@@ -1346,7 +1346,7 @@ def find_project_root(start: Optional[Path] = None) -> Path:
         current = current.parent
 
 
-def scaffold_project(directory: Path) -> None:
+def scaffold_project(directory: Path, *, overwrite_existing: bool = False) -> None:
     """Create a new Flujo project scaffold in the given directory.
 
     Creates `flujo.toml`, `pipeline.yaml`, `skills/`, `.flujo/`, and initializes
@@ -1361,7 +1361,7 @@ def scaffold_project(directory: Path) -> None:
     hidden_dir = directory / ".flujo"
     skills_dir = directory / "skills"
 
-    if flujo_toml.exists() or hidden_dir.exists():
+    if (flujo_toml.exists() or hidden_dir.exists()) and not overwrite_existing:
         secho("Error: This directory already looks like a Flujo project.", fg="red")
         raise Exit(1)
 
@@ -1369,23 +1369,37 @@ def scaffold_project(directory: Path) -> None:
     skills_dir.mkdir(parents=True, exist_ok=True)
     hidden_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write template files
+    # Write template files, tracking which files were created vs overwritten
     from importlib import resources as _res
+
+    created: list[str] = []
+    overwritten: list[str] = []
+
+    def _write(path: Path, content: str) -> None:
+        target = path
+        existed = target.exists()
+        target.write_text(content)
+        rel = str(target.relative_to(directory)) if target.is_file() else target.name
+        if existed:
+            overwritten.append(rel)
+        else:
+            created.append(rel)
 
     try:
         template_pkg = "flujo.templates.project"
         with _res.files(template_pkg).joinpath("flujo.toml").open("r") as f:
-            flujo_toml.write_text(f.read())
+            _write(flujo_toml, f.read())
         with _res.files(template_pkg).joinpath("pipeline.yaml").open("r") as f:
-            (directory / "pipeline.yaml").write_text(f.read())
+            _write(directory / "pipeline.yaml", f.read())
         # skills/__init__.py
         with _res.files(template_pkg).joinpath("skills__init__.py").open("r") as f:
-            (skills_dir / "__init__.py").write_text(f.read())
+            _write(skills_dir / "__init__.py", f.read())
         with _res.files(template_pkg).joinpath("custom_tools.py").open("r") as f:
-            (skills_dir / "custom_tools.py").write_text(f.read())
+            _write(skills_dir / "custom_tools.py", f.read())
     except Exception:
         # Fallback: write minimal content if resources are unavailable
-        flujo_toml.write_text(
+        _write(
+            flujo_toml,
             """
 # Flujo project configuration
 
@@ -1401,9 +1415,10 @@ state_uri = "sqlite:///.flujo/state.db"
 # total_cost_usd_limit = 5.0
 # total_tokens_limit = 100000
             """.strip()
-            + "\n"
+            + "\n",
         )
-        (directory / "pipeline.yaml").write_text(
+        _write(
+            directory / "pipeline.yaml",
             """
 version: "0.1"
 name: "example"
@@ -1411,10 +1426,11 @@ steps:
   - kind: step
     name: passthrough
             """.strip()
-            + "\n"
+            + "\n",
         )
-        (skills_dir / "__init__.py").write_text("# Custom project skills\n")
-        (skills_dir / "custom_tools.py").write_text(
+        _write(skills_dir / "__init__.py", "# Custom project skills\n")
+        _write(
+            skills_dir / "custom_tools.py",
             """
 from __future__ import annotations
 
@@ -1422,7 +1438,7 @@ from __future__ import annotations
 async def echo_tool(x: str) -> str:
     return x
             """.strip()
-            + "\n"
+            + "\n",
         )
 
     # Initialize SQLite DB at .flujo/state.db
@@ -1439,7 +1455,19 @@ async def echo_tool(x: str) -> str:
         # Best-effort init; ignore if environment lacks event loop support
         pass
 
-    secho("✅ Your new Flujo project has been initialized in this directory!", fg="green")
+    if overwrite_existing and overwritten:
+        secho(
+            "✅ Re-initialized Flujo project templates.",
+            fg="green",
+        )
+        secho(
+            "Overwrote: " + ", ".join(sorted(overwritten)),
+            fg="yellow",
+        )
+        if created:
+            secho("Created: " + ", ".join(sorted(created)), fg="cyan")
+    else:
+        secho("✅ Your new Flujo project has been initialized in this directory!", fg="green")
 
 
 def update_project_budget(flujo_toml_path: Path, pipeline_name: str, cost_limit: float) -> None:

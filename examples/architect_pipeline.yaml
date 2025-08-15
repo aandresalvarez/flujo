@@ -1,44 +1,44 @@
-version: "0.1"
+name: FlujoArchitect-GPT5
+version: "2.0"
 
 agents:
-  decomposer:
-    model: "openai:gpt-4o-mini"
+  architect_agent:
+    model: "openai:gpt-5"
+    model_settings:
+      reasoning: { effort: "high" }
+      text: { verbosity: "low" }
     system_prompt: |
-      Decompose a natural-language goal into ordered steps {step_name, purpose, input_type, output_type}.
+      You are the Flujo AI Architect. Your goal is to convert a user's high-level objective into a complete and valid `flujo pipeline.yaml` file.
+
+      You will be given the user's goal and a list of available built-in skills.
+
+      YOUR PROCESS:
+      1.  Decompose the user's goal into a logical sequence of discrete steps.
+      2.  Implement each step. You have two choices for implementation:
+          a.  If a built-in skill perfectly matches the step's purpose, use it by setting `agent: {id: "skill_id"}`.
+          b.  If no skill is a perfect match, you MUST design a new, lightweight LLM agent for that step. Define this new agent under the top-level `agents:` section and reference it with `uses: agents.<new_agent_name>`.
+      3.  Assemble the complete, valid `pipeline.yaml` string.
+
+      OUTPUT REQUIREMENTS:
+      - The output MUST be a Pydantic model: `YamlWriter(yaml_text: str)`.
+      - The `yaml_text` field MUST contain ONLY the raw YAML string.
+      - Do NOT include any explanations, apologies, or markdown formatting in your response.
     output_schema:
       type: object
       properties:
-        steps:
-          type: array
-          items:
-            type: object
-            properties:
-              step_name: { type: string }
-              purpose: { type: string }
-              input_type: { type: string }
-              output_type: { type: string }
-            required: [step_name, purpose, input_type, output_type]
-      required: [steps]
+        yaml_text: { type: string }
+      required: [yaml_text]
 
-  tool_matcher:
-    model: "openai:gpt-4o-mini"
+  repair_agent:
+    model: "openai:gpt-5"
+    model_settings:
+      reasoning: { effort: "medium" }
+      text: { verbosity: "high" }
+    timeout: 120
     system_prompt: |
-      Given a step and available skills (id, description, input_schema), choose a tool or 'llm_agent'.
-    output_schema:
-      type: object
-      properties:
-        step_name: { type: string }
-        implementation: { type: string, enum: ["tool", "llm_agent"] }
-        tool_name: { type: string }
-      required: [step_name, implementation]
-
-  yaml_writer:
-    model: "openai:gpt-4o-mini"
-    system_prompt: |
-      You are a Flujo YAML expert. Your SOLE job is to convert the provided JSON plan into a valid Flujo YAML file.
-      You MUST use the step names, tools, and agent descriptions from the `step_plans` provided in the input.
-      Do NOT invent new steps or agents.
-      The final output MUST be a single string containing only the YAML text.
+      You are a Flujo YAML debugger. You will receive an invalid YAML snippet and a validation error report.
+      Your task is to fix the YAML and return the corrected version.
+      The output MUST be a Pydantic model: `YamlWriter(yaml_text: str)`.
     output_schema:
       type: object
       properties:
@@ -46,69 +46,34 @@ agents:
       required: [yaml_text]
 
 steps:
+  # STEP 1: Design & Build
   - kind: step
-    name: DecomposeGoal
-    uses: agents.decomposer
+    name: DesignAndBuildBlueprint
+    uses: agents.architect_agent
     updates_context: true
+    # Provide both goal and available skills as a single, structured prompt
+    input: |
+      USER_GOAL:
+      {{ context.user_goal }}
 
-  # Adapter to normalize decomposer output into a simple list for mapping
-  - kind: step
-    name: PrepareStepsForMapping
-    agent:
-      id: "flujo.builtins.extract_decomposed_steps"
-    updates_context: true
+      AVAILABLE_SKILLS_JSON:
+      {{ context.available_skills }}
 
-  - kind: step
-    name: DiscoverSkills
-    agent:
-      id: "flujo.builtins.discover_skills"
-      params: { directory: "." }
-    updates_context: true
-
-  - kind: map
-    name: MapStepsToTools
-    map:
-      iterable_input: "prepared_steps_for_mapping"
-      body:
-        - kind: step
-          name: MatchTool
-          uses: agents.tool_matcher
-    # MapStep returns a list which is passed to the next step
-    updates_context: false
-
-  # Aggregate mapped tool decisions into a single plan for YAML writer
-  - kind: step
-    name: AggregatePlan
-    agent:
-      id: "flujo.builtins.aggregate_plan"
-    updates_context: false
-
-  - kind: step
-    name: GenerateBlueprint
-    uses: agents.yaml_writer
-    updates_context: true
-
-  # Adapter: convert writer output object into plain YAML string
-  - kind: step
-    name: ExtractYamlText
-    agent:
-      id: "flujo.builtins.extract_yaml_text"
-    updates_context: false
-
+  # STEP 2: Validate & Repair loop
   - kind: loop
     name: ValidateAndRepair
     loop:
-      max_loops: 3
+      max_loops: 2
       exit_condition: "flujo.builtins:exit_when_yaml_valid"
       body:
-        # Always validate the latest YAML string (extract whenever needed)
         - kind: step
-          name: ExtractYamlTextForValidation
+          name: ExtractYamlForValidation
           agent:
             id: "flujo.builtins.extract_yaml_text"
         - kind: step
           name: ValidateGeneratedYAML
-          agent: "flujo.cli.helpers:validate_yaml_text"
+          agent:
+            id: "flujo.builtins.validate_yaml"
         - kind: step
           name: SetValidationFlag
           agent:
@@ -120,8 +85,18 @@ steps:
           branches:
             valid:
               - kind: step
-                name: Done
+                name: Finish
+                agent:
+                  id: "flujo.builtins.passthrough"
             invalid:
               - kind: step
                 name: RepairBlueprint
-                uses: agents.yaml_writer
+                uses: agents.repair_agent
+                updates_context: true
+                # Provide both the invalid YAML and the validation report
+                input: |
+                  CURRENT_YAML:
+                  {{ context.generated_yaml or context.yaml_text or '' }}
+
+                  VALIDATION_REPORT_JSON:
+                  {{ previous_step }}

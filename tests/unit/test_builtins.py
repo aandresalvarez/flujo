@@ -105,7 +105,9 @@ def test_web_search_returns_simplified_results(monkeypatch: pytest.MonkeyPatch) 
 def test_web_search_when_dependency_missing_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     import flujo.builtins as builtins
 
+    # Simulate missing dependency for both async and sync clients
     monkeypatch.setattr(builtins, "_DDGSAsync", None, raising=True)
+    monkeypatch.setattr(builtins, "_DDGS_CLASS", None, raising=True)
 
     factory = _get_registered_factory("flujo.builtins.web_search")
     fn = factory()
@@ -160,3 +162,81 @@ def test_extract_from_text_wraps_non_dict_output(monkeypatch: pytest.MonkeyPatch
 
     out = asyncio.run(fn(text="x", schema={"type": "object"}))
     assert out == {"result": "not a dict"}
+
+
+# --- New: check_user_confirmation skill ---
+
+
+@pytest.mark.fast
+def test_check_user_confirmation_affirmatives() -> None:
+    factory = _get_registered_factory("flujo.builtins.check_user_confirmation")
+    fn = factory()
+    assert asyncio.run(fn("y")) == "approved"
+    assert asyncio.run(fn("Y")) == "approved"
+    assert asyncio.run(fn("yes")) == "approved"
+    assert asyncio.run(fn("  Yes  ")) == "approved"
+
+
+@pytest.mark.fast
+def test_check_user_confirmation_negatives() -> None:
+    factory = _get_registered_factory("flujo.builtins.check_user_confirmation")
+    fn = factory()
+    assert asyncio.run(fn("n")) == "denied"
+    assert asyncio.run(fn("no")) == "denied"
+    assert asyncio.run(fn("Nope")) == "denied"
+    assert asyncio.run(fn("maybe")) == "denied"
+
+
+@pytest.mark.fast
+def test_check_user_confirmation_whitespace_defaults_to_approved() -> None:
+    factory = _get_registered_factory("flujo.builtins.check_user_confirmation")
+    fn = factory()
+    assert asyncio.run(fn("")) == "approved"
+    assert asyncio.run(fn("   \t\n")) == "approved"
+
+
+# --- New small tests for passthrough and validate_yaml ---
+
+
+@pytest.mark.fast
+def test_passthrough_skill_identity() -> None:
+    factory = _get_registered_factory("flujo.builtins.passthrough")
+    fn = factory()
+    payload = {"k": [1, 2, 3], "nested": {"a": 1}}
+    out = asyncio.run(fn(payload))
+    # Identity function: same object returned
+    assert out is payload
+
+
+@pytest.mark.fast
+def test_validate_yaml_skill_handles_invalid_yaml_gracefully() -> None:
+    factory = _get_registered_factory("flujo.builtins.validate_yaml")
+    fn = factory()
+    bad_yaml = "version: '0.1'\nsteps: ["  # malformed YAML
+    report = asyncio.run(fn(bad_yaml))
+    # Accept either ValidationReport object or report-like dict
+    is_valid = False
+    try:
+        is_valid = bool(getattr(report, "is_valid", False))
+    except Exception:
+        is_valid = False
+    if not is_valid and isinstance(report, dict):
+        is_valid = bool(report.get("is_valid", False))
+    assert is_valid is False
+
+
+@pytest.mark.fast
+def test_validate_yaml_skill_accepts_minimal_valid_yaml() -> None:
+    factory = _get_registered_factory("flujo.builtins.validate_yaml")
+    fn = factory()
+    good_yaml = 'version: "0.1"\nsteps: []\n'
+    report = asyncio.run(fn(good_yaml))
+    # Accept either object or dict forms
+    is_valid = False
+    try:
+        is_valid = bool(getattr(report, "is_valid", False))
+    except Exception:
+        is_valid = False
+    if not is_valid and isinstance(report, dict):
+        is_valid = bool(report.get("is_valid", False))
+    assert is_valid is True

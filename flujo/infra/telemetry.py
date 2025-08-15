@@ -303,7 +303,7 @@ def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
     _safe_log(
         _fallback_logger,
         logging.INFO,
-        "Logfire telemetry is disabled or failed to initialize. Using standard Python logging.",
+        "Using standard Python logging.",
     )
     logfire = _MockLogfire(_fallback_logger)
     _initialized = True

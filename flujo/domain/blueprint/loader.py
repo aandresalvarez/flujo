@@ -209,7 +209,17 @@ def _make_step_from_blueprint(
     compiled_imports: Optional[Dict[str, Any]] = None,
 ) -> Step[Any, Any]:
     # For v0: agent may be None; if provided, we resolve later via import string in a follow-up.
-    step_config = StepConfig(**model.config) if model.config else StepConfig()
+    # Normalize step config supporting 'timeout' alias -> 'timeout_s'
+    if model.config:
+        cfg_dict = dict(model.config)
+        if "timeout" in cfg_dict and "timeout_s" not in cfg_dict:
+            try:
+                cfg_dict["timeout_s"] = float(cfg_dict.pop("timeout"))
+            except Exception:
+                cfg_dict.pop("timeout", None)
+        step_config = StepConfig(**cfg_dict)
+    else:
+        step_config = StepConfig()
     if model.kind == "parallel":
         if not model.branches:
             raise BlueprintError("parallel step requires branches")

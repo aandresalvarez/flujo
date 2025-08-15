@@ -29,6 +29,33 @@ flujo create [--output-dir ./out] [--context-file context.yaml] \
 
 The bundled Architect pipeline validates the generated YAML and can iteratively repair it up to a maximum number of loops.
 
+## Tuning Timeouts and Retries in YAML
+
+GPT‑5 agents often need more time to reason. You can increase timeouts and adjust retries in your blueprint:
+
+- Agent-level (affects the LLM call, enforced by the Agent wrapper):
+
+```yaml
+agents:
+  architect_agent:
+    model: "openai:gpt-5"
+    timeout: 180        # seconds
+    max_retries: 1
+```
+
+- Step-level (affects plugin/validator phases; normalized to `timeout_s`):
+
+```yaml
+steps:
+  - name: DesignAndBuildBlueprint
+    uses: agents.architect_agent
+    config:
+      timeout: 180      # alias to timeout_s for step-level operations
+      max_retries: 1
+```
+
+Tip: The bundled `examples/architect_pipeline.yaml` already sets higher timeouts suitable for GPT‑5.
+
 ## Skills Catalog
 
 Place a `skills.yaml` next to your blueprint to register custom tools. Example entry:
@@ -57,4 +84,3 @@ slack.post_message:
 
 - In interactive runs, missing required `params` for registered skills are prompted.
 - In non-interactive runs, provide all required parameters up front or use `--context-file`.
-

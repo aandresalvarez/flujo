@@ -31,6 +31,16 @@ mkdir weekly-bot && cd weekly-bot
 flujo init
 ```
 
+Re-initialize an existing project (overwriting templates):
+
+```bash
+# Prompt for confirmation
+flujo init --force
+
+# Non-interactive (CI/scripts):
+flujo init --force --yes
+```
+
 #### **Step 2: Tell Flujo Your Goal**
 
 Start a conversation with the Flujo Architect from inside your project:
@@ -131,6 +141,8 @@ export OPENAI_API_KEY="sk-..."
 ```
 
 For full guides, tutorials, and API references, please see our **[Official Documentation](https://flujo.readthedocs.io/)**.
+
+Looking to use GPT‑5 with the Architect? See the guide: `docs/guides/gpt5_architect.md`.
 
 ---
 

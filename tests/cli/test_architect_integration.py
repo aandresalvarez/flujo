@@ -27,42 +27,23 @@ def mock_architect_env(monkeypatch) -> Dict[str, Any]:
     Returns a dict with shared constants like the log marker string.
     """
 
-    class _Decomposer:
-        async def run(self, data: Any, **_: Any) -> Any:
-            return {
-                "steps": [
-                    {
-                        "step_name": "step1",
-                        "purpose": "demo",
-                        "input_type": "string",
-                        "output_type": "string",
-                    }
-                ]
-            }
-
-    class _ToolMatcher:
-        async def run(self, data: Any, **_: Any) -> Any:
-            name = data.get("step_name", "") if isinstance(data, dict) else ""
-            return {"step_name": name, "implementation": "tool", "tool_name": "echo"}
-
     captured: Dict[str, Any] = {}
 
-    class _YamlWriter:
+    class _ArchitectAgent:
         async def run(self, data: Any, **_: Any) -> Any:
-            # Capture the exact input provided to the YAML writer
+            # Capture the exact input provided to the architect agent
             captured["input"] = data
             logging.getLogger("flujo").info(MARKER)
-            return {"generated_yaml": 'version: "0.1"\nsteps: []\n'}
+            return {"yaml_text": 'version: "0.1"\nsteps: []\n'}
+
+    class _RepairAgent:
+        async def run(self, data: Any, **_: Any) -> Any:
+            # Return a fixed valid YAML regardless of input
+            return {"yaml_text": 'version: "0.1"\nsteps: []\n'}
 
     def _fake_make_agent_async(*, model: str, system_prompt: str, output_type: Any):  # type: ignore[no-untyped-def]
-        sp = system_prompt.lower()
-        if "decompose" in sp:
-            return _Decomposer()
-        if "choose a tool" in sp:
-            return _ToolMatcher()
-        if "emit a valid flujo yaml" in sp:
-            return _YamlWriter()
-        return _YamlWriter()
+        # Both architect and repair agents return simple dicts
+        return _ArchitectAgent()
 
     # Patch agent factory in compiler (in case it is used)
     monkeypatch.setattr("flujo.domain.blueprint.compiler.make_agent_async", _fake_make_agent_async)
@@ -70,9 +51,8 @@ def mock_architect_env(monkeypatch) -> Dict[str, Any]:
     # Ensure agents are considered precompiled to avoid any schema/model errors
     def _fake_compile_agents(self):  # type: ignore[no-redef]
         self._compiled_agents = {
-            "decomposer": _Decomposer(),
-            "tool_matcher": _ToolMatcher(),
-            "yaml_writer": _YamlWriter(),
+            "architect_agent": _ArchitectAgent(),
+            "repair_agent": _RepairAgent(),
         }
 
     monkeypatch.setattr(
@@ -89,9 +69,8 @@ def mock_architect_env(monkeypatch) -> Dict[str, Any]:
     def _build_with_fallback(model, compiled_agents=None, compiled_imports=None):  # type: ignore[no-redef]
         if not compiled_agents:
             compiled_agents = {
-                "decomposer": _Decomposer(),
-                "tool_matcher": _ToolMatcher(),
-                "yaml_writer": _YamlWriter(),
+                "architect_agent": _ArchitectAgent(),
+                "repair_agent": _RepairAgent(),
             }
         return _orig_build(
             model, compiled_agents=compiled_agents, compiled_imports=compiled_imports
@@ -127,12 +106,11 @@ def test_create_architect_flow_with_mocked_agents(tmp_path: Path, mock_architect
     out_yaml = tmp_path / "pipeline.yaml"
     assert out_yaml.exists(), "pipeline.yaml should be written"
     assert out_yaml.read_text().strip().startswith('version: "0.1"')
-    # Assert YAML writer received the aggregated plan including available_skills key
+    # Assert the architect agent received input containing available skills
     captured = mock_architect_env["captured"]
     assert "input" in captured
-    plan = captured["input"]
-    assert isinstance(plan, dict)
-    assert "available_skills" in plan and isinstance(plan["available_skills"], list)
+    architect_input = str(captured["input"])
+    assert "available_skills" in architect_input
 
 
 @pytest.mark.parametrize("debug, expect_marker", [(False, False), (True, True)])

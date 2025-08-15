@@ -896,6 +896,9 @@ When tests fail, follow this methodology:
 - Adjusting thresholds because performance regressed
 - Changing expectations because the system behavior changed unexpectedly
 
+**Production Rule:**
+- Never import test frameworks (like pytest) in production code. Surface environment constraints with explicit, typed exceptions, and let tests decide whether to skip.
+
 ### **🎯 LESSON 6: Performance Vigilance**
 
 **Performance Test Philosophy:**

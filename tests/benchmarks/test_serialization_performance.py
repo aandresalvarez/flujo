@@ -1,5 +1,10 @@
 """Performance benchmarks for serialization and reconstruction operations."""
 
+import pytest
+
+# Mark this module as benchmark so it's excluded from fast test runs
+pytestmark = pytest.mark.benchmark
+
 import os
 import time
 import json

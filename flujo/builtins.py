@@ -10,13 +10,21 @@ from flujo.domain.agent_protocol import AsyncAgentProtocol
 from .agents.wrapper import make_agent_async
 
 # Optional dependency: duckduckgo-search (installed via extras: flujo[skills])
+# Prefer async client if available; fall back to sync DDGS via thread pool.
+_DDGSAsync: Optional[Type[Any]] = None
 _DDGS_CLASS: Optional[Type[Any]] = None
-try:  # Use regular DDGS client
-    from duckduckgo_search import DDGS
+try:  # pragma: no cover - optional dependency
+    import duckduckgo_search as _dds
 
-    _DDGS_CLASS = DDGS
-except Exception:  # pragma: no cover - optional dependency
-    pass
+    _async = getattr(_dds, "AsyncDDGS", None)
+    _sync = getattr(_dds, "DDGS", None)
+    if _async is not None:
+        _DDGSAsync = _async
+    if _sync is not None:
+        _DDGS_CLASS = _sync
+except Exception:
+    _DDGSAsync = None
+    _DDGS_CLASS = None
 
 
 class DiscoverSkillsAgent(AsyncAgentProtocol[Any, Dict[str, Any]]):
@@ -156,6 +164,81 @@ def exit_when_yaml_valid(_out: Any, context: Any | None) -> bool:
         return False
 
 
+# --- HITL helper: interpret user confirmation into branch key ---
+async def check_user_confirmation(user_input: str) -> str:
+    """Map free-form user input to a conditional branch key.
+
+    Returns:
+        "approved" for affirmative ("y", "yes", empty/whitespace), otherwise "denied".
+    """
+    try:
+        text = "" if user_input is None else str(user_input)
+    except Exception:
+        text = ""
+    norm = text.strip().lower()
+    if norm == "":
+        return "approved"
+    affirmatives = {"y", "yes"}
+    if norm in affirmatives:
+        return "approved"
+    return "denied"
+
+
+# --- In-memory YAML validation skill ---
+async def validate_yaml(yaml_text: str, base_dir: Optional[str] = None) -> Any:
+    """Validate a YAML blueprint string and return a ValidationReport.
+
+    Never raises for invalid YAML; returns a report with an error finding instead.
+    """
+    try:
+        from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
+
+        pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
+        # Let the pipeline perform its deeper graph validation
+        if pipeline is not None:
+            return pipeline.validate_graph()
+        else:
+            # Handle case where pipeline loading returns None
+            from flujo.domain.pipeline_validation import (
+                ValidationReport as _VR,
+                ValidationFinding as _VF,
+            )
+
+            return _VR(
+                errors=[
+                    _VF(
+                        rule_id="YAML-LOAD",
+                        severity="error",
+                        message="Pipeline loading returned None",
+                    ),
+                ],
+                warnings=[],
+            )
+    except Exception as e:
+        try:
+            # Construct a report capturing the parse/compile error
+            from flujo.domain.pipeline_validation import (
+                ValidationReport as _VR,
+                ValidationFinding as _VF,
+            )
+
+            return _VR(
+                errors=[
+                    _VF(rule_id="YAML-PARSE", severity="error", message=str(e)),
+                ],
+                warnings=[],
+            )
+        except Exception:
+            # Absolute fallback: minimal dict compatible with adapters/predicates
+            return {"is_valid": False, "errors": [str(e)], "warnings": []}
+
+
+# --- Passthrough adapter (identity) ---
+async def passthrough(x: Any) -> Any:
+    """Return the input unchanged (identity)."""
+    return x
+
+
 def _register_builtins() -> None:
     """Register builtin skills with the global registry."""
     try:
@@ -186,6 +269,44 @@ def _register_builtins() -> None:
             "flujo.builtins.validation_report_to_flag",
             lambda **_params: validation_report_to_flag,
             description="Map validation report to {'yaml_is_valid': bool} and update context.",
+        )
+        # Human-in-the-loop confirmation interpreter
+        reg.register(
+            "flujo.builtins.check_user_confirmation",
+            lambda **_params: check_user_confirmation,
+            description=(
+                "Interpret user input as 'approved' when affirmative (y/yes/empty), else 'denied'."
+            ),
+            arg_schema={
+                "type": "object",
+                "properties": {"user_input": {"type": "string"}},
+                "required": ["user_input"],
+            },
+            side_effects=False,
+        )
+        # Identity adapter useful in conditional valid branches
+        reg.register(
+            "flujo.builtins.passthrough",
+            lambda **_params: passthrough,
+            description="Identity adapter that returns input unchanged.",
+            side_effects=False,
+        )
+        # In-memory YAML validation that returns a ValidationReport and never raises on invalid YAML
+        reg.register(
+            "flujo.builtins.validate_yaml",
+            lambda **_params: validate_yaml,
+            description=(
+                "Validate YAML blueprint text in-memory; returns ValidationReport without raising."
+            ),
+            arg_schema={
+                "type": "object",
+                "properties": {
+                    "yaml_text": {"type": "string"},
+                    "base_dir": {"type": "string"},
+                },
+                "required": ["yaml_text"],
+            },
+            side_effects=False,
         )
 
         # Aggregator: combine mapped results with goal and (optional) skills
@@ -244,27 +365,35 @@ def _register_builtins() -> None:
 
             Returns a list of {title, link, snippet} dicts.
             """
-            if _DDGS_CLASS is None:
+            if _DDGSAsync is None and _DDGS_CLASS is None:
                 # Graceful degrade if optional dependency not installed
                 return []
 
             results: List[Dict[str, Any]] = []
             try:
-                # Use DDGS in a thread pool since it's not async
-                import asyncio
-                from concurrent.futures import ThreadPoolExecutor
+                if _DDGSAsync is not None:
+                    # Use async client when available
+                    async with _DDGSAsync() as ddgs:
+                        async for r in ddgs.text(query, max_results=max_results):
+                            if isinstance(r, dict):
+                                results.append(r)
+                else:
+                    # Use DDGS in a thread pool since sync
+                    import asyncio
+                    from concurrent.futures import ThreadPoolExecutor
 
-                def _search_sync() -> List[Dict[str, Any]]:
-                    ddgs = _DDGS_CLASS()
-                    search_results = []
-                    for r in ddgs.text(query, max_results=max_results):
-                        if isinstance(r, dict):
-                            search_results.append(r)
-                    return search_results
+                    def _search_sync() -> List[Dict[str, Any]]:
+                        assert _DDGS_CLASS is not None
+                        ddgs = _DDGS_CLASS()
+                        search_results: List[Dict[str, Any]] = []
+                        for r in ddgs.text(query, max_results=max_results):
+                            if isinstance(r, dict):
+                                search_results.append(r)
+                        return search_results
 
-                loop = asyncio.get_event_loop()
-                with ThreadPoolExecutor() as executor:
-                    results = await loop.run_in_executor(executor, _search_sync)
+                    loop = asyncio.get_event_loop()
+                    with ThreadPoolExecutor() as executor:
+                        results = await loop.run_in_executor(executor, _search_sync)
             except Exception:
                 # Non-fatal: return empty results on any search error
                 return []

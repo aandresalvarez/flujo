@@ -24,50 +24,24 @@ def mock_architect_self_correction(monkeypatch) -> Dict[str, Any]:
     - validate_yaml_text returns invalid first call, valid second
     """
 
-    class _Decomposer:
-        async def run(self, data: Any, **_: Any) -> Any:
-            return {
-                "steps": [
-                    {
-                        "step_name": "spellcheck",
-                        "purpose": "spell check text",
-                        "input_type": "string",
-                        "output_type": "string",
-                    },
-                    {
-                        "step_name": "translate",
-                        "purpose": "translate text",
-                        "input_type": "string",
-                        "output_type": "string",
-                    },
-                ]
-            }
-
-    class _ToolMatcher:
-        async def run(self, data: Any, **_: Any) -> Any:
-            name = data.get("step_name", "") if isinstance(data, dict) else ""
-            return {"step_name": name, "implementation": "tool", "tool_name": "echo"}
-
-    counters: Dict[str, int] = {"yaml_writer_calls": 0, "validator_calls": 0}
+    counters: Dict[str, int] = {"architect_calls": 0, "repair_calls": 0, "validator_calls": 0}
     validator_inputs: list[str] = []
 
-    class _YamlWriter:
+    class _ArchitectAgent:
         async def run(self, data: Any, **_: Any) -> Any:
-            # First call: invalid YAML; Second call: valid YAML
-            counters["yaml_writer_calls"] += 1
-            if counters["yaml_writer_calls"] == 1:
-                return {"generated_yaml": "version: '0.1'\nsteps: ["}  # malformed YAML
-            return {"generated_yaml": 'version: "0.1"\nsteps: []\n'}
+            counters["architect_calls"] += 1
+            # Return invalid YAML initially to trigger the repair loop
+            return {"yaml_text": "version: '0.1'\nsteps: ["}
+
+    class _RepairAgent:
+        async def run(self, data: Any, **_: Any) -> Any:
+            counters["repair_calls"] += 1
+            # Always return a valid YAML on repair
+            return {"yaml_text": 'version: "0.1"\nsteps: []\n'}
 
     def _fake_make_agent_async(*, model: str, system_prompt: str, output_type: Any):  # type: ignore[no-untyped-def]
-        sp = system_prompt.lower()
-        if "decompose" in sp:
-            return _Decomposer()
-        if "choose a tool" in sp:
-            return _ToolMatcher()
-        if "sole job is to convert" in sp or "emit a valid flujo yaml" in sp:
-            return _YamlWriter()
-        return _YamlWriter()
+        # Return architect agent for simplicity; compiled mapping will override per name
+        return _ArchitectAgent()
 
     # Patch agent compiler
     monkeypatch.setattr("flujo.domain.blueprint.compiler.make_agent_async", _fake_make_agent_async)
@@ -75,9 +49,8 @@ def mock_architect_self_correction(monkeypatch) -> Dict[str, Any]:
     # Ensure agents are considered precompiled
     def _fake_compile_agents(self):  # type: ignore[no-redef]
         self._compiled_agents = {
-            "decomposer": _Decomposer(),
-            "tool_matcher": _ToolMatcher(),
-            "yaml_writer": _YamlWriter(),
+            "architect_agent": _ArchitectAgent(),
+            "repair_agent": _RepairAgent(),
         }
 
     monkeypatch.setattr(
@@ -94,9 +67,8 @@ def mock_architect_self_correction(monkeypatch) -> Dict[str, Any]:
     def _build_with_fallback(model, compiled_agents=None, compiled_imports=None):  # type: ignore[no-redef]
         if not compiled_agents:
             compiled_agents = {
-                "decomposer": _Decomposer(),
-                "tool_matcher": _ToolMatcher(),
-                "yaml_writer": _YamlWriter(),
+                "architect_agent": _ArchitectAgent(),
+                "repair_agent": _RepairAgent(),
             }
         return _orig_build(
             model, compiled_agents=compiled_agents, compiled_imports=compiled_imports

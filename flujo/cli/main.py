@@ -141,13 +141,45 @@ Keep this module focused on argument parsing and command wiring.
 """
 
 
-@app.command(help="✨ Initialize a new Flujo workflow project in this directory.")
-def init() -> None:
+@app.command(
+    help=(
+        "✨ Initialize a new Flujo workflow project in this directory.\n\n"
+        "Use --force to re-initialize templates in an existing project, and --yes to skip confirmation."
+    )
+)
+def init(
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help=("Re-initialize even if this directory already contains a Flujo project."),
+        ),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Skip confirmation prompts when using --force",
+        ),
+    ] = False,
+) -> None:
     """Initialize a new Flujo project in the current directory."""
     try:
         from pathlib import Path as _Path
 
-        scaffold_project(_Path.cwd())
+        if force:
+            if not yes:
+                proceed = typer.confirm(
+                    "This directory already has Flujo project files. Re-initialize templates (overwrite flujo.toml, pipeline.yaml, and skills/*)?",
+                    default=False,
+                )
+                if not proceed:
+                    raise typer.Exit(0)
+            scaffold_project(_Path.cwd(), overwrite_existing=True)
+        else:
+            scaffold_project(_Path.cwd())
     except Exception as e:
         typer.secho(f"Failed to initialize project: {e}", fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -540,6 +572,10 @@ def create(
     """Conversational pipeline generation via the Architect pipeline.
 
     Loads the bundled architect YAML, runs it with the provided goal, and writes outputs.
+
+    Tip: Using GPT-5? To tune agent timeouts/retries for complex reasoning, see
+    docs/guides/gpt5_architect.md (agent-level `timeout`/`max_retries`) and
+    step-level `config.timeout` (alias to `timeout_s`) for plugin/validator phases.
     """
     try:
         # Conditional logging: silence internal logs for end users unless --debug
@@ -583,7 +619,25 @@ def create(
             # Prepare initial context data
             from .helpers import parse_context_data
 
-            initial_context_data = {"user_goal": goal}
+            # Ensure built-in skills are registered and collect available skills
+            try:
+                import flujo.builtins as _ensure_builtins  # noqa: F401
+                from flujo.infra.skill_registry import get_skill_registry as _get_skill_registry
+
+                _reg = _get_skill_registry()
+                _entries = getattr(_reg, "_entries", {})
+                _available_skills = [
+                    {
+                        "id": sid,
+                        "description": (meta or {}).get("description"),
+                        "input_schema": (meta or {}).get("input_schema"),
+                    }
+                    for sid, meta in _entries.items()
+                ]
+            except Exception:
+                _available_skills = []
+
+            initial_context_data = {"user_goal": goal, "available_skills": _available_skills}
             extra_ctx = parse_context_data(None, context_file)
             if isinstance(extra_ctx, dict):
                 initial_context_data.update(extra_ctx)
@@ -612,31 +666,30 @@ def create(
                 runner=runner, input_data=goal, run_id=None, json_output=False
             )
 
-            # Extract YAML text from final context if present, with fallbacks
+            # Extract YAML text preferring the most recent step output (repairs), then context
             yaml_text: Optional[str] = None
             try:
-                ctx = getattr(result, "final_pipeline_context", None)
-                if ctx is not None:
-                    # Preferred key
-                    if hasattr(ctx, "generated_yaml") and getattr(ctx, "generated_yaml"):
-                        yaml_text = getattr(ctx, "generated_yaml")
-                    # Fallback key used by some agents
-                    elif hasattr(ctx, "yaml_text") and getattr(ctx, "yaml_text"):
-                        yaml_text = getattr(ctx, "yaml_text")
-                # Final fallback: inspect step history outputs
+                # Prefer latest step output for repaired YAML
+                for sr in getattr(result, "step_history", [])[::-1]:
+                    out = getattr(sr, "output", None)
+                    try:
+                        if isinstance(out, dict):
+                            if out.get("generated_yaml"):
+                                yaml_text = str(out.get("generated_yaml"))
+                                break
+                            if out.get("yaml_text"):
+                                yaml_text = str(out.get("yaml_text"))
+                                break
+                    except Exception:
+                        continue
+                # Fallback to final context if needed
                 if yaml_text is None:
-                    for sr in getattr(result, "step_history", [])[::-1]:
-                        out = getattr(sr, "output", None)
-                        try:
-                            if isinstance(out, dict):
-                                if out.get("generated_yaml"):
-                                    yaml_text = str(out.get("generated_yaml"))
-                                    break
-                                if out.get("yaml_text"):
-                                    yaml_text = str(out.get("yaml_text"))
-                                    break
-                        except Exception:
-                            continue
+                    ctx = getattr(result, "final_pipeline_context", None)
+                    if ctx is not None:
+                        if hasattr(ctx, "generated_yaml") and getattr(ctx, "generated_yaml"):
+                            yaml_text = getattr(ctx, "generated_yaml")
+                        elif hasattr(ctx, "yaml_text") and getattr(ctx, "yaml_text"):
+                            yaml_text = getattr(ctx, "yaml_text")
             except Exception:
                 pass
 
@@ -1054,6 +1107,20 @@ __all__ = [
     "lens_app",
     "main",
 ]
+
+# Register common top-level aliases expected by tests and docs
+try:
+    app.command(name="solve")(solve)
+    app.command(name="bench")(bench)
+    app.command(name="explain")(explain)
+    app.command(name="improve")(improve)
+    app.command(name="validate")(validate)
+    app.command(name="show-config")(show_config_cmd)
+    app.command(name="version-cmd")(version_cmd)
+    app.command(name="pipeline-mermaid")(pipeline_mermaid_cmd)
+    app.command(name="add-eval-case")(add_eval_case_cmd)
+except Exception:
+    pass
 
 
 if __name__ == "__main__":

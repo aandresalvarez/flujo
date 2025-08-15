@@ -47,6 +47,7 @@ nav:
     - 'Durable Workflows': 'guides/durable_workflows.md'
     - 'Choosing Your Loop': 'guides/choosing_your_loop.md'
     - 'Custom State Backend': 'guides/custom_state_backend.md'
+    - 'GPT‑5 Architect': 'guides/gpt5_architect.md'
   - 'Cookbook':
     - 'Pipeline as a Step': 'cookbook/pipeline_as_step.md'
     - 'Advanced Serialization': 'cookbook/advanced_serialization.md'
