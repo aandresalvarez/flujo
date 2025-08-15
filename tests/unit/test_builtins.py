@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any, Dict, List, AsyncIterator
 
+import pytest
 from pydantic import BaseModel
 
 from flujo.builtins import extract_decomposed_steps
@@ -50,3 +51,112 @@ def test_aggregate_plan_combines_goal_and_steps() -> None:
     out = asyncio.run(_aggregate_plan(mapped, context=ctx))
     assert out["user_goal"] == "make a plan"
     assert [s["step_name"] for s in out["step_plans"]] == ["a", "b"]
+
+
+# --- New builtins: web_search and extract_from_text ---
+
+
+def _get_registered_factory(skill_id: str):
+    from flujo.builtins import _register_builtins  # noqa: F401
+    from flujo.infra.skill_registry import get_skill_registry
+
+    reg = get_skill_registry()
+    entry = reg.get(skill_id)
+    assert entry is not None, f"Skill not registered: {skill_id}"
+    return entry["factory"]
+
+
+@pytest.mark.fast
+def test_web_search_returns_simplified_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeDDGSAsync:
+        async def __aenter__(self) -> "FakeDDGSAsync":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
+            return None
+
+        def text(self, query: str, max_results: int = 3) -> AsyncIterator[Dict[str, Any]]:
+            async def _gen() -> AsyncIterator[Dict[str, Any]]:
+                for i in range(max_results):
+                    yield {
+                        "title": f"Result {i} for {query}",
+                        "href": f"https://example.com/{i}",
+                        "body": f"Snippet {i}",
+                    }
+
+            return _gen()
+
+    import flujo.builtins as builtins
+
+    monkeypatch.setattr(builtins, "_DDGSAsync", FakeDDGSAsync, raising=True)
+
+    factory = _get_registered_factory("flujo.builtins.web_search")
+    fn = factory()
+
+    results = asyncio.run(fn("test query", max_results=2))
+
+    assert isinstance(results, list)
+    assert len(results) == 2
+    assert set(results[0].keys()) == {"title", "link", "snippet"}
+    assert results[0]["link"].startswith("https://example.com/")
+
+
+@pytest.mark.fast
+def test_web_search_when_dependency_missing_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    import flujo.builtins as builtins
+
+    monkeypatch.setattr(builtins, "_DDGSAsync", None, raising=True)
+
+    factory = _get_registered_factory("flujo.builtins.web_search")
+    fn = factory()
+
+    results = asyncio.run(fn("anything"))
+    assert results == []
+
+
+@pytest.mark.fast
+def test_extract_from_text_returns_agent_dict(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeAgent:
+        async def run(self, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+            return {"ceo_name": "Jane Doe", "stock_price": 123.45}
+
+    import flujo.builtins as builtins
+
+    monkeypatch.setattr(builtins, "make_agent_async", lambda **_k: FakeAgent())
+
+    factory = _get_registered_factory("flujo.builtins.extract_from_text")
+    fn = factory()
+
+    out = asyncio.run(
+        fn(
+            text="Apple CEO is Jane Doe. Stock is 123.45.",
+            schema={
+                "type": "object",
+                "properties": {
+                    "ceo_name": {"type": "string"},
+                    "stock_price": {"type": "number"},
+                },
+                "required": ["ceo_name", "stock_price"],
+            },
+        )
+    )
+
+    assert out["ceo_name"] == "Jane Doe"
+    assert out["stock_price"] == 123.45
+
+
+@pytest.mark.fast
+def test_extract_from_text_wraps_non_dict_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeAgentStr:
+        async def run(self, *_args: Any, **_kwargs: Any) -> str:
+            return "not a dict"
+
+    import flujo.builtins as builtins
+
+    monkeypatch.setattr(builtins, "make_agent_async", lambda **_k: FakeAgentStr())
+
+    factory = _get_registered_factory("flujo.builtins.extract_from_text")
+    fn = factory()
+
+    out = asyncio.run(fn(text="x", schema={"type": "object"}))
+    assert out == {"result": "not a dict"}

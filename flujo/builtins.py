@@ -1,12 +1,22 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type
 from pydantic import BaseModel as PydanticBaseModel
 from flujo.domain.models import BaseModel as DomainBaseModel
 
 from flujo.infra.skills_catalog import load_skills_catalog, load_skills_entry_points
 from flujo.infra.skill_registry import get_skill_registry
 from flujo.domain.agent_protocol import AsyncAgentProtocol
+from .agents.wrapper import make_agent_async
+
+# Optional dependency: duckduckgo-search (installed via extras: flujo[skills])
+_DDGS_CLASS: Optional[Type[Any]] = None
+try:  # Use regular DDGS client
+    from duckduckgo_search import DDGS
+
+    _DDGS_CLASS = DDGS
+except Exception:  # pragma: no cover - optional dependency
+    pass
 
 
 class DiscoverSkillsAgent(AsyncAgentProtocol[Any, Dict[str, Any]]):
@@ -226,6 +236,123 @@ def _register_builtins() -> None:
             "flujo.builtins.aggregate_plan",
             lambda **_params: aggregate_plan,
             description="Aggregate mapped tool decisions and goal for YAML writer.",
+        )
+
+        # --- Killer Demo: web_search ---
+        async def web_search(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
+            """Perform a DuckDuckGo web search (top N simplified results).
+
+            Returns a list of {title, link, snippet} dicts.
+            """
+            if _DDGS_CLASS is None:
+                # Graceful degrade if optional dependency not installed
+                return []
+
+            results: List[Dict[str, Any]] = []
+            try:
+                # Use DDGS in a thread pool since it's not async
+                import asyncio
+                from concurrent.futures import ThreadPoolExecutor
+
+                def _search_sync() -> List[Dict[str, Any]]:
+                    ddgs = _DDGS_CLASS()
+                    search_results = []
+                    for r in ddgs.text(query, max_results=max_results):
+                        if isinstance(r, dict):
+                            search_results.append(r)
+                    return search_results
+
+                loop = asyncio.get_event_loop()
+                with ThreadPoolExecutor() as executor:
+                    results = await loop.run_in_executor(executor, _search_sync)
+            except Exception:
+                # Non-fatal: return empty results on any search error
+                return []
+
+            simplified = [
+                {
+                    "title": item.get("title"),
+                    "link": item.get("href"),
+                    "snippet": item.get("body"),
+                }
+                for item in results
+            ]
+            return simplified
+
+        reg.register(
+            "flujo.builtins.web_search",
+            lambda **_params: web_search,
+            description=(
+                "Performs a web search and returns the top results (titles, links, snippets)."
+            ),
+            arg_schema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "max_results": {"type": "integer", "default": 3},
+                },
+                "required": ["query"],
+            },
+            side_effects=False,
+        )
+
+        # --- Killer Demo: extract_from_text ---
+        async def extract_from_text(
+            text: str,
+            schema: Dict[str, Any],
+            *,
+            model: Optional[str] = None,
+        ) -> Dict[str, Any]:
+            """Extract structured data from unstructured text using an LLM.
+
+            The JSON schema is used as instruction; output is a dict.
+            """
+            # Default lightweight model consistent with examples
+            chosen_model = model or "openai:gpt-4o-mini"
+
+            system_prompt = (
+                "You extract structured data from text.\n"
+                "Return only valid JSON matching the provided JSON Schema.\n"
+                "Do not include prose, backticks, or explanations.\n"
+            )
+
+            # Compose a single input string; the wrapper handles retries/repair
+            input_payload = (
+                "JSON_SCHEMA:\n"
+                f"{schema}\n\n"
+                "TEXT:\n"
+                f"{text}\n\n"
+                "Respond with JSON that validates against JSON_SCHEMA."
+            )
+
+            agent = make_agent_async(
+                model=chosen_model,
+                system_prompt=system_prompt,
+                output_type=Dict[str, Any],
+                max_retries=2,
+                auto_repair=True,
+            )
+
+            result = await agent.run(input_payload)
+            # The wrapper returns processed content; ensure it's a dict
+            return result if isinstance(result, dict) else {"result": result}
+
+        reg.register(
+            "flujo.builtins.extract_from_text",
+            lambda **_params: extract_from_text,
+            description=(
+                "Extracts structured data from text based on a provided JSON schema using an LLM."
+            ),
+            arg_schema={
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "schema": {"type": "object"},
+                    "model": {"type": "string"},
+                },
+                "required": ["text", "schema"],
+            },
+            side_effects=False,
         )
     except Exception:
         # Registration failures should not break import

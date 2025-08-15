@@ -69,6 +69,10 @@ dev = [
   "prometheus-client>=0.22.1,<0.23.0",  # Required for prometheus tests
   "httpx",  # Required for prometheus integration tests
 ]
+skills = [
+  "duckduckgo-search",
+  "httpx",
+]
 docs = [
     "mkdocs",
     "mkdocs-material", # Added for a professional theme
@@ -128,6 +132,7 @@ module = [
     "pydantic_evals",
     "tenacity",
     "yaml",
+    "duckduckgo_search",
     "tomli",
     "sqlvalidator",
     "vcr",

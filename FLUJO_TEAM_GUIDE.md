@@ -1336,3 +1336,51 @@ Before committing any code changes, ask yourself:
 ---
 
 This guide ensures that all Flujo core team members build features that are architecturally consistent, performant, maintainable, and **type-safe**. The patterns here have been battle-tested and should be followed religiously to maintain Flujo's quality, reliability, and prevent the accumulation of technical debt like the 161 mypy errors we just systematically resolved.
+
+---
+
+## Killer Demo Skills Starter Pack
+
+This starter pack equips the Architect with two high‑leverage skills for research and data extraction, built on simple, reliable primitives. It’s designed for a polished demo experience.
+
+- Web search: fetch fresh, external information without API keys.
+- Text extraction: convert unstructured text into structured JSON using an LLM.
+
+### Install optional skills
+
+- `pip install ".[skills]"` or `uv sync --extra skills`
+- Adds: `duckduckgo-search`, `httpx`
+
+### Built‑in skills
+
+- flujo.builtins.web_search: Performs a web search and returns top results.
+  - Args: `{ query: string, max_results?: integer = 3 }`
+  - Output: `[{ title, link, snippet }]`
+  - Side effects: `false`
+
+- flujo.builtins.extract_from_text: Extracts structured data from text per a JSON schema using an LLM.
+  - Args: `{ text: string, schema: object, model?: string }`
+  - Output: `object` (valid JSON matching the schema when possible)
+  - Side effects: `false`
+
+### Example: Research → Extract → Save (CSV)
+
+Goal: “Find the current CEO and latest stock price for Apple, Google, Microsoft. Save to `market_data.csv`.”
+
+- Parallelize by company; for each:
+  - Use `flujo.builtins.web_search` with a focused query.
+  - Use `flujo.builtins.extract_from_text` to pull `{ ceo_name, stock_price }` from snippets.
+- Aggregate to CSV and write using the file writer skill.
+
+Conceptual pipeline outline:
+
+1) ResearchCompanies (parallel branches by company)
+2) ConvertToCsv (agent converts dict to CSV string)
+3) SaveReport (file writer saves `market_data.csv`)
+
+### Notes and rationale
+
+- No API keys required for search (DuckDuckGo).
+- Async first: both skills are non‑blocking and safe for concurrent execution.
+- Graceful degradation: if the optional dependency is missing or a search fails, returns an empty list rather than crashing.
+- Extraction uses `make_agent_async` with retries and repair for robust JSON outputs.
