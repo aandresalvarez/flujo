@@ -761,14 +761,14 @@ async def repair_yaml_ruamel(yaml_text: str) -> Dict[str, Any]:
 
 # --- Adapter: return YAML in CLI-expected format ---
 async def return_yaml_for_cli(yaml_text: Any) -> Dict[str, str]:
-    """Return YAML in the format that the CLI expects to find.
+    """Return YAML in the format that the CLI expects to find, extracting it if necessary.
 
-    The CLI looks for either:
-    1. context.generated_yaml or context.yaml_text
-    2. Step outputs with 'generated_yaml' or 'yaml_text' keys
-
-    This function accepts either a string or a dictionary and returns a dict with both keys.
+    Defensive against LLMs that occasionally prepend prose before the YAML. If any
+    non-YAML text precedes the first YAML key, trim everything before the first line
+    starting with 'version:' or 'name:'.
     """
+    import re
+
     # Handle dictionary input (from extract_yaml_text)
     if isinstance(yaml_text, dict):
         yaml_string = (
@@ -776,6 +776,15 @@ async def return_yaml_for_cli(yaml_text: Any) -> Dict[str, str]:
         )
     else:
         yaml_string = str(yaml_text)
+
+    # Defensive extraction: find the start of the YAML content
+    try:
+        match = re.search(r"^(version:|name:)", yaml_string, re.MULTILINE)
+        if match:
+            yaml_string = yaml_string[match.start() :]
+    except Exception:
+        # Best-effort; keep original string on regex failure
+        pass
 
     return {"generated_yaml": yaml_string, "yaml_text": yaml_string}
 

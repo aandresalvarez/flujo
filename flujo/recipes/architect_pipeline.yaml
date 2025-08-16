@@ -8,6 +8,8 @@ agents:
     timeout: 120
     system_prompt: |
       You are a system architect. Decompose the user's goal into a list of simple, actionable steps.
+      Ensure you create separate, distinct steps for repetitive actions (e.g., if asked to create 3 items, create 3 separate draft steps).
+      Think step-by-step to build a complete workflow from research to final output.
       Output ONLY a model: { steps: [{ step_name: string, purpose: string }] }.
     output_schema:
       type: object
@@ -66,12 +68,13 @@ agents:
       - For file write: use flujo.builtins.fs_write_file with params.path and params.content.
       - Use proper Jinja references, e.g., "{{ fetch_step.body }}"; do NOT pass full previous objects where strings are required.
       - Avoid fields not in schema (e.g., don't use 'id', 'uses' in steps; use 'name' and 'agent').
-      Output ONLY: { generated_yaml: string } containing raw YAML.
+      - Output ONLY a JSON object with keys 'generated_yaml' and 'yaml_text', both containing the identical raw YAML text. Do not include any other prose, explanations, wrappers, or markdown fences.
     output_schema:
       type: object
       properties:
         generated_yaml: { type: string }
-      required: [generated_yaml]
+        yaml_text: { type: string }
+      required: [generated_yaml, yaml_text]
 
   # Repair agent
   repair_agent:
@@ -111,6 +114,10 @@ steps:
         - kind: step
           name: MatchTool
           uses: agents.tool_matcher
+          input:
+            step_name: "{{ previous_step.step_name }}"
+            purpose: "{{ previous_step.purpose }}"
+            available_skills: "{{ context.available_skills }}"
     updates_context: true
 
   - kind: step
@@ -119,22 +126,9 @@ steps:
     input: "{{ previous_step }}"
     updates_context: true
 
-  # Stage 2: Generate YAML directly (simplified for testing)
+  # Stage 2: Generate YAML directly
   - kind: step
     name: GenerateBlueprint
     uses: agents.yaml_writer
     input: "{{ context.aggregated_plan }}"
-
-  # Extract string and place in context (Output: dict)
-  - kind: step
-    name: ExtractGeneratedYaml
-    agent: { id: "flujo.builtins.extract_yaml_text" }
-    input: "{{ previous_step }}"
     updates_context: true
-
-  # ✨ THE FIX: Final Emission Step ✨
-  # This is now the last step. Its output is what the CLI receives.
-  - kind: step
-    name: EmitFinalYaml
-    agent: { id: "flujo.builtins.return_yaml_for_cli" }
-    input: "{{ context.yaml_text }}"

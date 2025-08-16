@@ -1,0 +1,23 @@
+version: '0.1'
+name: "GenerateBlueprint"
+steps:
+- name: fetch_current_weather
+  agent:
+    id: flujo.builtins.http_get
+    params:
+      url: https://api.weather.com/v3/wx/conditions/current?apiKey=YOUR_API_KEY&format=json
+  kind: step
+- name: extract_temperature
+  agent:
+    id: flujo.builtins.extract_from_text
+    params:
+      text: '{{ fetch_current_weather.body }}'
+      schema: 'temperature: float'
+  kind: step
+- name: log_temperature_to_file
+  agent:
+    id: flujo.builtins.fs_write_file
+    params:
+      path: /path/to/temperature_log.txt
+      content: '{{ extract_temperature.temperature }}'
+  kind: step

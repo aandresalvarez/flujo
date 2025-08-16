@@ -13,5 +13,5 @@
 # total_cost_usd_limit = 5.0
 # total_tokens_limit = 100000
 
-[budgets.pipeline."ExtractGeneratedYaml"]
-total_cost_usd_limit = 5.0
+[budgets.pipeline."GenerateBlueprint"]
+total_cost_usd_limit = 1.0
