@@ -43,7 +43,6 @@ dependencies = [
     "numpy>=1.20.0",
     "PyYAML>=6.0",
 ]
-
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
 [project.optional-dependencies]
 dev = [
@@ -72,6 +71,7 @@ dev = [
 skills = [
   "duckduckgo-search",
   "httpx",
+  "aiofiles",
 ]
 docs = [
     "mkdocs",
@@ -91,6 +91,8 @@ bench = [
 ]
 logfire = ["logfire>=4.0.0"] # Updated for compatibility with pydantic-graph 0.4.7
 sql = ["sqlvalidator>=0.0.8"]
+templating = ["Jinja2>=3.1"]
+yaml_tools = ["ruamel.yaml>=0.18"]
 
 # Prometheus-related dependencies (install with: `pip install .[prometheus]`)
 prometheus = [
@@ -149,6 +151,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
     "aiosqlite",
+    "aiofiles",
 ]
 ignore_missing_imports = true
 

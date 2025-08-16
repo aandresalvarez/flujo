@@ -725,3 +725,8 @@ def predicate_is_valid_report(report: Any, context: Any) -> str:
         return "valid" if v else "invalid"
     except Exception:
         return "invalid"
+
+
+"""
+Note: architect_mode_branch has been removed as the project uses a single Architect path.
+"""

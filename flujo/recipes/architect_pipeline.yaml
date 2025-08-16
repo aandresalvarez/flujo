@@ -1,45 +1,17 @@
 version: "0.1"
 name: "architect"
 
-# ==============================================================================
-#  AGENTS: The specialized LLMs that power the architect's reasoning process.
-# ==============================================================================
 agents:
-  Decomposer:
-    model: "openai:gpt-5"
-    system_prompt: "You are a senior software architect. Decompose the user's goal into a sequence of high-level, logical steps for an automated pipeline. Each step should represent a distinct action. Focus on a clear, linear workflow. If multiple independent tasks can be done at once, note that they can be parallelized."
-    output_schema:
-      type: object
-      properties:
-        steps:
-          type: array
-          items:
-            type: object
-            properties:
-              task:
-                type: string
-                description: "A clear, concise description of the task for this step."
-            required: [task]
-      required: [steps]
-
-  ToolMapper:
-    model: "openai:gpt-5"
-    system_prompt: "You are a tool mapping expert. Given a task description and a list of available skills, select the best skill to accomplish the task. If no specific skill is a good fit, select a general-purpose agent. Return the skill ID and any necessary parameters."
-    output_schema:
-      type: object
-      properties:
-        skill_id:
-          type: string
-          description: "The ID of the best skill to use (e.g., 'flujo.builtins.web_search')."
-        params:
-          type: object
-          description: "A dictionary of parameters required by the skill, with values templated from the context if necessary (e.g., {'query': '{{ context.user_goal }}'})."
-      required: [skill_id]
-
-  YamlWriter:
-    model: "openai:gpt-5"
+  architect_agent:
+    model: "openai:gpt-4o"
+    timeout: 180
+    model_settings:
+      reasoning:
+        effort: high
+      text:
+        verbosity: low
     system_prompt: |
-      You are an expert Flujo YAML pipeline architect. Your task is to generate a complete and valid `pipeline.yaml` file based on the user's goal and a provided plan.
+      You are the Flujo AI Architect. Your task is to convert a user's high-level objective into a complete and valid `flujo pipeline.yaml` file.
 
       **FLUJO YAML GUIDE:**
 
@@ -67,28 +39,15 @@ agents:
             - `params`: `{ "query": "your search query", "max_results": 3 }`
           - `flujo.builtins.extract_from_text`: Extracts structured data from text using an LLM.
             - `params`: `{ "text": "{{ previous_step }}", "schema": { ... JSON Schema ... } }`
+          - `flujo.builtins.http_get`: Fetches content from a URL.
+            - `params`: `{ "url": "https://..." }`
+          - `flujo.builtins.fs_write_file`: Writes content to a local file.
+            - `params`: `{ "path": "filename.txt", "content": "{{ previous_step }}" }`
           - `flujo.builtins.passthrough`: A simple step that passes its input directly to its output. Useful in conditional branches.
 
-      5.  **Parallel Steps:**
-          ```yaml
-          - kind: parallel
-            name: research_in_parallel
-            merge_strategy: context_update # Merges results back into the main context
-            branches:
-              google_research:
-                - kind: step
-                  name: search_google
-                  agent: { id: "flujo.builtins.web_search", params: { query: "Google CEO" } }
-                  updates_context: true
-              apple_research:
-                - kind: step
-                  name: search_apple
-                  agent: { id: "flujo.builtins.web_search", params: { query: "Apple CEO" } }
-                  updates_context: true
-          ```
-
       **YOUR TASK:**
-      - Synthesize the user's goal and the structured plan into a valid `pipeline.yaml`.
+      - Analyze the user's goal and the available skills.
+      - Design a sequence of steps to achieve the goal.
       - If you are given validation errors from a previous attempt, use them to correct the YAML.
       - **Return ONLY the raw YAML content.** Do not include explanations, apologies, or markdown fences.
     output_schema:
@@ -98,10 +57,24 @@ agents:
           type: string
           description: "The complete, valid YAML content for the pipeline."
       required: [generated_yaml]
+  repair_agent:
+    model: "openai:gpt-4o"
+    timeout: 120
+    model_settings:
+      reasoning:
+        effort: medium
+      text:
+        verbosity: high
+    system_prompt: |
+      You are a YAML debugger. Given an invalid Flujo pipeline YAML and validation errors,
+      produce a corrected YAML that fixes the issues. Return only the YAML content.
+    output_schema:
+      type: object
+      properties:
+        generated_yaml:
+          type: string
+          description: "The repaired YAML content for the pipeline."
 
-# ==============================================================================
-#  PIPELINE STEPS: The architect's workflow for building a new pipeline.
-# ==============================================================================
 steps:
   - kind: step
     name: discover_skills
@@ -109,61 +82,180 @@ steps:
       id: "flujo.builtins.discover_skills"
     updates_context: true
 
-  - kind: step
-    name: decompose_goal
-    uses: agents.Decomposer
-    input: "{{ context.user_goal }}"
-
-  - kind: step
-    name: extract_steps_for_mapping
-    agent:
-      id: "flujo.builtins.extract_decomposed_steps"
-    updates_context: true
-
-  - kind: map
-    name: map_tools_to_steps
-    map:
-      iterable_input: "prepared_steps_for_mapping"
-      body:
-        - kind: step
-          name: map_tool
-          uses: agents.ToolMapper
-          input:
-            task: "{{ context.this.task }}"
-            available_skills: "{{ context.available_skills }}"
-
-  - kind: step
-    name: aggregate_plan_for_writer
-    agent:
-      id: "flujo.builtins.aggregate_plan"
-    updates_context: true
-
   - kind: loop
-    name: iterative_yaml_generation
+    name: ValidateAndRepair
     loop:
-      max_loops: 3
+      max_loops: 2
       body:
         - kind: step
-          name: write_pipeline_yaml
-          uses: agents.YamlWriter
-          input: "{{ context }}"
+          name: decide_yaml_source
+          agent:
+            id: "flujo.builtins.has_yaml_key"
+        - kind: conditional
+          name: YamlSource
+          branches:
+            present:
+              - kind: step
+                name: use_existing_yaml
+                agent:
+                  id: "flujo.builtins.passthrough"
+                input: "{{ context.yaml_text }}"
+            absent:
+              - kind: step
+                name: write_pipeline_yaml
+                uses: agents.architect_agent
+                input:
+                  user_goal: "{{ context.user_goal }}"
+                  available_skills: "{{ context.available_skills }}"
+                  validation_errors: "{{ context.validation_errors | default('') }}"
         - kind: step
           name: extract_yaml_text
           agent:
             id: "flujo.builtins.extract_yaml_text"
         - kind: step
-          name: validate_generated_yaml
+          name: store_yaml_text
           agent:
-            id: "flujo.builtins.validate_yaml"
+            id: "flujo.builtins.capture_yaml_text"
+          updates_context: true
+        - kind: step
+          name: validate_generated_yaml
+          agent: "flujo.builtins.validate_yaml"
+          input:
+            yaml_text: "{{ context.yaml_text }}"
+          updates_context: true
+        - kind: step
+          name: store_validation_report
+          agent:
+            id: "flujo.builtins.capture_validation_report"
+          updates_context: true
         - kind: step
           name: check_validation_status
           agent:
             id: "flujo.builtins.validation_report_to_flag"
           updates_context: true
+        - kind: step
+          name: validate_for_errors
+          agent: "flujo.builtins.validate_yaml"
+          input:
+            yaml_text: "{{ context.yaml_text }}"
+        - kind: step
+          name: seed_shape_validity
+          agent:
+            id: "flujo.builtins.shape_to_validity_flag"
+          updates_context: true
+        - kind: step
+          name: collect_validation_errors
+          agent:
+            id: "flujo.builtins.extract_validation_errors"
+          updates_context: true
+        - kind: step
+          name: emit_yaml_validity
+          agent:
+            id: "flujo.builtins.shape_to_validity_flag"
+          updates_context: true
+        - kind: conditional
+          name: ValidityBranch
+          condition: "flujo.builtins.select_validity_branch"
+          branches:
+            valid:
+              - kind: step
+                name: noop_valid
+                agent:
+                  id: "flujo.builtins.passthrough"
+            invalid:
+              - kind: step
+                name: ruamel_repair
+                agent:
+                  id: "flujo.builtins.repair_yaml_ruamel"
+                input:
+                  yaml_text: "{{ context.yaml_text }}"
+              - kind: step
+                name: extract_ruamel_yaml
+                agent:
+                  id: "flujo.builtins.extract_yaml_text"
+              - kind: step
+                name: emit_ruamel_yaml
+                agent:
+                  id: "flujo.builtins.passthrough"
+                input:
+                  generated_yaml: "{{ previous_step }}"
+                  yaml_text: "{{ previous_step }}"
+              - kind: step
+                name: repair_yaml
+                uses: agents.repair_agent
+                input:
+                  yaml_text: "{{ previous_step }}"
+                  validation_errors: "{{ context.validation_errors | default('') }}"
+              - kind: step
+                name: extract_repaired_yaml
+                agent:
+                  id: "flujo.builtins.extract_yaml_text"
+              - kind: step
+                name: apply_repaired_yaml
+                agent:
+                  id: "flujo.builtins.capture_yaml_text"
+                updates_context: true
+              - kind: step
+                name: revalidate_generated_yaml
+                agent: "flujo.builtins.validate_yaml"
+                input:
+                  yaml_text: "{{ context.yaml_text }}"
+              - kind: step
+                name: recheck_validation_status
+                agent:
+                  id: "flujo.builtins.validation_report_to_flag"
+                updates_context: true
+              - kind: step
+                name: emit_after_repair
+                agent:
+                  id: "flujo.builtins.passthrough"
+                input:
+                  generated_yaml: "{{ context.yaml_text }}"
+                  yaml_text: "{{ context.yaml_text }}"
+                updates_context: true
+              - kind: step
+                name: announce_valid_after_repair
+                agent:
+                  id: "flujo.builtins.passthrough"
+                input:
+                  yaml_is_valid: true
+                updates_context: true
+              - kind: conditional
+                name: ValidityBranch
+                condition: "flujo.builtins.select_validity_branch"
+                branches:
+                  valid:
+                    - kind: step
+                      name: confirm_valid_after_repair
+                      agent:
+                        id: "flujo.builtins.passthrough"
+                    - kind: step
+                      name: finalize_emit_yaml
+                      agent:
+                        id: "flujo.builtins.passthrough"
+                      input:
+                        generated_yaml: "{{ context.yaml_text }}"
+                        yaml_text: "{{ context.yaml_text }}"
+                  invalid:
+                    - kind: step
+                      name: unexpected_invalid_after_repair
+                      agent:
+                        id: "flujo.builtins.passthrough"
+        - kind: step
+          name: emit_current_yaml
+          agent:
+            id: "flujo.builtins.passthrough"
+          input: "{{ context.yaml_text }}"
+        - kind: step
+          name: emit_validity_flag
+          agent:
+            id: "flujo.builtins.get_yaml_validity"
       exit_condition: "flujo.builtins.exit_when_yaml_valid"
 
   - kind: step
-    name: final_passthrough
+    name: final_emit_yaml
     agent:
       id: "flujo.builtins.passthrough"
-
+    input:
+      generated_yaml: "{{ context.yaml_text }}"
+      yaml_text: "{{ context.yaml_text }}"

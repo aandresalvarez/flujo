@@ -780,6 +780,7 @@ def create_flujo_runner(
     pipeline: Any,
     context_model_class: Optional[Type[PipelineContext]],
     initial_context_data: Optional[Dict[str, Any]],
+    state_backend: Optional[Any] = None,
 ) -> Any:
     """Create a Flujo runner instance with the given configuration.
 
@@ -801,6 +802,7 @@ def create_flujo_runner(
             pipeline=pipeline,
             context_model=context_model_class,
             initial_context_data=initial_context_data,
+            state_backend=state_backend,
         )
     else:
         # Use default PipelineContext
@@ -808,6 +810,7 @@ def create_flujo_runner(
             pipeline=pipeline,
             context_model=None,
             initial_context_data=initial_context_data,
+            state_backend=state_backend,
         )
 
     return runner

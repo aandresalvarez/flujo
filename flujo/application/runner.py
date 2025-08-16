@@ -539,8 +539,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     pass
                 current_context_instance = self.context_model(**processed_context_data)
                 try:
-                    telemetry.logfire.info(
-                        f"Runner.run_async created context: {self.context_model.__name__}.nums={getattr(current_context_instance, 'nums', None)!r}"
+                    telemetry.logfire.debug(
+                        f"Runner.run_async created context instance of type: {self.context_model.__name__}"
                     )
                 except Exception:
                     pass

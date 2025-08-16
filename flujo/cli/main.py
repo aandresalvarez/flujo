@@ -606,22 +606,6 @@ def create(
             if goal is None:
                 typer.echo("[red]--goal is required in --non-interactive mode[/red]")
                 raise typer.Exit(2)
-            # Locate bundled architect YAML from package resources
-            try:
-                with importlib_resources.as_file(
-                    importlib_resources.files("flujo.recipes").joinpath("architect_pipeline.yaml")
-                ) as p:
-                    architect_yaml = str(p)
-            except (FileNotFoundError, ModuleNotFoundError):
-                typer.echo(
-                    "[red]Architect pipeline blueprint not found within the application package.",
-                    err=True,
-                )
-                raise typer.Exit(1)
-
-            # Load architect pipeline
-            pipeline_obj = load_pipeline_from_yaml_file(architect_yaml)
-
             # Prepare initial context data
             from .helpers import parse_context_data
 
@@ -643,7 +627,26 @@ def create(
             except Exception:
                 _available_skills = []
 
-            initial_context_data = {"user_goal": goal, "available_skills": _available_skills}
+            # Locate bundled architect YAML from package resources
+            try:
+                with importlib_resources.as_file(
+                    importlib_resources.files("flujo.recipes").joinpath("architect_pipeline.yaml")
+                ) as p:
+                    architect_yaml = str(p)
+            except (FileNotFoundError, ModuleNotFoundError):
+                typer.echo(
+                    "[red]Architect pipeline blueprint not found within the application package.",
+                    err=True,
+                )
+                raise typer.Exit(1)
+
+            # Load architect pipeline
+            pipeline_obj = load_pipeline_from_yaml_file(architect_yaml)
+
+            initial_context_data = {
+                "user_goal": goal,
+                "available_skills": _available_skills,
+            }
             extra_ctx = parse_context_data(None, context_file)
             if isinstance(extra_ctx, dict):
                 initial_context_data.update(extra_ctx)
@@ -659,12 +662,24 @@ def create(
             class _ArchitectContext(_PipelineContext):
                 prepared_steps_for_mapping: list[dict[str, Any]] = _Field(default_factory=list)
                 generated_yaml: Optional[str] = None
+                yaml_text: Optional[str] = None
                 available_skills: list[dict[str, Any]] = _Field(default_factory=list)
+                yaml_is_valid: bool = False
+                validation_errors: str | None = None
+
+            # Load the project-aware state backend
+            try:
+                from .config import load_backend_from_config as _load_backend_from_config
+
+                _state_backend = _load_backend_from_config()
+            except Exception:
+                _state_backend = None
 
             runner = create_flujo_runner(
                 pipeline=pipeline_obj,
                 context_model_class=_ArchitectContext,
                 initial_context_data=initial_context_data,
+                state_backend=_state_backend,
             )
 
             # For now, require goal as input too (can be refined by architect design)
@@ -672,22 +687,91 @@ def create(
                 runner=runner, input_data=goal, run_id=None, json_output=False
             )
 
+            # Debug aid: print step names and success to help tests diagnose branching
+            try:
+
+                def _print_steps(steps: list[Any], indent: int = 0) -> None:
+                    for sr in steps or []:
+                        try:
+                            nm = getattr(sr, "name", "<unnamed>")
+                            ok = getattr(sr, "success", None)
+                            key = (getattr(sr, "metadata_", {}) or {}).get("executed_branch_key")
+                            typer.echo(
+                                f"[grey58]{'  ' * indent}STEP {nm}: success={ok} key={key}[/grey58]"
+                            )
+                            nested = getattr(sr, "step_history", None)
+                            if isinstance(nested, list) and nested:
+                                _print_steps(nested, indent + 1)
+                        except Exception:
+                            continue
+
+                _print_steps(getattr(result, "step_history", []) or [])
+            except Exception:
+                pass
+
             # Extract YAML text preferring the most recent step output (repairs), then context
             yaml_text: Optional[str] = None
             try:
-                # Prefer latest step output for repaired YAML
-                for sr in getattr(result, "step_history", [])[::-1]:
-                    out = getattr(sr, "output", None)
+                candidates: list[Any] = []
+
+                # Recursively collect outputs from step history (including nested sub-steps)
+                def _collect_outputs(step_results: list[Any]) -> None:
+                    for sr in step_results:
+                        try:
+                            # Push this step's output
+                            candidates.append(getattr(sr, "output", None))
+                            # Recurse into nested step_history if present
+                            nested = getattr(sr, "step_history", None)
+                            if isinstance(nested, list) and nested:
+                                _collect_outputs(nested)
+                        except Exception:
+                            continue
+
+                _collect_outputs(list(getattr(result, "step_history", [])))
+                # Reverse to prefer most recent outputs
+                candidates = list(reversed(candidates))
+                # Also include outputs of known steps if available (e.g., writer)
+                for sr in getattr(result, "step_history", []):
                     try:
+                        name = getattr(sr, "step_name", getattr(sr, "name", ""))
+                    except Exception:
+                        name = ""
+                    if str(name) in {"write_pipeline_yaml", "extract_yaml_text"}:
+                        candidates.append(getattr(sr, "output", None))
+
+                # Scan candidates for YAML text in various shapes
+                for out in candidates:
+                    try:
+                        if out is None:
+                            continue
                         if isinstance(out, dict):
-                            if out.get("generated_yaml"):
-                                yaml_text = str(out.get("generated_yaml"))
+                            val = out.get("generated_yaml") or out.get("yaml_text")
+                            if isinstance(val, (str, bytes)):
+                                candidate = val.decode() if isinstance(val, bytes) else str(val)
+                                if candidate and candidate.strip():
+                                    yaml_text = candidate
+                                    break
+                        if hasattr(out, "generated_yaml") and getattr(out, "generated_yaml"):
+                            val = getattr(out, "generated_yaml")
+                            s = val.decode() if isinstance(val, bytes) else str(val)
+                            if s and s.strip():
+                                yaml_text = s
                                 break
-                            if out.get("yaml_text"):
-                                yaml_text = str(out.get("yaml_text"))
+                        if hasattr(out, "yaml_text") and getattr(out, "yaml_text"):
+                            val = getattr(out, "yaml_text")
+                            s = val.decode() if isinstance(val, bytes) else str(val)
+                            if s and s.strip():
+                                yaml_text = s
+                                break
+                        if isinstance(out, (str, bytes)):
+                            s = out.decode() if isinstance(out, bytes) else out
+                            st = s.strip()
+                            if st and ("version:" in st or "steps:" in st):
+                                yaml_text = s
                                 break
                     except Exception:
                         continue
+
                 # Fallback to final context if needed
                 if yaml_text is None:
                     ctx = getattr(result, "final_pipeline_context", None)
@@ -696,10 +780,131 @@ def create(
                             yaml_text = getattr(ctx, "generated_yaml")
                         elif hasattr(ctx, "yaml_text") and getattr(ctx, "yaml_text"):
                             yaml_text = getattr(ctx, "yaml_text")
+                        else:
+                            # Fallback: look into context.scratchpad if present
+                            try:
+                                scratch = getattr(ctx, "scratchpad", None)
+                                if isinstance(scratch, dict):
+                                    val = scratch.get("generated_yaml") or scratch.get("yaml_text")
+                                    if isinstance(val, (str, bytes)):
+                                        yaml_text = (
+                                            val.decode() if isinstance(val, bytes) else str(val)
+                                        )
+                            except Exception:
+                                pass
+                # Targeted fallback: look for specific architect steps that carry YAML
+                if yaml_text is None:
+                    try:
+                        for sr in getattr(result, "step_history", []) or []:
+                            name = getattr(sr, "name", "")
+                            if str(name) in {
+                                "store_yaml_text",
+                                "extract_yaml_text",
+                                "emit_current_yaml",
+                                "final_passthrough",
+                            }:
+                                out = getattr(sr, "output", None)
+                                if isinstance(out, dict):
+                                    val = out.get("generated_yaml") or out.get("yaml_text")
+                                    if isinstance(val, (str, bytes)):
+                                        yaml_text = (
+                                            val.decode() if isinstance(val, bytes) else str(val)
+                                        )
+                                        if yaml_text.strip():
+                                            break
+                                elif isinstance(out, (str, bytes)):
+                                    s = out.decode() if isinstance(out, bytes) else out
+                                    if s.strip():
+                                        yaml_text = s
+                                        break
+                    except Exception:
+                        pass
+                # Context-based fallback: scan branch_context from step history (including nested)
+                if yaml_text is None:
+                    try:
+                        contexts: list[Any] = []
+
+                        def _collect_contexts(step_results: list[Any]) -> None:
+                            for sr in step_results:
+                                try:
+                                    ctx_candidate = getattr(sr, "branch_context", None)
+                                    if ctx_candidate is not None:
+                                        contexts.append(ctx_candidate)
+                                    nested_sr = getattr(sr, "step_history", None)
+                                    if isinstance(nested_sr, list) and nested_sr:
+                                        _collect_contexts(nested_sr)
+                                except Exception:
+                                    continue
+
+                        _collect_contexts(list(getattr(result, "step_history", [])))
+                        for ctx in reversed(contexts):
+                            try:
+                                if hasattr(ctx, "generated_yaml") and getattr(
+                                    ctx, "generated_yaml"
+                                ):
+                                    yaml_text = getattr(ctx, "generated_yaml")
+                                    break
+                                if hasattr(ctx, "yaml_text") and getattr(ctx, "yaml_text"):
+                                    yaml_text = getattr(ctx, "yaml_text")
+                                    break
+                                scratch = getattr(ctx, "scratchpad", None)
+                                if isinstance(scratch, dict):
+                                    val = scratch.get("generated_yaml") or scratch.get("yaml_text")
+                                    if isinstance(val, (str, bytes)):
+                                        yaml_text = (
+                                            val.decode() if isinstance(val, bytes) else str(val)
+                                        )
+                                        if yaml_text.strip():
+                                            break
+                            except Exception:
+                                continue
+                    except Exception:
+                        pass
+                # Last-resort heuristic: scan text representations for a YAML snippet
+                if yaml_text is None and candidates:
+                    try:
+                        import re as _re
+
+                        for out in candidates:
+                            text = None
+                            try:
+                                if isinstance(out, (str, bytes)):
+                                    text = out.decode() if isinstance(out, bytes) else out
+                                else:
+                                    text = str(out)
+                            except Exception:
+                                continue
+                            if not text:
+                                continue
+                            m = _re.search(
+                                r"(^|\n)version:\s*['\"]?0\.1['\"]?.*?\n(?:.*\n)*?steps:\s*.*", text
+                            )
+                            if m:
+                                snippet = text[m.start() :]
+                                yaml_text = snippet.strip()
+                                break
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
             if yaml_text is None:
+                try:
+                    # Minimal diagnostics to aid failing test visibility
+                    sh = getattr(result, "step_history", []) or []
+                    typer.echo(f"[grey58]No YAML found. step_history_len={len(sh)}[/grey58]")
+                    try:
+                        ctx = getattr(result, "final_pipeline_context", None)
+                        if ctx is not None:
+                            g = getattr(ctx, "generated_yaml", None)
+                            y = getattr(ctx, "yaml_text", None)
+                            typer.echo(
+                                f"[grey58]final_ctx has generated_yaml={bool(g)} yaml_text={bool(y)}[/grey58]"
+                            )
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
                 typer.echo("[red]Architect did not produce YAML (context.generated_yaml missing)")
                 raise typer.Exit(1)
 
@@ -764,6 +969,20 @@ def create(
             # Optionally inject top-level name into YAML if absent
             if name and (_extract_pipeline_name_from_yaml(yaml_text) is None):
                 yaml_text = f'name: "{name}"\n' + yaml_text
+            # Ensure version appears first for stable outputs
+            try:
+                lines = yaml_text.splitlines(True)
+                v_idx = next(
+                    (i for i, line in enumerate(lines) if line.strip().startswith("version:")),
+                    None,
+                )
+                if isinstance(v_idx, int) and v_idx > 0:
+                    version_line = lines.pop(v_idx)
+                    lines.insert(0, version_line)
+                    yaml_text = "".join(lines)
+            except Exception:
+                pass
+
             with open(out_yaml, "w") as f:
                 f.write(yaml_text)
             typer.echo(f"[green]Wrote: {out_yaml}")
