@@ -3968,10 +3968,7 @@ class DefaultConditionalStepExecutor:
         start_time = time.monotonic()
         with telemetry.logfire.span(conditional_step.name) as span:
             try:
-                try:
-                    print(f"[COND] start name={getattr(conditional_step, 'name', '<unnamed>')}")
-                except Exception:
-                    pass
+                # Avoid noisy prints during benchmarks; retain only telemetry logs
                 # Evaluate branch key using the immediate previous output and current context
                 # Ensure the condition sees a meaningful payload even when the last output
                 # is not a mapping by augmenting with context-derived signals.

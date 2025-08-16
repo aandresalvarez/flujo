@@ -35,7 +35,10 @@ def resolve_callable(value: T | Callable[[], T]) -> T:
     Returns:
         The resolved value of type T
     """
-    return value() if callable(value) else value
+    # Fast path: avoid attribute lookups in the hot loop
+    if callable(value):
+        return value()  # type: ignore[no-any-return]
+    return value
 
 
 def _is_mock_object(value: Any) -> bool:
