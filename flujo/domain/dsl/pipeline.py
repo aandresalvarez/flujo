@@ -133,6 +133,15 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 return all(_compatible(arg, b) for arg in get_args(a))
 
             try:
+                # Relaxed compatibility for common dict-like bridges
+                # Many built-in skills return Dict[str, Any]. Allow flowing into object/str inputs,
+                # because YAML param templating often selects a concrete field at runtime.
+                # Treat both direct dict and typing.Dict origins as dict-like.
+                origin_a = get_origin(a)
+                origin_b = get_origin(b)
+                is_dict_like_a = (a is dict) or (origin_a is dict)
+                if is_dict_like_a and (b is object or b is str or origin_b is dict):
+                    return True
                 return issubclass(a, b)
             except Exception as e:  # pragma: no cover
                 logging.warning("_compatible: issubclass(%s, %s) raised %s", a, b, e)

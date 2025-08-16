@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+    AliasChoices,
+)
 import re
 import yaml
 
@@ -25,7 +32,8 @@ class BlueprintStepModel(BaseModel):
     kind: Literal["step", "parallel", "conditional", "loop", "map", "dynamic_router"] = Field(
         default="step"
     )
-    name: str
+    # Accept both 'name' and legacy 'step' keys for step name
+    name: str = Field(validation_alias=AliasChoices("name", "step"))
     agent: Optional[Union[str, Dict[str, Any]]] = None
     # New: declarative reference to either a compiled agent (agents.<name>) or python path
     uses: Optional[str] = None

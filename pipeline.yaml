@@ -1,0 +1,9 @@
+version: "0.1"
+name: "web_search_and_extract"
+steps:
+  - step: "perform_web_search"
+    agent: { id: "flujo.builtins.web_search", params: { "query": "AI architecture", "max_results": 3 } }
+    updates_context: true
+  - step: "extract_data"
+    agent: { id: "flujo.builtins.extract_from_text", params: { "text": "{{ perform_web_search }}", "schema": { "type": "object", "properties": { "title": { "type": "string" }, "link": { "type": "string" }, "snippet": { "type": "string" } } } } }
+    updates_context: true

@@ -1,0 +1,11 @@
+version: "0.1"
+name: simple_test
+steps:
+  - kind: step
+    name: test_http_get
+    agent:
+      id: "flujo.builtins.http_get"
+      params:
+        url: "https://httpbin.org/json"
+    updates_context: true
+

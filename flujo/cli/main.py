@@ -600,6 +600,14 @@ def create(
                 pass
 
         try:
+            # Enforce explicit output directory in non-interactive mode to avoid accidental writes
+            if non_interactive and not output_dir:
+                typer.echo(
+                    "[red]--output-dir is required when running --non-interactive to specify where to write pipeline.yaml[/red]",
+                    err=True,
+                )
+                raise typer.Exit(2)
+
             # Prompt for goal if not provided and interactive
             if goal is None and not non_interactive:
                 goal = typer.prompt("What is your goal for this pipeline?")
@@ -1101,11 +1109,8 @@ def run(
                 if not _sys.stdin.isatty():
                     input_data = _sys.stdin.read().strip()
                 else:
-                    typer.echo(
-                        "[red]Error: --input is required for YAML runs when no stdin is provided.",
-                        err=True,
-                    )
-                    raise typer.Exit(1)
+                    # Default to empty string to support pipelines that do not require initial input
+                    input_data = ""
         else:
             pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = (
                 setup_run_command_environment(
