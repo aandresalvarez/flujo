@@ -997,7 +997,7 @@ def execute_improve(
             class _Dummy:  # minimal placeholder to satisfy the call signature
                 pass
 
-            agent = _Dummy()  # type: ignore[assignment]
+            agent = _Dummy()  # type: ignore
         with open("output/trace_improve.txt", "a") as f:
             f.write("stage:run_eval\n")
         report: ImprovementReport = asyncio.run(
@@ -1090,6 +1090,271 @@ def validate_yaml_text(yaml_text: str, base_dir: Optional[str] = None) -> Valida
         warnings.warn(f"Failed to load YAML blueprint for validation: {e}", RuntimeWarning)
         raise Exit(1)
     return _cast(Any, pipeline).validate_graph()
+
+
+def sanitize_blueprint_yaml(yaml_text: str) -> str:
+    """Repair common issues in Architect-generated YAML to improve validity.
+
+    Fixes applied conservatively:
+    - Ensure every step dict has a `name`. If missing, generate a deterministic
+      name based on its role (e.g., derived from agent id/uses/kind) with an
+      incremental suffix.
+    - Convert legacy/mistaken `conditional: <callable>` into
+      `kind: conditional` + `condition: <callable>`.
+    - Normalize nested structures within `branches`, `loop.body`, and `map.body`.
+
+    Returns the original YAML if parsing fails to avoid introducing new errors.
+    """
+    if not yaml_text or not yaml_text.strip():
+        return yaml_text
+
+    try:
+        data = yaml.safe_load(yaml_text)
+    except Exception:
+        return yaml_text
+
+    if not isinstance(data, dict):
+        return yaml_text
+
+    steps = data.get("steps")
+    if not isinstance(steps, list):
+        return yaml_text
+
+    name_counter: Dict[str, int] = {}
+    changed: bool = False
+
+    def _gen_name(prefix: str) -> str:
+        idx = name_counter.get(prefix, 0) + 1
+        name_counter[prefix] = idx
+        return f"{prefix}_{idx}"
+
+    def _derive_prefix(node: Dict[str, Any]) -> str:
+        # Prefer agent id last segment
+        agent = node.get("agent")
+        if isinstance(agent, dict):
+            sid = agent.get("id")
+            if isinstance(sid, str) and sid.strip():
+                tail = sid.rsplit(".", 1)[-1]
+                return tail.replace(" ", "_")
+        # If declarative uses is provided
+        uses = node.get("uses")
+        if isinstance(uses, str) and uses.strip():
+            tail = uses.rsplit(".", 1)[-1]
+            return tail.replace(" ", "_")
+        # Fallback to kind
+        kind = node.get("kind")
+        if isinstance(kind, str) and kind.strip():
+            return kind.replace(" ", "_")
+        return "step"
+
+    def _repair_node(node: Any) -> None:
+        nonlocal changed
+        if isinstance(node, dict):
+            # Normalize LLM-shape single step where tool id/params are placed at top-level
+            # Example:
+            #   - id: "flujo.builtins.web_search"
+            #     params: { query: "..." }
+            #   ->
+            #   - agent: { id: "...", params: { ... } }
+            if isinstance(node.get("id"), str) and "agent" not in node and "uses" not in node:
+                try:
+                    agent_id = str(node.pop("id"))
+                    params_val = node.pop("params", {})
+                    if not isinstance(params_val, dict):
+                        params_val = {}
+                    node["agent"] = {"id": agent_id, "params": params_val}
+                    changed = True
+                except Exception:
+                    pass
+            # Flatten mistaken nested shape: { step: { ...step fields... } }
+            if isinstance(node.get("step"), dict):
+                try:
+                    embedded = cast(Dict[str, Any], node.get("step"))
+                except Exception:
+                    embedded = None
+                if isinstance(embedded, dict):
+                    try:
+                        del node["step"]
+                    except Exception:
+                        pass
+                    for k, v in embedded.items():
+                        # Do not overwrite existing normalized fields
+                        if k not in node:
+                            node[k] = v
+
+            # Normalize mistaken `conditional` key into proper fields
+            if "conditional" in node and "kind" not in node:
+                cond = node.get("conditional")
+                if isinstance(cond, str) and cond.strip():
+                    node["kind"] = "conditional"
+                    node["condition"] = cond
+                    try:
+                        del node["conditional"]
+                    except Exception:
+                        pass
+                    changed = True
+
+            # Ensure name exists for top-level and nested step dicts
+            if (
+                "branches" in node
+                or "agent" in node
+                or "uses" in node
+                or node.get("kind")
+                in {
+                    "step",
+                    "parallel",
+                    "conditional",
+                    "loop",
+                    "map",
+                    "dynamic_router",
+                }
+            ):
+                if not isinstance(node.get("name"), str) or not node.get("name", "").strip():
+                    # Also accept legacy alias `step` for human-provided label
+                    legacy = node.get("step")
+                    if isinstance(legacy, str) and legacy.strip():
+                        node["name"] = legacy.strip()
+                    else:
+                        node["name"] = _gen_name(_derive_prefix(node))
+                    changed = True
+                # Default kind when omitted
+                if not isinstance(node.get("kind"), str) or not node.get("kind", "").strip():
+                    node["kind"] = "step"
+                    changed = True
+                # Ensure agent params is a dict when agent exists
+                agent_spec = node.get("agent")
+                if isinstance(agent_spec, dict):
+                    params = agent_spec.get("params")
+                    if params is None:
+                        agent_spec["params"] = {}
+                        changed = True
+                    # Heuristic repair: if using extract_from_text and no 'text' param but input provided
+                    sid = agent_spec.get("id")
+                    if (
+                        isinstance(sid, str)
+                        and sid.endswith("extract_from_text")
+                        and isinstance(agent_spec.get("params"), dict)
+                    ):
+                        p = agent_spec["params"]
+                        if "text" not in p:
+                            # If an input template exists at step level, move it into params.text
+                            inp = node.get("input")
+                            if isinstance(inp, str) and inp.strip():
+                                p["text"] = inp
+                                # Remove step-level input to avoid confusion
+                                try:
+                                    del node["input"]
+                                except Exception:
+                                    pass
+                                changed = True
+                    # Heuristic repair: if using fs_write_file and no 'content' but input provided
+                    if (
+                        isinstance(sid, str)
+                        and sid.endswith("fs_write_file")
+                        and isinstance(agent_spec.get("params"), dict)
+                    ):
+                        p = agent_spec["params"]
+                        if "content" not in p:
+                            inp = node.get("input")
+                            if isinstance(inp, str) and inp.strip():
+                                p["content"] = inp
+                                try:
+                                    del node["input"]
+                                except Exception:
+                                    pass
+                                changed = True
+
+            # Recurse into branches (conditional)
+            branches = node.get("branches")
+            if isinstance(branches, list):
+                # Some LLM outputs provide a bare list; wrap into a default-named branch
+                node["branches"] = {"default": branches}
+                branches = node["branches"]
+                changed = True
+            if isinstance(branches, dict):
+                for _, lst in branches.items():
+                    if isinstance(lst, list):
+                        for child in lst:
+                            _repair_node(child)
+
+            # Recurse into loop body
+            loop_spec = node.get("loop")
+            if isinstance(loop_spec, dict):
+                body = loop_spec.get("body")
+                if isinstance(body, list):
+                    for child in body:
+                        _repair_node(child)
+
+            # Recurse into map body
+            map_spec = node.get("map")
+            if isinstance(map_spec, dict):
+                # Normalize common LLM variants: input->iterable_input, steps->body
+                if "input" in map_spec and "iterable_input" not in map_spec:
+                    try:
+                        map_spec["iterable_input"] = map_spec.pop("input")
+                        changed = True
+                    except Exception:
+                        pass
+                if "steps" in map_spec and "body" not in map_spec:
+                    try:
+                        steps_val = map_spec.pop("steps")
+                        # Ensure body is a list of steps
+                        if isinstance(steps_val, list):
+                            map_spec["body"] = steps_val
+                        elif isinstance(steps_val, dict):
+                            map_spec["body"] = [steps_val]
+                        else:
+                            map_spec["body"] = []
+                        changed = True
+                    except Exception:
+                        pass
+                body = map_spec.get("body")
+                if isinstance(body, list):
+                    for child in body:
+                        _repair_node(child)
+
+            # Normalize ad-hoc 'parallel' key into proper kind/branches structure
+            if "parallel" in node and (
+                not isinstance(node.get("kind"), str) or node.get("kind") == "step"
+            ):
+                par = node.get("parallel")
+                try:
+                    # remove legacy field and convert to branches
+                    del node["parallel"]
+                except Exception:
+                    pass
+                node["kind"] = "parallel"
+                branches_map: Dict[str, Any] = {}
+                if isinstance(par, list):
+                    for idx, child in enumerate(par, start=1):
+                        branch_name = f"branch_{idx}"
+                        if isinstance(child, dict):
+                            branches_map[branch_name] = [child]
+                        else:
+                            branches_map[branch_name] = []
+                elif isinstance(par, dict):
+                    branches_map["branch_1"] = [par]
+                else:
+                    branches_map["branch_1"] = []
+                node["branches"] = branches_map
+                changed = True
+                # Repair inner steps
+                for lst in branches_map.values():
+                    for child in lst:
+                        _repair_node(child)
+
+        elif isinstance(node, list):
+            for it in node:
+                _repair_node(it)
+
+    _repair_node(steps)
+
+    if not changed:
+        return yaml_text
+    try:
+        return yaml.safe_dump(data, sort_keys=False)
+    except Exception:
+        return yaml_text
 
 
 def find_side_effect_skills_in_yaml(yaml_text: str, *, base_dir: Optional[str] = None) -> list[str]:

@@ -9,6 +9,18 @@ from flujo.infra.skill_registry import get_skill_registry
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from .agents.wrapper import make_agent_async
 
+# Lazy imports for optional dependencies
+try:
+    import jinja2 as _jinja2
+except ImportError:
+    _jinja2 = None  # type: ignore
+
+try:
+    import ruamel.yaml as _ruamel_yaml
+except ImportError:
+    _ruamel_yaml = None  # type: ignore
+
+
 # Optional dependency: duckduckgo-search (installed via extras: flujo[skills])
 # Prefer async client if available; fall back to sync DDGS via thread pool.
 _DDGSAsync: Optional[Type[Any]] = None
@@ -25,23 +37,23 @@ try:  # pragma: no cover - optional dependency
 except Exception:
     _DDGSAsync = None
     _DDGS_CLASS = None
-_httpx: Any = None  # Optional dependency placeholder
+
+# Optional dependency for HTTP client
+_httpx: Any = None
 try:  # pragma: no cover - optional dependency
     import httpx as _httpx
 except Exception:
     pass
 
-# Optional dependencies for templating and YAML repair
-_jinja2: Any = None
-_ruamel_yaml: Any = None
-try:  # pragma: no cover - optional dependency
-    import jinja2 as _jinja2
-except Exception:
-    pass
-try:  # pragma: no cover - optional dependency
-    import ruamel.yaml as _ruamel_yaml
-except Exception:
-    pass
+
+# Top-level utility: decide whether YAML exists in context for branch precheck
+def has_yaml_key(_out: Any = None, ctx: DomainBaseModel | None = None, **_kwargs: Any) -> str:
+    try:
+        yt = getattr(ctx, "yaml_text", None)
+    except Exception:
+        yt = None
+    present = isinstance(yt, str) and yt.strip() != ""
+    return "present" if present else "absent"
 
 
 class DiscoverSkillsAgent(AsyncAgentProtocol[Any, Dict[str, Any]]):
@@ -120,39 +132,99 @@ async def extract_decomposed_steps(
 
 
 # --- Adapter: extract YAML text from writer output ---
-async def extract_yaml_text(writer_output: Any) -> str:
-    """Extract the YAML text field from a YamlWriter agent's output.
-
-    Handles multiple shapes gracefully:
-    - pydantic-like object with attribute 'yaml_text' or 'generated_yaml'
-    - dict payload with keys 'yaml_text' or 'generated_yaml'
-    - falls back to str() representation
+async def extract_yaml_text(writer_output: Any) -> Dict[str, str]:
     """
+    Robustly extracts YAML text from various agent output formats,
+    stores it in the context, and returns it as a dictionary.
+    This function is the definitive bridge from YAML generation to the rest of the pipeline.
+    """
+    text: str | None = None
     try:
-        # Attribute access (pydantic model or simple object)
-        if hasattr(writer_output, "yaml_text"):
-            val = getattr(writer_output, "yaml_text")
-            if isinstance(val, (str, bytes)):
-                return val.decode() if isinstance(val, bytes) else val
+        # --- DEBUGGING: See exactly what we are receiving ---
+        print(f"DEBUG [extract_yaml_text]: Received type: {type(writer_output)}")
+        print(
+            f"DEBUG [extract_yaml_text]: Received value (first 200 chars): {str(writer_output)[:200]}"
+        )
+
+        # --- EXTRACTION LOGIC ---
+        # 1. Highest priority: Pydantic model-like object with attributes
         if hasattr(writer_output, "generated_yaml"):
             val = getattr(writer_output, "generated_yaml")
             if isinstance(val, (str, bytes)):
-                return val.decode() if isinstance(val, bytes) else val
+                text = val.decode() if isinstance(val, bytes) else val
+        if text is None and hasattr(writer_output, "yaml_text"):
+            val = getattr(writer_output, "yaml_text")
+            if isinstance(val, (str, bytes)):
+                text = val.decode() if isinstance(val, bytes) else val
 
-        # Mapping access
-        if isinstance(writer_output, dict):
-            if "yaml_text" in writer_output:
-                val = writer_output["yaml_text"]
-                if isinstance(val, (str, bytes)):
-                    return val.decode() if isinstance(val, bytes) else val
-            if "generated_yaml" in writer_output:
-                val = writer_output["generated_yaml"]
-                if isinstance(val, (str, bytes)):
-                    return val.decode() if isinstance(val, bytes) else val
-    except Exception:
-        pass
+        # 2. Fallback: Dictionary
+        if text is None and isinstance(writer_output, dict):
+            val = writer_output.get("generated_yaml") or writer_output.get("yaml_text")
+            if isinstance(val, (str, bytes)):
+                text = val.decode() if isinstance(val, bytes) else str(val)
 
-    return str(writer_output)
+        # 3. Fallback: Raw string or bytes - check if it's JSON first
+        if text is None and isinstance(writer_output, (str, bytes)):
+            raw_str = writer_output.decode() if isinstance(writer_output, bytes) else writer_output
+            # Check if this looks like JSON
+            if raw_str.strip().startswith("{") and raw_str.strip().endswith("}"):
+                try:
+                    import json
+
+                    parsed = json.loads(raw_str)
+                    if isinstance(parsed, dict):
+                        val = parsed.get("generated_yaml") or parsed.get("yaml_text")
+                        if isinstance(val, str):
+                            text = val
+                            print(
+                                "DEBUG [extract_yaml_text]: Successfully parsed JSON and extracted YAML"
+                            )
+                except json.JSONDecodeError:
+                    # Not valid JSON, treat as raw string
+                    text = raw_str
+            else:
+                text = raw_str
+
+        # 4. Last resort: Stringify the object and try to parse the YAML out of it
+        if text is None:
+            str_repr = str(writer_output)
+            # Look for the YAML content inside a string like "YamlWriter(generated_yaml='...')""
+            if "generated_yaml='" in str_repr:
+                start = str_repr.find("generated_yaml='") + len("generated_yaml='")
+                end = str_repr.rfind("'")
+                if start < end:
+                    text = str_repr[start:end]
+            elif 'generated_yaml:"' in str_repr:  # Handle double quotes
+                start = str_repr.find('generated_yaml:"') + len('generated_yaml:"')
+                end = str_repr.rfind('"')
+                if start < end:
+                    text = str_repr[start:end]
+    except Exception as e:
+        print(f"DEBUG [extract_yaml_text]: Exception during extraction: {e}")
+        text = str(writer_output)  # Fallback to string representation on error
+
+    # --- CLEANUP and RETURN ---
+    final_text = text or ""
+
+    # Strip markdown fences just in case the LLM added them
+    if "```" in final_text:
+        import re
+
+        match = re.search(r"```(?:yaml|yml)?\n(.*)\n```", final_text, re.DOTALL)
+        if match:
+            final_text = match.group(1).strip()
+
+    # Final check to ensure we have something that looks like YAML
+    if not ("version:" in final_text or "steps:" in final_text):
+        print(
+            "DEBUG [extract_yaml_text]: WARNING - Extracted text does not look like a valid Flujo YAML."
+        )
+
+    print(
+        f"DEBUG [extract_yaml_text]: Successfully extracted YAML (first 100 chars): {final_text[:100]}"
+    )
+
+    return {"yaml_text": final_text, "generated_yaml": final_text}
 
 
 # --- Adapter: capture ValidationReport for later error extraction ---
@@ -265,21 +337,33 @@ async def extract_validation_errors(
 
 
 # --- HITL helper: interpret user confirmation into branch key ---
-async def check_user_confirmation(user_input: str) -> str:
+async def check_user_confirmation(
+    _out: Any = None,
+    ctx: DomainBaseModel | None = None,
+    *,
+    user_input: Optional[str] = None,
+    **_kwargs: Any,
+) -> str:
     """Map free-form user input to a conditional branch key.
+
+    Accepts flexible calling conventions used by conditionals:
+    - First positional `_out` as the previous step output
+    - Keyword `user_input`
+    - Ignores extra positional/context args
 
     Returns:
         "approved" for affirmative ("y", "yes", empty/whitespace), otherwise "denied".
     """
+    # Resolve input text from explicit kwarg, previous output, or default
+    text_val: Any = user_input if user_input is not None else _out
     try:
-        text = "" if user_input is None else str(user_input)
+        text = "" if text_val is None else str(text_val)
     except Exception:
         text = ""
     norm = text.strip().lower()
     if norm == "":
         return "approved"
-    affirmatives = {"y", "yes"}
-    if norm in affirmatives:
+    if norm in {"y", "yes"}:
         return "approved"
     return "denied"
 
@@ -656,6 +740,9 @@ async def repair_yaml_ruamel(yaml_text: str) -> Dict[str, Any]:
             if isinstance(data, dict):
                 if "version" not in data:
                     data["version"] = "0.1"
+                # Add a default pipeline name when missing to satisfy validators
+                if "name" not in data:
+                    data["name"] = "generated_pipeline"
                 if "steps" in data and data["steps"] is None:
                     data["steps"] = []
             from io import StringIO
@@ -670,6 +757,27 @@ async def repair_yaml_ruamel(yaml_text: str) -> Dict[str, Any]:
 
     # Fallback: return text as-is (possibly after heuristic correction)
     return {"generated_yaml": text, "yaml_text": text}
+
+
+# --- Adapter: return YAML in CLI-expected format ---
+async def return_yaml_for_cli(yaml_text: Any) -> Dict[str, str]:
+    """Return YAML in the format that the CLI expects to find.
+
+    The CLI looks for either:
+    1. context.generated_yaml or context.yaml_text
+    2. Step outputs with 'generated_yaml' or 'yaml_text' keys
+
+    This function accepts either a string or a dictionary and returns a dict with both keys.
+    """
+    # Handle dictionary input (from extract_yaml_text)
+    if isinstance(yaml_text, dict):
+        yaml_string = (
+            yaml_text.get("yaml_text") or yaml_text.get("generated_yaml") or str(yaml_text)
+        )
+    else:
+        yaml_string = str(yaml_text)
+
+    return {"generated_yaml": yaml_string, "yaml_text": yaml_string}
 
 
 def _register_builtins() -> None:
@@ -699,47 +807,13 @@ def _register_builtins() -> None:
             description="Extract YAML string from YamlWriter output object or dict.",
         )
 
-        # Persist YAML text into context keys for downstream access
-        async def capture_yaml_text(yaml_text: Any) -> Dict[str, Any]:
-            """Normalize various outputs to extract YAML text.
-
-            Accepts:
-            - str/bytes: use directly
-            - dict: prefer 'generated_yaml' or 'yaml_text' fields
-            Fallback to str(...) for unexpected shapes.
-            """
-            text: str | None = None
-            try:
-                if isinstance(yaml_text, (bytes, bytearray)):
-                    text = yaml_text.decode()
-                elif isinstance(yaml_text, str):
-                    text = yaml_text
-                elif isinstance(yaml_text, dict):
-                    val = yaml_text.get("generated_yaml") or yaml_text.get("yaml_text")
-                    if isinstance(val, (bytes, bytearray)):
-                        text = val.decode()
-                    elif isinstance(val, str):
-                        text = val
-            except Exception:
-                text = None
-            if text is None:
-                try:
-                    text = str(yaml_text)
-                except Exception:
-                    text = ""
-            return {"generated_yaml": text, "yaml_text": text}
-
+        # Return YAML in CLI-expected format
         reg.register(
-            "flujo.builtins.capture_yaml_text",
-            lambda **_params: capture_yaml_text,
-            description="Store YAML text into context as generated_yaml/yaml_text.",
-            arg_schema={
-                "type": "object",
-                "properties": {"yaml_text": {"type": "string"}},
-                "required": ["yaml_text"],
-            },
-            side_effects=False,
+            "flujo.builtins.return_yaml_for_cli",
+            lambda **_params: return_yaml_for_cli,
+            description="Return YAML in the format that the CLI expects to find (with generated_yaml and yaml_text keys).",
         )
+
         reg.register(
             "flujo.builtins.capture_validation_report",
             lambda **_params: capture_validation_report,
@@ -775,6 +849,28 @@ def _register_builtins() -> None:
             description=(
                 "Return {'yaml_is_valid': bool} based on simple inline-list shape after 'steps:'"
             ),
+            side_effects=False,
+        )
+
+        # HITL: prompt user for approval
+        async def ask_user(question: Optional[str] = None) -> str:
+            try:
+                import typer as _typer
+
+                q = question or "Does this plan look correct? (Y/n)"
+                resp = _typer.prompt(q, default="Y")
+                return str(resp)
+            except Exception:
+                return "Y"
+
+        reg.register(
+            "flujo.builtins.ask_user",
+            lambda **_params: ask_user,
+            description=("Prompt user and return raw response string."),
+            arg_schema={
+                "type": "object",
+                "properties": {"question": {"type": "string"}},
+            },
             side_effects=False,
         )
         reg.register(
@@ -816,6 +912,20 @@ def _register_builtins() -> None:
                 },
                 "required": ["template"],
             },
+            side_effects=False,
+        )
+
+        # Simple adapter: stringify any object (useful to bridge model outputs to HITL)
+        async def stringify(x: Any) -> str:
+            try:
+                return str(x)
+            except Exception:
+                return ""
+
+        reg.register(
+            "flujo.builtins.stringify",
+            lambda **_params: stringify,
+            description="Convert any input value to a string via str(x).",
             side_effects=False,
         )
 

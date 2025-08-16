@@ -430,9 +430,56 @@ def _make_step_from_blueprint(
                 pass
             if st is None:
                 agent_obj = _resolve_agent_entry(model.agent)
-                if _is_async_callable(agent_obj):
+                # If we have a registry-backed callable and YAML provided params, wrap to inject them
+                _params_for_callable: Dict[str, Any] = {}
+                try:
+                    if isinstance(model.agent, dict):
+                        maybe_params = model.agent.get("params")
+                        if isinstance(maybe_params, dict):
+                            _params_for_callable = dict(maybe_params)
+                except Exception:
+                    _params_for_callable = {}
+
+                def _with_params(func: Any) -> Any:
+                    # Create an async wrapper that merges YAML params and respects step input when provided
+                    import inspect as __inspect
+
+                    async def _runner(data: Any, **kwargs: Any) -> Any:
+                        try:
+                            call_kwargs = dict(_params_for_callable)
+                            call_kwargs.update(
+                                {
+                                    k: v
+                                    for k, v in kwargs.items()
+                                    if k not in ("context", "pipeline_context")
+                                }
+                            )
+                            if model.input is not None:
+                                result = func(data, **call_kwargs)
+                            else:
+                                result = func(**call_kwargs)
+                            if __inspect.isawaitable(result):
+                                return await result
+                            return result
+                        except TypeError:
+                            # Fallback: try passing data as first arg
+                            result = func(data, **dict(_params_for_callable))
+                            if __inspect.isawaitable(result):
+                                return await result
+                            return result
+
+                    return _runner
+
+                callable_obj: Any = agent_obj
+                try:
+                    if callable(agent_obj) and _params_for_callable:
+                        callable_obj = _with_params(agent_obj)
+                except Exception:
+                    callable_obj = agent_obj
+
+                if _is_async_callable(callable_obj):
                     st = Step.from_callable(
-                        agent_obj,
+                        callable_obj,
                         name=model.name,
                         updates_context=model.updates_context,
                         validate_fields=model.validate_fields,

@@ -49,7 +49,10 @@ def mock_architect_self_correction(monkeypatch) -> Dict[str, Any]:
     # Ensure agents are considered precompiled
     def _fake_compile_agents(self):  # type: ignore[no-redef]
         self._compiled_agents = {
-            "architect_agent": _ArchitectAgent(),
+            "decomposer": _ArchitectAgent(),
+            "tool_matcher": _ArchitectAgent(),
+            "plan_presenter": _ArchitectAgent(),
+            "yaml_writer": _ArchitectAgent(),
             "repair_agent": _RepairAgent(),
         }
 
@@ -67,7 +70,10 @@ def mock_architect_self_correction(monkeypatch) -> Dict[str, Any]:
     def _build_with_fallback(model, compiled_agents=None, compiled_imports=None):  # type: ignore[no-redef]
         if not compiled_agents:
             compiled_agents = {
-                "architect_agent": _ArchitectAgent(),
+                "decomposer": _ArchitectAgent(),
+                "tool_matcher": _ArchitectAgent(),
+                "plan_presenter": _ArchitectAgent(),
+                "yaml_writer": _ArchitectAgent(),
                 "repair_agent": _RepairAgent(),
             }
         return _orig_build(

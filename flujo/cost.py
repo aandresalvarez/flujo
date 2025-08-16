@@ -37,7 +37,7 @@ def resolve_callable(value: T | Callable[[], T]) -> T:
     """
     # Fast path: avoid attribute lookups in the hot loop
     if callable(value):
-        return value()  # type: ignore[no-any-return]
+        return value()
     return value
 
 

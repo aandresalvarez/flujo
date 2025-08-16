@@ -1,0 +1,17 @@
+# Flujo project configuration template
+
+ # Use project-local SQLite DB for lens, telemetry, and replay
+ state_uri = "sqlite:///.flujo/state.db"
+
+[settings]
+# default_solution_model = "gpt-4o-mini"
+# reflection_enabled = true
+
+# Centralized budgets (optional)
+[budgets]
+# [budgets.default]
+# total_cost_usd_limit = 5.0
+# total_tokens_limit = 100000
+
+[budgets.pipeline."ExtractGeneratedYaml"]
+total_cost_usd_limit = 5.0

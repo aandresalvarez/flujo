@@ -4,6 +4,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 from flujo.cli.main import app
 from flujo.infra.skill_registry import get_skill_registry
+import yaml
 
 
 class _FakeCtx:
@@ -147,4 +148,5 @@ steps: []
         ],
     )
     assert res2.exit_code == 0
-    assert out_file.read_text() == yaml_text
+    # Compare YAML structures to avoid quoting differences
+    assert yaml.safe_load(out_file.read_text()) == yaml.safe_load(yaml_text)

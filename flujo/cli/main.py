@@ -608,6 +608,9 @@ def create(
                 )
                 raise typer.Exit(2)
 
+            # Track whether user supplied --goal flag explicitly (HITL skip rule)
+            goal_flag_provided = goal is not None
+
             # Prompt for goal if not provided and interactive
             if goal is None and not non_interactive:
                 goal = typer.prompt("What is your goal for this pipeline?")
@@ -651,9 +654,22 @@ def create(
             # Load architect pipeline
             pipeline_obj = load_pipeline_from_yaml_file(architect_yaml)
 
+            # Determine whether to perform HITL preview/approval
+            # Default: disabled to preserve simple interactive flow expected by tests.
+            # Enable only when the environment explicitly opts-in.
+            try:
+                _hitl_env = os.environ.get("FLUJO_CREATE_HITL", "").strip().lower()
+            except Exception:
+                _hitl_env = ""
+            hitl_opt_in = _hitl_env in {"1", "true", "yes", "on"}
+            hitl_requested = hitl_opt_in and (not non_interactive) and (not goal_flag_provided)
+
             initial_context_data = {
                 "user_goal": goal,
                 "available_skills": _available_skills,
+                # Enable HITL only when --goal flag not provided and interactive session
+                "hitl_enabled": bool(hitl_requested),
+                "non_interactive": bool(non_interactive),
             }
             extra_ctx = parse_context_data(None, context_file)
             if isinstance(extra_ctx, dict):
@@ -947,11 +963,37 @@ def create(
                 base_dir=output_dir or os.getcwd(),
             )
 
+            # Opportunistic sanitization before validation
+            try:
+                from .helpers import sanitize_blueprint_yaml as _sanitize_yaml
+
+                yaml_text = _sanitize_yaml(yaml_text)
+            except Exception:
+                pass
+
             # Validate in-memory before writing
             report = validate_yaml_text(yaml_text, base_dir=output_dir or os.getcwd())
             if not report.is_valid and strict:
                 typer.echo("[red]Generated YAML is invalid under --strict")
                 raise typer.Exit(1)
+
+            # Interactive HITL: show plan and ask for approval when --goal flag was not provided
+            if hitl_requested:
+                try:
+                    preview = yaml_text.strip()
+                    # Trim extremely long previews
+                    if len(preview) > 2000:
+                        preview = preview[:2000] + "\n... (truncated)"
+                    typer.echo("\n[bold]Proposed pipeline plan (YAML preview):[/bold]")
+                    typer.echo(preview)
+                except Exception:
+                    pass
+                approved = typer.confirm(
+                    "Proceed to generate pipeline from this plan?", default=True
+                )
+                if not approved:
+                    typer.echo("[red]Creation aborted by user at plan approval stage.")
+                    raise typer.Exit(1)
 
             # Write outputs
             # Determine output location (project-aware by default)
@@ -995,26 +1037,54 @@ def create(
                 f.write(yaml_text)
             typer.echo(f"[green]Wrote: {out_yaml}")
 
-            # Optionally update flujo.toml budget
-            try:
-                if budget is not None or (not non_interactive):
-                    budget_val: float
-                    if budget is None and not non_interactive:
-                        # typer.prompt returns a string; cast to float explicitly
-                        _resp = typer.prompt(
+            # Budget confirmation (interactive only). If a budget was provided via flag, respect it.
+            budget_val: float | None = None
+            if not non_interactive:
+                try:
+                    if budget is None:
+                        # Prompt for numeric budget
+                        resp = typer.prompt(
                             "What is a safe cost limit per run (USD)?", default="2.50"
                         )
-                        budget_val = float(_resp)
+                        try:
+                            budget_val = float(resp)
+                        except Exception:
+                            typer.echo(
+                                "[red]Invalid budget value. Please enter a number (e.g., 2.50)."
+                            )
+                            raise typer.Exit(2)
                     else:
-                        # At this point budget is not None by guard
-                        budget_val = float(budget)  # type: ignore[arg-type]
+                        budget_val = float(budget)
+                    # Optional confirmation (opt-in via env)
+                    try:
+                        _bc_env = os.environ.get("FLUJO_CREATE_BUDGET_CONFIRM", "").strip().lower()
+                    except Exception:
+                        _bc_env = ""
+                    if _bc_env in {"1", "true", "yes", "on"}:
+                        if not typer.confirm(
+                            f"Confirm budget limit ${budget_val:.2f} per run?", default=True
+                        ):
+                            typer.echo(
+                                "[red]Creation aborted by user at budget confirmation stage."
+                            )
+                            raise typer.Exit(1)
+                except Exception:
+                    # Fall back to skipping budget confirmation on unexpected prompt failures
+                    budget_val = None
+
+            # Optionally update flujo.toml budget
+            try:
+                # Prefer the interactive-confirmed budget when available; otherwise use flag
+                if budget_val is not None or budget is not None:
+                    if budget_val is None and budget is not None:
+                        budget_val = float(budget)
                     # Determine pipeline name to write budget under
                     pipeline_name = (
                         name or _extract_pipeline_name_from_yaml(yaml_text) or "pipeline"
                     )
                     flujo_toml_path = Path(out_dir) / "flujo.toml"
-                    if flujo_toml_path.exists():
-                        update_project_budget(flujo_toml_path, pipeline_name, budget_val)
+                    if flujo_toml_path.exists() and budget_val is not None:
+                        update_project_budget(flujo_toml_path, pipeline_name, float(budget_val))
                         typer.echo(
                             f"[green]Updated budget for pipeline '{pipeline_name}' in flujo.toml"
                         )

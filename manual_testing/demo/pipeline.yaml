@@ -5,21 +5,19 @@ steps:
   agent:
     id: flujo.builtins.http_get
     params:
-      url: https://example.com/api/data
+      url: http://example.com/data
   kind: step
 - name: extract_info
   agent:
     id: flujo.builtins.extract_from_text
     params:
       text: '{{ fetch_data.body }}'
-      schema: '{ ''title'': ''string'', ''description'': ''string'' }'
+      schema: '{ ''title'': ''string'', ''date'': ''string'' }'
   kind: step
 - name: save_to_file
   agent:
     id: flujo.builtins.fs_write_file
     params:
-      path: /data/output.txt
-      content: 'Title: {{ extract_info.title }}
-
-        Description: {{ extract_info.description }}'
+      path: /path/to/output.txt
+      content: 'Title: {{ extract_info.title }}, Date: {{ extract_info.date }}'
   kind: step
