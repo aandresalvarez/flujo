@@ -29,9 +29,15 @@ class BlueprintStepModel(BaseModel):
     This intentionally supports only a safe subset to start, then we'll extend.
     """
 
-    kind: Literal["step", "parallel", "conditional", "loop", "map", "dynamic_router"] = Field(
-        default="step"
-    )
+    kind: Literal[
+        "step",
+        "parallel",
+        "conditional",
+        "loop",
+        "map",
+        "dynamic_router",
+        "hitl",
+    ] = Field(default="step")
     # Accept both 'name' and legacy 'step' keys for step name
     name: str = Field(validation_alias=AliasChoices("name", "step"))
     agent: Optional[Union[str, Dict[str, Any]]] = None
@@ -66,6 +72,9 @@ class BlueprintStepModel(BaseModel):
     context_include_keys: Optional[List[str]] = None
     field_mapping: Optional[Dict[str, List[str]]] = None
     ignore_branch_names: Optional[bool] = None
+    # HITL specific (optional)
+    message: Optional[str] = None
+    input_schema: Optional[Dict[str, Any]] = None
 
     # ----------------------------
     # Field validators (compile-time safety for FSD-016 / Gap #9)
@@ -350,6 +359,24 @@ def _make_step_from_blueprint(
             name=model.name,
             router_agent=router_agent,
             branches=branches_router,
+            config=step_config,
+        )
+    elif model.kind == "hitl":
+        # Human-in-the-loop step compiled from declarative YAML
+        from ..dsl.step import HumanInTheLoopStep
+        from .model_generator import generate_model_from_schema
+
+        schema_model = None
+        try:
+            if isinstance(model.input_schema, dict):
+                schema_model = generate_model_from_schema(f"{model.name}Input", model.input_schema)
+        except Exception:
+            schema_model = None
+
+        return HumanInTheLoopStep(
+            name=model.name,
+            message_for_user=model.message,
+            input_schema=schema_model,
             config=step_config,
         )
     else:
@@ -663,6 +690,36 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                         "max_loops": step.max_retries,
                     },
                 }
+        except Exception:
+            pass
+        try:
+            # Pretty-print HumanInTheLoopStep as a first-class 'hitl' kind
+            from ..dsl.step import HumanInTheLoopStep
+
+            if isinstance(step, HumanInTheLoopStep):
+                hitl_data: Dict[str, Any] = {
+                    "kind": "hitl",
+                    "name": step.name,
+                }
+                # Optional message_for_user
+                try:
+                    if getattr(step, "message_for_user", None):
+                        hitl_data["message"] = getattr(step, "message_for_user")
+                except Exception:
+                    pass
+                # Optional input_schema (pydantic model class or dict)
+                try:
+                    schema = getattr(step, "input_schema", None)
+                    if schema is not None:
+                        if hasattr(schema, "model_json_schema") and callable(
+                            getattr(schema, "model_json_schema")
+                        ):
+                            hitl_data["input_schema"] = schema.model_json_schema()
+                        elif isinstance(schema, dict):
+                            hitl_data["input_schema"] = schema
+                except Exception:
+                    pass
+                return hitl_data
         except Exception:
             pass
         return {"kind": "step", "name": getattr(step, "name", "step")}

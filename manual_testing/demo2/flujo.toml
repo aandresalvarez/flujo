@@ -12,3 +12,6 @@
 # [budgets.default]
 # total_cost_usd_limit = 5.0
 # total_tokens_limit = 100000
+
+[budgets.pipeline."GenerateBlueprint"]
+total_cost_usd_limit = 34.0

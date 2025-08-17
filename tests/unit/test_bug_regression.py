@@ -277,6 +277,7 @@ class TestSerializationEdgeCases:
 class TestPerformanceRegression:
     """Test for performance regressions."""
 
+    @pytest.mark.slow  # Mark as slow due to performance measurement
     def test_serialization_performance(self):
         """Test that serialization doesn't have performance regressions."""
         # Create a complex object
@@ -301,6 +302,7 @@ class TestPerformanceRegression:
         assert isinstance(result, dict)
 
     @pytest.mark.asyncio
+    @pytest.mark.slow  # Mark as slow due to performance measurement
     async def test_database_operation_performance(self, tmp_path: Path):
         """Test that database operations don't have performance regressions."""
         db_path = tmp_path / "perf_test.db"

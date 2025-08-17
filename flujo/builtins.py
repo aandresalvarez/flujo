@@ -368,6 +368,27 @@ async def check_user_confirmation(
     return "denied"
 
 
+# Synchronous wrapper for conditional branching contexts (YAML 'condition')
+def check_user_confirmation_sync(
+    _out: Any = None,
+    ctx: DomainBaseModel | None = None,
+    *,
+    user_input: Optional[str] = None,
+    **_kwargs: Any,
+) -> str:
+    try:
+        text_val: Any = user_input if user_input is not None else _out
+        text = "" if text_val is None else str(text_val)
+    except Exception:
+        text = ""
+    norm = text.strip().lower()
+    if norm == "":
+        return "approved"
+    if norm in {"y", "yes"}:
+        return "approved"
+    return "denied"
+
+
 # --- Conditional key selector: 'valid' or 'invalid' based on context ---
 def select_validity_branch(
     _out: Any = None,

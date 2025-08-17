@@ -3968,6 +3968,9 @@ class DefaultConditionalStepExecutor:
         start_time = time.monotonic()
         with telemetry.logfire.span(conditional_step.name) as span:
             try:
+                from ...exceptions import PipelineAbortSignal as _Abort
+                from ...exceptions import PausedException as _PausedExc
+
                 # Avoid noisy prints during benchmarks; retain only telemetry logs
                 # Evaluate branch key using the immediate previous output and current context
                 # Ensure the condition sees a meaningful payload even when the last output
@@ -4003,15 +4006,6 @@ class DefaultConditionalStepExecutor:
                             and not _shape_invalid(ctx_text)
                         ) or yaml_flag:
                             branch_key = "valid"
-                except Exception:
-                    pass
-                try:
-                    cname = getattr(
-                        conditional_step.condition_callable,
-                        "__name__",
-                        str(conditional_step.condition_callable),
-                    )
-                    print(f"[COND] name={conditional_step.name} cond={cname} key={branch_key}")
                 except Exception:
                     pass
                 telemetry.logfire.info(f"Condition evaluated to branch key '{branch_key}'")
@@ -4062,15 +4056,50 @@ class DefaultConditionalStepExecutor:
                         with telemetry.logfire.span(
                             getattr(pipeline_step, "name", str(pipeline_step))
                         ):
-                            step_result = await core.execute(
-                                pipeline_step,
-                                branch_data,
-                                context=branch_context,
-                                resources=resources,
-                                limits=limits,
-                                context_setter=context_setter,
-                                _fallback_depth=_fallback_depth,
-                            )
+                            try:
+                                res_any = await core.execute(
+                                    pipeline_step,
+                                    branch_data,
+                                    context=branch_context,
+                                    resources=resources,
+                                    limits=limits,
+                                    context_setter=context_setter,
+                                    _fallback_depth=_fallback_depth,
+                                )
+                            except (_Abort, _PausedExc) as _pe:
+                                # If the branch step is an explicit HITL, bubble up the pause
+                                from flujo.domain.dsl.step import HumanInTheLoopStep as _HITL
+
+                                if isinstance(pipeline_step, _HITL):
+                                    raise
+                                # Non-HITL pause inside a branch should be treated as failure
+                                return to_outcome(
+                                    StepResult(
+                                        name=conditional_step.name,
+                                        success=False,
+                                        feedback=f"Paused in branch step '{getattr(pipeline_step, 'name', 'step')}': {_pe}",
+                                    )
+                                )
+                        # Normalize StepOutcome to StepResult, and propagate Paused
+                        if isinstance(res_any, StepOutcome):
+                            if isinstance(res_any, Success):
+                                step_result = res_any.step_result
+                            elif isinstance(res_any, Failure):
+                                step_result = res_any.step_result or StepResult(
+                                    name=core._safe_step_name(pipeline_step),
+                                    success=False,
+                                    feedback=res_any.feedback,
+                                )
+                            elif isinstance(res_any, Paused):
+                                return res_any
+                            else:
+                                step_result = StepResult(
+                                    name=core._safe_step_name(pipeline_step),
+                                    success=False,
+                                    feedback="Unsupported outcome",
+                                )
+                        else:
+                            step_result = res_any
                         total_cost += step_result.cost_usd
                         total_tokens += step_result.token_counts
                         total_latency += getattr(step_result, "latency_s", 0.0)
@@ -4125,6 +4154,9 @@ class DefaultConditionalStepExecutor:
                         except Exception:
                             pass
                     return to_outcome(result)
+            except (_Abort, _PausedExc):
+                # Bubble up pauses so the runner marks pipeline paused
+                raise
             except Exception as e:
                 # Log error for visibility in tests
                 try:
