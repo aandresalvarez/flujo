@@ -453,37 +453,20 @@ def select_validity_branch(
     if isinstance(context, dict) and "yaml_is_valid" in context:
         return "valid" if bool(context.get("yaml_is_valid")) else "invalid"
 
-    # 4) Remaining heuristics
-    def _looks_minimally_valid(text: Any) -> bool:
-        if not isinstance(text, str):
-            return False
-        return ("version:" in text) and ("steps:" in text)
-
-    try:
-        if isinstance(_out, dict):
-            yt = _out.get("yaml_text") or _out.get("generated_yaml")
-            if _shape_invalid(yt):
-                return "invalid"
-            if _looks_minimally_valid(yt):
-                return "valid"
-        elif isinstance(_out, str):
-            if _shape_invalid(_out):
-                return "invalid"
-            if _looks_minimally_valid(_out):
-                return "valid"
-    except Exception:
-        pass
-    try:
-        yt2 = getattr(context, "yaml_text", None)
-        if _shape_invalid(yt2):
-            return "invalid"
-        if _looks_minimally_valid(yt2):
-            return "valid"
-    except Exception:
-        pass
-
-    # 5) Default to valid
+    # 4) Default to valid
     return "valid"
+
+
+# --- Compute branch key from context validity (top-level importable) ---
+async def compute_validity_key(_x: Any = None, *, context: DomainBaseModel | None = None) -> str:
+    try:
+        val = bool(getattr(context, "yaml_is_valid", False))
+    except Exception:
+        try:
+            val = bool(context.get("yaml_is_valid", False)) if isinstance(context, dict) else False
+        except Exception:
+            val = False
+    return "valid" if val else "invalid"
 
 
 def select_by_yaml_shape(
@@ -972,23 +955,6 @@ def _register_builtins() -> None:
             side_effects=False,
         )
 
-        # Compute branch key explicitly for conditional when used as a normal step
-        async def compute_validity_key(
-            _x: Any = None, *, context: DomainBaseModel | None = None
-        ) -> str:
-            try:
-                val = bool(getattr(context, "yaml_is_valid", False))
-            except Exception:
-                try:
-                    val = (
-                        bool(context.get("yaml_is_valid", False))
-                        if isinstance(context, dict)
-                        else False
-                    )
-                except Exception:
-                    val = False
-            return "valid" if val else "invalid"
-
         reg.register(
             "flujo.builtins.compute_validity_key",
             lambda **_params: compute_validity_key,
@@ -1111,6 +1077,47 @@ def _register_builtins() -> None:
             description="Aggregate mapped tool decisions and goal for YAML writer.",
         )
 
+        # Adapter: build input for tool matcher from a step item and context skills
+        async def build_tool_match_input(
+            item: Any, *, context: DomainBaseModel | None = None
+        ) -> Dict[str, Any]:
+            name = None
+            purpose = None
+            try:
+                if isinstance(item, dict):
+                    name = item.get("step_name") or item.get("name") or item.get("title")
+                    purpose = item.get("purpose") or item.get("description")
+                else:
+                    name = getattr(item, "step_name", None) or getattr(item, "name", None)
+                    purpose = getattr(item, "purpose", None) or getattr(item, "description", None)
+            except Exception:
+                name = None
+                purpose = None
+
+            try:
+                maybe_skills = getattr(context, "available_skills", None)
+                skills = (
+                    [x for x in maybe_skills if isinstance(x, dict)]
+                    if isinstance(maybe_skills, list)
+                    else []
+                )
+            except Exception:
+                skills = []
+
+            return {
+                "step_name": str(name or ""),
+                "purpose": str(purpose or ""),
+                "available_skills": skills,
+            }
+
+        reg.register(
+            "flujo.builtins.build_tool_match_input",
+            lambda **_params: build_tool_match_input,
+            description=(
+                "Construct {step_name, purpose, available_skills} for the tool matcher from a step item."
+            ),
+        )
+
         # --- Killer Demo: web_search ---
         async def web_search(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
             """Perform a DuckDuckGo web search (top N simplified results).
@@ -1189,7 +1196,7 @@ def _register_builtins() -> None:
             The JSON schema is used as instruction; output is a dict.
             """
             # Default lightweight model consistent with examples
-            chosen_model = model or "openai:gpt-4o-mini"
+            chosen_model = model or "openai:gpt-5-mini"
 
             system_prompt = (
                 "You extract structured data from text.\n"
@@ -1310,6 +1317,48 @@ def _register_builtins() -> None:
                 "type": "object",
                 "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
                 "required": ["path", "content"],
+            },
+            side_effects=True,
+        )
+
+        # Convenience: write pipeline YAML where the step input is the content
+        async def write_pipeline_yaml(content: str, path: str = "pipeline.yaml") -> Dict[str, Any]:
+            """Write YAML content to disk; treats step input as content.
+
+            This adapter mirrors fs_write_file but accepts content as the first
+            parameter so it works naturally with blueprint 'input' templating.
+            """
+            try:
+                import aiofiles
+
+                async with aiofiles.open(path, mode="w", encoding="utf-8") as f:
+                    await f.write(content)
+                return {"success": True, "path": path}
+            except ImportError:
+                import asyncio as _asyncio
+
+                def _write_sync() -> Dict[str, Any]:
+                    try:
+                        with open(path, "w", encoding="utf-8") as f:
+                            f.write(content)
+                        return {"success": True, "path": path}
+                    except Exception as e:
+                        return {"success": False, "error": str(e)}
+
+                loop = _asyncio.get_event_loop()
+                return await loop.run_in_executor(None, _write_sync)
+            except Exception as e:  # pragma: no cover - filesystem errors
+                return {"success": False, "error": str(e)}
+
+        reg.register(
+            "flujo.builtins.write_pipeline_yaml",
+            lambda **_params: write_pipeline_yaml,
+            description=(
+                "Write YAML content to disk where the step input is the content (defaults to pipeline.yaml)."
+            ),
+            arg_schema={
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
             },
             side_effects=True,
         )

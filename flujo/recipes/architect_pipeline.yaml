@@ -4,7 +4,7 @@ name: "architect"
 agents:
   # Decomposer
   decomposer:
-    model: "openai:gpt-4o"
+    model: "openai:gpt-5"
     timeout: 120
     system_prompt: |
       You are a system architect. Decompose the user's goal into a list of simple, actionable steps.
@@ -26,7 +26,7 @@ agents:
 
   # Tool matcher (single step → best tool or null)
   tool_matcher:
-    model: "openai:gpt-4o"
+    model: "openai:gpt-5-mini"
     timeout: 60
     system_prompt: |
       You are a tool mapping expert. For the given step description, choose the best implementation.
@@ -44,8 +44,8 @@ agents:
 
   # Plan presenter (user-facing summary)
   plan_presenter:
-    model: "openai:gpt-4o"
-    timeout: 60
+    model: "openai:gpt-5"
+    timeout: 120
     system_prompt: |
       You are a helpful project manager. You will be given a JSON plan. Summarize it as a numbered list
       describing each step and its implementation. Ask for confirmation: "Does this plan look correct? (Y/n)".
@@ -54,7 +54,7 @@ agents:
 
   # YAML writer (self-contained Flujo YAML guide)
   yaml_writer:
-    model: "openai:gpt-4o"
+    model: "openai:gpt-5"
     timeout: 180
     system_prompt: |
       You are an expert at writing Flujo YAML blueprints. Convert a user's goal and a structured JSON plan into a complete, valid pipeline.yaml.
@@ -78,7 +78,7 @@ agents:
 
   # Repair agent
   repair_agent:
-    model: "openai:gpt-4o"
+    model: "openai:gpt-5"
     timeout: 120
     system_prompt: |
       You are a Flujo YAML debugger. Fix the provided invalid YAML based on a validation error.
@@ -112,23 +112,136 @@ steps:
       iterable_input: "prepared_steps_for_mapping"
       body:
         - kind: step
+          name: PrepareMatchInput
+          agent: { id: "flujo.builtins.build_tool_match_input" }
+        - kind: step
+          name: InspectPreparedMatchInput
+          agent: { id: "flujo.builtins.passthrough" }
+        - kind: step
           name: MatchTool
           uses: agents.tool_matcher
-          input:
-            step_name: "{{ previous_step.step_name }}"
-            purpose: "{{ previous_step.purpose }}"
-            available_skills: "{{ context.available_skills }}"
     updates_context: true
 
   - kind: step
     name: AggregatePlan
     agent: { id: "flujo.builtins.aggregate_plan" }
-    input: "{{ previous_step }}"
     updates_context: true
 
   # Stage 2: Generate YAML directly
   - kind: step
     name: GenerateBlueprint
     uses: agents.yaml_writer
-    input: "{{ context.aggregated_plan }}"
     updates_context: true
+
+  # Stage 3: Validate and (if needed) repair YAML
+  - kind: loop
+    name: ValidateAndRepair
+    loop:
+      max_loops: 3
+      exit_condition: "flujo.builtins.exit_when_yaml_valid"
+      body:
+        - kind: step
+          name: ExtractYaml
+          agent: { id: "flujo.builtins.extract_yaml_text" }
+          updates_context: true
+
+        - kind: step
+          name: ValidateYaml
+          agent: { id: "flujo.builtins.validate_yaml" }
+          input:
+            yaml_text: "{{ context.yaml_text }}"
+
+        - kind: step
+          name: CaptureValidation
+          agent: { id: "flujo.builtins.capture_validation_report" }
+          updates_context: true
+
+        - kind: conditional
+          name: ValidityBranch
+          condition: "flujo.builtins.select_validity_branch"
+          branches:
+            valid:
+              - kind: step
+                name: ReturnYamlForCli
+                agent: { id: "flujo.builtins.return_yaml_for_cli" }
+                input: "{{ context.yaml_text }}"
+                updates_context: true
+            invalid:
+              # First try deterministic repair, then re-validate
+              - kind: step
+                name: DeterministicRepair
+                agent: { id: "flujo.builtins.repair_yaml_ruamel" }
+                input:
+                  yaml_text: "{{ context.yaml_text }}"
+
+              - kind: step
+                name: RefreshYamlTextAfterDeterministic
+                agent: { id: "flujo.builtins.extract_yaml_text" }
+                updates_context: true
+
+              - kind: step
+                name: RevalidateAfterDeterministic
+                agent: { id: "flujo.builtins.validate_yaml" }
+                input:
+                  yaml_text: "{{ context.yaml_text }}"
+
+              - kind: step
+                name: CaptureValidationAfterDeterministic
+                agent: { id: "flujo.builtins.capture_validation_report" }
+                updates_context: true
+
+              - kind: conditional
+                name: AfterDeterministicBranch
+                condition: "flujo.builtins.select_validity_branch"
+                branches:
+                  valid:
+                    - kind: step
+                      name: ReturnYamlForCli
+                      agent: { id: "flujo.builtins.return_yaml_for_cli" }
+                      input: "{{ context.yaml_text }}"
+                      updates_context: true
+                  invalid:
+                    - kind: step
+                      name: ExtractValidationErrors
+                      agent: { id: "flujo.builtins.extract_validation_errors" }
+                      input: "{{ previous_step }}"
+                      updates_context: true
+
+                    - kind: step
+                      name: RepairYamlLLM
+                      uses: agents.repair_agent
+                      input:
+                        invalid_yaml: "{{ context.yaml_text }}"
+                        validation_errors: "{{ context.validation_errors }}"
+
+                    - kind: step
+                      name: RefreshYamlTextAfterLLM
+                      agent: { id: "flujo.builtins.extract_yaml_text" }
+                      updates_context: true
+
+                    - kind: step
+                      name: RevalidateAfterLLM
+                      agent: { id: "flujo.builtins.validate_yaml" }
+                      input:
+                        yaml_text: "{{ context.yaml_text }}"
+
+                    - kind: step
+                      name: CaptureValidationAfterLLM
+                      agent: { id: "flujo.builtins.capture_validation_report" }
+                      updates_context: true
+
+  # Stage 4: Finalize output — write to disk only if valid; else emit clear error
+  - kind: conditional
+    name: FinalizeOutput
+    condition: "flujo.builtins.compute_validity_key"
+    branches:
+      valid:
+        - kind: step
+          name: WriteYamlToDisk
+          agent: { id: "flujo.builtins.write_pipeline_yaml", params: { path: "pipeline.yaml" } }
+          input: "{{ context.yaml_text }}"
+      invalid:
+        - kind: step
+          name: EmitValidationFailure
+          agent: { id: "flujo.builtins.stringify" }
+          input: "Validation failed after validation/repair attempts. Errors: {{ context.validation_errors }}"

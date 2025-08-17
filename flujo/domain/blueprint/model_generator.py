@@ -78,12 +78,26 @@ def generate_model_from_schema(name: str, schema: JsonSchema) -> Type[BaseModel]
 
     fields: Dict[str, Any] = {}
     for prop_name, prop_schema in properties.items():
-        prop_type = _python_type_for_json_schema(prop_schema, name_hint=prop_name)
-
-        # If nested object with properties, recursively create a submodel
-        if prop_schema.get("type") == "object" and isinstance(prop_schema.get("properties"), dict):
+        prop_type: Any
+        if prop_schema.get("type") == "array":
+            items_schema = prop_schema.get("items")
+            if isinstance(items_schema, dict) and items_schema.get("type") == "object":
+                # Array of objects, create a sub-model for the items
+                item_model_name = f"{model_name}{prop_name.capitalize()}Item"
+                item_type = generate_model_from_schema(item_model_name, items_schema)
+                prop_type = List[item_type]
+            else:
+                # Simple array (e.g., of strings) or unspecified items
+                prop_type = List[Any]
+        elif prop_schema.get("type") == "object" and isinstance(
+            prop_schema.get("properties"), dict
+        ):
+            # Nested object, create a sub-model
             sub_name = f"{model_name}{''.join(part.capitalize() for part in prop_name.split('_'))}"
             prop_type = generate_model_from_schema(sub_name, prop_schema)
+        else:
+            # Primitive type
+            prop_type = _python_type_for_json_schema(prop_schema, name_hint=prop_name)
 
         is_required = prop_name in required
         default = ... if is_required else None
