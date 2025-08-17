@@ -107,7 +107,9 @@ logfire = telemetry.logfire
 app.add_typer(lens_app, name="lens")
 
 # New developer sub-app and nested experimental group
-dev_app: typer.Typer = typer.Typer(help="🛠️  Access advanced developer and diagnostic tools.")
+dev_app: typer.Typer = typer.Typer(
+    help="🛠️  Access advanced developer and diagnostic tools (e.g., version, show-config, visualize)."
+)
 experimental_app: typer.Typer = typer.Typer(help="(Advanced) Experimental and diagnostic commands.")
 dev_app.add_typer(experimental_app, name="experimental")
 
@@ -1378,6 +1380,13 @@ def main(
     profile: Annotated[
         bool, typer.Option("--profile", help="Enable Logfire STDOUT span viewer")
     ] = False,
+    debug: Annotated[
+        bool,
+        typer.Option(
+            "--debug/--no-debug",
+            help="Enable verbose debug logging to '.flujo/logs/run.log'.",
+        ),
+    ] = False,
 ) -> None:
     """
     CLI entry point for flujo.
@@ -1390,6 +1399,23 @@ def main(
     """
     if profile:
         logfire.enable_stdout_viewer()
+    # Optional global debug logging to a local file
+    if debug:
+        try:
+            import logging as _logging
+            import os as _os
+
+            _os.makedirs(".flujo/logs", exist_ok=True)
+            _fh = _logging.FileHandler(".flujo/logs/run.log", encoding="utf-8")
+            _fh.setLevel(_logging.DEBUG)
+            _fmt = _logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+            _fh.setFormatter(_fmt)
+            _logger = _logging.getLogger("flujo")
+            _logger.setLevel(_logging.DEBUG)
+            _logger.addHandler(_fh)
+        except Exception:
+            # Never fail CLI due to logging setup issues
+            pass
 
 
 # Explicit exports
@@ -1408,17 +1434,12 @@ __all__ = [
     "main",
 ]
 
-# Register common top-level aliases expected by tests and docs
+# Register only intended top-level commands per FSD-021
 try:
-    app.command(name="solve")(solve)
-    app.command(name="bench")(bench)
-    app.command(name="explain")(explain)
-    app.command(name="improve")(improve)
-    app.command(name="validate")(validate)
-    app.command(name="show-config")(show_config_cmd)
-    app.command(name="version-cmd")(version_cmd)
-    app.command(name="pipeline-mermaid")(pipeline_mermaid_cmd)
-    app.command(name="add-eval-case")(add_eval_case_cmd)
+    app.command(
+        name="validate",
+        help="✅ Validate the project's pipeline.yaml file.",
+    )(validate)
 except Exception:
     pass
 

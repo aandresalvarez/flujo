@@ -4,29 +4,24 @@ Usage: root [OPTIONS] COMMAND [ARGS]...
                                                                                 
                                                                                 
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --profile                     Enable Logfire STDOUT span viewer              │
-│ --install-completion          Install completion for the current shell.      │
-│ --show-completion             Show completion for the current shell, to copy │
-│                               it or customize the installation.              │
-│ --help                        Show this message and exit.                    │
+│ --profile                               Enable Logfire STDOUT span viewer    │
+│ --debug                 --no-debug      Enable verbose debug logging to      │
+│                                         '.flujo/logs/run.log'.               │
+│                                         [default: no-debug]                  │
+│ --install-completion                    Install completion for the current   │
+│                                         shell.                               │
+│ --show-completion                       Show completion for the current      │
+│                                         shell, to copy it or customize the   │
+│                                         installation.                        │
+│ --help                                  Show this message and exit.          │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────╮
-│ init               ✨ Initialize a new Flujo workflow project in this        │
-│                    directory.                                                │
-│ create             🤖 Start a conversation with the AI Architect to build    │
-│                    your workflow.                                            │
-│ run                🚀 Run the workflow in the current project.               │
-│ solve              Solves a task using the multi-agent orchestrator.         │
-│ bench              Quick micro-benchmark of generation latency/score.        │
-│ explain            Print a summary of a pipeline defined in a file.          │
-│ improve            Run evaluation and generate improvement suggestions.      │
-│ validate           Validate a pipeline defined in a file.                    │
-│ show-config        Print effective Settings with secrets masked.             │
-│ version-cmd        Print the package version.                                │
-│ pipeline-mermaid   Output a pipeline's Mermaid diagram at the chosen detail  │
-│                    level.                                                    │
-│ add-eval-case      Print a new Case(...) definition to manually add to a     │
-│                    dataset file.                                             │
-│ lens               🔍 Inspect, debug, and trace past workflow runs.          │
-│ dev                🛠️  Access advanced developer and diagnostic tools.        │
+│ init       ✨ Initialize a new Flujo workflow project in this directory.     │
+│ create     🤖 Start a conversation with the AI Architect to build your       │
+│            workflow.                                                         │
+│ run        🚀 Run the workflow in the current project.                       │
+│ validate   ✅ Validate the project's pipeline.yaml file.                     │
+│ lens       🔍 Inspect, debug, and trace past workflow runs.                  │
+│ dev        🛠️  Access advanced developer and diagnostic tools (e.g., version, │
+│            show-config, visualize).                                          │
 ╰──────────────────────────────────────────────────────────────────────────────╯

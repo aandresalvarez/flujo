@@ -1,6 +1,7 @@
 Usage: root dev [OPTIONS] COMMAND [ARGS]...                                    
                                                                                 
- 🛠️  Access advanced developer and diagnostic tools.                             
+ 🛠️  Access advanced developer and diagnostic tools (e.g., version, show-config, 
+ visualize).                                                                    
                                                                                 
                                                                                 
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
@@ -17,4 +18,3 @@ Usage: root dev [OPTIONS] COMMAND [ARGS]...
 │ experimental   (Advanced) Experimental and diagnostic commands.              │
 │ budgets        Budget governance commands                                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
