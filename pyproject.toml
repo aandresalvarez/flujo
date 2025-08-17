@@ -72,6 +72,7 @@ skills = [
   "duckduckgo-search",
   "httpx",
   "aiofiles",
+  "pyfiglet",
 ]
 docs = [
     "mkdocs",

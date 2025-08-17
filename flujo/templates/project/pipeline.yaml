@@ -1,8 +1,9 @@
 version: "0.1"
-name: "example"
-# Minimal valid pipeline using a passthrough step.
-# You can replace this by running `flujo create` for a conversational wizard.
+name: "welcome_pipeline"
 steps:
   - kind: step
-    name: passthrough
-
+    name: welcome_message
+    agent:
+      id: flujo.builtins.welcome_agent
+      params:
+        name: "Developer"

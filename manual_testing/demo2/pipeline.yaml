@@ -1,16 +1,9 @@
-version: '0.1'
-name: "GenerateBlueprint"
+version: "0.1"
+name: "welcome_pipeline"
 steps:
-- name: fetch_page
-  agent:
-    id: flujo.builtins.http_get
-    params:
-      url: https://example.com
-  kind: step
-- name: save_page
-  agent:
-    id: flujo.builtins.fs_write_file
-    params:
-      path: ./output/fetched.html
-      content: '{{ fetch_page.body }}'
-  kind: step
+  - kind: step
+    name: welcome_message
+    agent:
+      id: flujo.builtins.welcome_agent
+      params:
+        name: "Developer"

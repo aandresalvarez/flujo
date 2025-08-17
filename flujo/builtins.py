@@ -10,16 +10,24 @@ from flujo.domain.agent_protocol import AsyncAgentProtocol
 from .agents.wrapper import make_agent_async
 
 # Lazy imports for optional dependencies
+_jinja2: Any = None
 try:
     import jinja2 as _jinja2
 except ImportError:
-    _jinja2 = None  # type: ignore
+    pass
 
+_ruamel_yaml: Any = None
 try:
     import ruamel.yaml as _ruamel_yaml
 except ImportError:
-    _ruamel_yaml = None  # type: ignore
+    pass
 
+# Optional dependency: pyfiglet for ASCII art (installed via extras: flujo[skills])
+_pyfiglet: Any = None
+try:  # pragma: no cover - optional dependency
+    import pyfiglet as _pyfiglet
+except Exception:
+    pass
 
 # Optional dependency: duckduckgo-search (installed via extras: flujo[skills])
 # Prefer async client if available; fall back to sync DDGS via thread pool.
@@ -793,10 +801,52 @@ async def return_yaml_for_cli(yaml_text: Any) -> Dict[str, str]:
     return {"generated_yaml": yaml_string, "yaml_text": yaml_string}
 
 
+# --- Welcome agent for new users ---
+async def welcome_agent(name: str = "Developer") -> str:
+    """
+    Return a welcome message, optionally with ASCII art when pyfiglet is available.
+
+    Gracefully degrades to plain text when pyfiglet (optional) is not installed
+    or if the configured font is unavailable.
+    """
+    welcome_header = f"Welcome, {name}!"
+
+    flujo_art = ""
+    if _pyfiglet:
+        try:
+            fig = _pyfiglet.Figlet(font="slant")
+            flujo_art = fig.renderText("Flujo")
+        except Exception:
+            # Fallback to plain text if font is missing or another error occurs
+            flujo_art = "F L U J O\n"
+
+    welcome_body = (
+        "\nYou have successfully run your first pipeline!\n\n"
+        "This is a simple workflow defined in `pipeline.yaml`.\n"
+        "You can edit it or create a new one from scratch by running:\n\n"
+        '  flujo create --goal "Your new workflow goal"\n\n'
+        "Happy building!\n"
+    )
+
+    return f"{welcome_header}\n\n{flujo_art}{welcome_body}"
+
+
 def _register_builtins() -> None:
     """Register builtin skills with the global registry."""
     try:
         reg = get_skill_registry()
+
+        # Welcome experience for new users
+        reg.register(
+            "flujo.builtins.welcome_agent",
+            lambda **_params: welcome_agent,
+            description="Returns a fun welcome message for new users.",
+            arg_schema={
+                "type": "object",
+                "properties": {"name": {"type": "string", "default": "Developer"}},
+            },
+            side_effects=False,
+        )
         # Factory accepts params to match YAML 'agent: { id: ..., params: {...} }'
         reg.register(
             "flujo.builtins.discover_skills",
