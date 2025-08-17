@@ -198,6 +198,58 @@ Set appropriate timeouts and retries at the **step level**, not in the agent def
 
 ## Step Design Patterns
 
+
+### 5. **Human-in-the-Loop (HITL) Gate**
+Use a HITL step to pause execution and wait for human approval or structured input. Keep schemas minimal and explicit to ensure valid resumes.
+
+```yaml
+- kind: hitl
+  name: get_user_approval
+  message: "Approve the generated plan? (yes/no)"
+  input_schema:
+    type: object
+    properties:
+      confirmation: { type: string, enum: ["yes", "no"] }
+      reason: { type: string }
+    required: [confirmation]
+- kind: conditional
+  name: check_approval
+  condition: "flujo.builtins.check_user_confirmation_sync"
+  branches:
+    approved:
+      - kind: step
+        name: proceed
+        uses: agents.executor
+    denied:
+      - kind: step
+        name: abort
+        uses: agents.logger
+```
+
+**Guidelines:**
+- Use `message` to provide short, actionable instructions.
+- Prefer JSON Schema for `input_schema`; the engine compiles it to a Pydantic model.
+- In conditionals, use the synchronous `check_user_confirmation_sync` for declarative YAML.
+
+### 6. **Cache Wrapper**
+Cache the result of expensive or rate-limited operations. Wrap only deterministic steps.
+
+```yaml
+- kind: cache
+  name: cached_summarize
+  wrapped_step:
+    kind: step
+    name: summarize
+    uses: agents.summarizer
+    input: "{{ context.article_text }}"
+```
+
+**Guidelines:**
+- Ensure the wrapped step is deterministic with respect to input.
+- Avoid caching steps that read external state without including it in the input.
+- Start with the default cache backend; consider storage/backends later if needed.
+
+
 ### 1. **Sequential Processing Pattern**
 For linear workflows where each step depends on the previous one.
 

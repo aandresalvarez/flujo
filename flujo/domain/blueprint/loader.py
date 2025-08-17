@@ -37,6 +37,7 @@ class BlueprintStepModel(BaseModel):
         "map",
         "dynamic_router",
         "hitl",
+        "cache",
     ] = Field(default="step")
     # Accept both 'name' and legacy 'step' keys for step name
     name: str = Field(validation_alias=AliasChoices("name", "step"))
@@ -75,6 +76,8 @@ class BlueprintStepModel(BaseModel):
     # HITL specific (optional)
     message: Optional[str] = None
     input_schema: Optional[Dict[str, Any]] = None
+    # Cache specific (optional)
+    wrapped_step: Optional[Dict[str, Any]] = None
 
     # ----------------------------
     # Field validators (compile-time safety for FSD-016 / Gap #9)
@@ -379,6 +382,20 @@ def _make_step_from_blueprint(
             input_schema=schema_model,
             config=step_config,
         )
+    elif model.kind == "cache":
+        # Declarative cache wrapper for inner step
+        from flujo.steps.cache_step import CacheStep as _CacheStep
+
+        if not model.wrapped_step:
+            raise BlueprintError("cache step requires 'wrapped_step'")
+        inner_spec = BlueprintStepModel.model_validate(model.wrapped_step)
+        inner_step = _make_step_from_blueprint(
+            inner_spec,
+            yaml_path=f"{yaml_path}.wrapped_step" if yaml_path else None,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+        )
+        return _CacheStep.cached(inner_step)
     else:
         # Simple step; resolve agent if provided, otherwise passthrough.
         agent_obj: Any = _PassthroughAgent()
@@ -585,7 +602,7 @@ def _build_pipeline_from_branch(
                     compiled_imports=compiled_imports,
                 )
             )
-        return Pipeline(steps=steps)
+        return Pipeline.model_construct(steps=steps)
     elif isinstance(branch_spec, dict):
         m = BlueprintStepModel.model_validate(branch_spec)
         return Pipeline.from_step(
@@ -615,7 +632,7 @@ def build_pipeline_from_blueprint(
                 compiled_imports=compiled_imports,
             )
         )
-    p = Pipeline(steps=steps)
+    p = Pipeline.model_construct(steps=steps)
     # Best-effort finalize types after Pipeline construction
     try:
         for st in p.steps:
@@ -720,6 +737,21 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                 except Exception:
                     pass
                 return hitl_data
+        except Exception:
+            pass
+        try:
+            # Pretty-print CacheStep as a first-class 'cache' kind
+            from flujo.steps.cache_step import CacheStep as _CacheStep
+
+            if isinstance(step, _CacheStep):
+                wrapped = getattr(step, "wrapped_step", None)
+                return {
+                    "kind": "cache",
+                    "name": getattr(step, "name", "cache"),
+                    "wrapped_step": step_to_yaml(wrapped)
+                    if wrapped is not None
+                    else {"kind": "step", "name": "step"},
+                }
         except Exception:
             pass
         return {"kind": "step", "name": getattr(step, "name", "step")}

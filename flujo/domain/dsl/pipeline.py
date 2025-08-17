@@ -13,7 +13,7 @@ from typing import (
     cast,
 )
 import logging
-from pydantic import ConfigDict
+from pydantic import ConfigDict, field_validator
 
 from ..pipeline_validation import ValidationFinding, ValidationReport
 from ..models import BaseModel
@@ -49,6 +49,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
+        "revalidate_instances": "never",
     }
 
     # ------------------------------------------------------------------
@@ -58,6 +59,18 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     @classmethod
     def from_step(cls, step: Step[PipeInT, PipeOutT]) -> "Pipeline[PipeInT, PipeOutT]":
         return cls.model_construct(steps=[step])
+
+    # Preserve concrete Step subclasses (e.g., CacheStep, HumanInTheLoopStep)
+    @field_validator("steps", mode="before")
+    @classmethod
+    def _preserve_step_subclasses(cls, v: Any) -> Any:
+        try:
+            if isinstance(v, (list, tuple)) and all(isinstance(s, Step) for s in v):
+                # Return as-is to avoid coercing subclass instances into base Step
+                return list(v)
+        except Exception:
+            pass
+        return v
 
     def __rshift__(
         self, other: Step[PipeOutT, NewPipeOutT] | "Pipeline[PipeOutT, NewPipeOutT]"

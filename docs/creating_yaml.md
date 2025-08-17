@@ -196,32 +196,29 @@ Let an agent decide which branches to execute at runtime.
 
 ### 7. Human-in-the-Loop Step (`kind: hitl`)
 
-Pause pipeline execution to wait for human input or approval.
+Pause pipeline execution to wait for human input or approval (supported in YAML).
 
 ```yaml
 - kind: hitl
   name: user_approval
-  message_for_user: "Please review and approve the generated content before proceeding"
-  input_schema: "myapp.schemas:ApprovalSchema" # Optional: validate human input
+  message: "Please review and approve the generated content before proceeding"
+  input_schema:
+    type: object
+    properties:
+      confirmation: { type: string, enum: ["yes", "no"] }
+      reasoning: { type: string }
+    required: [confirmation]
 ```
 
 **Use Cases:**
 - Content approval workflows, human validation steps, manual quality checks, and interactive decision points.
 
 **HITL Configuration:**
-- `message_for_user`: (Optional) A message to display to the user when the pipeline pauses.
-- `input_schema`: (Optional) A Pydantic model or import string to validate the human's response.
+- `message`: (Optional) Message to display when the pipeline pauses.
+- `input_schema`: (Optional) JSON Schema object used to validate the human response. Flujo compiles this to a Pydantic model internally.
 
-**Note:** HITL steps are currently only supported in the Python DSL. YAML support for `kind: hitl` is planned for future releases. For now, use the Python API to create HITL steps:
+When a `hitl` step runs, the pipeline pauses and records a message. Resume execution with the validated payload to continue.
 
-```python
-from flujo import Step
-
-hitl_step = Step.human_in_the_loop(
-    name="approval",
-    message_for_user="Please review and approve the generated content"
-)
-```
 
 ## Agent Definitions
 
@@ -428,7 +425,27 @@ Enhance steps with custom validation logic.
 4.  **Context Management:** Use `context_include_keys` in parallel steps to limit data copying and `updates_context` judiciously.
 5.  **Performance:** Use `parallel` and `map` steps for concurrent operations where appropriate.
 6.  **Security:** Restrict Python object imports via `blueprint_allowed_imports` in `flujo.toml`.
-7.  **Human-in-the-Loop:** Use HITL steps for approval workflows and manual validation, but note that YAML support is currently limited to the Python DSL.
+7.  **Human-in-the-Loop:** Use HITL steps for approval workflows and manual validation. Prefer small, explicit `input_schema` objects so resumes are predictable and validatable.
+
+### 8. Cache Step (`kind: cache`)
+
+Wrap a step to cache its result for identical inputs.
+
+```yaml
+- kind: cache
+  name: cached_stringify
+  wrapped_step:
+    kind: step
+    name: stringify
+    agent: { id: "flujo.builtins.stringify" }
+```
+
+**Use Cases:**
+- Expensive or rate-limited operations (LLM calls, remote APIs) where identical inputs recur.
+
+**Notes:**
+- The default cache backend is used unless configured otherwise.
+- Ensure the wrapped step is deterministic with respect to its input; avoid time-/random-dependent side effects.
 
 ## Running YAML Pipelines
 
