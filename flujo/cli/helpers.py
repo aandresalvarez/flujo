@@ -886,10 +886,60 @@ def display_pipeline_results(
     import json
 
     console = Console()
-    console.print("[bold green]Pipeline execution completed successfully![/bold green]")
+    # Detect paused state for HITL and tailor the header accordingly
+    paused = False
+    hitl_message = None
+    try:
+        ctx = getattr(result, "final_pipeline_context", None)
+        scratch = getattr(ctx, "scratchpad", None) if ctx is not None else None
+        if isinstance(scratch, dict) and scratch.get("status") == "paused":
+            paused = True
+            hitl_message = scratch.get("pause_message") or scratch.get("hitl_message")
+    except Exception:
+        paused = False
 
+    if paused:
+        console.print("[bold yellow]Pipeline execution paused.[/bold yellow]")
+        if hitl_message:
+            console.print(hitl_message)
+        # For paused runs, stop here to avoid confusing final report output
+        return
+    else:
+        console.print("[bold green]Pipeline execution completed successfully![/bold green]")
+
+    # Nicely render the final output: unwrap common wrappers and render Markdown when possible
     final_output = result.step_history[-1].output if result.step_history else None
-    console.print(f"[bold]Final output:[/bold] {final_output}")
+    try:
+        # Unwrap RootModel-like objects or simple containers
+        if hasattr(final_output, "value") and not isinstance(final_output, (str, bytes)):
+            final_output = getattr(final_output, "value")
+        elif isinstance(final_output, dict) and "value" in final_output and len(final_output) == 1:
+            final_output = final_output.get("value")
+        # Render Markdown when a string looks like MD (headings, lists, links, bold)
+        if isinstance(final_output, str):
+            from rich.markdown import Markdown as _Markdown
+
+            console.print("[bold]Final output:[/bold]")
+            console.print(_Markdown(final_output))
+        elif isinstance(final_output, bytes):
+            # Handle bytes safely by decoding to string
+            try:
+                decoded_output = final_output.decode("utf-8")
+                console.print(f"[bold]Final output:[/bold] {decoded_output}")
+            except UnicodeDecodeError:
+                console.print(f"[bold]Final output:[/bold] {final_output!r}")
+        else:
+            console.print(f"[bold]Final output:[/bold] {final_output}")
+    except Exception:
+        # Handle bytes safely in exception case too
+        if isinstance(final_output, bytes):
+            try:
+                decoded_output = final_output.decode("utf-8")
+                console.print(f"[bold]Final output:[/bold] {decoded_output}")
+            except UnicodeDecodeError:
+                console.print(f"[bold]Final output:[/bold] {final_output!r}")
+        else:
+            console.print(f"[bold]Final output:[/bold] {final_output}")
     console.print(f"[bold]Total cost:[/bold] ${result.total_cost_usd:.4f}")
 
     total_tokens = sum(s.token_counts for s in result.step_history)
@@ -1736,6 +1786,144 @@ async def echo_tool(x: str) -> str:
             secho("Created: " + ", ".join(sorted(created)), fg="cyan")
     else:
         secho("✅ Your new Flujo project has been initialized in this directory!", fg="green")
+
+
+def scaffold_demo_project(directory: Path, *, overwrite_existing: bool = False) -> None:
+    """Create a new Flujo demo project with a sample research pipeline."""
+    from typer import secho
+
+    directory = directory.resolve()
+    flujo_toml = directory / "flujo.toml"
+    pipeline_yaml = directory / "pipeline.yaml"
+    hidden_dir = directory / ".flujo"
+    skills_dir = directory / "skills"
+
+    if (
+        flujo_toml.exists() or pipeline_yaml.exists() or hidden_dir.exists()
+    ) and not overwrite_existing:
+        secho(
+            "Error: This directory already contains Flujo project files. Use --force to overwrite.",
+            fg="red",
+        )
+        raise Exit(1)
+
+    # Create directories
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    hidden_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write template files, tracking which files were created vs overwritten
+    created: list[str] = []
+    overwritten: list[str] = []
+
+    def _write(path: Path, content: str) -> None:
+        target = path
+        existed = target.exists()
+        target.write_text(content)
+        rel = str(target.relative_to(directory)) if target.is_file() else target.name
+        if existed:
+            overwritten.append(rel)
+        else:
+            created.append(rel)
+
+    # Content for the templates
+    flujo_toml_content = (
+        """
+# Flujo project configuration template
+
+ # Use project-local SQLite DB for lens, telemetry, and replay
+ state_uri = "sqlite:///.flujo/state.db"
+
+[settings]
+# default_solution_model = "gpt-4o-mini"
+# reflection_enabled = true
+
+# Centralized budgets (optional)
+[budgets]
+# [budgets.default]
+# total_cost_usd_limit = 5.0
+# total_tokens_limit = 100000
+""".strip()
+        + "\n"
+    )
+
+    demo_pipeline_content = (
+        """
+version: "0.1"
+name: "research_demo"
+
+agents:
+  result_formatter:
+    model: "openai:gpt-4o-mini"
+    system_prompt: |
+      You are a research assistant. You will be given a JSON object containing web search results.
+      Format these results into a clear, concise, and human-readable summary.
+      Present the title, a brief snippet, and the link for each result in a numbered list.
+      If the input is empty or contains no results, say "I couldn't find any information on that topic."
+    output_schema:
+      type: string
+
+steps:
+  - kind: hitl
+    name: get_research_topic
+    message: "What would you like to research on the web?"
+
+  - kind: step
+    name: perform_web_search
+    agent:
+      id: "flujo.builtins.web_search"
+      params:
+        max_results: 3
+    input: "{{ previous_step }}"
+
+  - kind: step
+    name: format_search_results
+    uses: agents.result_formatter
+    input: "{{ previous_step }}"
+""".strip()
+        + "\n"
+    )
+
+    skills_init_content = "# This marks the skills package for your project.\n"
+
+    custom_tools_content = (
+        """
+from __future__ import annotations
+
+
+# Example custom tool function
+async def echo_tool(x: str) -> str:
+    return x
+""".strip()
+        + "\n"
+    )
+
+    # Write the files
+    _write(flujo_toml, flujo_toml_content)
+    _write(pipeline_yaml, demo_pipeline_content)
+    _write(skills_dir / "__init__.py", skills_init_content)
+    _write(skills_dir / "custom_tools.py", custom_tools_content)
+
+    # Initialize SQLite DB at .flujo/state.db
+    try:
+        from flujo.state.backends.sqlite import SQLiteBackend
+
+        db_path = hidden_dir / "state.db"
+        backend = SQLiteBackend(db_path)
+        import asyncio as _asyncio
+
+        _asyncio.run(backend.list_runs(limit=1))
+    except Exception:
+        pass
+
+    if overwrite_existing and overwritten:
+        secho("✅ Re-initialized Flujo project with the demo pipeline.", fg="green")
+        if overwritten:
+            secho("Overwrote: " + ", ".join(sorted(overwritten)), fg="yellow")
+        if created:
+            secho("Created: " + ", ".join(sorted(created)), fg="cyan")
+    else:
+        secho("✅ Your new Flujo demo project is ready!", fg="green")
+        secho("To run the demo, execute: [bold]flujo run[/bold]", fg="cyan")
 
 
 def update_project_budget(flujo_toml_path: Path, pipeline_name: str, cost_limit: float) -> None:

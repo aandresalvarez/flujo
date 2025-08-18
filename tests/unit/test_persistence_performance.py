@@ -139,9 +139,9 @@ class TestPersistencePerformanceOverhead:
                 # Treat as acceptable jitter
                 assert True
             else:
-                assert (
-                    overhead_percentage <= overhead_limit
-                ), f"Default persistence overhead ({overhead_percentage:.2f}%) exceeds {overhead_limit}% limit"
+                assert overhead_percentage <= overhead_limit, (
+                    f"Default persistence overhead ({overhead_percentage:.2f}%) exceeds {overhead_limit}% limit"
+                )
 
         finally:
             # Clean up database files to prevent resource contention
@@ -248,9 +248,9 @@ class TestPersistencePerformanceOverhead:
             if delta_s < min_abs_delta_s:
                 assert True
             else:
-                assert (
-                    overhead_percentage <= overhead_limit
-                ), f"Persistence overhead with large context ({overhead_percentage:.2f}%) exceeds {overhead_limit}%"
+                assert overhead_percentage <= overhead_limit, (
+                    f"Persistence overhead with large context ({overhead_percentage:.2f}%) exceeds {overhead_limit}%"
+                )
 
             # Additional assertion to ensure the optimization is actually working
             if overhead_percentage > 20.0:
@@ -308,9 +308,9 @@ class TestPersistencePerformanceOverhead:
 
                 # For large contexts, serialization should be reasonably fast
                 if size_name == "large":
-                    assert (
-                        serialization_time < 0.1
-                    ), f"Large context serialization too slow: {serialization_time:.6f}s"
+                    assert serialization_time < 0.1, (
+                        f"Large context serialization too slow: {serialization_time:.6f}s"
+                    )
 
             finally:
                 # Clean up
@@ -687,9 +687,9 @@ class TestPersistencePerformanceOverhead:
                 if "|" in key:
                     parts = key.rsplit("|", 1)
                     assert len(parts) == 2, f"Invalid cache key format: {key}"
-                    assert (
-                        len(parts[1]) == 32
-                    ), f"Context hash should be 32 chars: {parts[1]}"  # MD5 hash length
+                    assert len(parts[1]) == 32, (
+                        f"Context hash should be 32 chars: {parts[1]}"
+                    )  # MD5 hash length
 
         finally:
             # Clean up
@@ -874,9 +874,9 @@ class TestCLIPerformance:
 
         # Use standardized threshold configuration
         threshold = self.get_cli_performance_threshold()
-        assert (
-            execution_time < threshold
-        ), f"`flujo lens list` took {execution_time:.3f}s, exceeds {threshold}s limit"
+        assert execution_time < threshold, (
+            f"`flujo lens list` took {execution_time:.3f}s, exceeds {threshold}s limit"
+        )
 
     @pytest.mark.slow
     def test_lens_show_performance(self, large_database: Path) -> None:
@@ -908,9 +908,9 @@ class TestCLIPerformance:
 
         # Use standardized threshold configuration
         threshold = self.get_cli_performance_threshold()
-        assert (
-            execution_time < threshold
-        ), f"`flujo lens show` took {execution_time:.3f}s, exceeds {threshold}s limit"
+        assert execution_time < threshold, (
+            f"`flujo lens show` took {execution_time:.3f}s, exceeds {threshold}s limit"
+        )
 
     @pytest.mark.slow
     def test_lens_list_with_filters_performance(self, large_database: Path) -> None:
@@ -942,9 +942,9 @@ class TestCLIPerformance:
 
         # Use standardized threshold configuration
         threshold = self.get_cli_performance_threshold()
-        assert (
-            execution_time < threshold
-        ), f"`flujo lens list --status completed` took {execution_time:.3f}s, exceeds {threshold}s limit"
+        assert execution_time < threshold, (
+            f"`flujo lens list --status completed` took {execution_time:.3f}s, exceeds {threshold}s limit"
+        )
 
     @pytest.mark.slow
     def test_lens_show_nonexistent_run_performance(self, large_database: Path) -> None:
@@ -968,8 +968,8 @@ class TestCLIPerformance:
 
         # Use a configurable threshold for CI environments (faster for nonexistent runs)
         PERFORMANCE_THRESHOLD = float(os.environ.get("FLUJO_CLI_PERF_THRESHOLD", "0.2"))
-        assert (
-            execution_time < PERFORMANCE_THRESHOLD
-        ), f"`flujo lens show` for nonexistent run took {execution_time:.3f}s, should be very fast"
+        assert execution_time < PERFORMANCE_THRESHOLD, (
+            f"`flujo lens show` for nonexistent run took {execution_time:.3f}s, should be very fast"
+        )
         # Should exit with error code for nonexistent run
         assert result.exit_code != 0, "Should fail for nonexistent run"

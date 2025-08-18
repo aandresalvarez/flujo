@@ -17,6 +17,7 @@ Usage: root [OPTIONS] COMMAND [ARGS]...
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────╮
 │ init       ✨ Initialize a new Flujo workflow project in this directory.     │
+│ demo       🌟 Create a demo project with a sample research pipeline.         │
 │ create     🤖 Start a conversation with the AI Architect to build your       │
 │            workflow.                                                         │
 │ run        🚀 Run the workflow in the current project.                       │

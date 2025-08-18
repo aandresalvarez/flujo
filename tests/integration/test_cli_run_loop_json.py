@@ -19,9 +19,9 @@ def test_cli_run_loop_step_json_nested_history():
     result = runner.invoke(
         app, ["run", PIPELINE_FILE, "--input", "Write a sentence about Python.", "--json"]
     )
-    assert (
-        result.exit_code == 0
-    ), f"CLI exited non-zero: {result.exit_code}\n{result.stdout}\n{result.stderr}"
+    assert result.exit_code == 0, (
+        f"CLI exited non-zero: {result.exit_code}\n{result.stdout}\n{result.stderr}"
+    )
     # Parse JSON output
     data = json.loads(result.stdout)
     # Find the loop step by name

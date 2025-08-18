@@ -279,7 +279,7 @@ class ExecutionManager(Generic[ContextT]):
                                 # Unknown outcome: ignore
                                 pass
                         elif isinstance(item, StepResult):
-                            # Legacy path
+                            # Legacy path: just capture for later bookkeeping; do not forward paused records
                             step_result = item
                         else:
                             # Legacy streaming chunk; forward as-is
@@ -483,6 +483,8 @@ class ExecutionManager(Generic[ContextT]):
                             # Only set paused if not already set by lower layers
                             if scratch.get("status") != "paused":
                                 scratch["status"] = "paused"
+                            if not scratch.get("pause_message"):
+                                scratch["pause_message"] = "Paused for HITL"
                     except Exception:
                         pass
                     # Persist paused state for stateful HITL

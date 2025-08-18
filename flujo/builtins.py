@@ -29,15 +29,30 @@ try:  # pragma: no cover - optional dependency
 except Exception:
     pass
 
-# Optional dependency: duckduckgo-search (installed via extras: flujo[skills])
-# Prefer async client if available; fall back to sync DDGS via thread pool.
+# Optional dependency: web search client (ddgs preferred; fallback to duckduckgo_search)
+# Prefer async client if available; otherwise use sync DDGS in a thread pool.
 _DDGSAsync: Optional[Type[Any]] = None
 _DDGS_CLASS: Optional[Type[Any]] = None
 try:  # pragma: no cover - optional dependency
-    import duckduckgo_search as _dds
+    _ddgs_module = None
+    try:
+        import ddgs
 
-    _async = getattr(_dds, "AsyncDDGS", None)
-    _sync = getattr(_dds, "DDGS", None)
+        _ddgs_module = ddgs
+    except Exception:
+        try:
+            import duckduckgo_search  # deprecated upstream, kept for compatibility
+
+            _ddgs_module = duckduckgo_search
+        except Exception:
+            pass
+
+    if _ddgs_module is not None:
+        _async = getattr(_ddgs_module, "AsyncDDGS", None)
+        _sync = getattr(_ddgs_module, "DDGS", None)
+    else:
+        _async = None
+        _sync = None
     if _async is not None:
         _DDGSAsync = _async
     if _sync is not None:
@@ -1204,9 +1219,18 @@ def _register_builtins() -> None:
                 if _DDGSAsync is not None:
                     # Use async client when available
                     async with _DDGSAsync() as ddgs:
-                        async for r in ddgs.text(query, max_results=max_results):
-                            if isinstance(r, dict):
-                                results.append(r)
+                        agen = None
+                        try:
+                            agen = ddgs.text(query, max_results=max_results)  # duckduckgo_search
+                        except Exception:
+                            try:
+                                agen = ddgs.atext(query, max_results=max_results)  # ddgs
+                            except Exception:
+                                agen = None
+                        if agen is not None:
+                            async for r in agen:
+                                if isinstance(r, dict):
+                                    results.append(r)
                 else:
                     # Use DDGS in a thread pool since sync
                     import asyncio
@@ -1216,7 +1240,12 @@ def _register_builtins() -> None:
                         assert _DDGS_CLASS is not None
                         ddgs = _DDGS_CLASS()
                         search_results: List[Dict[str, Any]] = []
-                        for r in ddgs.text(query, max_results=max_results):
+                        try:
+                            iterable = ddgs.text(query, max_results=max_results)
+                        except Exception:
+                            # Some versions expect 'max_results' or 'max_results' under different name (e.g., 'max_results')
+                            iterable = ddgs.text(query, max_results=max_results)
+                        for r in iterable:
                             if isinstance(r, dict):
                                 search_results.append(r)
                         return search_results
@@ -1228,14 +1257,19 @@ def _register_builtins() -> None:
                 # Non-fatal: return empty results on any search error
                 return []
 
-            simplified = [
-                {
-                    "title": item.get("title"),
-                    "link": item.get("href"),
-                    "snippet": item.get("body"),
-                }
-                for item in results
-            ]
+            simplified: List[Dict[str, Any]] = []
+            for item in results:
+                try:
+                    title = item.get("title") if isinstance(item, dict) else None
+                    link = None
+                    snippet = None
+                    if isinstance(item, dict):
+                        # Support both ddgs and duckduckgo_search field names
+                        link = item.get("href") or item.get("link")
+                        snippet = item.get("body") or item.get("snippet")
+                    simplified.append({"title": title, "link": link, "snippet": snippet})
+                except Exception:
+                    continue
             return simplified
 
         reg.register(

@@ -426,9 +426,9 @@ class TestOptimizationPerformanceRegression:
         # For simple operations, optimized executor may be slower due to overhead
         # This is expected behavior - optimizations benefit complex workloads
         # Allow up to 25x slower for simple operations in test environment (increased from 10x)
-        assert (
-            optimized_time < standard_time * 25.0
-        ), f"Optimized executor too slow: {optimized_time:.4f}s vs {standard_time:.4f}s"
+        assert optimized_time < standard_time * 25.0, (
+            f"Optimized executor too slow: {optimized_time:.4f}s vs {standard_time:.4f}s"
+        )
 
         print(
             f"Performance comparison: Standard={standard_time:.6f}s, Optimized={optimized_time:.6f}s"
@@ -457,9 +457,9 @@ class TestOptimizationPerformanceRegression:
         memory_increase = final_memory - initial_memory
 
         # Memory increase should be reasonable (less than 50MB for 10 executions)
-        assert (
-            memory_increase < 50 * 1024 * 1024
-        ), f"Excessive memory usage: {memory_increase / 1024 / 1024:.2f}MB increase"
+        assert memory_increase < 50 * 1024 * 1024, (
+            f"Excessive memory usage: {memory_increase / 1024 / 1024:.2f}MB increase"
+        )
 
     @pytest.mark.asyncio
     async def test_concurrent_execution_performance(self, performance_step, performance_data):

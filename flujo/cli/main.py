@@ -38,6 +38,7 @@ from .helpers import (
     load_pipeline_from_file,
     find_project_root,
     scaffold_project,
+    scaffold_demo_project,
     update_project_budget,
 )
 import click.testing
@@ -185,6 +186,51 @@ def init(
             scaffold_project(_Path.cwd())
     except Exception as e:
         typer.secho(f"Failed to initialize project: {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
+@app.command(
+    help=(
+        "🌟 Create a demo project with a sample research pipeline.\n\n"
+        "This command initializes a new project (like `flujo init`) but with a more advanced `pipeline.yaml` "
+        "that demonstrates agents, tools, and human-in-the-loop steps."
+    )
+)
+def demo(
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help=("Scaffold the demo project even if the directory already contains Flujo files."),
+        ),
+    ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes",
+            "-y",
+            help="Skip confirmation prompts when using --force",
+        ),
+    ] = False,
+) -> None:
+    """Creates a new Flujo demo project in the current directory."""
+    try:
+        from pathlib import Path as _Path
+
+        if force:
+            if not yes:
+                proceed = typer.confirm(
+                    "This directory may already contain a Flujo project. Re-scaffold with demo files?",
+                    default=False,
+                )
+                if not proceed:
+                    raise typer.Exit(0)
+            scaffold_demo_project(_Path.cwd(), overwrite_existing=True)
+        else:
+            scaffold_demo_project(_Path.cwd())
+    except Exception as e:
+        typer.secho(f"Failed to create demo project: {e}", fg=typer.colors.RED)
         raise typer.Exit(1)
 
 
@@ -581,6 +627,21 @@ def create(
     step-level `config.timeout` (alias to `timeout_s`) for plugin/validator phases.
     """
     try:
+        # Make --debug effective even if passed after the command name (Click quirk)
+        try:
+            _ctx = click.get_current_context(silent=True)
+            if _ctx is not None and any(arg in getattr(_ctx, "args", []) for arg in ("--debug",)):
+                import logging as _logging
+                import os as _os
+
+                _logger = _logging.getLogger("flujo")
+                _logger.setLevel(_logging.INFO)
+                try:
+                    _os.environ["FLUJO_DEBUG"] = "1"
+                except Exception:
+                    pass
+        except Exception:
+            pass
         # Conditional logging: silence internal logs for end users unless --debug
         import logging as _logging
         import warnings as _warnings
@@ -594,6 +655,12 @@ def create(
         if not debug:
             _flujo_logger.setLevel(_logging.CRITICAL)
             _httpx_logger.setLevel(_logging.WARNING)
+        else:
+            # Ensure flujo logger emits INFO when --debug is passed
+            try:
+                _flujo_logger.setLevel(_logging.INFO)
+            except Exception:
+                pass
             # Suppress specific runner warnings for a clean UX
             try:
                 _warnings.filterwarnings("ignore", message="pipeline_name was not provided.*")
@@ -1241,6 +1308,35 @@ def run(
             json_output=json_output,
         )
 
+        # Interactive HITL resume loop: if paused and in TTY, prompt and resume
+        if not json_output:
+            try:
+                import sys as _sys
+                import asyncio as _asyncio
+
+                def _is_paused(_res: Any) -> tuple[bool, str | None]:
+                    try:
+                        ctx = getattr(_res, "final_pipeline_context", None)
+                        scratch = getattr(ctx, "scratchpad", None) if ctx is not None else None
+                        if isinstance(scratch, dict) and scratch.get("status") == "paused":
+                            return True, (
+                                scratch.get("pause_message") or scratch.get("hitl_message")
+                            )
+                    except Exception:
+                        pass
+                    return False, None
+
+                paused, msg = _is_paused(result)
+                while paused and _sys.stdin.isatty():
+                    prompt_msg = msg or "Provide input to resume:"
+                    human = typer.prompt(prompt_msg)
+                    # Resume via runner
+                    result = _asyncio.run(runner.resume_async(result, human))
+                    paused, msg = _is_paused(result)
+            except Exception:
+                # If resume fails, fall through to normal display (will show paused message)
+                pass
+
         # Handle output
         if json_output:
             typer.echo(result)
@@ -1416,6 +1512,40 @@ def main(
         except Exception:
             # Never fail CLI due to logging setup issues
             pass
+    # Quiet by default: reduce console noise unless --debug
+    try:
+        import logging as _logging
+        import os as _os
+
+        _logger = _logging.getLogger("flujo")
+        if debug:
+            # Propagate debug intent to runtime via env for internal warnings gates
+            try:
+                _os.environ["FLUJO_DEBUG"] = "1"
+            except Exception:
+                pass
+            _logger.setLevel(_logging.INFO)
+            for h in list(_logger.handlers):
+                try:
+                    h.setLevel(_logging.INFO)
+                except Exception:
+                    pass
+        else:
+            # Ensure flag is not set when not debugging
+            try:
+                if _os.environ.get("FLUJO_DEBUG"):
+                    del _os.environ["FLUJO_DEBUG"]
+            except Exception:
+                pass
+            _logger.setLevel(_logging.WARNING)
+            for h in list(_logger.handlers):
+                # Keep error handler; downgrade others to WARNING
+                try:
+                    h.setLevel(_logging.WARNING)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
 
 # Explicit exports

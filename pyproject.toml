@@ -69,7 +69,7 @@ dev = [
   "httpx",  # Required for prometheus integration tests
 ]
 skills = [
-  "duckduckgo-search",
+  "ddgs",
   "httpx",
   "aiofiles",
   "pyfiglet",
@@ -136,6 +136,7 @@ module = [
     "tenacity",
     "yaml",
     "duckduckgo_search",
+    "ddgs",
     "tomli",
     "sqlvalidator",
     "vcr",

@@ -197,12 +197,12 @@ class TestExecutorCorePerformance:
 
         # Performance assertions
         threshold = get_performance_threshold(0.01)  # 10ms base threshold
-        assert (
-            stats["mean"] < threshold
-        ), f"Mean execution time {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
-        assert (
-            stats["p95"] < threshold * 2
-        ), f"P95 execution time {stats['p95']:.6f}s exceeds threshold {threshold * 2:.6f}s"
+        assert stats["mean"] < threshold, (
+            f"Mean execution time {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        )
+        assert stats["p95"] < threshold * 2, (
+            f"P95 execution time {stats['p95']:.6f}s exceeds threshold {threshold * 2:.6f}s"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -231,9 +231,9 @@ class TestExecutorCorePerformance:
 
         # Memory should not increase excessively
         threshold = get_performance_threshold(50.0)  # 50MB base threshold
-        assert (
-            memory_increase < threshold
-        ), f"Memory increase {memory_increase:.2f}MB exceeds threshold {threshold:.2f}MB"
+        assert memory_increase < threshold, (
+            f"Memory increase {memory_increase:.2f}MB exceeds threshold {threshold:.2f}MB"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -261,9 +261,9 @@ class TestExecutorCorePerformance:
 
         # Concurrent execution should be efficient
         threshold = get_performance_threshold(1.0)  # 1s base threshold
-        assert (
-            stats["mean"] < threshold
-        ), f"Concurrent execution time {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        assert stats["mean"] < threshold, (
+            f"Concurrent execution time {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -293,9 +293,9 @@ class TestExecutorCorePerformance:
         # This is acceptable for microsecond-level operations where cache overhead dominates
         # The real benefit of caching comes with slower operations (API calls, etc.)
         min_speedup = 0.8  # Allow 20% overhead for very fast operations
-        assert (
-            cache_speedup >= min_speedup
-        ), f"Cache speedup {cache_speedup:.2f}x should be at least {min_speedup:.1f}x (allowing overhead for fast operations)"
+        assert cache_speedup >= min_speedup, (
+            f"Cache speedup {cache_speedup:.2f}x should be at least {min_speedup:.1f}x (allowing overhead for fast operations)"
+        )
 
         # Log the performance for analysis
         print("Cache performance analysis:")
@@ -335,9 +335,9 @@ class TestExecutorCorePerformance:
 
         # Context overhead should be minimal
         max_overhead_percentage = get_performance_threshold(50.0)  # 50% base threshold
-        assert (
-            overhead_percentage < max_overhead_percentage
-        ), f"Context overhead {overhead_percentage:.1f}% exceeds threshold {max_overhead_percentage:.1f}%"
+        assert overhead_percentage < max_overhead_percentage, (
+            f"Context overhead {overhead_percentage:.1f}% exceeds threshold {max_overhead_percentage:.1f}%"
+        )
 
 
 class TestComponentPerformance:
@@ -359,9 +359,9 @@ class TestComponentPerformance:
         print(f"P95: {stats['p95']:.6f}s")
 
         threshold = get_performance_threshold(0.005)  # 5ms base threshold
-        assert (
-            stats["mean"] < threshold
-        ), f"Agent runner performance {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        assert stats["mean"] < threshold, (
+            f"Agent runner performance {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -386,9 +386,9 @@ class TestComponentPerformance:
         print(f"P95: {stats['p95']:.6f}s")
 
         threshold = get_performance_threshold(0.01)  # 10ms base threshold
-        assert (
-            stats["mean"] < threshold
-        ), f"Processor pipeline performance {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        assert stats["mean"] < threshold, (
+            f"Processor pipeline performance {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -412,9 +412,9 @@ class TestComponentPerformance:
         print(f"P95: {stats['p95']:.6f}s")
 
         threshold = get_performance_threshold(0.01)  # 10ms base threshold
-        assert (
-            stats["mean"] < threshold
-        ), f"Validator runner performance {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        assert stats["mean"] < threshold, (
+            f"Validator runner performance {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -438,9 +438,9 @@ class TestComponentPerformance:
         print(f"P95: {stats['p95']:.6f}s")
 
         threshold = get_performance_threshold(0.01)  # 10ms base threshold
-        assert (
-            stats["mean"] < threshold
-        ), f"Plugin runner performance {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        assert stats["mean"] < threshold, (
+            f"Plugin runner performance {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        )
 
 
 class TestMemoryManagement:
@@ -474,9 +474,9 @@ class TestMemoryManagement:
 
         # Memory increase should be reasonable
         threshold = get_performance_threshold(100.0)  # 100MB base threshold
-        assert (
-            memory_increase < threshold
-        ), f"Memory increase {memory_increase:.2f}MB exceeds threshold {threshold:.2f}MB"
+        assert memory_increase < threshold, (
+            f"Memory increase {memory_increase:.2f}MB exceeds threshold {threshold:.2f}MB"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -510,9 +510,9 @@ class TestMemoryManagement:
 
             # GC impact should be minimal
             max_impact_percentage = get_performance_threshold(25.0)  # 25% base threshold
-            assert (
-                impact_percentage < max_impact_percentage
-            ), f"GC impact {impact_percentage:.1f}% exceeds threshold {max_impact_percentage:.1f}%"
+            assert impact_percentage < max_impact_percentage, (
+                f"GC impact {impact_percentage:.1f}% exceeds threshold {max_impact_percentage:.1f}%"
+            )
 
         finally:
             gc.enable()
@@ -547,9 +547,9 @@ class TestMemoryManagement:
 
             # Memory growth should be minimal
             max_growth_per_iteration = get_performance_threshold(0.1)  # 0.1MB per iteration
-            assert (
-                growth_per_iteration < max_growth_per_iteration
-            ), f"Memory growth {growth_per_iteration:.3f}MB per iteration exceeds threshold {max_growth_per_iteration:.3f}MB"
+            assert growth_per_iteration < max_growth_per_iteration, (
+                f"Memory growth {growth_per_iteration:.3f}MB per iteration exceeds threshold {max_growth_per_iteration:.3f}MB"
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -574,9 +574,9 @@ class TestMemoryManagement:
 
         # Basic performance assertion
         threshold = get_performance_threshold(0.01)  # 10ms base threshold
-        assert (
-            stats["mean"] < threshold
-        ), f"Object pooling baseline {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        assert stats["mean"] < threshold, (
+            f"Object pooling baseline {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        )
 
 
 class TestAdvancedComponentPerformance:
@@ -606,9 +606,9 @@ class TestAdvancedComponentPerformance:
 
             # Larger data should still be reasonably fast
             threshold = get_performance_threshold(0.02)  # 20ms base threshold
-            assert (
-                stats["mean"] < threshold
-            ), f"Serialization performance for {size_name} data {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            assert stats["mean"] < threshold, (
+                f"Serialization performance for {size_name} data {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -634,9 +634,9 @@ class TestAdvancedComponentPerformance:
             print(f"P95: {stats['p95']:.6f}s")
 
             threshold = get_performance_threshold(0.01)  # 10ms base threshold
-            assert (
-                stats["mean"] < threshold
-            ), f"Hash computation performance for test {i + 1} {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            assert stats["mean"] < threshold, (
+                f"Hash computation performance for test {i + 1} {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -670,9 +670,9 @@ class TestAdvancedComponentPerformance:
             print(f"P95: {stats['p95']:.6f}s")
 
             threshold = get_performance_threshold(0.015)  # 15ms base threshold
-            assert (
-                stats["mean"] < threshold
-            ), f"Cache key generation performance for scenario {i + 1} {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            assert stats["mean"] < threshold, (
+                f"Cache key generation performance for scenario {i + 1} {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -704,9 +704,9 @@ class TestAdvancedComponentPerformance:
             print(f"P95: {stats['p95']:.6f}s")
 
             threshold = get_performance_threshold(0.02)  # 20ms base threshold
-            assert (
-                stats["mean"] < threshold
-            ), f"Context copying performance for {size_name} context {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            assert stats["mean"] < threshold, (
+                f"Context copying performance for {size_name} context {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            )
 
 
 class TestConcurrencyPerformance:
@@ -745,9 +745,9 @@ class TestConcurrencyPerformance:
 
             # Higher limits should generally perform better
             threshold = get_performance_threshold(2.0)  # 2s base threshold
-            assert (
-                stats["mean"] < threshold
-            ), f"Semaphore contention performance with limit {limit} {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            assert stats["mean"] < threshold, (
+                f"Semaphore contention performance with limit {limit} {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -785,9 +785,9 @@ class TestConcurrencyPerformance:
             print(f"P95: {stats['p95']:.6f}s")
 
             threshold = get_performance_threshold(1.5)  # 1.5s base threshold
-            assert (
-                stats["mean"] < threshold
-            ), f"Task scheduling performance for {pattern['name']} pattern {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            assert stats["mean"] < threshold, (
+                f"Task scheduling performance for {pattern['name']} pattern {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -814,9 +814,9 @@ class TestConcurrencyPerformance:
         print(f"P95: {stats['p95']:.6f}s")
 
         threshold = get_performance_threshold(1.0)  # 1s base threshold
-        assert (
-            stats["mean"] < threshold
-        ), f"Resource contention performance {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        assert stats["mean"] < threshold, (
+            f"Resource contention performance {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+        )
 
 
 class TestScalabilityBenchmarks:
@@ -867,9 +867,9 @@ class TestScalabilityBenchmarks:
 
             # Scaling should be reasonable (not more than 3x degradation)
             max_scaling_factor = get_performance_threshold(3.0)
-            assert (
-                scaling_factor < max_scaling_factor
-            ), f"Scaling factor {scaling_factor:.2f}x exceeds threshold {max_scaling_factor:.2f}x"
+            assert scaling_factor < max_scaling_factor, (
+                f"Scaling factor {scaling_factor:.2f}x exceeds threshold {max_scaling_factor:.2f}x"
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -903,9 +903,9 @@ class TestScalabilityBenchmarks:
 
             # Memory per execution should be reasonable
             max_memory_per_execution = get_performance_threshold(0.5)  # 0.5MB per execution
-            assert (
-                memory_per_execution < max_memory_per_execution
-            ), f"Memory per execution {memory_per_execution:.3f}MB exceeds threshold {max_memory_per_execution:.3f}MB"
+            assert memory_per_execution < max_memory_per_execution, (
+                f"Memory per execution {memory_per_execution:.3f}MB exceeds threshold {max_memory_per_execution:.3f}MB"
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -937,6 +937,6 @@ class TestScalabilityBenchmarks:
 
             # Cache hits should remain fast regardless of cache size
             threshold = get_performance_threshold(0.001)  # 1ms base threshold
-            assert (
-                stats["mean"] < threshold
-            ), f"Cache hit performance with size {cache_size} {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            assert stats["mean"] < threshold, (
+                f"Cache hit performance with size {cache_size} {stats['mean']:.6f}s exceeds threshold {threshold:.6f}s"
+            )

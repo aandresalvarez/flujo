@@ -490,7 +490,7 @@ class SQLiteBackend(StateBackend):
                 await self._create_indexes(db)
 
                 await db.commit()
-                telemetry.logfire.info(f"Initialized SQLite database at {self.db_path}")
+                telemetry.logfire.debug(f"Initialized SQLite database at {self.db_path}")
 
         except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
             # If we get a database error during initialization, try to backup and retry
@@ -947,7 +947,7 @@ class SQLiteBackend(StateBackend):
                         ),
                     )
                     await db.commit()
-                    telemetry.logfire.info(f"Saved state for run_id={run_id}")
+                    telemetry.logfire.debug(f"Saved state for run_id={run_id}")
 
             await self._with_retries(_save)
 

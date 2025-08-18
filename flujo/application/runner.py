@@ -222,9 +222,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             pipeline_name = f"unnamed_{timestamp}"
 
-            # Only warn in production environments, not in tests
-            if not get_settings().test_mode and not any(
-                path in os.getcwd() for path in ["/tests/", "\\tests\\", "test_"]
+            # Only warn in production environments, not in tests; and only when debug is enabled
+            if (
+                not get_settings().test_mode
+                and not any(path in os.getcwd() for path in ["/tests/", "\\tests\\", "test_"])
+                and str(os.getenv("FLUJO_DEBUG", "")).lower() in {"1", "true", "yes", "on"}
             ):
                 warnings.warn(
                     "pipeline_name was not provided. Generated name based on timestamp: {}. This is discouraged for production runs.".format(
@@ -236,9 +238,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         if pipeline_id is None:
             pipeline_id = str(uuid.uuid4())
 
-            # Only warn in production environments, not in tests
-            if not get_settings().test_mode and not any(
-                path in os.getcwd() for path in ["/tests/", "\\tests\\", "test_"]
+            # Only warn in production environments, not in tests; and only when debug is enabled
+            if (
+                not get_settings().test_mode
+                and not any(path in os.getcwd() for path in ["/tests/", "\\tests\\", "test_"])
+                and str(os.getenv("FLUJO_DEBUG", "")).lower() in {"1", "true", "yes", "on"}
             ):
                 warnings.warn(
                     "pipeline_id was not provided. Generated unique id: {}. This is discouraged for production runs.".format(
@@ -710,7 +714,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 pass
             return
         except PipelineAbortSignal as e:
-            telemetry.logfire.info(str(e))
+            telemetry.logfire.debug(str(e))
             paused = True
         except (UsageLimitExceededError, PricingNotConfiguredError) as e:
             if current_context_instance is not None:
@@ -811,7 +815,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 # Don't execute hooks if we're being cancelled
                 telemetry.logfire.info("Skipping post_run hook due to cancellation")
             except PipelineAbortSignal as e:
-                telemetry.logfire.info(str(e))
+                # Quiet by default; only surface on --debug
+                telemetry.logfire.debug(str(e))
 
         yield pipeline_result_obj
         return
@@ -902,7 +907,17 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     step_result=last_step_result,
                 )
         else:
-            # Synthesize a minimal final result when no steps ran
+            # If paused context exists, emit Paused; otherwise synthesize minimal success
+            try:
+                ctx = pipeline_result_obj.final_pipeline_context
+                if isinstance(ctx, PipelineContext):
+                    status = ctx.scratchpad.get("status") if hasattr(ctx, "scratchpad") else None
+                    if status == "paused":
+                        msg = ctx.scratchpad.get("pause_message")
+                        yield Paused(message=msg or "Paused for HITL")
+                        return
+            except Exception:
+                pass
             yield Success(step_result=StepResult(name="<no-steps>", success=True))
 
     async def stream_async(
@@ -1074,7 +1089,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             pass
 
         if isinstance(paused_step, _HITL):
-            paused_result.step_history.append(paused_step_result)
+            # Replace the prior paused-failure record for this HITL step, if present
+            if paused_result.step_history:
+                last = paused_result.step_history[-1]
+                if last.name == paused_step.name and not last.success:
+                    paused_result.step_history[-1] = paused_step_result
+                else:
+                    paused_result.step_history.append(paused_step_result)
+            else:
+                paused_result.step_history.append(paused_step_result)
             # If the paused step updates context, merge the human_input output into context before next step
             try:
                 if getattr(paused_step, "updates_context", False) and isinstance(
