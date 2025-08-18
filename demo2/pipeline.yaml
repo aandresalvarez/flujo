@@ -22,7 +22,7 @@ steps:
     agent:
       id: "flujo.builtins.web_search"
       params:
-        max_results: 3
+        max_results: 4
     input: "{{ previous_step }}"
 
   - kind: step

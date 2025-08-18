@@ -485,9 +485,9 @@ def test_lens_trace_command_regression_timestamps(tmp_path: Path) -> None:
         result = runner.invoke(app, ["lens", "trace", run_id])
         assert result.exit_code in [0, 1]
         for expected in expected_in_output:
-            assert expected in result.stdout, (
-                f"Expected '{expected}' in output. Got: {result.stdout}"
-            )
+            assert (
+                expected in result.stdout
+            ), f"Expected '{expected}' in output. Got: {result.stdout}"
 
     # 1. Normal float timestamps
     run_id1 = "trace_regression_1"

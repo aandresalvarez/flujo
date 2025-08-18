@@ -796,6 +796,26 @@ def create_flujo_runner(
     from flujo.cli.main import Flujo
     from flujo.domain.models import PipelineContext
 
+    # Try to propagate a meaningful pipeline_name to enable budget resolution from flujo.toml
+    try:
+        inferred_name = getattr(pipeline, "name", None)
+        if not isinstance(inferred_name, str) or not inferred_name.strip():
+            inferred_name = None
+    except Exception:
+        inferred_name = None
+
+    # Resolve usage limits from flujo.toml so budgets apply even if runner fallback fails
+    usage_limits_arg = None
+    try:
+        from flujo.infra.config_manager import ConfigManager
+        from flujo.infra.budget_resolver import resolve_limits_for_pipeline as _resolve
+
+        cfg = ConfigManager().load_config()
+        pname = inferred_name or ""
+        usage_limits_arg, _src = _resolve(getattr(cfg, "budgets", None), pname)
+    except Exception:
+        usage_limits_arg = None
+
     if context_model_class is not None:
         # Use custom context model with proper typing
         runner = Flujo[Any, Any, PipelineContext](
@@ -803,6 +823,8 @@ def create_flujo_runner(
             context_model=context_model_class,
             initial_context_data=initial_context_data,
             state_backend=state_backend,
+            pipeline_name=inferred_name,
+            usage_limits=usage_limits_arg,
         )
     else:
         # Use default PipelineContext
@@ -811,6 +833,8 @@ def create_flujo_runner(
             context_model=None,
             initial_context_data=initial_context_data,
             state_backend=state_backend,
+            pipeline_name=inferred_name,
+            usage_limits=usage_limits_arg,
         )
 
     return runner

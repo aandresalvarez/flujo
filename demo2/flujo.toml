@@ -9,6 +9,6 @@
 
 # Centralized budgets (optional)
 [budgets]
-# [budgets.default]
+[budgets.default]
 # total_cost_usd_limit = 5.0
-total_tokens_limit = 200 
+total_tokens_limit = 20

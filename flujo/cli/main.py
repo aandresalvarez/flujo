@@ -10,6 +10,7 @@ from pathlib import Path
 from importlib import resources as importlib_resources
 from flujo.infra.config_manager import get_cli_defaults as _get_cli_defaults
 from flujo.exceptions import ConfigurationError, SettingsError
+from flujo.exceptions import UsageLimitExceededError
 from flujo.infra import telemetry
 import flujo.builtins as _flujo_builtins  # noqa: F401  # Register builtin skills on CLI import
 from typing_extensions import Annotated
@@ -1343,6 +1344,26 @@ def run(
         else:
             display_pipeline_results(result, run_id, json_output)
 
+    except UsageLimitExceededError as e:
+        # Friendly budget exceeded messaging with partial results if available
+        try:
+            from rich.console import Console
+            from rich.panel import Panel
+
+            console = Console()
+            msg = str(e) or "Usage limits exceeded"
+            console.print(
+                Panel.fit(f"[bold red]Budget exceeded[/bold red]\n{msg}", border_style="red")
+            )
+            partial = getattr(e, "result", None)
+            if partial is not None:
+                try:
+                    display_pipeline_results(partial, run_id, False)
+                except Exception:
+                    pass
+        except Exception:
+            typer.echo(f"[red]Budget exceeded: {e}[/red]", err=True)
+        raise typer.Exit(1)
     except Exception as e:
         try:
             import os
