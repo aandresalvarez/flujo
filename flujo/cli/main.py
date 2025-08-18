@@ -82,8 +82,8 @@ if not TYPE_CHECKING:
             def _stderr(self: click.testing.Result) -> str:
                 return getattr(self, "output", "")
 
-            # Assign property at runtime; typing not enforced here
-            click.testing.Result.stderr = property(_stderr)  # type: ignore[assignment]
+            # Assign property at runtime for test compatibility
+            click.testing.Result.stderr = property(_stderr)
             setattr(click.testing.Result, "_flujo_stderr_shim", True)
     except Exception:
         pass
@@ -101,18 +101,18 @@ if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
     _os.environ.setdefault("NO_COLOR", "1")
     _os.environ.setdefault("COLUMNS", "108")
     try:
-        import typer.rich_utils as _tru  # type: ignore
+        import typer.rich_utils as _tru
         from rich.console import Console as _RichConsole
 
         # Force a deterministic width to match help snapshots
         def _flujo_get_console() -> _RichConsole:
             return _RichConsole(width=107, force_terminal=False, color_system=None, soft_wrap=True)
 
-        _tru._get_rich_console = _flujo_get_console  # type: ignore[assignment]
+        setattr(_tru, "_get_rich_console", _flujo_get_console)
         try:
-            import typer.main as _tm  # type: ignore
+            import typer.main as _tm
 
-            _tm._get_rich_console = _flujo_get_console  # type: ignore[attr-defined]
+            setattr(_tm, "_get_rich_console", _flujo_get_console)
         except Exception:
             pass
 
@@ -135,8 +135,9 @@ if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
             _ty.echo()
             # Description line with a single leading space
             if obj.help:
-                desc = _tru._get_help_text(obj=obj, markup_mode=markup_mode).plain
-                _ty.echo(f" {desc.strip()}")
+                _desc_obj = _tru._get_help_text(obj=obj, markup_mode=markup_mode)
+                desc = getattr(_desc_obj, "plain", str(_desc_obj))
+                _ty.echo(f" {str(desc).strip()}")
             # Exactly five blank lines after description
             _ty.echo()
             _ty.echo()
@@ -247,13 +248,13 @@ if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
                 lines = obj.epilog.split("\n\n")
                 epilogue = "\n".join([x.replace("\n", " ").strip() for x in lines])
                 epilogue_text = _tru._make_rich_text(text=epilogue, markup_mode=markup_mode)
-                console.print(_tru.Align(epilogue_text, pad=False))
+                console.print(epilogue_text)
 
-        _tru.rich_format_help = _flujo_rich_format_help  # type: ignore[assignment]
+        setattr(_tru, "rich_format_help", _flujo_rich_format_help)
         try:
-            import typer.main as _tm  # type: ignore
+            import typer.main as _tm
 
-            _tm.rich_format_help = _flujo_rich_format_help  # type: ignore[attr-defined]
+            setattr(_tm, "rich_format_help", _flujo_rich_format_help)
         except Exception:
             pass
     except Exception:
