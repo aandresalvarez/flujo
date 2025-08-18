@@ -11,4 +11,4 @@
 [budgets]
 [budgets.default]
 # total_cost_usd_limit = 5.0
-total_tokens_limit = 20
+total_tokens_limit = 10000

@@ -275,7 +275,7 @@ class ExecutionManager(Generic[ContextT]):
                                 try:
                                     from flujo.exceptions import UsageLimitExceededError as _ULEE
                                 except Exception:  # pragma: no cover - defensive
-                                    _ULEE = RuntimeError  # type: ignore
+                                    _ULEE = RuntimeError
                                 reason = getattr(item, "reason", "") or ""
                                 # Heuristics: detect common budget/limit abort reasons
                                 lower = str(reason).lower()
