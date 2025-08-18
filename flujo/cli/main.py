@@ -15,6 +15,7 @@ from flujo.infra import telemetry
 import flujo.builtins as _flujo_builtins  # noqa: F401  # Register builtin skills on CLI import
 from typing_extensions import Annotated
 from rich.console import Console
+import os as _os
 from ..utils.serialization import safe_serialize, safe_deserialize as _safe_deserialize
 from .lens import lens_app
 from .helpers import (
@@ -95,6 +96,10 @@ ScorerType = (
 )
 
 
+# In CI/tests, disable color to keep help snapshots stable and ANSI-free
+if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
+    _os.environ.setdefault("NO_COLOR", "1")
+
 app: typer.Typer = typer.Typer(
     rich_markup_mode="markdown",
     help=("A project-based server for building, running, and managing AI workflows."),
@@ -110,13 +115,16 @@ app.add_typer(lens_app, name="lens")
 
 # New developer sub-app and nested experimental group
 dev_app: typer.Typer = typer.Typer(
-    help="🛠️  Access advanced developer and diagnostic tools (e.g., version, show-config, visualize)."
+    rich_markup_mode=None,
+    help="🛠️  Access advanced developer and diagnostic tools (e.g., version, show-config, visualize).",
 )
-experimental_app: typer.Typer = typer.Typer(help="(Advanced) Experimental and diagnostic commands.")
+experimental_app: typer.Typer = typer.Typer(
+    rich_markup_mode=None, help="(Advanced) Experimental and diagnostic commands."
+)
 dev_app.add_typer(experimental_app, name="experimental")
 
 # Budgets live under the dev group
-budgets_app: typer.Typer = typer.Typer(help="Budget governance commands")
+budgets_app: typer.Typer = typer.Typer(rich_markup_mode=None, help="Budget governance commands")
 dev_app.add_typer(budgets_app, name="budgets")
 
 # Register developer app at top level

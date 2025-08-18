@@ -10,7 +10,9 @@ from .helpers import find_project_root, load_pipeline_from_yaml_file
 from .lens_show import show_run
 from .lens_trace import trace_command
 
-lens_app = typer.Typer(help="🔍 Inspect, debug, and trace past workflow runs.")
+lens_app = typer.Typer(
+    rich_markup_mode=None, help="🔍 Inspect, debug, and trace past workflow runs."
+)
 
 
 @lens_app.command("list")
