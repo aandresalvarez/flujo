@@ -105,8 +105,22 @@ if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
         from rich.console import Console as _RichConsole
 
         # Force a deterministic width to match help snapshots
-        def _flujo_get_console() -> _RichConsole:
-            return _RichConsole(width=107, force_terminal=False, color_system=None, soft_wrap=True)
+        def _flujo_get_console(*_args: object, **_kwargs: object) -> _RichConsole:
+            # Accept any signature used by Typer/Rich (e.g., stderr=True)
+            stderr_flag = bool(_kwargs.get("stderr", False))
+            try:
+                return _RichConsole(
+                    width=107,
+                    force_terminal=False,
+                    color_system=None,
+                    soft_wrap=True,
+                    stderr=stderr_flag,
+                )
+            except TypeError:
+                # Fallback without unsupported kwargs
+                return _RichConsole(
+                    width=107, force_terminal=False, color_system=None, soft_wrap=True
+                )
 
         setattr(_tru, "_get_rich_console", _flujo_get_console)
         try:
