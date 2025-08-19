@@ -1236,12 +1236,17 @@ def create(
 
             # Write outputs
             # Determine output location (project-aware by default)
-            project_root = str(find_project_root())
-            out_dir = output_dir or project_root
+            # If an explicit --output-dir is provided, do NOT require a Flujo project.
+            if output_dir is not None:
+                out_dir = output_dir
+                project_root = None  # Only used for overwrite policy below
+            else:
+                project_root = str(find_project_root())
+                out_dir = project_root
             os.makedirs(out_dir, exist_ok=True)
             out_yaml = os.path.join(out_dir, "pipeline.yaml")
             # In project-aware default path, allow overwriting pipeline.yaml without --force
-            allow_overwrite = (output_dir is None) or (
+            allow_overwrite = (project_root is not None) and (
                 os.path.abspath(out_dir) == os.path.abspath(project_root)
             )
             if os.path.exists(out_yaml) and not (force or allow_overwrite):

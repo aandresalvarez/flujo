@@ -2,8 +2,11 @@ import pytest
 
 
 def test_welcome_agent_is_registered() -> None:
-    # Ensure builtins (and registrations) are imported
-    import flujo.builtins  # noqa: F401
+    # Explicitly register builtins to avoid relying on import side effects
+    from flujo.builtins import _register_builtins
+
+    _register_builtins()
+
     from flujo.infra.skill_registry import get_skill_registry
 
     reg = get_skill_registry()

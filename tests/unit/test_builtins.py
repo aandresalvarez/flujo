@@ -56,16 +56,6 @@ def test_aggregate_plan_combines_goal_and_steps() -> None:
 # --- New builtins: web_search and extract_from_text ---
 
 
-def _get_registered_factory(skill_id: str):
-    from flujo.builtins import _register_builtins  # noqa: F401
-    from flujo.infra.skill_registry import get_skill_registry
-
-    reg = get_skill_registry()
-    entry = reg.get(skill_id)
-    assert entry is not None, f"Skill not registered: {skill_id}"
-    return entry["factory"]
-
-
 @pytest.mark.fast
 def test_web_search_returns_simplified_results(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeDDGSAsync:
@@ -90,7 +80,10 @@ def test_web_search_returns_simplified_results(monkeypatch: pytest.MonkeyPatch) 
 
     monkeypatch.setattr(builtins, "_DDGSAsync", FakeDDGSAsync, raising=True)
 
-    factory = _get_registered_factory("flujo.builtins.web_search")
+    # Use shared helper function from conftest.py
+    from tests.conftest import get_registered_factory
+
+    factory = get_registered_factory("flujo.builtins.web_search")
     fn = factory()
 
     results = asyncio.run(fn("test query", max_results=2))
@@ -109,7 +102,10 @@ def test_web_search_when_dependency_missing_returns_empty(monkeypatch: pytest.Mo
     monkeypatch.setattr(builtins, "_DDGSAsync", None, raising=True)
     monkeypatch.setattr(builtins, "_DDGS_CLASS", None, raising=True)
 
-    factory = _get_registered_factory("flujo.builtins.web_search")
+    # Use shared helper function from conftest.py
+    from tests.conftest import get_registered_factory
+
+    factory = get_registered_factory("flujo.builtins.web_search")
     fn = factory()
 
     results = asyncio.run(fn("anything"))
@@ -126,7 +122,10 @@ def test_extract_from_text_returns_agent_dict(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr(builtins, "make_agent_async", lambda **_k: FakeAgent())
 
-    factory = _get_registered_factory("flujo.builtins.extract_from_text")
+    # Use shared helper function from conftest.py
+    from tests.conftest import get_registered_factory
+
+    factory = get_registered_factory("flujo.builtins.extract_from_text")
     fn = factory()
 
     out = asyncio.run(
@@ -157,7 +156,10 @@ def test_extract_from_text_wraps_non_dict_output(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(builtins, "make_agent_async", lambda **_k: FakeAgentStr())
 
-    factory = _get_registered_factory("flujo.builtins.extract_from_text")
+    # Use shared helper function from conftest.py
+    from tests.conftest import get_registered_factory
+
+    factory = get_registered_factory("flujo.builtins.extract_from_text")
     fn = factory()
 
     out = asyncio.run(fn(text="x", schema={"type": "object"}))
@@ -169,7 +171,10 @@ def test_extract_from_text_wraps_non_dict_output(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.fast
 def test_check_user_confirmation_affirmatives() -> None:
-    factory = _get_registered_factory("flujo.builtins.check_user_confirmation")
+    # Use shared helper function from conftest.py
+    from tests.conftest import get_registered_factory
+
+    factory = get_registered_factory("flujo.builtins.check_user_confirmation")
     fn = factory()
     assert asyncio.run(fn("y")) == "approved"
     assert asyncio.run(fn("Y")) == "approved"
@@ -179,7 +184,10 @@ def test_check_user_confirmation_affirmatives() -> None:
 
 @pytest.mark.fast
 def test_check_user_confirmation_negatives() -> None:
-    factory = _get_registered_factory("flujo.builtins.check_user_confirmation")
+    # Use shared helper function from conftest.py
+    from tests.conftest import get_registered_factory
+
+    factory = get_registered_factory("flujo.builtins.check_user_confirmation")
     fn = factory()
     assert asyncio.run(fn("n")) == "denied"
     assert asyncio.run(fn("no")) == "denied"
@@ -189,7 +197,10 @@ def test_check_user_confirmation_negatives() -> None:
 
 @pytest.mark.fast
 def test_check_user_confirmation_whitespace_defaults_to_approved() -> None:
-    factory = _get_registered_factory("flujo.builtins.check_user_confirmation")
+    # Use shared helper function from conftest.py
+    from tests.conftest import get_registered_factory
+
+    factory = get_registered_factory("flujo.builtins.check_user_confirmation")
     fn = factory()
     assert asyncio.run(fn("")) == "approved"
     assert asyncio.run(fn("   \t\n")) == "approved"
@@ -200,7 +211,10 @@ def test_check_user_confirmation_whitespace_defaults_to_approved() -> None:
 
 @pytest.mark.fast
 def test_passthrough_skill_identity() -> None:
-    factory = _get_registered_factory("flujo.builtins.passthrough")
+    # Use shared helper function from conftest.py
+    from tests.conftest import get_registered_factory
+
+    factory = get_registered_factory("flujo.builtins.passthrough")
     fn = factory()
     payload = {"k": [1, 2, 3], "nested": {"a": 1}}
     out = asyncio.run(fn(payload))
@@ -210,7 +224,10 @@ def test_passthrough_skill_identity() -> None:
 
 @pytest.mark.fast
 def test_validate_yaml_skill_handles_invalid_yaml_gracefully() -> None:
-    factory = _get_registered_factory("flujo.builtins.validate_yaml")
+    # Use shared helper function from conftest.py
+    from tests.conftest import get_registered_factory
+
+    factory = get_registered_factory("flujo.builtins.validate_yaml")
     fn = factory()
     bad_yaml = "version: '0.1'\nsteps: ["  # malformed YAML
     report = asyncio.run(fn(bad_yaml))
@@ -227,7 +244,10 @@ def test_validate_yaml_skill_handles_invalid_yaml_gracefully() -> None:
 
 @pytest.mark.fast
 def test_validate_yaml_skill_accepts_minimal_valid_yaml() -> None:
-    factory = _get_registered_factory("flujo.builtins.validate_yaml")
+    # Use shared helper function from conftest.py
+    from tests.conftest import get_registered_factory
+
+    factory = get_registered_factory("flujo.builtins.validate_yaml")
     fn = factory()
     good_yaml = 'version: "0.1"\nsteps: []\n'
     report = asyncio.run(fn(good_yaml))

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 
 
 def test_repair_yaml_ruamel_fixes_inline_steps_list() -> None:
-    # Lazy import to ensure registry side-effects ran
-    builtins = importlib.import_module("flujo.builtins")
+    # Import builtins module to ensure registry side-effects ran
+    import flujo.builtins as builtins
+
     INVALID = "version: '0.1'\nsteps: ["
 
     # Run the async repair helper
@@ -22,7 +22,8 @@ def test_repair_yaml_ruamel_fixes_inline_steps_list() -> None:
 
 
 def test_repair_yaml_ruamel_is_idempotent_on_valid_yaml() -> None:
-    builtins = importlib.import_module("flujo.builtins")
+    import flujo.builtins as builtins
+
     VALID = 'version: "0.1"\nname: pipeline\nsteps: []\n'
     result = asyncio.run(builtins.repair_yaml_ruamel(VALID))
     text = result.get("generated_yaml") or result.get("yaml_text") or ""

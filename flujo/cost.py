@@ -242,16 +242,6 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
 
                     provider, model_name = _model_cache[cache_key]
 
-                    # Enforce strict pricing for known providers; allow providerless IDs to use defaults in non-strict tests
-                    if provider is not None:
-                        try:
-                            # This will raise PricingNotConfiguredError when strict pricing is enabled
-                            # and the model is not configured; otherwise it returns a pricing object or None.
-                            flujo.infra.config.get_provider_pricing(provider, model_name)
-                        except PricingNotConfiguredError:
-                            # Bubble up to policy/runner to satisfy strict-mode tests
-                            raise
-
                     cost_calculator = CostCalculator()
                     cost_usd = cost_calculator.calculate(
                         model_name=model_name,
@@ -445,8 +435,7 @@ class CostCalculator:
         )
 
         if pricing is None:
-            # Rely on get_provider_pricing to enforce strict mode. If it returned None,
-            # treat as non-strict and report 0.0 cost with a warning.
+            # Non-strict path: treat missing pricing as zero cost and warn.
             telemetry.logfire.warning(
                 f"No pricing found for provider={provider}, model={model_name}. "
                 f"Cost will be reported as 0.0. "
