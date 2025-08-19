@@ -12,6 +12,7 @@ build/
 # Testing and coverage
 .pytest_cache/
 .coverage
+.coverage.*
 coverage.xml
 htmlcov/
 .tox/

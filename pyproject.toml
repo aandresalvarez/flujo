@@ -181,6 +181,24 @@ module = "flujo.application.core.step_logic"
 disable_error_code = ["no-any-return"]
 
 
+# Coverage configuration to make reports robust across environments
+[tool.coverage.run]
+source = ["flujo"]
+parallel = true
+relative_files = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.coverage.paths]
+source = [
+  "flujo",
+  "*/work/flujo/flujo/flujo",
+  "*/Documents/Code/flujo/flujo",
+]
+
+
 # Relax mypy on complex, dynamically-typed policy and executor modules
 [[tool.mypy.overrides]]
 module = [
