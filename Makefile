@@ -68,7 +68,7 @@ typecheck: .uv ## Run static type checking with mypy
 .PHONY: test
 test: .uv ## Run all tests
 	@echo "🧪 Running tests..."
-	CI=1 uv run pytest tests/
+	CI=1 FLUJO_TEST_FORCE_EXIT=1 uv run pytest tests/
 
 .PHONY: test-fast
 test-fast: .uv ## Run fast tests in parallel (excludes slow, serial, and benchmark tests)

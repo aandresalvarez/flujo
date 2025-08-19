@@ -8,6 +8,8 @@ from flujo.utils.serialization import register_custom_serializer, reset_custom_s
 from collections import OrderedDict, Counter, defaultdict
 from enum import Enum
 import pytest
+import threading
+import os as _os
 
 # Set test mode environment variable
 os.environ["FLUJO_TEST_MODE"] = "1"
@@ -288,3 +290,38 @@ class NoOpStateBackend(StateBackend):
         from flujo.utils.serialization import safe_serialize
 
         self._trace_store[run_id] = safe_serialize(trace)
+
+
+def _diagnose_threads() -> None:
+    try:
+        alive = [t for t in threading.enumerate() if t.is_alive()]
+        non_daemon = [t for t in alive if not t.daemon]
+        if non_daemon:
+            print("\n[pytest-sessionfinish] Non-daemon threads still alive:")
+            for t in non_daemon:
+                print(f"  - {t.name} (id={getattr(t, 'ident', '?')})")
+    except Exception:
+        pass
+
+
+def pytest_sessionfinish(session, exitstatus):  # type: ignore
+    """Best-effort cleanup for background services to avoid process hang."""
+    # Attempt to stop any prometheus servers started during tests
+    try:
+        from flujo.telemetry.prometheus import shutdown_all_prometheus_servers
+
+        shutdown_all_prometheus_servers()
+    except Exception:
+        pass
+    # Optional: print any non-daemon threads for debugging when enabled
+    try:
+        if _os.environ.get("FLUJO_TEST_DEBUG_THREADS") == "1":
+            _diagnose_threads()
+    except Exception:
+        pass
+    # As a last-resort, force-exit the interpreter in CI/test runs to avoid hangs
+    try:
+        if _os.environ.get("FLUJO_TEST_FORCE_EXIT") == "1":
+            _os._exit(exitstatus)
+    except Exception:
+        pass
