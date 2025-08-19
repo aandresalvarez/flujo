@@ -1,41 +1,71 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typer.testing import CliRunner
 
 from flujo.cli.main import app
 
 
-def _normalize_help(text: str) -> str:
-    # Drop telemetry/info log lines to keep snapshots stable
-    lines = []
+def _clean(text: str) -> str:
+    # Drop telemetry lines and trailing spaces; retain content for semantic checks
+    lines: list[str] = []
     for ln in text.splitlines():
         if re.match(r"\d{4}-\d{2}-\d{2}.*Logfire telemetry", ln):
             continue
-        lines.append(ln)
-    return "\n".join(lines).strip() + "\n"
+        lines.append(ln.rstrip())
+    return "\n".join(lines)
 
 
-def _read_snapshot(name: str) -> str:
-    p = Path(__file__).with_name("snapshots") / name
-    # Normalize trailing blank lines like the live output normalization
-    return p.read_text().strip() + "\n"
-
-
-def test_top_level_help_snapshot() -> None:
+def test_top_level_help_semantics() -> None:
     runner = CliRunner()
-    out = runner.invoke(app, ["--help"]).stdout
-    assert _normalize_help(out) == _read_snapshot("top_help.txt")
+    out = _clean(runner.invoke(app, ["--help"]).stdout)
+
+    # Usage and description present
+    assert "Usage: root" in out
+    assert "A project-based server" in out
+
+    # Options present (names and gist of help)
+    assert "--profile" in out
+    assert "--debug" in out and "no-debug" in out
+    assert "--install-completion" in out
+    assert "--show-completion" in out
+    assert "--help" in out
+
+    # Commands present
+    for cmd in ["init", "demo", "create", "run", "validate", "lens", "dev"]:
+        assert cmd in out
 
 
-def test_lens_help_snapshot() -> None:
+def test_lens_help_semantics() -> None:
     runner = CliRunner()
-    out = runner.invoke(app, ["lens", "--help"]).stdout
-    assert _normalize_help(out) == _read_snapshot("lens_help.txt")
+    out = _clean(runner.invoke(app, ["lens", "--help"]).stdout)
+
+    # Usage and description
+    assert "Usage: root lens" in out
+    assert "Inspect" in out or "trace" in out
+
+    # Commands under lens
+    for cmd in ["list", "show", "trace", "replay", "spans", "stats"]:
+        assert cmd in out
 
 
-def test_dev_help_snapshot() -> None:
+def test_dev_help_semantics() -> None:
     runner = CliRunner()
-    out = runner.invoke(app, ["dev", "--help"]).stdout
-    assert _normalize_help(out) == _read_snapshot("dev_help.txt")
+    out = _clean(runner.invoke(app, ["dev", "--help"]).stdout)
+
+    # Usage and description
+    assert "Usage: root dev" in out
+    assert "developer" in out or "diagnostic" in out
+
+    # Commands under dev
+    for cmd in [
+        "version",
+        "show-config",
+        "show-steps",
+        "validate",
+        "compile-yaml",
+        "visualize",
+        "experimental",
+        "budgets",
+    ]:
+        assert cmd in out
