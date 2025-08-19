@@ -51,6 +51,8 @@ settings.json
 .benchmarks/
 .dmypy.json
 dmypy.json
+output/
+manual_testing/
 
 # Distribution / packaging
 .Python
