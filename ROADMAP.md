@@ -34,7 +34,7 @@ This plan is broken into three phases, each with a clear objective, target user 
 **Success Metrics (How we know it's valuable):**
 
 *   **Time-to-First-Run (TTFR):** Can a developer get a working pipeline for these scenarios in **under 2 minutes** using `flujo create`? (Measure this against manual coding).
-*   **Correction Overhead:** What percentage of generated YAMLs are **100% valid and runnable on the first try**? For those that aren't, how many lines does the user have to edit to make them work? (Goal: < 80% first-try success, < 3 lines of edits for the rest).
+*   **Correction Overhead:** What percentage of generated YAMLs are **100% valid and runnable on the first try**? For those that aren't, how many lines does the user have to edit to make them work? (Goal: ≥ 80% first-try success, < 3 lines of edits for the rest).
 *   **Qualitative Feedback:** "Did this feel like magic?" "Was the generated YAML easy to understand?"
 
 **Implementation Focus for this Phase:**

@@ -272,9 +272,8 @@ class SQLiteBackend(StateBackend):
     _global_file_locks: "weakref.WeakKeyDictionary[AbstractEventLoop, Dict[str, asyncio.Lock]]" = (
         weakref.WeakKeyDictionary()
     )
-    # Thread-local locks used in CLI/no-event-loop contexts may be non-async locks
-    # (e.g., threading.Lock). Widen the annotation to accommodate both kinds safely.
-    _thread_file_locks: Dict[int, Dict[str, Any]] = {}
+    # Thread-local locks used in CLI/no-event-loop contexts for asyncio.Lock deduplication
+    _thread_file_locks: Dict[int, Dict[str, asyncio.Lock]] = {}
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
@@ -306,21 +305,21 @@ class SQLiteBackend(StateBackend):
 
             except RuntimeError:
                 # No running event loop - this is the CLI context
-                # Use a simple, synchronous lock for CLI operations
+                # Create and store a per-thread, per-db asyncio.Lock for deduplication
                 import threading
 
-                # Create a thread-local lock that's safe for CLI context
+                # Create a thread-local asyncio.Lock that's safe for CLI context
                 thread_id = threading.get_ident()
                 if thread_id not in SQLiteBackend._thread_file_locks:
                     SQLiteBackend._thread_file_locks[thread_id] = {}
-                thread_lock_map: Dict[str, Any] = SQLiteBackend._thread_file_locks[thread_id]
+                thread_lock_map = SQLiteBackend._thread_file_locks[thread_id]
                 db_key = str(self.db_path.absolute())
                 if db_key not in thread_lock_map:
-                    # Use threading.Lock instead of asyncio.Lock for CLI safety
-                    thread_lock_map[db_key] = threading.Lock()
+                    # Create and store an asyncio.Lock for this db in this thread
+                    thread_lock_map[db_key] = asyncio.Lock()
 
-                # Create a simple asyncio.Lock that won't hang in CLI context
-                self._file_lock = asyncio.Lock()
+                # Use the stored asyncio.Lock for deduplication
+                self._file_lock = thread_lock_map[db_key]
 
         # Always return a Lock
         assert self._file_lock is not None
