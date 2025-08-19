@@ -272,6 +272,7 @@ class SQLiteBackend(StateBackend):
     _global_file_locks: "weakref.WeakKeyDictionary[AbstractEventLoop, Dict[str, asyncio.Lock]]" = (
         weakref.WeakKeyDictionary()
     )
+    # Thread-local locks used in CLI/no-event-loop contexts for asyncio.Lock deduplication
     _thread_file_locks: Dict[int, Dict[str, asyncio.Lock]] = {}
 
     def __init__(self, db_path: Path) -> None:
@@ -288,38 +289,38 @@ class SQLiteBackend(StateBackend):
         self._file_lock_key = str(self.db_path.absolute())
 
     def _get_file_lock(self) -> asyncio.Lock:
-        """Get the file lock for the current event loop."""
+        """Get the file lock for the current event loop with robust fallback handling."""
         if self._file_lock is None:
             try:
                 # Try to get the current event loop
                 loop = asyncio.get_running_loop()
+                # We have a valid event loop
+                if loop not in SQLiteBackend._global_file_locks:
+                    SQLiteBackend._global_file_locks[loop] = {}
+                lock_map = SQLiteBackend._global_file_locks[loop]
+                db_key = str(self.db_path.absolute())
+                if db_key not in lock_map:
+                    lock_map[db_key] = asyncio.Lock()
+                self._file_lock = lock_map[db_key]
+
             except RuntimeError:
-                # No running event loop, try to get the current event loop
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    # No event loop in current thread, use a thread-local approach
-                    # instead of creating a new loop that could interfere with existing operations
-                    import threading
+                # No running event loop - this is the CLI context
+                # Create and store a per-thread, per-db asyncio.Lock for deduplication
+                import threading
 
-                    thread_id = threading.get_ident()
-                    if thread_id not in SQLiteBackend._thread_file_locks:
-                        SQLiteBackend._thread_file_locks[thread_id] = {}
-                    lock_map = SQLiteBackend._thread_file_locks[thread_id]
-                    db_key = str(self.db_path.absolute())
-                    if db_key not in lock_map:
-                        lock_map[db_key] = asyncio.Lock()
-                    self._file_lock = lock_map[db_key]
-                    return self._file_lock
+                # Create a thread-local asyncio.Lock that's safe for CLI context
+                thread_id = threading.get_ident()
+                if thread_id not in SQLiteBackend._thread_file_locks:
+                    SQLiteBackend._thread_file_locks[thread_id] = {}
+                thread_lock_map = SQLiteBackend._thread_file_locks[thread_id]
+                db_key = str(self.db_path.absolute())
+                if db_key not in thread_lock_map:
+                    # Create and store an asyncio.Lock for this db in this thread
+                    thread_lock_map[db_key] = asyncio.Lock()
 
-            # We have a valid event loop
-            if loop not in SQLiteBackend._global_file_locks:
-                SQLiteBackend._global_file_locks[loop] = {}
-            lock_map = SQLiteBackend._global_file_locks[loop]
-            db_key = str(self.db_path.absolute())
-            if db_key not in lock_map:
-                lock_map[db_key] = asyncio.Lock()
-            self._file_lock = lock_map[db_key]
+                # Use the stored asyncio.Lock for deduplication
+                self._file_lock = thread_lock_map[db_key]
+
         # Always return a Lock
         assert self._file_lock is not None
         return self._file_lock
