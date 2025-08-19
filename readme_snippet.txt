@@ -1,5 +1,5 @@
 <div align="center">
-  <a href="https://github.com/flujo-ai/flujo">
+  <a href="https://github.com/aandresalvarez/flujo">
     <img src="https://raw.githubusercontent.com/aandresalvarez/flujo/main/assets/flujo.png" alt="Flujo logo" width="180"/>
   </a>
   

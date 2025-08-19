@@ -1,7 +1,7 @@
 <div align="center">
-  <a href="https://github.com/flujo-ai/flujo">
-    <img src="https://raw.githubusercontent.com/aandresalvarez/flujo/main/assets/flujo.png" alt="Flujo logo" width="180"/>
-  </a>
+  <a href="https://github.com/aandresalvarez/flujo">
+    <img src="https://github.com/aandresalvarez/flujo/tree/main/assets/flujo.png" alt="Flujo logo" width="180"/>
+  </a> 
   
   <h1>Flujo — Your Conversational AI Workflow Server</h1>
   
@@ -11,7 +11,7 @@
 
 | CI/CD | PyPI | Docs | License |
 | :---: | :---: | :---: | :---: |
-| [![CI status](https://github.com/flujo-ai/flujo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/flujo-ai/flujo/actions/workflows/ci.yml) | [![PyPI version](https://img.shields.io/pypi/v/flujo.svg)](https://pypi.org/project/flujo/) | [![Documentation Status](https://readthedocs.org/projects/flujo/badge/?version=latest)](https://flujo.readthedocs.io/en/latest/?badge=latest) | [![License](https://img.shields.io/pypi/l/flujo.svg)](https://github.com/flujo-ai/flujo/blob/main/LICENSE) |
+| [![CI status](https://github.com/aandresalvarez/flujo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/aandresalvarez/flujo/actions/workflows/ci.yml) | [![PyPI version](https://img.shields.io/pypi/v/flujo.svg)](https://pypi.org/project/flujo/) | [![Documentation Status](https://readthedocs.org/projects/flujo/badge/?version=latest)](https://flujo.readthedocs.io/en/latest/?badge=latest) | [![License](https://img.shields.io/pypi/l/flujo.svg)](https://github.com/aandresalvarez/flujo/blob/main/LICENSE) |
 
 </div>
 ---
