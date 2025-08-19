@@ -8,6 +8,7 @@ Run with: python tests/performance_monitor.py
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -24,20 +25,24 @@ def run_test_with_timing(test_path: str = "tests/") -> Tuple[float, str]:
     start_time = time.time()
 
     # Use a fast subset by default to keep CI under time limits
-    markers = os.getenv("FLUJO_PERF_MARKERS", "not slow and not serial and not benchmark")
-    timeout_sec = int(os.getenv("FLUJO_PERF_TIMEOUT", "600"))
+    # Parse timeout robustly and fall back to 600 on invalid values
+    raw_timeout = os.getenv("FLUJO_PERF_TIMEOUT", "").strip()
+    try:
+        timeout_sec = int(raw_timeout) if raw_timeout else 600
+    except ValueError:
+        timeout_sec = 600
 
-    cmd = [
-        "uv",
-        "run",
-        "pytest",
-        test_path,
-        "-v",
-        "--tb=no",
-        "--durations=25",
-        "-m",
-        markers,
-    ]
+    # Normalize markers: default to fast subset if unset/empty after strip
+    default_markers = "not slow and not serial and not benchmark"
+    raw_markers = os.getenv("FLUJO_PERF_MARKERS", "")
+    markers = raw_markers.strip() or default_markers
+
+    use_uv = shutil.which("uv") is not None
+    base_cmd = ["uv", "run", "pytest"] if use_uv else ["python", "-m", "pytest"]
+    cmd_parts = base_cmd + [test_path, "-v", "--tb=no", "--durations=25"]
+    if markers.strip():
+        cmd_parts += ["-m", markers]
+    cmd = cmd_parts
 
     try:
         result = subprocess.run(
@@ -50,16 +55,9 @@ def run_test_with_timing(test_path: str = "tests/") -> Tuple[float, str]:
 
         # Fallback: if nothing parsed, try without -v formatting quirks
         if not parse_test_output(stdout):
-            fallback_cmd = [
-                "uv",
-                "run",
-                "pytest",
-                test_path,
-                "--tb=no",
-                "--durations=25",
-                "-m",
-                markers,
-            ]
+            fallback_cmd = base_cmd + [test_path, "--tb=no", "--durations=25"]
+            if markers.strip():
+                fallback_cmd += ["-m", markers]
             result_fb = subprocess.run(
                 fallback_cmd,
                 capture_output=True,
