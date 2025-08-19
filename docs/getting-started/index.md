@@ -21,6 +21,17 @@ Go beyond static prompts. Flujo provides the structure, state, and observability
 - [Concepts](../user_guide/concepts.md) - Core concepts and architecture
 - [Architect (Generate Blueprints)](../user_guide/architect.md) - Create YAML blueprints from natural language goals
 
+## Project-Based Workflow
+
+Start new workflows as self-contained projects and run everything from the project root without passing file paths.
+
+- Initialize a project: `flujo init`
+- Create a pipeline conversationally: `flujo create`
+- Run the pipeline (project-aware): `flujo run --input "..."`
+- Inspect and replay runs: `flujo lens list`, `flujo lens trace <run_id>`, `flujo lens replay <run_id>`
+
+See the [Quickstart](quickstart.md) and the [Architect guide](../user_guide/architect.md) for details.
+
 ## Advanced Features
 
 - [Advanced Serialization](../cookbook/advanced_serialization.md) - Handle custom types and complex serialization scenarios

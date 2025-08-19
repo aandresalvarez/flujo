@@ -132,6 +132,7 @@ class TestInMemoryMonitorUsage:
         assert global_monitor.calls[1]["output_data"] == "output_input2"
 
     @pytest.mark.asyncio
+    @pytest.mark.slow  # Mark as slow due to sleep timing operation
     async def test_monitor_execution_time(self):
         """Test that In-Memory Monitor records execution time."""
         from flujo.agents import monitored_agent

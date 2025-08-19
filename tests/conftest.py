@@ -216,6 +216,39 @@ def create_test_flujo(
     return Flujo(pipeline, pipeline_name=pipeline_name, pipeline_id=pipeline_id, **kwargs)
 
 
+def get_registered_factory(skill_id: str):
+    """Get a registered factory from the skill registry.
+
+    This helper function ensures builtins are registered and retrieves the factory
+    for a given skill ID. It's used across multiple test files to reduce duplication.
+
+    Parameters
+    ----------
+    skill_id : str
+        The skill ID to look up in the registry
+
+    Returns
+    -------
+    Any
+        The factory function for the skill
+
+    Raises
+    ------
+    AssertionError
+        If the skill is not registered in the registry
+    """
+    from flujo.builtins import _register_builtins
+    from flujo.infra.skill_registry import get_skill_registry
+
+    # Ensure builtins are registered
+    _register_builtins()
+
+    reg = get_skill_registry()
+    entry = reg.get(skill_id)
+    assert entry is not None, f"Skill not registered: {skill_id}"
+    return entry["factory"]
+
+
 class NoOpStateBackend(StateBackend):
     """A state backend that simulates real backend behavior for testing while maintaining isolation."""
 

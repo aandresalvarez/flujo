@@ -1,0 +1,31 @@
+version: "0.1"
+name: "research_demo"
+
+agents:
+  result_formatter:
+    model: "openai:gpt-4o-mini"
+    system_prompt: |
+      You are a research assistant. You will be given a JSON object containing web search results.
+      Format these results into a clear, concise, and human-readable summary.
+      Present the title, a brief snippet, and the link for each result in a numbered list.
+      If the input is empty or contains no results, say "I couldn't find any information on that topic."
+    output_schema:
+      type: string
+
+steps:
+  - kind: hitl
+    name: get_research_topic
+    message: "What would you like to research on the web?"
+
+  - kind: step
+    name: perform_web_search
+    agent:
+      id: "flujo.builtins.web_search"
+      params:
+        max_results: 3
+    input: "{{ previous_step }}"
+
+  - kind: step
+    name: format_search_results
+    uses: agents.result_formatter
+    input: "{{ previous_step }}"

@@ -65,7 +65,7 @@ def test_cli_solve_happy_path(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
 
-    result = runner.invoke(app, ["solve", "write a poem"])
+    result = runner.invoke(app, ["dev", "experimental", "solve", "write a poem"])
     assert result.exit_code == 0
     assert '"solution": "mocked"' in result.stdout
 
@@ -83,7 +83,9 @@ def test_cli_solve_custom_models(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_review_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
-    result = runner.invoke(app, ["solve", "write", "--solution-model", "gemini:gemini-1.5-pro"])
+    result = runner.invoke(
+        app, ["dev", "experimental", "solve", "write", "--solution-model", "gemini:gemini-1.5-pro"]
+    )
     assert result.exit_code == 0
 
 
@@ -104,7 +106,7 @@ def test_cli_bench_command(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", lambda *a, **k: DummyAgent())
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", lambda *a, **k: DummyAgent())
 
-    result = runner.invoke(app, ["bench", "test prompt", "--rounds", "2"])
+    result = runner.invoke(app, ["dev", "experimental", "bench", "test prompt", "--rounds", "2"])
     assert result.exit_code == 0
     assert "Benchmark Results" in result.stdout
 
@@ -113,7 +115,7 @@ def test_cli_show_config_masks_secrets(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
     # This requires re-importing settings or running CLI in a subprocess
     # For simplicity, we'll just check the output format.
-    result = runner.invoke(app, ["show-config"])
+    result = runner.invoke(app, ["dev", "show-config"])
     assert result.exit_code == 0
     assert "openai_api_key" not in result.stdout
     assert "logfire_api_key" not in result.stdout
@@ -124,7 +126,7 @@ def test_cli_version_command(monkeypatch) -> None:
     monkeypatch.setattr("importlib.metadata.version", lambda name: "1.2.3")
     monkeypatch.setattr("importlib.metadata.PackageNotFoundError", Exception)
 
-    result = runner.invoke(app, ["version-cmd"])
+    result = runner.invoke(app, ["dev", "version"])
     assert result.exit_code == 0
     assert "1.2.3" in result.stdout
 
@@ -168,7 +170,9 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
             json.dump(weights, f)
             weights_file = f.name
 
-        result = runner.invoke(app, ["solve", "write a poem", "--weights-path", weights_file])
+        result = runner.invoke(
+            app, ["dev", "experimental", "solve", "write a poem", "--weights-path", weights_file]
+        )
 
         # Print debug info if test fails
         if result.exit_code != 0:
@@ -189,7 +193,9 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
 
 
 def test_cli_solve_weights_file_not_found() -> None:
-    result = runner.invoke(app, ["solve", "prompt", "--weights-path", "nonexistent.json"])
+    result = runner.invoke(
+        app, ["dev", "experimental", "solve", "prompt", "--weights-path", "nonexistent.json"]
+    )
     assert result.exit_code == 1
     assert "Weights file not found" in result.stderr
 
@@ -197,7 +203,9 @@ def test_cli_solve_weights_file_not_found() -> None:
 def test_cli_solve_weights_file_invalid_json(tmp_path) -> None:
     bad_file = tmp_path / "bad.json"
     bad_file.write_text("not a json")
-    result = runner.invoke(app, ["solve", "prompt", "--weights-path", str(bad_file)])
+    result = runner.invoke(
+        app, ["dev", "experimental", "solve", "prompt", "--weights-path", str(bad_file)]
+    )
     assert result.exit_code == 1
     assert "Error" in result.stdout or "Traceback" in result.stdout or result.stderr
 
@@ -205,7 +213,9 @@ def test_cli_solve_weights_file_invalid_json(tmp_path) -> None:
 def test_cli_solve_weights_invalid_structure(tmp_path) -> None:
     bad_file = tmp_path / "bad.json"
     bad_file.write_text('{"item": "a", "weight": 1}')
-    result = runner.invoke(app, ["solve", "prompt", "--weights-path", str(bad_file)])
+    result = runner.invoke(
+        app, ["dev", "experimental", "solve", "prompt", "--weights-path", str(bad_file)]
+    )
     assert result.exit_code == 1
     assert "list of objects" in result.stderr
 
@@ -214,7 +224,9 @@ def test_cli_solve_weights_missing_keys(tmp_path) -> None:
     weights = [{"item": "a"}]
     file = tmp_path / "weights.json"
     file.write_text(json.dumps(weights))
-    result = runner.invoke(app, ["solve", "prompt", "--weights-path", str(file)])
+    result = runner.invoke(
+        app, ["dev", "experimental", "solve", "prompt", "--weights-path", str(file)]
+    )
     assert result.exit_code == 1
     assert "list of objects" in result.stderr
 
@@ -261,7 +273,9 @@ def test_cli_add_eval_case_uses_safe_deserialize(tmp_path, monkeypatch) -> None:
     result = runner.invoke(
         app,
         [
-            "add-eval-case",
+            "dev",
+            "experimental",
+            "add-case",
             "-d",
             str(file),
             "-n",
@@ -305,7 +319,9 @@ def test_cli_solve_weights_file_safe_deserialize(tmp_path, monkeypatch) -> None:
 
     # from flujo.cli.main import app # This line is moved to the top of the file
 
-    result = runner.invoke(app, ["solve", "prompt", "--weights-path", str(weights_file)])
+    result = runner.invoke(
+        app, ["dev", "experimental", "solve", "prompt", "--weights-path", str(weights_file)]
+    )
     assert result.exit_code == 0
     assert calls["called"]
 
@@ -321,7 +337,7 @@ def test_cli_solve_keyboard_interrupt(monkeypatch) -> None:
 
     # from flujo.cli.main import app # This line is moved to the top of the file
 
-    result = runner.invoke(app, ["solve", "write a poem"])
+    result = runner.invoke(app, ["dev", "experimental", "solve", "write a poem"])
     assert result.exit_code == 130
 
 
@@ -338,7 +354,7 @@ def test_cli_bench_keyboard_interrupt(monkeypatch) -> None:
 
     # from flujo.cli.main import app # This line is moved to the top of the file
 
-    result = runner.invoke(app, ["bench", "test prompt", "--rounds", "2"])
+    result = runner.invoke(app, ["dev", "experimental", "bench", "test prompt", "--rounds", "2"])
     assert result.exit_code == 130
 
 
@@ -355,7 +371,7 @@ def test_cli_version_cmd_package_not_found(monkeypatch) -> None:
     )
     # from flujo.cli.main import app # This line is moved to the top of the file
 
-    result = runner.invoke(app, ["version-cmd"])
+    result = runner.invoke(app, ["dev", "version"])
     assert result.exit_code == 0
     assert "unknown" in result.stdout
 
@@ -379,7 +395,7 @@ def test_cli_solve_configuration_error(monkeypatch) -> None:
     monkeypatch.setattr("flujo.cli.main.make_solution_agent", raise_config_error)
     monkeypatch.setattr("flujo.cli.main.make_validator_agent", raise_config_error)
 
-    result = runner.invoke(app, ["solve", "prompt"])
+    result = runner.invoke(app, ["dev", "experimental", "solve", "prompt"])
     assert result.exit_code == 2
     assert "Configuration Error: Missing API key!" in result.stderr
 
@@ -390,7 +406,7 @@ def test_cli_explain(tmp_path) -> None:
         "from flujo.domain import Step\npipeline = Step.model_validate({'name': 'A'}) >> Step.model_validate({'name': 'B'})\n"
     )
 
-    result = runner.invoke(app, ["explain", str(file)])
+    result = runner.invoke(app, ["dev", "show-steps", str(file)])
     assert result.exit_code == 0
     assert "A" in result.stdout
     assert "B" in result.stdout
@@ -437,7 +453,7 @@ def test_cli_improve_output_formatting(monkeypatch, tmp_path) -> None:
         dummy_eval,
     )
 
-    result = runner.invoke(app, ["improve", str(pipe), str(data)])
+    result = runner.invoke(app, ["dev", "experimental", "improve", str(pipe), str(data)])
     assert result.exit_code == 0
     assert "IMPROVEMENT REPORT" in result.stdout
 
@@ -481,7 +497,7 @@ def test_cli_improve_json_output(monkeypatch, tmp_path) -> None:
         dummy_eval,
     )
 
-    result = runner.invoke(app, ["improve", str(pipe), str(data), "--json"])
+    result = runner.invoke(app, ["dev", "experimental", "improve", str(pipe), str(data), "--json"])
     assert result.exit_code == 0
     assert '"suggestions"' in result.stdout
 
@@ -490,12 +506,9 @@ def test_cli_help() -> None:
     """Test that the help command works and shows all available commands."""
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "solve" in result.stdout
-    assert "version-cmd" in result.stdout
-    assert "show-config" in result.stdout
-    assert "bench" in result.stdout
-    assert "improve" in result.stdout
-    assert "explain" in result.stdout
+    # Top-level is focused for YAML users; advanced commands live under 'dev'
+    assert "dev" in result.stdout
+    assert "validate" in result.stdout
 
 
 def test_cli_version(monkeypatch) -> None:
@@ -504,7 +517,7 @@ def test_cli_version(monkeypatch) -> None:
 
     monkeypatch.setattr(importlib.metadata, "version", lambda name: "0.2.0")
     version = importlib.metadata.version("flujo")
-    result = runner.invoke(app, ["version-cmd"])
+    result = runner.invoke(app, ["dev", "version"])
     assert result.exit_code == 0
     assert version in result.stdout
 
@@ -523,7 +536,7 @@ def test_cli_run() -> None:
     with patch("flujo.cli.main.run_default_pipeline", dummy_run_async):
         # from flujo.cli.main import app # This line is moved to the top of the file
 
-        result = runner.invoke(app, ["solve", "test prompt"])
+        result = runner.invoke(app, ["dev", "experimental", "solve", "test prompt"])
         assert result.exit_code == 0
 
 
@@ -560,6 +573,8 @@ def test_cli_run_with_args() -> None:
         result = runner.invoke(
             app,
             [
+                "dev",
+                "experimental",
                 "solve",
                 "test prompt",
                 "--solution-model",
@@ -581,17 +596,21 @@ def test_cli_run_with_args() -> None:
 def test_cli_run_with_invalid_args() -> None:
     """Test run with invalid command line arguments."""
     # Test with invalid max-iters
-    result = runner.invoke(app, ["solve", "test prompt", "--max-iters", "-1"])
+    result = runner.invoke(
+        app, ["dev", "experimental", "solve", "test prompt", "--max-iters", "-1"]
+    )
     assert result.exit_code != 0
     assert "Error" in result.stderr
 
     # Test with invalid k
-    result = runner.invoke(app, ["solve", "test prompt", "--k", "0"])
+    result = runner.invoke(app, ["dev", "experimental", "solve", "test prompt", "--k", "0"])
     assert result.exit_code != 0
     assert "Error" in result.stderr
 
     # Test with invalid scorer
-    result = runner.invoke(app, ["solve", "test prompt", "--scorer", "invalid"])
+    result = runner.invoke(
+        app, ["dev", "experimental", "solve", "test prompt", "--scorer", "invalid"]
+    )
     assert result.exit_code != 0
     assert "Error" in result.stderr
 
@@ -603,7 +622,10 @@ def test_cli_run_with_invalid_model() -> None:
 
     with patch("flujo.cli.main.make_review_agent") as mock_review:
         mock_review.side_effect = ConfigurationError("Invalid model name")
-        result = runner.invoke(app, ["solve", "test prompt", "--solution-model", "invalid-model"])
+        result = runner.invoke(
+            app,
+            ["dev", "experimental", "solve", "test prompt", "--solution-model", "invalid-model"],
+        )
         assert result.exit_code == 2
         assert "Configuration Error" in result.stderr
 
@@ -618,7 +640,7 @@ def test_cli_run_with_invalid_retries() -> None:
     with patch("flujo.cli.main.run_default_pipeline", raise_config_error):
         # from flujo.cli.main import app # This line is moved to the top of the file
 
-        result = runner.invoke(app, ["solve", "test prompt"])
+        result = runner.invoke(app, ["dev", "experimental", "solve", "test prompt"])
         assert result.exit_code == 2
 
 
@@ -632,7 +654,7 @@ def test_cli_run_with_invalid_agent_timeout() -> None:
     with patch("flujo.cli.main.run_default_pipeline", raise_config_error):
         # from flujo.cli.main import app # This line is moved to the top of the file
 
-        result = runner.invoke(app, ["solve", "test prompt"])
+        result = runner.invoke(app, ["dev", "experimental", "solve", "test prompt"])
         assert result.exit_code == 2
 
 
@@ -643,7 +665,9 @@ def test_cli_run_with_invalid_review_model() -> None:
 
     with patch("flujo.cli.main.make_review_agent") as mock_review:
         mock_review.side_effect = ConfigurationError("Invalid review model")
-        result = runner.invoke(app, ["solve", "test prompt", "--review-model", "invalid-model"])
+        result = runner.invoke(
+            app, ["dev", "experimental", "solve", "test prompt", "--review-model", "invalid-model"]
+        )
         assert result.exit_code == 2
         assert "Configuration Error" in result.stderr
 
@@ -655,7 +679,9 @@ def test_cli_run_with_invalid_review_model_path() -> None:
 
     with patch("flujo.cli.main.make_review_agent") as mock_review:
         mock_review.side_effect = ConfigurationError("Invalid review model path")
-        result = runner.invoke(app, ["solve", "test prompt", "--review-model", "/invalid/path"])
+        result = runner.invoke(
+            app, ["dev", "experimental", "solve", "test prompt", "--review-model", "/invalid/path"]
+        )
         assert result.exit_code == 2
         assert "Configuration Error" in result.stderr
 
@@ -666,7 +692,9 @@ def test_cli_add_eval_case_prints_correct_case_string(tmp_path) -> None:
     result = runner.invoke(
         app,
         [
-            "add-eval-case",
+            "dev",
+            "experimental",
+            "add-case",
             "-d",
             str(file),
             "-n",
@@ -687,7 +715,19 @@ def test_cli_add_eval_case_handles_missing_dataset_file_gracefully(tmp_path) -> 
     missing = tmp_path / "missing.py"
     result = runner.invoke(
         app,
-        ["add-eval-case", "-d", str(missing), "-n", "a", "-i", "b", "--expected", ""],
+        [
+            "dev",
+            "experimental",
+            "add-case",
+            "-d",
+            str(missing),
+            "-n",
+            "a",
+            "-i",
+            "b",
+            "--expected",
+            "",
+        ],
     )
     assert result.exit_code == 1
     assert "Dataset file not found" in result.stdout
@@ -699,7 +739,9 @@ def test_cli_add_eval_case_invalid_metadata_json(tmp_path) -> None:
     result = runner.invoke(
         app,
         [
-            "add-eval-case",
+            "dev",
+            "experimental",
+            "add-case",
             "-d",
             str(file),
             "-n",
@@ -749,7 +791,7 @@ def test_cli_improve_uses_custom_improvement_model(monkeypatch, tmp_path) -> Non
 
     result = runner.invoke(
         app,
-        ["improve", str(pipe), str(data), "--improvement-model", "custom"],
+        ["dev", "experimental", "improve", str(pipe), str(data), "--improvement-model", "custom"],
     )
     assert result.exit_code == 0
     assert called["model"] == "custom"

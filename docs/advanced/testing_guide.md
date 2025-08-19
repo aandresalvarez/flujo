@@ -67,7 +67,7 @@ When your pipeline uses a context model, provide `initial_context_data` to the r
 
 ```python
 from flujo import Flujo, Step, step
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 from flujo.testing.utils import StubAgent
 
 class Ctx(PipelineContext):
@@ -251,7 +251,7 @@ Asserts that the final pipeline context contains specific expected updates. This
 
 ```python
 from flujo import Flujo, Step
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 from flujo.testing.utils import StubAgent
 
 class MyContext(PipelineContext):

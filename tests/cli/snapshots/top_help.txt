@@ -1,0 +1,29 @@
+
+ Usage: root [OPTIONS] COMMAND [ARGS]...
+
+
+
+ A project-based server for building, running, and managing AI workflows.
+
+
+
+
+
+╭─ Options ───────────────────────────────────────────────────────────────────────────────────────────────╮
+│ --profile                               Enable Logfire STDOUT span viewer                                │
+│ --debug                 --no-debug      Enable verbose debug logging to '.flujo/logs/run.log'.          │
+│                                         [default: no-debug]                                              │
+│ --install-completion                    Install completion for the current shell.                        │
+│ --show-completion                       Show completion for the current shell, to copy it or customize  │
+│                                         the installation.                                                │
+│ --help                                  Show this message and exit.                                      │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────────────╮
+│ init       ✨ Initialize a new Flujo workflow project in this directory.                               │
+│ demo       🌟 Create a demo project with a sample research pipeline.                                   │
+│ create     🤖 Start a conversation with the AI Architect to build your workflow.                       │
+│ run        🚀 Run the workflow in the current project.                                                 │
+│ validate   ✅ Validate the project's pipeline.yaml file.                                               │
+│ lens       🔍 Inspect, debug, and trace past workflow runs.                                           │
+│ dev        🛠️  Access advanced developer and diagnostic tools (e.g., version, show-config, visualize). │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────╯

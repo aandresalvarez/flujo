@@ -17,6 +17,7 @@ from flujo.domain.models import (
     Failure,
     Chunk,
 )
+from flujo.domain.models import Paused as _Paused
 from flujo.domain.models import Quota
 from flujo.domain.resources import AppResources
 from flujo.exceptions import (
@@ -237,13 +238,20 @@ class StepCoordinator(Generic[ContextT]):
                         if isinstance(step_outcome, StepOutcome):
                             if isinstance(step_outcome, Success):
                                 step_result = step_outcome.step_result
+                                yield step_outcome
                             elif isinstance(step_outcome, Failure):
                                 step_result = step_outcome.step_result or StepResult(
                                     name=getattr(step, "name", "<unnamed>"),
                                     success=False,
                                     feedback=step_outcome.feedback,
                                 )
-                            yield step_outcome
+                                yield step_outcome
+                            elif isinstance(step_outcome, _Paused):
+                                # Forward Paused to the manager so it can set pause_message and handle abort
+                                yield step_outcome
+                            else:
+                                # Unknown control outcome: propagate as abort
+                                raise PipelineAbortSignal("Paused for HITL")
                         else:
                             step_result = step_outcome
                             yield Success(step_result=step_result)
@@ -258,21 +266,6 @@ class StepCoordinator(Generic[ContextT]):
                     scratch = context.scratchpad
                     if "paused_step_input" not in scratch:
                         scratch["paused_step_input"] = data
-                # Emit pause event for tracing
-                try:
-                    await self._dispatch_hook(
-                        "on_step_failure",  # reuse channel to ensure TraceManager closes child span if any
-                        step_result=StepResult(
-                            name=getattr(step, "name", "<paused>"),
-                            success=False,
-                            feedback=str(e),
-                        ),
-                        context=context,
-                        resources=self.resources,
-                    )
-                except Exception:
-                    pass
-                # Do not append a synthetic result; just stop so runner can resume later
                 # Indicate to the ExecutionManager/Runner that execution should stop by raising a sentinel
                 raise PipelineAbortSignal("Paused for HITL")
             except UsageLimitExceededError:

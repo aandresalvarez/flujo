@@ -109,6 +109,7 @@ class TestInMemoryLRUBackend:
         assert retrieved.output == "data"
 
     @pytest.mark.asyncio
+    @pytest.mark.slow  # Mark as slow due to sleep timing operation
     async def test_cache_ttl_expiration(self):
         """Test TTL expiration."""
         backend = InMemoryLRUBackend(max_size=10, ttl_s=0.1)  # Very short TTL
@@ -210,6 +211,7 @@ class TestThreadSafeMeter:
             await meter.guard(limits)
 
     @pytest.mark.asyncio
+    @pytest.mark.slow  # Mark as slow due to sleep timing operation
     async def test_concurrent_usage_tracking(self):
         """Test thread-safe usage tracking."""
         meter = ThreadSafeMeter()

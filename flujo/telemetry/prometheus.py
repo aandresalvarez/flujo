@@ -9,6 +9,13 @@ from typing import Any, Callable, Iterable, TypeVar, cast
 
 from ..state.backends.base import StateBackend
 
+
+class PrometheusBindingError(PermissionError):
+    """Raised when the metrics server cannot bind due to environment restrictions."""
+
+    pass
+
+
 T = TypeVar("T")
 
 # Default timeout for server readiness checks
@@ -127,9 +134,18 @@ def start_prometheus_server(port: int, backend: StateBackend) -> tuple[Callable[
     # For port 0 we need to find an available port first
     if port == 0:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind(("", 0))
-        assigned_port = sock.getsockname()[1]
-        sock.close()
+        try:
+            # Bind explicitly to localhost to satisfy sandbox constraints
+            sock.bind(("127.0.0.1", 0))
+            assigned_port = sock.getsockname()[1]
+        except PermissionError as e:  # pragma: no cover - sandbox-specific
+            # Surface a domain error; tests can decide to skip in constrained envs
+            raise PrometheusBindingError(f"Prometheus server binding not permitted: {e}")
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
     else:
         assigned_port = port
 

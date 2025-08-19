@@ -271,7 +271,29 @@ class ExecutionManager(Generic[ContextT]):
                                 # Pass through streaming chunks
                                 yield item
                             elif isinstance(item, Aborted):
-                                # Immediate termination without error
+                                # Treat quota/budget aborts as hard failures to surface to callers/CLI
+                                try:
+                                    from flujo.exceptions import UsageLimitExceededError as _ULEE
+                                except Exception:  # pragma: no cover - defensive
+                                    _ULEE = RuntimeError
+                                reason = getattr(item, "reason", "") or ""
+                                # Heuristics: detect common budget/limit abort reasons
+                                lower = str(reason).lower()
+                                is_budget = any(
+                                    key in lower
+                                    for key in [
+                                        "token_limit_exceeded",
+                                        "cost_limit_exceeded",
+                                        "usage limit exceeded",
+                                        "quota",
+                                        "budget",
+                                    ]
+                                )
+                                if is_budget:
+                                    # Preserve partial result in error for diagnostics
+                                    self.set_final_context(result, context)
+                                    raise _ULEE(reason or "Usage limit exceeded", result)
+                                # Otherwise, treat as immediate graceful termination
                                 self.set_final_context(result, context)
                                 yield result
                                 return
@@ -279,7 +301,7 @@ class ExecutionManager(Generic[ContextT]):
                                 # Unknown outcome: ignore
                                 pass
                         elif isinstance(item, StepResult):
-                            # Legacy path
+                            # Legacy path: just capture for later bookkeeping; do not forward paused records
                             step_result = item
                         else:
                             # Legacy streaming chunk; forward as-is
@@ -483,6 +505,8 @@ class ExecutionManager(Generic[ContextT]):
                             # Only set paused if not already set by lower layers
                             if scratch.get("status") != "paused":
                                 scratch["status"] = "paused"
+                            if not scratch.get("pause_message"):
+                                scratch["pause_message"] = "Paused for HITL"
                     except Exception:
                         pass
                     # Persist paused state for stateful HITL

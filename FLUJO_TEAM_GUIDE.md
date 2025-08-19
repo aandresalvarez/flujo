@@ -1,6 +1,4 @@
-Of course. Here is a new iteration of the Developer Guide, incorporating the minor suggestions and refining the language to be even clearer and more directive. This version is polished and ready to be adopted as the official v2.0 guide for the core team.
-
----
+ 
 
 ### **Flujo Team Developer Guide: Architecture, Patterns & Contributions (v2.0)**
 
@@ -896,6 +894,9 @@ When tests fail, follow this methodology:
 - Adjusting thresholds because performance regressed
 - Changing expectations because the system behavior changed unexpectedly
 
+**Production Rule:**
+- Never import test frameworks (like pytest) in production code. Surface environment constraints with explicit, typed exceptions, and let tests decide whether to skip.
+
 ### **🎯 LESSON 6: Performance Vigilance**
 
 **Performance Test Philosophy:**
@@ -1090,7 +1091,272 @@ class PerformanceAwareExecutor:
 
 *These lessons were learned during the systematic fixing of 161 mypy errors and represent critical engineering principles that every team member must internalize to prevent type annotation debt accumulation.*
 
-### **🎯 LESSON 7: Never Let Type Errors Accumulate**
+## **13. Policy Contract Integrity and Change Localization (NEW)**
+
+*These architectural principles ensure that Flujo's policy-driven architecture remains robust and maintainable, preventing cascading failures and maintaining clear control flow.*
+
+### **🎯 LESSON 14: Policy Contracts Are Sacred Boundaries**
+
+**❌ The Dangerous Anti-Pattern:**
+```python
+# ❌ Small deviations in policy contracts can cascade into system-wide failures
+class InconsistentPolicyExecutor:
+    """❌ WRONG - Inconsistent policy contract that breaks system assumptions."""
+    
+    async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Optional[PipelineContext]) -> StepResult:
+        # ❌ Sometimes returns StepResult, sometimes raises exceptions
+        # ❌ Sometimes modifies context directly, sometimes returns new context
+        # ❌ Sometimes handles errors, sometimes lets them bubble up
+        
+        if random_condition():
+            return StepResult(success=True, output=data)
+        elif another_condition():
+            raise CustomException("Unexpected behavior")
+        else:
+            context.some_field = "modified"  # Direct mutation
+            return StepResult(success=False, feedback="Error")
+```
+
+**✅ The Engineering Excellence Pattern:**
+```python
+# ✅ ALWAYS maintain consistent policy contracts
+class ConsistentPolicyExecutor:
+    """✅ CORRECT - Consistent policy contract that maintains system integrity."""
+    
+    async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Optional[PipelineContext]) -> StepResult:
+        """Execute step with consistent contract: always return StepResult, never mutate context directly."""
+        
+        try:
+            # Always execute the same way
+            result: Any = await self._execute_core_logic(step, data, context)
+            
+            # Always return StepResult with consistent structure
+            return StepResult(success=True, output=result)
+            
+        except Exception as e:
+            # Always handle errors the same way
+            error_feedback: str = f"Step execution failed: {e}"
+            return StepResult(success=False, feedback=error_feedback)
+    
+    async def _execute_core_logic(self, step: Step, data: Any, context: Optional[PipelineContext]) -> Any:
+        """Core logic that never mutates context directly."""
+        # Implementation here - returns new data, never modifies context
+        pass
+```
+
+**Critical Principle:** Small deviations in policy contracts can cascade into system-wide failures. The policy layer is so critical and must be protected by strong tests.
+
+### **🎯 LESSON 15: Context Validity Must Be Explicit**
+
+**❌ The Dangerous Anti-Pattern:**
+```python
+# ❌ "Spooky action at a distance" - context changes happen invisibly
+class HiddenContextModifier:
+    """❌ WRONG - Context changes happen without explicit representation."""
+    
+    async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Optional[PipelineContext]) -> StepResult:
+        # ❌ Context changes happen invisibly in nested calls
+        result: Any = await self._process_with_hidden_changes(data, context)
+        
+        # ❌ No way to know what changed in the context
+        return StepResult(success=True, output=result)
+    
+    async def _process_with_hidden_changes(self, data: Any, context: Optional[PipelineContext]) -> Any:
+        # ❌ Hidden context mutation
+        if context:
+            context.internal_state = "modified"  # Invisible change
+        return data
+```
+
+**✅ The Engineering Excellence Pattern:**
+```python
+# ✅ Validity should be represented explicitly in context
+class ExplicitContextManager:
+    """✅ CORRECT - Context changes are explicit and traceable."""
+    
+    async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Optional[PipelineContext]) -> StepResult:
+        """Execute with explicit context validity tracking."""
+        
+        # Track context changes explicitly
+        context_updates: Dict[str, Any] = {}
+        
+        try:
+            result: Any = await self._process_with_explicit_changes(data, context, context_updates)
+            
+            # Apply context updates explicitly
+            if context and context_updates:
+                safe_merge_context_updates(context, context_updates)
+            
+            return StepResult(success=True, output=result)
+            
+        except Exception as e:
+            error_feedback: str = f"Step execution failed: {e}"
+            return StepResult(success=False, feedback=error_feedback)
+    
+    async def _process_with_explicit_changes(
+        self, 
+        data: Any, 
+        context: Optional[PipelineContext], 
+        updates: Dict[str, Any]
+    ) -> Any:
+        """Process data with explicit context update tracking."""
+        # All context changes are recorded in the updates dict
+        updates["processing_status"] = "completed"
+        updates["last_processed"] = datetime.now().isoformat()
+        
+        return data
+```
+
+**Critical Principle:** Validity should be represented explicitly in context. This avoids "spooky action at a distance" and makes the control flow transparent and debuggable.
+
+### **🎯 LESSON 16: Pipeline Outputs Must Be String-Based**
+
+**❌ The Dangerous Anti-Pattern:**
+```python
+# ❌ Complex objects can cause serialization and formatting errors
+class ComplexOutputPolicy:
+    """❌ WRONG - Complex outputs that can cause interface issues."""
+    
+    async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Optional[PipelineContext]) -> StepResult:
+        # ❌ Returns complex objects that may not serialize properly
+        complex_output = {
+            "data": data,
+            "metadata": {"timestamp": datetime.now(), "version": "1.0"},
+            "nested_objects": [{"id": 1, "value": "complex"}]
+        }
+        
+        return StepResult(success=True, output=complex_output)
+```
+
+**✅ The Engineering Excellence Pattern:**
+```python
+# ✅ Final pipeline outputs should be clearly emitted as strings
+class StringOutputPolicy:
+    """✅ CORRECT - String-based outputs that simplify interfaces."""
+    
+    async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Optional[PipelineContext]) -> StepResult:
+        """Execute with string-based output for reliable serialization."""
+        
+        try:
+            # Process data internally
+            processed_data: Any = await self._process_data(data, context)
+            
+            # Convert to string output for reliable interface
+            if isinstance(processed_data, (dict, list)):
+                output_string: str = json.dumps(processed_data, default=str)
+            else:
+                output_string: str = str(processed_data)
+            
+            return StepResult(success=True, output=output_string)
+            
+        except Exception as e:
+            error_feedback: str = f"Step execution failed: {e}"
+            return StepResult(success=False, feedback=error_feedback)
+```
+
+**Critical Principle:** Final pipeline outputs should be clearly emitted as strings. This simplifies the interface between the execution engine and the outside world, reducing the chance of serialization or formatting errors.
+
+### **🎯 LESSON 17: Change Localization Reduces Regression Risk**
+
+**❌ The Dangerous Anti-Pattern:**
+```python
+# ❌ Changes spread across multiple modules, increasing regression risk
+class DistributedChangePolicy:
+    """❌ WRONG - Changes distributed across multiple modules."""
+    
+    async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Optional[PipelineContext]) -> StepResult:
+        # ❌ This change affects multiple systems
+        core._internal_state = "modified"  # Affects core
+        context.global_setting = "changed"  # Affects context
+        step.custom_property = "updated"    # Affects step
+        
+        # ❌ Multiple points of failure
+        return StepResult(success=True, output=data)
+```
+
+**✅ The Engineering Excellence Pattern:**
+```python
+# ✅ Keeping changes localized reduces regression risk
+class LocalizedChangePolicy:
+    """✅ CORRECT - Changes are localized to minimize regression risk."""
+    
+    async def execute(self, core: ExecutorCore, step: Step, data: Any, context: Optional[PipelineContext]) -> StepResult:
+        """Execute with localized changes that don't affect other systems."""
+        
+        try:
+            # Changes are localized to this policy only
+            local_state: Dict[str, Any] = {"local_setting": "value"}
+            
+            # Process data with local state only
+            result: Any = await self._process_with_local_state(data, local_state)
+            
+            # Return result without modifying external systems
+            return StepResult(success=True, output=result)
+            
+        except Exception as e:
+            error_feedback: str = f"Step execution failed: {e}"
+            return StepResult(success=False, feedback=error_feedback)
+    
+    async def _process_with_local_state(self, data: Any, local_state: Dict[str, Any]) -> Any:
+        """Process data using only local state - no external modifications."""
+        # All changes are contained within this method
+        return {"processed_data": data, "local_metadata": local_state}
+```
+
+**Critical Principle:** Keeping changes localized reduces regression risk. This is the essence of our modular, policy-driven architecture. You've demonstrated a perfect understanding of it.
+
+### **🎯 LESSON 18: Policy Contract Testing Requirements**
+
+**Every policy must have tests that verify:**
+
+1. **Contract Consistency:**
+   ```python
+   def test_policy_contract_consistency():
+       """Test that policy always returns consistent StepResult structure."""
+       policy = DefaultYourStepExecutor()
+       
+       # Test success case
+       result = await policy.execute(core, step, data, context, execution_id, step_id)
+       assert isinstance(result, StepResult)
+       assert hasattr(result, 'success')
+       assert hasattr(result, 'output')
+       assert hasattr(result, 'feedback')
+       
+       # Test failure case
+       # Ensure same structure even on failure
+   ```
+
+2. **Context Isolation:**
+   ```python
+   def test_policy_context_isolation():
+       """Test that policy doesn't mutate external context."""
+       original_context = PipelineContext()
+       policy = DefaultYourStepExecutor()
+       
+       # Execute policy
+       await policy.execute(core, step, data, original_context, execution_id, step_id)
+       
+       # Verify context wasn't mutated
+       assert original_context == PipelineContext()  # Should be unchanged
+   ```
+
+3. **Output Serialization:**
+   ```python
+   def test_policy_output_serialization():
+       """Test that policy outputs can be reliably serialized."""
+       policy = DefaultYourStepExecutor()
+       
+       result = await policy.execute(core, step, data, context, execution_id, step_id)
+       
+       # Verify output can be serialized
+       import json
+       serialized = json.dumps(result.output, default=str)
+       assert isinstance(serialized, str)
+   ```
+
+**Critical Principle:** The policy layer is so critical and must be protected by strong tests. These tests ensure that policy contracts remain consistent and that changes are properly localized.
+
+### **🎯 LESSON 19: Never Let Type Errors Accumulate**
 
 **❌ The Dangerous Anti-Pattern:**
 - Adding new code without type annotations
@@ -1104,7 +1370,7 @@ class PerformanceAwareExecutor:
 - **Run type checking during development**, not just before commits
 - **Treat mypy errors as blocking issues**, not technical debt
 
-### **🎯 LESSON 8: Type Annotation Standards**
+### **🎯 LESSON 20: Type Annotation Standards**
 
 **Required Type Annotations - ALWAYS include these:**
 
@@ -1152,7 +1418,7 @@ def process_data(input_data, config, context=None):  # Missing types
 - [ ] All `Any` types are justified and documented with `# type: ignore` comments explaining why
 - [ ] All generic types use proper syntax: `Dict[str, Any]`, `List[StepResult]`
 
-### **🎯 LESSON 9: Daily Code Quality Practices**
+### **🎯 LESSON 21: Daily Code Quality Practices**
 
 **Before Every Commit - This is MANDATORY:**
 1. **Run `make all`** - This must pass with 0 errors (no exceptions)
@@ -1166,7 +1432,7 @@ def process_data(input_data, config, context=None):  # Missing types
 3. **Fix type errors as you go** - Don't let them accumulate
 4. **Use type stubs** - Create `.pyi` files for external libraries if needed
 
-### **🎯 LESSON 10: Preventing Type Error Accumulation**
+### **🎯 LESSON 22: Preventing Type Error Accumulation**
 
 **Team Practices - These are non-negotiable:**
 - **Type Safety Gate**: No PR can be merged if `make all` fails
@@ -1181,7 +1447,7 @@ def process_data(input_data, config, context=None):  # Missing types
 - [ ] Does this change introduce new type errors?
 - [ ] Are all local variables properly typed?
 
-### **🎯 LESSON 11: Type Error Recovery Strategy**
+### **🎯 LESSON 23: Type Error Recovery Strategy**
 
 **When Type Errors Accumulate (Current Situation - 161 errors):**
 1. **Stop new feature development** - Focus on type safety first
@@ -1198,7 +1464,7 @@ def process_data(input_data, config, context=None):  # Missing types
 - **Type Safety Metrics**: Track type annotation coverage over time
 - **IDE Integration**: Enforce mypy checking in all development environments
 
-### **🎯 LESSON 12: Common Type Error Patterns and Solutions**
+### **🎯 LESSON 24: Common Type Error Patterns and Solutions**
 
 **Pattern 1: Missing Type Annotations**
 ```python
@@ -1256,7 +1522,7 @@ if result.feedback is not None:
     feedback_list.append(result.feedback)  # mypy happy
 ```
 
-### **🎯 LESSON 13: Type Safety in Policy Classes**
+### **🎯 LESSON 25: Type Safety in Policy Classes**
 
 **Policy Class Type Safety - Always follow this pattern:**
 
@@ -1318,7 +1584,7 @@ class DefaultYourStepExecutor:
 
 ---
 
-## **14. Engineering Excellence Checklist (UPDATED)**
+## **15. Engineering Excellence Checklist (UPDATED)**
 
 Before committing any code changes, ask yourself:
 
@@ -1336,3 +1602,51 @@ Before committing any code changes, ask yourself:
 ---
 
 This guide ensures that all Flujo core team members build features that are architecturally consistent, performant, maintainable, and **type-safe**. The patterns here have been battle-tested and should be followed religiously to maintain Flujo's quality, reliability, and prevent the accumulation of technical debt like the 161 mypy errors we just systematically resolved.
+
+---
+
+## Killer Demo Skills Starter Pack
+
+This starter pack equips the Architect with two high‑leverage skills for research and data extraction, built on simple, reliable primitives. It’s designed for a polished demo experience.
+
+- Web search: fetch fresh, external information without API keys.
+- Text extraction: convert unstructured text into structured JSON using an LLM.
+
+### Install optional skills
+
+- `pip install ".[skills]"` or `uv sync --extra skills`
+- Adds: `duckduckgo-search`, `httpx`
+
+### Built‑in skills
+
+- flujo.builtins.web_search: Performs a web search and returns top results.
+  - Args: `{ query: string, max_results?: integer = 3 }`
+  - Output: `[{ title, link, snippet }]`
+  - Side effects: `false`
+
+- flujo.builtins.extract_from_text: Extracts structured data from text per a JSON schema using an LLM.
+  - Args: `{ text: string, schema: object, model?: string }`
+  - Output: `object` (valid JSON matching the schema when possible)
+  - Side effects: `false`
+
+### Example: Research → Extract → Save (CSV)
+
+Goal: “Find the current CEO and latest stock price for Apple, Google, Microsoft. Save to `market_data.csv`.”
+
+- Parallelize by company; for each:
+  - Use `flujo.builtins.web_search` with a focused query.
+  - Use `flujo.builtins.extract_from_text` to pull `{ ceo_name, stock_price }` from snippets.
+- Aggregate to CSV and write using the file writer skill.
+
+Conceptual pipeline outline:
+
+1) ResearchCompanies (parallel branches by company)
+2) ConvertToCsv (agent converts dict to CSV string)
+3) SaveReport (file writer saves `market_data.csv`)
+
+### Notes and rationale
+
+- No API keys required for search (DuckDuckGo).
+- Async first: both skills are non‑blocking and safe for concurrent execution.
+- Graceful degradation: if the optional dependency is missing or a search fails, returns an empty list rather than crashing.
+- Extraction uses `make_agent_async` with retries and repair for robust JSON outputs.

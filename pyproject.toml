@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # --------------------------------------------------------------------------- #
 [project]
 name = "flujo"
-version = "0.4.36"  # Performance optimizations with uvloop, orjson, and blake3
+version = "0.4.37"  # Project-based CLI journey (FSD-021)
 description = "A modern, type-safe framework for building AI-powered applications with structured outputs and robust error handling."
 readme = "README.md"
 license = {text = "AGPL-3.0"}
@@ -30,7 +30,7 @@ classifiers = [
 ]
 dependencies = [
     "pydantic>=2.11.7,<2.13",
-    "pydantic-ai>=0.4.7,<0.5.0",
+    "pydantic-ai>=0.7.0,<0.7.3",
     "pydantic-settings>=2.0.0",
     "aiosqlite>=0.19.0",
     "tenacity>=8.2.0",
@@ -43,7 +43,6 @@ dependencies = [
     "numpy>=1.20.0",
     "PyYAML>=6.0",
 ]
-
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
 [project.optional-dependencies]
 dev = [
@@ -69,10 +68,17 @@ dev = [
   "prometheus-client>=0.22.1,<0.23.0",  # Required for prometheus tests
   "httpx",  # Required for prometheus integration tests
 ]
+skills = [
+  "ddgs",
+  "httpx",
+  "aiofiles",
+  "pyfiglet",
+]
 docs = [
     "mkdocs",
     "mkdocs-material", # Added for a professional theme
     "mkdocstrings[python]",
+    "mkdocs-redirects",
 ]
 opentelemetry = ["opentelemetry-sdk>=1.26", "opentelemetry-exporter-otlp-proto-http>=1.26"]
 lens = [
@@ -86,6 +92,8 @@ bench = [
 ]
 logfire = ["logfire>=4.0.0"] # Updated for compatibility with pydantic-graph 0.4.7
 sql = ["sqlvalidator>=0.0.8"]
+templating = ["Jinja2>=3.1"]
+yaml_tools = ["ruamel.yaml>=0.18"]
 
 # Prometheus-related dependencies (install with: `pip install .[prometheus]`)
 prometheus = [
@@ -127,6 +135,8 @@ module = [
     "pydantic_evals",
     "tenacity",
     "yaml",
+    "duckduckgo_search",
+    "ddgs",
     "tomli",
     "sqlvalidator",
     "vcr",
@@ -143,6 +153,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
     "aiosqlite",
+    "aiofiles",
 ]
 ignore_missing_imports = true
 
@@ -168,6 +179,24 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "flujo.application.core.step_logic"
 disable_error_code = ["no-any-return"]
+
+
+# Coverage configuration to make reports robust across environments
+[tool.coverage.run]
+source = ["flujo"]
+parallel = true
+relative_files = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.coverage.paths]
+source = [
+  "flujo",
+  "*/work/flujo/flujo/flujo",
+  "*/Documents/Code/flujo/flujo",
+]
 
 
 # Relax mypy on complex, dynamically-typed policy and executor modules
@@ -283,6 +312,8 @@ disable_error_code = [
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
 per-file-ignores = { "tests/benchmarks/*.py" = ["E402"], "tests/unit/test_extract.py" = ["E402"] }
 
 
@@ -315,7 +346,10 @@ addopts = [
 # --------------------------------------------------------------------------- #
 [tool.hatch.build.targets.wheel]
 packages = ["flujo"]
-include = ["flujo/py.typed"]
+include = [
+    "flujo/py.typed",
+    "flujo/recipes/architect_pipeline.yaml",
+]
 
 [tool.hatch.build.targets.sdist]
 include = [

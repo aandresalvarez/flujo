@@ -8,7 +8,7 @@
 from flujo import Step, AgentProcessors
 from flujo.processors import AddContextVariables, StripMarkdownFences
 from flujo.testing.utils import StubAgent
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 
 class Ctx(PipelineContext):
     product: str

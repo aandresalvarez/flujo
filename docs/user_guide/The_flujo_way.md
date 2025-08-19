@@ -23,7 +23,7 @@ Use `AsyncAgentProtocol` for simple agents that don't need typed context:
 ```python
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.domain.resources import AppResources
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 
 class TriageContext(PipelineContext):
     post_content: str
@@ -46,7 +46,7 @@ For agents that need typed pipeline context, use `ContextAwareAgentProtocol`:
 
 ```python
 from flujo.domain.agent_protocol import ContextAwareAgentProtocol
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 
 class ResearchContext(PipelineContext):
     research_topic: str = "Unknown"
@@ -148,7 +148,7 @@ refine_step = Step.refine_until(
 ### A. Basic Context
 
 ```python
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 
 class ModerationContext(PipelineContext):
     post_id: int
@@ -160,7 +160,7 @@ class ModerationContext(PipelineContext):
 ### B. Extended Context with Built-in Features
 
 ```python
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 from pydantic import Field
 
 class ResearchContext(PipelineContext):

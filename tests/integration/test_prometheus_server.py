@@ -5,13 +5,18 @@ import httpx
 from flujo import Step
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.state.backends.sqlite import SQLiteBackend
-from flujo.telemetry.prometheus import start_prometheus_server
+from flujo.telemetry.prometheus import start_prometheus_server, PrometheusBindingError
 from tests.conftest import create_test_flujo
 
 
 def test_prometheus_metrics_endpoint(tmp_path):
     backend = SQLiteBackend(tmp_path / "state.db")
-    wait_for_ready, assigned_port = start_prometheus_server(0, backend)
+    try:
+        wait_for_ready, assigned_port = start_prometheus_server(0, backend)
+    except PrometheusBindingError as e:  # environment may restrict binding
+        import pytest
+
+        pytest.skip(str(e))
     step = Step.model_validate({"name": "s", "agent": StubAgent(["o"])})
     runner = create_test_flujo(step, state_backend=backend)
     asyncio.run(gather_result(runner, "in"))  # Run the workflow

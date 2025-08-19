@@ -34,10 +34,13 @@ class CacheStep(Step[StepInT, StepOutT]):
         cache_backend: Optional[CacheBackend] = None,
     ) -> "CacheStep[Any, Any]":
         """Create a CacheStep that wraps the given step with caching."""
+        # Preserve the inner agent so default policy paths remain executable
+        # even if policy routing does not pick the CacheStep policy.
         return cls(
             name=wrapped_step.name,
             wrapped_step=wrapped_step,
             cache_backend=cache_backend or InMemoryCache(),
+            agent=getattr(wrapped_step, "agent", None),
         )
 
 

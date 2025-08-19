@@ -22,9 +22,28 @@ Imagine you need to automate a task: "Summarize a web article, translate it to S
 
 **With Flujo, it's a conversation.**
 
-#### **Step 1: Tell Flujo Your Goal**
+#### **Step 1: Initialize a Project**
 
-Start a conversation with the Flujo Architect, your AI pipeline designer.
+Create and enter a new project directory, then scaffold it:
+
+```bash
+mkdir weekly-bot && cd weekly-bot
+flujo init
+```
+
+Re-initialize an existing project (overwriting templates):
+
+```bash
+# Prompt for confirmation
+flujo init --force
+
+# Non-interactive (CI/scripts):
+flujo init --force --yes
+```
+
+#### **Step 2: Tell Flujo Your Goal**
+
+Start a conversation with the Flujo Architect from inside your project:
 
 ```bash
 flujo create --goal "Summarize a web article, translate it to Spanish, and post to Slack."
@@ -47,7 +66,7 @@ In seconds, Flujo has generated a complete, secure, and production-ready YAML bl
 Execute your new pipeline. Flujo handles the orchestration, cost tracking, and logging automatically.
 
 ```bash
-flujo run pipeline.yaml --input "https://flujo-ai.dev/blog/some-article"
+flujo run --input "https://flujo-ai.dev/blog/some-article"
 ```
 Every run is saved. If something goes wrong, you have a complete, replayable trace.
 ```bash
@@ -55,7 +74,7 @@ Every run is saved. If something goes wrong, you have a complete, replayable tra
 flujo lens trace <run_id>
 
 # Replay a failed production run locally for perfect debugging
-flujo lens replay <run_id> --file pipeline.yaml
+flujo lens replay <run_id>
 ```
 
 **This is the core of Flujo:** a framework that uses AI to build AI, guided by you, and governed by production-ready safety rails.
@@ -122,6 +141,20 @@ export OPENAI_API_KEY="sk-..."
 ```
 
 For full guides, tutorials, and API references, please see our **[Official Documentation](https://flujo.readthedocs.io/)**.
+
+Looking to use GPT‑5 with the Architect? See the guide: `docs/guides/gpt5_architect.md`.
+
+---
+
+## CLI Overview
+
+- `init`: ✨ Initialize a new Flujo workflow project in this directory.
+- `create`: 🤖 Start a conversation with the AI Architect to build your workflow.
+- `run`: 🚀 Run the workflow in the current project.
+- `lens`: 🔍 Inspect, debug, and trace past workflow runs.
+- `dev`: 🛠️ Access advanced developer and diagnostic tools.
+  - `validate`, `show-steps`, `visualize`, `compile-yaml`, `show-config`, `version`
+  - `experimental`: advanced tools like `solve`, `bench`, `add-case`, `improve`
 
 ---
 

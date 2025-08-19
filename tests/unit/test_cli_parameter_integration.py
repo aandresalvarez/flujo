@@ -49,7 +49,9 @@ class TestCLIParameterIntegration:
                                     from typer.testing import CliRunner
 
                                     runner = CliRunner()
-                                    result = runner.invoke(app, ["solve", "test prompt"])
+                                    result = runner.invoke(
+                                        app, ["dev", "experimental", "solve", "test prompt"]
+                                    )
                                     assert result.exit_code == 0
                                     mock_make_pipeline.assert_called_once()
 
@@ -110,7 +112,14 @@ class TestCLIParameterIntegration:
                                         runner = CliRunner()
                                         result = runner.invoke(
                                             app,
-                                            ["bench", "test prompt", "--rounds", "1"],
+                                            [
+                                                "dev",
+                                                "experimental",
+                                                "bench",
+                                                "test prompt",
+                                                "--rounds",
+                                                "1",
+                                            ],
                                         )
                                     assert result.exit_code == 0
                                     mock_make_pipeline.assert_called_once()

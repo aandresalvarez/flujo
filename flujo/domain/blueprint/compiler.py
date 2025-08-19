@@ -37,17 +37,38 @@ class DeclarativeBlueprintCompiler:
                 model_name = str(spec.get("model"))
                 system_prompt = str(spec.get("system_prompt"))
                 output_schema = spec.get("output_schema") or {}
+                # Optional GPT-5 style controls passed through to Agent
+                model_settings = spec.get("model_settings") or {}
+                # Optional execution controls
+                timeout_opt = spec.get("timeout")
+                max_retries_opt = spec.get("max_retries")
             else:
                 # Already a parsed model-like (fallback)
                 model_name = str(getattr(spec, "model"))
                 system_prompt = str(getattr(spec, "system_prompt"))
                 output_schema = getattr(spec, "output_schema")
+                try:
+                    model_settings = getattr(spec, "model_settings", {}) or {}
+                except Exception:
+                    model_settings = {}
+                try:
+                    timeout_opt = getattr(spec, "timeout", None)
+                except Exception:
+                    timeout_opt = None
+                try:
+                    max_retries_opt = getattr(spec, "max_retries", None)
+                except Exception:
+                    max_retries_opt = None
 
             output_type = generate_model_from_schema(name, output_schema)
             agent_wrapper = make_agent_async(
                 model=model_name,
                 system_prompt=system_prompt,
                 output_type=output_type,
+                # Pass through provider-specific model settings (e.g., GPT-5 controls)
+                model_settings=model_settings,
+                timeout=timeout_opt,
+                max_retries=int(max_retries_opt) if isinstance(max_retries_opt, int) else 3,
             )
             self._compiled_agents[name] = agent_wrapper
 

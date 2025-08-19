@@ -4,6 +4,8 @@ from pathlib import Path
 from typer.testing import CliRunner
 from flujo.cli.main import app
 from flujo.infra.skill_registry import get_skill_registry
+import yaml
+import pytest
 
 
 class _FakeCtx:
@@ -147,4 +149,13 @@ steps: []
         ],
     )
     assert res2.exit_code == 0
-    assert out_file.read_text() == yaml_text
+    # Compare YAML structures to avoid quoting differences
+    try:
+        actual_yaml = yaml.safe_load(out_file.read_text())
+    except yaml.YAMLError as e:
+        pytest.fail(f"Malformed YAML in output file {out_file}:\n{e}")
+    try:
+        expected_yaml = yaml.safe_load(yaml_text)
+    except yaml.YAMLError as e:
+        pytest.fail(f"Malformed expected YAML string:\n{e}")
+    assert actual_yaml == expected_yaml

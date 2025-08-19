@@ -1,6 +1,9 @@
 # Quickstart Guide
 
-Get up and running with `flujo` in 5 minutes!
+Get up and running with `flujo` in minutes. Choose a path:
+
+- Project-based (no-code CLI) — recommended for most users
+- Programmatic (Python DSL) — for full control
 
 ## 1. Install the Package
 
@@ -21,7 +24,37 @@ Add your API keys to `.env`:
 OPENAI_API_KEY=your_key_here
 ```
 
-## 3. Your First AgenticLoop
+## 3. Project-Based Quickstart (Recommended)
+
+Initialize a new project and create a pipeline via conversation.
+
+```bash
+mkdir my-bot && cd my-bot
+flujo init
+```
+
+Start the architect to generate `pipeline.yaml` and budget in `flujo.toml`:
+
+```bash
+flujo create
+# Answer prompts: goal, pipeline name, budget per-run
+```
+
+Run the pipeline (project-aware; no file paths needed):
+
+```bash
+flujo run --input "Hello, world"
+```
+
+Inspect and replay runs using the built-in lens tooling (uses `.flujo/state.db` by default):
+
+```bash
+flujo lens list
+flujo lens trace <run_id>
+flujo lens replay <run_id>
+```
+
+## 4. Programmatic Quickstart (Python DSL)
 
 Create a new file `hello_agentic.py`:
 
@@ -66,7 +99,7 @@ if result.trace_tree:
     print(f"   Steps: {len(result.step_history)}")
 ```
 
-## 4. Run Your First Loop
+## 5. Run Your First Loop
 
 ```bash
 python hello_agentic.py
@@ -74,7 +107,7 @@ python hello_agentic.py
 
 You should see a short transcript of the planner running the search tool and finishing with an answer, plus trace information.
 
-## 5. Debug with Tracing
+## 6. Debug with Tracing
 
 After running your pipeline, you can inspect the execution trace:
 
@@ -89,6 +122,6 @@ flujo lens trace <run_id>
 flujo lens spans <run_id>
 ```
 
-## 6. Next Steps
+## 7. Next Steps
 
 Now that you've seen the basics, explore the [Tutorial](tutorial.md) and [Concepts](../user_guide/concepts.md) pages for a deeper dive.

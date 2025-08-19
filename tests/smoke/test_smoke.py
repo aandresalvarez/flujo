@@ -22,6 +22,6 @@ async def test_basic_pipeline_runs() -> None:
 
 def test_cli_version() -> None:
     runner = CliRunner()
-    res = runner.invoke(app, ["version-cmd"])
+    res = runner.invoke(app, ["dev", "version"])
     assert res.exit_code == 0
     assert "flujo version:" in res.stdout

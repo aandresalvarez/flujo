@@ -140,6 +140,7 @@ class TestStateManagerCacheKeyParsing:
             assert parsed_run_id == run_id, f"Failed for run_id: {run_id}"
             assert parsed_context_hash == context_hash, f"Failed for run_id: {run_id}"
 
+    @pytest.mark.slow  # Mark as slow due to performance measurement
     def test_cache_key_performance(self, state_manager):
         """Test that cache key operations are performant."""
         import time

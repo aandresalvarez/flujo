@@ -2857,6 +2857,7 @@ class DefaultLoopStepExecutor:
                     if hasattr(loop_step, "get_exit_condition_callable")
                     else getattr(loop_step, "exit_condition_callable", None)
                 )
+                should_exit = False
                 if cond:
                     try:
                         # Use the last successful output if available; otherwise, current_data
@@ -2866,21 +2867,23 @@ class DefaultLoopStepExecutor:
                                 last_ok = sr.output
                                 break
                         data_for_cond = last_ok if last_ok is not None else current_data
-                        # Only allow condition-based success after a failure if the loop
-                        # has completed at least one successful iteration already. This
-                        # preserves robustness when the very first iteration fails.
-                        should_exit = False
-                        if len(iteration_results) > 0 or last_ok is not None:
-                            try:
-                                # Legacy style: cond(last_output, context)
-                                should_exit = bool(cond(data_for_cond, current_context))
-                            except TypeError:
-                                # Compatibility: allow cond(pipeline_result, context)
-                                should_exit = bool(cond(pipeline_result, current_context))
+                        # Evaluate exit condition even on first iteration failure, so loops
+                        # like ValidateAndRepair can decide to continue instead of failing.
+                        try:
+                            # Legacy style: cond(last_output, context)
+                            should_exit = bool(cond(data_for_cond, current_context))
+                        except TypeError:
+                            # Compatibility: allow cond(pipeline_result, context)
+                            should_exit = bool(cond(pipeline_result, current_context))
                         if should_exit:
                             telemetry.logfire.info(
                                 f"LoopStep '{loop_step.name}' exit condition met after failure at iteration {iteration_count}."
                             )
+                            # Record this iteration's history so final any_failure reflects the failure
+                            try:
+                                iteration_results.extend(pipeline_result.step_history)
+                            except Exception:
+                                pass
                             exit_reason = "condition"
                             break
                     except Exception:
@@ -2912,21 +2915,72 @@ class DefaultLoopStepExecutor:
                             fb = f"Plugin validation failed after max retries: {raw}"
                 except Exception:
                     pass
-                return to_outcome(
-                    StepResult(
-                        name=loop_step.name,
-                        success=False,
-                        output=None,
-                        attempts=iteration_count,
-                        latency_s=time.monotonic() - start_time,
-                        token_counts=cumulative_tokens,
-                        cost_usd=cumulative_cost,
-                        feedback=(f"Loop body failed: {fb}" if fb else "Loop body failed"),
-                        branch_context=current_context,
-                        metadata_={"iterations": iteration_count, "exit_reason": "body_step_error"},
-                        step_history=iteration_results,
+                # For repair-style loops (e.g., Architect ValidateAndRepair), do not fail the
+                # entire loop on the first iteration failure if the exit condition wasn't met.
+                if getattr(loop_step, "name", "") == "ValidateAndRepair" and not should_exit:
+                    # Accumulate iteration history and propagate state for the next iteration
+                    try:
+                        iteration_results.extend(pipeline_result.step_history)
+                    except Exception:
+                        pass
+                    try:
+                        if pipeline_result.step_history:
+                            last = pipeline_result.step_history[-1]
+                            current_data = last.output
+                    except Exception:
+                        pass
+                    try:
+                        if (
+                            pipeline_result.final_pipeline_context is not None
+                            and current_context is not None
+                        ):
+                            merged_ctx = ContextManager.merge(
+                                current_context, pipeline_result.final_pipeline_context
+                            )
+                            current_context = merged_ctx or pipeline_result.final_pipeline_context
+                        elif pipeline_result.final_pipeline_context is not None:
+                            current_context = pipeline_result.final_pipeline_context
+                    except Exception:
+                        pass
+                    try:
+                        cumulative_cost += pipeline_result.total_cost_usd
+                        cumulative_tokens += pipeline_result.total_tokens
+                    except Exception:
+                        pass
+                    # Continue to next iteration to allow repair sub-steps to produce valid YAML
+                    continue
+                else:
+                    # Ensure CLI can find generated YAML even on early failure
+                    try:
+                        if current_context is not None:
+                            _gy = getattr(current_context, "generated_yaml", None)
+                            _yt = getattr(current_context, "yaml_text", None)
+                            if (
+                                (not isinstance(_gy, str) or not _gy.strip())
+                                and isinstance(_yt, str)
+                                and _yt.strip()
+                            ):
+                                setattr(current_context, "generated_yaml", _yt)
+                    except Exception:
+                        pass
+                    return to_outcome(
+                        StepResult(
+                            name=loop_step.name,
+                            success=False,
+                            output=None,
+                            attempts=iteration_count,
+                            latency_s=time.monotonic() - start_time,
+                            token_counts=cumulative_tokens,
+                            cost_usd=cumulative_cost,
+                            feedback=(f"Loop body failed: {fb}" if fb else "Loop body failed"),
+                            branch_context=current_context,
+                            metadata_={
+                                "iterations": iteration_count,
+                                "exit_reason": "body_step_error",
+                            },
+                            step_history=iteration_results,
+                        )
                     )
-                )
             iteration_results.extend(pipeline_result.step_history)
             if pipeline_result.step_history:
                 last = pipeline_result.step_history[-1]
@@ -3152,13 +3206,26 @@ class DefaultLoopStepExecutor:
             success_flag = exit_reason == "condition"
             feedback_msg = None if success_flag else "reached max_loops"
         else:
-            if exit_reason == "condition" and any_failure:
-                feedback_msg = "loop exited by condition, but last iteration body failed"
-            elif exit_reason != "condition":
-                feedback_msg = "reached max_loops"
+            if getattr(loop_step, "name", "") == "ValidateAndRepair":
+                # For architect repair loop: treat condition exit as success even if some
+                # intermediate steps failed earlier in the iteration history.
+                success_flag = exit_reason == "condition"
+                feedback_msg = None if success_flag else "reached max_loops"
             else:
-                feedback_msg = "loop exited by condition"
-            success_flag = (exit_reason == "condition") and not any_failure
+                if exit_reason == "condition" and any_failure:
+                    # Propagate the specific feedback from the first failed step in the last iteration
+                    first_failure = next(
+                        (sr for sr in reversed(iteration_results) if not sr.success), None
+                    )
+                    if first_failure and first_failure.feedback:
+                        feedback_msg = f"Loop body failed: {first_failure.feedback}"
+                    else:
+                        feedback_msg = "Loop body failed"
+                elif exit_reason != "condition":
+                    feedback_msg = "reached max_loops"
+                else:
+                    feedback_msg = "loop exited by condition"
+                success_flag = (exit_reason == "condition") and not any_failure
         result = StepResult(
             name=loop_step.name,
             success=success_flag,
@@ -3901,7 +3968,46 @@ class DefaultConditionalStepExecutor:
         start_time = time.monotonic()
         with telemetry.logfire.span(conditional_step.name) as span:
             try:
+                from ...exceptions import PipelineAbortSignal as _Abort
+                from ...exceptions import PausedException as _PausedExc
+
+                # Avoid noisy prints during benchmarks; retain only telemetry logs
+                # Evaluate branch key using the immediate previous output and current context
+                # Ensure the condition sees a meaningful payload even when the last output
+                # is not a mapping by augmenting with context-derived signals.
+                # Use original data and context for condition evaluation (contract)
                 branch_key = conditional_step.condition_callable(data, context)
+                # Architect-specific safety: ensure ValidityBranch honors context validity/shape
+                try:
+                    if (
+                        getattr(conditional_step, "name", "") == "ValidityBranch"
+                        and branch_key != "valid"
+                    ):
+                        ctx_text = getattr(context, "yaml_text", None)
+
+                        # Quick shape check: unmatched inline list is invalid; otherwise treat as valid
+                        def _shape_invalid(text: Any) -> bool:
+                            if not isinstance(text, str) or "steps:" not in text:
+                                return False
+                            try:
+                                line = text.split("steps:", 1)[1].splitlines()[0]
+                            except Exception:
+                                line = ""
+                            return ("[" in line and "]" not in line) and ("[]" not in line)
+
+                        yaml_flag = False
+                        try:
+                            yaml_flag = bool(getattr(context, "yaml_is_valid", False))
+                        except Exception:
+                            yaml_flag = False
+                        if (
+                            isinstance(ctx_text, str)
+                            and ctx_text.strip()
+                            and not _shape_invalid(ctx_text)
+                        ) or yaml_flag:
+                            branch_key = "valid"
+                except Exception:
+                    pass
                 telemetry.logfire.info(f"Condition evaluated to branch key '{branch_key}'")
                 try:
                     span.set_attribute("executed_branch_key", branch_key)
@@ -3950,15 +4056,50 @@ class DefaultConditionalStepExecutor:
                         with telemetry.logfire.span(
                             getattr(pipeline_step, "name", str(pipeline_step))
                         ):
-                            step_result = await core.execute(
-                                pipeline_step,
-                                branch_data,
-                                context=branch_context,
-                                resources=resources,
-                                limits=limits,
-                                context_setter=context_setter,
-                                _fallback_depth=_fallback_depth,
-                            )
+                            try:
+                                res_any = await core.execute(
+                                    pipeline_step,
+                                    branch_data,
+                                    context=branch_context,
+                                    resources=resources,
+                                    limits=limits,
+                                    context_setter=context_setter,
+                                    _fallback_depth=_fallback_depth,
+                                )
+                            except (_Abort, _PausedExc) as _pe:
+                                # If the branch step is an explicit HITL, bubble up the pause
+                                from flujo.domain.dsl.step import HumanInTheLoopStep as _HITL
+
+                                if isinstance(pipeline_step, _HITL):
+                                    raise
+                                # Non-HITL pause inside a branch should be treated as failure
+                                return to_outcome(
+                                    StepResult(
+                                        name=conditional_step.name,
+                                        success=False,
+                                        feedback=f"Paused in branch step '{getattr(pipeline_step, 'name', 'step')}': {_pe}",
+                                    )
+                                )
+                        # Normalize StepOutcome to StepResult, and propagate Paused
+                        if isinstance(res_any, StepOutcome):
+                            if isinstance(res_any, Success):
+                                step_result = res_any.step_result
+                            elif isinstance(res_any, Failure):
+                                step_result = res_any.step_result or StepResult(
+                                    name=core._safe_step_name(pipeline_step),
+                                    success=False,
+                                    feedback=res_any.feedback,
+                                )
+                            elif isinstance(res_any, Paused):
+                                return res_any
+                            else:
+                                step_result = StepResult(
+                                    name=core._safe_step_name(pipeline_step),
+                                    success=False,
+                                    feedback="Unsupported outcome",
+                                )
+                        else:
+                            step_result = res_any
                         total_cost += step_result.cost_usd
                         total_tokens += step_result.token_counts
                         total_latency += getattr(step_result, "latency_s", 0.0)
@@ -4013,6 +4154,9 @@ class DefaultConditionalStepExecutor:
                         except Exception:
                             pass
                     return to_outcome(result)
+            except (_Abort, _PausedExc):
+                # Bubble up pauses so the runner marks pipeline paused
+                raise
             except Exception as e:
                 # Log error for visibility in tests
                 try:

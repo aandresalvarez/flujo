@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Union, Literal, Tuple
-from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+    AliasChoices,
+)
 import re
 import yaml
 
@@ -22,10 +29,18 @@ class BlueprintStepModel(BaseModel):
     This intentionally supports only a safe subset to start, then we'll extend.
     """
 
-    kind: Literal["step", "parallel", "conditional", "loop", "map", "dynamic_router"] = Field(
-        default="step"
-    )
-    name: str
+    kind: Literal[
+        "step",
+        "parallel",
+        "conditional",
+        "loop",
+        "map",
+        "dynamic_router",
+        "hitl",
+        "cache",
+    ] = Field(default="step")
+    # Accept both 'name' and legacy 'step' keys for step name
+    name: str = Field(validation_alias=AliasChoices("name", "step"))
     agent: Optional[Union[str, Dict[str, Any]]] = None
     # New: declarative reference to either a compiled agent (agents.<name>) or python path
     uses: Optional[str] = None
@@ -58,6 +73,11 @@ class BlueprintStepModel(BaseModel):
     context_include_keys: Optional[List[str]] = None
     field_mapping: Optional[Dict[str, List[str]]] = None
     ignore_branch_names: Optional[bool] = None
+    # HITL specific (optional)
+    message: Optional[str] = None
+    input_schema: Optional[Dict[str, Any]] = None
+    # Cache specific (optional)
+    wrapped_step: Optional[Dict[str, Any]] = None
 
     # ----------------------------
     # Field validators (compile-time safety for FSD-016 / Gap #9)
@@ -209,7 +229,17 @@ def _make_step_from_blueprint(
     compiled_imports: Optional[Dict[str, Any]] = None,
 ) -> Step[Any, Any]:
     # For v0: agent may be None; if provided, we resolve later via import string in a follow-up.
-    step_config = StepConfig(**model.config) if model.config else StepConfig()
+    # Normalize step config supporting 'timeout' alias -> 'timeout_s'
+    if model.config:
+        cfg_dict = dict(model.config)
+        if "timeout" in cfg_dict and "timeout_s" not in cfg_dict:
+            try:
+                cfg_dict["timeout_s"] = float(cfg_dict.pop("timeout"))
+            except Exception:
+                cfg_dict.pop("timeout", None)
+        step_config = StepConfig(**cfg_dict)
+    else:
+        step_config = StepConfig()
     if model.kind == "parallel":
         if not model.branches:
             raise BlueprintError("parallel step requires branches")
@@ -334,6 +364,38 @@ def _make_step_from_blueprint(
             branches=branches_router,
             config=step_config,
         )
+    elif model.kind == "hitl":
+        # Human-in-the-loop step compiled from declarative YAML
+        from ..dsl.step import HumanInTheLoopStep
+        from .model_generator import generate_model_from_schema
+
+        schema_model = None
+        try:
+            if isinstance(model.input_schema, dict):
+                schema_model = generate_model_from_schema(f"{model.name}Input", model.input_schema)
+        except Exception:
+            schema_model = None
+
+        return HumanInTheLoopStep(
+            name=model.name,
+            message_for_user=model.message,
+            input_schema=schema_model,
+            config=step_config,
+        )
+    elif model.kind == "cache":
+        # Declarative cache wrapper for inner step
+        from flujo.steps.cache_step import CacheStep as _CacheStep
+
+        if not model.wrapped_step:
+            raise BlueprintError("cache step requires 'wrapped_step'")
+        inner_spec = BlueprintStepModel.model_validate(model.wrapped_step)
+        inner_step = _make_step_from_blueprint(
+            inner_spec,
+            yaml_path=f"{yaml_path}.wrapped_step" if yaml_path else None,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+        )
+        return _CacheStep.cached(inner_step)
     else:
         # Simple step; resolve agent if provided, otherwise passthrough.
         agent_obj: Any = _PassthroughAgent()
@@ -412,9 +474,56 @@ def _make_step_from_blueprint(
                 pass
             if st is None:
                 agent_obj = _resolve_agent_entry(model.agent)
-                if _is_async_callable(agent_obj):
+                # If we have a registry-backed callable and YAML provided params, wrap to inject them
+                _params_for_callable: Dict[str, Any] = {}
+                try:
+                    if isinstance(model.agent, dict):
+                        maybe_params = model.agent.get("params")
+                        if isinstance(maybe_params, dict):
+                            _params_for_callable = dict(maybe_params)
+                except Exception:
+                    _params_for_callable = {}
+
+                def _with_params(func: Any) -> Any:
+                    # Create an async wrapper that merges YAML params and respects step input when provided
+                    import inspect as __inspect
+
+                    async def _runner(data: Any, **kwargs: Any) -> Any:
+                        try:
+                            call_kwargs = dict(_params_for_callable)
+                            call_kwargs.update(
+                                {
+                                    k: v
+                                    for k, v in kwargs.items()
+                                    if k not in ("context", "pipeline_context")
+                                }
+                            )
+                            if model.input is not None:
+                                result = func(data, **call_kwargs)
+                            else:
+                                result = func(**call_kwargs)
+                            if __inspect.isawaitable(result):
+                                return await result
+                            return result
+                        except TypeError:
+                            # Fallback: try passing data as first arg
+                            result = func(data, **dict(_params_for_callable))
+                            if __inspect.isawaitable(result):
+                                return await result
+                            return result
+
+                    return _runner
+
+                callable_obj: Any = agent_obj
+                try:
+                    if callable(agent_obj) and _params_for_callable:
+                        callable_obj = _with_params(agent_obj)
+                except Exception:
+                    callable_obj = agent_obj
+
+                if _is_async_callable(callable_obj):
                     st = Step.from_callable(
-                        agent_obj,
+                        callable_obj,
                         name=model.name,
                         updates_context=model.updates_context,
                         validate_fields=model.validate_fields,
@@ -493,7 +602,7 @@ def _build_pipeline_from_branch(
                     compiled_imports=compiled_imports,
                 )
             )
-        return Pipeline(steps=steps)
+        return Pipeline.model_construct(steps=steps)
     elif isinstance(branch_spec, dict):
         m = BlueprintStepModel.model_validate(branch_spec)
         return Pipeline.from_step(
@@ -523,7 +632,7 @@ def build_pipeline_from_blueprint(
                 compiled_imports=compiled_imports,
             )
         )
-    p = Pipeline(steps=steps)
+    p = Pipeline.model_construct(steps=steps)
     # Best-effort finalize types after Pipeline construction
     try:
         for st in p.steps:
@@ -600,6 +709,51 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                 }
         except Exception:
             pass
+        try:
+            # Pretty-print HumanInTheLoopStep as a first-class 'hitl' kind
+            from ..dsl.step import HumanInTheLoopStep
+
+            if isinstance(step, HumanInTheLoopStep):
+                hitl_data: Dict[str, Any] = {
+                    "kind": "hitl",
+                    "name": step.name,
+                }
+                # Optional message_for_user
+                try:
+                    if getattr(step, "message_for_user", None):
+                        hitl_data["message"] = getattr(step, "message_for_user")
+                except Exception:
+                    pass
+                # Optional input_schema (pydantic model class or dict)
+                try:
+                    schema = getattr(step, "input_schema", None)
+                    if schema is not None:
+                        if hasattr(schema, "model_json_schema") and callable(
+                            getattr(schema, "model_json_schema")
+                        ):
+                            hitl_data["input_schema"] = schema.model_json_schema()
+                        elif isinstance(schema, dict):
+                            hitl_data["input_schema"] = schema
+                except Exception:
+                    pass
+                return hitl_data
+        except Exception:
+            pass
+        try:
+            # Pretty-print CacheStep as a first-class 'cache' kind
+            from flujo.steps.cache_step import CacheStep as _CacheStep
+
+            if isinstance(step, _CacheStep):
+                wrapped = getattr(step, "wrapped_step", None)
+                return {
+                    "kind": "cache",
+                    "name": getattr(step, "name", "cache"),
+                    "wrapped_step": step_to_yaml(wrapped)
+                    if wrapped is not None
+                    else {"kind": "step", "name": "step"},
+                }
+        except Exception:
+            pass
         return {"kind": "step", "name": getattr(step, "name", "step")}
 
     data: Dict[str, Any] = {
@@ -618,15 +772,17 @@ def load_pipeline_blueprint_from_yaml(
             raise BlueprintError("YAML blueprint must be a mapping with a 'steps' key")
         bp = BlueprintPipelineModel.model_validate(data)
         # If declarative agents or imports are present, compile them first
-        try:
-            from .compiler import DeclarativeBlueprintCompiler  # lazy import
+        from .compiler import DeclarativeBlueprintCompiler  # lazy import
 
-            if bp.agents or getattr(bp, "imports", None):
+        if bp.agents or getattr(bp, "imports", None):
+            try:
                 compiler = DeclarativeBlueprintCompiler(bp, base_dir=base_dir)
                 return compiler.compile_to_pipeline()
-        except Exception:
-            # Fallback to plain builder on any compiler issue
-            pass
+            except Exception as e:
+                # Surface a clear error instead of silently falling back and failing later
+                raise BlueprintError(
+                    f"Failed to compile declarative blueprint (agents/imports): {e}"
+                ) from e
         return build_pipeline_from_blueprint(bp)
     except ValidationError as ve:
         # Construct readable error with locations

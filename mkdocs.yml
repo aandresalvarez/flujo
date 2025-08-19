@@ -25,11 +25,11 @@ nav:
     - 'Pipelines and Steps': 'user_guide/pipelines-and-steps.md'
     - 'Agentic Patterns': 'user_guide/agentic-patterns.md'
     - 'Use Cases': 'user_guide/use_cases.md'
-    - 'Pipeline DSL': 'user-guide/pipeline_dsl.md'
-    - 'Pipeline Context': 'user-guide/pipeline_context.md'
-    - 'Pipeline Looping': 'user-guide/pipeline_looping.md'
-    - 'Pipeline Branching': 'user-guide/pipeline_branching.md'
-    - 'Modular Workflows': 'user-guide/modular_workflows.md'
+    - 'Pipeline DSL': 'user_guide/pipeline_dsl.md'
+    - 'Pipeline Context': 'user_guide/pipeline_context.md'
+    - 'Pipeline Looping': 'user_guide/pipeline_looping.md'
+    - 'Pipeline Branching': 'user_guide/pipeline_branching.md'
+    - 'Modular Workflows': 'user_guide/modular_workflows.md'
   - 'Advanced Topics':
     - 'Tools': 'advanced/tools.md'
     - 'Scoring': 'advanced/scoring.md'
@@ -47,6 +47,9 @@ nav:
     - 'Durable Workflows': 'guides/durable_workflows.md'
     - 'Choosing Your Loop': 'guides/choosing_your_loop.md'
     - 'Custom State Backend': 'guides/custom_state_backend.md'
+    - 'GPT‑5 Architect': 'guides/gpt5_architect.md'
+    - 'YAML: Human-in-the-Loop': 'hitl.md'
+    - 'YAML: Cache': 'cache.md'
   - 'Cookbook':
     - 'Pipeline as a Step': 'cookbook/pipeline_as_step.md'
     - 'Advanced Serialization': 'cookbook/advanced_serialization.md'
@@ -62,6 +65,7 @@ nav:
     - 'Development Guide': 'development/dev.md'
   - 'Migration':
     - 'v0.8.0': 'migration/v0.8.0.md'
+    - 'v0.4.37': 'migration/v0.4.37.md'
     - 'v0.7.0': 'migration/v0.7.0.md'
     - 'v0.6.0': 'migration/v0.6.0.md'
     - 'v0.4.0': 'migration/v0.4.0.md'
@@ -108,6 +112,13 @@ markdown_extensions:
 # The core plugin for auto-generating API docs from your code
 plugins:
   - search
+  - redirects:
+      redirect_maps:
+        user-guide/pipeline_dsl.md: user_guide/pipeline_dsl.md
+        user-guide/pipeline_context.md: user_guide/pipeline_context.md
+        user-guide/pipeline_looping.md: user_guide/pipeline_looping.md
+        user-guide/pipeline_branching.md: user_guide/pipeline_branching.md
+        user-guide/modular_workflows.md: user_guide/modular_workflows.md
   - mkdocstrings:
       handlers:
         python:

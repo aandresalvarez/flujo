@@ -55,7 +55,7 @@ To share state across steps, define a Pydantic model and have your agents or plu
 > Steps, agents, and plugins can declare a `context` parameter to receive the shared context.
 
 ```python
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 from flujo.domain.agent_protocol import ContextAwareAgentProtocol
 from flujo.domain.plugins import ContextAwarePluginProtocol, PluginOutcome
 
@@ -79,7 +79,7 @@ Every call to `Flujo.run()` creates a fresh context instance. Mutations are visi
 
 ```python
 from flujo import Flujo, step, PipelineResult
-from flujo.models import PipelineContext
+from flujo.domain.models import PipelineContext
 
 class Ctx(PipelineContext):
     history: list[str] = []

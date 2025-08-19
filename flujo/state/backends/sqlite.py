@@ -279,8 +279,8 @@ class SQLiteBackend(StateBackend):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure parent directories exist
         self._lock = asyncio.Lock()
         self._initialized = False
-        # Deprecated: persistent connection pool (kept for backward compatibility in tests)
-        # aiosqlite connections are created per-call; this remains None.
+        # Lightweight single-connection pool to reduce connect() overhead on hot paths.
+        # Guarded by self._lock for serialized access.
         self._connection_pool: Optional[aiosqlite.Connection] = None
 
         # Event-loop-local file-level lock - will be initialized lazily
@@ -356,14 +356,15 @@ class SQLiteBackend(StateBackend):
 
             async with aiosqlite.connect(self.db_path) as db:
                 # OPTIMIZATION: Use more efficient SQLite settings for performance
-                await db.execute(
-                    "PRAGMA journal_mode = WAL"
-                )  # Write-Ahead Logging for better concurrency
-                await db.execute("PRAGMA synchronous = NORMAL")  # Faster than FULL, still safe
+                await db.execute("PRAGMA journal_mode = WAL")
+                await db.execute("PRAGMA synchronous = NORMAL")
                 await db.execute("PRAGMA cache_size = 10000")  # Increase cache size
                 await db.execute("PRAGMA temp_store = MEMORY")  # Use memory for temp tables
                 await db.execute("PRAGMA mmap_size = 268435456")  # 256MB memory mapping
-                await db.execute("PRAGMA page_size = 4096")  # Standard page size
+                await db.execute("PRAGMA page_size = 4096")
+
+                # Batch DDL inside a transaction to reduce fsyncs
+                await db.execute("BEGIN")
 
                 # Create the main workflow_state table with optimized schema
                 await db.execute(
@@ -478,10 +479,11 @@ class SQLiteBackend(StateBackend):
 
                 # Create indexes for spans table
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_run_id ON spans(run_id)")
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_spans_span_id ON spans(span_id)")
                 await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_spans_parent_span_id ON spans(parent_span_id)"
+                    "CREATE INDEX IF NOT EXISTS idx_spans_parent_span ON spans(parent_span_id)"
                 )
+
+                await db.execute("COMMIT")
 
                 # Run migration to ensure schema is up to date
                 await self._migrate_existing_schema(db)
@@ -490,7 +492,7 @@ class SQLiteBackend(StateBackend):
                 await self._create_indexes(db)
 
                 await db.commit()
-                telemetry.logfire.info(f"Initialized SQLite database at {self.db_path}")
+                telemetry.logfire.debug(f"Initialized SQLite database at {self.db_path}")
 
         except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
             # If we get a database error during initialization, try to backup and retry
@@ -785,6 +787,19 @@ class SQLiteBackend(StateBackend):
                 if not self._initialized:
                     try:
                         await self._init_db()
+                        # Lazily create a pooled connection with optimized pragmas for subsequent writes
+                        try:
+                            self._connection_pool = await aiosqlite.connect(self.db_path)
+                            await self._connection_pool.execute("PRAGMA journal_mode = WAL")
+                            await self._connection_pool.execute("PRAGMA synchronous = NORMAL")
+                            await self._connection_pool.execute("PRAGMA temp_store = MEMORY")
+                            await self._connection_pool.execute("PRAGMA cache_size = 10000")
+                            await self._connection_pool.execute("PRAGMA mmap_size = 268435456")
+                            await self._connection_pool.execute("PRAGMA page_size = 4096")
+                            await self._connection_pool.commit()
+                        except Exception:
+                            # If pool creation fails, fall back to per-call connections
+                            self._connection_pool = None
                         self._initialized = True
                     except sqlite3.DatabaseError as e:
                         telemetry.logfire.error(f"Failed to initialize DB: {e}")
@@ -947,7 +962,7 @@ class SQLiteBackend(StateBackend):
                         ),
                     )
                     await db.commit()
-                    telemetry.logfire.info(f"Saved state for run_id={run_id}")
+                    telemetry.logfire.debug(f"Saved state for run_id={run_id}")
 
             await self._with_retries(_save)
 
@@ -1321,19 +1336,28 @@ class SQLiteBackend(StateBackend):
         async with self._lock:
 
             async def _save() -> None:
-                async with aiosqlite.connect(self.db_path) as db:
+                # Use pooled connection when available to avoid connect() overhead
+                db = self._connection_pool
+                if db is None:
+                    db_cm = aiosqlite.connect(self.db_path)
+                    db = await db_cm.__aenter__()
+                    should_close = True
+                else:
+                    should_close = False
+
+                try:
                     # OPTIMIZATION: Use simplified schema for better performance
                     created_at = run_data.get("created_at") or datetime.utcnow().isoformat()
                     updated_at = run_data.get("updated_at") or created_at
 
                     await db.execute(
                         """
-                    INSERT OR REPLACE INTO runs (
-                        run_id, pipeline_id, pipeline_name, pipeline_version, status,
-                        created_at, updated_at, execution_time_ms, memory_usage_mb,
-                        total_steps, error_message
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
+                        INSERT OR REPLACE INTO runs (
+                            run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                            created_at, updated_at, execution_time_ms, memory_usage_mb,
+                            total_steps, error_message
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
                         (
                             run_data["run_id"],
                             run_data.get("pipeline_id", "unknown"),
@@ -1349,6 +1373,9 @@ class SQLiteBackend(StateBackend):
                         ),
                     )
                     await db.commit()
+                finally:
+                    if should_close:
+                        await db_cm.__aexit__(None, None, None)
 
             await self._with_retries(_save)
 

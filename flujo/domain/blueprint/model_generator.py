@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Type
+from typing import Literal as _Literal
 
 from pydantic import BaseModel, Field, create_model
 
@@ -15,12 +16,33 @@ def _python_type_for_json_schema(schema: JsonSchema, *, name_hint: str = "Value"
         return Any
 
     if t == "string":
+        enums = schema.get("enum")
+        if isinstance(enums, list) and enums:
+            try:
+                return _Literal[tuple(enums)]
+            except Exception:
+                return str
         return str
     if t == "integer":
+        enums = schema.get("enum")
+        if isinstance(enums, list) and enums:
+            try:
+                coerced = [int(e) for e in enums]
+                return _Literal[tuple(coerced)]
+            except Exception:
+                return int
         return int
     if t == "number":
+        enums = schema.get("enum")
+        if isinstance(enums, list) and enums:
+            try:
+                coerced = [float(e) for e in enums]
+                return _Literal[tuple(coerced)]
+            except Exception:
+                return float
         return float
     if t == "boolean":
+        # Booleans with enum are odd; fall back to bool
         return bool
     if t == "array":
         # Keep item typing permissive for runtime compatibility
@@ -78,12 +100,30 @@ def generate_model_from_schema(name: str, schema: JsonSchema) -> Type[BaseModel]
 
     fields: Dict[str, Any] = {}
     for prop_name, prop_schema in properties.items():
-        prop_type = _python_type_for_json_schema(prop_schema, name_hint=prop_name)
-
-        # If nested object with properties, recursively create a submodel
-        if prop_schema.get("type") == "object" and isinstance(prop_schema.get("properties"), dict):
+        prop_type: Any
+        if prop_schema.get("type") == "array":
+            items_schema = prop_schema.get("items")
+            if isinstance(items_schema, dict) and items_schema.get("type") == "object":
+                # Array of objects, create a sub-model for the items
+                item_model_name = f"{model_name}{prop_name.capitalize()}Item"
+                item_type = generate_model_from_schema(item_model_name, items_schema)
+                prop_type = List[item_type]
+            elif isinstance(items_schema, dict):
+                # Primitive or enum-typed array items
+                item_py = _python_type_for_json_schema(items_schema, name_hint=f"{prop_name}_item")
+                prop_type = List[item_py]
+            else:
+                # Unspecified items
+                prop_type = List[Any]
+        elif prop_schema.get("type") == "object" and isinstance(
+            prop_schema.get("properties"), dict
+        ):
+            # Nested object, create a sub-model
             sub_name = f"{model_name}{''.join(part.capitalize() for part in prop_name.split('_'))}"
             prop_type = generate_model_from_schema(sub_name, prop_schema)
+        else:
+            # Primitive type
+            prop_type = _python_type_for_json_schema(prop_schema, name_hint=prop_name)
 
         is_required = prop_name in required
         default = ... if is_required else None

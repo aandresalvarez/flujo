@@ -19,7 +19,7 @@ def create_pipeline_file(tmp_path: Path) -> Path:
 
 def test_pipeline_mermaid_command(tmp_path: Path) -> None:
     path = create_pipeline_file(tmp_path)
-    result = runner.invoke(app, ["pipeline-mermaid", "--file", str(path)])
+    result = runner.invoke(app, ["dev", "visualize", "--file", str(path)])
     assert result.exit_code == 0
     assert "```mermaid" in result.stdout
     assert "graph TD" in result.stdout

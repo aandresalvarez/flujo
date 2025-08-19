@@ -16,22 +16,11 @@ _in_ci_or_tests = bool(
     os.getenv("CI") == "true" or os.getenv("FLUJO_TEST_MODE") or os.getenv("PYTEST_CURRENT_TEST")
 )
 _fallback_logger.setLevel(logging.WARNING if _in_ci_or_tests else logging.INFO)
+# Always propagate so external handlers (caplog, app) can capture logs
+_fallback_logger.propagate = True
 
-if not _fallback_logger.handlers:
-    # Only attach INFO handler when not in CI/tests to avoid noisy output & jitter
-    if not _in_ci_or_tests:
-        info_handler = logging.StreamHandler(sys.stdout)
-        info_handler.setLevel(logging.INFO)
-        info_handler.addFilter(lambda record: record.levelno <= logging.WARNING)
-        info_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        info_handler.setFormatter(info_formatter)
-        _fallback_logger.addHandler(info_handler)
-
-    error_handler = logging.StreamHandler(sys.stderr)
-    error_handler.setLevel(logging.ERROR if _in_ci_or_tests else logging.ERROR)
-    error_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    error_handler.setFormatter(error_formatter)
-    _fallback_logger.addHandler(error_handler)
+# Do not attach handlers here; let messages propagate to root handlers.
+# This ensures test frameworks (caplog) and app-level configuration capture logs consistently.
 
 
 def _is_cleanup_io_error(error: Exception) -> bool:
@@ -300,10 +289,11 @@ def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
                 f"Failed to configure Logfire: {e}. Falling back to standard Python logging.",
             )
 
+    # Reduce noise in CLI: emit this at DEBUG level instead of INFO
     _safe_log(
         _fallback_logger,
-        logging.INFO,
-        "Logfire telemetry is disabled or failed to initialize. Using standard Python logging.",
+        logging.DEBUG,
+        "Using standard Python logging.",
     )
     logfire = _MockLogfire(_fallback_logger)
     _initialized = True

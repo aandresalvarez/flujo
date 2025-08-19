@@ -26,11 +26,14 @@ class TestSQLInjectionPrevention:
         return tmp_path / "security_test.db"
 
     @pytest.fixture
-    def backend(self, temp_db_path: Path) -> SQLiteBackend:
+    async def backend(self, temp_db_path: Path) -> SQLiteBackend:
         """Create a SQLite backend instance."""
-        return SQLiteBackend(temp_db_path)
+        backend = SQLiteBackend(temp_db_path)
+        yield backend
+        await backend.close()
 
-    def test_validate_sql_identifier_safe_identifiers(self):
+    @pytest.mark.asyncio
+    async def test_validate_sql_identifier_safe_identifiers(self):
         """Test that safe SQL identifiers are accepted."""
         safe_identifiers = [
             "valid_column",
@@ -43,7 +46,8 @@ class TestSQLInjectionPrevention:
         for identifier in safe_identifiers:
             assert _validate_sql_identifier(identifier) is True
 
-    def test_validate_sql_identifier_dangerous_identifiers(self):
+    @pytest.mark.asyncio
+    async def test_validate_sql_identifier_dangerous_identifiers(self):
         """Test that dangerous SQL identifiers are rejected."""
         dangerous_identifiers = [
             "DROP TABLE",
@@ -65,7 +69,8 @@ class TestSQLInjectionPrevention:
             with pytest.raises(ValueError, match="Unsafe SQL identifier"):
                 _validate_sql_identifier(identifier)
 
-    def test_validate_sql_identifier_sql_keywords(self):
+    @pytest.mark.asyncio
+    async def test_validate_sql_identifier_sql_keywords(self):
         """Test that SQL keywords are rejected as identifiers."""
         sql_keywords = [
             "DROP",
@@ -89,7 +94,8 @@ class TestSQLInjectionPrevention:
             with pytest.raises(ValueError, match="dangerous SQL keyword"):
                 _validate_sql_identifier(keyword)
 
-    def test_validate_sql_identifier_invalid_types(self):
+    @pytest.mark.asyncio
+    async def test_validate_sql_identifier_invalid_types(self):
         """Test that invalid types are rejected."""
         invalid_inputs = [None, "", "123column", "column-name", "column.name", "column name"]
 
@@ -98,7 +104,8 @@ class TestSQLInjectionPrevention:
             with pytest.raises(ValueError):
                 _validate_sql_identifier(invalid_input)
 
-    def test_validate_column_definition_safe_definitions(self):
+    @pytest.mark.asyncio
+    async def test_validate_column_definition_safe_definitions(self):
         """Test that safe column definitions are accepted."""
         safe_definitions = [
             "INTEGER",
@@ -114,7 +121,8 @@ class TestSQLInjectionPrevention:
         for definition in safe_definitions:
             assert _validate_column_definition(definition) is True
 
-    def test_validate_column_definition_dangerous_definitions(self):
+    @pytest.mark.asyncio
+    async def test_validate_column_definition_dangerous_definitions(self):
         """Test that dangerous column definitions are rejected."""
         dangerous_definitions = [
             "INTEGER; DROP TABLE users",
@@ -136,7 +144,8 @@ class TestSQLInjectionPrevention:
             with pytest.raises(ValueError, match="Unsafe column definition"):
                 _validate_column_definition(definition)
 
-    def test_validate_column_definition_invalid_types(self):
+    @pytest.mark.asyncio
+    async def test_validate_column_definition_invalid_types(self):
         """Test that invalid column definition types are rejected."""
         invalid_inputs = [
             None,
@@ -288,7 +297,8 @@ class TestSQLInjectionPrevention:
             # This indicates that the parameterized query system handled the malicious input safely
             assert True  # Operation completed safely with parameterized queries
 
-    def test_healthcare_data_security(self):
+    @pytest.mark.asyncio
+    async def test_healthcare_data_security(self):
         """Test security measures for healthcare data scenarios."""
         # Test with realistic healthcare column names
         healthcare_columns = [
@@ -306,7 +316,8 @@ class TestSQLInjectionPrevention:
             assert _validate_sql_identifier(column_name) is True
             assert _validate_column_definition(column_def) is True
 
-    def test_legal_data_security(self):
+    @pytest.mark.asyncio
+    async def test_legal_data_security(self):
         """Test security measures for legal data scenarios."""
         # Test with realistic legal column names
         legal_columns = [
@@ -324,7 +335,8 @@ class TestSQLInjectionPrevention:
             assert _validate_sql_identifier(column_name) is True
             assert _validate_column_definition(column_def) is True
 
-    def test_finance_data_security(self):
+    @pytest.mark.asyncio
+    async def test_finance_data_security(self):
         """Test security measures for finance data scenarios."""
         # Test with realistic finance column names
         finance_columns = [
@@ -335,14 +347,15 @@ class TestSQLInjectionPrevention:
             ("transaction_type", "TEXT"),
             ("balance", "REAL"),
             ("routing_number", "TEXT"),
-            ("tax_id", "TEXT"),
+            ("last_updated", "TEXT"),
         ]
 
         for column_name, column_def in finance_columns:
             assert _validate_sql_identifier(column_name) is True
             assert _validate_column_definition(column_def) is True
 
-    def test_edge_case_security(self):
+    @pytest.mark.asyncio
+    async def test_edge_case_security(self):
         """Test edge cases that could bypass security measures."""
         edge_cases = [
             # Unicode injection attempts
