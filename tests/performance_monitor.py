@@ -7,6 +7,7 @@ Run with: python tests/performance_monitor.py
 """
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -15,20 +16,61 @@ from typing import Dict, List, Tuple
 
 
 def run_test_with_timing(test_path: str = "tests/") -> Tuple[float, str]:
-    """Run tests and return execution time and output."""
+    """Run a subset of tests with timing and return execution time and output.
+
+    Defaults to running the fast subset to avoid CI timeouts. You can override
+    the selection with the FLUJO_PERF_MARKERS env var.
+    """
     start_time = time.time()
+
+    # Use a fast subset by default to keep CI under time limits
+    markers = os.getenv("FLUJO_PERF_MARKERS", "not slow and not serial and not benchmark")
+    timeout_sec = int(os.getenv("FLUJO_PERF_TIMEOUT", "600"))
+
+    cmd = [
+        "uv",
+        "run",
+        "pytest",
+        test_path,
+        "-v",
+        "--tb=no",
+        "--durations=25",
+        "-m",
+        markers,
+    ]
 
     try:
         result = subprocess.run(
-            ["uv", "run", "pytest", test_path, "-v", "--tb=no", "--durations=10"],
+            cmd,
             capture_output=True,
             text=True,
-            timeout=600,  # 10 minute timeout
+            timeout=timeout_sec,
         )
-        end_time = time.time()
-        return end_time - start_time, result.stdout
+        stdout = result.stdout
+
+        # Fallback: if nothing parsed, try without -v formatting quirks
+        if not parse_test_output(stdout):
+            fallback_cmd = [
+                "uv",
+                "run",
+                "pytest",
+                test_path,
+                "--tb=no",
+                "--durations=25",
+                "-m",
+                markers,
+            ]
+            result_fb = subprocess.run(
+                fallback_cmd,
+                capture_output=True,
+                text=True,
+                timeout=max(60, timeout_sec // 4),  # quick fallback
+            )
+            stdout = result_fb.stdout
+
+        return time.time() - start_time, stdout
     except subprocess.TimeoutExpired:
-        return 600, "Tests timed out after 10 minutes"
+        return timeout_sec, "Tests timed out after configured limit"
 
 
 def parse_test_output(output: str) -> List[Dict[str, str]]:
