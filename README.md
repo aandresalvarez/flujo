@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://github.com/aandresalvarez/flujo">
-    <img src="https://github.com/aandresalvarez/flujo/tree/main/assets/flujo.png" alt="Flujo logo" width="180"/>
+    <img src="https://raw.githubusercontent.com/aandresalvarez/flujo/main/assets/flujo.png" alt="Flujo logo" width="180"/>
   </a> 
   
   <h1>Flujo — Your Conversational AI Workflow Server</h1>
