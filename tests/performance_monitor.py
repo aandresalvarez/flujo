@@ -14,6 +14,8 @@ import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Tuple
+import re
+import importlib.util
 
 
 def run_test_with_timing(test_path: str = "tests/") -> Tuple[float, str]:
@@ -38,8 +40,11 @@ def run_test_with_timing(test_path: str = "tests/") -> Tuple[float, str]:
     markers = raw_markers.strip() or default_markers
 
     use_uv = shutil.which("uv") is not None
+    use_xdist = importlib.util.find_spec("xdist") is not None
     base_cmd = ["uv", "run", "pytest"] if use_uv else ["python", "-m", "pytest"]
-    cmd_parts = base_cmd + [test_path, "-v", "--tb=no", "--durations=25"]
+    cmd_parts = base_cmd + [test_path, "-v", "--tb=no", "--durations=25", "--color=no"]
+    if use_xdist:
+        cmd_parts += ["-n", "auto"]
     if markers.strip():
         cmd_parts += ["-m", markers]
     cmd = cmd_parts
@@ -51,11 +56,13 @@ def run_test_with_timing(test_path: str = "tests/") -> Tuple[float, str]:
             text=True,
             timeout=timeout_sec,
         )
-        stdout = result.stdout
+        stdout = (result.stdout or "") + "\n" + (result.stderr or "")
 
         # Fallback: if nothing parsed, try without -v formatting quirks
         if not parse_test_output(stdout):
-            fallback_cmd = base_cmd + [test_path, "--tb=no", "--durations=25"]
+            fallback_cmd = base_cmd + [test_path, "--tb=no", "--durations=25", "--color=no"]
+            if use_xdist:
+                fallback_cmd += ["-n", "auto"]
             if markers.strip():
                 fallback_cmd += ["-m", markers]
             result_fb = subprocess.run(
@@ -64,7 +71,7 @@ def run_test_with_timing(test_path: str = "tests/") -> Tuple[float, str]:
                 text=True,
                 timeout=max(60, timeout_sec // 4),  # quick fallback
             )
-            stdout = result_fb.stdout
+            stdout = (result_fb.stdout or "") + "\n" + (result_fb.stderr or "")
 
         return time.time() - start_time, stdout
     except subprocess.TimeoutExpired:
@@ -76,51 +83,42 @@ def parse_test_output(output: str) -> List[Dict[str, str]]:
     tests = []
     lines = output.split("\n")
 
-    # Look for the durations section at the end
+    # Look for the durations section and parse lines that look like durations
     in_durations = False
     for line in lines:
-        if line.startswith("=") and "durations" in line.lower():
+        stripped = line.strip()
+        lower = stripped.lower()
+        if ("durations" in lower and "slowest" in lower) or (
+            stripped.startswith("=") and "durations" in lower
+        ):
             in_durations = True
             continue
-        elif in_durations and line.startswith("="):
-            break
-        elif in_durations and line.strip():
-            # Parse duration line like "1.23s call     tests/unit/test_example.py::test_function"
-            parts = line.split()
-            if len(parts) >= 3 and "s" in parts[0]:
-                try:
-                    duration_str = parts[0].replace("s", "")
-                    duration = float(duration_str)
-                    test_name = " ".join(parts[2:])
-                    tests.append(
-                        {
-                            "name": test_name,
-                            "duration": duration,
-                            "status": "PASSED",  # Assume passed if in durations
-                        }
-                    )
-                except ValueError:
-                    continue
+        if in_durations:
+            # Stop when a new section begins
+            if stripped.startswith("=") and ("durations" not in lower and "slowest" not in lower):
+                break
+
+            # Parse duration lines like "1.23s call     tests/unit/test_example.py::test_function"
+            m = re.match(r"^([0-9]+(?:\.[0-9]+)?)s\s+(setup|teardown|call)\s+(.+)$", stripped)
+            if m:
+                duration = float(m.group(1))
+                test_name = m.group(3)
+                tests.append({"name": test_name, "duration": duration, "status": "PASSED"})
 
     # If no durations found, try parsing individual test lines
     if not tests:
         for line in lines:
-            if line.startswith("tests/") and "::" in line and "PASSED" in line:
+            stripped = line.strip()
+            if stripped.startswith("tests/") and "::" in stripped and "PASSED" in stripped:
                 # Extract test path and duration
-                parts = line.split()
+                parts = stripped.split()
                 if len(parts) >= 2:
                     test_name = parts[0]
-                    # Look for duration in format like "PASSED [ 0.12s ]"
-                    for part in parts:
-                        if "s]" in part and "[" in part:
-                            duration_str = part.strip("[]").replace("s", "")
-                            try:
-                                duration = float(duration_str)
-                                tests.append(
-                                    {"name": test_name, "duration": duration, "status": "PASSED"}
-                                )
-                            except ValueError:
-                                continue
+                    # Look for duration like "[ 0.12s ]" or "(0.12s)"
+                    dur_match = re.search(r"[\[(]\s*([0-9]+(?:\.[0-9]+)?)s\s*[\])]", stripped)
+                    if dur_match:
+                        duration = float(dur_match.group(1))
+                        tests.append({"name": test_name, "duration": duration, "status": "PASSED"})
 
     return tests
 
@@ -232,14 +230,23 @@ def main():
     print("🔍 Analyzing test performance...")
     print()
 
+    # Determine target path (default to unit tests for speed unless overridden)
+    target = os.getenv("FLUJO_PERF_TARGET", "tests/unit").strip() or "tests/unit"
+
     # Run tests and capture timing
-    duration, output = run_test_with_timing()
+    duration, output = run_test_with_timing(target)
 
     # Parse test results
     tests = parse_test_output(output)
 
     if not tests:
-        print("❌ No test results found. Make sure tests are passing.")
+        # Persist raw output to help debugging locally/CI
+        raw_log = Path("test_performance_raw.log")
+        try:
+            raw_log.write_text(output)
+            print(f"❌ No test results found. Raw output saved to {raw_log}")
+        except Exception:
+            print("❌ No test results found. Make sure tests are passing.")
         sys.exit(1)
 
     # Analyze performance

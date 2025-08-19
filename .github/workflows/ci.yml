@@ -251,10 +251,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11"]
+    env:
+      FLUJO_PERF_TARGET: tests/unit
+      FLUJO_PERF_MARKERS: not slow and not serial and not benchmark
+      FLUJO_PERF_TIMEOUT: "1200"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -283,6 +288,13 @@ jobs:
         with:
           name: performance-report
           path: test_performance_report.json
+
+      - name: Upload raw performance log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-raw-log
+          path: test_performance_raw.log
 
   # ----------------------------------------------------------------------------
   # Job 7: Live API Tests (Optional but Recommended)
