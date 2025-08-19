@@ -53,6 +53,7 @@ settings.json
 dmypy.json
 output/
 manual_testing/
+bug_hunting/
 
 # Distribution / packaging
 .Python
