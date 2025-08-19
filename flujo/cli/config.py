@@ -14,6 +14,8 @@ else:
 from ..state.backends.sqlite import SQLiteBackend
 from ..state.backends.base import StateBackend
 from ..infra.config_manager import get_state_uri
+from ..utils.config import get_settings
+import tempfile
 
 
 def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
@@ -100,12 +102,29 @@ def load_backend_from_config() -> StateBackend:
     # Get state URI from ConfigManager (handles env vars + TOML with proper precedence)
     uri = get_state_uri(force_reload=True)
 
-    # Default fallback
+    # Default fallback with test/CI isolation
     if uri is None:
-        logging.warning(
-            "[flujo.config] FLUJO_STATE_URI not set, using default 'sqlite:///flujo_ops.db'"
-        )
-        uri = "sqlite:///flujo_ops.db"
+        settings = get_settings()
+        # Detect pytest or explicit test mode to avoid reusing a possibly corrupted repo DB
+        is_test_env = bool(os.getenv("PYTEST_CURRENT_TEST")) or settings.test_mode
+        if is_test_env:
+            # Allow override for test DB directory
+            override_dir = os.getenv("FLUJO_TEST_STATE_DIR")
+            if override_dir and override_dir.strip():
+                temp_dir = Path(override_dir.strip())
+            else:
+                # Place DB in a temp directory unique per user/session to avoid collisions
+                temp_dir = Path(os.getenv("PYTEST_TMPDIR", tempfile.gettempdir())) / "flujo-test-db"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            uri = f"sqlite:///{(temp_dir / 'flujo_ops.db').as_posix()}"
+            logging.warning(
+                f"[flujo.config] FLUJO_STATE_URI not set; using isolated test DB '{uri}'"
+            )
+        else:
+            logging.warning(
+                "[flujo.config] FLUJO_STATE_URI not set, using default 'sqlite:///flujo_ops.db'"
+            )
+            uri = "sqlite:///flujo_ops.db"
 
     parsed = urlparse(uri)
     if parsed.scheme.startswith("sqlite"):
