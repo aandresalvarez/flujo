@@ -25,7 +25,7 @@ def test_custom_step_registration_and_yaml_loader() -> None:
     registry.register_step_type(MyStep)
     registry.register_policy(MyStep, MyPolicy())
 
-    yaml_text = 'version: "0.1"\n' "steps:\n" "  - kind: CustomX\n" "    name: X\n"
+    yaml_text = 'version: "0.1"\nsteps:\n  - kind: CustomX\n    name: X\n'
     p = Pipeline.from_yaml_text(yaml_text)
     assert p is not None
     assert len(p.steps) == 1

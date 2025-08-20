@@ -1030,7 +1030,7 @@ def _register_builtins() -> None:
                         import flujo.framework as _framework_mod
 
                         if hasattr(_framework_mod, "_register_core_primitives"):
-                            _framework_mod._register_core_primitives()  # type: ignore[attr-defined]
+                            _framework_mod._register_core_primitives()
                             mapping = get_registered_step_kinds()
                     except Exception:
                         pass
