@@ -34,3 +34,8 @@ repos:
         entry: python3 scripts/hooks/check_forbidden_patterns.py
         language: system
         types: [python]
+      - id: forbid-duplicate-suffix
+        name: forbid duplicate suffix ' 2.py'
+        entry: python3 scripts/hooks/check_duplicate_suffix.py
+        language: system
+        types: [python]

@@ -921,18 +921,8 @@ def create(
             if "initial_prompt" not in initial_context_data:
                 initial_context_data["initial_prompt"] = goal
 
-            # Create runner and execute
-            # Use a minimal context model for the Architect to allow prepared list
-            from pydantic import Field as _Field
-            from flujo.domain.models import PipelineContext as _PipelineContext
-
-            class _ArchitectContext(_PipelineContext):
-                prepared_steps_for_mapping: list[dict[str, Any]] = _Field(default_factory=list)
-                generated_yaml: Optional[str] = None
-                yaml_text: Optional[str] = None
-                available_skills: list[dict[str, Any]] = _Field(default_factory=list)
-                yaml_is_valid: bool = False
-                validation_errors: str | None = None
+            # Create runner and execute using shared ArchitectContext
+            from flujo.architect.context import ArchitectContext as _ArchitectContext
 
             # Load the project-aware state backend
             try:

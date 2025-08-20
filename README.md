@@ -61,6 +61,9 @@ Provide the missing details. The Architect confirms the plan.
 
 In seconds, Flujo has generated a complete, secure, and production-ready YAML blueprint. No code written. No complex configuration.
 
+For details on the new programmatic Architect that powers `flujo create`, see:
+- `flujo/architect/README.md` (usage, states, extension points)
+
 #### **Step 3: Run and Inspect**
 
 Execute your new pipeline. Flujo handles the orchestration, cost tracking, and logging automatically.
