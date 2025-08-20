@@ -34,7 +34,7 @@ async def test_async_agent_wrapper_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_agent_wrapper_retry_then_success() -> None:
+async def test_async_agent_wrapper_retry_then_success(no_wait_backoff) -> None:
     agent = AsyncMock()
     agent.run.side_effect = [Exception("fail"), "ok"]
     wrapper = AsyncAgentWrapper(agent, max_retries=2)
@@ -43,13 +43,14 @@ async def test_async_agent_wrapper_retry_then_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_agent_wrapper_timeout() -> None:
+async def test_async_agent_wrapper_timeout(monkeypatch) -> None:
     agent = AsyncMock()
 
-    async def never_returns(*args, **kwargs):
-        await asyncio.sleep(2)
+    async def fake_wait_for(*args, **kwargs):
+        raise asyncio.TimeoutError()
 
-    agent.run.side_effect = never_returns
+    monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
+    agent.run.side_effect = AsyncMock(return_value="unused")
     wrapper = AsyncAgentWrapper(agent, timeout=1, max_retries=1)
     with pytest.raises(OrchestratorRetryError):
         await wrapper.run_async("prompt")
@@ -269,12 +270,13 @@ def test_async_agent_wrapper_init_non_positive_timeout_value(
 @pytest.mark.asyncio
 async def test_async_agent_wrapper_runtime_timeout(
     mock_pydantic_ai_agent: MagicMock,
+    monkeypatch,
 ) -> None:
-    async def slow_run(*args, **kwargs):
-        await asyncio.sleep(2)
-        return "should_not_reach_here"
+    async def fake_wait_for(*args, **kwargs):
+        raise asyncio.TimeoutError()
 
-    mock_pydantic_ai_agent.run = AsyncMock(side_effect=slow_run)
+    monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
+    mock_pydantic_ai_agent.run = AsyncMock(return_value="unused")
     wrapper = AsyncAgentWrapper(agent=mock_pydantic_ai_agent, timeout=1, max_retries=1)
     with pytest.raises(OrchestratorRetryError) as exc_info:
         await wrapper.run_async("prompt")
