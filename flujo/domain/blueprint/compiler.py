@@ -32,6 +32,23 @@ class DeclarativeBlueprintCompiler:
         self._compiled_imports: Dict[str, Any] = {}
         self._base_dir: Optional[str] = base_dir
 
+    def _validate_and_coerce_max_retries(self, max_retries_opt: Any, agent_name: str) -> int:
+        """Validate and coerce max_retries value, raising ConfigurationError on failure."""
+        max_retries = 3
+        if max_retries_opt is not None:
+            try:
+                if isinstance(max_retries_opt, str):
+                    max_retries = int(max_retries_opt)
+                elif isinstance(max_retries_opt, int):
+                    max_retries = max_retries_opt
+                else:
+                    raise ValueError(f"Cannot convert {type(max_retries_opt).__name__} to int")
+            except (ValueError, TypeError) as e:
+                raise ConfigurationError(
+                    f"Agent '{agent_name}': Invalid max_retries value '{max_retries_opt}': {e}"
+                )
+        return max_retries
+
     def _compile_agents(self) -> None:
         agents: Optional[Dict[str, Any]] = getattr(self.blueprint, "agents", None)
         if not agents:
@@ -117,14 +134,22 @@ class DeclarativeBlueprintCompiler:
 
             output_type = generate_model_from_schema(name, output_schema)
 
-            # If variables are provided alongside from_file, use templated wrapper
+            # If from_file is present, always use templated wrapper (variables are optional)
             agent_wrapper: "AsyncAgentWrapper[Any, Any]"
-            if (
-                isinstance(prompt_spec, dict)
-                and "from_file" in prompt_spec
-                and ("variables" in prompt_spec and prompt_spec.get("variables") is not None)
-            ):
-                variables_spec = dict(prompt_spec.get("variables") or {})
+            if isinstance(prompt_spec, dict) and "from_file" in prompt_spec:
+                # Variables are optional when using from_file - use empty dict if absent
+                variables_spec = {}
+                if "variables" in prompt_spec:
+                    try:
+                        variables_spec = dict(prompt_spec["variables"])
+                    except Exception as e:
+                        raise ConfigurationError(
+                            f"Agent '{name}': Failed to convert variables to dict: {prompt_spec['variables']} - {e}"
+                        )
+
+                # Validate and coerce max_retries
+                max_retries = self._validate_and_coerce_max_retries(max_retries_opt, name)
+
                 agent_wrapper = make_templated_agent_async(
                     model=model_name,
                     template_string=system_prompt,
@@ -132,15 +157,21 @@ class DeclarativeBlueprintCompiler:
                     output_type=output_type,
                     model_settings=model_settings,
                     timeout=timeout_opt,
-                    max_retries=int(max_retries_opt) if isinstance(max_retries_opt, int) else 3,
+                    max_retries=max_retries,
                 )
             elif (
                 hasattr(prompt_spec, "variables") and getattr(prompt_spec, "variables") is not None
             ):
                 try:
                     variables_spec2 = dict(getattr(prompt_spec, "variables"))
-                except Exception:
-                    variables_spec2 = {}
+                except Exception as e:
+                    raise ConfigurationError(
+                        f"Agent '{name}': Failed to convert variables to dict: {getattr(prompt_spec, 'variables')} - {e}"
+                    )
+
+                # Validate and coerce max_retries
+                max_retries = self._validate_and_coerce_max_retries(max_retries_opt, name)
+
                 agent_wrapper = make_templated_agent_async(
                     model=model_name,
                     template_string=system_prompt,
@@ -148,9 +179,12 @@ class DeclarativeBlueprintCompiler:
                     output_type=output_type,
                     model_settings=model_settings,
                     timeout=timeout_opt,
-                    max_retries=int(max_retries_opt) if isinstance(max_retries_opt, int) else 3,
+                    max_retries=max_retries,
                 )
             else:
+                # Validate and coerce max_retries
+                max_retries = self._validate_and_coerce_max_retries(max_retries_opt, name)
+
                 agent_wrapper = make_agent_async(
                     model=model_name,
                     system_prompt=system_prompt,
@@ -158,7 +192,7 @@ class DeclarativeBlueprintCompiler:
                     # Pass through provider-specific model settings (e.g., GPT-5 controls)
                     model_settings=model_settings,
                     timeout=timeout_opt,
-                    max_retries=int(max_retries_opt) if isinstance(max_retries_opt, int) else 3,
+                    max_retries=max_retries,
                 )
             self._compiled_agents[name] = agent_wrapper
 

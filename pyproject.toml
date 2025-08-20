@@ -348,7 +348,6 @@ addopts = [
 packages = ["flujo"]
 include = [
     "flujo/py.typed",
-    "flujo/recipes/architect_pipeline.yaml",
 ]
 
 [tool.hatch.build.targets.sdist]

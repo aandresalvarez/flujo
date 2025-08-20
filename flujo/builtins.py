@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Type
+
+# Ensure framework primitives (like StateMachine) are registered when builtins load
+try:  # pragma: no cover - best-effort for import order
+    import flujo.framework as _framework  # noqa: F401
+except Exception:
+    pass
 from pydantic import BaseModel as PydanticBaseModel
 from flujo.domain.models import BaseModel as DomainBaseModel
 
@@ -1004,6 +1010,108 @@ def _register_builtins() -> None:
             "flujo.builtins.stringify",
             lambda **_params: stringify,
             description="Convert any input value to a string via str(x).",
+            side_effects=False,
+        )
+
+        # Introspect registered framework step primitives and produce JSON Schemas
+        async def get_framework_schema() -> Dict[str, Any]:
+            try:
+                import flujo.framework as _fw  # noqa: F401
+                from flujo.framework.registry import (
+                    get_registered_step_kinds,
+                    register_step_type as _reg_step,
+                    register_policy as _reg_policy,
+                )
+
+                mapping = get_registered_step_kinds()
+                if not mapping:
+                    # Try explicit registration call if exposed
+                    try:
+                        import flujo.framework as _framework_mod
+
+                        if hasattr(_framework_mod, "_register_core_primitives"):
+                            _framework_mod._register_core_primitives()
+                            mapping = get_registered_step_kinds()
+                    except Exception:
+                        pass
+                if not mapping:
+                    # Fallback: force-register StateMachine explicitly
+                    try:
+                        from flujo.domain.dsl.state_machine import StateMachineStep as _SM
+                        from flujo.application.core.step_policies import (
+                            StateMachinePolicyExecutor as _SMPol,
+                        )
+
+                        _reg_step(_SM)
+                        _reg_policy(_SM, _SMPol())
+                        mapping = get_registered_step_kinds()
+                    except Exception:
+                        pass
+            except Exception:
+                mapping = {}
+            schemas: Dict[str, Any] = {}
+            for kind, cls in mapping.items():
+                try:
+                    if hasattr(cls, "model_json_schema") and callable(
+                        getattr(cls, "model_json_schema")
+                    ):
+                        # Create a JSON schema-compatible version by excluding non-serializable fields
+                        # The issue is that Step classes have fields like ValidationPlugin, Callable, etc.
+                        # that cannot be converted to JSON schema
+                        try:
+                            # First try the standard approach
+                            schemas[kind] = cls.model_json_schema()
+                        except Exception:
+                            # If that fails, create a simplified schema with only the essential fields
+                            # This is a fallback for complex step types that have non-serializable fields
+                            if "StateMachine" in kind:
+                                # For StateMachine, create a simplified schema with only the essential fields
+                                simplified_schema = {
+                                    "type": "object",
+                                    "title": f"{kind}",
+                                    "properties": {
+                                        "name": {"type": "string", "title": "Name"},
+                                        "kind": {"type": "string", "const": kind, "title": "Kind"},
+                                        "states": {
+                                            "type": "object",
+                                            "title": "States",
+                                            "description": "Map of state name to Pipeline configuration",
+                                        },
+                                        "start_state": {"type": "string", "title": "Start State"},
+                                        "end_states": {
+                                            "type": "array",
+                                            "items": {"type": "string"},
+                                            "title": "End States",
+                                        },
+                                    },
+                                    "required": ["name", "start_state"],
+                                }
+                                schemas[kind] = simplified_schema
+                            else:
+                                # For other step types, create a basic schema
+                                schemas[kind] = {
+                                    "type": "object",
+                                    "title": f"{kind}",
+                                    "properties": {
+                                        "name": {"type": "string", "title": "Name"},
+                                        "kind": {"type": "string", "const": kind, "title": "Kind"},
+                                    },
+                                    "required": ["name"],
+                                }
+                except Exception as e:
+                    # Log the error for debugging but continue with other step types
+                    import logging
+
+                    logging.getLogger(__name__).warning(
+                        f"Failed to generate schema for {kind}: {e}"
+                    )
+                    continue
+            return {"steps": schemas}
+
+        reg.register(
+            "flujo.builtins.get_framework_schema",
+            lambda **_params: get_framework_schema,
+            description=("Return JSON Schemas for registered framework steps (by kind)."),
             side_effects=False,
         )
 

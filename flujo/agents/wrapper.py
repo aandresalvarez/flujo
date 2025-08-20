@@ -360,8 +360,11 @@ class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
         )
         self.system_prompt_template: str = template_string
         self.prompt_variables: dict[str, Any] = variables_spec or {}
+        self._prompt_lock = asyncio.Lock()
 
-    async def run_async(self, data: Any, **kwargs: Any) -> Any:
+    async def run_async(self, *args: Any, **kwargs: Any) -> Any:
+        # Derive previous_step from args or kwargs
+        previous_step = args[0] if args else kwargs.get("previous_step") or None
         context = kwargs.get("context") or kwargs.get("pipeline_context")
 
         if self.system_prompt_template:
@@ -371,7 +374,7 @@ class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
                 if isinstance(value_template, str) and "{{" in value_template:
                     try:
                         resolved_vars[key] = format_prompt(
-                            value_template, context=context, previous_step=data
+                            value_template, context=context, previous_step=previous_step
                         )
                     except Exception:
                         resolved_vars[key] = ""
@@ -384,23 +387,24 @@ class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
                     self.system_prompt_template,
                     **resolved_vars,
                     context=context,
-                    previous_step=data,
+                    previous_step=previous_step,
                 )
             except Exception:
                 final_system_prompt = self.system_prompt_template
 
-            # Temporarily override system prompt
-            original_prompt = getattr(self._agent, "system_prompt", None)
-            try:
-                setattr(self._agent, "system_prompt", final_system_prompt)
-                return await super().run_async(data, **kwargs)
-            finally:
+            # Temporarily override system prompt with concurrency protection
+            async with self._prompt_lock:
+                original_prompt = getattr(self._agent, "system_prompt", None)
                 try:
-                    setattr(self._agent, "system_prompt", original_prompt)
-                except Exception:
-                    pass
+                    setattr(self._agent, "system_prompt", final_system_prompt)
+                    return await super().run_async(*args, **kwargs)
+                finally:
+                    try:
+                        setattr(self._agent, "system_prompt", original_prompt)
+                    except Exception:
+                        pass
         # No template configured; behave like base class
-        return await super().run_async(data, **kwargs)
+        return await super().run_async(*args, **kwargs)
 
 
 def make_agent_async(

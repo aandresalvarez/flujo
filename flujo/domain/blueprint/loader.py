@@ -122,7 +122,8 @@ class BlueprintStepModel(BaseModel):
 
 class BlueprintPipelineModel(BaseModel):
     version: str = Field(default="0.1")
-    steps: List[BlueprintStepModel]
+    # Allow arbitrary step dicts so custom primitives with extra fields are preserved
+    steps: List[Dict[str, Any]]
     # New: top-level declarative agents section
     agents: Optional[Dict[str, "AgentModel"]] = None
     # New: top-level imports section mapping alias -> relative/absolute YAML path
@@ -136,18 +137,27 @@ class BlueprintPipelineModel(BaseModel):
         declared_agents = set((self.agents or {}).keys())
         declared_imports = set((self.imports or {}).keys())
         for idx, step in enumerate(self.steps):
-            if step.uses and step.uses.startswith("agents."):
-                name = step.uses.split(".", 1)[1]
-                if name not in declared_agents:
-                    raise ValueError(
-                        f"Unknown declarative agent referenced at steps[{idx}].uses: {step.uses}"
-                    )
-            if step.uses and step.uses.startswith("imports."):
-                alias = step.uses.split(".", 1)[1]
-                if alias not in declared_imports:
-                    raise ValueError(
-                        f"Unknown imported pipeline alias at steps[{idx}].uses: {step.uses}"
-                    )
+            try:
+                uses = None
+                if isinstance(step, dict):
+                    uses = step.get("uses")
+                else:
+                    uses = getattr(step, "uses", None)
+                if isinstance(uses, str) and uses.startswith("agents."):
+                    name = uses.split(".", 1)[1]
+                    if name not in declared_agents:
+                        raise ValueError(
+                            f"Unknown declarative agent referenced at steps[{idx}].uses: {uses}"
+                        )
+                if isinstance(uses, str) and uses.startswith("imports."):
+                    alias = uses.split(".", 1)[1]
+                    if alias not in declared_imports:
+                        raise ValueError(
+                            f"Unknown imported pipeline alias at steps[{idx}].uses: {uses}"
+                        )
+            except Exception:
+                # Best-effort validation; ignore shape issues to allow custom primitives
+                pass
         return self
 
 
@@ -222,15 +232,56 @@ def _finalize_step_types(step_obj: Step[Any, Any]) -> None:
 
 
 def _make_step_from_blueprint(
-    model: BlueprintStepModel,
+    model: Any,
     *,
     yaml_path: Optional[str] = None,
     compiled_agents: Optional[Dict[str, Any]] = None,
     compiled_imports: Optional[Dict[str, Any]] = None,
 ) -> Step[Any, Any]:
+    # Support both native BlueprintStepModel and raw dict for custom primitives
+    if isinstance(model, dict):
+        kind_val = str(model.get("kind", "step"))
+        # Built-in kinds handled by existing logic via typed model
+        if kind_val in {
+            "step",
+            "parallel",
+            "conditional",
+            "loop",
+            "map",
+            "dynamic_router",
+            "hitl",
+            "cache",
+        }:
+            model = BlueprintStepModel.model_validate(model)
+        else:
+            # Attempt framework registry lookup for custom primitives
+            try:
+                from ...framework import registry as _fwreg
+
+                step_cls = _fwreg.get_step_class(kind_val)
+            except Exception:
+                step_cls = None
+            if step_cls is not None:
+                try:
+                    # Let the custom Step class validate its own fields
+                    step_obj = step_cls.model_validate(model)
+                except Exception as e:
+                    raise BlueprintError(
+                        f"Failed to instantiate custom step for kind '{kind_val}': {e}"
+                    )
+                # Attach yaml_path for telemetry if available
+                if yaml_path:
+                    try:
+                        step_obj.meta["yaml_path"] = yaml_path
+                    except Exception:
+                        pass
+                return step_obj
+            # No custom mapping found; raise a clear error for unknown kind
+            raise BlueprintError(f"Unknown step kind: {kind_val}")
+
     # For v0: agent may be None; if provided, we resolve later via import string in a follow-up.
     # Normalize step config supporting 'timeout' alias -> 'timeout_s'
-    if model.config:
+    if hasattr(model, "config") and model.config:
         cfg_dict = dict(model.config)
         if "timeout" in cfg_dict and "timeout_s" not in cfg_dict:
             try:
@@ -240,7 +291,7 @@ def _make_step_from_blueprint(
         step_config = StepConfig(**cfg_dict)
     else:
         step_config = StepConfig()
-    if model.kind == "parallel":
+    if getattr(model, "kind", None) == "parallel":
         if not model.branches:
             raise BlueprintError("parallel step requires branches")
         # Branch values are nested steps or pipelines in YAML; support list-of-steps or single step.
@@ -263,7 +314,7 @@ def _make_step_from_blueprint(
             else False,
             config=step_config,
         )
-    elif model.kind == "conditional":
+    elif getattr(model, "kind", None) == "conditional":
         from ..dsl.conditional import ConditionalStep
 
         if not model.branches:
@@ -298,7 +349,7 @@ def _make_step_from_blueprint(
             default_branch_pipeline=default_branch,
             config=step_config,
         )
-    elif model.kind == "loop":
+    elif getattr(model, "kind", None) == "loop":
         from ..dsl.loop import LoopStep
 
         if not model.loop or "body" not in model.loop:
@@ -331,7 +382,7 @@ def _make_step_from_blueprint(
             max_retries=max(1, int(max_loops)) if isinstance(max_loops, int) else 1,
             config=step_config,
         )
-    elif model.kind == "map":
+    elif getattr(model, "kind", None) == "map":
         from ..dsl.loop import MapStep
 
         if not model.map or "iterable_input" not in model.map or "body" not in model.map:
@@ -345,7 +396,7 @@ def _make_step_from_blueprint(
         return MapStep.from_pipeline(
             name=model.name, pipeline=body, iterable_input=str(iterable_input)
         )
-    elif model.kind == "dynamic_router":
+    elif getattr(model, "kind", None) == "dynamic_router":
         from ..dsl.dynamic_router import DynamicParallelRouterStep
 
         if not model.router or "router_agent" not in model.router or "branches" not in model.router:
@@ -364,7 +415,7 @@ def _make_step_from_blueprint(
             branches=branches_router,
             config=step_config,
         )
-    elif model.kind == "hitl":
+    elif getattr(model, "kind", None) == "hitl":
         # Human-in-the-loop step compiled from declarative YAML
         from ..dsl.step import HumanInTheLoopStep
         from .model_generator import generate_model_from_schema
@@ -382,7 +433,7 @@ def _make_step_from_blueprint(
             input_schema=schema_model,
             config=step_config,
         )
-    elif model.kind == "cache":
+    elif getattr(model, "kind", None) == "cache":
         # Declarative cache wrapper for inner step
         from flujo.steps.cache_step import CacheStep as _CacheStep
 
@@ -567,8 +618,11 @@ def _make_step_from_blueprint(
         # Optional fallback
         if model.fallback is not None:
             try:
+                # Fallback can be custom; accept dict directly to allow registry dispatch
                 st.fallback_step = _make_step_from_blueprint(
-                    BlueprintStepModel.model_validate(model.fallback),
+                    model.fallback
+                    if isinstance(model.fallback, dict)
+                    else BlueprintStepModel.model_validate(model.fallback),
                     yaml_path=f"{yaml_path}.fallback" if yaml_path else None,
                 )
             except Exception:
@@ -593,10 +647,9 @@ def _build_pipeline_from_branch(
     if isinstance(branch_spec, list):
         steps: List[Step[Any, Any]] = []
         for idx, s in enumerate(branch_spec):
-            m = BlueprintStepModel.model_validate(s)
             steps.append(
                 _make_step_from_blueprint(
-                    m,
+                    s,
                     yaml_path=f"{base_path}.steps[{idx}]" if base_path is not None else None,
                     compiled_agents=compiled_agents,
                     compiled_imports=compiled_imports,
@@ -604,10 +657,9 @@ def _build_pipeline_from_branch(
             )
         return Pipeline.model_construct(steps=steps)
     elif isinstance(branch_spec, dict):
-        m = BlueprintStepModel.model_validate(branch_spec)
         return Pipeline.from_step(
             _make_step_from_blueprint(
-                m,
+                branch_spec,
                 yaml_path=f"{base_path}.steps[0]" if base_path is not None else None,
                 compiled_agents=compiled_agents,
                 compiled_imports=compiled_imports,

@@ -318,6 +318,33 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self.policy_registry.register(HumanInTheLoopStep, self._policy_hitl_step)
         self.policy_registry.register(CacheStep, self._policy_cache_step)
 
+        # Adapt any framework-registered policies to bound callables if needed
+        try:
+            # Helper: wrap policy objects exposing execute(core, frame) into callables(frame)
+            from typing import Any as _Any
+
+            def _wrap_policy(_p: _Any) -> _Any:
+                if callable(_p):
+                    return _p
+                exec_fn = getattr(_p, "execute", None)
+                if callable(exec_fn):
+
+                    async def _bound(frame: _Any) -> _Any:
+                        return await _p.execute(self, frame)
+
+                    return _bound
+                return _p
+
+            # Iterate over a copy to avoid mutation during iteration
+            _current = dict(getattr(self.policy_registry, "_registry", {}))
+            for _step_cls, _policy in _current.items():
+                wrapped = _wrap_policy(_policy)
+                if wrapped is not _policy:
+                    self.policy_registry.register(_step_cls, wrapped)
+        except Exception:
+            # Defensive: do not fail core init due to extension policy issues
+            pass
+
     @property
     def cache(self) -> _LRUCache:
         if not hasattr(self, "_cache"):

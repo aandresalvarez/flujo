@@ -43,6 +43,9 @@ from .recipes.factories import (
     run_default_pipeline,
 )
 
+# Ensure framework primitives are registered at import time
+from . import framework as _framework  # noqa: F401
+
 __version__ = "0.4.37"  # Project-based CLI journey (FSD-021)
 
 __all__ = [
