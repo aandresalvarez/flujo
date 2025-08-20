@@ -251,6 +251,22 @@ def get_registered_factory(skill_id: str):
     return entry["factory"]
 
 
+@pytest.fixture()
+def no_wait_backoff(monkeypatch: pytest.MonkeyPatch):
+    """Disable tenacity backoff in retry loops for fast unit tests.
+
+    Patches flujo.agents.wrapper.wait_exponential to wait_none so retries do not sleep.
+    """
+    import tenacity as _tenacity
+
+    monkeypatch.setattr(
+        "flujo.agents.wrapper.wait_exponential",
+        lambda **_k: _tenacity.wait_none(),
+        raising=True,
+    )
+    yield
+
+
 class NoOpStateBackend(StateBackend):
     """A state backend that simulates real backend behavior for testing while maintaining isolation."""
 

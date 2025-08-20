@@ -17,15 +17,24 @@ from flujo.cli.main import app
 class TestCLIPerformanceEdgeCases:
     """Test CLI performance edge cases and optimizations."""
 
-    @pytest.fixture
-    def large_database_with_mixed_data(self, tmp_path: Path) -> Path:
+    @pytest.fixture(scope="module")
+    def large_database_with_mixed_data(self, tmp_path_factory) -> Path:
         """Create a database with mixed data types for performance testing."""
+        # Use a module-scoped tmp dir to reuse DB across tests in this module
+        tmp_path = tmp_path_factory.mktemp("cli_perf_db")
         db_path = tmp_path / "mixed_ops.db"
         backend = SQLiteBackend(db_path)
 
         # Create runs with different characteristics
+        import os as _os
+
         now = datetime.utcnow()
-        for i in range(1000):
+        # Allow scaling via env; default to a modest size for unit tests
+        try:
+            total = int(_os.getenv("FLUJO_CI_DB_SIZE", "200"))
+        except Exception:
+            total = 200
+        for i in range(total):
             # Create run start
             dt = (now - timedelta(minutes=i)).isoformat()
             asyncio.run(

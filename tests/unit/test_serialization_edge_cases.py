@@ -556,6 +556,7 @@ class TestSerializationEdgeCases:
         # This validates Flujo's robustness principle
         assert True, "System handled circular reference gracefully without crashing or hanging"
 
+    @pytest.mark.slow
     def test_large_data_structures(self):
         """Test serialization of very large data structures."""
         # Create a large nested structure
