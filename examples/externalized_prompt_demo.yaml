@@ -1,0 +1,54 @@
+version: "0.1"
+agents:
+  # Example 1: Simple externalized prompt
+  code_reviewer:
+    model: "openai:gpt-4o"
+    system_prompt:
+      from_file: "./prompts/code_reviewer.md"
+    output_schema:
+      type: object
+      properties:
+        issues:
+          type: array
+          items:
+            type: object
+            properties:
+              severity:
+                type: string
+                enum: [low, medium, high]
+              description:
+                type: string
+              suggestion:
+                type: string
+        overall_score:
+          type: number
+          minimum: 0
+          maximum: 10
+      required: [issues, overall_score]
+  
+  # Example 2: Another externalized prompt
+  documentation_writer:
+    model: "openai:gpt-4o"
+    system_prompt:
+      from_file: "./prompts/documentation_writer.md"
+    output_schema:
+      type: object
+      properties:
+        title:
+          type: string
+        content:
+          type: string
+        sections:
+          type: array
+          items:
+            type: string
+      required: [title, content, sections]
+
+steps:
+  - kind: step
+    name: review_code
+    uses: agents.code_reviewer
+  
+  - kind: step
+    name: write_docs
+    uses: agents.documentation_writer

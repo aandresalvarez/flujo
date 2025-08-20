@@ -10,6 +10,8 @@ from .loader import (
 )
 from .model_generator import generate_model_from_schema
 from ...agents import make_agent_async
+import os
+from ...exceptions import ConfigurationError
 
 
 class DeclarativeAgentModel(BaseModel):
@@ -35,7 +37,35 @@ class DeclarativeBlueprintCompiler:
             # Support dict specs validated via model on loader side
             if isinstance(spec, dict):
                 model_name = str(spec.get("model"))
-                system_prompt = str(spec.get("system_prompt"))
+                prompt_spec = spec.get("system_prompt")
+                # Resolve system prompt possibly from external file
+                system_prompt: str
+                if isinstance(prompt_spec, dict) and "from_file" in prompt_spec:
+                    rel = str(prompt_spec.get("from_file"))
+                    base_dir = self._resolve_base_dir()
+                    path = os.path.normpath(os.path.join(base_dir, rel))
+                    abs_base = os.path.abspath(base_dir)
+                    abs_path = os.path.abspath(path)
+                    # Security: sandbox to base_dir
+                    try:
+                        if os.path.commonpath([abs_base, abs_path]) != abs_base:
+                            raise ConfigurationError(f"Path traversal detected in from_file: {rel}")
+                    except ValueError:
+                        # On Windows, different drives cause ValueError
+                        raise ConfigurationError(f"Path traversal detected in from_file: {rel}")
+                    try:
+                        with open(abs_path, "r", encoding="utf-8") as f:
+                            system_prompt = f.read()
+                    except FileNotFoundError:
+                        raise ConfigurationError(
+                            f"Prompt file not found for agent '{name}': {abs_path}"
+                        )
+                    except Exception as e:
+                        raise ConfigurationError(f"Error reading prompt file '{abs_path}': {e}")
+                elif isinstance(prompt_spec, str):
+                    system_prompt = prompt_spec
+                else:
+                    system_prompt = str(prompt_spec) if prompt_spec is not None else ""
                 output_schema = spec.get("output_schema") or {}
                 # Optional GPT-5 style controls passed through to Agent
                 model_settings = spec.get("model_settings") or {}
@@ -45,7 +75,29 @@ class DeclarativeBlueprintCompiler:
             else:
                 # Already a parsed model-like (fallback)
                 model_name = str(getattr(spec, "model"))
-                system_prompt = str(getattr(spec, "system_prompt"))
+                prompt_spec = getattr(spec, "system_prompt")
+                if hasattr(prompt_spec, "from_file"):
+                    rel = str(getattr(prompt_spec, "from_file"))
+                    base_dir = self._resolve_base_dir()
+                    path = os.path.normpath(os.path.join(base_dir, rel))
+                    abs_base = os.path.abspath(base_dir)
+                    abs_path = os.path.abspath(path)
+                    try:
+                        if os.path.commonpath([abs_base, abs_path]) != abs_base:
+                            raise ConfigurationError(f"Path traversal detected in from_file: {rel}")
+                    except ValueError:
+                        raise ConfigurationError(f"Path traversal detected in from_file: {rel}")
+                    try:
+                        with open(abs_path, "r", encoding="utf-8") as f:
+                            system_prompt = f.read()
+                    except FileNotFoundError:
+                        raise ConfigurationError(
+                            f"Prompt file not found for agent '{name}': {abs_path}"
+                        )
+                    except Exception as e:
+                        raise ConfigurationError(f"Error reading prompt file '{abs_path}': {e}")
+                else:
+                    system_prompt = str(prompt_spec)
                 output_schema = getattr(spec, "output_schema")
                 try:
                     model_settings = getattr(spec, "model_settings", {}) or {}
