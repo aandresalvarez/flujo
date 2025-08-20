@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Type
 
 # Ensure framework primitives (like StateMachine) are registered when builtins load
 try:  # pragma: no cover - best-effort for import order
@@ -1028,7 +1028,9 @@ def _register_builtins() -> None:
                             continue
                         restore[sid] = dict(entry)
 
-                        def _make_factory(_sid: str):
+                        def _make_factory(
+                            _sid: str,
+                        ) -> Callable[..., Callable[..., Awaitable[Dict[str, _Any]]]]:
                             async def _mock(*_a: _Any, **_k: _Any) -> Dict[str, _Any]:
                                 return {"mocked": True, "skill": _sid}
 
@@ -1044,7 +1046,7 @@ def _register_builtins() -> None:
                 runner = create_flujo_runner(pipeline, None, {"initial_prompt": input_text})
 
                 # Execute synchronously via a worker thread to avoid blocking the event loop
-                def _run_sync():
+                def _run_sync() -> Any:
                     return execute_pipeline_with_output_handling(runner, input_text, None, False)
 
                 result = await _asyncio.to_thread(_run_sync)
