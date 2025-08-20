@@ -35,6 +35,7 @@ from .factory import make_agent, _unwrap_type_adapter
 
 # Import prompts from the prompts module
 from ..prompts import _format_repair_prompt
+from ..utils import format_prompt
 
 
 # Import from utils to avoid circular imports
@@ -328,6 +329,80 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         return await self.run_async(*args, **kwargs)
 
 
+class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
+    """
+    Async wrapper that supports just-in-time system prompt rendering from a template
+    using runtime context and previous step output.
+
+    The wrapper temporarily overrides the underlying agent's system_prompt for a single
+    run and restores it afterwards to keep agent instances stateless.
+    """
+
+    def __init__(
+        self,
+        agent: Agent[Any, AgentOutT],
+        *,
+        template_string: str,
+        variables_spec: Optional[dict[str, Any]] = None,
+        max_retries: int = 3,
+        timeout: int | None = None,
+        model_name: str | None = None,
+        processors: Optional[AgentProcessors] = None,
+        auto_repair: bool = True,
+    ) -> None:
+        super().__init__(
+            agent,
+            max_retries=max_retries,
+            timeout=timeout,
+            model_name=model_name,
+            processors=processors,
+            auto_repair=auto_repair,
+        )
+        self.system_prompt_template: str = template_string
+        self.prompt_variables: dict[str, Any] = variables_spec or {}
+
+    async def run_async(self, data: Any, **kwargs: Any) -> Any:
+        context = kwargs.get("context") or kwargs.get("pipeline_context")
+
+        if self.system_prompt_template:
+            # Resolve variable specs: support static values or template strings
+            resolved_vars: dict[str, Any] = {}
+            for key, value_template in (self.prompt_variables or {}).items():
+                if isinstance(value_template, str) and "{{" in value_template:
+                    try:
+                        resolved_vars[key] = format_prompt(
+                            value_template, context=context, previous_step=data
+                        )
+                    except Exception:
+                        resolved_vars[key] = ""
+                else:
+                    resolved_vars[key] = value_template
+
+            # Render final system prompt
+            try:
+                final_system_prompt = format_prompt(
+                    self.system_prompt_template,
+                    **resolved_vars,
+                    context=context,
+                    previous_step=data,
+                )
+            except Exception:
+                final_system_prompt = self.system_prompt_template
+
+            # Temporarily override system prompt
+            original_prompt = getattr(self._agent, "system_prompt", None)
+            try:
+                setattr(self._agent, "system_prompt", final_system_prompt)
+                return await super().run_async(data, **kwargs)
+            finally:
+                try:
+                    setattr(self._agent, "system_prompt", original_prompt)
+                except Exception:
+                    pass
+        # No template configured; behave like base class
+        return await super().run_async(data, **kwargs)
+
+
 def make_agent_async(
     model: str,
     system_prompt: str,
@@ -393,6 +468,53 @@ def make_agent_async(
 
     return AsyncAgentWrapper(
         agent,
+        max_retries=max_retries,
+        timeout=timeout,
+        model_name=model,
+        processors=final_processors,
+        auto_repair=auto_repair,
+    )
+
+
+def make_templated_agent_async(
+    model: str,
+    template_string: str,
+    variables_spec: Optional[dict[str, Any]],
+    output_type: Type[Any],
+    max_retries: int = 3,
+    timeout: int | None = None,
+    processors: Optional[AgentProcessors] = None,
+    auto_repair: bool = True,
+    **kwargs: Any,
+) -> TemplatedAsyncAgentWrapper[Any, Any]:
+    """
+    Create an agent and wrap it with TemplatedAsyncAgentWrapper to enable
+    just-in-time system prompt rendering.
+    """
+    # Create underlying agent with a placeholder prompt; it will be overridden at runtime
+    try:
+        from flujo.agents import make_agent as infra_make_agent
+
+        agent, final_processors = infra_make_agent(
+            model,
+            system_prompt="",
+            output_type=output_type,
+            processors=processors,
+            **kwargs,
+        )
+    except ImportError:
+        agent, final_processors = make_agent(
+            model,
+            system_prompt="",
+            output_type=output_type,
+            processors=processors,
+            **kwargs,
+        )
+
+    return TemplatedAsyncAgentWrapper(
+        agent,
+        template_string=template_string,
+        variables_spec=variables_spec,
         max_retries=max_retries,
         timeout=timeout,
         model_name=model,

@@ -10,7 +10,12 @@ This is the public API for the flujo agents package.
 
 from .monitoring import monitored_agent
 from .factory import make_agent, _unwrap_type_adapter
-from .wrapper import AsyncAgentWrapper, make_agent_async
+from .wrapper import (
+    AsyncAgentWrapper,
+    make_agent_async,
+    TemplatedAsyncAgentWrapper,
+    make_templated_agent_async,
+)
 from .repair import DeterministicRepairProcessor, make_repair_agent, get_repair_agent
 from .utils import get_raw_output_from_exception
 from .recipes import (
@@ -38,6 +43,8 @@ __all__ = [
     "_unwrap_type_adapter",
     "AsyncAgentWrapper",
     "make_agent_async",
+    "TemplatedAsyncAgentWrapper",
+    "make_templated_agent_async",
     # Repair functions
     "DeterministicRepairProcessor",
     "make_repair_agent",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel
 
@@ -9,7 +9,10 @@ from .loader import (
     build_pipeline_from_blueprint,
 )
 from .model_generator import generate_model_from_schema
-from ...agents import make_agent_async
+from ...agents import make_agent_async, make_templated_agent_async
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ...agents import AsyncAgentWrapper
 import os
 from ...exceptions import ConfigurationError
 
@@ -113,15 +116,50 @@ class DeclarativeBlueprintCompiler:
                     max_retries_opt = None
 
             output_type = generate_model_from_schema(name, output_schema)
-            agent_wrapper = make_agent_async(
-                model=model_name,
-                system_prompt=system_prompt,
-                output_type=output_type,
-                # Pass through provider-specific model settings (e.g., GPT-5 controls)
-                model_settings=model_settings,
-                timeout=timeout_opt,
-                max_retries=int(max_retries_opt) if isinstance(max_retries_opt, int) else 3,
-            )
+
+            # If variables are provided alongside from_file, use templated wrapper
+            agent_wrapper: "AsyncAgentWrapper[Any, Any]"
+            if (
+                isinstance(prompt_spec, dict)
+                and "from_file" in prompt_spec
+                and ("variables" in prompt_spec and prompt_spec.get("variables") is not None)
+            ):
+                variables_spec = dict(prompt_spec.get("variables") or {})
+                agent_wrapper = make_templated_agent_async(
+                    model=model_name,
+                    template_string=system_prompt,
+                    variables_spec=variables_spec,
+                    output_type=output_type,
+                    model_settings=model_settings,
+                    timeout=timeout_opt,
+                    max_retries=int(max_retries_opt) if isinstance(max_retries_opt, int) else 3,
+                )
+            elif (
+                hasattr(prompt_spec, "variables") and getattr(prompt_spec, "variables") is not None
+            ):
+                try:
+                    variables_spec2 = dict(getattr(prompt_spec, "variables"))
+                except Exception:
+                    variables_spec2 = {}
+                agent_wrapper = make_templated_agent_async(
+                    model=model_name,
+                    template_string=system_prompt,
+                    variables_spec=variables_spec2,
+                    output_type=output_type,
+                    model_settings=model_settings,
+                    timeout=timeout_opt,
+                    max_retries=int(max_retries_opt) if isinstance(max_retries_opt, int) else 3,
+                )
+            else:
+                agent_wrapper = make_agent_async(
+                    model=model_name,
+                    system_prompt=system_prompt,
+                    output_type=output_type,
+                    # Pass through provider-specific model settings (e.g., GPT-5 controls)
+                    model_settings=model_settings,
+                    timeout=timeout_opt,
+                    max_retries=int(max_retries_opt) if isinstance(max_retries_opt, int) else 3,
+                )
             self._compiled_agents[name] = agent_wrapper
 
     def _resolve_base_dir(self) -> str:
