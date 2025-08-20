@@ -42,7 +42,7 @@ steps:
 
 ## Step Types
 
-Flujo supports seven main step types, each with specific use cases and configuration options.
+Flujo supports several built-in step types, plus first-class custom primitives via the framework registry. The built-ins are listed below; custom primitives can be used by setting `kind` to the registered name (see “Extensible Step Primitives”).
 
 ### 1. Basic Step (`kind: step`)
 
@@ -218,6 +218,32 @@ Pause pipeline execution to wait for human input or approval (supported in YAML)
 - `input_schema`: (Optional) JSON Schema object used to validate the human response. Flujo compiles this to a Pydantic model internally.
 
 When a `hitl` step runs, the pipeline pauses and records a message. Resume execution with the validated payload to continue.
+
+### 8. State Machine Step (`kind: StateMachine`)
+
+Drive execution across named states; each state maps to its own Pipeline.
+
+```yaml
+- kind: StateMachine
+  name: sm
+  start_state: analyze
+  end_states: [refine]
+  states:
+    analyze:
+      - kind: step
+        name: Analyze
+    refine:
+      - kind: step
+        name: Refine
+```
+
+For full details, see “State Machine Step”.
+
+## Custom Step Primitives
+
+Flujo supports first-class custom primitives via `flujo.framework.registry`. Once registered, you can reference them by `kind` in YAML, and they are executed by their corresponding policies.
+
+See “Extensible Step Primitives” for registration and best practices.
 
 
 ## Agent Definitions

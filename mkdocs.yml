@@ -30,6 +30,7 @@ nav:
     - 'Pipeline Looping': 'user_guide/pipeline_looping.md'
     - 'Pipeline Branching': 'user_guide/pipeline_branching.md'
     - 'Modular Workflows': 'user_guide/modular_workflows.md'
+    - 'State Machine Step': 'user_guide/state_machine_step.md'
   - 'Advanced Topics':
     - 'Tools': 'advanced/tools.md'
     - 'Scoring': 'advanced/scoring.md'
@@ -40,6 +41,7 @@ nav:
     - 'State': 'advanced/state.md'
     - 'SQLite Backend': 'advanced/sqlite_backend_comprehensive_guide.md'
     - 'Troubleshooting': 'advanced/troubleshooting.md'
+    - 'Extensible Step Primitives': 'advanced/extensible_step_primitives.md'
   - 'Guides':
     - 'SQLite Backend': 'guides/sqlite_backend_guide.md'
     - 'Tracing Guide': 'guides/tracing_guide.md'
@@ -50,6 +52,7 @@ nav:
     - 'GPT‑5 Architect': 'guides/gpt5_architect.md'
     - 'YAML: Human-in-the-Loop': 'hitl.md'
     - 'YAML: Cache': 'cache.md'
+    - 'Architect Flow Fundamentals': 'architect_flow_first_principles.md'
   - 'Cookbook':
     - 'Pipeline as a Step': 'cookbook/pipeline_as_step.md'
     - 'Advanced Serialization': 'cookbook/advanced_serialization.md'

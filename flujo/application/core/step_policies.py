@@ -59,6 +59,16 @@ class PolicyRegistry:
     def __init__(self) -> None:
         # Type-safe mapping: Step subclass → policy instance (opaque type)
         self._registry: Dict[Type[Step], Any] = {}
+        # Preload any globally registered policies from framework registry
+        try:
+            from ...framework.registry import get_registered_policies
+
+            for step_cls, policy_instance in get_registered_policies().items():
+                # Defer binding to executor core; raw policy instances are kept here
+                self._registry[step_cls] = policy_instance
+        except Exception:
+            # Framework registry may not be initialized yet; ignore
+            pass
 
     def register(self, step_type: Type[Step], policy: Any) -> None:
         """Register a policy for a given `Step` subclass.

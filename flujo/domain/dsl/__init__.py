@@ -52,6 +52,11 @@ def __getattr__(name: str) -> Any:
 
         globals()[name] = ParallelStep
         return ParallelStep
+    if name == "StateMachineStep":
+        from .state_machine import StateMachineStep
+
+        globals()[name] = StateMachineStep
+        return StateMachineStep
     if name == "MergeStrategy":
         from .step import MergeStrategy
 

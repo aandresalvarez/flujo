@@ -87,3 +87,13 @@ This document describes the first‑principles design for the Architect flow and
 - Add a small optional env‑guarded trace in `select_validity_branch` for deep debugging (e.g., `FLUJO_DEBUG_COND=1`).
 - Consider a minimal end‑to‑end test that asserts the presence of both "invalid" and "valid" keys using the nested ValidityBranch approach as a regression guard.
 
+## Framework Awareness of Custom Primitives (FSD‑025)
+
+The Architect is aware of registered framework step primitives through the builtin skill `flujo.builtins.get_framework_schema`. It introspects the framework registry and returns JSON Schemas for each custom `kind`. This enables the Architect to generate valid YAML using new primitives such as `StateMachine` without hard‑coding their shapes.
+
+Integration points:
+- `flujo.framework.registry`: Central registration of `Step` kinds and execution policies
+- `flujo.builtins.get_framework_schema`: Produces `{ "steps": { kind: json_schema } }`
+- YAML loader: Instantiates custom steps via `model_validate()` on the registered class
+
+As you add new primitives to the registry, they automatically become available to the Architect.
