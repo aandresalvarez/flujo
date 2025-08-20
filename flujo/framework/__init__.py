@@ -8,7 +8,7 @@ from .registry import register_step_type, register_policy
 def _register_core_primitives() -> None:
     # Import here to avoid import cycles during package initialization
     from ..domain.dsl.state_machine import StateMachineStep
-    from ..application.core.state_machine_policy import StateMachinePolicyExecutor
+    from ..application.core.step_policies import StateMachinePolicyExecutor
 
     register_step_type(StateMachineStep)
     register_policy(StateMachineStep, StateMachinePolicyExecutor())

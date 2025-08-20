@@ -1038,7 +1038,7 @@ def _register_builtins() -> None:
                     # Fallback: force-register StateMachine explicitly
                     try:
                         from flujo.domain.dsl.state_machine import StateMachineStep as _SM
-                        from flujo.application.core.state_machine_policy import (
+                        from flujo.application.core.step_policies import (
                             StateMachinePolicyExecutor as _SMPol,
                         )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple, Type
+from typing import Any as _Any
 from pydantic import BaseModel
 from flujo.domain.models import (
     StepResult,
@@ -135,6 +136,133 @@ class DefaultTimeoutRunner:
         if timeout_s is None:
             return await coro
         return await asyncio.wait_for(coro, timeout_s)
+
+
+# --- StateMachine policy executor (FSD-025) ---
+
+
+class StateMachinePolicyExecutor:
+    """Policy executor for StateMachineStep.
+
+    Iteratively executes the pipeline for the current state until an end state is reached.
+    State is tracked in the context scratchpad under 'current_state'.
+    Next state may be specified by setting 'next_state' in the context scratchpad.
+    """
+
+    async def execute(self, core: _Any, frame: ExecutionFrame[_Any]) -> StepOutcome[StepResult]:
+        step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+
+        try:
+            from flujo.domain.dsl.state_machine import StateMachineStep  # noqa: F401
+        except Exception:
+            pass
+
+        current_state: Optional[str] = None
+        try:
+            if context is not None and hasattr(context, "scratchpad"):
+                sp = getattr(context, "scratchpad")
+                if isinstance(sp, dict):
+                    current_state = sp.get("current_state")
+        except Exception:
+            current_state = None
+        if not isinstance(current_state, str):
+            current_state = getattr(step, "start_state", None)
+
+        total_cost = 0.0
+        total_tokens = 0
+        total_latency = 0.0
+        step_history: list[StepResult] = []
+        last_context = context
+
+        telemetry.logfire.info(f"[StateMachinePolicy] starting at state={current_state!r}")
+
+        max_hops = max(1, len(getattr(step, "states", {})) * 10)
+        for _hop in range(max_hops):
+            if current_state is None:
+                break
+
+            end_states = getattr(step, "end_states", []) or []
+            if isinstance(end_states, list) and current_state in end_states:
+                telemetry.logfire.info(
+                    f"[StateMachinePolicy] reached terminal state={current_state!r}"
+                )
+                break
+
+            state_pipeline = getattr(step, "states", {}).get(current_state)
+            if state_pipeline is None:
+                failure = StepResult(
+                    name=getattr(step, "name", "StateMachine"),
+                    output=None,
+                    success=False,
+                    feedback=f"Unknown state: {current_state}",
+                    branch_context=last_context,
+                )
+                return Failure(
+                    error=Exception("unknown_state"), feedback=failure.feedback, step_result=failure
+                )
+
+            try:
+                _ = step.build_internal_pipeline()
+            except Exception:
+                _ = None
+
+            iteration_context = (
+                ContextManager.isolate(last_context) if last_context is not None else None
+            )
+
+            pipeline_result: PipelineResult[_Any] = await core._execute_pipeline_via_policies(
+                state_pipeline,
+                data,
+                iteration_context,
+                resources,
+                limits,
+                None,
+                frame.context_setter,
+            )
+
+            total_cost += float(getattr(pipeline_result, "total_cost_usd", 0.0))
+            total_tokens += int(getattr(pipeline_result, "total_tokens", 0))
+            try:
+                for sr in getattr(pipeline_result, "step_history", []) or []:
+                    if isinstance(sr, StepResult):
+                        total_latency += float(getattr(sr, "latency_s", 0.0))
+                        step_history.append(sr)
+            except Exception:
+                pass
+
+            last_context = getattr(pipeline_result, "final_pipeline_context", iteration_context)
+            next_state: Optional[str] = None
+            try:
+                if last_context is not None and hasattr(last_context, "scratchpad"):
+                    sp2 = getattr(last_context, "scratchpad")
+                    if isinstance(sp2, dict):
+                        next_state = sp2.get("next_state")
+            except Exception:
+                next_state = None
+
+            current_state = next_state if isinstance(next_state, str) else current_state
+            if not isinstance(next_state, str):
+                if isinstance(end_states, list) and current_state in end_states:
+                    break
+                break
+
+        result = StepResult(
+            name=getattr(step, "name", "StateMachine"),
+            output=None,
+            success=True,
+            attempts=1,
+            latency_s=total_latency,
+            token_counts=total_tokens,
+            cost_usd=total_cost,
+            feedback=None,
+            branch_context=last_context,
+            step_history=step_history,
+        )
+        return Success(step_result=result)
 
 
 # --- Agent result unpacker policy ---
