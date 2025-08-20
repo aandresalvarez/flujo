@@ -70,8 +70,10 @@ system_prompt:
 ### Relative Path Resolution
 ```yaml
 system_prompt:
-  from_file: "../shared_prompts/agent_prompt.md"
+  from_file: "./shared_prompts/agent_prompt.md"
 ```
+
+Note: Paths are sandboxed to the blueprint's base_dir. If you need to reference a parent directory (e.g., `../shared_prompts/...`), ensure the compiler/loader is invoked with base_dir set to the project root so that the resolved absolute path still falls within the sandbox. Otherwise, the os.path.commonpath check will block traversal outside base_dir.
 
 ### Nested Directory Structure
 ```yaml

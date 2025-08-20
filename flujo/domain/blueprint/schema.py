@@ -24,17 +24,14 @@ class AgentModel(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _validate_prompt_format(cls, data: Any) -> Any:
-        try:
-            if isinstance(data, dict):
-                prompt = data.get("system_prompt")
-                if isinstance(prompt, dict):
-                    if "from_file" not in prompt or len(prompt.keys()) != 1:
-                        raise ValueError(
-                            "system_prompt dictionary must contain only the 'from_file' key"
-                        )
-        except Exception:
-            # Defer detailed type errors to pydantic after-hook
-            pass
+        if isinstance(data, dict):
+            prompt = data.get("system_prompt")
+            if isinstance(prompt, dict):
+                if "from_file" not in prompt or len(prompt.keys()) != 1:
+                    # Let ValueError propagate so Pydantic surfaces a clear error
+                    raise ValueError(
+                        "system_prompt dictionary must contain only the 'from_file' key"
+                    )
         return data
 
 

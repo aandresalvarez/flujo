@@ -44,24 +44,24 @@ class DeclarativeBlueprintCompiler:
                     rel = str(prompt_spec.get("from_file"))
                     base_dir = self._resolve_base_dir()
                     path = os.path.normpath(os.path.join(base_dir, rel))
-                    abs_base = os.path.abspath(base_dir)
-                    abs_path = os.path.abspath(path)
+                    real_base = os.path.realpath(base_dir)
+                    real_path = os.path.realpath(path)
                     # Security: sandbox to base_dir
                     try:
-                        if os.path.commonpath([abs_base, abs_path]) != abs_base:
+                        if os.path.commonpath([real_base, real_path]) != real_base:
                             raise ConfigurationError(f"Path traversal detected in from_file: {rel}")
                     except ValueError:
                         # On Windows, different drives cause ValueError
                         raise ConfigurationError(f"Path traversal detected in from_file: {rel}")
                     try:
-                        with open(abs_path, "r", encoding="utf-8") as f:
+                        with open(real_path, "r", encoding="utf-8") as f:
                             system_prompt = f.read()
                     except FileNotFoundError:
                         raise ConfigurationError(
-                            f"Prompt file not found for agent '{name}': {abs_path}"
+                            f"Prompt file not found for agent '{name}': {real_path}"
                         )
                     except Exception as e:
-                        raise ConfigurationError(f"Error reading prompt file '{abs_path}': {e}")
+                        raise ConfigurationError(f"Error reading prompt file '{real_path}': {e}")
                 elif isinstance(prompt_spec, str):
                     system_prompt = prompt_spec
                 else:
@@ -80,22 +80,22 @@ class DeclarativeBlueprintCompiler:
                     rel = str(getattr(prompt_spec, "from_file"))
                     base_dir = self._resolve_base_dir()
                     path = os.path.normpath(os.path.join(base_dir, rel))
-                    abs_base = os.path.abspath(base_dir)
-                    abs_path = os.path.abspath(path)
+                    real_base = os.path.realpath(base_dir)
+                    real_path = os.path.realpath(path)
                     try:
-                        if os.path.commonpath([abs_base, abs_path]) != abs_base:
+                        if os.path.commonpath([real_base, real_path]) != real_base:
                             raise ConfigurationError(f"Path traversal detected in from_file: {rel}")
                     except ValueError:
                         raise ConfigurationError(f"Path traversal detected in from_file: {rel}")
                     try:
-                        with open(abs_path, "r", encoding="utf-8") as f:
+                        with open(real_path, "r", encoding="utf-8") as f:
                             system_prompt = f.read()
                     except FileNotFoundError:
                         raise ConfigurationError(
-                            f"Prompt file not found for agent '{name}': {abs_path}"
+                            f"Prompt file not found for agent '{name}': {real_path}"
                         )
                     except Exception as e:
-                        raise ConfigurationError(f"Error reading prompt file '{abs_path}': {e}")
+                        raise ConfigurationError(f"Error reading prompt file '{real_path}': {e}")
                 else:
                     system_prompt = str(prompt_spec)
                 output_schema = getattr(spec, "output_schema")
