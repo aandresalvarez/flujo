@@ -503,11 +503,19 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 call_args: list[Any] = []
                 callable_kwargs: dict[str, Any] = {}
 
-                first_param = next(iter(self._original_sig.parameters.values()))
-                if first_param.kind is inspect.Parameter.POSITIONAL_ONLY:
-                    call_args.append(data)
-                else:
-                    callable_kwargs[first_param.name] = data
+                params = list(self._original_sig.parameters.values())
+                if params:
+                    first_param = params[0]
+                    # Pass data positionally for common kinds including *args
+                    if first_param.kind in (
+                        inspect.Parameter.POSITIONAL_ONLY,
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        inspect.Parameter.VAR_POSITIONAL,
+                    ):
+                        call_args.append(data)
+                    else:
+                        # Fallback to keyword by name
+                        callable_kwargs[first_param.name] = data
 
                 # Add the injected arguments if the callable needs them
                 from flujo.application.core.context_manager import _accepts_param

@@ -12,6 +12,7 @@ from flujo.exceptions import (
     UsageLimitExceededError,
     NonRetryableError,
     MockDetectionError,
+    PricingNotConfiguredError,
 )
 
 if TYPE_CHECKING:
@@ -324,6 +325,9 @@ async def _execute_agent_step(
                     InfiniteRedirectError,
                     UsageLimitExceededError,
                     NonRetryableError,
+                    # Pricing configuration errors are not retryable; surface immediately
+                    # to preserve strict-mode semantics expected by integration tests.
+                    PricingNotConfiguredError,
                 ),
             ):
                 telemetry.logfire.error(

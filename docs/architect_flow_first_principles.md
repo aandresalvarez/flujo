@@ -1,7 +1,7 @@
 # Architect Flow: First‑Principles Design and Fixes
 
 ## Summary
-This document describes the first‑principles design for the Architect flow and the changes implemented to make it deterministic, policy‑driven, and robust. It covers the root cause, guiding principles, concrete changes in policies/built‑ins/recipe/CLI, test expectations, and troubleshooting tips.
+This document describes the first‑principles design for the Architect flow and the changes implemented to make it deterministic, policy‑driven, and robust. It covers the root cause, guiding principles, concrete changes in policies/built‑ins/CLI, test expectations, and troubleshooting tips.
 
 ## Problem Statement
 - The Architect CLI occasionally selected or emitted the wrong pipeline variant and did not consistently produce YAML.
@@ -46,22 +46,20 @@ This document describes the first‑principles design for the Architect flow and
   - `select_validity_branch`: uses last output dict or falls back to `context.yaml_is_valid`.
   - `validate_yaml` registration resolves dynamically so test monkeypatches take effect.
 
-- Recipe (`flujo/recipes/architect_pipeline.yaml`)
-  - Loop body (ValidateAndRepair):
-    - `decide_yaml_source` → `YamlSource` (reuse present YAML or call Architect agent)
-    - `extract_yaml_text` → `store_yaml_text` (updates context.yaml_text)
-    - `validate_generated_yaml` → `check_validation_status` (updates context.yaml_is_valid)
-    - `ValidityBranch` (main)
-      - `valid`: noop
-      - `invalid` branch:
-        - `repair_yaml` → `extract_repaired_yaml` → `revalidate_generated_yaml` → `apply_repaired_yaml` → `recheck_validation_status`
-        - Nested `ValidityBranch` (records "valid" immediately after repair)
-    - `emit_current_yaml` (string)
-  - Final top‑level: `final_emit_yaml` (string)
+- Programmatic Builder (`flujo/architect/builder.py`)
+  - The recipe has been superseded by a programmatic `StateMachineStep` that orchestrates the flow:
+    GatheringContext → GoalClarification → Planning → PlanApproval → ParameterCollection →
+    Generation → Validation (validate/repair loop) → DryRunOffer → Finalization.
+  - The validation/repair loop is implemented via built‑ins (`validate_yaml`, `repair_yaml_ruamel`) and
+    sets `context.yaml_is_valid` as the single source of truth.
+  - A reference YAML still exists at `examples/architect_pipeline.yaml` for study and experimentation.
 
 - CLI
-  - No scaffolds or re‑serialization. YAML extraction walks step_history and context attributes and prefers the final emit.
-  - Added `--debug` printout for step names and output types to accelerate triage.
+  - YAML extraction walks `step_history` and context attributes, preferring the most recent valid
+    `yaml_text`/`generated_yaml` rather than relying on heuristics.
+  - `--debug` prints step names and outputs to accelerate triage.
+  - The state‑machine architect can be enabled via `FLUJO_ARCHITECT_STATE_MACHINE=1`. Without the flag,
+    the CLI uses a minimal builder that emits a conservative valid YAML scaffold.
 
 ## Testing Impact
 - Conditional tests are stable (contract guarded).

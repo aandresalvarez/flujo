@@ -134,3 +134,33 @@ Registered in `flujo/builtins.py` and used by the Architect:
 If you want a deeper conversational flow (approvals, refinement, dry run prompts),
 let us know and we’ll wire the HITL steps and policies accordingly.
 
+## Testing
+
+- Unit (built-ins): Validates the new FSD‑024 helpers.
+  - `tests/unit/architect/test_builtins_analyze_project.py`: detects common files and handles empty dirs.
+  - `tests/unit/architect/test_builtins_visualize_plan.py`: Mermaid rendering with correct node names.
+  - `tests/unit/architect/test_builtins_estimate_plan_cost.py`: sums `est_cost` metadata.
+  - `tests/unit/architect/test_builtins_run_pipeline_in_memory.py`: mocks side‑effects in sandbox; no file writes; non‑blocking execution.
+- Integration (state machine): Runs the full flow end‑to‑end in‑process.
+  - `tests/integration/architect/test_architect_happy_path.py`: produces valid YAML; confirms `GenerateYAML` executed.
+  - `tests/integration/architect/test_architect_validation_repair.py`: invalid → repair → valid loop.
+  - `tests/integration/architect/test_architect_plan_rejection.py`: context‑driven plan rejection → `Refinement` → re‑planning.
+  - `tests/integration/architect/test_architect_plan_approval_hitl.py`: HITL plan approval via `ask_user` → denial triggers refinement.
+- Running tests:
+  - Fast pass: `make test-fast`
+  - Integration only: `pytest tests/integration/architect -q`
+  - Full: `make test`
+- Enabling the full Architect state machine for tests/runs:
+  - Set `FLUJO_ARCHITECT_STATE_MACHINE=1` (the default builder returns a minimal single‑step pipeline for legacy tests).
+
+### Manual E2E Scenarios (CLI)
+
+- Magic Moment:
+  - `flujo init` → `flujo create` → enter goal: `Search the web for the price of a Tesla Model 3 and save it to price.txt` → approve.
+  - Expect a valid `pipeline.yaml` using `flujo.builtins.web_search` and `flujo.builtins.fs_write_file`.
+- Parameter Collection:
+  - `flujo create` with a goal that requires required params (e.g., a hypothetical `create_jira_ticket`).
+  - Interactive prompts fill `input_schema.required` fields.
+- Dry Run:
+  - `flujo create` → approve → opt‑in to dry run (when enabled) → provide sample input.
+  - Expect printed output from the in‑memory run, then pipeline saved.

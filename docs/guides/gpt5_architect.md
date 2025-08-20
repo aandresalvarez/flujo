@@ -1,6 +1,6 @@
 # GPT‑5 Architect Pipeline and `model_settings`
 
-This guide explains how Flujo supports GPT‑5 provider controls via `model_settings` in YAML and showcases the new, simplified Architect pipeline.
+This guide explains how Flujo supports GPT‑5 provider controls via `model_settings` in YAML and showcases a reference Architect pipeline. The CLI’s Architect is now implemented programmatically (state machine) in `flujo/architect/builder.py`; the YAML example remains useful for studying agent settings and prompts.
 
 ## Overview
 
@@ -34,7 +34,7 @@ These settings are passed as‑is to `pydantic_ai.Agent` (via Flujo’s compiler
 
 ## GPT‑5 Architect Pipeline (Example)
 
-See `examples/architect_pipeline.yaml` for a full example. Highlights:
+See `examples/architect_pipeline.yaml` for a full example (reference). Highlights:
 - `agents.architect_agent` designs and emits the YAML (`YamlWriter(yaml_text: str)`).
 - Validation loop uses `flujo.builtins.validate_yaml` and branches on `flujo.utils.context:predicate_is_valid_report`.
 - Valid branch is a passthrough; invalid branch uses `agents.repair_agent` (also with `model_settings`).
@@ -73,7 +73,7 @@ Notes:
 
 ## CLI Support
 
-`flujo create` passes a list of available skills to the architect via initial context. The example pipeline formats both the `user_goal` and `available_skills` into the agent input to encourage tool usage over ad‑hoc agents.
+`flujo create` passes a list of available skills to the architect via initial context. In the programmatic builder, this is set during the `GatheringContext` state. To enable the full conversational state machine for the CLI, set `FLUJO_ARCHITECT_STATE_MACHINE=1`.
 
 ## Testing Notes
 

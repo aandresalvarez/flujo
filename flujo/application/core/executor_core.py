@@ -69,6 +69,7 @@ from .step_policies import (
 )
 from .types import TContext_w_Scratch, ExecutionFrame
 from .context_manager import ContextManager
+from .context_adapter import _build_context_update, _inject_context_with_deep_merge
 from .estimation import (
     UsageEstimator,
     HeuristicUsageEstimator,
@@ -1022,11 +1023,45 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 current_data = (
                     step_result.output if step_result.output is not None else current_data
                 )
+                # Prefer branch_context from complex policies (loops/parallel/etc.)
                 current_context = (
                     step_result.branch_context
                     if step_result.branch_context is not None
                     else current_context
                 )
+                # Apply context updates for simple steps when flagged
+                try:
+                    if getattr(step, "updates_context", False) and current_context is not None:
+                        update_data = _build_context_update(step_result.output)
+                        if update_data:
+                            try:
+                                _before = getattr(current_context, "scratchpad", None)
+                                telemetry.logfire.info(
+                                    f"[ContextUpdate] Before update (step={getattr(step, 'name', '?')}): scratchpad={_before}"
+                                )
+                            except Exception:
+                                pass
+                            # FIX: The original _inject_context performs a shallow update, which is incorrect
+                            # for nested structures like scratchpad. We need to ensure deep merging of nested dicts.
+                            validation_error = _inject_context_with_deep_merge(
+                                current_context, update_data, type(current_context)
+                            )
+                            if validation_error:
+                                # Mirror legacy behavior: mark step failed on validation error
+                                step_result.success = False
+                                step_result.feedback = (
+                                    f"Context validation failed: {validation_error}"
+                                )
+                            try:
+                                _after = getattr(current_context, "scratchpad", None)
+                                telemetry.logfire.info(
+                                    f"[ContextUpdate] After update (step={getattr(step, 'name', '?')}): scratchpad={_after}"
+                                )
+                            except Exception:
+                                pass
+                except Exception:
+                    # Never crash pipeline aggregation due to context update issues
+                    pass
 
             except PausedException as e:
                 telemetry.logfire.info(

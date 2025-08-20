@@ -899,7 +899,9 @@ def _register_builtins() -> None:
         )
 
         # --- FSD-024: analyze_project (safe filesystem scan)
-        async def analyze_project(directory: str = ".", max_files: int = 200) -> Dict[str, Any]:
+        async def analyze_project(
+            _data: Any = None, *, directory: str = ".", max_files: int = 200
+        ) -> Dict[str, Any]:
             import os
 
             try:
@@ -925,9 +927,15 @@ def _register_builtins() -> None:
             except Exception:
                 return {"project_summary": "Error analyzing project"}
 
+        def _make_analyze_runner(directory: str = ".", max_files: int = 200) -> Any:
+            async def _runner(_data: Any = None, **_k: Any) -> Dict[str, Any]:
+                return await analyze_project(_data, directory=directory, max_files=max_files)
+
+            return _runner
+
         reg.register(
             "flujo.builtins.analyze_project",
-            lambda directory=".", max_files=200: analyze_project,
+            _make_analyze_runner,
             description="Scan project tree to produce a short summary (no network).",
             arg_schema={
                 "type": "object",

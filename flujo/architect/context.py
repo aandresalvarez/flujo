@@ -28,6 +28,10 @@ class ArchitectContext(PipelineContext):
     dry_run_requested: bool = False
     sample_input: Optional[str] = None
 
+    # HITL Configuration
+    hitl_enabled: bool = False
+    non_interactive: bool = True
+
     # Final Artifact
     generated_yaml: Optional[str] = None
     yaml_text: Optional[str] = None

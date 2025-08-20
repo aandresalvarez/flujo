@@ -1,0 +1,78 @@
+================================================================================
+COMPREHENSIVE ARCHITECT TEST REPORT
+================================================================================
+Generated at: 2025-08-20 13:02:59
+Total execution time: 20.81 seconds
+
+TEST CATEGORY SUMMARY
+--------------------------------------------------------------------------------
+Category        Status     Tests      Passed   Failed   Time    
+--------------------------------------------------------------------------------
+regression      PASS       0          0        0        5.77    s
+edge_cases      FAIL       19         17       2        11.42   s
+performance     FAIL       0          0        0        1.38    s
+security        FAIL       0          0        0        1.12    s
+happy_path      PASS       0          0        0        1.12    s
+--------------------------------------------------------------------------------
+TOTAL                      19         17       2        20.81   s
+
+OVERALL STATUS: ❌ 2 TESTS FAILED
+
+DETAILED RESULTS
+================================================================================
+
+REGRESSION TESTS
+----------------------------------------
+Status: PASS
+Message: All tests passed
+Tests Run: 0
+Tests Passed: 0
+Tests Failed: 0
+Execution Time: 5.77s
+
+EDGE_CASES TESTS
+----------------------------------------
+Status: FAIL
+Message: Tests failed with return code 1
+Tests Run: 19
+Tests Passed: 17
+Tests Failed: 2
+Execution Time: 11.42s
+
+PERFORMANCE TESTS
+----------------------------------------
+Status: FAIL
+Message: Tests failed with return code 2
+Tests Run: 0
+Tests Passed: 0
+Tests Failed: 0
+Execution Time: 1.38s
+
+SECURITY TESTS
+----------------------------------------
+Status: FAIL
+Message: Tests failed with return code 2
+Tests Run: 0
+Tests Passed: 0
+Tests Failed: 0
+Execution Time: 1.12s
+
+HAPPY_PATH TESTS
+----------------------------------------
+Status: PASS
+Message: All tests passed
+Tests Run: 0
+Tests Passed: 0
+Tests Failed: 0
+Execution Time: 1.12s
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+⚠️  Some tests are failing. Recommendations:
+1. Review failing tests to understand the issues
+2. Fix the root causes of failures
+3. Re-run tests to verify fixes
+4. Consider adding more specific tests for failing areas
+
+================================================================================

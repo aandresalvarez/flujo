@@ -1,6 +1,9 @@
 # Architect: Generate Pipelines from Natural Language
 
-The Architect helps you create runnable Flujo YAML blueprints from a goal.
+The Architect helps you create runnable Flujo YAML blueprints from a goal. As of the latest version,
+the Architect is implemented programmatically in `flujo/architect/builder.py` using a
+`StateMachineStep`. A minimal one‑shot builder remains the default for compatibility with
+existing tests and CI; the full conversational state machine can be enabled via an environment flag.
 
 ## Usage
 
@@ -19,6 +22,16 @@ flujo create [--output-dir ./out] [--context-file context.yaml] \
 - When run inside a project, `create` prompts for a pipeline name (added to `pipeline.yaml`) and a budget per run (added to `flujo.toml`).
 - `--strict`: exit non-zero if the generated blueprint is invalid.
 
+### Conversational Architect (State Machine)
+
+Set this flag to enable the full multi‑state Architect (gathering context, planning, approval,
+parameter collection, generation, validation, optional dry run):
+
+```bash
+export FLUJO_ARCHITECT_STATE_MACHINE=1
+flujo create --goal "Fetch a web page and summarize it" --output-dir ./out
+```
+
 ## Safety and Governance
 
 - The blueprint loader enforces `blueprint_allowed_imports` from `flujo.toml`.
@@ -27,7 +40,9 @@ flujo create [--output-dir ./out] [--context-file context.yaml] \
 
 ## Validation and Repair Loop
 
-The bundled Architect pipeline validates the generated YAML and can iteratively repair it up to a maximum number of loops.
+The Architect validates the generated YAML and can iteratively repair it. In the programmatic
+implementation, validation and repair are implemented via built-ins (`validate_yaml`,
+`repair_yaml_ruamel`) and controlled by the state machine.
 
 ## Tuning Timeouts and Retries in YAML
 
@@ -54,7 +69,9 @@ steps:
       max_retries: 1
 ```
 
-Tip: The bundled `examples/architect_pipeline.yaml` already sets higher timeouts suitable for GPT‑5.
+Tip: A reference YAML pipeline remains available at `examples/architect_pipeline.yaml`. The
+programmatic architect supersedes it for the CLI, but the YAML example is useful to study prompt and
+agent settings (e.g., higher timeouts for GPT‑5).
 
 ## Skills Catalog
 
@@ -84,3 +101,4 @@ slack.post_message:
 
 - In interactive runs, missing required `params` for registered skills are prompted.
 - In non-interactive runs, provide all required parameters up front or use `--context-file`.
+- When HITL is enabled (via context flag `hitl_enabled: true`), plan approval can be interactive.
