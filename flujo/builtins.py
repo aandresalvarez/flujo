@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type
 
 # Ensure framework primitives (like StateMachine) are registered when builtins load
 try:  # pragma: no cover - best-effort for import order
@@ -995,52 +995,67 @@ def _register_builtins() -> None:
 
         # --- FSD-024: run_pipeline_in_memory (safe, mocks side effects)
         async def run_pipeline_in_memory(
-            yaml_text: str, input_text: str = "", sandbox: bool = True
+            yaml_text: str,
+            input_text: str = "",
+            sandbox: bool = True,
+            base_dir: Optional[str] = None,
         ) -> Dict[str, Any]:
             from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
             from flujo.cli.helpers import create_flujo_runner, execute_pipeline_with_output_handling
             from flujo.infra.skill_registry import get_skill_registry as _get
             from typing import Any as _Any
+            import os as _os
+            import asyncio as _asyncio
 
             reg_local = _get()
             restore: dict[str, dict[str, Any]] = {}
-            # Identify and mock side-effect skills referenced in YAML
-            try:
-                from flujo.cli.helpers import find_side_effect_skills_in_yaml as _find
+            mutated = False
+            # Identify and (optionally) mock side-effect skills referenced in YAML
+            if sandbox:
+                try:
+                    from flujo.cli.helpers import find_side_effect_skills_in_yaml as _find
 
-                side_ids = _find(yaml_text)
-            except Exception:
+                    side_ids = _find(yaml_text)
+                except Exception:
+                    side_ids = []
+            else:
                 side_ids = []
             try:
-                for sid in side_ids:
-                    entry = reg_local.get(sid)
-                    if not entry:
-                        continue
-                    restore[sid] = dict(entry)
+                if sandbox and side_ids:
+                    for sid in side_ids:
+                        entry = reg_local.get(sid)
+                        if not entry:
+                            continue
+                        restore[sid] = dict(entry)
 
-                    def _make_factory(
-                        _sid: str,
-                    ) -> Callable[..., Callable[..., Awaitable[Dict[str, _Any]]]]:
-                        async def _mock(*_a: _Any, **_k: _Any) -> Dict[str, _Any]:
-                            return {"mocked": True, "skill": _sid}
+                        def _make_factory(_sid: str):
+                            async def _mock(*_a: _Any, **_k: _Any) -> Dict[str, _Any]:
+                                return {"mocked": True, "skill": _sid}
 
-                        return lambda **_p: _mock
+                            return lambda **_p: _mock
 
-                    entry["factory"] = _make_factory(sid)
-                    entry["side_effects"] = False
+                        entry["factory"] = _make_factory(sid)
+                        entry["side_effects"] = False
+                        mutated = True
 
-                pipeline = load_pipeline_blueprint_from_yaml(yaml_text)
+                # Compile blueprint with base_dir for correct relative resolution
+                _base = base_dir or _os.getcwd()
+                pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=_base)
                 runner = create_flujo_runner(pipeline, None, {"initial_prompt": input_text})
-                result = execute_pipeline_with_output_handling(
-                    runner=runner, input_data=input_text, run_id=None, json_output=False
-                )
+
+                # Execute synchronously via a worker thread to avoid blocking the event loop
+                def _run_sync():
+                    return execute_pipeline_with_output_handling(runner, input_text, None, False)
+
+                result = await _asyncio.to_thread(_run_sync)
                 return {"dry_run_result": result}
             finally:
-                try:
-                    for sid, entry in restore.items():
-                        reg_local._entries[sid] = entry
-                except Exception:
-                    pass
+                if mutated:
+                    try:
+                        for sid, entry in restore.items():
+                            reg_local._entries[sid] = entry
+                    except Exception:
+                        pass
 
         reg.register(
             "flujo.builtins.run_pipeline_in_memory",
@@ -1051,6 +1066,8 @@ def _register_builtins() -> None:
                 "properties": {
                     "yaml_text": {"type": "string"},
                     "input_text": {"type": "string", "default": ""},
+                    "sandbox": {"type": "boolean", "default": True},
+                    "base_dir": {"type": "string"},
                 },
                 "required": ["yaml_text"],
             },
