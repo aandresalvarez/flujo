@@ -104,6 +104,7 @@ class TestHighConcurrencyStress:
 
     @pytest.mark.asyncio
     @pytest.mark.slow
+    @pytest.mark.ultra_slow
     async def test_sustained_high_concurrency(self, stress_executor, concurrent_step):
         """Test sustained high concurrency over time."""
         test_data = {"sustained": "test"}
@@ -657,6 +658,7 @@ class TestSustainedLoadStress:
 
     @pytest.mark.asyncio
     @pytest.mark.slow
+    @pytest.mark.ultra_slow
     async def test_sustained_load_stability(self, sustained_executor):
         """Test system stability under sustained load."""
         # Create simple step
