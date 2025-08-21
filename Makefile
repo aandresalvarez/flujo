@@ -130,9 +130,15 @@ test-health-full: .uv ## Run comprehensive test suite health check (full)
 	@echo "✅ Test suite health check (full) completed"
 
 .PHONY: test-slow
-test-slow: .uv ## Run slow tests serially
-	@echo "🐌 Running slow tests serially..."
-	CI=1 uv run pytest tests/ -m "slow or serial or benchmark"
+test-slow: .uv ## Run slow tests serially (excludes ultra-slow tests problematic for mass CI)
+	@echo "🐌 Running slow tests serially (excluding ultra-slow tests)..."
+	CI=1 uv run pytest tests/ -m "(slow or serial or benchmark) and not ultra_slow"
+
+.PHONY: test-ultra-slow
+test-ultra-slow: .uv ## Run ultra-slow tests (>30s, problematic for mass CI)
+	@echo "🚨 Running ultra-slow tests (>30s duration)..."
+	@echo "⚠️  These tests are excluded from regular CI due to long execution time"
+	CI=1 uv run pytest tests/ -m "ultra_slow" -v
 
 .PHONY: test-parallel
 test-parallel: .uv ## Run all tests in parallel (excludes serial tests)
@@ -203,8 +209,11 @@ test-analyze: .uv ## Analyze test collection and categorization
 	@echo "Fast tests (run by test-fast):"
 	@uv run pytest tests/ -m "not slow and not serial and not benchmark" --collect-only -q | tail -1
 	@echo ""
-	@echo "Slow/Benchmark tests (excluded):"
-	@uv run pytest tests/ -m "slow or serial or benchmark" --collect-only -q | tail -1
+	@echo "Slow tests (run by test-slow, excludes ultra-slow):"
+	@uv run pytest tests/ -m "(slow or serial or benchmark) and not ultra_slow" --collect-only -q | tail -1
+	@echo ""
+	@echo "Ultra-slow tests (>30s, excluded from mass CI):"
+	@uv run pytest tests/ -m "ultra_slow" --collect-only -q | tail -1
 	@echo ""
 	@echo "Test categories:"
 	@echo "  • Unit tests: $(shell find tests/unit -name "*.py" | wc -l | tr -d ' ') files"

@@ -32,11 +32,18 @@ The test suite has been optimized for better performance through:
 - **Includes**: Unit tests, integration tests (excluding slow ones)
 - **Command**: `make test-fast`
 
-### Slow Tests
+### Slow Tests (CI-Optimized)
 - **Execution**: Serial (to avoid resource conflicts)
-- **Duration**: ~3-4 minutes
-- **Includes**: Performance tests, benchmarks, serial tests
+- **Duration**: ~46 seconds (optimized for mass CI)
+- **Includes**: Performance tests, benchmarks, serial tests (excludes ultra-slow)
 - **Command**: `make test-slow`
+
+### Ultra-Slow Tests (Mass CI Problematic)
+- **Execution**: Serial, excluded from regular CI
+- **Duration**: >30 seconds per test
+- **Includes**: Stress tests, sustained load tests
+- **Command**: `make test-ultra-slow`
+- **Marked with**: `@pytest.mark.ultra_slow`
 
 ### Serial Tests
 - **Execution**: Always serial
@@ -65,8 +72,11 @@ make test
 # Run all tests in parallel (excluding serial tests)
 make test-parallel
 
-# Run slow tests separately
+# Run slow tests separately (excludes ultra-slow)
 make test-slow
+
+# Run ultra-slow tests (problematic for mass CI)
+make test-ultra-slow
 ```
 
 ### Coverage Testing

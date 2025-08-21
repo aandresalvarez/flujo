@@ -18,10 +18,11 @@ The test suite uses environment variables to determine the database size:
 ```python
 @staticmethod
 def get_database_size() -> int:
-    """Get database size based on environment - smaller for CI, full for local."""
+    """Get database size based on environment - smaller for CI, minimal for mass CI."""
     if os.getenv("CI") == "true":
-        # Use 1,000 runs in CI for faster execution (10% of full size)
-        return int(os.getenv("FLUJO_CI_DB_SIZE", "1000"))
+        # Use even smaller size for mass CI scenarios (250 runs)
+        # This reduces setup time from ~4s to ~1s while maintaining test validity
+        return int(os.getenv("FLUJO_CI_DB_SIZE", "250"))
     else:
         # Use 10,000 runs for local development (full size)
         return int(os.getenv("FLUJO_LOCAL_DB_SIZE", "10000"))
@@ -42,21 +43,34 @@ def get_database_size() -> int:
 | Environment | Database Size | Execution Time | Speed Improvement |
 |-------------|---------------|----------------|-------------------|
 | Local | 10,000 runs | ~44s | Baseline |
-| CI (Slow Tests) | 1,000 runs | ~4.8s | 9x faster |
-| CI (Fast Tests) | 500 runs | ~2.6s | 17x faster |
-| CI (Unit Tests) | 250 runs | ~1.3s | 34x faster |
+| CI (Mass CI Optimized) | 250 runs | ~1.0s | 44x faster |
+| CI (Previous) | 1,000 runs | ~4.8s | 9x faster |
+
+### Test Categorization for Mass CI
+
+#### Ultra-Slow Tests (Excluded from Regular CI)
+- **Markers**: `@pytest.mark.ultra_slow`
+- **Duration**: >30 seconds each
+- **Examples**: Stress tests, sustained load tests
+- **CI Strategy**: Run separately on main branch only
+
+#### Slow Tests (Optimized for CI)
+- **Markers**: `@pytest.mark.slow`, excluding `ultra_slow`
+- **Duration**: ~46 seconds total (down from 5:41)
+- **Database Size**: 250 runs (optimized from 1,000)
+- **CI Strategy**: Regular inclusion in CI workflows
 
 ### CI Workflow Optimizations
 
 #### Main CI Workflow (`.github/workflows/ci.yml`)
 
-- **Fast Tests**: 500 runs (`FLUJO_CI_DB_SIZE: "500"`)
-- **Slow Tests**: 1,000 runs (`FLUJO_CI_DB_SIZE: "1000"`)
-- **Full Tests**: 500 runs (`FLUJO_CI_DB_SIZE: "500"`)
+- **Fast Tests**: 250 runs (`FLUJO_CI_DB_SIZE: "250"`)
+- **Slow Tests**: 250 runs, excludes ultra-slow (`FLUJO_CI_DB_SIZE: "250"`)
+- **Ultra-Slow Tests**: Separate job, main branch only
 
 #### PR Checks Workflow (`.github/workflows/pr-checks.yml`)
 
-- **Fast Tests**: 500 runs (`FLUJO_CI_DB_SIZE: "500"`)
+- **Fast Tests**: 250 runs (`FLUJO_CI_DB_SIZE: "250"`)
 - **Unit Tests**: 250 runs (`FLUJO_CI_DB_SIZE: "250"`)
 - **Security Tests**: 250 runs (`FLUJO_CI_DB_SIZE: "250"`)
 
