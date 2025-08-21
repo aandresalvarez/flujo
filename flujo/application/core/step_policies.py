@@ -590,6 +590,7 @@ class DefaultSimpleStepExecutor:
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]:
+        # Delegate orchestration to ExecutorCore to preserve separation of concerns
         telemetry.logfire.debug(
             f"[Policy] SimpleStep: delegating to core orchestration for '{getattr(step, 'name', '<unnamed>')}'"
         )
@@ -620,6 +621,7 @@ class DefaultSimpleStepExecutor:
                 pass
             return outcome
         except PausedException as e:
+            # Surface as Paused outcome to maintain control-flow semantics
             return Paused(message=str(e))
 
 
