@@ -1,0 +1,6 @@
+version: "0.1"
+steps:
+  - name: Echo
+    agent: { id: "echo_cmd", params: {} }
+    input: "hello world"
+

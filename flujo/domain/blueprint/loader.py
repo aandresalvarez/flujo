@@ -818,6 +818,20 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
 def load_pipeline_blueprint_from_yaml(
     yaml_text: str, base_dir: Optional[str] = None
 ) -> Pipeline[Any, Any]:
+    # Proactively auto-load skills to honor docs: load skills.yaml before parsing.
+    # This ensures CLI and any programmatic use benefit from the same behavior.
+    try:
+        if base_dir:
+            from ...infra.skills_catalog import (
+                load_skills_catalog as _load_skills_catalog,
+                load_skills_entry_points as _load_skills_entry_points,
+            )
+
+            _load_skills_catalog(base_dir)
+            _load_skills_entry_points()
+    except Exception:
+        # Never fail blueprint loading due to skills discovery issues
+        pass
     try:
         data = yaml.safe_load(yaml_text)
         if not isinstance(data, dict) or "steps" not in data:
