@@ -13,6 +13,17 @@ This guide is for the Flujo core team—developers building and maintaining the 
 >
 > When updating the executor or composing defaults, import from these modules instead of `ultra_executor`. Policy implementations remain in `flujo/application/core/step_policies.py`.
 
+## **Architect Pipeline Toggles (Builder)**
+
+- Truthy `FLUJO_ARCHITECT_STATE_MACHINE` → enable the programmatic state machine.
+- Truthy `FLUJO_ARCHITECT_IGNORE_CONFIG` or `FLUJO_TEST_MODE` → use minimal single-step generator (ignores project config) for deterministic tests/CI.
+- Else, honor `flujo.toml` via `ConfigManager`: `[architect].state_machine_default = true` → state machine.
+- Else → minimal default.
+
+Notes:
+- Always access configuration through `ConfigManager`; do not read `flujo.toml` directly.
+- Integration tests set `FLUJO_ARCHITECT_STATE_MACHINE=1`; unit tests run with `FLUJO_TEST_MODE=1`.
+
 ## **1. The Golden Rule: Respect the Policy-Driven Architecture**
 
 Flujo's core strength is the **separation between the DSL and the Execution Core via Policies**. This is the most important principle to understand.

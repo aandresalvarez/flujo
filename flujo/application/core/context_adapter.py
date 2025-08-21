@@ -414,8 +414,10 @@ def _build_context_update(output: BaseModel | dict[str, Any] | Any) -> dict[str,
     """Return context update dict extracted from a step output."""
     if isinstance(output, (BaseModel, PydanticBaseModel)):
         # Handle PipelineResult objects from as_step
+        # Important: use full dump (exclude_unset=False) so in-place mutations
+        # to lists/dicts (e.g., command_log, scratchpad) are preserved.
         if hasattr(output, "final_pipeline_context") and output.final_pipeline_context is not None:
-            result = output.final_pipeline_context.model_dump(exclude_unset=True)
+            result = output.final_pipeline_context.model_dump(exclude_unset=False)
             return result if isinstance(result, dict) else None
         # Handle regular BaseModel objects
         result = output.model_dump(exclude_unset=True)
@@ -451,11 +453,69 @@ def _inject_context_with_deep_merge(
     """
     original = context.model_dump()
 
+    # Lenient fast-path for PipelineContext-style updates coming from as_step
+    try:
+        import os as _os
+
+        _lenient_flag = str(_os.environ.get("FLUJO_LENIENT_AS_STEP_CONTEXT", "1")).strip().lower()
+        _lenient_enabled = _lenient_flag in {"1", "true", "yes", "on"}
+        if _lenient_enabled and any(k in update_data for k in ("command_log", "hitl_history")):
+            for key, value in update_data.items():
+                if key not in context_model.model_fields:
+                    continue
+                current_val = getattr(context, key, None)
+                if isinstance(current_val, dict) and isinstance(value, dict):
+                    try:
+                        current_val.update(value)
+                    except Exception:
+                        setattr(context, key, value)
+                else:
+                    # For list-typed fields, deserialize elements to proper model types
+                    field_info = context_model.model_fields[key]
+                    field_type = field_info.annotation
+                    try:
+                        resolved = _resolve_actual_type(field_type)
+                        if resolved is not None:
+                            field_type = resolved
+                    except Exception:
+                        pass
+                    try:
+                        if (
+                            field_type is not None
+                            and hasattr(field_type, "__origin__")
+                            and field_type.__origin__ is list
+                            and isinstance(value, list)
+                        ):
+                            value = _deserialize_value(value, field_type, context_model)
+                    except Exception:
+                        pass
+                    setattr(context, key, value)
+            return None
+    except Exception:
+        # Fall through to validated path on any error
+        pass
+
     # Process update data with proper field mapping
     for key, value in update_data.items():
         if key in context_model.model_fields:
             field_info = context_model.model_fields[key]
             field_type = field_info.annotation
+            # Resolve Union and other composite annotations to a concrete type when possible
+            try:
+                resolved = _resolve_actual_type(field_type)
+                if resolved is not None:
+                    field_type = resolved
+            except Exception:
+                pass
+
+            # Special-case common textual fields to avoid over-validation
+            if key == "initial_prompt" and isinstance(value, str):
+                try:
+                    setattr(context, key, value)
+                    continue
+                except Exception:
+                    # Fall back to generic path
+                    pass
 
             # TYPE VALIDATION: Ensure the value matches the declared field type
             if field_type is not None:
@@ -482,9 +542,14 @@ def _inject_context_with_deep_merge(
 
                     # For other types, use Pydantic's validation
                     else:
-                        # Try to validate the value against the field type
+                        # Try to validate the value against the field type.
+                        # Be lenient for unresolved typing constructs (e.g., typing.Union).
                         try:
-                            if hasattr(field_type, "model_validate"):
+                            ft_str = str(field_type)
+                            if ft_str.startswith("typing."):
+                                # Skip strict callable validation for typing.* constructs
+                                pass
+                            elif hasattr(field_type, "model_validate"):
                                 field_type.model_validate(value)
                             elif hasattr(field_type, "__call__"):
                                 field_type(value)
@@ -504,6 +569,17 @@ def _inject_context_with_deep_merge(
                 else:
                     setattr(context, key, value)
             else:
+                # For list-typed fields, deserialize elements into declared model types
+                try:
+                    if (
+                        field_type is not None
+                        and hasattr(field_type, "__origin__")
+                        and field_type.__origin__ is list
+                        and isinstance(value, list)
+                    ):
+                        value = _deserialize_value(value, field_type, context_model)
+                except Exception:
+                    pass
                 setattr(context, key, value)
         elif not hasattr(context, key):
             # Skip fields that don't exist in the context model

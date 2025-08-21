@@ -161,6 +161,43 @@ Looking to use GPT‑5 with the Architect? See the guide: `docs/guides/gpt5_arch
 
 ---
 
+## Architect Pipeline Toggles
+
+Control how the Architect pipeline is built (state machine vs. minimal) using environment variables:
+
+- FLUJO_ARCHITECT_STATE_MACHINE=1: Force the full state-machine Architect.
+- FLUJO_ARCHITECT_IGNORE_CONFIG=1: Ignore project config and use the minimal single-step generator.
+- FLUJO_TEST_MODE=1: Test mode; behaves like ignore-config to keep unit tests deterministic.
+
+Precedence: FLUJO_ARCHITECT_STATE_MACHINE → FLUJO_ARCHITECT_IGNORE_CONFIG/FLUJO_TEST_MODE → flujo.toml ([architect].state_machine_default) → minimal default.
+
+---
+
+## State Backend Configuration
+
+Flujo persists workflow state (for traceability, resume, and lens tooling) via a pluggable state backend.
+
+- Templates (init/demo): default to `state_uri = "memory://"` so projects don’t persist state unless you opt in.
+- Core default when not using a project template: SQLite at `sqlite:///flujo_ops.db` (created in CWD) or as configured in `flujo.toml`.
+- Ephemeral (in-memory): set one of the following to avoid any persistent files (handy for demos or CI):
+  - In `flujo.toml`: `state_uri = "memory://"`
+  - Env var: `FLUJO_STATE_URI=memory://`
+  - Env var: `FLUJO_STATE_MODE=memory` or `FLUJO_STATE_MODE=ephemeral`
+  - Env var: `FLUJO_EPHEMERAL_STATE=1|true|yes|on`
+
+Examples:
+```bash
+# One-off ephemeral run
+FLUJO_STATE_URI=memory:// flujo create --goal "Build a pipeline"
+
+# Project-wide (recommended for demos)
+echo 'state_uri = "memory://"' >> flujo.toml
+```
+
+When using persistent SQLite, ensure the containing directory exists and is writable (see `flujo/cli/config.py` for path normalization and validation).
+
+---
+
 ## License
 
 Flujo is available under a dual-license model:

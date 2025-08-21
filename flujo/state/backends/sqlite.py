@@ -288,6 +288,19 @@ class SQLiteBackend(StateBackend):
         self._file_lock: Optional[asyncio.Lock] = None
         self._file_lock_key = str(self.db_path.absolute())
 
+    async def shutdown(self) -> None:
+        """Close connection pool and release resources to avoid lingering threads."""
+        try:
+            # Close pooled async connection if present
+            if self._connection_pool is not None:
+                try:
+                    await self._connection_pool.close()
+                finally:
+                    self._connection_pool = None
+        except Exception:
+            # Defensive: never raise during shutdown
+            pass
+
     def _get_file_lock(self) -> asyncio.Lock:
         """Get the file lock for the current event loop with robust fallback handling."""
         if self._file_lock is None:

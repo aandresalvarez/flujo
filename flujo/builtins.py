@@ -75,6 +75,403 @@ except Exception:
     pass
 
 
+# --- Core builtin skills registration ---
+
+
+def _register_core_skills() -> None:
+    reg = get_skill_registry()
+
+    # Stringify: identity formatter as a safe default
+    async def _stringify(x: Any) -> Dict[str, Any] | str:
+        try:
+            if isinstance(x, (str, bytes)):
+                return x.decode() if isinstance(x, bytes) else x
+            return str(x)
+        except Exception:
+            return str(x)
+
+    if reg.get("flujo.builtins.stringify") is None:
+        reg.register(
+            "flujo.builtins.stringify",
+            _stringify,
+            description="Return input as string",
+            input_schema={"type": ["string", "object", "array", "number", "boolean", "null"]},
+            side_effects=False,
+        )
+
+    # Web search: use ddgs/duckduckgo if available, otherwise stub
+    async def _web_search(*, query: str, max_results: int = 5) -> str:
+        try:
+            if _DDGSAsync is not None:
+                async with _DDGSAsync() as ddgs:
+                    results = []
+                    async for r in ddgs.atext(query, max_results=max_results):
+                        try:
+                            title = r.get("title") or ""
+                            href = r.get("href") or r.get("url") or ""
+                            body = r.get("body") or r.get("snippet") or ""
+                            results.append(f"- {title}\n  {href}\n  {body}")
+                        except Exception:
+                            continue
+                    return "\n".join(results) if results else ""
+            elif _DDGS_CLASS is not None:
+                with _DDGS_CLASS() as ddgs:
+                    data = ddgs.text(query, max_results=max_results) or []
+                    lines = []
+                    for r in data:
+                        try:
+                            title = r.get("title") or ""
+                            href = r.get("href") or r.get("url") or ""
+                            body = r.get("body") or r.get("snippet") or ""
+                            lines.append(f"- {title}\n  {href}\n  {body}")
+                        except Exception:
+                            continue
+                    return "\n".join(lines)
+        except Exception:
+            pass
+        # Fallback: no-op string
+        return f"(web_search stub) query='{query}'"
+
+    if reg.get("flujo.builtins.web_search") is None:
+        reg.register(
+            "flujo.builtins.web_search",
+            lambda: _web_search,  # factory returning an async callable
+            description="Perform a web search and return summarized results",
+            input_schema={
+                "type": "object",
+                "properties": {"query": {"type": "string"}, "max_results": {"type": "integer"}},
+                "required": ["query"],
+            },
+            side_effects=False,
+        )
+
+    # HTTP GET: simple fetcher
+    async def _http_get(*, url: str, timeout_s: int = 10) -> str:
+        try:
+            if _httpx is not None:
+                async with _httpx.AsyncClient(timeout=timeout_s) as client:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    return str(resp.text)
+        except Exception:
+            pass
+        return f"(http_get stub) url='{url}'"
+
+    if reg.get("flujo.builtins.http_get") is None:
+        reg.register(
+            "flujo.builtins.http_get",
+            lambda: _http_get,
+            description="Fetch content from a URL",
+            input_schema={
+                "type": "object",
+                "properties": {"url": {"type": "string"}, "timeout_s": {"type": "integer"}},
+                "required": ["url"],
+            },
+            side_effects=False,
+        )
+
+    # Write file: side-effect skill
+    async def _fs_write_file(data: Any, *, path: str, encoding: str = "utf-8") -> str:
+        from pathlib import Path as _Path
+
+        p = _Path(path)
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            text = (
+                data
+                if isinstance(data, str)
+                else (data.decode() if isinstance(data, bytes) else str(data))
+            )
+            p.write_text(text, encoding=encoding)
+            return f"wrote:{p.as_posix()}"
+        except Exception as e:
+            return f"error:{type(e).__name__}:{e}"
+
+    if reg.get("flujo.builtins.fs_write_file") is None:
+        reg.register(
+            "flujo.builtins.fs_write_file",
+            lambda: _fs_write_file,
+            description="Write string content to a file",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "encoding": {"type": "string"},
+                },
+                "required": ["path"],
+            },
+            side_effects=True,
+        )
+
+
+# Ensure skills are registered when this module is imported by the CLI
+try:
+    _register_core_skills()
+except Exception:
+    # Never fail module import due to registration
+    pass
+
+
+# --- Architect agent stubs (Planner, ToolMatcher, YAML Writer) ---
+
+
+def _register_architect_agents() -> None:
+    """Register stub implementations for architect agents.
+
+    These stubs enable local iteration without external LLMs.
+    They follow the contracts defined in flujo/architect/models.py.
+    """
+    reg = get_skill_registry()
+
+    # Planner Agent: decomposes user goal into high-level steps
+    async def _planner_agent(payload: Dict[str, Any]) -> Dict[str, Any]:
+        goal = str(payload.get("user_goal") or "").strip()
+        g = goal.lower()
+        steps: List[Dict[str, str]] = []
+        if not goal:
+            steps = [{"step_name": "UnderstandGoal", "purpose": "Clarify the intended outcome."}]
+        else:
+            # Very lightweight heuristic decomposition
+            if "http" in g or "url" in g or "https://" in g or "http://" in g:
+                steps.append(
+                    {
+                        "step_name": "FetchWebpage",
+                        "purpose": "Fetch the content from the referenced URL.",
+                    }
+                )
+            elif "search" in g or "find" in g or "lookup" in g:
+                steps.append(
+                    {
+                        "step_name": "WebSearch",
+                        "purpose": "Search the web for relevant information.",
+                    }
+                )
+            else:
+                steps.append(
+                    {
+                        "step_name": "Echo Input",
+                        "purpose": "Safely echo or stringify the input as a baseline step.",
+                    }
+                )
+
+            if "save" in g or "write" in g or "export" in g:
+                steps.append(
+                    {
+                        "step_name": "SaveToFile",
+                        "purpose": "Persist the result to a file if requested.",
+                    }
+                )
+
+        plan_summary = (
+            f"Plan derived from goal: {goal[:80]}" if goal else "Plan derived from unspecified goal"
+        )
+        return {"plan_summary": plan_summary, "steps": steps}
+
+    if reg.get("flujo.architect.planner") is None:
+        reg.register(
+            "flujo.architect.planner",
+            lambda: _planner_agent,
+            description="Agentic planner: decomposes goal into high-level steps.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "user_goal": {"type": "string"},
+                    "available_skills": {"type": "array"},
+                    "project_summary": {"type": "string"},
+                    "flujo_schema": {"type": "object"},
+                },
+                "required": ["user_goal"],
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "plan_summary": {"type": "string"},
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "step_name": {"type": "string"},
+                                "purpose": {"type": "string"},
+                            },
+                            "required": ["step_name", "purpose"],
+                        },
+                    },
+                },
+                "required": ["plan_summary", "steps"],
+            },
+            side_effects=False,
+        )
+
+    # Tool Matcher Agent: select a skill for each planned step
+    async def _tool_matcher_agent(payload: Dict[str, Any]) -> Dict[str, Any]:
+        step_name = payload.get("step_name") or "Step"
+        purpose = (payload.get("purpose") or "").lower()
+        available = payload.get("available_skills") or []
+
+        # Helper to check availability
+        def _is_avail(sid: str) -> bool:
+            try:
+                if any(isinstance(x, dict) and x.get("id") == sid for x in available):
+                    return True
+                entry = get_skill_registry().get(sid)
+                # Treat empty dicts/None as unavailable
+                return bool(entry) if isinstance(entry, dict) else (entry is not None)
+            except Exception:
+                return False
+
+        # Simple heuristics to choose a skill
+        if any(k in purpose for k in ["http", "url", "fetch", "webpage", "download"]):
+            sid = (
+                "flujo.builtins.http_get"
+                if _is_avail("flujo.builtins.http_get")
+                else "flujo.builtins.stringify"
+            )
+            params: Dict[str, Any] = {}
+        elif any(k in purpose for k in ["search", "find", "lookup", "discover"]):
+            sid = (
+                "flujo.builtins.web_search"
+                if _is_avail("flujo.builtins.web_search")
+                else "flujo.builtins.stringify"
+            )
+            params = {"query": purpose[:80]} if sid.endswith("web_search") else {}
+        elif any(k in purpose for k in ["save", "write", "persist", "export", "file"]):
+            sid = (
+                "flujo.builtins.fs_write_file"
+                if _is_avail("flujo.builtins.fs_write_file")
+                else "flujo.builtins.stringify"
+            )
+            params = {"path": "output.txt"} if sid.endswith("fs_write_file") else {}
+        else:
+            sid = "flujo.builtins.stringify"
+            params = {}
+
+        return {"step_name": step_name, "chosen_agent_id": sid, "agent_params": params}
+
+    if reg.get("flujo.architect.tool_matcher") is None:
+        reg.register(
+            "flujo.architect.tool_matcher",
+            lambda: _tool_matcher_agent,
+            description="Agentic tool matcher: selects best skill for a step.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "step_name": {"type": "string"},
+                    "purpose": {"type": "string"},
+                    "available_skills": {"type": "array"},
+                },
+                "required": ["step_name", "purpose"],
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "step_name": {"type": "string"},
+                    "chosen_agent_id": {"type": "string"},
+                    "agent_params": {"type": "object"},
+                },
+                "required": ["step_name", "chosen_agent_id", "agent_params"],
+            },
+            side_effects=False,
+        )
+
+    # YAML Writer Agent: assemble final pipeline.yaml
+    async def _yaml_writer_agent(payload: Dict[str, Any]) -> Dict[str, Any]:
+        goal = payload.get("user_goal")
+        selections = payload.get("tool_selections") or []
+        # schema = payload.get("flujo_schema") or {}  # Unused variable removed
+        name = goal or "generated_pipeline"
+        try:
+            if isinstance(name, str):
+                import re as _re
+
+                norm = _re.sub(r"[^A-Za-z0-9\s]+", "", name)[:40].strip().lower()
+                if norm:
+                    name = ("_".join(norm.split()) or name)[:40]
+        except Exception:
+            name = "generated_pipeline"
+
+        import yaml as _yaml
+
+        steps_yaml: List[str] = []
+        # Decide whether to construct a parallel block when goal hints parallelism
+        goal_text = (goal or "").lower() if isinstance(goal, str) else ""
+        wants_parallel = ("parallel" in goal_text or "concurrent" in goal_text) and len(
+            selections
+        ) > 1
+
+        if wants_parallel:
+            # Build a single ParallelStep with each selection as its own branch
+            branches: Dict[str, List[Dict[str, Any]]] = {}
+            for idx, sel in enumerate(selections, start=1):
+                if not isinstance(sel, dict):
+                    continue
+                sid = sel.get("chosen_agent_id") or "flujo.builtins.stringify"
+                params = sel.get("agent_params") or {}
+                sname = sel.get("step_name") or f"Step {idx}"
+                step_dict = {"kind": "step", "name": sname, "agent": {"id": sid, "params": params}}
+                branches[f"branch_{idx}"] = [step_dict]
+
+            parallel_dict: Dict[str, Any] = {
+                "kind": "parallel",
+                "name": "DoInParallel",
+                "branches": branches,
+            }
+            steps_yaml.append(_yaml.safe_dump(parallel_dict, sort_keys=False).strip())
+        else:
+            # Linear steps
+            for sel in selections:
+                if not isinstance(sel, dict):
+                    continue
+                sid = sel.get("chosen_agent_id") or "flujo.builtins.stringify"
+                params = sel.get("agent_params") or {}
+                sname = sel.get("step_name") or "Step"
+                step_dict = {"kind": "step", "name": sname, "agent": {"id": sid, "params": params}}
+                steps_yaml.append(_yaml.safe_dump(step_dict, sort_keys=False).strip())
+
+        if not steps_yaml:
+            # Minimal scaffold
+            yaml_text = f'version: "0.1"\nname: {name}\nsteps: []\n'
+        else:
+            steps_block = "\n".join(
+                [
+                    "- " + line if i == 0 else "  " + line
+                    for block in steps_yaml
+                    for i, line in enumerate(block.splitlines())
+                ]
+            )
+            yaml_text = f'\nversion: "0.1"\nname: {name}\nsteps:\n{steps_block}\n'
+        return {"generated_yaml": yaml_text}
+
+    if reg.get("flujo.architect.yaml_writer") is None:
+        reg.register(
+            "flujo.architect.yaml_writer",
+            lambda: _yaml_writer_agent,
+            description="Agentic YAML writer: assembles pipeline.yaml from selections.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "user_goal": {"type": "string"},
+                    "tool_selections": {"type": "array"},
+                    "flujo_schema": {"type": "object"},
+                },
+                "required": ["tool_selections"],
+            },
+            output_schema={
+                "type": "object",
+                "properties": {"generated_yaml": {"type": "string"}},
+                "required": ["generated_yaml"],
+            },
+            side_effects=False,
+        )
+
+
+try:
+    _register_architect_agents()
+except Exception:
+    # Never fail module import due to registration
+    pass
+
+
 # Top-level utility: decide whether YAML exists in context for branch precheck
 def has_yaml_key(_out: Any = None, ctx: DomainBaseModel | None = None, **_kwargs: Any) -> str:
     try:

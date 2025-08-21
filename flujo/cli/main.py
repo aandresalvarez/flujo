@@ -317,7 +317,9 @@ Keep this module focused on argument parsing and command wiring.
 @app.command(
     help=(
         "✨ Initialize a new Flujo workflow project in this directory.\n\n"
-        "Use --force to re-initialize templates in an existing project, and --yes to skip confirmation."
+        "Use --force to re-initialize templates in an existing project, and --yes to skip confirmation.\n\n"
+        "Tip: New projects default to an in-memory state backend (state_uri = 'memory://').\n"
+        "      To persist runs, set state_uri = 'sqlite:///.flujo/state.db' in flujo.toml or set FLUJO_STATE_URI."
     )
 )
 def init(
@@ -362,7 +364,9 @@ def init(
     help=(
         "🌟 Create a demo project with a sample research pipeline.\n\n"
         "This command initializes a new project (like `flujo init`) but with a more advanced `pipeline.yaml` "
-        "that demonstrates agents, tools, and human-in-the-loop steps."
+        "that demonstrates agents, tools, and human-in-the-loop steps.\n\n"
+        "Tip: Demo projects default to an in-memory state backend (state_uri = 'memory://').\n"
+        "      To persist runs, set state_uri = 'sqlite:///.flujo/state.db' in flujo.toml or set FLUJO_STATE_URI."
     )
 )
 def demo(
@@ -740,8 +744,14 @@ def validate(
         raise typer.Exit(1)
 
 
-@app.command(help=("🤖 Start a conversation with the AI Architect to build your workflow."))
-def create(
+@app.command(
+    help=(
+        "🤖 Start a conversation with the AI Architect to build your workflow.\n\n"
+        "By default this uses the full conversational state machine. Set FLUJO_ARCHITECT_MINIMAL=1"
+        " to use the legacy minimal generator."
+    )
+)
+def create(  # <--- REVERT BACK TO SYNC
     goal: Annotated[
         Optional[str], typer.Option("--goal", help="Natural-language goal for the architect")
     ] = None,
@@ -786,6 +796,15 @@ def create(
         help="Enable verbose logging to debug the Architect Agent's execution.",
         hidden=True,
     ),
+    agentic: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--agentic/--no-agentic",
+            help=(
+                "Force-enable the agentic Architect (state machine) or force the minimal generator for this run."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Conversational pipeline generation via the Architect pipeline.
 
@@ -887,6 +906,20 @@ def create(
                 if is_injected:
                     pipeline_obj = fn("<injected>")
                 else:
+                    # Respect explicit CLI override first
+                    try:
+                        if agentic is True:
+                            os.environ["FLUJO_ARCHITECT_STATE_MACHINE"] = "1"
+                            os.environ.pop("FLUJO_ARCHITECT_MINIMAL", None)
+                        elif agentic is False:
+                            os.environ["FLUJO_ARCHITECT_MINIMAL"] = "1"
+                            os.environ.pop("FLUJO_ARCHITECT_STATE_MACHINE", None)
+                        else:
+                            # Prefer agentic by default for users invoking `flujo create` when minimal not explicitly set
+                            if os.environ.get("FLUJO_ARCHITECT_MINIMAL", "").strip() == "":
+                                os.environ.setdefault("FLUJO_ARCHITECT_STATE_MACHINE", "1")
+                    except Exception:
+                        pass
                     from flujo.architect.builder import build_architect_pipeline as _build_arch
 
                     pipeline_obj = _build_arch()
@@ -924,7 +957,8 @@ def create(
             # Create runner and execute using shared ArchitectContext
             from flujo.architect.context import ArchitectContext as _ArchitectContext
 
-            # Load the project-aware state backend
+            # Load the project-aware state backend (config-driven). If configured
+            # as memory/ephemeral, this will select the in-memory backend.
             try:
                 from .config import load_backend_from_config as _load_backend_from_config
 
@@ -1337,6 +1371,67 @@ def create(
                 # Reset to default warning filters (sufficient for CLI lifecycle)
                 _warnings.resetwarnings()
             except Exception:
+                pass
+
+            # Comprehensive cleanup to prevent process hang
+            try:
+                import asyncio
+                import gc
+                import threading
+
+                # Force garbage collection
+                gc.collect()
+
+                # Cancel any remaining asyncio tasks
+                try:
+                    loop = asyncio.get_running_loop()
+                    # If we're in a running loop, cancel all tasks
+                    tasks = asyncio.all_tasks(loop)
+                    if tasks:
+                        for task in tasks:
+                            if not task.done():
+                                task.cancel()
+                except RuntimeError:
+                    # No running loop, which is expected
+                    pass
+
+                # Clean up any remaining threads that might be hanging
+                threads = [
+                    t
+                    for t in threading.enumerate()
+                    if t != threading.main_thread() and t.is_alive()
+                ]
+                if threads:
+                    for thread in threads:
+                        try:
+                            # Try to join with a timeout to avoid hanging
+                            thread.join(timeout=0.1)
+                        except Exception:
+                            pass
+
+                # Additional cleanup for common async libraries
+                try:
+                    # Clean up httpx connection pools
+                    import httpx
+
+                    if hasattr(httpx, "_default_limits"):
+                        httpx._default_limits = None
+                except Exception:
+                    pass
+
+                try:
+                    # Clean up any SQLite async locks
+                    # Note: sqlite3.connect._instance doesn't exist in standard Python
+                    # This cleanup was attempting to access a non-existent attribute
+                    pass
+                except Exception:
+                    pass
+
+                # Force final garbage collection
+                gc.collect()
+
+            except Exception:
+                # Don't fail the command on cleanup errors
                 pass
     except Exception as e:
         typer.echo(f"[red]Failed to create pipeline: {e}", err=True)

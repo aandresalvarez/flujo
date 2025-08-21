@@ -1,166 +1,146 @@
-# Flujo Architect – Usage Guide
+# Flujo Architect — Usage Guide
 
-This guide explains how to use and extend the new programmatic Architect that powers `flujo create`.
-It summarizes the user experience, state machine flow, configuration knobs, and extension points.
+This guide explains how to use and extend the programmatic Architect that powers `flujo create`.
+It covers the agentic planning/generation flow, state machine, environment toggles, and testing.
 
 ## Overview
 
-- The Architect is implemented as a `StateMachineStep` and runs entirely inside a Flujo pipeline.
-- The CLI command `flujo create` builds and runs this pipeline using a dedicated `ArchitectContext`.
-- The default experience is safe-by-default, non-interactive, and produces a minimal, valid
-  `pipeline.yaml` tailored from your goal.
+- The Architect runs as a `StateMachineStep` inside a Flujo pipeline.
+- The CLI `flujo create` builds/executes this pipeline with an `ArchitectContext`.
+- Default mode uses the conversational state machine that plans, selects tools, generates, and validates `pipeline.yaml`.
+- A minimal mode is available via `FLUJO_ARCHITECT_MINIMAL=1`.
+
+### Agentic Hooks
+- `flujo.architect.planner`: Decomposes a user goal into named steps with purpose.
+- `flujo.architect.tool_matcher`: Picks the best skill per planned step (runs via MapStep).
+- `flujo.architect.yaml_writer`: Assembles a complete `pipeline.yaml` from tool selections.
+- If any agent is missing or disabled, robust fallbacks keep the flow working.
 
 ## Quick Start
 
-- Non-interactive one shot (recommended for automation):
+- Non-interactive (CI-friendly):
   - `uv run flujo create --goal "Build a simple pipeline" --non-interactive --output-dir ./output`
-- Interactive prompts (parameter collection when required by skills):
+- Interactive (collect required params from skills):
   - `uv run flujo create --goal "Fetch a webpage and process it" --output-dir ./output`
-- Validate the project pipeline later:
+- Validate later:
   - `uv run flujo dev validate --strict`
 
 Notes:
-- `--output-dir` is mandatory with `--non-interactive` to avoid accidental overwrites.
-- You may pass `--name`, `--budget`, and `--force` to control naming, default budget, and overwriting.
+- With `--non-interactive`, pass `--output-dir` to avoid accidental overwrites.
+- Optional flags: `--name`, `--budget`, `--force`.
 
 ## State Machine Flow
 
-The Architect defines the following states and transitions:
+- GatheringContext: Discover skills, analyze project (safe/no network), map framework schema. → GoalClarification
+- GoalClarification: For now, forwards to Planning (future: clarifying Q&A). → Planning
+- Planning: `PlannerAgent` builds a structured plan; fallback to heuristics.
+  - Visualize plan (Mermaid).
+  - Estimate cost from registry metadata.
+  - → PlanApproval
+- PlanApproval: Auto-approve by default; HITL hooks available. → ParameterCollection
+- ParameterCollection: Interactive only; prompt for required params (`input_schema.required`). → Generation
+- Generation: Prepare items → `MapToolMatcher` (parallel) → collect selections → `YamlWriterAgent`.
+  - Fallback to legacy generator when agents disabled/unavailable.
+  - → Validation
+- Validation: Validate YAML; attempt conservative repair on failure. → DryRunOffer or loop
+- DryRunOffer: Default forwards to Finalization; HITL dry run optional.
+- DryRunExecution: In-memory run with side effects mocked. → Finalization
+- Finalization: Terminal; returns `{"generated_yaml", "yaml_text"}` as final output.
+- Failure: Reserved terminal for future error routing.
 
-- GatheringContext: Discovers available skills, analyzes the project tree (safe, no network), and
-  fetches framework step schemas. Advances to GoalClarification.
-- GoalClarification: Current implementation forwards to Planning. A future iteration can ask
-  clarifying questions here.
-- Planning: Builds a minimal execution plan from the goal using heuristics and available skills.
-  - Heuristics:
-    - If a URL is present in the goal (or mentions http), choose `flujo.builtins.http_get` and pre-fill `url`.
-    - If the goal suggests search (“search”, “find”), choose `flujo.builtins.web_search` with `query` = goal.
-    - Otherwise, default to `flujo.builtins.stringify`.
-  - Visualizes the plan as a Mermaid graph (`plan_mermaid_graph`).
-  - Estimates cost by summing `est_cost` metadata from the Skill Registry.
-  - Advances to PlanApproval.
-- PlanApproval: Currently auto-approves and proceeds. You can wire HITL here to ask the user.
-- ParameterCollection: Prompts for missing required parameters based on each chosen skill’s
-  `input_schema.required` when in interactive mode. Non-interactive mode skips prompts.
-  Advances to Generation.
-- Generation: Converts the plan into `pipeline.yaml` text and stores it in context (`yaml_text`).
-- Validation: Validates YAML in-memory. If invalid, runs a conservative repair and re-validates.
-  - On valid, goes to DryRunOffer; on invalid, loops to attempt repairs.
-- DryRunOffer: Currently advances to Finalization. You can add a HITL branch to run an optional dry run.
-- DryRunExecution: Available state that runs the pipeline in-memory with side-effect skills mocked.
-  Advances to Finalization.
-- Finalization: Terminal state used by the CLI to write the `pipeline.yaml` to disk and optionally
-  update budgets.
-- Failure: Terminal fallback reserved for future error reporting.
+All transitions are driven by `context.scratchpad.next_state`.
 
-All transitions are driven by the StateMachine policy reading `context.scratchpad.next_state`.
+## Agent Contracts (Pydantic Models)
+
+- Planner → `ExecutionPlan`:
+  - Input: `user_goal`, `available_skills`, `project_summary`, `flujo_schema`
+  - Output: `{ plan_summary: str, steps: [{ step_name: str, purpose: str }, ...] }`
+- Tool Matcher → `ToolSelection` (per plan step via MapStep):
+  - Input: `step_name`, `purpose`, `available_skills`
+  - Output: `{ step_name: str, chosen_agent_id: str, agent_params: dict }`
+- YAML Writer → `GeneratedYaml`:
+  - Input: `user_goal`, `tool_selections`, `flujo_schema`
+  - Output: `{ generated_yaml: str }` (clean YAML string; no fences)
+
+See `flujo/architect/models.py` for the canonical schema definitions.
 
 ## Context Model
 
-`flujo/architect/context.py` defines `ArchitectContext`, extending `PipelineContext` with:
+`flujo/architect/context.py` defines `ArchitectContext` (extends `PipelineContext`):
 
 - Inputs: `user_goal`, `project_summary`, `refinement_feedback`.
-- Discovered: `flujo_schema`, `available_skills`.
+- Discovered: `available_skills`, `flujo_schema`.
 - Plan: `execution_plan`, `plan_summary`, `plan_mermaid_graph`, `plan_estimates`.
-- Interaction: `plan_approved`, `dry_run_requested`, `sample_input`.
+- Structured (agentic): `execution_plan_structured`, `tool_selections`, `generated_yaml_structured`.
+- Interaction: `plan_approved`, `dry_run_requested`, `sample_input`, `hitl_enabled`, `non_interactive`.
 - Artifact & Validation: `generated_yaml`, `yaml_text`, `validation_report`, `yaml_is_valid`, `validation_errors`.
-- CLI/Test helpers: `prepared_steps_for_mapping`.
+- Helpers: `prepared_steps_for_mapping`.
 
-## Built-in Skills Used
+## Built-ins and Agents
 
-Registered in `flujo/builtins.py` and used by the Architect:
+- Built-in skills used by the Architect (registered in `flujo/builtins.py`):
+  - `flujo.builtins.discover_skills`, `flujo.builtins.analyze_project`, `flujo.builtins.visualize_plan`,
+    `flujo.builtins.estimate_plan_cost`, `flujo.builtins.validate_yaml`, `flujo.builtins.repair_yaml_ruamel`,
+    `flujo.builtins.run_pipeline_in_memory`, `flujo.builtins.stringify`.
+- Architect agent stubs (enabled by default; safe for local iteration):
+  - `flujo.architect.planner`, `flujo.architect.tool_matcher`, `flujo.architect.yaml_writer`.
+  - Stubs follow the contracts and provide deterministic fallback behavior.
 
-- `flujo.builtins.discover_skills`: Collects registered skills (catalog + entry points).
-- `flujo.builtins.analyze_project`: Shallow, safe file system scan for project hints (no network).
-- `flujo.builtins.get_framework_schema`: Generates JSON Schemas for registered DSL step kinds.
-- `flujo.builtins.visualize_plan`: Renders a basic Mermaid diagram for a linear plan.
-- `flujo.builtins.estimate_plan_cost`: Sums `est_cost` metadata from the Skill Registry.
-- `flujo.builtins.validate_yaml`: Validates `yaml_text` into a `ValidationReport`.
-- `flujo.builtins.repair_yaml_ruamel`: Conservative YAML repair for common shape issues.
-- `flujo.builtins.run_pipeline_in_memory`: Compiles and runs YAML in-memory, mocking side effects.
-- `flujo.builtins.stringify`: Safe default step; echoes input.
+## Environment Toggles
+
+- `FLUJO_ARCHITECT_MINIMAL=1`: Bypass state machine; emit minimal YAML.
+- `FLUJO_ARCHITECT_STATE_MACHINE=0`: Legacy toggle to disable state machine.
+- `FLUJO_ARCHITECT_AGENTIC_PLANNER=0|false|no|off`: Force heuristic planning even if planner agent is available.
+- `FLUJO_ARCHITECT_AGENTIC_TOOLMATCHER=0|false|no|off`: Disable tool matcher agent; use safe defaults.
+- `FLUJO_ARCHITECT_AGENTIC_YAMLWRITER=0|false|no|off`: Disable YAML writer agent; use fallback assembler.
 
 ## Interactive vs Non-Interactive
 
-- Non-interactive (`--non-interactive`):
-  - No prompts are shown. Parameter collection is skipped if anything is missing.
-  - Good for CI and repeatable generation.
-- Interactive (default):
-  - Missing required parameters (from `input_schema.required`) trigger Typer prompts.
-  - Future: you can add interactive plan approval, dry run prompts, and refinement.
+- Non-interactive (`--non-interactive`): Skips prompts; suitable for CI. Ensure `--output-dir` is set.
+- Interactive (default): Prompts for missing required params from skill `input_schema.required`.
+- Future: add HITL plan approval, dry-run prompts, and refinement.
 
 ## Output & Validation
 
-- The CLI writes `pipeline.yaml` to the chosen directory after validation and optional plan approval.
-- Side-effect skills in the YAML are detected before writing. In non-interactive mode, use
-  `--allow-side-effects` to proceed automatically.
-- After writing, the CLI can update budgets in `flujo.toml` for the detected pipeline name.
+- Finalization always returns `{"generated_yaml": str, "yaml_text": str}`.
+- Side-effect skills can be gated; use `--allow-side-effects` for non-interactive runs.
+- Post-run: `uv run flujo dev validate --strict` to revalidate the saved YAML.
 
 ## Extending the Architect
 
-- Improve planning: Replace `_make_plan_from_goal` with a more sophisticated mapper using
-  `available_skills`, model prompts, or a rule set.
-- Add plan approval: Insert a HITL step in `PlanApproval` using `flujo.builtins.ask_user` and route
-  responses with `flujo.builtins.check_user_confirmation`.
-- Enhance parameter collection: Add typing-aware prompts or pre-fill from project detectors.
-- Enable DryRunOffer: Ask the user to run a safe in-memory dry run via `run_pipeline_in_memory`.
-- Add states: New states can be registered in the `StateMachineStep.states` mapping; use
-  `scratchpad.next_state` to transition.
-
-## Troubleshooting
-
-- “No YAML found” after run: Ensure the build states set `yaml_text` in context; the CLI extracts it
-  from the final step outputs and from context fields.
-- Validation loop doesn’t finish: The repair step is conservative; check console output or inspect
-  `validation_report` in context.
-- Skills not found: Make sure packaged entry points or a local skills catalog is discoverable.
-
-## Development Tips
-
-- Run the full suite:
-  - `make format && make lint && make typecheck && make test`
-- Check what the Architect produced:
-  - `uv run flujo dev show-steps ./output/pipeline.yaml`
-  - `uv run flujo dev validate --strict`
-- Inspect available skills:
-  - Add debug prints or call `flujo.builtins.discover_skills` in a small pipeline.
-
-## File Map
-
-- `builder.py`: State machine definition and per-state helpers/adapters.
-- `context.py`: ArchitectContext model.
-- `README.md`: This guide.
-
-If you want a deeper conversational flow (approvals, refinement, dry run prompts),
-let us know and we’ll wire the HITL steps and policies accordingly.
+- Swap in your own planner/tool-matcher/yaml-writer by registering skills with the same IDs.
+- Improve parameter collection (typing-aware prompts, detectors).
+- Add HITL in `PlanApproval` with `flujo.builtins.ask_user` + `flujo.builtins.check_user_confirmation`.
+- Add new states by extending `StateMachineStep.states` and driving transitions via `scratchpad.next_state`.
 
 ## Testing
 
-- Unit (built-ins): Validates the new FSD‑024 helpers.
-  - `tests/unit/architect/test_builtins_analyze_project.py`: detects common files and handles empty dirs.
-  - `tests/unit/architect/test_builtins_visualize_plan.py`: Mermaid rendering with correct node names.
-  - `tests/unit/architect/test_builtins_estimate_plan_cost.py`: sums `est_cost` metadata.
-  - `tests/unit/architect/test_builtins_run_pipeline_in_memory.py`: mocks side‑effects in sandbox; no file writes; non‑blocking execution.
-- Integration (state machine): Runs the full flow end‑to‑end in‑process.
-  - `tests/integration/architect/test_architect_happy_path.py`: produces valid YAML; confirms `GenerateYAML` executed.
-  - `tests/integration/architect/test_architect_validation_repair.py`: invalid → repair → valid loop.
-  - `tests/integration/architect/test_architect_plan_rejection.py`: context‑driven plan rejection → `Refinement` → re‑planning.
-  - `tests/integration/architect/test_architect_plan_approval_hitl.py`: HITL plan approval via `ask_user` → denial triggers refinement.
-- Running tests:
-  - Fast pass: `make test-fast`
-  - Integration only: `pytest tests/integration/architect -q`
+- Unit:
+  - Built-ins: analyze_project, visualize_plan, estimate_plan_cost, run_pipeline_in_memory.
+  - Architect agent toggles/resilience:
+    - `tests/unit/architect/test_planner_agent_toggle.py`
+    - `tests/unit/architect/test_tool_matcher_resilience.py`
+    - `tests/unit/architect/test_yaml_writer_and_finalize.py`
+- Integration:
+  - End-to-end with agent stubs: `tests/integration/architect/test_agentic_end_to_end.py`
+  - Happy path: `tests/integration/architect/test_architect_happy_path.py`
+  - Repair loop: `tests/integration/architect/test_architect_validation_repair.py`
+  - Plan rejection/approval HITL flows and security validation suites.
+- Run:
+  - Fast: `make test-fast`
+  - Integration: `pytest tests/integration/architect -q`
   - Full: `make test`
-- Enabling the full Architect state machine for tests/runs:
-  - Set `FLUJO_ARCHITECT_STATE_MACHINE=1` (the default builder returns a minimal single‑step pipeline for legacy tests).
 
-### Manual E2E Scenarios (CLI)
+## Troubleshooting
 
-- Magic Moment:
-  - `flujo init` → `flujo create` → enter goal: `Search the web for the price of a Tesla Model 3 and save it to price.txt` → approve.
-  - Expect a valid `pipeline.yaml` using `flujo.builtins.web_search` and `flujo.builtins.fs_write_file`.
-- Parameter Collection:
-  - `flujo create` with a goal that requires required params (e.g., a hypothetical `create_jira_ticket`).
-  - Interactive prompts fill `input_schema.required` fields.
-- Dry Run:
-  - `flujo create` → approve → opt‑in to dry run (when enabled) → provide sample input.
-  - Expect printed output from the in‑memory run, then pipeline saved.
+- No YAML in output: Ensure Finalization ran; the CLI reads both step output and context.
+- Validation loops: Check `validation_report`; repair is conservative by design.
+- Skills not found: Ensure packaged entry points or a local skills catalog is discoverable.
+
+## File Map
+
+- `builder.py`: State machine and per-state helpers.
+- `context.py`: ArchitectContext.
+- `models.py`: Pydantic models for agent contracts.
+- `README.md`: This guide.
+

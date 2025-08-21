@@ -544,9 +544,6 @@ class TestErrorHandlingIntegration:
             late_avg <= early_avg * 2
         ), f"Circuit breaker not working: {late_avg:.6f}s vs {early_avg:.6f}s"
 
-    @pytest.mark.skip(
-        reason="Fallback loop issue - needs fundamental redesign of fallback mechanism"
-    )
     @pytest.mark.asyncio
     async def test_error_handling_with_telemetry(self, error_handling_executor):
         """Test error handling integration with telemetry."""

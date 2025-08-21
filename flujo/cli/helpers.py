@@ -862,6 +862,8 @@ def execute_pipeline_with_output_handling(
     """
     import sys
     import io
+    import asyncio
+    import gc
 
     # Add a high-level span for architect or generic pipeline execution
     with _telemetry.logfire.span("pipeline_run"):
@@ -882,12 +884,73 @@ def execute_pipeline_with_output_handling(
 
             return serialize_to_json_robust(result, indent=2)
         else:
-            # Normal execution
-            if run_id is not None:
-                result = runner.run(input_data, run_id=run_id)
-            else:
-                result = runner.run(input_data)
-            return result
+            # Normal execution with robust event loop cleanup
+            try:
+                if run_id is not None:
+                    result = runner.run(input_data, run_id=run_id)
+                else:
+                    result = runner.run(input_data)
+                return result
+            finally:
+                # Robust cleanup to prevent event loop hang
+                # Force garbage collection to clean up any orphaned async objects
+                gc.collect()
+
+                # Cancel any remaining tasks in the current event loop (if any)
+                try:
+                    loop = asyncio.get_running_loop()
+                    # If we're in a running loop, cancel all tasks
+                    for task in asyncio.all_tasks(loop):
+                        if not task.done():
+                            task.cancel()
+                except RuntimeError:
+                    # No running loop, which is expected after asyncio.run() completes
+                    pass
+
+                # Additional cleanup for common async libraries
+                try:
+                    # Clean up httpx connection pools
+                    import httpx
+
+                    if hasattr(httpx, "_default_limits"):
+                        httpx._default_limits = None
+                except Exception:
+                    pass
+
+                try:
+                    # Clean up any SQLite async locks
+                    # Note: sqlite3.connect._instances doesn't exist in standard Python
+                    # This cleanup was attempting to access a non-existent attribute
+                    pass
+                except Exception:
+                    pass
+
+                # Gracefully shutdown state backend if it exposes a shutdown hook
+                try:
+                    sb = getattr(runner, "state_backend", None)
+                    if sb is not None and hasattr(sb, "shutdown"):
+                        import asyncio as _asyncio
+
+                        async def _do_shutdown() -> None:
+                            try:
+                                await sb.shutdown()
+                            except Exception:
+                                pass
+
+                        try:
+                            _asyncio.run(_do_shutdown())
+                        except RuntimeError:
+                            # If already in a running loop, schedule and wait briefly
+                            try:
+                                loop = _asyncio.get_running_loop()
+                                t = loop.create_task(_do_shutdown())
+                                # Best-effort wait without blocking forever
+                                loop.run_until_complete(t)
+                            except Exception:
+                                pass
+                except Exception:
+                    # Never fail cleanup
+                    pass
 
 
 def display_pipeline_results(
@@ -1702,6 +1765,7 @@ def scaffold_project(directory: Path, *, overwrite_existing: bool = False) -> No
     flujo_toml = directory / "flujo.toml"
     hidden_dir = directory / ".flujo"
     skills_dir = directory / "skills"
+    # env_file = directory / ".env"  # Unused variable removed
 
     if (flujo_toml.exists() or hidden_dir.exists()) and not overwrite_existing:
         secho("Error: This directory already looks like a Flujo project.", fg="red")
@@ -1738,6 +1802,12 @@ def scaffold_project(directory: Path, *, overwrite_existing: bool = False) -> No
             _write(skills_dir / "__init__.py", f.read())
         with _res.files(template_pkg).joinpath("custom_tools.py").open("r") as f:
             _write(skills_dir / "custom_tools.py", f.read())
+        # README template (best-effort)
+        try:
+            with _res.files(template_pkg).joinpath("README.md").open("r") as f:
+                _write(directory / "README.md", f.read())
+        except Exception:
+            pass
     except Exception:
         # Fallback: write minimal content if resources are unavailable
         _write(
@@ -1745,8 +1815,8 @@ def scaffold_project(directory: Path, *, overwrite_existing: bool = False) -> No
             """
 # Flujo project configuration
 
-[Note: uses project-local state DB]
-state_uri = "sqlite:///.flujo/state.db"
+# Use an in-memory state backend by default
+state_uri = "memory://"
 
 [settings]
 # default_solution_model = "gpt-4o-mini"
@@ -1756,6 +1826,15 @@ state_uri = "sqlite:///.flujo/state.db"
 # [budgets.default]
 # total_cost_usd_limit = 5.0
 # total_tokens_limit = 100000
+
+# Architect defaults
+[architect]
+# Enable the agentic Architect state machine by default for this project
+state_machine_default = true
+# To disable by default, set to false or remove this section.
+# Per-run overrides:
+#   - Force agentic: export FLUJO_ARCHITECT_STATE_MACHINE=1
+#   - Force minimal: export FLUJO_ARCHITECT_MINIMAL=1
             """.strip()
             + "\n",
         )
@@ -1782,23 +1861,36 @@ async def echo_tool(x: str) -> str:
             """.strip()
             + "\n",
         )
+        _write(
+            directory / "README.md",
+            """
+# Flujo Project
 
-    # Initialize SQLite DB at .flujo/state.db
+Welcome! This project is scaffolded for use with Flujo.
+
+## Architect Defaults
+
+This project enables the agentic Architect (state machine) by default via `flujo.toml`:
+
+[architect]
+state_machine_default = true
+
+- To disable by default, set `state_machine_default = false` or remove the section.
+- Per-run overrides:
+  - Force agentic: `FLUJO_ARCHITECT_STATE_MACHINE=1`
+  - Force minimal: `FLUJO_ARCHITECT_MINIMAL=1`
+- CLI override on the create command:
+  - `uv run flujo create --agentic --goal "..."`
+  - `uv run flujo create --no-agentic --goal "..."`
+            """.strip()
+            + "\n",
+        )
+        # Note: Agentic architect defaults are controlled via flujo.toml ([architect])
+
+    # Create basic .flujo structure (no DB for memory backend)
     try:
-        # Create the database file synchronously without triggering async operations
-        # This prevents hanging issues that can occur with _asyncio.run() in CLI context
-        db_path = hidden_dir / "state.db"
-
-        # Create an empty database file to ensure the directory structure is valid
-        # The actual async initialization will happen when the backend is first used
-        if not db_path.exists():
-            # Touch the file to create it
-            db_path.touch()
-
-        # Create a basic .flujo directory structure for immediate use
         (hidden_dir / "logs").mkdir(exist_ok=True)
         (hidden_dir / "cache").mkdir(exist_ok=True)
-
     except Exception:
         # Best-effort init; ignore if environment lacks file system support
         pass
@@ -1858,10 +1950,10 @@ def scaffold_demo_project(directory: Path, *, overwrite_existing: bool = False) 
     # Content for the templates
     flujo_toml_content = (
         """
-# Flujo project configuration template
+# Flujo project configuration template (demo)
 
- # Use project-local SQLite DB for lens, telemetry, and replay
- state_uri = "sqlite:///.flujo/state.db"
+# Use an in-memory state backend for demos so runs never persist
+state_uri = "memory://"
 
 [settings]
 # default_solution_model = "gpt-4o-mini"
@@ -1872,6 +1964,10 @@ def scaffold_demo_project(directory: Path, *, overwrite_existing: bool = False) 
 # [budgets.default]
 # total_cost_usd_limit = 5.0
 # total_tokens_limit = 100000
+\n+# Architect defaults
+[architect]
+# Enable the agentic Architect state machine by default for this project
+state_machine_default = true
 """.strip()
         + "\n"
     )
@@ -1932,25 +2028,35 @@ async def echo_tool(x: str) -> str:
     _write(pipeline_yaml, demo_pipeline_content)
     _write(skills_dir / "__init__.py", skills_init_content)
     _write(skills_dir / "custom_tools.py", custom_tools_content)
-
-    # Initialize SQLite DB at .flujo/state.db
+    # Add README with architect toggle notes
     try:
-        # Create the database file synchronously without triggering async operations
-        # This prevents hanging issues that can occur with _asyncio.run() in CLI context
-        db_path = hidden_dir / "state.db"
+        _write(
+            directory / "README.md",
+            """
+# Flujo Demo Project
 
-        # Create an empty database file to ensure the directory structure is valid
-        # The actual async initialization will happen when the backend is first used
-        if not db_path.exists():
-            # Touch the file to create it
-            db_path.touch()
+This demo is scaffolded with the agentic Architect enabled by default via `flujo.toml`:
 
-        # Create a basic .flujo directory structure for immediate use
+[architect]
+state_machine_default = true
+
+Per-run overrides:
+- Force agentic: `FLUJO_ARCHITECT_STATE_MACHINE=1`
+- Force minimal: `FLUJO_ARCHITECT_MINIMAL=1`
+CLI overrides (create command): `--agentic` / `--no-agentic`.
+            """.strip()
+            + "\n",
+        )
+    except Exception:
+        pass
+    # Note: Agentic architect defaults are controlled via flujo.toml ([architect])
+
+    # Initialize basic .flujo structure (no DB for memory backend)
+    try:
         (hidden_dir / "logs").mkdir(exist_ok=True)
         (hidden_dir / "cache").mkdir(exist_ok=True)
-
     except Exception:
-        # Best-effort init; ignore if environment lacks file system support
+        # Best-effort init
         pass
 
     if overwrite_existing and overwritten:
