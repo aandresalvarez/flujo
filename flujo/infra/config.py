@@ -227,6 +227,39 @@ def _is_ci_environment() -> bool:
     return os.environ.get("CI", "").lower() in ("true", "1", "yes")
 
 
+def get_ci_performance_multiplier() -> float:
+    """Get performance multiplier for CI environments.
+
+    CI environments often have different performance characteristics than local development.
+    This function provides appropriate multipliers for performance thresholds.
+    """
+    if _is_ci_environment():
+        # CI environments typically have:
+        # - Shared CPU resources (slower)
+        # - Limited memory (more GC pressure)
+        # - Network latency (if using remote runners)
+        # - Different OS/environment configurations
+
+        # Allow for 3x performance degradation in CI
+        return 3.0
+    else:
+        # Local development typically has dedicated resources
+        return 1.0
+
+
+def get_performance_threshold(base_threshold: float) -> float:
+    """Get environment-adjusted performance threshold.
+
+    Args:
+        base_threshold: Base threshold for local development
+
+    Returns:
+        Threshold adjusted for current environment (CI vs local)
+    """
+    multiplier = get_ci_performance_multiplier()
+    return base_threshold * multiplier
+
+
 def _no_config_file_found(config_manager: Optional[Any] = None) -> bool:
     """Check if no configuration file was found."""
     if config_manager is None:

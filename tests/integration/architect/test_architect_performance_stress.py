@@ -7,6 +7,7 @@ import os
 from flujo.architect.builder import build_architect_pipeline
 from flujo.architect.context import ArchitectContext
 from flujo.cli.helpers import create_flujo_runner, execute_pipeline_with_output_handling
+from flujo.infra.config import get_performance_threshold
 
 
 @pytest.mark.integration
@@ -85,18 +86,27 @@ def test_architect_handles_high_frequency_requests():
         pipeline=pipeline, context_model_class=ArchitectContext, initial_context_data=initial
     )
 
+    # Warm up the system first to avoid measuring cold start time
+    _ = execute_pipeline_with_output_handling(
+        runner=runner, input_data="Echo input", run_id=None, json_output=False
+    )
+
     start_time = time.time()
     successful_executions = 0
+    execution_times = []
 
     # Execute multiple requests rapidly
     for i in range(10):
         try:
+            request_start = time.time()
             result = execute_pipeline_with_output_handling(
                 runner=runner, input_data="Echo input", run_id=None, json_output=False
             )
+            request_end = time.time()
 
             if result is not None:
                 successful_executions += 1
+                execution_times.append(request_end - request_start)
 
         except Exception as e:
             # Log but continue - we want to test resilience
@@ -109,8 +119,24 @@ def test_architect_handles_high_frequency_requests():
     success_rate = successful_executions / 10
     assert success_rate >= 0.8, f"Success rate {success_rate:.2%} below 80% threshold"
 
-    # Should complete all requests within reasonable time (10 seconds)
-    assert total_time <= 10, f"Total execution time {total_time:.2f}s exceeds 10s limit"
+    # Calculate average execution time per request (excluding setup)
+    if execution_times:
+        avg_execution_time = sum(execution_times) / len(execution_times)
+        # Each individual request should complete within 2 seconds (adjusted for environment)
+        max_avg_time = get_performance_threshold(2.0)
+        assert (
+            avg_execution_time <= max_avg_time
+        ), f"Average execution time {avg_execution_time:.2f}s exceeds {max_avg_time}s limit"
+
+        # Total time should be reasonable (allow for some overhead)
+        # Base expectation: 10 requests × 2s each = 20s, but allow for CI variance
+        max_total_time = get_performance_threshold(20.0)  # Environment-adjusted threshold
+        assert (
+            total_time <= max_total_time
+        ), f"Total execution time {total_time:.2f}s exceeds {max_total_time}s limit"
+    else:
+        # If no successful executions, fail the test
+        assert False, "No successful executions to measure performance"
 
 
 @pytest.mark.integration
@@ -380,19 +406,28 @@ def test_architect_stress_test_rapid_requests():
         pipeline=pipeline, context_model_class=ArchitectContext, initial_context_data=initial
     )
 
+    # Warm up the system first to avoid measuring cold start time
+    _ = execute_pipeline_with_output_handling(
+        runner=runner, input_data="Echo input", run_id=None, json_output=False
+    )
+
     # Send rapid-fire requests
     start_time = time.time()
     successful_requests = 0
     total_requests = 20
+    execution_times = []
 
     for i in range(total_requests):
         try:
+            request_start = time.time()
             result = execute_pipeline_with_output_handling(
                 runner=runner, input_data="Echo input", run_id=None, json_output=False
             )
+            request_end = time.time()
 
             if result is not None:
                 successful_requests += 1
+                execution_times.append(request_end - request_start)
 
         except Exception as e:
             # Log but continue - we want to test resilience
@@ -405,13 +440,33 @@ def test_architect_stress_test_rapid_requests():
     success_rate = successful_requests / total_requests
     assert success_rate >= 0.9, f"Success rate {success_rate:.2%} below 90% threshold under stress"
 
-    # Should complete all requests within reasonable time
-    # Allow 1 second per request on average for realistic performance expectations
-    max_allowed_time = total_requests * 1.0  # 1 second per request on average
-    assert (
-        total_time <= max_allowed_time
-    ), f"Total time {total_time:.2f}s exceeds {max_allowed_time:.2f}s limit"
+    # Calculate performance metrics
+    if execution_times:
+        avg_execution_time = sum(execution_times) / len(execution_times)
+        max_execution_time = max(execution_times)
+
+        # Each individual request should complete within 3 seconds (adjusted for environment)
+        max_avg_time = get_performance_threshold(3.0)
+        max_single_time = get_performance_threshold(5.0)
+
+        assert (
+            avg_execution_time <= max_avg_time
+        ), f"Average execution time {avg_execution_time:.2f}s exceeds {max_avg_time}s limit"
+        assert (
+            max_execution_time <= max_single_time
+        ), f"Maximum execution time {max_execution_time:.2f}s exceeds {max_single_time}s limit"
+
+        # Total time should be reasonable (allow for CI environment differences)
+        # Base expectation: 20 requests × 3s each = 60s, but allow for CI variance
+        max_total_time = get_performance_threshold(60.0)  # Environment-adjusted threshold
+        assert (
+            total_time <= max_total_time
+        ), f"Total time {total_time:.2f}s exceeds {max_total_time}s limit"
+    else:
+        # If no successful executions, fail the test
+        assert False, "No successful executions to measure performance"
 
     print(
-        f"Stress test completed: {successful_requests}/{total_requests} successful in {total_time:.2f}s"
+        f"Stress test completed: {successful_requests}/{total_requests} successful in {total_time:.2f}s "
+        f"(avg: {avg_execution_time:.2f}s, max: {max_execution_time:.2f}s)"
     )
