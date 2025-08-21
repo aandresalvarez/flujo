@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple, Type
 from typing import Any as _Any
+from unittest.mock import Mock, MagicMock, AsyncMock
 from pydantic import BaseModel
 from flujo.domain.models import (
     StepResult,
@@ -30,6 +31,7 @@ from flujo.exceptions import (
 from flujo.cost import extract_usage_metrics
 from flujo.utils.performance import time_perf_ns, time_perf_ns_to_seconds
 from flujo.infra import telemetry
+from .hybrid_check import run_hybrid_check
 from flujo.application.core.context_adapter import _build_context_update, _inject_context
 from flujo.application.core.context_manager import ContextManager
 from flujo.domain.dsl.parallel import ParallelStep
@@ -589,12 +591,10 @@ class DefaultSimpleStepExecutor:
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]:
         telemetry.logfire.debug(
-            f"[Policy] SimpleStep(self-contained): {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
+            f"[Policy] SimpleStep: delegating to core orchestration for '{getattr(step, 'name', '<unnamed>')}'"
         )
-        # Use self-contained policy implementation instead of delegating to core
         try:
-            outcome = await _execute_simple_step_policy_impl(
-                core,
+            outcome = await core._execute_agent_with_orchestration(
                 step,
                 data,
                 context,
@@ -606,9 +606,21 @@ class DefaultSimpleStepExecutor:
                 breach_event,
                 _fallback_depth,
             )
+            # Cache successful outcomes here when called directly via policy
+            try:
+                from flujo.domain.models import Success as _Success
+
+                if (
+                    isinstance(outcome, _Success)
+                    and cache_key
+                    and getattr(core, "_enable_cache", False)
+                ):
+                    await core._cache_backend.put(cache_key, outcome.step_result, ttl_s=3600)
+            except Exception:
+                pass
+            return outcome
         except PausedException as e:
             return Paused(message=str(e))
-        return outcome
 
 
 async def _execute_simple_step_policy_impl(
@@ -624,21 +636,25 @@ async def _execute_simple_step_policy_impl(
     breach_event: Optional[Any],
     _fallback_depth: int,
 ) -> StepOutcome[StepResult]:
-    """Full SimpleStep execution logic migrated from core into policy."""
-    from unittest.mock import Mock, MagicMock, AsyncMock
-    from .hybrid_check import run_hybrid_check
-    from flujo.exceptions import (
-        UsageLimitExceededError,
-        PausedException,
-        InfiniteFallbackError,
-    )
+    """Deprecated: Orchestration moved into ExecutorCore.
 
-    class PluginError(Exception):
-        pass
-
-    telemetry.logfire.debug(
-        f"[Policy] SimpleStep: {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
-    )
+    Delegates to core._execute_agent_with_orchestration() and returns a typed outcome.
+    """
+    try:
+        return await core._execute_agent_with_orchestration(
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            stream,
+            on_chunk,
+            cache_key,
+            breach_event,
+            _fallback_depth,
+        )
+    except PausedException as e:
+        return Paused(message=str(e))
 
     # ✅ FLUJO BEST PRACTICE: Early Mock Detection and Fallback Chain Protection
     # Critical architectural fix: Detect Mock objects early to prevent infinite fallback chains
