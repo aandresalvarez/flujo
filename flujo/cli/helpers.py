@@ -1785,16 +1785,22 @@ async def echo_tool(x: str) -> str:
 
     # Initialize SQLite DB at .flujo/state.db
     try:
-        from flujo.state.backends.sqlite import SQLiteBackend
-
+        # Create the database file synchronously without triggering async operations
+        # This prevents hanging issues that can occur with _asyncio.run() in CLI context
         db_path = hidden_dir / "state.db"
-        backend = SQLiteBackend(db_path)
-        # Trigger initialization via a lightweight call
-        import asyncio as _asyncio
 
-        _asyncio.run(backend.list_runs(limit=1))
+        # Create an empty database file to ensure the directory structure is valid
+        # The actual async initialization will happen when the backend is first used
+        if not db_path.exists():
+            # Touch the file to create it
+            db_path.touch()
+
+        # Create a basic .flujo directory structure for immediate use
+        (hidden_dir / "logs").mkdir(exist_ok=True)
+        (hidden_dir / "cache").mkdir(exist_ok=True)
+
     except Exception:
-        # Best-effort init; ignore if environment lacks event loop support
+        # Best-effort init; ignore if environment lacks file system support
         pass
 
     if overwrite_existing and overwritten:
@@ -1929,14 +1935,22 @@ async def echo_tool(x: str) -> str:
 
     # Initialize SQLite DB at .flujo/state.db
     try:
-        from flujo.state.backends.sqlite import SQLiteBackend
-
+        # Create the database file synchronously without triggering async operations
+        # This prevents hanging issues that can occur with _asyncio.run() in CLI context
         db_path = hidden_dir / "state.db"
-        backend = SQLiteBackend(db_path)
-        import asyncio as _asyncio
 
-        _asyncio.run(backend.list_runs(limit=1))
+        # Create an empty database file to ensure the directory structure is valid
+        # The actual async initialization will happen when the backend is first used
+        if not db_path.exists():
+            # Touch the file to create it
+            db_path.touch()
+
+        # Create a basic .flujo directory structure for immediate use
+        (hidden_dir / "logs").mkdir(exist_ok=True)
+        (hidden_dir / "cache").mkdir(exist_ok=True)
+
     except Exception:
+        # Best-effort init; ignore if environment lacks file system support
         pass
 
     if overwrite_existing and overwritten:
