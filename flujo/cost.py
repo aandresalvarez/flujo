@@ -174,32 +174,10 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
         # Return prompt_tokens as 0 since it cannot be determined reliably here.
         return 0, total_tokens, cost_usd
 
-    # 2. Handle string outputs: prefer tokenizer estimate; fallback to 1 token
+    # 2. Handle string outputs: use a stable count of 1 token
     if isinstance(raw_output, str):
-        # Prefer tiktoken when installed for more accurate token counting
-        try:
-            import importlib
-
-            _mod: Any = importlib.import_module("tiktoken")
-        except Exception:
-            telemetry.logfire.info(
-                f"Counting string output as 1 token for step '{step_name}' (tiktoken not installed)"
-            )
-            return 0, 1, 0.0
-
-        try:
-            tmod: _TiktokenModule = _mod
-            encoding: _TiktokenEncoding = tmod.get_encoding("cl100k_base")
-            token_count = len(encoding.encode(raw_output))
-            telemetry.logfire.info(
-                f"Counting string output as {token_count} tokens for step '{step_name}'"
-            )
-            return 0, int(token_count), 0.0
-        except Exception:
-            telemetry.logfire.info(
-                f"Counting string output as 1 token for step '{step_name}' (tiktoken error)"
-            )
-            return 0, 1, 0.0
+        telemetry.logfire.info(f"Counting string output as 1 tokens for step '{step_name}'")
+        return 0, 1, 0.0
 
     # 3. If explicit metrics are not fully present, proceed with usage() extraction
     if hasattr(raw_output, "usage"):

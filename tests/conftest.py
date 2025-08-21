@@ -218,6 +218,21 @@ def create_test_flujo(
     return Flujo(pipeline, pipeline_name=pipeline_name, pipeline_id=pipeline_id, **kwargs)
 
 
+def pytest_ignore_collect(collection_path, config):  # type: ignore[override]
+    """Ignore accidentally duplicated test files like 'test_foo 2.py'.
+
+    This prevents pytest from collecting backup copies that end with ' 2.py'.
+    The cleanup script in scripts/cleanup_duplicate_tests.py can remove or move them.
+    """
+    try:
+        p = str(collection_path)
+        if p.endswith(" 2.py"):
+            return True
+    except Exception:
+        return None
+    return None
+
+
 def get_registered_factory(skill_id: str):
     """Get a registered factory from the skill registry.
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple, Type
 from typing import Any as _Any
+from unittest.mock import Mock, MagicMock, AsyncMock
 from pydantic import BaseModel
 from flujo.domain.models import (
     StepResult,
@@ -30,6 +31,7 @@ from flujo.exceptions import (
 from flujo.cost import extract_usage_metrics
 from flujo.utils.performance import time_perf_ns, time_perf_ns_to_seconds
 from flujo.infra import telemetry
+from .hybrid_check import run_hybrid_check
 from flujo.application.core.context_adapter import _build_context_update, _inject_context
 from flujo.application.core.context_manager import ContextManager
 from flujo.domain.dsl.parallel import ParallelStep
@@ -214,15 +216,24 @@ class StateMachinePolicyExecutor:
                 ContextManager.isolate(last_context) if last_context is not None else None
             )
 
-            pipeline_result: PipelineResult[_Any] = await core._execute_pipeline_via_policies(
-                state_pipeline,
-                data,
-                iteration_context,
-                resources,
-                limits,
-                None,
-                frame.context_setter,
-            )
+            # Disable cache during state transitions to avoid stale context
+            original_cache_enabled = getattr(core, "_enable_cache", True)
+            try:
+                setattr(core, "_enable_cache", False)
+                pipeline_result: PipelineResult[_Any] = await core._execute_pipeline_via_policies(
+                    state_pipeline,
+                    data,
+                    iteration_context,
+                    resources,
+                    limits,
+                    None,
+                    frame.context_setter,
+                )
+            finally:
+                try:
+                    setattr(core, "_enable_cache", original_cache_enabled)
+                except Exception:
+                    pass
 
             total_cost += float(getattr(pipeline_result, "total_cost_usd", 0.0))
             total_tokens += int(getattr(pipeline_result, "total_tokens", 0))
@@ -234,7 +245,44 @@ class StateMachinePolicyExecutor:
             except Exception:
                 pass
 
-            last_context = getattr(pipeline_result, "final_pipeline_context", iteration_context)
+            # Merge sub-pipeline's final context back into the state machine's main context
+            sub_ctx = getattr(pipeline_result, "final_pipeline_context", iteration_context)
+            # Capture next_state/current_state from the sub-context BEFORE merge. The generic
+            # ContextManager.merge intentionally excludes certain fields (like 'scratchpad')
+            # for noise reduction, which can drop state transitions. We extract the intended
+            # hop here and re-apply it after the merge.
+            intended_next: Optional[str] = None
+            intended_curr: Optional[str] = None
+            try:
+                if sub_ctx is not None and hasattr(sub_ctx, "scratchpad"):
+                    sc = getattr(sub_ctx, "scratchpad")
+                    if isinstance(sc, dict):
+                        nxt = sc.get("next_state")
+                        cur = sc.get("current_state")
+                        intended_next = str(nxt) if isinstance(nxt, str) else None
+                        intended_curr = str(cur) if isinstance(cur, str) else None
+            except Exception:
+                intended_next = None
+                intended_curr = None
+            try:
+                last_context = ContextManager.merge(last_context, sub_ctx)
+            except Exception:
+                # Defensive: if merge fails, fall back to sub_ctx to avoid losing progress
+                last_context = sub_ctx
+            # Re-apply intended state transition to the merged context when available
+            try:
+                if last_context is not None and hasattr(last_context, "scratchpad"):
+                    lcd = getattr(last_context, "scratchpad")
+                    if isinstance(lcd, dict):
+                        if isinstance(intended_next, str):
+                            lcd["next_state"] = intended_next
+                            # Default current_state to intended_next when not explicitly provided
+                            if isinstance(intended_curr, str):
+                                lcd["current_state"] = intended_curr
+                            else:
+                                lcd.setdefault("current_state", intended_next)
+            except Exception:
+                pass
             next_state: Optional[str] = None
             try:
                 if last_context is not None and hasattr(last_context, "scratchpad"):
@@ -243,6 +291,38 @@ class StateMachinePolicyExecutor:
                         next_state = sp2.get("next_state")
             except Exception:
                 next_state = None
+
+            # Fallback: derive next_state from step outputs when context wasn't updated
+            if not isinstance(next_state, str):
+                try:
+                    telemetry.logfire.info(
+                        "[StateMachinePolicy] Looking for next_state in step outputs"
+                    )
+                    for sr in reversed(getattr(pipeline_result, "step_history", []) or []):
+                        out = getattr(sr, "output", None)
+                        telemetry.logfire.info(f"[StateMachinePolicy] Step output: {out}")
+                        if isinstance(out, dict):
+                            sp = out.get("scratchpad")
+                            telemetry.logfire.info(f"[StateMachinePolicy] Step scratchpad: {sp}")
+                            if isinstance(sp, dict) and isinstance(sp.get("next_state"), str):
+                                next_state = sp.get("next_state")
+                                telemetry.logfire.info(
+                                    f"[StateMachinePolicy] Found next_state: {next_state}"
+                                )
+                                # Best-effort: persist into context scratchpad for downstream steps
+                                try:
+                                    if last_context is not None and hasattr(
+                                        last_context, "scratchpad"
+                                    ):
+                                        lcd = getattr(last_context, "scratchpad")
+                                        if isinstance(lcd, dict):
+                                            lcd["next_state"] = str(next_state)
+                                            lcd.setdefault("current_state", str(next_state))
+                                except Exception:
+                                    pass
+                                break
+                except Exception:
+                    pass
 
             current_state = next_state if isinstance(next_state, str) else current_state
             if not isinstance(next_state, str):
@@ -510,13 +590,12 @@ class DefaultSimpleStepExecutor:
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]:
+        # Delegate orchestration to ExecutorCore to preserve separation of concerns
         telemetry.logfire.debug(
-            f"[Policy] SimpleStep(self-contained): {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
+            f"[Policy] SimpleStep: delegating to core orchestration for '{getattr(step, 'name', '<unnamed>')}'"
         )
-        # Use self-contained policy implementation instead of delegating to core
         try:
-            outcome = await _execute_simple_step_policy_impl(
-                core,
+            outcome = await core._execute_agent_with_orchestration(
                 step,
                 data,
                 context,
@@ -528,9 +607,22 @@ class DefaultSimpleStepExecutor:
                 breach_event,
                 _fallback_depth,
             )
+            # Cache successful outcomes here when called directly via policy
+            try:
+                from flujo.domain.models import Success as _Success
+
+                if (
+                    isinstance(outcome, _Success)
+                    and cache_key
+                    and getattr(core, "_enable_cache", False)
+                ):
+                    await core._cache_backend.put(cache_key, outcome.step_result, ttl_s=3600)
+            except Exception:
+                pass
+            return outcome
         except PausedException as e:
+            # Surface as Paused outcome to maintain control-flow semantics
             return Paused(message=str(e))
-        return outcome
 
 
 async def _execute_simple_step_policy_impl(
@@ -546,21 +638,25 @@ async def _execute_simple_step_policy_impl(
     breach_event: Optional[Any],
     _fallback_depth: int,
 ) -> StepOutcome[StepResult]:
-    """Full SimpleStep execution logic migrated from core into policy."""
-    from unittest.mock import Mock, MagicMock, AsyncMock
-    from .hybrid_check import run_hybrid_check
-    from flujo.exceptions import (
-        UsageLimitExceededError,
-        PausedException,
-        InfiniteFallbackError,
-    )
+    """Deprecated: Orchestration moved into ExecutorCore.
 
-    class PluginError(Exception):
-        pass
-
-    telemetry.logfire.debug(
-        f"[Policy] SimpleStep: {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
-    )
+    Delegates to core._execute_agent_with_orchestration() and returns a typed outcome.
+    """
+    try:
+        return await core._execute_agent_with_orchestration(
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            stream,
+            on_chunk,
+            cache_key,
+            breach_event,
+            _fallback_depth,
+        )
+    except PausedException as e:
+        return Paused(message=str(e))
 
     # ✅ FLUJO BEST PRACTICE: Early Mock Detection and Fallback Chain Protection
     # Critical architectural fix: Detect Mock objects early to prevent infinite fallback chains
@@ -1224,6 +1320,30 @@ async def _execute_simple_step_policy_impl(
                 telemetry.logfire.debug(
                     f"Merged successful simple step attempt {attempt} context back to main context"
                 )
+
+            # Apply updates_context directly on the live context for simple steps
+            try:
+                if getattr(step, "updates_context", False) and context is not None:
+                    update_data = _build_context_update(result.output)
+                    if update_data:
+                        try:
+                            telemetry.logfire.info(
+                                f"[SimplePolicy] Injecting updates for step '{getattr(step, 'name', '?')}', update_keys={list(update_data.keys())}"
+                            )
+                            telemetry.logfire.info(
+                                f"[SimplePolicy] Scratchpad before: {getattr(context, 'scratchpad', None)}"
+                            )
+                        except Exception:
+                            pass
+                        _ = _inject_context(context, update_data, type(context))
+                        try:
+                            telemetry.logfire.info(
+                                f"[SimplePolicy] Scratchpad after: {getattr(context, 'scratchpad', None)}"
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
             result.branch_context = context
             # Adapter attempts alignment: if this is an adapter step following a loop,

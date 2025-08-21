@@ -384,7 +384,13 @@ async def test_dynamic_router_with_context_updates_state_isolation():
         context.branch_count += 1
         context.total_updates += 1
 
-        return branch_data
+        # Return the updated values to ensure they get merged back
+        return {
+            "branch_executed": "isolation_branch",
+            "branch_count": context.branch_count,
+            "total_updates": context.total_updates,
+            "branch_data": branch_data,
+        }
 
     router_step = Step.dynamic_parallel_branch(
         name="isolation_router",

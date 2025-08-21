@@ -692,6 +692,7 @@ class DefaultAgentRunner:
 
         try:
             if stream:
+                # Case 1: async generator function
                 if inspect.isasyncgenfunction(executable_func):
                     async_generator = executable_func(payload, **filtered_kwargs)
                     chunks = []
@@ -702,13 +703,13 @@ class DefaultAgentRunner:
                     if chunks:
                         if all(isinstance(chunk, str) for chunk in chunks):
                             return "".join(chunks)
-                        elif all(isinstance(chunk, bytes) for chunk in chunks):
+                        if all(isinstance(chunk, bytes) for chunk in chunks):
                             return b"".join(chunks)
-                        else:
-                            return str(chunks)
-                    else:
-                        return "" if on_chunk is None else chunks
-                elif inspect.iscoroutinefunction(executable_func):
+                        return str(chunks)
+                    return "" if on_chunk is None else chunks
+
+                # Case 2: coroutine function that returns an async iterator
+                if inspect.iscoroutinefunction(executable_func):
                     result = await executable_func(payload, **filtered_kwargs)
                     if hasattr(result, "__aiter__"):
                         chunks = []
@@ -719,29 +720,42 @@ class DefaultAgentRunner:
                         if chunks:
                             if all(isinstance(chunk, str) for chunk in chunks):
                                 return "".join(chunks)
-                            elif all(isinstance(chunk, bytes) for chunk in chunks):
+                            if all(isinstance(chunk, bytes) for chunk in chunks):
                                 return b"".join(chunks)
-                            else:
-                                return str(chunks)
-                        else:
-                            return "" if on_chunk is None else chunks
-                    else:
-                        if on_chunk is not None:
-                            await on_chunk(result)
-                        return result
-                else:
-                    result = executable_func(payload, **filtered_kwargs)
+                            return str(chunks)
+                        return "" if on_chunk is None else chunks
+                    # Not an iterator: treat as single result
                     if on_chunk is not None:
                         await on_chunk(result)
                     return result
-            else:
-                if inspect.iscoroutinefunction(executable_func):
-                    return await executable_func(payload, **filtered_kwargs)
-                else:
-                    result = executable_func(payload, **filtered_kwargs)
-                    if inspect.iscoroutine(result):
-                        return await result
-                    return result
+
+                # Case 3: regular callable returning an async iterator/generator
+                result = executable_func(payload, **filtered_kwargs)
+                if hasattr(result, "__aiter__"):
+                    chunks = []
+                    async for chunk in result:
+                        chunks.append(chunk)
+                        if on_chunk is not None:
+                            await on_chunk(chunk)
+                    if chunks:
+                        if all(isinstance(chunk, str) for chunk in chunks):
+                            return "".join(chunks)
+                        if all(isinstance(chunk, bytes) for chunk in chunks):
+                            return b"".join(chunks)
+                        return str(chunks)
+                    return "" if on_chunk is None else chunks
+                # Fallback: single value passthrough
+                if on_chunk is not None:
+                    await on_chunk(result)
+                return result
+
+            # Non-streaming execution
+            if inspect.iscoroutinefunction(executable_func):
+                return await executable_func(payload, **filtered_kwargs)
+            result = executable_func(payload, **filtered_kwargs)
+            if inspect.iscoroutine(result):
+                return await result
+            return result
         except (
             PausedException,
             InfiniteFallbackError,

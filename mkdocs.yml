@@ -31,6 +31,7 @@ nav:
     - 'Pipeline Branching': 'user_guide/pipeline_branching.md'
     - 'Modular Workflows': 'user_guide/modular_workflows.md'
     - 'State Machine Step': 'user_guide/state_machine_step.md'
+    - 'Architect (Programmatic)': 'user_guide/architect_programmatic.md'
   - 'Advanced Topics':
     - 'Tools': 'advanced/tools.md'
     - 'Scoring': 'advanced/scoring.md'

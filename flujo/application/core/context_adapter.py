@@ -425,6 +425,107 @@ def _build_context_update(output: BaseModel | dict[str, Any] | Any) -> dict[str,
     return None
 
 
+def _deep_merge_dicts(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+    """Deep merge update dict into base dict, handling nested structures."""
+    result = base.copy()
+
+    for key, value in update.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            # Both are dicts, recursively merge
+            result[key] = _deep_merge_dicts(result[key], value)
+        else:
+            # Not both dicts, or key doesn't exist in base, overwrite
+            result[key] = value
+
+    return result
+
+
+def _inject_context_with_deep_merge(
+    context: BaseModel,
+    update_data: dict[str, Any],
+    context_model: Type[BaseModel],
+) -> Optional[str]:
+    """Apply ``update_data`` to ``context`` with deep merge for nested dicts.
+
+    Returns an error message if validation fails, otherwise ``None``.
+    """
+    original = context.model_dump()
+
+    # Process update data with proper field mapping
+    for key, value in update_data.items():
+        if key in context_model.model_fields:
+            field_info = context_model.model_fields[key]
+            field_type = field_info.annotation
+
+            # TYPE VALIDATION: Ensure the value matches the declared field type
+            if field_type is not None:
+                try:
+                    # For list fields, ensure we're not trying to assign a dict to a list[int]
+                    if hasattr(field_type, "__origin__") and field_type.__origin__ is list:
+                        if not isinstance(value, list):
+                            return f"Field '{key}' expects list but got {type(value).__name__}: {value}"
+
+                    # For int fields, ensure we're not trying to assign a dict to an int
+                    elif field_type is int and not isinstance(value, int):
+                        return f"Field '{key}' expects int but got {type(value).__name__}: {value}"
+
+                    # For str fields, ensure we're not trying to assign a dict to a str
+                    elif field_type is str and not isinstance(value, str):
+                        return f"Field '{key}' expects str but got {type(value).__name__}: {value}"
+
+                    # For dict fields, allow dict values
+                    elif field_type is dict or (
+                        hasattr(field_type, "__origin__") and field_type.__origin__ is dict
+                    ):
+                        if not isinstance(value, dict):
+                            return f"Field '{key}' expects dict but got {type(value).__name__}: {value}"
+
+                    # For other types, use Pydantic's validation
+                    else:
+                        # Try to validate the value against the field type
+                        try:
+                            if hasattr(field_type, "model_validate"):
+                                field_type.model_validate(value)
+                            elif hasattr(field_type, "__call__"):
+                                field_type(value)
+                        except Exception as validation_error:
+                            return f"Field '{key}' validation failed: {validation_error}"
+
+                except Exception as type_check_error:
+                    return f"Field '{key}' type check failed: {type_check_error}"
+
+            # Apply the validated value to the specific field
+            if key == "scratchpad" and isinstance(value, dict) and hasattr(context, "scratchpad"):
+                # Special handling for scratchpad: deep merge nested dicts
+                current_scratchpad = getattr(context, "scratchpad", {})
+                if isinstance(current_scratchpad, dict):
+                    merged_scratchpad = _deep_merge_dicts(current_scratchpad, value)
+                    setattr(context, key, merged_scratchpad)
+                else:
+                    setattr(context, key, value)
+            else:
+                setattr(context, key, value)
+        elif not hasattr(context, key):
+            # Skip fields that don't exist in the context model
+            continue
+        else:
+            # If the field exists on the context but is not in the model, set it directly
+            setattr(context, key, value)
+
+    # Final validation pass
+    try:
+        validated = context_model.model_validate(context.model_dump())
+        context.__dict__.update(validated.__dict__)
+    except ValidationError as e:
+        # If validation fails, restore original state
+        for key, value in original.items():
+            setattr(context, key, value)
+        telemetry.logfire.error(f"Context update failed Pydantic validation: {e}")
+        return str(e)
+
+    return None
+
+
 def _inject_context(
     context: BaseModel,
     update_data: dict[str, Any],

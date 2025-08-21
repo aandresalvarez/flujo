@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Type
 
 # Ensure framework primitives (like StateMachine) are registered when builtins load
 try:  # pragma: no cover - best-effort for import order
@@ -896,6 +896,192 @@ def _register_builtins() -> None:
             "flujo.builtins.return_yaml_for_cli",
             lambda **_params: return_yaml_for_cli,
             description="Return YAML in the format that the CLI expects to find (with generated_yaml and yaml_text keys).",
+        )
+
+        # --- FSD-024: analyze_project (safe filesystem scan)
+        async def analyze_project(
+            _data: Any = None, *, directory: str = ".", max_files: int = 200
+        ) -> Dict[str, Any]:
+            import os
+
+            try:
+                files: list[str] = []
+                for root, dirs, fnames in os.walk(directory):
+                    # Limit depth to top 2 levels
+                    depth = os.path.relpath(root, directory).count(os.sep)
+                    if depth > 1:
+                        dirs[:] = []
+                    for f in fnames:
+                        if len(files) >= int(max_files):
+                            break
+                        files.append(os.path.relpath(os.path.join(root, f), directory))
+                detected: list[str] = []
+                s = set(files)
+                for mark in ("requirements.txt", "pyproject.toml", "flujo.toml", "pipeline.yaml"):
+                    if any(p.endswith(mark) for p in s):
+                        detected.append(mark)
+                return {
+                    "project_summary": f"Found {len(files)} files. Detected: "
+                    + (", ".join(detected) if detected else "none")
+                }
+            except Exception:
+                return {"project_summary": "Error analyzing project"}
+
+        def _make_analyze_runner(directory: str = ".", max_files: int = 200) -> Any:
+            async def _runner(_data: Any = None, **_k: Any) -> Dict[str, Any]:
+                return await analyze_project(_data, directory=directory, max_files=max_files)
+
+            return _runner
+
+        reg.register(
+            "flujo.builtins.analyze_project",
+            _make_analyze_runner,
+            description="Scan project tree to produce a short summary (no network).",
+            arg_schema={
+                "type": "object",
+                "properties": {
+                    "directory": {"type": "string", "default": "."},
+                    "max_files": {"type": "integer", "default": 200},
+                },
+            },
+            side_effects=False,
+        )
+
+        # --- FSD-024: visualize_plan -> Mermaid
+        async def visualize_plan(plan: Any) -> Dict[str, str]:
+            try:
+                lines: list[str] = ["graph TD"]
+                if isinstance(plan, list):
+                    for i, step in enumerate(plan, start=1):
+                        label = None
+                        if isinstance(step, dict):
+                            label = step.get("name") or step.get("id") or f"Step {i}"
+                        else:
+                            label = getattr(step, "name", None) or f"Step {i}"
+                        lines.append(f'  S{i}["{str(label)}"]')
+                        if i > 1:
+                            lines.append(f"  S{i - 1} --> S{i}")
+                return {"plan_mermaid_graph": "\n".join(lines)}
+            except Exception:
+                return {"plan_mermaid_graph": 'graph TD\n  S1["Plan unavailable"]'}
+
+        reg.register(
+            "flujo.builtins.visualize_plan",
+            lambda **_params: visualize_plan,
+            description="Render a simple Mermaid graph for a linear plan.",
+            side_effects=False,
+        )
+
+        # --- FSD-024: estimate_plan_cost (sum registry est_cost)
+        async def estimate_plan_cost(plan: Any) -> Dict[str, float]:
+            total = 0.0
+            try:
+                registry = get_skill_registry()
+                if isinstance(plan, list):
+                    for step in plan:
+                        sid = None
+                        if isinstance(step, dict):
+                            agent = step.get("agent")
+                            if isinstance(agent, dict):
+                                sid = agent.get("id")
+                        if isinstance(sid, str):
+                            entry = registry.get(sid) or {}
+                            try:
+                                total += float(entry.get("est_cost", 0.0))
+                            except Exception:
+                                pass
+            except Exception:
+                total = 0.0
+            return {"plan_estimated_cost_usd": round(float(total), 4)}
+
+        reg.register(
+            "flujo.builtins.estimate_plan_cost",
+            lambda **_params: estimate_plan_cost,
+            description="Estimate cost by summing est_cost metadata for referenced skills.",
+            side_effects=False,
+        )
+
+        # --- FSD-024: run_pipeline_in_memory (safe, mocks side effects)
+        async def run_pipeline_in_memory(
+            yaml_text: str,
+            input_text: str = "",
+            sandbox: bool = True,
+            base_dir: Optional[str] = None,
+        ) -> Dict[str, Any]:
+            from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
+            from flujo.cli.helpers import create_flujo_runner, execute_pipeline_with_output_handling
+            from flujo.infra.skill_registry import get_skill_registry as _get
+            from typing import Any as _Any
+            import os as _os
+            import asyncio as _asyncio
+
+            reg_local = _get()
+            restore: dict[str, dict[str, Any]] = {}
+            mutated = False
+            # Identify and (optionally) mock side-effect skills referenced in YAML
+            if sandbox:
+                try:
+                    from flujo.cli.helpers import find_side_effect_skills_in_yaml as _find
+
+                    side_ids = _find(yaml_text)
+                except Exception:
+                    side_ids = []
+            else:
+                side_ids = []
+            try:
+                if sandbox and side_ids:
+                    for sid in side_ids:
+                        entry = reg_local.get(sid)
+                        if not entry:
+                            continue
+                        restore[sid] = dict(entry)
+
+                        def _make_factory(
+                            _sid: str,
+                        ) -> Callable[..., Callable[..., Awaitable[Dict[str, _Any]]]]:
+                            async def _mock(*_a: _Any, **_k: _Any) -> Dict[str, _Any]:
+                                return {"mocked": True, "skill": _sid}
+
+                            return lambda **_p: _mock
+
+                        entry["factory"] = _make_factory(sid)
+                        entry["side_effects"] = False
+                        mutated = True
+
+                # Compile blueprint with base_dir for correct relative resolution
+                _base = base_dir or _os.getcwd()
+                pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=_base)
+                runner = create_flujo_runner(pipeline, None, {"initial_prompt": input_text})
+
+                # Execute synchronously via a worker thread to avoid blocking the event loop
+                def _run_sync() -> Any:
+                    return execute_pipeline_with_output_handling(runner, input_text, None, False)
+
+                result = await _asyncio.to_thread(_run_sync)
+                return {"dry_run_result": result}
+            finally:
+                if mutated:
+                    try:
+                        for sid, entry in restore.items():
+                            reg_local._entries[sid] = entry
+                    except Exception:
+                        pass
+
+        reg.register(
+            "flujo.builtins.run_pipeline_in_memory",
+            lambda **_params: run_pipeline_in_memory,
+            description="Compile and run a YAML pipeline in-memory, mocking side-effect skills.",
+            arg_schema={
+                "type": "object",
+                "properties": {
+                    "yaml_text": {"type": "string"},
+                    "input_text": {"type": "string", "default": ""},
+                    "sandbox": {"type": "boolean", "default": True},
+                    "base_dir": {"type": "string"},
+                },
+                "required": ["yaml_text"],
+            },
+            side_effects=False,
         )
 
         reg.register(
