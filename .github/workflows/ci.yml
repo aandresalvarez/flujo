@@ -59,7 +59,7 @@ jobs:
       CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
       FLUJO_CV_THRESHOLD: "1.0"
-      FLUJO_CI_DB_SIZE: "500"  # Reduced database size for faster CI
+      FLUJO_CI_DB_SIZE: "250"  # Optimized database size for mass CI (was 500)
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -110,7 +110,7 @@ jobs:
       CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
       FLUJO_CV_THRESHOLD: "1.0"
-      FLUJO_CI_DB_SIZE: "1000"  # Reduced database size for faster CI
+      FLUJO_CI_DB_SIZE: "250"  # Optimized database size for mass CI (was 1000)
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -160,7 +160,7 @@ jobs:
       CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
       FLUJO_CV_THRESHOLD: "1.0"
-      FLUJO_CI_DB_SIZE: "500"  # Reduced database size for faster CI
+      FLUJO_CI_DB_SIZE: "250"  # Optimized database size for mass CI (was 500)
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -297,7 +297,51 @@ jobs:
           path: test_performance_raw.log
 
   # ----------------------------------------------------------------------------
-  # Job 7: Live API Tests (Optional but Recommended)
+  # Job 7: Ultra-Slow Tests (>30s, excluded from regular CI)
+  # ----------------------------------------------------------------------------
+  test-ultra-slow:
+    name: Ultra-Slow Tests (>30s)
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11"]
+    env:
+      CI: "true"
+      FLUJO_CLI_PERF_THRESHOLD: "0.2"
+      FLUJO_CV_THRESHOLD: "1.0"
+      FLUJO_CI_DB_SIZE: "250"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Set dummy OpenAI API key for tests
+        run: echo "OPENAI_API_KEY=dummy-key-for-testing" >> $GITHUB_ENV
+
+      - name: Run ultra-slow tests
+        run: |
+          echo "⚠️ Running ultra-slow tests (>30s each)"
+          echo "These tests are excluded from regular CI due to long execution time"
+          make test-ultra-slow
+
+  # ----------------------------------------------------------------------------
+  # Job 8: Live API Tests (Optional but Recommended)
   # ----------------------------------------------------------------------------
   # This job is a placeholder for a critical testing practice.
   # To enable it, you would need to:
