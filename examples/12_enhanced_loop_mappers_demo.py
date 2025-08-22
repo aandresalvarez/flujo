@@ -1,285 +1,338 @@
 #!/usr/bin/env python3
 """
-Enhanced Loop Mappers Demo (FSD-026 Implementation)
+Enhanced Loop Mappers Demo - Current Flujo 0.4.37 Compatible Version
 
-This example demonstrates the new YAML loop mapper functionality that solves
-the critical gap in data transformation for agentic loops.
+This demo shows:
+1. How to work with current Flujo loop limitations
+2. What enhanced loop mappers would enable (FSD-026)
+3. The difference between current workarounds and future declarative approach
 
-The problem: A LoopStep receives a raw string but its internal agent expects
-a structured dictionary. Previously, there was no declarative way to map
-the initial input to the format expected by the first iteration.
-
-The solution: New optional keys in YAML:
-- initial_input_mapper: Maps LoopStep input to first iteration's body input
-- iteration_input_mapper: Maps previous iteration output to next iteration input
-- loop_output_mapper: Maps final successful output to LoopStep output
-
-This enables clean, declarative, and robust conversational AI workflows.
+Note: The enhanced loop mapper functionality shown in the "Future" section
+is not yet available in Flujo 0.4.37. This demonstrates the concept and
+shows how it would simplify conversational AI workflows.
 """
 
-import asyncio
 from typing import Any, Dict, List
-
-from flujo import Step, Pipeline
-from flujo.domain.dsl.loop import LoopStep
+from flujo.domain.dsl.pipeline import Pipeline
+from flujo.domain.dsl.step import Step
 from flujo.domain.models import PipelineContext
 from flujo.testing.utils import StubAgent
 
 
 class ConversationalContext(PipelineContext):
-    """Context for conversational loop workflows."""
+    """Extended context for conversational workflows."""
 
-    initial_prompt: str = ""
+    initial_prompt: str
     conversation_history: List[str] = []
     command_log: List[str] = []
+    current_goal: str = ""
+    clarification_count: int = 0
 
 
-def map_initial_input(initial_goal: str, context: ConversationalContext) -> Dict[str, Any]:
+def map_initial_input(context: ConversationalContext) -> Dict[str, Any]:
     """
-    Transform the initial raw string goal into the structured input for the loop's first iteration.
+    Maps the initial LoopStep input to structured format for first iteration.
 
-    This solves the core problem: the LoopStep receives a string but the planner agent
-    expects a structured dictionary.
+    In current Flujo, this would need to be done manually in each step.
+    With enhanced loop mappers, this would be automatic.
     """
-    context.initial_prompt = initial_goal
-    context.command_log.append(f"Initial Goal: {initial_goal}")
-    return {"initial_goal": initial_goal, "conversation_history": [], "current_step": "planning"}
+    return {
+        "goal": context.initial_prompt,
+        "conversation_history": [],
+        "iteration": 0,
+        "status": "initial",
+    }
 
 
-def map_iteration_input(
-    output: Any, context: ConversationalContext, iteration: int
-) -> Dict[str, Any]:
+def map_iteration_input(context: ConversationalContext, previous_output: Any) -> Dict[str, Any]:
     """
-    Map the output of iteration n to the input of iteration n+1.
+    Maps previous iteration output to next iteration input.
 
-    This maintains conversation state and provides context for the next iteration.
+    In current Flujo, this requires manual context management.
+    With enhanced loop mappers, this would be declarative.
     """
-    if isinstance(output, str):
-        context.conversation_history.append(output)
-    else:
-        context.conversation_history.append(str(output))
+    # Add to conversation history
+    if isinstance(previous_output, str):
+        context.conversation_history.append(previous_output)
 
-    context.command_log.append(f"Iteration {iteration}: {output}")
+    context.clarification_count += 1
 
     return {
-        "initial_goal": context.initial_prompt,
+        "goal": context.current_goal,
         "conversation_history": context.conversation_history,
-        "current_step": "execution",
-        "iteration": iteration,
+        "iteration": context.clarification_count,
+        "status": "clarifying",
     }
 
 
-def is_finish_command(output: Any, context: ConversationalContext) -> bool:
+def is_finish_command(context: ConversationalContext, output: Any) -> bool:
+    """Determines if the loop should exit."""
+    if isinstance(output, str):
+        return output.startswith("COMPLETE:") or context.clarification_count >= 3
+    return context.clarification_count >= 3
+
+
+def map_loop_output(context: ConversationalContext, final_output: Any) -> Dict[str, Any]:
     """
-    Determine if the conversation should finish.
+    Maps the final successful output to LoopStep result.
 
-    Exit conditions:
-    - User says "finish" or similar
-    - Maximum iterations reached
-    - Goal appears to be achieved
-    """
-    output_str = str(output).lower()
-
-    # Check for explicit finish commands
-    if any(word in output_str for word in ["finish", "done", "complete", "stop"]):
-        context.command_log.append("Exit: User requested finish")
-        return True
-
-    # Check for goal achievement indicators
-    if any(word in output_str for word in ["achieved", "completed", "successful", "ready"]):
-        context.command_log.append("Exit: Goal appears achieved")
-        return True
-
-    # Check iteration limit
-    if len(context.conversation_history) >= 5:
-        context.command_log.append("Exit: Maximum iterations reached")
-        return True
-
-    return False
-
-
-def map_loop_output(output: Any, context: ConversationalContext) -> Dict[str, Any]:
-    """
-    Map the final successful output to the LoopStep's output.
-
-    This provides a clean, structured result that summarizes the entire conversation.
+    In current Flujo, this requires manual post-processing.
+    With enhanced loop mappers, this would be automatic.
     """
     return {
-        "final_result": output,
-        "conversation_summary": context.conversation_history,
-        "total_iterations": len(context.conversation_history),
-        "initial_goal": context.initial_prompt,
-        "command_log": context.command_log,
-        "success": True,
+        "final_goal": context.current_goal,
+        "conversation_history": context.conversation_history,
+        "total_clarifications": context.clarification_count,
+        "final_output": final_output,
+        "status": "completed",
     }
 
 
-def create_conversational_loop_pipeline() -> Pipeline:
-    """Create a pipeline that demonstrates the enhanced loop functionality."""
+def create_current_flujo_workaround_pipeline() -> Pipeline:
+    """
+    Current Flujo 0.4.37 approach - requires manual workarounds.
 
-    # Create the loop body pipeline
-    planner_step = Step(
-        name="planner",
-        agent=StubAgent(
-            [
-                "I'll help you build a website. Let me start by gathering requirements.",
-                "Based on your goal, I recommend using a modern framework like React.",
-                "Let me create a project structure and basic files for you.",
-                "I'll set up the development environment and dependencies.",
-                "Your website project is now ready! I've created all the necessary files and structure.",
-            ]
+    This shows what you have to do now to achieve the same functionality.
+    """
+    # Create agents that simulate the conversation
+    planner_agent = StubAgent(
+        [
+            "I need to understand your goal better. What specific outcome are you looking for?",
+            "Can you provide more context about the environment?",
+            "COMPLETE: I now understand you want to create a data processing pipeline with error handling.",
+        ]
+    )
+
+    executor_agent = StubAgent(
+        [
+            "I'll help you with that. Let me break this down into steps.",
+            "Based on your clarification, here's the refined approach.",
+            "Perfect! Here's your final implementation plan.",
+        ]
+    )
+
+    # Current Flujo approach - manual step-by-step conversation
+    steps = [
+        # Step 1: Get initial goal
+        Step(
+            name="get_initial_goal", agent=planner_agent, input="What would you like to accomplish?"
         ),
-    )
-
-    executor_step = Step(
-        name="executor",
-        agent=StubAgent(
-            [
-                "Creating project directory...",
-                "Setting up package.json...",
-                "Installing dependencies...",
-                "Creating component files...",
-                "Project setup complete!",
-            ]
+        # Step 2: Manual conversation loop (simulated)
+        Step(
+            name="conversation_loop",
+            agent=executor_agent,
+            input="Let's clarify your goal step by step.",
         ),
-    )
-
-    loop_body = Pipeline(steps=[planner_step, executor_step])
-
-    # Create the enhanced loop step
-    loop_step = LoopStep(
-        name="conversational_loop",
-        loop_body_pipeline=loop_body,
-        exit_condition_callable=is_finish_command,
-        max_loops=5,
-        initial_input_to_loop_body_mapper=map_initial_input,
-        iteration_input_mapper=map_iteration_input,
-        loop_output_mapper=map_loop_output,
-    )
-
-    # Create the final summarization step
-    summary_step = Step(
-        name="generate_specification",
-        agent=StubAgent(
-            [
-                "Based on our conversation, here's your project specification:\n\n"
-                "Project: Website Development\n"
-                "Framework: React\n"
-                "Features: Modern UI, Responsive Design\n"
-                "Status: Ready for development"
-            ]
+        # Step 3: Manual context building
+        Step(
+            name="build_context",
+            agent=StubAgent(["Context built manually"]),
+            input="Building conversation context...",
         ),
+    ]
+
+    return Pipeline(steps=steps)
+
+
+def create_future_enhanced_pipeline() -> Pipeline:
+    """
+    Future approach with enhanced loop mappers (FSD-026).
+
+    This shows what would be possible with the enhanced functionality.
+    Note: This is conceptual and won't work in current Flujo 0.4.37.
+    """
+    # This is what the future YAML would look like:
+    future_yaml = """
+    - kind: loop
+      name: conversational_loop
+      loop:
+        body:
+          - kind: step
+            name: planner
+            uses: agents.conversation_planner
+          - kind: step
+            name: executor
+            uses: agents.command_executor
+        initial_input_mapper: "examples.12_enhanced_loop_mappers_demo:map_initial_input"
+        iteration_input_mapper: "examples.12_enhanced_loop_mappers_demo:map_iteration_input"
+        exit_condition: "examples.12_enhanced_loop_mappers_demo:is_finish_command"
+        loop_output_mapper: "examples.12_enhanced_loop_mappers_demo:map_loop_output"
+        max_loops: 5
+    """
+
+    print("Future YAML Configuration (FSD-026):")
+    print(future_yaml)
+
+    # For now, return a simple pipeline that demonstrates the concept
+    return Pipeline(
+        steps=[
+            Step(
+                name="concept_demo",
+                agent=StubAgent(["Enhanced loop mappers would enable this declarative approach"]),
+                input="This is what enhanced loop mappers would enable",
+            )
+        ]
     )
 
-    # Compose the complete pipeline
-    return Pipeline(steps=[loop_step, summary_step])
 
-
-def create_yaml_equivalent() -> str:
-    """Create the YAML equivalent of the conversational loop pipeline."""
-    return """
-version: "0.1"
-steps:
-  - kind: loop
-    name: conversational_loop
-    loop:
-      body:
-        - name: planner
-          agent:
-            id: "conversation_planner"
-        - name: executor
-          agent:
-            id: "command_executor"
-      initial_input_mapper: "examples.12_enhanced_loop_mappers_demo:map_initial_input"
-      iteration_input_mapper: "examples.12_enhanced_loop_mappers_demo:map_iteration_input"
-      exit_condition: "examples.12_enhanced_loop_mappers_demo:is_finish_command"
-      loop_output_mapper: "examples.12_enhanced_loop_mappers_demo:map_loop_output"
-      max_loops: 5
-  
-  - kind: step
-    name: generate_specification
-    agent:
-      id: "project_summarizer"
-"""
-
-
-async def run_conversational_demo() -> None:
-    """Run the conversational loop demonstration."""
-    print("🚀 Enhanced Loop Mappers Demo (FSD-026 Implementation)")
+def run_current_workaround_demo():
+    """Demonstrates the current Flujo 0.4.37 approach."""
     print("=" * 60)
-    print()
-
-    # Create the pipeline
-    pipeline = create_conversational_loop_pipeline()
+    print("CURRENT FLUJO 0.4.37 APPROACH")
+    print("=" * 60)
+    print("This shows what you have to do now to achieve conversational loops.\n")
 
     # Create context
-    context = ConversationalContext(initial_prompt="build a website")
-
-    print("📋 Pipeline Configuration:")
-    print(f"  - Loop step: {pipeline.steps[0].name}")
-    print(
-        f"  - Has initial mapper: {pipeline.steps[0].initial_input_to_loop_body_mapper is not None}"
+    context = ConversationalContext(
+        initial_prompt="I want to create a data processing pipeline",
+        conversation_history=[],
+        command_log=[],
+        current_goal="",
+        clarification_count=0,
     )
-    print(f"  - Has iteration mapper: {pipeline.steps[0].iteration_input_mapper is not None}")
-    print(f"  - Has output mapper: {pipeline.steps[0].loop_output_mapper is not None}")
-    print()
 
-    print("🎯 Initial Goal:", context.initial_prompt)
-    print()
+    # Simulate the manual conversation flow
+    print("1. Initial input received:", context.initial_prompt)
+    print("2. Manual step: Process and structure the input")
+    print("3. Manual step: Create conversation context")
+    print("4. Manual step: Handle each iteration manually")
+    print("5. Manual step: Build conversation history")
+    print("6. Manual step: Transform final output")
 
-    # Execute the pipeline
-    print("🔄 Executing conversational loop...")
-    print("-" * 40)
+    print("\nCurrent Limitations:")
+    print("- No automatic input mapping")
+    print("- No automatic context preservation")
+    print("- No automatic output transformation")
+    print("- Requires manual step-by-step management")
 
-    # Simulate the loop execution manually to show the mapper flow
-    loop_step = pipeline.steps[0]
+    return context
 
-    # Initial input mapping
-    initial_input = loop_step.initial_input_to_loop_body_mapper(context.initial_prompt, context)
-    print(f"📥 Initial input mapped: {initial_input}")
 
-    # Simulate iterations
-    for iteration in range(1, 4):  # Simulate 3 iterations
-        print(f"\n🔄 Iteration {iteration}:")
+def show_future_enhanced_approach():
+    """Shows what enhanced loop mappers would enable."""
+    print("\n" + "=" * 60)
+    print("FUTURE ENHANCED LOOP MAPPER APPROACH (FSD-026)")
+    print("=" * 60)
+    print("This shows what would be possible with enhanced loop mappers.\n")
 
-        # Simulate loop body execution
-        body_output = f"Step {iteration} completed"
-        print(f"  Body output: {body_output}")
+    print("Enhanced Loop Mapper Keys:")
+    print("- initial_input_mapper: Automatically maps LoopStep input to first iteration")
+    print("- iteration_input_mapper: Automatically maps between iterations")
+    print("- loop_output_mapper: Automatically transforms final output")
+    print("- exit_condition: Determines when to stop (already supported)")
 
-        # Check exit condition
-        should_exit = loop_step.exit_condition_callable(body_output, context)
-        if should_exit:
-            print(f"  Exit condition met: {body_output}")
-            break
+    print("\nBenefits:")
+    print("- Declarative YAML configuration")
+    print("- Automatic data transformation")
+    print("- Automatic context preservation")
+    print("- Clean, maintainable workflows")
+    print("- No more adapter steps or manual context management")
 
-        # Map to next iteration input
-        next_input = loop_step.iteration_input_mapper(body_output, context, iteration)
-        print(f"  Next iteration input: {next_input}")
 
-    # Final output mapping
-    final_output = loop_step.loop_output_mapper("Project setup complete", context)
-    print(f"\n📤 Final output mapped: {final_output}")
+def show_yaml_usage():
+    """Shows the YAML equivalent for both approaches."""
+    print("\n" + "=" * 60)
+    print("YAML COMPARISON")
+    print("=" * 60)
+
+    print("Current Flujo 0.4.37 (Manual Approach):")
+    current_yaml = """
+    - kind: step
+      name: get_initial_goal
+      agent:
+        id: "flujo.builtins.ask_user"
+      input: "What would you like to accomplish?"
+    
+    - kind: step
+      name: process_goal
+      uses: agents.goal_processor
+      input: "{{ previous_step }}"
+    
+    - kind: step
+      name: build_context
+      uses: agents.context_builder
+      input: "{{ context.processed_goal }}"
+    
+    - kind: loop
+      name: clarification_loop
+      loop:
+        body:
+          - kind: step
+            name: ask_clarification
+            agent:
+              id: "flujo.builtins.ask_user"
+            input: "{{ context.clarification_question }}"
+          - kind: step
+            name: process_response
+            uses: agents.response_processor
+            input: "{{ previous_step }}"
+        exit_condition: "helpers:is_goal_complete"
+        max_loops: 5
+    """
+    print(current_yaml)
+
+    print("\nFuture Enhanced Approach (FSD-026):")
+    future_yaml = """
+    - kind: loop
+      name: conversational_loop
+      loop:
+        body:
+          - kind: step
+            name: planner
+            uses: agents.conversation_planner
+          - kind: step
+            name: executor
+            uses: agents.command_executor
+        initial_input_mapper: "skills.helpers:map_initial_goal"
+        iteration_input_mapper: "skills.helpers:map_conversation_state"
+        exit_condition: "skills.helpers:is_conversation_complete"
+        loop_output_mapper: "skills.helpers:map_final_result"
+        max_loops: 5
+    """
+    print(future_yaml)
+
+    print("\nKey Differences:")
+    print("1. Enhanced approach eliminates manual context management")
+    print("2. Enhanced approach provides automatic data transformation")
+    print("3. Enhanced approach maintains conversation state automatically")
+    print("4. Enhanced approach produces rich, structured output")
+
+
+def main():
+    """Main demo function."""
+    print("Enhanced Loop Mappers Demo - Flujo 0.4.37 Compatible")
+    print("=" * 60)
+    print("This demo shows the difference between current Flujo limitations")
+    print("and what enhanced loop mappers would enable.\n")
+
+    # Show current approach
+    run_current_workaround_demo()
+
+    # Show future approach
+    show_future_enhanced_approach()
+
+    # Show YAML comparison
+    show_yaml_usage()
 
     print("\n" + "=" * 60)
-    print("✅ Demo completed successfully!")
-    print("\nKey Benefits of Enhanced Loop Mappers:")
-    print("1. 🎯 Clean data transformation from raw input to structured format")
-    print("2. 🔄 Consistent state management across iterations")
-    print("3. 📊 Rich output with conversation history and metadata")
-    print("4. 🚀 Declarative YAML configuration without workarounds")
-    print("5. 🔧 Backward compatible with existing loop steps")
+    print("SUMMARY")
+    print("=" * 60)
+    print("Current Flujo 0.4.37:")
+    print("- Works but requires manual workarounds")
+    print("- No automatic input/output mapping")
+    print("- Manual context management needed")
+    print("- More verbose YAML configuration")
 
+    print("\nFuture Enhanced Approach (FSD-026):")
+    print("- Declarative YAML configuration")
+    print("- Automatic data transformation")
+    print("- Automatic context preservation")
+    print("- Clean, maintainable workflows")
 
-def show_yaml_usage() -> None:
-    """Show how to use the new YAML functionality."""
-    print("\n📝 YAML Usage Example:")
-    print("=" * 40)
-    print(create_yaml_equivalent())
+    print("\nThe enhanced loop mappers would solve the exact problems")
+    print("encountered in conversational AI workflows, making them")
+    print("much simpler and more robust.")
 
 
 if __name__ == "__main__":
-    # Run the demo
-    asyncio.run(run_conversational_demo())
-
-    # Show YAML usage
-    show_yaml_usage()
+    main()
