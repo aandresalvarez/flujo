@@ -15,6 +15,7 @@ class StubAgent:
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow due to architect pipeline execution
 async def test_architect_state_machine_completion(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that the Architect completes the full state machine flow successfully."""
 
@@ -82,6 +83,7 @@ async def test_architect_state_machine_completion(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow due to multiple architect pipeline runs
 async def test_architect_different_goal_types(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that the Architect handles different types of goals correctly."""
 
@@ -141,6 +143,7 @@ async def test_architect_different_goal_types(monkeypatch: pytest.MonkeyPatch) -
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow due to architect pipeline execution
 async def test_architect_context_persistence(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that the Architect maintains context throughout the pipeline execution."""
 
@@ -199,6 +202,7 @@ async def test_architect_context_persistence(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow due to architect pipeline execution with error handling
 async def test_architect_error_handling(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that the Architect handles errors gracefully and falls back to reliable defaults."""
 
@@ -271,6 +275,7 @@ async def test_architect_error_handling(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow due to multiple architect pipeline runs
 async def test_architect_performance_characteristics(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that the Architect performs consistently across multiple runs."""
 

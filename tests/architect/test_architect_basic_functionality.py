@@ -15,6 +15,7 @@ class StubAgent:
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow due to architect pipeline execution
 async def test_architect_basic_functionality(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test basic Architect functionality - pipeline builds and runs."""
 

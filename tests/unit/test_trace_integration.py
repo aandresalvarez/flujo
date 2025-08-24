@@ -13,6 +13,9 @@ from flujo.domain.dsl import Step, Pipeline
 from flujo.testing.utils import StubAgent
 from flujo.state.backends.sqlite import SQLiteBackend
 
+# Mark as very slow to exclude from fast suites
+pytestmark = pytest.mark.veryslow
+
 
 @pytest.mark.asyncio
 async def test_trace_saving_integration(tmp_path: Path) -> None:

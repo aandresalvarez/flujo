@@ -7,6 +7,11 @@ from flujo.architect.context import ArchitectContext
 from flujo.cli.helpers import create_flujo_runner, execute_pipeline_with_output_handling
 
 
+# These validation sweeps iterate over many malicious payloads and are inherently slow.
+# Mark the module as slow so they're excluded from fast suites by default.
+pytestmark = pytest.mark.slow
+
+
 @pytest.mark.integration
 def test_architect_handles_sql_injection_attempts():
     """Test: Architect safely handles SQL injection attempts in input."""

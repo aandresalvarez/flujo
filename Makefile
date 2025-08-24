@@ -65,57 +65,51 @@ typecheck: .uv ## Run static type checking with mypy
 # Testing & Coverage
 # ------------------------------------------------------------------------------
 
+# Global environment and safety defaults for pytest
+# Note: We disable plugin autoload to control which plugins are loaded
+# but we must explicitly load pytest-asyncio for async test support
+# For now, let's enable autoload to ensure pytest-asyncio works
+# export PYTEST_DISABLE_PLUGIN_AUTOLOAD ?= 1
+
 .PHONY: test
-test: .uv ## Run all tests
-	@echo "🧪 Running tests..."
-	CI=1 FLUJO_TEST_FORCE_EXIT=1 uv run pytest tests/
+test: .uv ## Run all tests via enhanced runner (robust, two-phase)
+	@echo "🧪 Running full test suite (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers auto --timeout 60 --split-slow --slow-workers 1 --slow-timeout 120
 
 .PHONY: test-fast
-test-fast: .uv ## Run fast tests in parallel (excludes slow, serial, and benchmark tests)
-	@echo "⚡ Running fast tests in parallel..."
-	@echo "📊 Test breakdown:"
-	@echo "   • Total tests: 2424"
-	@echo "   • Fast tests: 2266 (93.5%)"
-	@echo "   • Excluded: 158 (6.5% - slow/benchmark)"
-	@echo ""
-	@echo "🔄 Starting test execution with limited parallelism..."
-	@CI=1 uv run pytest tests/ -m "not slow and not serial and not benchmark" -n 4 --tb=short -q || \
-		(echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
-	@echo "✅ Fast tests completed!"
+test-fast: .uv ## Run fast tests in parallel with hang guards (excludes slow, veryslow, serial, and benchmark tests)
+	@echo "⚡ Running fast tests (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers auto --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
 
 .PHONY: test-fast-verbose
 test-fast-verbose: .uv ## Run fast tests with verbose output for debugging
-	@echo "🔍 Running fast tests with verbose output..."
-	CI=1 uv run pytest tests/ -m "not slow and not serial and not benchmark" -n 4 -v
+	@echo "🔍 Running fast tests with verbose output (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 --tb --pytest-args "-vv"
 
 .PHONY: test-fast-serial
-test-fast-serial: .uv ## Run fast tests serially (for debugging parallel issues)
-	@echo "🔧 Running fast tests serially for debugging..."
-	CI=1 uv run pytest tests/ -m "not slow and not serial and not benchmark" --tb=short -q
+test-fast-serial: .uv ## Run fast tests serially with hang guard (debug parallel issues)
+	@echo "🔧 Running fast tests serially (enhanced runner)..."
+	CI=1 FLUJO_TEST_FORCE_EXIT=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 1 --timeout 90 --faulthandler-timeout 60
 
 .PHONY: test-fast-conservative
-test-fast-conservative: .uv ## Run fast tests with conservative parallelism (2 workers)
-	@echo "🐌 Running fast tests with conservative parallelism..."
-	@echo "📊 Using 2 workers to minimize resource contention..."
-	CI=1 uv run pytest tests/ -m "not slow and not serial and not benchmark" -n 2 --tb=short -q
+test-fast-conservative: .uv ## Run fast tests with conservative parallelism (2 workers + hang guard)
+	@echo "🐌 Running fast tests with conservative parallelism (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 2 --timeout 90 --faulthandler-timeout 60
 
 .PHONY: test-robust
 test-robust: .uv ## Run tests with enhanced robustness and monitoring
-	@echo "🛡️ Running robust test suite with monitoring..."
-	@echo "📊 Enhanced error handling and resource monitoring..."
-	CI=1 uv run pytest tests/ -m "not slow and not serial and not benchmark" -n 4 --tb=short -q --maxfail=5
+	@echo "🛡️ Running robust test suite (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 --pytest-args "--maxfail=5 -q"
 
 .PHONY: test-stress
 test-stress: .uv ## Run stress tests to identify resource issues
-	@echo "💪 Running stress tests..."
-	@echo "🧠 Testing memory and CPU limits..."
-	CI=1 uv run pytest tests/ -m "stress" --timeout=300
+	@echo "💪 Running stress tests (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "stress" --workers 1 --timeout 300 --tb
 
 .PHONY: test-memory
 test-memory: .uv ## Run memory leak detection tests
-	@echo "🧠 Running memory leak tests..."
-	@echo "📊 Monitoring memory usage patterns..."
-	CI=1 uv run pytest tests/ -m "memory" --timeout=120
+	@echo "🧠 Running memory leak tests (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "memory" --workers 1 --timeout 120 --tb
 
 .PHONY: test-health-full
 test-health-full: .uv ## Run comprehensive test suite health check (full)
@@ -131,33 +125,33 @@ test-health-full: .uv ## Run comprehensive test suite health check (full)
 
 .PHONY: test-slow
 test-slow: .uv ## Run slow tests serially
-	@echo "🐌 Running slow tests serially..."
-	CI=1 uv run pytest tests/ -m "slow or serial or benchmark"
+	@echo "🐌 Running slow tests serially (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "slow or veryslow or serial or benchmark" --workers 1 --timeout 180 --tb
 
 .PHONY: test-parallel
 test-parallel: .uv ## Run all tests in parallel (excludes serial tests)
-	@echo "🚀 Running tests in parallel..."
-	CI=1 uv run pytest tests/ -m "not serial" -n auto
+	@echo "🚀 Running tests in parallel (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not serial" --workers auto --timeout 60
 
 .PHONY: test-unit
 test-unit: .uv ## Run unit tests only
-	@echo "🧪 Running unit tests..."
-	CI=1 uv run pytest tests/unit/
+	@echo "🧪 Running unit tests (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py tests/unit --workers auto --timeout 60
 
 .PHONY: test-integration
 test-integration: .uv ## Run integration tests only
-	@echo "🔗 Running integration tests..."
-	CI=1 uv run pytest tests/integration/
+	@echo "🔗 Running integration tests (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py tests/integration --workers auto --timeout 60
 
 .PHONY: test-bench
 test-bench: .uv ## Run benchmark tests only
-	@echo "📊 Running benchmark tests..."
-	CI=1 uv run pytest tests/benchmarks/
+	@echo "📊 Running benchmark tests (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py tests/benchmarks --workers 1 --timeout 300 --tb
 
 .PHONY: test-e2e
 test-e2e: .uv ## Run end-to-end tests only
-	@echo "🌐 Running end-to-end tests..."
-	CI=1 uv run pytest tests/e2e/
+	@echo "🌐 Running end-to-end tests (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py tests/e2e --workers auto --timeout 120 --tb
 
 .PHONY: testcov
 testcov: .uv ## Run tests and generate an HTML coverage report
@@ -169,7 +163,7 @@ testcov: .uv ## Run tests and generate an HTML coverage report
 .PHONY: testcov-fast
 testcov-fast: .uv ## Run fast tests with coverage in parallel
 	@echo "⚡ Running fast tests with coverage in parallel..."
-	@uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n auto
+	@uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not veryslow and not serial and not benchmark" -n auto
 	@uv run coverage html
 	@echo "\n✅ Coverage report generated in 'htmlcov/'. Open htmlcov/index.html to view."
 
@@ -201,7 +195,7 @@ test-analyze: .uv ## Analyze test collection and categorization
 	@uv run pytest tests/ --collect-only -q | tail -1
 	@echo ""
 	@echo "Fast tests (run by test-fast):"
-	@uv run pytest tests/ -m "not slow and not serial and not benchmark" --collect-only -q | tail -1
+	@uv run pytest tests/ -m "not slow and not veryslow and not serial and not benchmark" --collect-only -q | tail -1
 	@echo ""
 	@echo "Slow/Benchmark tests (excluded):"
 	@uv run pytest tests/ -m "slow or serial or benchmark" --collect-only -q | tail -1
@@ -215,7 +209,7 @@ test-analyze: .uv ## Analyze test collection and categorization
 .PHONY: test-failing
 test-failing: .uv ## Run only failing tests to identify issues
 	@echo "🔍 Running only failing tests..."
-	CI=1 uv run pytest tests/ -m "not slow and not serial and not benchmark" --lf -v
+	CI=1 uv run pytest tests/ -m "not slow and not veryslow and not serial and not benchmark" --lf -v
 
 .PHONY: test-slow-marked
 test-slow-marked: .uv ## Show which tests are marked as slow
@@ -226,6 +220,121 @@ test-slow-marked: .uv ## Show which tests are marked as slow
 test-benchmark-marked: .uv ## Show which tests are marked as benchmark
 	@echo "📊 Tests marked as benchmark:"
 	@uv run pytest tests/ -m "benchmark" --collect-only -q
+
+# ------------------------------------------------------------------------------
+# Advanced Test Execution & Debugging Targets
+# ------------------------------------------------------------------------------
+
+.PHONY: test-hang-guard
+test-hang-guard: .uv ## Find what's hanging: hard timeouts + stack dumps on stall (enhanced runner)
+	@echo "🧯 Hang guard: hard timeouts + stack dumps (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers 4 --timeout 60 --faulthandler-timeout 60 --tb --pytest-args "-p pytest_forked"
+
+.PHONY: test-top-slowest
+test-top-slowest: .uv ## Show the slowest test offenders (fast subset)
+	@echo "🐢 Top slow tests (running fast subset for quick analysis):"
+	@echo "Reporting top slow tests with durations..."
+	CI=1 uv run pytest tests/ \
+		-m "not slow and not veryslow and not serial and not benchmark" \
+		-q -k "" -p pytest_asyncio
+
+.PHONY: test-loop
+test-loop: .uv ## Loop on first failure (tight local debug loop)
+	@echo "🔁 Loop on first failure (xdist -f)..."
+	CI=1 uv run pytest tests/ -f -x -q
+
+
+.PHONY: test-changed
+test-changed: .uv ## Run only tests impacted by recent changes (testmon)
+	@echo "🧩 Running tests impacted by recent changes (testmon)..."
+	CI=1 uv run pytest tests/ --testmon -q \
+		-p pytest_testmon
+
+.PHONY: test-shard
+test-shard: .uv ## Run deterministic shard (for CI: make test-shard SHARD_INDEX=0 SHARD_COUNT=4)
+	@echo "🧱 Running shard $(SHARD_INDEX)/$(SHARD_COUNT) (0-indexed input) ..."
+	@GROUP_IDX=$$(( $(SHARD_INDEX) + 1 )); \
+	CI=1 uv run pytest tests/ \
+		--splits $(SHARD_COUNT) --group $$GROUP_IDX \
+		-n auto --dist=loadfile \
+		-p pytest_split -q
+
+.PHONY: test-serial
+test-serial: .uv ## Run serial/slow/benchmark tests in isolation (fixes parallel issues)
+	@echo "🧵 Running serial/slow/benchmark tests in isolation (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "slow or serial or benchmark" --workers 1 --timeout 180 --tb
+
+.PHONY: test-flake-harden
+test-flake-harden: .uv ## Auto-rerun flaky test failures up to 2x (CI-only recommended)
+	@echo "🧷 Rerunning flaky test failures up to 2x..."
+	CI=1 uv run pytest tests/ --reruns 2 --reruns-delay 1 -q \
+		-p pytest_rerunfailures
+
+.PHONY: test-deadfixtures
+test-deadfixtures: .uv ## Find unused/overlapping fixtures that slow collection/execution
+	@echo "🧟 Finding dead fixtures..."
+	CI=1 uv run pytest tests/ --deadfixtures -q \
+		-p pytest_deadfixtures
+
+.PHONY: test-profile
+test-profile: .uv ## Profile test execution to find hot spots
+	@echo "📊 Profiling test execution..."
+	CI=1 uv run pytest tests/ --profile -q
+
+.PHONY: test-random-order
+test-random-order: .uv ## Run tests in random order to reveal order dependencies
+	@echo "🎲 Running tests in random order..."
+	CI=1 uv run pytest tests/ --randomly-seed=auto -n auto \
+		-p pytest_randomly
+
+.PHONY: test-forked
+test-forked: .uv ## Run each test in fresh process to isolate state/leaks (enhanced runner)
+	@echo "🔀 Running tests in fresh processes (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers 4 --timeout 60 --pytest-args "--forked -p pytest_forked"
+
+.PHONY: test-timeout-strict
+test-timeout-strict: .uv ## Run with strict timeouts for debugging hangs (enhanced runner)
+	@echo "⏰ Running with strict timeouts (enhanced runner)..."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers auto --timeout 30 --faulthandler-timeout 60 --tb
+
+.PHONY: test-collection-only
+test-collection-only: .uv ## Check test collection without running (fast validation)
+	@echo "📋 Checking test collection..."
+	uv run pytest tests/ --collect-only -q
+
+.PHONY: test-analyze-performance
+test-analyze-performance: .uv ## Comprehensive performance analysis
+	@echo "📊 Comprehensive test performance analysis..."
+	@echo "1. Test collection time..."
+	@time uv run pytest tests/ --collect-only -q > /dev/null
+	@echo ""
+	@echo "2. Top slow tests (unit tests only for speed)..."
+	@CI=1 uv run pytest tests/unit/ --durations=20 --durations-min=0.1 -q -k "" \
+		-p pytest_asyncio
+	@echo ""
+	@echo "3. Memory usage check..."
+	@CI=1 uv run pytest tests/ -m "memory" --timeout=60 -q \
+		-p pytest_asyncio
+
+.PHONY: test-slow-analysis
+test-slow-analysis: .uv ## Quick analysis of slow tests without running them
+	@echo "🐌 Analyzing slow tests without execution..."
+	@echo "1. Tests marked as slow:"
+	@uv run pytest tests/ -m "slow" --collect-only -q
+	@echo ""
+	@echo "2. Tests marked as benchmark:"
+	@uv run pytest tests/ -m "benchmark" --collect-only -q
+	@echo ""
+	@echo "3. Tests marked as serial:"
+	@uv run pytest tests/ -m "serial" --collect-only -q
+	@echo ""
+	@echo "4. Tests with timeout markers:"
+	@uv run pytest tests/ -m "timeout" --collect-only -q
+
+.PHONY: test-quick-check
+test-quick-check: .uv ## Quick test to verify pytest-asyncio is working (enhanced runner)
+	@echo "🔍 Quick async test via enhanced runner..."
+	CI=1 uv run python scripts/run_targeted_tests.py tests/unit/test_validation.py::test_base_validator_initialization --timeout 60 --tb --fail-fast --pytest-args "-vv"
 
 
 # ------------------------------------------------------------------------------
@@ -252,7 +361,39 @@ help: ## ✨ Show this help message
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@awk '/^[a-zA-Z0-9_-]+:.*?##/ { \
+	@echo ""
+	@echo "🚀 Development & Setup:"
+	@awk '/^[a-zA-Z0-9_-]+:.*?##/ && /install|sync|format|lint|typecheck/ { \
+		helpMessage = match($$0, /## (.*)/); \
+		if (helpMessage) { \
+			recipe = $$1; \
+			sub(/:/, "", recipe); \
+			printf "  \033[36m%-20s\033[0m %s\n", recipe, substr($$0, RSTART + 3, RLENGTH); \
+		} \
+	}' $(MAKEFILE_LIST)
+	@echo ""
+	@echo "🧪 Core Testing:"
+	@awk '/^[a-zA-Z0-9_-]+:.*?##/ && /test[^-]/ && !/test-analyze|test-deadfixtures|test-profile|test-random-order|test-forked|test-timeout-strict|test-collection-only/ { \
+		helpMessage = match($$0, /## (.*)/); \
+		if (helpMessage) { \
+			recipe = $$1; \
+			sub(/:/, "", recipe); \
+			printf "  \033[36m%-20s\033[0m %s\n", recipe, substr($$0, RSTART + 3, RLENGTH); \
+		} \
+	}' $(MAKEFILE_LIST)
+	@echo ""
+	@echo "🔧 Advanced Testing & Debugging:"
+	@awk '/^[a-zA-Z0-9_-]+:.*?##/ && /test-analyze|test-deadfixtures|test-profile|test-random-order|test-forked|test-timeout-strict|test-collection-only|test-hang-guard|test-top-slowest|test-loop|test-changed|test-shard|test-serial|test-flake-harden/ { \
+		helpMessage = match($$0, /## (.*)/); \
+		if (helpMessage) { \
+			recipe = $$1; \
+			sub(/:/, "", recipe); \
+			printf "  \033[36m%-20s\033[0m %s\n", recipe, substr($$0, RSTART + 3, RLENGTH); \
+		} \
+	}' $(MAKEFILE_LIST)
+	@echo ""
+	@echo "📦 Package & Quality:"
+	@awk '/^[a-zA-Z0-9_-]+:.*?##/ && /package|all/ { \
 		helpMessage = match($$0, /## (.*)/); \
 		if (helpMessage) { \
 			recipe = $$1; \

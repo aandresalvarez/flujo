@@ -706,7 +706,7 @@ def build_pipeline_from_blueprint(
                 compiled_imports=compiled_imports,
             )
         )
-    p = Pipeline.model_construct(steps=steps)
+    p: Pipeline[Any, Any] = Pipeline.model_construct(steps=steps)
     # Best-effort finalize types after Pipeline construction
     try:
         for st in p.steps:
@@ -870,6 +870,12 @@ def load_pipeline_blueprint_from_yaml(
             _load_skills_entry_points()
     except Exception:
         # Never fail blueprint loading due to skills discovery issues
+        pass
+    # Ensure core builtin skills are registered so YAML agent ids like
+    # 'flujo.builtins.stringify' resolve without requiring a separate import.
+    try:  # best-effort; never fail if unavailable
+        import flujo.builtins  # noqa: F401
+    except Exception:
         pass
     try:
         data = yaml.safe_load(yaml_text)

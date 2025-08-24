@@ -276,6 +276,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             self.usage_limits = usage_limits
 
         self.hooks: list[Any] = []
+        # Tracing: honor caller's enable_tracing flag in all environments
+        # Do not auto-disable during tests; tests assert presence of trace data.
         if enable_tracing:
             from flujo.tracing.manager import TraceManager
 
@@ -607,7 +609,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         state_created_at: datetime | None = None
         # Initialize state manager and load existing state if available
         state_manager: StateManager[ContextT] = StateManager[ContextT](self.state_backend)
-        run_id_for_state = run_id or state_manager.get_run_id_from_context(current_context_instance)
+        # Determine run_id early for tracing; prefer explicit run_id, else context.run_id if present
+        run_id_for_state = run_id or getattr(current_context_instance, "run_id", None)
+
+        # If we didn't get an explicit run_id, consult the state manager
+        # to support durable resume semantics
+        if run_id_for_state is None:
+            run_id_for_state = state_manager.get_run_id_from_context(current_context_instance)
 
         if run_id_for_state:
             (

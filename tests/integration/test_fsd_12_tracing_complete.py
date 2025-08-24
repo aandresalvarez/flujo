@@ -16,6 +16,9 @@ from flujo.application.runner import Flujo
 from flujo.domain.models import PipelineContext
 from flujo.state.backends.sqlite import SQLiteBackend
 
+# Tracing + SQLite persistence can be slow under some environments.
+pytestmark = pytest.mark.slow
+
 
 class FSD12TracingTestContext(PipelineContext):
     """Test context for tracing tests."""

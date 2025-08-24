@@ -34,28 +34,56 @@ class StepValueProxy:
 
 
 class TemplateContextProxy:
-    """Proxy base context with a fallback to steps outputs by name."""
+    """Proxy base context with a fallback to steps outputs by name.
+
+    Supports both mapping-like and attribute-style access on the base context.
+    """
 
     def __init__(
         self,
-        base: Optional[Mapping[str, Any]] = None,
+        base: Optional[Any] = None,
         *,
         steps: Optional[Mapping[str, Any]] = None,
     ) -> None:
-        self._base: Mapping[str, Any] = base or {}
+        self._base: Any = base if base is not None else {}
         self._steps: Mapping[str, Any] = steps or {}
 
     def __getattr__(self, name: str) -> Any:
-        if name in self._base:
-            return self._base[name]
+        # Mapping-style lookup
+        try:
+            from collections.abc import Mapping as _Mapping
+
+            if isinstance(self._base, _Mapping) and name in self._base:
+                return self._base[name]
+        except Exception:
+            pass
+        # Attribute-style lookup
+        try:
+            val = getattr(self._base, name, None)
+            if val is not None:
+                return val
+        except Exception:
+            pass
+        # Fallback to prior step outputs by name
         if name in self._steps:
             v = self._steps[name]
             return v if isinstance(v, StepValueProxy) else StepValueProxy(v)
         raise AttributeError(name)
 
     def __getitem__(self, key: str) -> Any:  # pragma: no cover - simple delegator
-        if key in self._base:
-            return self._base[key]
+        try:
+            from collections.abc import Mapping as _Mapping
+
+            if isinstance(self._base, _Mapping) and key in self._base:
+                return self._base[key]
+        except Exception:
+            pass
+        try:
+            val = getattr(self._base, key, None)
+            if val is not None:
+                return val
+        except Exception:
+            pass
         if key in self._steps:
             v = self._steps[key]
             return v if isinstance(v, StepValueProxy) else StepValueProxy(v)

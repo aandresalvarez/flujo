@@ -32,7 +32,7 @@ import re
 
 def load_pipeline_from_file(
     pipeline_file: str, pipeline_name: str = "pipeline"
-) -> tuple[Pipeline[Any, Any], str]:
+) -> tuple["Pipeline[Any, Any]", str]:
     """Load a pipeline from a Python file.
 
     Args:
@@ -109,7 +109,7 @@ def load_pipeline_from_file(
     return pipeline_obj, pipeline_name
 
 
-def load_pipeline_from_yaml_file(yaml_path: str) -> Pipeline[Any, Any]:
+def load_pipeline_from_yaml_file(yaml_path: str) -> "Pipeline[Any, Any]":
     """Load a pipeline from a YAML blueprint file (progressive v0).
 
     This relies on flujo.domain.blueprint loader and returns a Pipeline.
@@ -952,6 +952,23 @@ def execute_pipeline_with_output_handling(
                     # Never fail cleanup
                     pass
 
+                # Aggressively release caches that can inflate RSS across runs
+                try:
+                    # Clear skills registry to avoid retaining heavy factory metadata across executions
+                    from flujo.infra.skill_registry import get_skill_registry
+
+                    reg = get_skill_registry()
+                    if hasattr(reg, "_entries") and isinstance(getattr(reg, "_entries"), dict):
+                        reg._entries.clear()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+                # Final garbage collection pass after cache cleanup
+                try:
+                    gc.collect()
+                except Exception:
+                    pass
+
 
 def display_pipeline_results(
     result: Any,
@@ -1175,7 +1192,7 @@ def load_mermaid_code(file: str, object_name: str, detail_level: str) -> str:
     pipeline, _ = load_pipeline_from_file(file, object_name)
     if not hasattr(pipeline, "to_mermaid_with_detail_level"):
         raise Exit(1)
-    return cast(str, pipeline.to_mermaid_with_detail_level(detail_level))
+    return pipeline.to_mermaid_with_detail_level(detail_level)
 
 
 def get_pipeline_step_names(path: str) -> list[str]:

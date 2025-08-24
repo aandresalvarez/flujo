@@ -15,6 +15,7 @@ class StubAgent:
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow due to architect pipeline execution
 async def test_architect_plan_approval_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that the Architect correctly handles plan approval flow (the actual implemented behavior)."""
 

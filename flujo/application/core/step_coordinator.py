@@ -247,8 +247,19 @@ class StepCoordinator(Generic[ContextT]):
                                 )
                                 yield step_outcome
                             elif isinstance(step_outcome, _Paused):
-                                # Forward Paused to the manager so it can set pause_message and handle abort
-                                yield step_outcome
+                                # Normalize Paused control flow to PipelineAbortSignal and mark context
+                                try:
+                                    if isinstance(context, PipelineContext):
+                                        context.scratchpad["status"] = "paused"
+                                        context.scratchpad["pause_message"] = str(
+                                            getattr(step_outcome, "message", "Paused for HITL")
+                                        )
+                                        scratch = context.scratchpad
+                                        if "paused_step_input" not in scratch:
+                                            scratch["paused_step_input"] = data
+                                except Exception:
+                                    pass
+                                raise PipelineAbortSignal("Paused for HITL")
                             else:
                                 # Unknown control outcome: propagate as abort
                                 raise PipelineAbortSignal("Paused for HITL")

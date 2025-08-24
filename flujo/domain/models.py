@@ -434,5 +434,7 @@ class PipelineContext(BaseModel):
         default_factory=list,
         description="A log of commands executed by an agentic loop pipeline.",
     )
+    # Utility counter used by test hooks; kept in base context for simplicity
+    call_count: int = 0
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}

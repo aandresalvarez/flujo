@@ -1521,13 +1521,28 @@ def _register_builtins() -> None:
 
         # HITL: prompt user for approval
         async def ask_user(question: Optional[str] = None) -> str:
+            """Ask the user for input, with non-interactive fallback.
+
+            Behavior:
+            - If stdin is non-interactive (e.g., piped input), return the provided
+              value directly without prompting. This enables CLI usage like:
+                  echo "goal" | flujo run pipeline.yaml
+            - Otherwise, prompt interactively using the question (or a default).
+            """
             try:
+                import sys as _sys
+
+                # Non-interactive: treat provided value as the answer and do not prompt
+                if not _sys.stdin.isatty():
+                    return str(question or "").strip()
+
                 import typer as _typer
 
                 q = question or "Does this plan look correct? (Y/n)"
                 resp = _typer.prompt(q, default="Y")
                 return str(resp)
             except Exception:
+                # Conservative fallback to an affirmative response to avoid breaking flows
                 return "Y"
 
         reg.register(

@@ -613,7 +613,7 @@ async def _generate_yaml_from_tool_selections(
     return await _generate_yaml_from_plan(None, context=context)
 
 
-def _build_state_machine_pipeline() -> Pipeline[Any, Any]:
+def _build_state_machine_pipeline() -> "Pipeline[Any, Any]":
     """Programmatically build the full Architect state machine."""
     # GatheringContext: discover skills + analyze project + framework schema
     reg = get_skill_registry()
@@ -668,7 +668,7 @@ def _build_state_machine_pipeline() -> Pipeline[Any, Any]:
     async def _schema_fallback(*_a: Any, **_k: Any) -> Dict[str, Any]:
         return {"flujo_schema": {}}
 
-    get_schema: Union[Step[Any, Any], Pipeline[Any, Any]] = Step.from_callable(
+    get_schema: Union["Step[Any, Any]", "Pipeline[Any, Any]"] = Step.from_callable(
         _schema_fallback, name="MapFrameworkSchema", updates_context=True
     )
 
@@ -906,7 +906,7 @@ def _build_state_machine_pipeline() -> Pipeline[Any, Any]:
     tool_match_body = Pipeline.from_step(
         Step.from_callable(_match_one_tool, name="ToolMatcher", updates_context=False)
     )
-    map_tools = MapStep(
+    map_tools: "MapStep[Any]" = MapStep(
         name="MapToolMatcher",
         iterable_input="prepared_steps_for_mapping",
         pipeline_to_run=tool_match_body,

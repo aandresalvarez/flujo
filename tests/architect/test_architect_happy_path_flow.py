@@ -15,6 +15,7 @@ class StubAgent:
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow due to architect pipeline execution
 async def test_architect_happy_path_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that the Architect state machine correctly orchestrates the flow from one state to the next."""
 

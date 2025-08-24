@@ -1,0 +1,29 @@
+version: "0.1"
+name: "template_fallbacks_workaround"
+
+steps:
+  - kind: step
+    name: check_prompt
+    agent:
+      id: "flujo.builtins.stringify"
+    input: "{{ context.initial_prompt }}"
+    
+  - kind: step
+    name: use_fallback
+    agent:
+      id: "flujo.builtins.stringify"
+    input: "{{ steps.check_prompt or 'Fallback: No prompt provided' }}"
+    
+  - kind: step
+    name: show_workarounds
+    agent:
+      id: "flujo.builtins.stringify"
+    input: |
+      Workarounds for conditional template issue:
+      
+      1. Explicit Conditional Logic: Use separate steps with explicit checks
+      2. Default Values: Set explicit default values in context
+      3. Separate Steps: Handle fallback logic in separate pipeline steps
+      
+      Current result: {{ steps.use_fallback }}
+

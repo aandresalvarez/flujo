@@ -23,6 +23,7 @@ This is the concise contributor guide for the Flujo repository. For deeper archi
 - **Formatting**: `ruff format`; lint with `ruff check` (fix or justify).
 
 ## Testing Guidelines
+- REQUIRED: See the full testing guide in [docs/testing.md](docs/testing.md). This is the authoritative source for how to run, categorize, and analyze tests in Flujo.
 - **Framework**: `pytest` with markers `fast`, `slow`, `serial`, `benchmark`, `e2e`.
 - **Layout**: Place tests under `tests/<area>/test_*.py`.
 - **Run**: Iterate with `make test-fast`; verify with `make test`.

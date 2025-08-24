@@ -724,7 +724,7 @@ async def _execute_simple_step_policy_impl(
     if hasattr(max_retries, "_mock_name") or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
         max_retries = 2
     # Ensure at least one attempt
-    telemetry.logfire.info(f"[Policy] SimpleStep max_retries (total attempts): {total_attempts}")
+    telemetry.logfire.debug(f"[Policy] SimpleStep max_retries (total attempts): {total_attempts}")
     # Attempt count semantics: max_retries equals total attempts expected by tests
     # Track primary (pre-fallback) usage totals to aggregate into fallback result
     primary_cost_usd_total: float = 0.0
@@ -1338,26 +1338,12 @@ async def _execute_simple_step_policy_impl(
                 if getattr(step, "updates_context", False) and context is not None:
                     update_data = _build_context_update(result.output)
                     if update_data:
-                        try:
-                            telemetry.logfire.info(
-                                f"[SimplePolicy] Injecting updates for step '{getattr(step, 'name', '?')}', update_keys={list(update_data.keys())}"
-                            )
-                            telemetry.logfire.info(
-                                f"[SimplePolicy] Scratchpad before: {getattr(context, 'scratchpad', None)}"
-                            )
-                        except Exception:
-                            pass
                         _ = _inject_context(context, update_data, type(context))
-                        try:
-                            telemetry.logfire.info(
-                                f"[SimplePolicy] Scratchpad after: {getattr(context, 'scratchpad', None)}"
-                            )
-                        except Exception:
-                            pass
             except Exception:
                 pass
 
             # Record successful step output into scratchpad['steps'] for templating references
+            # Store a compact string snapshot to avoid memory bloat in long runs.
             try:
                 if context is not None:
                     sp = getattr(context, "scratchpad", None)
@@ -1372,7 +1358,21 @@ async def _execute_simple_step_policy_impl(
                         if not isinstance(steps_map, dict):
                             steps_map = {}
                             sp["steps"] = steps_map
-                        steps_map[getattr(step, "name", "")] = result.output
+                        # Compact snapshot: stringify and cap size
+                        try:
+                            val = result.output
+                            if isinstance(val, bytes):
+                                try:
+                                    val = val.decode("utf-8", errors="ignore")
+                                except Exception:
+                                    val = str(val)
+                            else:
+                                val = str(val)
+                            if len(val) > 1024:
+                                val = val[:1024]
+                            steps_map[getattr(step, "name", "")] = val
+                        except Exception:
+                            steps_map[getattr(step, "name", "")] = ""
             except Exception:
                 pass
 

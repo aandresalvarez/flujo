@@ -13,14 +13,34 @@ must be imported from their respective modules:
 This avoids import cycles and ensures robust usage.
 """
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from .step import StepConfig, Step, step, adapter_step
+
+if TYPE_CHECKING:
+    from .pipeline import Pipeline
+    from .loop import LoopStep, MapStep
+    from .conditional import ConditionalStep
+    from .parallel import ParallelStep
+    from .state_machine import StateMachineStep
+    from .step import MergeStrategy, BranchFailureStrategy, BranchKey, HumanInTheLoopStep
+    from .dynamic_router import DynamicParallelRouterStep
 
 __all__ = [
     "StepConfig",
     "Step",
     "step",
     "adapter_step",
+    "Pipeline",
+    "LoopStep",
+    "MapStep",
+    "ConditionalStep",
+    "ParallelStep",
+    "StateMachineStep",
+    "MergeStrategy",
+    "BranchFailureStrategy",
+    "BranchKey",
+    "HumanInTheLoopStep",
+    "DynamicParallelRouterStep",
 ]
 
 # Lazy import pattern for all other symbols

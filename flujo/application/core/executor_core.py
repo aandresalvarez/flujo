@@ -1717,7 +1717,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         total_attempts = max(1, retries_config + 1)
         if stream:
             total_attempts = 1
-        telemetry.logfire.info(f"[Core] SimpleStep max_retries (total attempts): {total_attempts}")
+        telemetry.logfire.debug(f"[Core] SimpleStep max_retries (total attempts): {total_attempts}")
 
         # Track pre-fallback primary usage for aggregation
         primary_tokens_total: int = 0
@@ -1758,11 +1758,23 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 if hasattr(step, "meta") and isinstance(step.meta, dict):
                     templ_spec = step.meta.get("templated_input")
                 if templ_spec is not None:
+                    # Align templating behavior with step policies using proxies and steps map
                     from flujo.utils.prompting import AdvancedPromptFormatter
+                    from flujo.utils.template_vars import (
+                        get_steps_map_from_context,
+                        TemplateContextProxy,
+                        StepValueProxy,
+                    )
 
+                    steps_map = get_steps_map_from_context(attempt_context)
+                    steps_wrapped: Dict[str, Any] = {
+                        k: v if isinstance(v, StepValueProxy) else StepValueProxy(v)
+                        for k, v in steps_map.items()
+                    }
                     fmt_context: Dict[str, Any] = {
-                        "context": attempt_context,
+                        "context": TemplateContextProxy(attempt_context, steps=steps_wrapped),
                         "previous_step": data,
+                        "steps": steps_wrapped,
                     }
                     if isinstance(templ_spec, str) and ("{{" in templ_spec and "}}" in templ_spec):
                         data = AdvancedPromptFormatter(templ_spec).format(**fmt_context)

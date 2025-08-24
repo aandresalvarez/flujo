@@ -4,6 +4,7 @@ import pytest
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow due to architect pipeline execution
 async def test_architect_fallback_functionality(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that the Architect's fallback functionality works correctly."""
 
@@ -143,6 +144,7 @@ async def test_architect_fallback_functionality(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Mark as slow due to architect pipeline execution
 async def test_architect_http_goal_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that the Architect correctly handles HTTP goals with fallback logic."""
 

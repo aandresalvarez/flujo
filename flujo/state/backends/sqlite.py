@@ -15,6 +15,7 @@ from typing import (
     Any,
     Awaitable,
     Callable,
+    Coroutine,
     Dict,
     List,
     Optional,
@@ -25,6 +26,7 @@ from typing import (
 
 import aiosqlite
 import os
+import atexit
 
 from .base import StateBackend
 from flujo.infra import telemetry
@@ -266,6 +268,38 @@ def _validate_column_definition(column_def: str) -> bool:
     return True
 
 
+def _run_coro_sync(coro: "Coroutine[Any, Any, Any]") -> Any:
+    """Run an async coroutine from sync context, even if a loop exists.
+
+    This mirrors the safe pattern used elsewhere in the project to ensure we can
+    close resources at interpreter shutdown without hanging.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: Any = None
+    exc: BaseException | None = None
+
+    def _target() -> None:
+        nonlocal result, exc
+        try:
+            result = asyncio.run(coro)
+        except BaseException as e:  # pragma: no cover - unlikely
+            exc = e
+
+    import threading as _threading
+
+    t = _threading.Thread(target=_target, name="sqlite-backend-shutdown")
+    t.daemon = True
+    t.start()
+    t.join()
+    if exc:
+        raise exc
+    return result
+
+
 class SQLiteBackend(StateBackend):
     """SQLite-backed persistent storage for workflow state with optimized schema."""
 
@@ -274,6 +308,9 @@ class SQLiteBackend(StateBackend):
     )
     # Thread-local locks used in CLI/no-event-loop contexts for asyncio.Lock deduplication
     _thread_file_locks: Dict[int, Dict[str, asyncio.Lock]] = {}
+
+    # Track live instances for best-effort shutdown at interpreter exit
+    _instances: "weakref.WeakSet[SQLiteBackend]" = weakref.WeakSet()
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
@@ -288,6 +325,12 @@ class SQLiteBackend(StateBackend):
         self._file_lock: Optional[asyncio.Lock] = None
         self._file_lock_key = str(self.db_path.absolute())
 
+        # Register instance for process-exit cleanup to prevent lingering threads
+        try:
+            SQLiteBackend._instances.add(self)
+        except Exception:
+            pass
+
     async def shutdown(self) -> None:
         """Close connection pool and release resources to avoid lingering threads."""
         try:
@@ -300,6 +343,24 @@ class SQLiteBackend(StateBackend):
         except Exception:
             # Defensive: never raise during shutdown
             pass
+
+    @classmethod
+    def shutdown_all(cls) -> None:
+        """Best-effort synchronous shutdown of all live SQLiteBackend instances.
+
+        This prevents pytest processes from lingering due to aiosqlite worker
+        threads when connections remain open at interpreter shutdown.
+        """
+        try:
+            instances = list(cls._instances)
+        except Exception:
+            instances = []
+        for inst in instances:
+            try:
+                _run_coro_sync(inst.shutdown())
+            except Exception:
+                # Best-effort cleanup; ignore shutdown errors
+                pass
 
     def _get_file_lock(self) -> asyncio.Lock:
         """Get the file lock for the current event loop with robust fallback handling."""
@@ -1823,3 +1884,10 @@ class SQLiteBackend(StateBackend):
                 await db.execute("PRAGMA foreign_keys = ON")
                 await db.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
                 await db.commit()
+
+
+# Ensure we shut down any pooled connections on interpreter exit
+try:
+    atexit.register(SQLiteBackend.shutdown_all)
+except Exception:
+    pass
