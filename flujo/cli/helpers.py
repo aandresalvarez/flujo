@@ -28,6 +28,7 @@ from flujo.domain.pipeline_validation import ValidationReport
 from flujo.infra import telemetry as _telemetry
 from pathlib import Path
 import re
+import sys
 
 
 def load_pipeline_from_file(
@@ -198,6 +199,54 @@ def parse_context_data(
             raise Exit(1)
 
     return None
+
+
+def resolve_initial_input(input_data: Optional[str]) -> str:
+    """Resolve the initial input to feed the pipeline.
+
+    Precedence:
+    1) Explicit ``--input`` value. If value is "-", read from stdin.
+    2) ``FLUJO_INPUT`` environment variable when set.
+    3) If stdin is piped (non-TTY), read from stdin.
+    4) Fallback to empty string (pipelines that don't require input).
+
+    Args:
+        input_data: The value provided via ``--input`` option, if any.
+
+    Returns:
+        The resolved input string (possibly empty).
+    """
+    # 1) Explicit CLI value takes precedence
+    if input_data is not None:
+        # Conventional "-" means read from stdin
+        if input_data.strip() == "-":
+            try:
+                return sys.stdin.read().strip()
+            except Exception:
+                return ""
+        return input_data
+
+    # 2) Environment variable fallback
+    try:
+        env_val = os.environ.get("FLUJO_INPUT")
+        if isinstance(env_val, str) and env_val != "":
+            return env_val
+    except Exception:
+        pass
+
+    # 3) Read from stdin if piped (or when isatty is unavailable)
+    try:
+        is_tty = getattr(sys.stdin, "isatty", None)
+        if not (callable(is_tty) and bool(is_tty())):
+            try:
+                return sys.stdin.read().strip()
+            except Exception:
+                return ""
+    except Exception:
+        pass
+
+    # 4) Safe fallback
+    return ""
 
 
 def validate_context_model(
@@ -740,7 +789,6 @@ def setup_run_command_environment(
     Raises:
         Exit: If setup fails
     """
-    import sys
     import runpy
 
     # Set up JSON output mode
@@ -749,13 +797,8 @@ def setup_run_command_environment(
     # Load the pipeline
     pipeline_obj, pipeline_name = load_pipeline_from_file(pipeline_file, pipeline_name)
 
-    # Parse input data
-    if input_data is None:
-        # Try to get input from stdin if no --input provided
-        if not sys.stdin.isatty():
-            input_data = sys.stdin.read().strip()
-        else:
-            raise Exit(1)
+    # Resolve initial input robustly (CLI flag, env var, piped stdin, fallback)
+    input_data = resolve_initial_input(input_data)
 
     # Handle context model
     context_model_class = None
@@ -954,12 +997,22 @@ def execute_pipeline_with_output_handling(
 
                 # Aggressively release caches that can inflate RSS across runs
                 try:
-                    # Clear skills registry to avoid retaining heavy factory metadata across executions
+                    # Clear dynamic skills but preserve built-in registrations
                     from flujo.infra.skill_registry import get_skill_registry
 
                     reg = get_skill_registry()
-                    if hasattr(reg, "_entries") and isinstance(getattr(reg, "_entries"), dict):
-                        reg._entries.clear()  # type: ignore[attr-defined]
+                    entries = getattr(reg, "_entries", None)
+                    if isinstance(entries, dict):
+                        preserved: dict[str, Any] = {
+                            k: v
+                            for k, v in list(entries.items())
+                            if isinstance(k, str)
+                            and (
+                                k.startswith("flujo.builtins.") or k.startswith("flujo.architect.")
+                            )
+                        }
+                        entries.clear()
+                        entries.update(preserved)
                 except Exception:
                     pass
 

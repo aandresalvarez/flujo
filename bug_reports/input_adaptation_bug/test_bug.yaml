@@ -1,0 +1,15 @@
+version: "0.1"
+name: "input_adaptation_bug_test"
+
+steps:
+  - kind: step
+    name: get_input
+    agent:
+      id: "flujo.builtins.ask_user"
+    input: "{{ context.initial_prompt or 'What do you want to do today?' }}"
+    
+  - kind: step
+    name: process_input
+    agent:
+      id: "flujo.builtins.stringify"
+    input: "Processing: {{ steps.get_input }}"

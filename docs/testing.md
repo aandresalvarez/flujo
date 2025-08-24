@@ -34,6 +34,11 @@ Flujo's test suite has been completely optimized for better performance, reliabi
 - **Command**: `make test-slow`
 - **Use Case**: Performance validation, comprehensive testing
 
+#### What belongs in slow tests?
+- Benchmarks and performance measurements (`@pytest.mark.benchmark` + `@pytest.mark.slow`).
+- Human-in-the-loop (HITL) and stateful resume tests (SQLite-backed) — mark `@pytest.mark.slow` and `@pytest.mark.serial`.
+- Trace replay/persistence integration — mark `@pytest.mark.slow`.
+
 ### Serial Tests
 - **Execution**: Always serial
 - **Reason**: SQLite concurrency, resource sharing, etc.
@@ -247,6 +252,11 @@ async def test_long_operation():
     """Test with specific timeout."""
     pass
 ```
+
+### Marking Guidance (Required)
+- Prefer module-level `pytestmark` for uniform categorization in benchmark/HITL modules.
+- Ensure any test that interacts with interactive steps or persistent state backends is marked `slow` (and `serial` when DB contention is possible).
+- Avoid adding kexpr-based exclusions in Makefiles for specific tests; use markers so `make test-fast` selection remains stable.
 
 ## Parallel Execution Strategy
 

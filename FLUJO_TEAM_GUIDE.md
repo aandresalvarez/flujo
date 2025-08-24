@@ -24,6 +24,21 @@ Notes:
 - Always access configuration through `ConfigManager`; do not read `flujo.toml` directly.
 - Integration tests set `FLUJO_ARCHITECT_STATE_MACHINE=1`; unit tests run with `FLUJO_TEST_MODE=1`.
 
+## **CLI I/O Semantics (Team Standard)**
+
+- `flujo run` must support standard Unix piping and non-interactive usage.
+- Input resolution precedence (implemented in CLI layer only):
+  1) `--input VALUE` (treat `-` as "read from stdin")
+  2) `FLUJO_INPUT` environment variable
+  3) Piped stdin (when not a TTY)
+  4) Fallback empty string (pipelines that don't need initial input)
+- Do not read env or stdin in policies/domain; keep I/O adaptation in CLI.
+
+Examples:
+- `echo "goal" | uv run flujo run`
+- `uv run flujo run --input - < input.txt`
+- `FLUJO_INPUT='goal' uv run flujo run`
+
 ## **1. The Golden Rule: Respect the Policy-Driven Architecture**
 
 Flujo's core strength is the **separation between the DSL and the Execution Core via Policies**. This is the most important principle to understand.
@@ -182,6 +197,15 @@ Developer checklist (quotas):
 Testing guidance:
 - For parallel budgeting, test with `Quota.split(n)` and reservation/reconciliation flows.
 - For pipeline enforcement, assert that partial step history is preserved on limit errors and that messages are precisely formatted.
+
+## **Testing Standards (Markers & Fast/Slow Split)**
+
+- Fast subset is marker-based: `not slow and not veryslow and not serial and not benchmark`.
+- Marking rules (enforced in reviews):
+  - Benchmarks: `@pytest.mark.benchmark` + `@pytest.mark.slow` (prefer module-level `pytestmark`).
+  - HITL/stateful resume (SQLite, interactive steps): `@pytest.mark.slow` + `@pytest.mark.serial`.
+  - DB/trace replay integration: `@pytest.mark.slow`.
+- Do not rely on file-name filters to keep heavy tests out of fast runs—use markers.
 
 ### **7.1 Migration Notes: Pure Quota System (UPDATED)**
 

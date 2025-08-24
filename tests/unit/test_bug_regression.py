@@ -22,6 +22,9 @@ from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.utils.serialization import safe_serialize, robust_serialize, register_custom_serializer
 from flujo.domain import Step
 
+# This module aggregates regression and performance edge cases; mark as slow
+pytestmark = [pytest.mark.slow]
+
 
 class CircularReferenceModel(BaseModel):
     """Test model for circular reference detection."""

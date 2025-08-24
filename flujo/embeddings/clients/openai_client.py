@@ -29,7 +29,9 @@ class OpenAIEmbeddingClient:
         """
         self.model_name = model_name
         self.model_id = f"openai:{model_name}"
-        self.client = openai.AsyncOpenAI()
+        # Lazily construct the OpenAI client to avoid requiring API key at import/initialization time
+        # This allows unit tests that only validate formatting to run without network secrets.
+        self._client: openai.AsyncOpenAI | None = None
 
     async def embed(self, texts: List[str]) -> EmbeddingResult:
         """
@@ -51,7 +53,10 @@ class OpenAIEmbeddingClient:
             If the embedding API call fails
         """
         # Call the OpenAI embeddings API
-        response = await self.client.embeddings.create(model=self.model_name, input=texts)
+        # Initialize the API client on first use
+        if self._client is None:
+            self._client = openai.AsyncOpenAI()
+        response = await self._client.embeddings.create(model=self.model_name, input=texts)
 
         # Extract embeddings from the response
         embeddings = [item.embedding for item in response.data]

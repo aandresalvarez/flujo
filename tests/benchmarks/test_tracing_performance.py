@@ -12,6 +12,9 @@ import statistics
 
 import pytest
 
+# Mark entire module as benchmark and slow to exclude from fast subset
+pytestmark = [pytest.mark.benchmark, pytest.mark.slow]
+
 from flujo import Step
 from flujo.testing.utils import StubAgent
 from tests.conftest import create_test_flujo

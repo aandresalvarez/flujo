@@ -1445,7 +1445,14 @@ def run(
         help="Path to the pipeline (.py or .yaml). If omitted, uses project pipeline.yaml",
     ),
     input_data: Optional[str] = typer.Option(
-        None, "--input", "--input-data", "-i", help="Initial input data for the pipeline"
+        None,
+        "--input",
+        "--input-data",
+        "-i",
+        help=(
+            "Initial input data for the pipeline. Use '-' to read from stdin. "
+            "When omitted, Flujo reads from FLUJO_INPUT (if set) or piped stdin."
+        ),
     ),
     context_model: Optional[str] = typer.Option(
         None, "--context-model", "-c", help="Context model class name to use"
@@ -1505,15 +1512,10 @@ def run(
             pipeline_obj = load_pipeline_from_yaml_file(pipeline_file)
             context_model_class = None
             initial_context_data = parse_context_data(context_data, context_file)
-            # Ensure input_data is provided or read from stdin for YAML runs
-            if input_data is None:
-                import sys as _sys
+            # Resolve initial input for YAML runs
+            from .helpers import resolve_initial_input as _resolve_initial_input
 
-                if not _sys.stdin.isatty():
-                    input_data = _sys.stdin.read().strip()
-                else:
-                    # Default to empty string to support pipelines that do not require initial input
-                    input_data = ""
+            input_data = _resolve_initial_input(input_data)
         else:
             pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = (
                 setup_run_command_environment(

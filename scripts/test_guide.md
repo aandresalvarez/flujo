@@ -184,6 +184,10 @@ Run only specific tests:
   Use the default two-phase run (`--split-slow`) so slow tests run serialized with higher timeouts.
   Tune with `--slow-workers` and `--slow-timeout` as needed.
 
+- HITL or stateful (SQLite-backed) tests time out or contend when run in fast mode:
+  Mark them with `@pytest.mark.slow` and `@pytest.mark.serial`, or apply module-level `pytestmark`.
+  The fast subset is marker-based (excludes `slow/serial/benchmark`). Avoid kexpr-based exclusions.
+
 ---
 
 ## ✅ Exit Codes

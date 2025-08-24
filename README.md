@@ -161,6 +161,35 @@ Looking to use GPT‑5 with the Architect? See the guide: `docs/guides/gpt5_arch
 
 ---
 
+## CLI Input Piping (Non‑Interactive Usage)
+
+Flujo supports standard Unix piping and env-based input for `flujo run`.
+
+Input resolution precedence:
+1) `--input VALUE` (if `VALUE` is `-`, read from stdin)
+2) `FLUJO_INPUT` environment variable
+3) Piped stdin (non‑TTY)
+4) Empty string fallback
+
+Examples:
+```bash
+# Pipe goal via stdin
+echo "Summarize this" | uv run flujo run
+
+# Read stdin explicitly via '-'
+uv run flujo run --input - < input.txt
+
+# Use environment variable
+FLUJO_INPUT='Translate this to Spanish' uv run flujo run
+
+# Run a specific pipeline file
+printf 'hello' | uv run flujo run path/to/pipeline.yaml
+```
+
+These semantics are implemented in the CLI layer only; policies and domain logic must not read from stdin or environment directly.
+
+---
+
 ## Architect Pipeline Toggles
 
 Control how the Architect pipeline is built (state machine vs. minimal) using environment variables:
