@@ -48,6 +48,15 @@ import os
 # Expose Flujo class for tests that monkeypatch flujo.cli.main.Flujo.run
 from flujo.application.runner import Flujo as _Flujo  # re-export for test monkeypatch compatibility
 
+# Ensure project root is importable for custom packages (e.g., skills/)
+try:
+    _project_root = Path.cwd()
+    import sys as _sys
+    if str(_project_root) not in _sys.path:
+        _sys.path.insert(0, str(_project_root))
+except Exception:
+    pass
+
 # Import Flujo class for testing compatibility - commented out as unused
 # from flujo.application.runner import Flujo
 
