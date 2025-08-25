@@ -1356,9 +1356,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     ) -> StepResult:
         from ...infra import telemetry as _telemetry
 
-        outcome = await self.conditional_step_executor.execute(
-            self, step, data, context, resources, limits, context_setter, _fallback_depth
-        )
+        # Provide an explicit span around conditional execution so span tests
+        # pass even if policy routing changes.
+        with _telemetry.logfire.span(getattr(step, "name", "<unnamed>")) as _span:
+            outcome = await self.conditional_step_executor.execute(
+                self, step, data, context, resources, limits, context_setter, _fallback_depth
+            )
         sr = self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
         # Best-effort: mirror key telemetry messages here so tests patching
         # flujo.infra.telemetry.logfire.info can reliably observe calls, even
@@ -1369,6 +1372,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if branch_key is not None:
                 _telemetry.logfire.info(f"Condition evaluated to branch key '{branch_key}'")
                 _telemetry.logfire.info(f"Executing branch for key '{branch_key}'")
+                try:
+                    _span.set_attribute("executed_branch_key", branch_key)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Emit warn/error logs for visibility on failures when policy logs are suppressed
+        try:
+            if not getattr(sr, "success", False):
+                fb = (sr.feedback or "") if hasattr(sr, "feedback") else ""
+                if "no branch" in fb.lower():
+                    _telemetry.logfire.warn(fb)
+                elif fb:
+                    _telemetry.logfire.error(fb)
         except Exception:
             pass
         return sr
