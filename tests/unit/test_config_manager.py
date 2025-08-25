@@ -255,10 +255,73 @@ class TestConfigManager:
             uri = config_manager.get_state_uri()
             assert uri == "sqlite:///test.db"
         finally:
-            # Restore original environment
+            # Restore original environment and clean up
             if original_state_uri is not None:
                 os.environ["FLUJO_STATE_URI"] = original_state_uri
+            else:
+                os.environ.pop("FLUJO_STATE_URI", None)
             os.unlink(config_path)
+
+    def test_env_file_loading_from_toml(self, monkeypatch, tmp_path):
+        """ConfigManager loads env vars from `env_file` relative to flujo.toml directory."""
+        # Ensure baseline: no OPENAI_API_KEY in environment
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ORCH_OPENAI_API_KEY", raising=False)
+
+        # Create a temp project config and a custom secrets file
+        secrets = tmp_path / ".secrets"
+        secrets.write_text("OPENAI_API_KEY=sk-from-secrets\n")
+        flujo_toml = tmp_path / "flujo.toml"
+        flujo_toml.write_text(
+            """
+state_uri = "memory://"
+env_file = ".secrets"
+"""
+        )
+
+        cm = ConfigManager(flujo_toml)
+        s = cm.get_settings(force_reload=True)
+        # Value should be visible via pydantic Settings
+        assert s.openai_api_key is not None
+        assert s.openai_api_key.get_secret_value() == "sk-from-secrets"
+
+    def test_env_file_respects_env_override(self, monkeypatch, tmp_path):
+        """Environment variable takes precedence over env_file contents."""
+        # Set environment var explicitly
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-env-override")
+
+        secrets = tmp_path / ".secrets"
+        secrets.write_text("OPENAI_API_KEY=sk-from-secrets\n")
+        flujo_toml = tmp_path / "flujo.toml"
+        flujo_toml.write_text(
+            """
+state_uri = "memory://"
+env_file = ".secrets"
+"""
+        )
+
+        cm = ConfigManager(flujo_toml)
+        s = cm.get_settings(force_reload=True)
+        # Should keep the environment value, not the file
+        assert s.openai_api_key is not None
+        assert s.openai_api_key.get_secret_value() == "sk-env-override"
+
+    def test_env_file_missing_is_non_fatal(self, monkeypatch, tmp_path):
+        """Missing env_file should not crash and leaves settings as default when no env vars set."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("ORCH_OPENAI_API_KEY", raising=False)
+
+        flujo_toml = tmp_path / "flujo.toml"
+        flujo_toml.write_text(
+            """
+state_uri = "memory://"
+env_file = ".does-not-exist"
+"""
+        )
+        cm = ConfigManager(flujo_toml)
+        s = cm.get_settings(force_reload=True)
+        # No key loaded from missing file
+        assert s.openai_api_key is None
 
     def test_state_uri_environment_precedence(self):
         """Test that environment variables take precedence over TOML file for state_uri."""
