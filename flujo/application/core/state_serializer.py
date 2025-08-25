@@ -173,8 +173,11 @@ class StateSerializer(Generic[ContextT]):
             serialized = self.serialize_context_full(context)
             self._cache_put_by_hash(run_id, current_hash, serialized)
             return serialized
-        # Unchanged: prefer minimal representation to reduce I/O overhead
-        # regardless of whether a full serialization is cached
+        # Unchanged: if a full serialization for this hash is cached, reuse it.
+        # Otherwise, return the minimal representation to reduce I/O overhead.
+        cached_full = self._cache_get_by_hash(run_id, current_hash)
+        if cached_full is not None:
+            return cached_full
         return self.serialize_context_minimal(context)
 
     def serialize_step_history_full(
