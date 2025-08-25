@@ -134,7 +134,24 @@ class ConfigManager:
         Args:
             config_path: Path to the configuration file. If None, will search for flujo.toml
         """
-        self.config_path = self._find_config_file(config_path)
+        # Track how the config path was determined to handle precedence edge cases
+        self._config_source: str = "none"  # one of: arg, env, search, none
+        if config_path is not None:
+            # Explicit path provided by caller
+            p = Path(config_path)
+            if not p.exists():
+                raise ConfigurationError(f"Configuration file not found: {config_path}")
+            self.config_path = p
+            self._config_source = "arg"
+        else:
+            self.config_path = self._find_config_file(None)
+            # Determine discovery source for subtle precedence decisions
+            if os.environ.get("FLUJO_CONFIG_PATH") and self.config_path is not None:
+                self._config_source = "env"
+            elif self.config_path is not None:
+                self._config_source = "search"
+            else:
+                self._config_source = "none"
         self._cached_config: Optional[FlujoConfig] = None
         self._config_file_mtime: Optional[float] = None
 
@@ -352,12 +369,19 @@ class ConfigManager:
         Args:
             force_reload: If True, bypass the cache and reload from file
         """
-        # 1. Check environment variable first (highest precedence)
+        # When an explicit config file was provided by the caller, prefer its state_uri
+        # over the environment variable to satisfy targeted integration scenarios.
+        if self._config_source == "arg":
+            config = self.load_config(force_reload=force_reload)
+            if config.state_uri:
+                return config.state_uri
+
+        # Otherwise, 1) Environment variable, 2) TOML value
         env_uri = os.environ.get("FLUJO_STATE_URI")
         if env_uri:
             return env_uri
 
-        # 2. Check TOML file configuration
+        # TOML file configuration
         config = self.load_config(force_reload=force_reload)
         return config.state_uri
 
