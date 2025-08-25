@@ -375,12 +375,10 @@ class ConfigManager:
         Args:
             force_reload: If True, bypass the cache and reload from file
         """
-        # If an explicit config file path was provided, prefer its value
-        # over the environment to avoid cross-test leakage in multiprocessing.
-        if getattr(self, "_config_source", "none") != "arg":
-            env_uri = os.environ.get("FLUJO_STATE_URI")
-            if env_uri:
-                return env_uri
+        # Precedence: 1) Environment variable, 2) TOML value
+        env_uri = os.environ.get("FLUJO_STATE_URI")
+        if env_uri:
+            return env_uri
 
         # TOML file configuration
         config = self.load_config(force_reload=force_reload)
