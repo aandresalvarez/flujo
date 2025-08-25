@@ -14,8 +14,6 @@ from flujo.state.backends.sqlite import SQLiteBackend
 # Uses state backend and trace replay; mark as slow for fast subset exclusion
 pytestmark = [pytest.mark.slow]
 
-# Set up logging for debugging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -61,24 +59,21 @@ async def create_test_runner():
                 logger.warning(f"Error closing backend: {e}")
 
 
-async def run_with_timeout(coro, timeout_seconds: float, operation_name: str):
-    """Run a coroutine with timeout protection."""
-    try:
-        return await asyncio.wait_for(coro, timeout=timeout_seconds)
-    except asyncio.TimeoutError:
-        logger.error(f"{operation_name} timed out after {timeout_seconds} seconds")
-        raise TimeoutError(f"{operation_name} timed out after {timeout_seconds} seconds")
-
-
 async def execute_pipeline_with_timeout(runner, input_data, timeout_seconds: float):
-    """Execute pipeline with timeout protection."""
-    try:
+    """Execute the pipeline to completion with timeout protection."""
+
+    async def _run():
         final = None
         async for item in runner.run_async(input_data):
-            final = item
+            final = item  # take last yielded item as final
             logger.info(f"Pipeline step completed: {item}")
-            break  # We only need the first item for this test
         return final
+
+    try:
+        return await asyncio.wait_for(_run(), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        logger.error(f"Pipeline execution timed out after {timeout_seconds} seconds")
+        raise TimeoutError(f"Pipeline execution timed out after {timeout_seconds} seconds")
     except Exception as e:
         logger.error(f"Pipeline execution failed: {e}")
         raise
@@ -100,9 +95,7 @@ async def test_replay_agent_replays_non_hitl_pipeline_from_state():
             # Run original to persist step outputs/spans
             try:
                 # Use timeout protection for pipeline execution
-                final = await run_with_timeout(
-                    execute_pipeline_with_timeout(runner, "go", 20.0), 20.0, "Pipeline execution"
-                )
+                final = await execute_pipeline_with_timeout(runner, "go", 20.0)
             except TimeoutError:
                 pytest.fail("Pipeline execution timed out - possible hanging issue")
             except Exception as e:
@@ -117,16 +110,15 @@ async def test_replay_agent_replays_non_hitl_pipeline_from_state():
             logger.info("Starting replay operation")
             try:
                 # Add timeout to prevent hanging
-                replayed = await run_with_timeout(
+                replayed = await asyncio.wait_for(
                     runner.replay_from_trace(run_id),
                     30.0,  # 30 second timeout for replay operation
-                    "Replay operation",
                 )
                 assert replayed is not None
                 # The step history should match the original shape and final output
                 assert replayed.step_history[-1].output == "GO!"
                 logger.info("Replay operation completed successfully")
-            except TimeoutError:
+            except asyncio.TimeoutError:
                 logger.error("Replay operation timed out after 30 seconds")
                 pytest.fail("Replay operation timed out after 30 seconds - possible hanging issue")
             except Exception as e:

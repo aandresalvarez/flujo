@@ -12,9 +12,9 @@ This branch (`fix-ci-timeouts`) addresses critical CI timeout issues that were c
 
 ### 2. Architect Performance Tests Taking Excessive Time
 - **Tests**: Multiple tests in `tests/integration/architect/test_architect_performance_stress.py`
-- **Problem**: Tests were taking 100+ seconds instead of expected 20-60 seconds
+- **Problem**: Tests were taking 100+ seconds instead of the expected 20–60 seconds
 - **Root Cause**: Tests were running the full architect state machine pipeline instead of minimal pipeline
-- **Impact**: CI builds taking excessive time, performance thresholds failing
+- **Impact**: CI builds took excessive time, and performance thresholds failed
 
 ### 3. Architect Security Validation Tests Hanging
 - **Tests**: Multiple tests in `tests/integration/architect/test_architect_security_validation.py`
@@ -33,8 +33,8 @@ This branch (`fix-ci-timeouts`) addresses critical CI timeout issues that were c
 - **Improved resource cleanup**: Proper backend closure to prevent resource leaks
 - **Result**: Test now completes in ~0.17s instead of hanging indefinitely
 
-### 2. Architect Tests Fix (`3c05625`)
-- **Force minimal architect pipeline**:
+### 2. Architect Tests Fix (commit `3c05625`)
+- **Force minimal Architect pipeline**:
   - Set `FLUJO_ARCHITECT_IGNORE_CONFIG=1` and `FLUJO_TEST_MODE=1`
   - Ensures tests use simple pipeline instead of complex state machine
 - **Added comprehensive timeout protection**:
@@ -44,7 +44,7 @@ This branch (`fix-ci-timeouts`) addresses critical CI timeout issues that were c
   - `test_architect_response_time_under_load`: 60s timeout
   - `test_architect_resource_usage_scaling`: 60s timeout
   - Security validation tests: 30s timeout each
-- **Result**: Tests now complete in reasonable time instead of hanging
+- **Result**: Tests now complete in a reasonable time instead of hanging
 
 ## Technical Details
 
@@ -80,8 +80,8 @@ os.environ["FLUJO_TEST_MODE"] = "1"
 
 ### After Fixes
 - Replay agent test: Completes in ~0.17s
-- Architect performance tests: Complete in 14-24s
-- Security validation tests: Complete in 24s
+- Architect performance tests: Complete in 14-24s (on CI runners as of Aug 2025)
+- Security validation tests: Complete in 2-4s (on CI runners as of Aug 2025)
 - All tests: Pass with proper timeout protection
 
 ## Files Modified
@@ -116,11 +116,11 @@ os.environ["FLUJO_TEST_MODE"] = "1"
 
 ## Alignment with Architect Redesign
 
-### Current Approach vs. Long-term Vision
+### Current Approach vs. Long‑Term Vision
 Our current fixes implement the **"Short-Term Pragmatics"** mentioned in the architect redesign document:
 
 - **Environment-based selection**: We're using `FLUJO_ARCHITECT_IGNORE_CONFIG=1` and `FLUJO_TEST_MODE=1`
-- **CI stabilization**: Our timeout fixes provide immediate stability
+- **CI stabilization**: Our timeout fixes provide immediate stability.
 - **Deterministic behavior**: Minimal pipeline ensures consistent test results
 
 ### Supporting the Redesign Goals

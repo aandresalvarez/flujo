@@ -20,11 +20,11 @@ os.environ["FLUJO_TEST_MODE"] = "1"
 
 # These validation sweeps iterate over many malicious payloads and are inherently slow.
 # Mark the module as slow so they're excluded from fast suites by default.
-pytestmark = pytest.mark.slow
+# Set module-level timeout to prevent hanging
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(30)]
 
 
 @pytest.mark.integration
-@pytest.mark.timeout(30)  # 30 second timeout to prevent hanging
 def test_architect_handles_sql_injection_attempts():
     """Test: Architect safely handles SQL injection attempts in input."""
     pipeline = build_architect_pipeline()
@@ -59,7 +59,6 @@ def test_architect_handles_sql_injection_attempts():
 
 
 @pytest.mark.integration
-@pytest.mark.timeout(30)  # 30 second timeout to prevent hanging
 def test_architect_handles_xss_attempts():
     """Test: Architect safely handles XSS attempts in input."""
     pipeline = build_architect_pipeline()
@@ -95,7 +94,6 @@ def test_architect_handles_xss_attempts():
 
 
 @pytest.mark.integration
-@pytest.mark.timeout(30)  # 30 second timeout to prevent hanging
 def test_architect_handles_command_injection_attempts():
     """Test: Architect safely handles command injection attempts in input."""
     pipeline = build_architect_pipeline()

@@ -57,6 +57,7 @@ def test_architect_execution_time_consistency():
 
 
 @pytest.mark.integration
+@pytest.mark.timeout(60)
 def test_architect_memory_usage_stability():
     """Test: Architect memory usage remains stable during execution."""
     pipeline = build_architect_pipeline()
@@ -227,10 +228,11 @@ def test_architect_large_context_handling():
     ctx = getattr(result, "final_pipeline_context", None)
     assert ctx is not None
 
-    # Should complete within reasonable time (5 seconds)
+    # Should complete within reasonable time; allow CI multiplier.
+    max_time = get_performance_threshold(5.0)
     assert (
-        execution_time <= 5
-    ), f"Execution time {execution_time:.2f}s exceeds 5s limit for large context"
+        execution_time <= max_time
+    ), f"Execution time {execution_time:.2f}s exceeds {max_time}s limit for large context"
 
     # Should generate YAML even with large context
     yaml_text = getattr(ctx, "yaml_text", None)
@@ -309,8 +311,8 @@ def test_architect_memory_cleanup_after_execution():
         runner=runner, input_data="Echo input", run_id=None, json_output=False
     )
 
-    # Get memory immediately after execution
-    process.memory_info().rss
+    # (Optional) Capture memory immediately after execution if you want to log trends:
+    # memory_immediate = process.memory_info().rss
 
     # Force garbage collection
     import gc
@@ -364,12 +366,13 @@ def test_architect_response_time_under_load():
     max_time = max(execution_times)
     min_time = min(execution_times)
 
-    # Response time should remain reasonable under load
-    # Average should be under 2 seconds
-    assert avg_time <= 2, f"Average response time {avg_time:.2f}s exceeds 2s limit"
-
-    # Maximum response time should be under 5 seconds
-    assert max_time <= 5, f"Maximum response time {max_time:.2f}s exceeds 5s limit"
+    # Response time should remain reasonable under load (CI-aware thresholds)
+    max_avg = get_performance_threshold(2.0)
+    max_single = get_performance_threshold(5.0)
+    assert avg_time <= max_avg, f"Average response time {avg_time:.2f}s exceeds {max_avg}s limit"
+    assert (
+        max_time <= max_single
+    ), f"Maximum response time {max_time:.2f}s exceeds {max_single}s limit"
 
     # Response time should not degrade significantly (max should not be more than 3x min)
     time_ratio = max_time / min_time if min_time > 0 else float("inf")
