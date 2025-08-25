@@ -1,0 +1,55 @@
+version: "0.1"
+name: "summary_aggregation_bug_demonstration"
+
+description: |
+  This pipeline demonstrates the critical bug where Flujo summary tables fail to
+  aggregate costs and tokens from nested steps, showing only wrapper step data.
+
+  Expected behavior: Summary shows aggregated costs and tokens from all nested steps
+  Actual behavior: Summary shows only wrapper step with $0.0000 cost and 0 tokens
+
+  This is a minimal pipeline that should complete quickly but demonstrates the bug.
+
+steps:
+  - kind: step
+    name: wrapper_workflow
+    agent:
+      id: "flujo.builtins.workflow"
+    input: "test input for nested workflow demonstration"
+    description: "Wrapper workflow that contains nested steps"
+    workflow:
+      steps:
+        - kind: step
+          name: inner_step_1
+          agent:
+            id: "flujo.builtins.stringify"
+          input: "First inner step input"
+          description: "First step inside the nested workflow (visibility demo)"
+
+        - kind: step
+          name: inner_step_2
+          agent:
+            id: "flujo.builtins.stringify"
+          input: "Second inner step input"
+          description: "Second step inside the nested workflow (visibility demo)"
+
+        - kind: step
+          name: inner_step_3
+          agent:
+            id: "flujo.builtins.stringify"
+          input: "Third inner step input"
+          description: "Third step inside the nested workflow (visibility demo)"
+
+        - kind: step
+          name: inner_step_4
+          agent:
+            id: "flujo.builtins.stringify"
+          input: "Fourth inner step input"
+          description: "Fourth step inside the nested workflow (visibility demo)"
+
+        - kind: step
+          name: inner_step_5
+          agent:
+            id: "flujo.builtins.stringify"
+          input: "Fifth inner step input"
+          description: "Fifth step inside the nested workflow (visibility demo)"

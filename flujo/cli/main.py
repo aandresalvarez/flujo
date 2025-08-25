@@ -1238,6 +1238,45 @@ def create(  # <--- REVERT BACK TO SYNC
             except Exception:
                 pass
 
+            # If no YAML could be produced (e.g., user denied plan), abort
+            def _any_denied_branch(step_results: list[Any]) -> bool:
+                try:
+                    for sr in step_results or []:
+                        md = getattr(sr, "metadata_", {}) or {}
+                        key = md.get("executed_branch_key")
+                        if isinstance(key, str) and key.strip().lower() in {
+                            "denied",
+                            "reject",
+                            "rejected",
+                        }:
+                            return True
+                        nested = getattr(sr, "step_history", None)
+                        if isinstance(nested, list) and nested and _any_denied_branch(nested):
+                            return True
+                except Exception:
+                    return False
+                return False
+
+            no_yaml = not isinstance(yaml_text, str) or not yaml_text.strip()
+            looks_like_yaml = False
+            try:
+                if isinstance(yaml_text, str):
+                    s = yaml_text.strip()
+                    looks_like_yaml = ("version:" in s) or ("steps:" in s)
+            except Exception:
+                looks_like_yaml = False
+
+            if (
+                no_yaml
+                or not looks_like_yaml
+                or _any_denied_branch(getattr(result, "step_history", []) or [])
+            ):
+                typer.echo(
+                    "[red]No YAML was generated from the architect pipeline (plan rejected or writer failed). Aborting.",
+                    err=True,
+                )
+                raise typer.Exit(1)
+
             # Validate in-memory before writing
             report = validate_yaml_text(yaml_text, base_dir=output_dir or os.getcwd())
             if not report.is_valid and strict:
@@ -1711,7 +1750,7 @@ def run(
                 import httpx as _httpx
 
                 if hasattr(_httpx, "_default_limits"):
-                    _httpx._default_limits = None  # type: ignore[attr-defined]
+                    _httpx._default_limits = None
             except Exception:
                 pass
 

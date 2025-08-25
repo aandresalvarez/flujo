@@ -331,6 +331,7 @@ per-file-ignores = { "tests/benchmarks/*.py" = ["E402"], "tests/unit/test_extrac
 asyncio_mode = "auto"
 testpaths = ["tests"]
 norecursedirs = [
+  ".hypothesis",  # Ensure Hypothesis' workdir is ignored to avoid plugin warnings
   "bug_reports",
   "manual_testing",
   "scripts",
@@ -348,6 +349,7 @@ markers = [
   "serial: marks tests that must run serially to avoid concurrency issues",
   "slow: marks tests that are slow and should be run separately",
   "veryslow: marks extremely slow tests that must never run in fast suites",
+  "ultra_slow: marks ultra-long stress tests; excluded from fast suites",
   "fast: marks tests that are fast and can be run in parallel",
   "integration: marks integration tests for subsystems like the Architect",
   "no_collect: marks classes that should not be collected as test classes",

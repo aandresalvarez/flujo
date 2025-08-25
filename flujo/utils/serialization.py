@@ -995,22 +995,44 @@ def robust_serialize(obj: Any, circular_ref_placeholder: Any = "<circular-ref>")
         if isinstance(obj, PRIMITIVES):
             return obj
 
-        # Always prefer returning structured data so callers can control JSON formatting
-        serialized: Any
-        if isinstance(obj, BUILTIN_CONTAINERS):
-            serialized = safe_serialize(obj, circular_ref_placeholder=circular_ref_placeholder)
-        else:
-            # For custom/unknown objects
-            serialized = safe_serialize(
-                obj,
-                circular_ref_placeholder=circular_ref_placeholder,
-            )
+        # Pydantic/Flujo models: preserve structured data (avoid unsafe hasattr)
+        try:
+            md = getattr(obj, "model_dump")
+        except Exception:
+            md = None
+        if md is not None:
+            return safe_serialize(obj, circular_ref_placeholder=circular_ref_placeholder)
 
-        # If serialization produced primitives or builtin containers, return them directly
+        # If a custom serializer is registered for this type, use it first to avoid
+        # triggering attribute access (e.g., __getattr__ raising) in safe_serialize.
+        from .serialization import lookup_custom_serializer as _lookup
+
+        _ser = _lookup(obj)
+        if _ser is not None:
+            try:
+                interim = _ser(obj)
+                # If the custom serializer already returns a primitive/container, use it directly
+                if isinstance(interim, (str, int, float, bool, type(None))) or isinstance(
+                    interim, (dict, list, tuple, set, frozenset)
+                ):
+                    return interim
+                # Otherwise, serialize the serializer output
+                return safe_serialize(interim, circular_ref_placeholder=circular_ref_placeholder)
+            except Exception:
+                # Fall through to generic paths
+                pass
+
+        # Built-in containers: preserve structured data
+        if isinstance(obj, BUILTIN_CONTAINERS):
+            return safe_serialize(obj, circular_ref_placeholder=circular_ref_placeholder)
+
+        # Custom/unknown types: prefer structured result when available; else concise string
+        serialized: Any = safe_serialize(
+            obj,
+            circular_ref_placeholder=circular_ref_placeholder,
+        )
         if isinstance(serialized, PRIMITIVES) or isinstance(serialized, BUILTIN_CONTAINERS):
             return serialized
-
-        # As a last resort, return a concise string representation
         return repr(serialized)
     except Exception:
         return f"<unserializable: {type(obj).__name__}>"

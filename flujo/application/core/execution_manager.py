@@ -187,6 +187,16 @@ class ExecutionManager(Generic[ContextT]):
                         if isinstance(item, StepOutcome):
                             if isinstance(item, Success):
                                 step_result = item.step_result
+                                # Normalize missing/placeholder names to the actual step name
+                                try:
+                                    if getattr(step_result, "name", None) in (
+                                        None,
+                                        "",
+                                        "<unknown>",
+                                    ):
+                                        step_result.name = getattr(step, "name", "<unnamed>")
+                                except Exception:
+                                    pass
                             elif isinstance(item, Failure):
                                 try:
                                     telemetry.logfire.error(
@@ -200,6 +210,16 @@ class ExecutionManager(Generic[ContextT]):
                                     success=False,
                                     feedback=item.feedback,
                                 )
+                                # Normalize missing/placeholder names to the actual step name
+                                try:
+                                    if getattr(step_result, "name", None) in (
+                                        None,
+                                        "",
+                                        "<unknown>",
+                                    ):
+                                        step_result.name = getattr(step, "name", "<unnamed>")
+                                except Exception:
+                                    pass
                                 # Call step-level failure handlers before we mutate state
                                 if hasattr(step, "failure_handlers") and step.failure_handlers:
                                     for handler in step.failure_handlers:

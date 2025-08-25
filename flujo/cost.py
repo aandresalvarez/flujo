@@ -235,12 +235,20 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                         )
                 else:
                     # FIXED: Return 0.0 cost for agents without model_id instead of guessing OpenAI pricing
-                    telemetry.logfire.warning(
+                    msg = (
                         f"CRITICAL: Could not determine model for step '{step_name}'. "
                         f"Cost will be reported as 0.0. "
                         f"To fix: ensure your agent has a 'model_id' attribute (e.g., 'openai:gpt-4o') "
                         f"or use make_agent_async() with explicit model parameter."
                     )
+                    telemetry.logfire.warning(msg)
+                    # Also emit via standard logging to ensure capture in parallel/CI environments
+                    try:
+                        import logging as _logging
+
+                        _logging.getLogger("flujo").warning(msg)
+                    except Exception:
+                        pass
                     cost_usd = 0.0  # Return 0, which is safer than an incorrect guess.
 
         except Exception as e:

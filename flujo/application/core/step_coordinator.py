@@ -382,6 +382,78 @@ class StepCoordinator(Generic[ContextT]):
         step_result: StepResult,
     ) -> None:
         """Update the pipeline result with a step result."""
+        # Append the step result first
         result.step_history.append(step_result)
+
+        # Base accumulation from the step itself
         result.total_cost_usd += step_result.cost_usd
         result.total_tokens += step_result.token_counts
+
+        # If this step returned a nested PipelineResult (e.g., runner.as_step composition),
+        # proactively aggregate its usage so top-level summaries remain correct.
+        # This is a generic aggregation rule, not step-specific logic.
+        try:
+            nested = getattr(step_result, "output", None)
+            # Prefer strict type check for clarity; fall back to duck-typing when needed
+            is_nested_pr = isinstance(nested, PipelineResult)
+            has_totals = (
+                not is_nested_pr
+                and nested is not None
+                and hasattr(nested, "total_cost_usd")
+                and hasattr(nested, "total_tokens")
+                and hasattr(nested, "step_history")
+            )
+            if is_nested_pr or has_totals:
+                try:
+                    nested_cost = float(getattr(nested, "total_cost_usd", 0.0) or 0.0)
+                except Exception:
+                    nested_cost = 0.0
+                try:
+                    nested_tokens = int(getattr(nested, "total_tokens", 0) or 0)
+                except Exception:
+                    nested_tokens = 0
+
+                # Heuristic: only add nested usage when the parent step hasn't already
+                # accounted for it (common when using runner.as_step). If the parent
+                # already aggregated, its own counts will be >= nested totals.
+                add_cost = max(0.0, nested_cost - float(step_result.cost_usd or 0.0))
+                add_tokens = max(0, nested_tokens - int(step_result.token_counts or 0))
+
+                if add_cost > 0.0:
+                    result.total_cost_usd += add_cost
+                    # Reflect aggregation on the step result for consistent reporting
+                    try:
+                        step_result.cost_usd = float(step_result.cost_usd or 0.0) + add_cost
+                    except Exception:
+                        pass
+                if add_tokens > 0:
+                    result.total_tokens += add_tokens
+                    try:
+                        step_result.token_counts = int(step_result.token_counts or 0) + add_tokens
+                    except Exception:
+                        pass
+                # Mark idempotency once we've applied nested usage
+                try:
+                    if getattr(step_result, "metadata_", None) is None:
+                        step_result.metadata_ = {}
+                    step_result.metadata_["nested_usage_aggregated"] = True
+                except Exception:
+                    pass
+
+                # When the step did not record sub-step history, attach it for introspection
+                try:
+                    if isinstance(step_result.step_history, list) and not step_result.step_history:
+                        sub_hist = getattr(nested, "step_history", [])
+                        if isinstance(sub_hist, list) and sub_hist:
+                            # Shallow-copy to avoid aliasing nested objects across containers
+                            step_result.step_history.extend(list(sub_hist))
+                except Exception:
+                    pass
+        except Exception as agg_ex:
+            # Never let aggregation best-effort break execution; emit a debug breadcrumb.
+            try:
+                telemetry.logfire.debug(
+                    f"Nested usage aggregation skipped due to error: {agg_ex!r}"
+                )
+            except Exception:
+                pass
