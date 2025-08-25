@@ -43,6 +43,21 @@ async def _emit_minimal_yaml(goal: str) -> dict[str, Any]:
     }
 
 
+async def _approval_noop(x: str, *, context: _BaseModel | None = None) -> str:
+    """No-op PlanApproval step for minimal pipelines.
+
+    - In non-interactive/test modes, ensure a PlanApproval step appears in history
+      without changing the input payload semantics expected by the next step.
+    - Optionally set plan_approved=True on the context when available.
+    """
+    try:
+        if context is not None and hasattr(context, "plan_approved"):
+            setattr(context, "plan_approved", True)
+    except Exception:
+        pass
+    return x
+
+
 def _normalize_name_from_goal(goal: Optional[str]) -> str:
     safe_name = "generated_pipeline"
     try:
@@ -1291,18 +1306,8 @@ def build_architect_pipeline() -> Pipeline[Any, Any]:
         _os.environ.get("FLUJO_TEST_MODE")
     ):
         # Minimal pipeline for tests/CI, but preserve visibility of PlanApproval
-        # to satisfy integration test introspection.
-        async def _approval_min(
-            _x: Any = None, *, context: _BaseModel | None = None
-        ) -> Dict[str, Any]:
-            try:
-                if context is not None and hasattr(context, "plan_approved"):
-                    setattr(context, "plan_approved", True)
-            except Exception:
-                pass
-            return {}
-
-        approval = Step.from_callable(_approval_min, name="PlanApproval", updates_context=True)
+        # to satisfy integration test introspection. Keep input type (str) intact.
+        approval = Step.from_callable(_approval_noop, name="PlanApproval", updates_context=True)
         gen = Step.from_callable(_emit_minimal_yaml, name="GenerateYAML", updates_context=True)
         return Pipeline.from_step(approval) >> gen
 
@@ -1319,14 +1324,6 @@ def build_architect_pipeline() -> Pipeline[Any, Any]:
         pass
 
     # 4) Default minimal pipeline (outside tests), also include PlanApproval for parity
-    async def _approval_min(_x: Any = None, *, context: _BaseModel | None = None) -> Dict[str, Any]:
-        try:
-            if context is not None and hasattr(context, "plan_approved"):
-                setattr(context, "plan_approved", True)
-        except Exception:
-            pass
-        return {}
-
-    approval = Step.from_callable(_approval_min, name="PlanApproval", updates_context=True)
+    approval = Step.from_callable(_approval_noop, name="PlanApproval", updates_context=True)
     gen = Step.from_callable(_emit_minimal_yaml, name="GenerateYAML", updates_context=True)
     return Pipeline.from_step(approval) >> gen
