@@ -46,7 +46,7 @@ The summary table should:
 4. **Compare with JSON output** using `echo "write a book" | flujo run --json`
 
 ### **Expected Result**
-```
+```text
 Total cost: $0.00057525
 Total tokens: 1,746
 Steps executed: 8
@@ -63,7 +63,7 @@ Step Results:
 ```
 
 ### **Actual Result**
-```
+```text
 Total cost: $0.0000
 Total tokens: 0
 Steps executed: 1

@@ -18,7 +18,7 @@ The Flujo pipeline summary generation logic fails to recursively aggregate costs
 4. **Display Limitation**: Only wrapper step data is shown in the summary table
 
 ### **Evidence from Execution Data**
-```json
+```jsonc
 // Top-level summary (INCORRECT)
 {
   "total_cost_usd": 0.0,
@@ -91,7 +91,7 @@ The Flujo pipeline summary generation logic fails to recursively aggregate costs
 ## 🔄 **Data Flow Analysis**
 
 ### **Normal Data Flow**
-```
+```text
 1. Step Execution → 2. Data Collection → 3. Nested Storage → 4. Aggregation → 5. Summary Display
 ```
 

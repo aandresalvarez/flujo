@@ -394,14 +394,16 @@ class StepCoordinator(Generic[ContextT]):
         # This is a generic aggregation rule, not step-specific logic.
         try:
             nested = getattr(step_result, "output", None)
-            # Fast shape check for PipelineResult-like objects
+            # Prefer strict type check for clarity; fall back to duck-typing when needed
+            is_nested_pr = isinstance(nested, PipelineResult)
             has_totals = (
-                nested is not None
+                not is_nested_pr
+                and nested is not None
                 and hasattr(nested, "total_cost_usd")
                 and hasattr(nested, "total_tokens")
                 and hasattr(nested, "step_history")
             )
-            if has_totals:
+            if is_nested_pr or has_totals:
                 try:
                     nested_cost = float(getattr(nested, "total_cost_usd", 0.0) or 0.0)
                 except Exception:
@@ -430,15 +432,28 @@ class StepCoordinator(Generic[ContextT]):
                         step_result.token_counts = int(step_result.token_counts or 0) + add_tokens
                     except Exception:
                         pass
+                # Mark idempotency once we've applied nested usage
+                try:
+                    if getattr(step_result, "metadata_", None) is None:
+                        step_result.metadata_ = {}
+                    step_result.metadata_["nested_usage_aggregated"] = True
+                except Exception:
+                    pass
 
                 # When the step did not record sub-step history, attach it for introspection
                 try:
                     if isinstance(step_result.step_history, list) and not step_result.step_history:
                         sub_hist = getattr(nested, "step_history", [])
                         if isinstance(sub_hist, list) and sub_hist:
-                            step_result.step_history.extend(sub_hist)
+                            # Shallow-copy to avoid aliasing nested objects across containers
+                            step_result.step_history.extend(list(sub_hist))
                 except Exception:
                     pass
-        except Exception:
-            # Never let aggregation best-effort break execution
-            pass
+        except Exception as agg_ex:
+            # Never let aggregation best-effort break execution; emit a debug breadcrumb.
+            try:
+                telemetry.logfire.debug(
+                    f"Nested usage aggregation skipped due to error: {agg_ex!r}"
+                )
+            except Exception:
+                pass
