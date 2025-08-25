@@ -136,6 +136,8 @@ class ConfigManager:
         """
         # Track how the config path was determined to handle precedence edge cases
         self._config_source: str = "none"  # one of: arg, env, search, none
+        # Attribute annotation ensures mypy understands Optional type across branches
+        self.config_path: Optional[Path]
         if config_path is not None:
             # Explicit path provided by caller
             p = Path(config_path)
@@ -369,14 +371,7 @@ class ConfigManager:
         Args:
             force_reload: If True, bypass the cache and reload from file
         """
-        # When an explicit config file was provided by the caller, prefer its state_uri
-        # over the environment variable to satisfy targeted integration scenarios.
-        if self._config_source == "arg":
-            config = self.load_config(force_reload=force_reload)
-            if config.state_uri:
-                return config.state_uri
-
-        # Otherwise, 1) Environment variable, 2) TOML value
+        # Precedence: 1) Environment variable, 2) TOML value
         env_uri = os.environ.get("FLUJO_STATE_URI")
         if env_uri:
             return env_uri
