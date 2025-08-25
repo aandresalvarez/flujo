@@ -56,7 +56,9 @@ class BlueprintStepModel(BaseModel):
     condition: Optional[str] = None
     default_branch: Optional[Any] = None
     # Loop only (v0)
-    loop: Optional[Dict[str, Any]] = None  # { body: [...], max_loops: int }
+    loop: Optional[Dict[str, Any]] = (
+        None  # { body: [...], max_loops: int, exit_condition: str, initial_input_mapper: str, iteration_input_mapper: str, loop_output_mapper: str }
+    )
     # Map only
     map: Optional[Dict[str, Any]] = None  # { iterable_input: str, body: [...] }
     # Dynamic router only
@@ -360,6 +362,22 @@ def _make_step_from_blueprint(
             compiled_agents=compiled_agents,
         )
         max_loops = model.loop.get("max_loops")
+
+        # --- PROPOSED CHANGE ---
+        # Resolve all optional callable overrides
+        _initial_mapper = None
+        if model.loop.get("initial_input_mapper"):
+            _initial_mapper = _import_object(model.loop["initial_input_mapper"])
+
+        _iter_mapper = None
+        if model.loop.get("iteration_input_mapper"):
+            _iter_mapper = _import_object(model.loop["iteration_input_mapper"])
+
+        _output_mapper = None
+        if model.loop.get("loop_output_mapper"):
+            _output_mapper = _import_object(model.loop["loop_output_mapper"])
+        # --- END CHANGE ---
+
         # Optional callable overrides
         if model.loop.get("exit_condition"):
             _exit_condition = _import_object(model.loop["exit_condition"])  # runtime import
@@ -381,6 +399,10 @@ def _make_step_from_blueprint(
             exit_condition_callable=_exit_condition,
             max_retries=max(1, int(max_loops)) if isinstance(max_loops, int) else 1,
             config=step_config,
+            # --- PASS THE RESOLVED MAPPERS ---
+            initial_input_to_loop_body_mapper=_initial_mapper,
+            iteration_input_mapper=_iter_mapper,
+            loop_output_mapper=_output_mapper,
         )
     elif getattr(model, "kind", None) == "map":
         from ..dsl.loop import MapStep
@@ -684,7 +706,7 @@ def build_pipeline_from_blueprint(
                 compiled_imports=compiled_imports,
             )
         )
-    p = Pipeline.model_construct(steps=steps)
+    p: Pipeline[Any, Any] = Pipeline.model_construct(steps=steps)
     # Best-effort finalize types after Pipeline construction
     try:
         for st in p.steps:
@@ -751,13 +773,30 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
             from ..dsl.loop import LoopStep
 
             if isinstance(step, LoopStep):
+                loop_data = {
+                    "body": [step_to_yaml(s) for s in step.loop_body_pipeline.steps],
+                    "max_loops": step.max_retries,
+                }
+
+                # Add mapper fields if they exist
+                if (
+                    hasattr(step, "initial_input_to_loop_body_mapper")
+                    and step.initial_input_to_loop_body_mapper
+                ):
+                    # For now, we can't easily serialize the callable, so we'll skip it
+                    # In a future enhancement, we could store the original import string
+                    pass
+                if hasattr(step, "iteration_input_mapper") and step.iteration_input_mapper:
+                    # For now, we can't easily serialize the callable, so we'll skip it
+                    pass
+                if hasattr(step, "loop_output_mapper") and step.loop_output_mapper:
+                    # For now, we can't easily serialize the callable, so we'll skip it
+                    pass
+
                 return {
                     "kind": "loop",
                     "name": step.name,
-                    "loop": {
-                        "body": [step_to_yaml(s) for s in step.loop_body_pipeline.steps],
-                        "max_loops": step.max_retries,
-                    },
+                    "loop": loop_data,
                 }
         except Exception:
             pass
@@ -818,6 +857,26 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
 def load_pipeline_blueprint_from_yaml(
     yaml_text: str, base_dir: Optional[str] = None
 ) -> Pipeline[Any, Any]:
+    # Proactively auto-load skills to honor docs: load skills.yaml before parsing.
+    # This ensures CLI and any programmatic use benefit from the same behavior.
+    try:
+        if base_dir:
+            from ...infra.skills_catalog import (
+                load_skills_catalog as _load_skills_catalog,
+                load_skills_entry_points as _load_skills_entry_points,
+            )
+
+            _load_skills_catalog(base_dir)
+            _load_skills_entry_points()
+    except Exception:
+        # Never fail blueprint loading due to skills discovery issues
+        pass
+    # Ensure core builtin skills are registered so YAML agent ids like
+    # 'flujo.builtins.stringify' resolve without requiring a separate import.
+    try:  # best-effort; never fail if unavailable
+        import flujo.builtins  # noqa: F401
+    except Exception:
+        pass
     try:
         data = yaml.safe_load(yaml_text)
         if not isinstance(data, dict) or "steps" not in data:

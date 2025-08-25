@@ -144,13 +144,79 @@ Execute a pipeline repeatedly until a condition is met.
     exit_condition: "flujo.utils.looping:quality_threshold_met"
 ```
 
-**Use Cases:**
-- Content refinement, iterative problem solving, and quality improvement loops.
-
-**Loop Configuration:**
+**Basic Loop Configuration:**
 - `body`: The pipeline to execute in each iteration.
 - `max_loops`: The maximum number of iterations.
 - `exit_condition`: A callable that returns `True` to stop the loop.
+
+**Enhanced Loop Configuration:**
+For sophisticated agentic workflows, you can also specify input/output mappers:
+
+```yaml
+- kind: loop
+  name: conversational_loop
+  loop:
+    body:
+      - kind: step
+        name: planner
+        uses: agents.conversation_planner
+      - kind: step
+        name: executor
+        uses: agents.command_executor
+    initial_input_mapper: "skills.helpers:map_initial_goal"
+    iteration_input_mapper: "skills.helpers:map_conversation_state"
+    exit_condition: "skills.helpers:is_conversation_complete"
+    loop_output_mapper: "skills.helpers:map_final_result"
+    max_loops: 10
+```
+
+**Enhanced Loop Configuration Keys:**
+- `body`: The pipeline to execute in each iteration
+- `max_loops`: Maximum number of iterations (prevents infinite loops)
+- `exit_condition`: Callable that returns `True` to stop the loop
+- `initial_input_mapper`: **NEW** - Maps LoopStep input to first iteration's body input
+- `iteration_input_mapper`: Maps previous iteration output to next iteration input
+- `loop_output_mapper`: Maps final successful output to LoopStep output
+
+**Use Cases:**
+- Content refinement, iterative problem solving, and quality improvement loops
+- **Conversational AI workflows** with structured data transformation
+- **Agentic planning and execution cycles** with state management
+- **Multi-step refinement processes** with context preservation
+
+**Benefits of Enhanced Loops:**
+- **Clean Data Transformation**: No more adapter steps or complex agent logic
+- **Consistent State Management**: Maintains conversation context across iterations
+- **Rich Output**: Comprehensive results with metadata and conversation history
+- **Declarative Configuration**: Intuitive YAML syntax for complex workflows
+- **Backward Compatibility**: Existing loop configurations continue to work unchanged
+
+**Practical Example - Conversational Clarification Loop:**
+```yaml
+- kind: loop
+  name: clarification_loop
+  loop:
+    body:
+      - kind: step
+        name: analyze_goal
+        uses: agents.goal_analyzer
+      - kind: step
+        name: ask_clarification
+        agent:
+          id: "flujo.builtins.ask_user"
+        input: "{{ previous_step }}"
+    initial_input_mapper: "skills.helpers:map_initial_goal"
+    iteration_input_mapper: "skills.helpers:map_conversation_state"
+    exit_condition: "skills.helpers:is_goal_complete"
+    loop_output_mapper: "skills.helpers:map_final_goal"
+    max_loops: 5
+```
+
+This pattern enables sophisticated conversational workflows where:
+- The `initial_input_mapper` transforms the user's initial goal into a structured format
+- The `iteration_input_mapper` maintains conversation context and history
+- The `exit_condition` determines when the goal is sufficiently clarified
+- The `loop_output_mapper` provides a comprehensive final result
 
 ### 5. Map Step (`kind: map`)
 
@@ -388,6 +454,23 @@ Define a step to run if the primary step fails.
 
 ## Advanced Features
 
+### Enhanced Loop Mappers
+
+Flujo now supports comprehensive input/output mapping for sophisticated agentic loops directly in YAML. This eliminates the need for adapter steps and complex agent logic when building conversational workflows.
+
+**Key Features:**
+- **`initial_input_mapper`**: Transform LoopStep input for the first iteration
+- **`iteration_input_mapper`**: Map previous iteration output to next iteration input
+- **`loop_output_mapper`**: Transform final successful output to LoopStep result
+- **Full YAML Support**: All mapper functionality available declaratively
+- **Backward Compatibility**: Existing loops continue to work unchanged
+
+**Common Use Cases:**
+- Conversational AI with context preservation
+- Iterative refinement with state management
+- Agentic planning with conversation history
+- Quality improvement loops with progressive enhancement
+
 ### Templated Input
 
 Use Jinja-like templates for dynamic input values.
@@ -519,11 +602,369 @@ Run this command to check your pipeline for errors before execution.
 flujo validate pipeline.yaml
 ```
 
+## Real-World Development Insights
+
+This section documents key learnings from building and debugging complex Flujo YAML pipelines, particularly insights gained from real-world development exercises.
+
+### 1. **Built-in Skills: Your First Choice**
+
+**Key Learning**: Flujo's built-in skills are more powerful than initially apparent and can handle surprisingly complex workflows without custom development.
+
+```yaml
+# ✅ Leverage built-in skills for common patterns
+- kind: step
+  name: get_user_input
+  agent:
+    id: "flujo.builtins.ask_user"
+  input: "What would you like to accomplish?"
+
+- kind: step
+  name: stringify_response
+  agent:
+    id: "flujo.builtins.stringify"
+  input: "{{ previous_step }}"
+
+- kind: step
+  name: web_search
+  agent:
+    id: "flujo.builtins.web_search"
+    params:
+      query: "{{ previous_step }}"
+      max_results: 5
+```
+
+**Available Built-in Skills:**
+- **Human Interaction**: `flujo.builtins.ask_user`, `flujo.builtins.check_user_confirmation`
+- **Data Processing**: `flujo.builtins.stringify`, `flujo.builtins.extract_from_text`
+- **Web Operations**: `flujo.builtins.web_search`, `flujo.builtins.http_get`
+- **File Operations**: `flujo.builtins.fs_write_file`
+- **AI Operations**: `flujo.builtins.extract_from_text`
+
+**Guidelines:**
+- **Start with built-ins**: Explore `flujo.builtins.*` namespace before building custom solutions
+- **Combine multiple built-ins**: Chain simple skills to create complex behaviors
+- **Use `flujo.builtins.discover_skills`**: Run this to see all available capabilities
+- **Test built-in combinations**: Often you can achieve your goal without custom development
+
+### 2. **Skill Discovery and Troubleshooting**
+
+**Key Learning**: Understanding when and how skills are loaded is crucial for successful pipeline execution.
+
+**Debugging Skill Issues:**
+```bash
+# ✅ Check what skills are available
+flujo run debug_skills.yaml
+
+# ✅ Verify skill registry contents
+python3 -c "from flujo.infra.skill_registry import get_skill_registry; print(list(get_skill_registry()._entries.keys()))"
+
+# ✅ Test minimal pipeline first
+flujo run test_minimal.yaml
+```
+
+**Common Error Patterns:**
+```bash
+# ❌ "Unknown skill id" usually means:
+# - Skill not registered in the registry
+# - Skill loading happens after pipeline compilation
+# - Import path issues in custom skills
+
+# ✅ Debug with:
+flujo --debug run pipeline.yaml
+```
+
+**Guidelines:**
+- **Built-in skills load automatically**: No registration needed
+- **Custom skills require explicit registration**: Use programmatic registration in `__init__.py` files
+- **Test skill availability**: Use `flujo.builtins.discover_skills` to verify what's loaded
+- **Understand loading timing**: Skills must be available before pipeline compilation
+
+### 3. **Building Interactive Workflows with YAML**
+
+**Key Learning**: Complex interactive workflows can be built using only built-in skills and proper YAML composition.
+
+```yaml
+# ✅ Example: Multi-step clarification workflow using built-ins
+version: "0.1"
+name: "clarification_workflow"
+
+agents:
+  clarification_agent:
+    model: "openai:gpt-4o-mini"
+    system_prompt: |
+      Analyze the user's goal and either:
+      - Ask ONE clarifying question if more details are needed
+      - Respond with "COMPLETE: " followed by a summary
+    output_schema:
+      type: string
+
+steps:
+  - kind: step
+    name: get_initial_goal
+    agent:
+      id: "flujo.builtins.ask_user"
+    input: "What would you like to accomplish?"
+
+  - kind: step
+    name: analyze_and_clarify
+    uses: agents.clarification_agent
+    input: "Initial goal: {{ previous_step }}"
+
+  - kind: step
+    name: stringify_response
+    agent:
+      id: "flujo.builtins.stringify"
+    input: "{{ previous_step }}"
+
+  - kind: step
+    name: get_clarification
+    agent:
+      id: "flujo.builtins.ask_user"
+    input: "{{ previous_step }}"
+```
+
+**Interactive Workflow Patterns:**
+- **Use HITL steps strategically**: Combine `ask_user` with AI agents for intelligent interactions
+- **Stringify complex outputs**: Use `flujo.builtins.stringify` to handle type conversions
+- **Build incrementally**: Add complexity one step at a time
+- **Test each addition**: Ensure the pipeline works before adding more steps
+
+### 4. **When to Use Custom Skills vs. Built-ins**
+
+**Decision Framework:**
+```yaml
+# ✅ Use Built-ins When:
+# - You need human interaction (ask_user, check_user_confirmation)
+# - You need data processing (stringify, web_search, http_get)
+# - You need file operations (fs_write_file)
+# - You need basic AI operations (extract_from_text)
+# - You can combine multiple built-ins to achieve your goal
+
+# 🔧 Consider Custom Skills When:
+# - You need domain-specific business logic
+# - You need to integrate with external APIs not covered by built-ins
+# - You need complex state management beyond what YAML provides
+# - You've exhausted built-in capabilities and combinations
+```
+
+**Custom Skill Implementation Pattern:**
+```python
+# skills/__init__.py - Programmatic registration
+from flujo.infra.skill_registry import get_skill_registry
+from .helpers import my_custom_function
+
+registry = get_skill_registry()
+registry.register(
+    id="my_custom_skill",
+    factory=my_custom_function,
+    description="Custom business logic"
+)
+```
+
+### 5. **Testing and Validation Best Practices**
+
+**Key Learning**: Test skill availability and pipeline loading separately from execution.
+
+```bash
+# ✅ Test skill discovery
+flujo run debug_skills.yaml
+
+# ✅ Test minimal pipeline
+flujo run test_minimal.yaml
+
+# ✅ Test full pipeline
+flujo run main_pipeline.yaml
+
+# ✅ Validate pipeline structure
+flujo validate main_pipeline.yaml
+```
+
+**Testing Checklist:**
+- [ ] Skills are discoverable (`flujo.builtins.discover_skills`)
+- [ ] Minimal pipeline loads without errors
+- [ ] Each step can execute independently
+- [ ] Full pipeline completes successfully
+- [ ] Error handling works as expected
+- [ ] Performance meets requirements
+
+### 6. **Performance and Reliability Considerations**
+
+**Key Learning**: Built-in skills are optimized and tested, while custom skills require additional validation.
+
+```yaml
+# ✅ Built-in skills have built-in optimization
+- kind: step
+  name: web_search
+  agent:
+    id: "flujo.builtins.web_search"
+    params:
+      query: "{{ context.search_term }}"
+      max_results: 3
+
+# 🔧 Custom skills need explicit configuration
+- kind: step
+  name: custom_operation
+  agent:
+    id: "my_custom_skill"
+  config:
+    timeout_s: 60
+    max_retries: 2
+```
+
+**Guidelines:**
+- **Built-ins are production-ready**: They include proper error handling and retries
+- **Custom skills need testing**: Validate error handling and edge cases
+- **Monitor performance**: Built-ins include cost tracking and performance metrics
+- **Use appropriate timeouts**: Set realistic timeouts for custom operations
+
+### 7. **Migration Path from Custom to Built-in Skills**
+
+**Key Learning**: Many custom skill requirements can be satisfied by combining built-in capabilities.
+
+```yaml
+# ❌ Before: Custom command executor
+# skills.yaml
+command_executor:
+  path: "skills:command_executor_factory"
+
+# ✅ After: Built-in pattern
+- kind: step
+  name: get_user_input
+  agent:
+    id: "flujo.builtins.ask_user"
+  input: "{{ context.question }}"
+
+- kind: step
+  name: process_response
+  uses: agents.response_processor
+  input: "{{ previous_step }}"
+```
+
+**Migration Strategy:**
+1. **Inventory your custom skills**: List what each one does
+2. **Map to built-ins**: Find equivalent or combinable built-in skills
+3. **Refactor incrementally**: Replace one skill at a time
+4. **Test thoroughly**: Ensure the new approach works as expected
+5. **Document patterns**: Share successful built-in combinations with your team
+
+### 8. **Enhanced Loop Mappers for Conversational AI**
+
+**Key Learning**: Flujo's enhanced loop mappers provide a declarative solution for complex conversational workflows that previously required custom adapter steps.
+
+**Before Enhanced Loops:**
+```yaml
+# ❌ Required complex workarounds
+- kind: step
+  name: adapter_step
+  uses: agents.complex_adapter
+  input: "{{ context.user_goal }}"
+
+- kind: loop
+  name: basic_loop
+  loop:
+    body:
+      - kind: step
+        name: process
+        uses: agents.processor
+    max_loops: 5
+    exit_condition: "helpers:is_complete"
+```
+
+**After Enhanced Loops:**
+```yaml
+# ✅ Clean, declarative configuration
+- kind: loop
+  name: conversational_loop
+  loop:
+    body:
+      - kind: step
+        name: process
+        uses: agents.processor
+    initial_input_mapper: "skills.helpers:map_initial_goal"
+    iteration_input_mapper: "skills.helpers:map_conversation_state"
+    exit_condition: "skills.helpers:is_complete"
+    loop_output_mapper: "skills.helpers:map_final_result"
+    max_loops: 5
+```
+
+**Benefits:**
+- **Eliminates Adapter Steps**: Direct mapping between input and loop body expectations
+- **Maintains Context**: Conversation history and state preserved across iterations
+- **Rich Output**: Comprehensive results with metadata and conversation flow
+- **Declarative**: Intuitive YAML syntax for complex workflows
+- **Production Ready**: Built-in error handling and validation
+
+### 9. **Advanced YAML Composition Patterns**
+
+**Key Learning**: Complex workflows can be built by combining multiple YAML features effectively.
+
+```yaml
+# ✅ Example: Conditional routing with built-in skills
+- kind: conditional
+  name: content_router
+  condition: "flujo.builtins.has_yaml_key"
+  branches:
+    present:
+      - kind: step
+        name: process_yaml
+        agent:
+          id: "flujo.builtins.extract_yaml_text"
+    absent:
+      - kind: step
+        name: create_yaml
+        uses: agents.yaml_generator
+
+# ✅ Example: Parallel processing with built-ins
+- kind: parallel
+  name: parallel_analysis
+  merge_strategy: context_update
+  branches:
+    sentiment:
+      - kind: step
+        name: analyze_sentiment
+        agent:
+          id: "flujo.builtins.extract_from_text"
+        input: |
+          Extract sentiment from: {{ context.text }}
+          Schema: {{ context.sentiment_schema }}
+    keywords:
+      - kind: step
+        name: extract_keywords
+        agent:
+          id: "flujo.builtins.extract_from_text"
+        input: |
+          Extract keywords from: {{ context.text }}
+          Schema: {{ context.keyword_schema }}
+```
+
+**Composition Guidelines:**
+- **Combine step types**: Use `conditional`, `parallel`, and `loop` with built-in skills
+- **Leverage templating**: Use `{{ context.* }}` and `{{ previous_step }}` effectively
+- **Chain operations**: Build complex workflows from simple, focused steps
+- **Test combinations**: Ensure each composition works before building further
+
+---
+
+## Summary of Key Insights
+
+The real-world development experience revealed several critical insights for Flujo YAML development:
+
+1. **Built-in skills are underestimated** - They can handle surprisingly complex workflows
+2. **Skill discovery timing matters** - Skills must be available before pipeline compilation
+3. **Systematic debugging is essential** - Question assumptions and test hypotheses methodically
+4. **YAML-driven workflows are powerful** - When skills work, the declarative approach scales well
+5. **Start simple, add complexity incrementally** - Test each addition before building further
+6. **Enhanced loop mappers eliminate complexity** - Conversational AI workflows are now declarative and intuitive
+
+**Remember**: Flujo's built-in capabilities are often sufficient for your needs. Explore them thoroughly before building custom solutions, and always test incrementally to catch issues early.
+
 ## Conclusion
 
 Flujo's YAML syntax provides a powerful, declarative way to define complex AI workflows. By understanding the available step types, configuration options, and best practices, you can create maintainable, scalable pipelines that leverage the full power of the Flujo framework.
 
 The `as_step` functionality is available through the `imports` section, where imported pipelines are automatically wrapped as steps, providing the same modular composition capabilities as the Python API.
+
+**Enhanced Loop Support:** Flujo now provides comprehensive YAML support for sophisticated loop workflows through enhanced mappers (`initial_input_mapper`, `iteration_input_mapper`, `loop_output_mapper`). This enables declarative conversational AI patterns and complex iterative workflows without requiring custom adapter steps.
 
 **Note on Step Type Support:** While most step types are fully supported in YAML, Human-in-the-Loop (HITL) steps currently require the Python DSL. This limitation will be addressed in future releases to provide complete YAML coverage for all Flujo step types.
  

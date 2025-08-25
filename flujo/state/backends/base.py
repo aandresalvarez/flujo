@@ -129,3 +129,12 @@ class StateBackend(ABC):
     async def list_run_steps(self, run_id: str) -> List[Dict[str, Any]]:
         """Return all step records for a run ordered by step index."""
         raise NotImplementedError
+
+    # Optional lifecycle hook: backends may override to release resources
+    async def shutdown(self) -> None:
+        """Gracefully release any resources held by the backend.
+
+        Default is a no-op. Concrete backends should override when they hold
+        threads, file handles, or async connections that need closing.
+        """
+        return None

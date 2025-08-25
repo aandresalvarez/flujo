@@ -124,6 +124,10 @@ def _get_thread_scratch_buffer() -> bytearray:
     buffer_returned_to_pool: bool = _buffer_returned_to_pool_var.get()
 
     if task_buffer is not None and not buffer_returned_to_pool:
+        # Ensure callers always receive an empty buffer at retrieval time
+        # to avoid leaking content across test/task boundaries.
+        if len(task_buffer) != 0:
+            task_buffer.clear()
         return task_buffer
 
     if ENABLE_BUFFER_POOLING:

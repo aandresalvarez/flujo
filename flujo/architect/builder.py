@@ -4,17 +4,23 @@ from typing import Any, Dict, List, Optional, Union
 import os as _os
 
 from flujo.domain.dsl import Pipeline, Step
+from flujo.domain.dsl import MapStep
 from flujo.domain.dsl.state_machine import StateMachineStep
 from flujo.infra.skill_registry import get_skill_registry
 from flujo.infra import telemetry as _telemetry
 from flujo.domain.base_model import BaseModel as _BaseModel
 
+# Ensure core builtin skills are registered for heuristics
+try:  # pragma: no cover - best-effort
+    import flujo.builtins as _builtins  # noqa: F401
+except Exception:
+    pass
+
 
 async def _emit_minimal_yaml(goal: str) -> dict[str, Any]:
     """Return a minimal, valid Flujo YAML blueprint derived from the goal.
 
-    The builder intentionally emits a conservative pipeline scaffold to keep
-    CLI `create` flows fast and dependency-free.
+    Intentionally conservative and dependency-free.
     """
     safe_name = "generated_pipeline"
     try:
@@ -109,11 +115,18 @@ async def _map_framework_schema(obj: Dict[str, Any]) -> Dict[str, Any]:
 def _skill_available(skill_id: str, *, available: Optional[List[Dict[str, Any]]]) -> bool:
     try:
         if isinstance(available, list):
-            return any(isinstance(x, dict) and x.get("id") == skill_id for x in available)
+            # Only return early if we actually find the skill in the list
+            found = any(isinstance(x, dict) and x.get("id") == skill_id for x in available)
+            if found:
+                return True
     except Exception:
         pass
     try:
-        return get_skill_registry().get(skill_id) is not None
+        entry = get_skill_registry().get(skill_id)
+        # Treat empty dicts and None as unavailable
+        if isinstance(entry, dict):
+            return bool(entry)
+        return entry is not None
     except Exception:
         return False
 
@@ -140,10 +153,24 @@ async def _make_plan_from_goal(*_: Any, context: _BaseModel | None = None) -> Di
     except Exception:
         url = None
 
+    save_path: Optional[str] = None
+    try:
+        # Extract common "save to file" patterns
+        m = _re.search(r"save\s+(?:it\s+)?to\s+(?:a\s+)?file\s+(?:named\s+)?([\w\.-/\\]+)", g)
+        if m:
+            save_path = m.group(1)
+        else:
+            m2 = _re.search(r"save\s+(?:it\s+)?as\s+([\w\.-/\\]+)", g)
+            if m2:
+                save_path = m2.group(1)
+    except Exception:
+        save_path = None
+
     if ("http" in g or url) and _skill_available("flujo.builtins.http_get", available=available):
         params = {"url": url} if url else {}
         chosen = {
             "name": "Fetch URL",
+            "purpose": "Fetch the content from the specified URL for downstream processing.",
             "agent": {"id": "flujo.builtins.http_get", "params": params},
         }
         summary = "Fetches content from the specified URL."
@@ -152,17 +179,31 @@ async def _make_plan_from_goal(*_: Any, context: _BaseModel | None = None) -> Di
     ):
         chosen = {
             "name": "Web Search",
+            "purpose": "Perform a web search to find information related to the user's goal.",
             "agent": {"id": "flujo.builtins.web_search", "params": {"query": goal}},
         }
         summary = "Performs a web search for the goal text."
     else:
         chosen = {
             "name": "Echo Input",
+            "purpose": "Safely echo or stringify the input as a baseline step.",
             "agent": {"id": "flujo.builtins.stringify", "params": {}},
         }
         summary = "Returns the input unchanged."
 
     plan: List[Dict[str, Any]] = [chosen]
+    # If the goal clearly requests saving to a file and the skill is available, append a write step
+    if save_path and _skill_available("flujo.builtins.fs_write_file", available=available):
+        plan.append(
+            {
+                "name": "Save To File",
+                "purpose": "Persist the previous step's output to a file on disk.",
+                "agent": {
+                    "id": "flujo.builtins.fs_write_file",
+                    "params": {"path": save_path},
+                },
+            }
+        )
     return {"execution_plan": plan, "plan_summary": summary}
 
 
@@ -220,9 +261,6 @@ async def _generate_yaml_from_plan(
             scratchpad = getattr(context, "scratchpad")
             if isinstance(scratchpad, dict):
                 scratchpad["next_state"] = "Validation"
-                _telemetry.logfire.info(
-                    f"[ArchitectSM] GenerateYAML directly updated context scratchpad: {scratchpad}"
-                )
     except Exception as e:
         _telemetry.logfire.error(f"[ArchitectSM] Failed to update context scratchpad: {e}")
 
@@ -231,14 +269,8 @@ async def _generate_yaml_from_plan(
         if context is not None:
             if hasattr(context, "yaml_text"):
                 setattr(context, "yaml_text", yaml_text)
-                _telemetry.logfire.info(
-                    "[ArchitectSM] GenerateYAML directly set yaml_text in context"
-                )
             if hasattr(context, "generated_yaml"):
                 setattr(context, "generated_yaml", yaml_text)
-                _telemetry.logfire.info(
-                    "[ArchitectSM] GenerateYAML directly set generated_yaml in context"
-                )
     except Exception as e:
         _telemetry.logfire.error(f"[ArchitectSM] GenerateYAML failed to set context fields: {e}")
         pass
@@ -255,7 +287,333 @@ async def _generate_yaml_from_plan(
     return result
 
 
-def _build_state_machine_pipeline() -> Pipeline[Any, Any]:
+# ------------------------------
+# Agentic Planner (Phase 1)
+# ------------------------------
+async def _run_planner_agent(
+    _x: Any = None, *, context: _BaseModel | None = None
+) -> Dict[str, Any]:
+    """Call Planner Agent when available; fallback to heuristics.
+
+    Expects planner agent to accept a dict with keys:
+      - user_goal, available_skills, project_summary, flujo_schema
+    And return an ExecutionPlan-like dict with keys:
+      - plan_summary: str, steps: List[{'step_name','purpose'}]
+    """
+    try:
+        reg = get_skill_registry()
+    except Exception:
+        reg = None
+
+    # Gather inputs
+    goal = ""
+    available = []
+    proj = ""
+    schema = {}
+    try:
+        if context is not None:
+            goal = str(getattr(context, "user_goal", "") or "")
+            available = list(getattr(context, "available_skills", []) or [])
+            proj = str(getattr(context, "project_summary", "") or "")
+            schema = dict(getattr(context, "flujo_schema", {}) or {})
+    except Exception:
+        pass
+
+    payload = {
+        "user_goal": goal,
+        "available_skills": available,
+        "project_summary": proj,
+        "flujo_schema": schema,
+    }
+
+    # Try registry agent (respect explicit opt-out)
+    try:
+        # Optional toggle to disable agentic planner for A/B or debugging
+        disable = str(_os.environ.get("FLUJO_ARCHITECT_AGENTIC_PLANNER", "")).strip().lower()
+        if disable in {"0", "false", "no", "off"}:
+            raise RuntimeError("Agentic planner explicitly disabled by env var")
+
+        entry = reg.get("flujo.architect.planner") if reg else None
+        if entry and isinstance(entry, dict) and entry.get("factory"):
+            agent_callable = entry["factory"]()
+            result = await agent_callable(payload)
+            # Normalize into legacy context fields
+            plan_summary = None
+            steps_out: List[Dict[str, Any]] = []
+            if isinstance(result, dict):
+                plan_summary = result.get("plan_summary")
+                steps = result.get("steps")
+                if isinstance(steps, list):
+                    for s in steps:
+                        if isinstance(s, dict):
+                            nm = s.get("step_name") or s.get("name") or "step"
+                            purpose = s.get("purpose") or ""
+                            steps_out.append({"name": nm, "purpose": purpose})
+            out: Dict[str, Any] = {}
+            if steps_out:
+                out["execution_plan"] = steps_out
+            if plan_summary:
+                out["plan_summary"] = plan_summary
+            return out
+    except Exception:
+        pass
+
+    # Fallback to heuristics
+    return await _make_plan_from_goal(context=context)
+
+
+# ------------------------------
+# Agentic Tool Matcher + YAML Writer (Phase 2)
+# ------------------------------
+async def _prepare_for_map(_x: Any = None, *, context: _BaseModel | None = None) -> Dict[str, Any]:
+    """Prepare `prepared_steps_for_mapping` from `execution_plan`.
+
+    Accepts both agentic-planned steps (name/purpose) and legacy heuristic steps
+    (with 'agent'). Returns list items suitable for tool matching.
+    """
+    items: List[Dict[str, Any]] = []
+    try:
+        plan = getattr(context, "execution_plan", None) if context is not None else None
+        if isinstance(plan, list):
+            for s in plan:
+                if not isinstance(s, dict):
+                    continue
+                # Agentic planned variant
+                if "purpose" in s and "name" in s and "agent" not in s:
+                    items.append({"step_name": s.get("name"), "purpose": s.get("purpose")})
+                # Legacy variant (already selected agent)
+                elif "agent" in s:
+                    nm = s.get("name") or "step"
+                    agent = s.get("agent") or {}
+                    items.append(
+                        {
+                            "step_name": nm,
+                            "purpose": s.get("purpose", ""),
+                            "preselected_agent": agent,
+                        }
+                    )
+    except Exception:
+        items = []
+    # Ensure at least one item to keep MapStep productive and avoid empty YAML later
+    if not items:
+        items = [
+            {
+                "step_name": "Echo Input",
+                "purpose": "Safely echo or stringify the input as a baseline step.",
+            }
+        ]
+    return {"prepared_steps_for_mapping": items}
+
+
+async def _match_one_tool(
+    step_item: Dict[str, Any], *, context: _BaseModel | None = None
+) -> Dict[str, Any]:
+    """Run ToolMatcher agent for a single planned step; resilient with safe fallback.
+
+    Any exception is caught and logged; function always returns a selection.
+    """
+    try:
+        # Inputs
+        step_name = step_item.get("step_name") if isinstance(step_item, dict) else None
+        purpose = step_item.get("purpose") if isinstance(step_item, dict) else None
+        preselected = step_item.get("preselected_agent") if isinstance(step_item, dict) else None
+        available: List[Dict[str, Any]] = []
+        try:
+            if context is not None:
+                available = list(getattr(context, "available_skills", []) or [])
+        except Exception:
+            available = []
+
+        # If already selected from legacy plan, honor it
+        if isinstance(preselected, dict) and preselected.get("id"):
+            return {
+                "step_name": step_name or "step",
+                "chosen_agent_id": preselected.get("id"),
+                "agent_params": preselected.get("params") or {},
+            }
+
+        # Try agent (respect explicit opt-out)
+        try:
+            # Optional toggle to disable agentic tool matcher for A/B or debugging
+            disable = (
+                str(_os.environ.get("FLUJO_ARCHITECT_AGENTIC_TOOLMATCHER", "")).strip().lower()
+            )
+            if disable in {"0", "false", "no", "off"}:
+                raise RuntimeError("Agentic tool matcher explicitly disabled by env var")
+
+            reg = get_skill_registry()
+            entry = reg.get("flujo.architect.tool_matcher") if reg else None
+            if entry and isinstance(entry, dict) and entry.get("factory"):
+                agent_callable = entry["factory"]()
+                payload = {
+                    "step_name": step_name,
+                    "purpose": purpose,
+                    "available_skills": available,
+                }
+                res = await agent_callable(payload)
+                if isinstance(res, dict) and res.get("chosen_agent_id"):
+                    return {
+                        "step_name": res.get("step_name") or step_name or "step",
+                        "chosen_agent_id": res.get("chosen_agent_id"),
+                        "agent_params": res.get("agent_params") or {},
+                    }
+        except Exception as e:
+            try:
+                _telemetry.logfire.warning(
+                    f"[ArchitectSM] ToolMatcher agent failed for step '{step_name}': {e}. Falling back."
+                )
+            except Exception:
+                pass
+
+        # Heuristic fallback: default to stringify
+        return {
+            "step_name": step_name or "step",
+            "chosen_agent_id": "flujo.builtins.stringify",
+            "agent_params": {},
+        }
+    except Exception as e:
+        try:
+            _telemetry.logfire.warning(
+                f"[ArchitectSM] ToolMatcher unexpected error for step: {e}. Using safe default."
+            )
+        except Exception:
+            pass
+        return {
+            "step_name": (step_item.get("step_name") if isinstance(step_item, dict) else None)
+            or "step",
+            "chosen_agent_id": "flujo.builtins.stringify",
+            "agent_params": {},
+        }
+
+
+async def _collect_tool_selections(
+    result_list: Any, *, context: _BaseModel | None = None
+) -> Dict[str, Any]:
+    """Collect MapStep outputs into context field."""
+    results = result_list if isinstance(result_list, list) else []
+    return {"tool_selections": results}
+
+
+async def _generate_yaml_from_tool_selections(
+    _x: Any = None, *, context: _BaseModel | None = None
+) -> Dict[str, Any]:
+    """YAML writer using agent when available, with robust fallback."""
+    goal = None
+    flujo_schema: Dict[str, Any] = {}
+    selections: List[Dict[str, Any]] = []
+    try:
+        if context is not None:
+            goal = getattr(context, "user_goal", None)
+            flujo_schema = getattr(context, "flujo_schema", {}) or {}
+            selections = list(getattr(context, "tool_selections", []) or [])
+    except Exception:
+        pass
+
+    # Try agent if registered (respect explicit opt-out)
+    try:
+        # Optional toggle to disable agentic YAML writer for A/B or debugging
+        disable = str(_os.environ.get("FLUJO_ARCHITECT_AGENTIC_YAMLWRITER", "")).strip().lower()
+        if disable in {"0", "false", "no", "off"}:
+            raise RuntimeError("Agentic YAML writer explicitly disabled by env var")
+
+        reg = get_skill_registry()
+        entry = reg.get("flujo.architect.yaml_writer") if reg else None
+        if entry and isinstance(entry, dict) and entry.get("factory"):
+            agent_callable = entry["factory"]()
+            payload = {
+                "user_goal": goal,
+                "tool_selections": selections,
+                "flujo_schema": flujo_schema,
+            }
+            res = await agent_callable(payload)
+            if isinstance(res, dict) and isinstance(res.get("generated_yaml"), str):
+                yaml_text = res["generated_yaml"]
+                # Update context directly for state transition consistency
+                try:
+                    if context is not None and hasattr(context, "scratchpad"):
+                        scratchpad = getattr(context, "scratchpad")
+                        if isinstance(scratchpad, dict):
+                            scratchpad["next_state"] = "Validation"
+                except Exception:
+                    pass
+                try:
+                    if context is not None and hasattr(context, "yaml_text"):
+                        setattr(context, "yaml_text", yaml_text)
+                    if context is not None and hasattr(context, "generated_yaml"):
+                        setattr(context, "generated_yaml", yaml_text)
+                except Exception:
+                    pass
+                return {"generated_yaml": yaml_text, "yaml_text": yaml_text}
+    except Exception:
+        pass
+
+    # Fallbacks
+    # 1) If we have tool selections, synthesize steps -> YAML
+    if selections:
+        try:
+            name = _normalize_name_from_goal(str(goal) if goal is not None else None)
+            import yaml as _yaml
+
+            steps_yaml: List[str] = []
+            for i, sel in enumerate(selections):
+                # Handle both Pydantic models and dictionaries
+                if hasattr(sel, "chosen_agent_id"):
+                    # Pydantic model - use attribute access
+                    sid = getattr(sel, "chosen_agent_id", None)
+                    params = getattr(sel, "agent_params", None)
+                    sname = getattr(sel, "step_name", None)
+                else:
+                    # Dictionary - use .get() method
+                    sid = sel.get("chosen_agent_id") if isinstance(sel, dict) else None
+                    params = sel.get("agent_params") if isinstance(sel, dict) else None
+                    sname = sel.get("step_name") if isinstance(sel, dict) else None
+                if not sid:
+                    sid = "flujo.builtins.stringify"
+                if not isinstance(params, dict):
+                    params = {}
+                if not sname:
+                    sname = "Step"
+                step_dict = {
+                    "kind": "step",
+                    "name": sname,
+                    "agent": {"id": sid, "params": params},
+                }
+                steps_yaml.append(_yaml.safe_dump(step_dict, sort_keys=False).strip())
+
+            steps_block = "\n".join(
+                [
+                    "- " + line if i == 0 else "  " + line
+                    for block in steps_yaml
+                    for i, line in enumerate(block.splitlines())
+                ]
+            )
+            yaml_text = f'\nversion: "0.1"\nname: {name}\nsteps:\n{steps_block}\n'
+
+            try:
+                if context is not None and hasattr(context, "scratchpad"):
+                    scratchpad = getattr(context, "scratchpad")
+                    if isinstance(scratchpad, dict):
+                        scratchpad["next_state"] = "Validation"
+            except Exception:
+                pass
+            try:
+                if context is not None and hasattr(context, "yaml_text"):
+                    setattr(context, "yaml_text", yaml_text)
+                if context is not None and hasattr(context, "generated_yaml"):
+                    setattr(context, "generated_yaml", yaml_text)
+            except Exception:
+                pass
+            return {"generated_yaml": yaml_text, "yaml_text": yaml_text}
+        except Exception as e:
+            _telemetry.logfire.info(f"[Architect] Exception in tool selections processing: {e}")
+            pass
+
+    # 2) If no selections, fallback to legacy plan-based generator
+    _telemetry.logfire.info("[Architect] No tool selections, falling back to plan-based generator")
+    return await _generate_yaml_from_plan(None, context=context)
+
+
+def _build_state_machine_pipeline() -> "Pipeline[Any, Any]":
     """Programmatically build the full Architect state machine."""
     # GatheringContext: discover skills + analyze project + framework schema
     reg = get_skill_registry()
@@ -310,7 +668,7 @@ def _build_state_machine_pipeline() -> Pipeline[Any, Any]:
     async def _schema_fallback(*_a: Any, **_k: Any) -> Dict[str, Any]:
         return {"flujo_schema": {}}
 
-    get_schema: Union[Step[Any, Any], Pipeline[Any, Any]] = Step.from_callable(
+    get_schema: Union["Step[Any, Any]", "Pipeline[Any, Any]"] = Step.from_callable(
         _schema_fallback, name="MapFrameworkSchema", updates_context=True
     )
 
@@ -387,7 +745,7 @@ def _build_state_machine_pipeline() -> Pipeline[Any, Any]:
 
     plan_pipe = (
         Pipeline.from_step(
-            Step.from_callable(_make_plan_from_goal, name="MakePlan", updates_context=True)
+            Step.from_callable(_run_planner_agent, name="MakePlan", updates_context=True)
         )
         >> visualize
         >> estimate
@@ -544,9 +902,27 @@ def _build_state_machine_pipeline() -> Pipeline[Any, Any]:
         lambda *_a, **_k: _goto("Planning"), name="GotoReplan", updates_context=True
     )
 
-    # Generation: build YAML from plan
-    gen = Step.from_callable(_generate_yaml_from_plan, name="GenerateYAML", updates_context=True)
-    gen_pipeline = Pipeline.from_step(gen)
+    # Generation: Tool matching (Map) + YAML writer, with fallbacks
+    tool_match_body = Pipeline.from_step(
+        Step.from_callable(_match_one_tool, name="ToolMatcher", updates_context=False)
+    )
+    map_tools: "MapStep[Any]" = MapStep(
+        name="MapToolMatcher",
+        iterable_input="prepared_steps_for_mapping",
+        pipeline_to_run=tool_match_body,
+    )
+    gen_pipeline = (
+        Pipeline.from_step(
+            Step.from_callable(_prepare_for_map, name="PrepareForMap", updates_context=True)
+        )
+        >> map_tools
+        >> Step.from_callable(
+            _collect_tool_selections, name="CollectToolSelections", updates_context=True
+        )
+        >> Step.from_callable(
+            _generate_yaml_from_tool_selections, name="GenerateYAML", updates_context=True
+        )
+    )
 
     # Validation: validate -> repair loop until valid, then DryRunOffer
     try:
@@ -762,30 +1138,101 @@ def _build_state_machine_pipeline() -> Pipeline[Any, Any]:
     )
 
     async def _finalize(_x: Any = None, *, context: _BaseModel | None = None) -> Dict[str, Any]:
-        # Terminal state: ensure yaml_text exists to satisfy CLI/tests
+        """Ensure final YAML is present and return it as the step output.
+
+        Order:
+        1) Structured agent output
+        2) Fields (generated_yaml/yaml_text)
+        3) Attempt generation from tool selections
+        4) Attempt generation from plan
+        5) Minimal scaffold from goal
+        """
+        yaml_text: Optional[str] = None
         try:
-            yt = getattr(context, "yaml_text", None) if context is not None else None
-            if isinstance(yt, str) and yt.strip():
-                # Preserve existing yaml_text in the final result
-                return {"yaml_text": yt, "generated_yaml": yt}
-            # Try generate from plan
-            try:
-                gen = await _generate_yaml_from_plan(None, context=context)
-                out = {k: v for k, v in gen.items() if k in {"yaml_text", "generated_yaml"}}
-                if isinstance(out.get("yaml_text"), str):
-                    return out
-            except Exception:
-                pass
-            # Fallback: minimal YAML from user_goal
-            goal = None
-            try:
-                goal = getattr(context, "user_goal", None)
-            except Exception:
-                goal = None
-            gen2 = await _emit_minimal_yaml(str(goal or "pipeline"))
-            return {k: v for k, v in gen2.items() if k in {"yaml_text", "generated_yaml"}}
+            if context is not None:
+                # 1) Structured
+                try:
+                    gen_yaml_struct = getattr(context, "generated_yaml_structured", None)
+                    if gen_yaml_struct is not None and hasattr(gen_yaml_struct, "generated_yaml"):
+                        yaml_text = getattr(gen_yaml_struct, "generated_yaml")
+                except Exception:
+                    pass
+
+                # 2) Direct fields
+                if not yaml_text:
+                    try:
+                        yaml_text = getattr(context, "generated_yaml", None) or getattr(
+                            context, "yaml_text", None
+                        )
+                    except Exception:
+                        yaml_text = None
+
+                # 3) From tool selections
+                if (not isinstance(yaml_text, str) or not yaml_text.strip()) and hasattr(
+                    context, "tool_selections"
+                ):
+                    try:
+                        gen = await _generate_yaml_from_tool_selections(None, context=context)
+                        if isinstance(gen, dict):
+                            cand = gen.get("yaml_text") or gen.get("generated_yaml")
+                            if isinstance(cand, str) and cand.strip():
+                                yaml_text = cand
+                    except Exception:
+                        pass
+
+                # 4) From plan
+                if not isinstance(yaml_text, str) or not yaml_text.strip():
+                    try:
+                        gen2 = await _generate_yaml_from_plan(None, context=context)
+                        if isinstance(gen2, dict):
+                            cand2 = gen2.get("yaml_text") or gen2.get("generated_yaml")
+                            if isinstance(cand2, str) and cand2.strip():
+                                yaml_text = cand2
+                    except Exception:
+                        pass
+
+            # 5) Minimal scaffold
+            if not isinstance(yaml_text, str) or not yaml_text.strip():
+                try:
+                    goal = getattr(context, "user_goal", None) if context is not None else None
+                except Exception:
+                    goal = None
+                minimal = await _emit_minimal_yaml(str(goal or "pipeline"))
+                yaml_text = minimal.get("generated_yaml")
+                # Upgrade absolute minimal scaffold to a single safe step to avoid empty steps list
+                try:
+                    if isinstance(yaml_text, str) and "steps: []" in yaml_text:
+                        name = _normalize_name_from_goal(str(goal) if goal is not None else None)
+                        import yaml as _yaml
+
+                        step_dict = {
+                            "kind": "step",
+                            "name": "Echo Input",
+                            "agent": {"id": "flujo.builtins.stringify", "params": {}},
+                        }
+                        block = _yaml.safe_dump(step_dict, sort_keys=False).strip()
+                        steps_block = "\n".join(
+                            [
+                                "- " + line if i == 0 else "  " + line
+                                for i, line in enumerate(block.splitlines())
+                            ]
+                        )
+                        yaml_text = f'\nversion: "0.1"\nname: {name}\nsteps:\n{steps_block}\n'
+                except Exception:
+                    pass
         except Exception:
-            return {}
+            yaml_text = 'version: "0.1"\nname: fallback_pipeline\nsteps: []\n'
+
+        # Persist into context as well to avoid any merging anomalies
+        try:
+            if context is not None:
+                if hasattr(context, "yaml_text"):
+                    setattr(context, "yaml_text", yaml_text)
+                if hasattr(context, "generated_yaml"):
+                    setattr(context, "generated_yaml", yaml_text)
+        except Exception:
+            pass
+        return {"generated_yaml": yaml_text, "yaml_text": yaml_text}
 
     async def _failure_step(*_a: Any, **_k: Any) -> Dict[str, Any]:
         # Failure state: return empty dict
@@ -820,18 +1267,44 @@ def _build_state_machine_pipeline() -> Pipeline[Any, Any]:
 def build_architect_pipeline() -> Pipeline[Any, Any]:
     """Return the Architect pipeline object.
 
-    By default (for test compatibility), returns a minimal single-step pipeline named
-    'GenerateYAML'. To enable the full state-machine architect, set the environment
-    variable FLUJO_ARCHITECT_STATE_MACHINE=1.
+    Behavior:
+    - If ``FLUJO_ARCHITECT_STATE_MACHINE`` is truthy → enable state machine.
+    - Else if ``FLUJO_ARCHITECT_IGNORE_CONFIG`` is truthy → use minimal pipeline.
+    - Else, honor ``flujo.toml``: if ``[architect].state_machine_default = true`` → state machine.
+    - Else → minimal, single-step generator (unit-test friendly default).
+
+    This respects the team guide: use ConfigManager (not direct file reads) and
+    allow explicit environment overrides for reproducible tests.
     """
-    if (_os.environ.get("FLUJO_ARCHITECT_STATE_MACHINE") or "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
+
+    def _truthy(val: str | None) -> bool:
+        v = (val or "").strip().lower()
+        return v in {"1", "true", "yes", "on"}
+
+    # 1) Explicit environment opt-in to state machine has highest precedence
+    if _truthy(_os.environ.get("FLUJO_ARCHITECT_STATE_MACHINE")):
         return _build_state_machine_pipeline()
 
-    # Minimal programmatic pipeline used by tests and simple flows
+    # 2) Allow tests/CI to ignore project configuration explicitly
+    #    Also ignore config when running under test mode to keep unit tests deterministic
+    if _truthy(_os.environ.get("FLUJO_ARCHITECT_IGNORE_CONFIG")) or _truthy(
+        _os.environ.get("FLUJO_TEST_MODE")
+    ):
+        gen = Step.from_callable(_emit_minimal_yaml, name="GenerateYAML", updates_context=True)
+        return Pipeline.from_step(gen)
+
+    # 3) Honor flujo.toml default via ConfigManager, if present
+    try:
+        from flujo.infra.config_manager import ConfigManager as _CfgMgr
+
+        cfg = _CfgMgr().load_config()
+        arch = getattr(cfg, "architect", None)
+        if arch and bool(getattr(arch, "state_machine_default", False)):
+            return _build_state_machine_pipeline()
+    except Exception:
+        # Fall through to minimal pipeline
+        pass
+
+    # 4) Default minimal pipeline
     gen = Step.from_callable(_emit_minimal_yaml, name="GenerateYAML", updates_context=True)
     return Pipeline.from_step(gen)

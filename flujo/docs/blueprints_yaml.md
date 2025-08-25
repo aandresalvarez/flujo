@@ -7,6 +7,7 @@ Status: v1 (progressive)
 - Supported constructs:
   - Simple steps with `name`, `config`, `updates_context`, `validate_fields`
   - Parallel steps with `branches`, `merge_strategy`, `on_branch_failure`, `context_include_keys`, `field_mapping`, `ignore_branch_names`
+  - Loop steps with `body`, `max_loops`, `exit_condition`, `initial_input_mapper`, `iteration_input_mapper`, `loop_output_mapper`
 - Agent resolution: you can reference an async callable or agent via import string (e.g., `my_pkg.my_mod:async_fn`). If omitted, a passthrough agent is used.
   - NEW: You can declare agents inline under a top-level `agents` section and reference them with `uses: agents.<name>`.
   - NEW: You can compose pipelines via a top-level `imports` section and reference them with `uses: imports.<alias>`.
@@ -25,6 +26,41 @@ Status: v1 (progressive)
           id: "echo-skill"
     ```
     The CLI will auto-load `skills.yaml` before parsing the YAML.
+
+## Enhanced Loop Steps
+
+Loop steps now support comprehensive input/output mapping for sophisticated agentic workflows:
+
+```yaml
+- kind: loop
+  name: clarification_loop
+  loop:
+    body:
+      - name: planner
+        uses: agents.clarification_agent
+      - name: executor
+        agent:
+          id: "command_executor"
+    initial_input_mapper: "skills.helpers:map_initial_input"
+    iteration_input_mapper: "skills.helpers:map_iteration_input"
+    exit_condition: "skills.helpers:is_finish_command"
+    loop_output_mapper: "skills.helpers:map_loop_output"
+    max_loops: 10
+```
+
+**Loop Configuration Keys:**
+- `body`: The pipeline to execute in each iteration
+- `max_loops`: Maximum number of iterations (prevents infinite loops)
+- `exit_condition`: Callable that returns `True` to stop the loop
+- `initial_input_mapper`: Maps LoopStep input to first iteration's body input
+- `iteration_input_mapper`: Maps previous iteration output to next iteration input
+- `loop_output_mapper`: Maps final successful output to LoopStep output
+
+**Use Cases:**
+- Conversational AI loops with structured data transformation
+- Iterative refinement workflows
+- Agentic planning and execution cycles
+- Quality improvement loops with context preservation
 
 Example:
 

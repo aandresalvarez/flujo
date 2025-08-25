@@ -118,11 +118,34 @@ class AdvancedPromptFormatter:
 
         def placeholder_replacer(match: re.Match[str]) -> str:
             key = match.group(1).strip()
-            value = self._get_nested_value({**kwargs, **{"this": kwargs.get("this")}}, key)
-            # Escape any template syntax that may appear inside user-provided
-            # values so that it is rendered literally and not interpreted in a
-            # subsequent regex pass.
-            serialized_value = self._serialize(value)
+            # Support simple "a or b or c" fallback semantics within placeholders.
+            # Evaluate each candidate left-to-right; use the first truthy value.
+            # - Identifiers are resolved via dotted lookup in kwargs.
+            # - Single/double-quoted strings are treated as literals.
+            # - Unknown/None/empty values are skipped.
+            candidates = [s.strip() for s in re.split(r"\s+or\s+", key)] if " or " in key else [key]
+
+            chosen: Any = None
+            for expr in candidates:
+                # Quoted string literal
+                if (len(expr) >= 2) and (
+                    (expr[0] == expr[-1] == '"') or (expr[0] == expr[-1] == "'")
+                ):
+                    literal = expr[1:-1]
+                    if literal:
+                        chosen = literal
+                        break
+                    else:
+                        continue
+                # Variable/path lookup
+                v = self._get_nested_value({**kwargs, **{"this": kwargs.get("this")}}, expr)
+                # Treat empty string as falsy for fallback semantics
+                if v is not None and (str(v) != ""):
+                    chosen = v
+                    break
+
+            # Serialize and escape chosen value (or empty string if none)
+            serialized_value = self._serialize(chosen)
             return self._escape_template_syntax(serialized_value)
 
         processed = PLACEHOLDER_REGEX.sub(placeholder_replacer, processed)

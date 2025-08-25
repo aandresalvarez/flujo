@@ -7,6 +7,9 @@ from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.state.backends.sqlite import SQLiteBackend
 
+# Uses state backend and trace replay; mark as slow for fast subset exclusion
+pytestmark = [pytest.mark.slow]
+
 
 async def _upper(x: object) -> str:
     return str(x).upper()

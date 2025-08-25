@@ -12,6 +12,7 @@ else:
     logging.basicConfig(level=logging.INFO)
 
 from ..state.backends.sqlite import SQLiteBackend
+from ..state.backends.memory import InMemoryBackend
 from ..state.backends.base import StateBackend
 from ..infra.config_manager import get_state_uri
 from ..utils.config import get_settings
@@ -102,6 +103,27 @@ def load_backend_from_config() -> StateBackend:
     # Get state URI from ConfigManager (handles env vars + TOML with proper precedence)
     uri = get_state_uri(force_reload=True)
 
+    # Ephemeral override: allow config/env to force an in-memory backend
+    # Accepted forms:
+    #   - FLUJO_STATE_URI=memory:// (or mem://, inmemory://, memory)
+    #   - FLUJO_STATE_MODE in {"memory", "ephemeral"}
+    #   - FLUJO_EPHEMERAL_STATE in truthy values
+    try:
+        mode = os.getenv("FLUJO_STATE_MODE", "").strip().lower()
+        ephemeral_flag = os.getenv("FLUJO_EPHEMERAL_STATE", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        uri_lower = (uri or "").strip().lower()
+        memory_uri = uri_lower in {"memory", "memory://", "mem://", "inmemory://"}
+        if mode in {"memory", "ephemeral"} or ephemeral_flag or memory_uri:
+            return InMemoryBackend()
+    except Exception:
+        # Fall through to normal resolution
+        pass
+
     # Default fallback with test/CI isolation
     if uri is None:
         settings = get_settings()
@@ -178,5 +200,8 @@ def load_backend_from_config() -> StateBackend:
             raise typer.Exit(1)
         return SQLiteBackend(db_path)
     else:
+        # Support memory-like URIs when scheme was present but not sqlite
+        if (uri or "").strip().lower() in {"memory", "memory://", "mem://", "inmemory://"}:
+            return InMemoryBackend()
         typer.echo(f"[red]Unsupported backend URI: {uri}[/red]", err=True)
         raise typer.Exit(1)

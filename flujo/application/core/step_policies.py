@@ -724,7 +724,7 @@ async def _execute_simple_step_policy_impl(
     if hasattr(max_retries, "_mock_name") or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
         max_retries = 2
     # Ensure at least one attempt
-    telemetry.logfire.info(f"[Policy] SimpleStep max_retries (total attempts): {total_attempts}")
+    telemetry.logfire.debug(f"[Policy] SimpleStep max_retries (total attempts): {total_attempts}")
     # Attempt count semantics: max_retries equals total attempts expected by tests
     # Track primary (pre-fallback) usage totals to aggregate into fallback result
     primary_cost_usd_total: float = 0.0
@@ -794,10 +794,22 @@ async def _execute_simple_step_policy_impl(
                     templ_spec = step.meta.get("templated_input")
                 if templ_spec is not None:
                     from flujo.utils.prompting import AdvancedPromptFormatter
+                    from flujo.utils.template_vars import (
+                        get_steps_map_from_context,
+                        TemplateContextProxy,
+                        StepValueProxy,
+                    )
 
+                    steps_map = get_steps_map_from_context(attempt_context)
+                    # Wrap step values so .output/.result/.value aliases work
+                    steps_wrapped: Dict[str, Any] = {
+                        k: v if isinstance(v, StepValueProxy) else StepValueProxy(v)
+                        for k, v in steps_map.items()
+                    }
                     fmt_context: Dict[str, Any] = {
-                        "context": attempt_context,
+                        "context": TemplateContextProxy(attempt_context, steps=steps_wrapped),
                         "previous_step": data,
+                        "steps": steps_wrapped,
                     }
                     if isinstance(templ_spec, str) and ("{{" in templ_spec and "}}" in templ_spec):
                         data = AdvancedPromptFormatter(templ_spec).format(**fmt_context)
@@ -1326,22 +1338,41 @@ async def _execute_simple_step_policy_impl(
                 if getattr(step, "updates_context", False) and context is not None:
                     update_data = _build_context_update(result.output)
                     if update_data:
-                        try:
-                            telemetry.logfire.info(
-                                f"[SimplePolicy] Injecting updates for step '{getattr(step, 'name', '?')}', update_keys={list(update_data.keys())}"
-                            )
-                            telemetry.logfire.info(
-                                f"[SimplePolicy] Scratchpad before: {getattr(context, 'scratchpad', None)}"
-                            )
-                        except Exception:
-                            pass
                         _ = _inject_context(context, update_data, type(context))
+            except Exception:
+                pass
+
+            # Record successful step output into scratchpad['steps'] for templating references
+            # Store a compact string snapshot to avoid memory bloat in long runs.
+            try:
+                if context is not None:
+                    sp = getattr(context, "scratchpad", None)
+                    if sp is None:
                         try:
-                            telemetry.logfire.info(
-                                f"[SimplePolicy] Scratchpad after: {getattr(context, 'scratchpad', None)}"
-                            )
+                            setattr(context, "scratchpad", {"steps": {}})
+                            sp = getattr(context, "scratchpad", None)
                         except Exception:
-                            pass
+                            sp = None
+                    if isinstance(sp, dict):
+                        steps_map = sp.get("steps")
+                        if not isinstance(steps_map, dict):
+                            steps_map = {}
+                            sp["steps"] = steps_map
+                        # Compact snapshot: stringify and cap size
+                        try:
+                            val = result.output
+                            if isinstance(val, bytes):
+                                try:
+                                    val = val.decode("utf-8", errors="ignore")
+                                except Exception:
+                                    val = str(val)
+                            else:
+                                val = str(val)
+                            if len(val) > 1024:
+                                val = val[:1024]
+                            steps_map[getattr(step, "name", "")] = val
+                        except Exception:
+                            steps_map[getattr(step, "name", "")] = ""
             except Exception:
                 pass
 
@@ -1874,10 +1905,21 @@ class DefaultAgentStepExecutor:
                 templ_spec = step.meta.get("templated_input")
             if templ_spec is not None:
                 from flujo.utils.prompting import AdvancedPromptFormatter
+                from flujo.utils.template_vars import (
+                    get_steps_map_from_context,
+                    TemplateContextProxy,
+                    StepValueProxy,
+                )
 
+                steps_map = get_steps_map_from_context(context)
+                steps_wrapped: Dict[str, Any] = {
+                    k: v if isinstance(v, StepValueProxy) else StepValueProxy(v)
+                    for k, v in steps_map.items()
+                }
                 fmt_context: Dict[str, Any] = {
-                    "context": context,
+                    "context": TemplateContextProxy(context, steps=steps_wrapped),
                     "previous_step": data,
+                    "steps": steps_wrapped,
                 }
                 if isinstance(templ_spec, str) and ("{{" in templ_spec and "}}" in templ_spec):
                     data = AdvancedPromptFormatter(templ_spec).format(**fmt_context)
@@ -2382,6 +2424,24 @@ class DefaultAgentStepExecutor:
                         )
 
                     result.branch_context = context
+                    # Record successful step output for later templating
+                    try:
+                        if context is not None:
+                            sp = getattr(context, "scratchpad", None)
+                            if sp is None:
+                                try:
+                                    setattr(context, "scratchpad", {"steps": {}})
+                                    sp = getattr(context, "scratchpad", None)
+                                except Exception:
+                                    sp = None
+                            if isinstance(sp, dict):
+                                steps_map = sp.get("steps")
+                                if not isinstance(steps_map, dict):
+                                    steps_map = {}
+                                    sp["steps"] = steps_map
+                                steps_map[getattr(step, "name", "")] = result.output
+                    except Exception:
+                        pass
                     # Adapter attempts alignment for post-loop mappers (e.g., refine_output_mapper)
                     try:
                         step_name = getattr(step, "name", "")

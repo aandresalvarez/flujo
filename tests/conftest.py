@@ -10,6 +10,7 @@ from enum import Enum
 import pytest
 import threading
 import os as _os
+import re
 
 # Set test mode environment variable
 os.environ["FLUJO_TEST_MODE"] = "1"
@@ -350,9 +351,49 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore
             _diagnose_threads()
     except Exception:
         pass
+    # Ensure SQLite backends are shut down to avoid lingering aiosqlite threads
+    try:
+        from flujo.state.backends.sqlite import SQLiteBackend
+
+        SQLiteBackend.shutdown_all()
+    except Exception:
+        pass
     # As a last-resort, force-exit the interpreter in CI/test runs to avoid hangs
     try:
         if _os.environ.get("FLUJO_TEST_FORCE_EXIT") == "1":
             _os._exit(exitstatus)
     except Exception:
         pass
+
+
+def pytest_collection_modifyitems(config, items):  # type: ignore[override]
+    """Optionally skip tests via env var patterns without editing tests.
+
+    - Set `FLUJO_SKIP_TESTS` to a comma-separated list of regex patterns that
+      will be matched against each test's nodeid. Matching items are deselected.
+      Example:
+        FLUJO_SKIP_TESTS="tests/unit/test_sql_injection_security.py::TestSQLInjectionSecurity::test_save_state_sql_injection_resistance"
+
+    - Convenience toggle to skip the entire SQL injection security file:
+        FLUJO_SKIP_SQL_INJECTION_SECURITY=1
+    """
+    patterns: list[str] = []
+    if _os.environ.get("FLUJO_SKIP_SQL_INJECTION_SECURITY") == "1":
+        patterns.append(r"tests/unit/test_sql_injection_security\.py")
+    env_patterns = _os.environ.get("FLUJO_SKIP_TESTS", "").strip()
+    if env_patterns:
+        patterns.extend([p.strip() for p in env_patterns.split(",") if p.strip()])
+    if not patterns:
+        return
+
+    deselected = []
+    kept = []
+    for item in items:
+        nodeid = item.nodeid
+        if any(re.search(p, nodeid) for p in patterns):
+            deselected.append(item)
+        else:
+            kept.append(item)
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = kept

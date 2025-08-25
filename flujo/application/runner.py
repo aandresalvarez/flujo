@@ -276,6 +276,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             self.usage_limits = usage_limits
 
         self.hooks: list[Any] = []
+        # Tracing: honor caller's enable_tracing flag in all environments
+        # Do not auto-disable during tests; tests assert presence of trace data.
         if enable_tracing:
             from flujo.tracing.manager import TraceManager
 
@@ -607,7 +609,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         state_created_at: datetime | None = None
         # Initialize state manager and load existing state if available
         state_manager: StateManager[ContextT] = StateManager[ContextT](self.state_backend)
-        run_id_for_state = run_id or state_manager.get_run_id_from_context(current_context_instance)
+        # Determine run_id early for tracing; prefer explicit run_id, else context.run_id if present
+        run_id_for_state = run_id or getattr(current_context_instance, "run_id", None)
+
+        # If we didn't get an explicit run_id, consult the state manager
+        # to support durable resume semantics
+        if run_id_for_state is None:
+            run_id_for_state = state_manager.get_run_id_from_context(current_context_instance)
 
         if run_id_for_state:
             (
@@ -1414,6 +1422,34 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     initial_context_data=initial_sub_context_data,
                 ):
                     pass  # Consume all results to get the last one
+                # Best-effort: merge the sub-runner's final context back into the parent context
+                try:
+                    if (
+                        inherit_context
+                        and context is not None
+                        and hasattr(result, "final_pipeline_context")
+                    ):
+                        sub_ctx = getattr(result, "final_pipeline_context", None)
+                        if sub_ctx is not None:
+                            cm = type(context)
+                            for fname in getattr(cm, "model_fields", {}):
+                                if not hasattr(sub_ctx, fname):
+                                    continue
+                                new_val = getattr(sub_ctx, fname)
+                                if new_val is None:
+                                    continue
+                                cur_val = getattr(context, fname, None)
+                                if isinstance(cur_val, dict) and isinstance(new_val, dict):
+                                    try:
+                                        cur_val.update(new_val)
+                                    except Exception:
+                                        setattr(context, fname, new_val)
+                                elif isinstance(cur_val, list) and isinstance(new_val, list):
+                                    setattr(context, fname, new_val)
+                                else:
+                                    setattr(context, fname, new_val)
+                except Exception:
+                    pass
                 return result
             except PipelineContextInitializationError as e:
                 cause = getattr(e, "__cause__", None)
@@ -1444,6 +1480,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 )
                 raise context_inheritance_error
 
+        # Allow engine-side merge as well for robustness in typed contexts
         return Step.from_callable(_runner, name=name, updates_context=inherit_context, **kwargs)
 
 

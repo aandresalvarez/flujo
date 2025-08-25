@@ -122,6 +122,7 @@ async def test_pipeline_with_no_resources_succeeds():
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Uses SQLite backend file and UUID; can linger in CI/macOS
 async def test_mixing_resources_and_context(tmp_path: Path, mock_resources: MyResources):
     # Use a unique run_id and a temporary SQLite backend for isolation
     run_id = f"test_run_{uuid.uuid4()}"

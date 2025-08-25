@@ -17,6 +17,9 @@ from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.testing.utils import gather_result, StubAgent
 from tests.conftest import create_test_flujo
 
+# Mark as very slow to exclude from fast suites
+pytestmark = pytest.mark.veryslow
+
 # Default overhead limit for performance tests
 # ✅ REALISTIC PERFORMANCE THRESHOLD: Based on actual enhanced system behavior
 # The enhanced system provides production-grade persistence with:

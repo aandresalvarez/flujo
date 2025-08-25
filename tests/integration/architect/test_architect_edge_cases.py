@@ -108,6 +108,7 @@ def test_architect_handles_special_characters_in_input():
 
 
 @pytest.mark.integration
+@pytest.mark.slow  # Uses ThreadPool and multiple pipeline runs; slower
 def test_architect_handles_concurrent_executions():
     """Test: Architect can handle multiple concurrent executions without conflicts."""
     import concurrent.futures

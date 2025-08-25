@@ -13,6 +13,9 @@ from flujo.state.backends.sqlite import SQLiteBackend
 from typer.testing import CliRunner
 from flujo.cli.main import app
 
+# Mark as very slow to exclude from fast suites
+pytestmark = pytest.mark.veryslow
+
 
 class TestCLIPerformanceEdgeCases:
     """Test CLI performance edge cases and optimizations."""

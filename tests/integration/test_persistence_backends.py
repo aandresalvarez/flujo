@@ -97,6 +97,7 @@ async def test_file_backend_resume_after_crash(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Uses subprocess and SQLite; can linger on some systems
 async def test_sqlite_backend_resume_after_crash(tmp_path: Path) -> None:
     db_path = tmp_path / "state.db"
     run_id = "run_sqlite"
@@ -157,6 +158,7 @@ async def test_file_backend_concurrent(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Runs many SQLite operations; slower on CI/macOS
 async def test_sqlite_backend_admin_queries_integration(tmp_path: Path) -> None:
     """Integration test for admin queries on SQLiteBackend."""
     backend = SQLiteBackend(tmp_path / "state.db")
@@ -202,6 +204,7 @@ async def test_sqlite_backend_admin_queries_integration(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # SQLite concurrent ops; tends to trip linger classification
 async def test_sqlite_backend_concurrent_integration(tmp_path: Path) -> None:
     """Integration test for concurrent save/load/delete for SQLiteBackend."""
     import asyncio

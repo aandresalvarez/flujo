@@ -1064,6 +1064,33 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 current_context, update_data, type(current_context)
                             )
                             if validation_error:
+                                # Resilient fallback for nested PipelineResult updates (as_step):
+                                # attempt a best-effort merge from the sub-runner's final context
+                                sub_ctx = None
+                                out = step_result.output
+                                if hasattr(out, "final_pipeline_context"):
+                                    sub_ctx = getattr(out, "final_pipeline_context", None)
+                                if sub_ctx is not None:
+                                    # Field-wise merge with minimal assumptions
+                                    cm = type(current_context)
+                                    for fname in getattr(cm, "model_fields", {}):
+                                        if not hasattr(sub_ctx, fname):
+                                            continue
+                                        new_val = getattr(sub_ctx, fname)
+                                        if new_val is None:
+                                            continue
+                                        cur_val = getattr(current_context, fname, None)
+                                        # Deep-merge dict-like fields such as scratchpad
+                                        if isinstance(cur_val, dict) and isinstance(new_val, dict):
+                                            try:
+                                                cur_val.update(new_val)
+                                            except Exception:
+                                                setattr(current_context, fname, new_val)
+                                        else:
+                                            setattr(current_context, fname, new_val)
+                                    # Clear validation_error to treat as success
+                                    validation_error = None
+                            if validation_error:
                                 # Mirror legacy behavior: mark step failed on validation error
                                 step_result.success = False
                                 step_result.feedback = (
@@ -1690,7 +1717,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         total_attempts = max(1, retries_config + 1)
         if stream:
             total_attempts = 1
-        telemetry.logfire.info(f"[Core] SimpleStep max_retries (total attempts): {total_attempts}")
+        telemetry.logfire.debug(f"[Core] SimpleStep max_retries (total attempts): {total_attempts}")
 
         # Track pre-fallback primary usage for aggregation
         primary_tokens_total: int = 0
@@ -1731,11 +1758,23 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 if hasattr(step, "meta") and isinstance(step.meta, dict):
                     templ_spec = step.meta.get("templated_input")
                 if templ_spec is not None:
+                    # Align templating behavior with step policies using proxies and steps map
                     from flujo.utils.prompting import AdvancedPromptFormatter
+                    from flujo.utils.template_vars import (
+                        get_steps_map_from_context,
+                        TemplateContextProxy,
+                        StepValueProxy,
+                    )
 
+                    steps_map = get_steps_map_from_context(attempt_context)
+                    steps_wrapped: Dict[str, Any] = {
+                        k: v if isinstance(v, StepValueProxy) else StepValueProxy(v)
+                        for k, v in steps_map.items()
+                    }
                     fmt_context: Dict[str, Any] = {
-                        "context": attempt_context,
+                        "context": TemplateContextProxy(attempt_context, steps=steps_wrapped),
                         "previous_step": data,
+                        "steps": steps_wrapped,
                     }
                     if isinstance(templ_spec, str) and ("{{" in templ_spec and "}}" in templ_spec):
                         data = AdvancedPromptFormatter(templ_spec).format(**fmt_context)
@@ -2153,6 +2192,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     )
                 except Exception:
                     pass
+            except PricingNotConfiguredError:
+                # Strict pricing must propagate to satisfy tests
+                raise
             except Exception:
                 # Metrics unavailable; best-effort mark presence of primary output
                 try:

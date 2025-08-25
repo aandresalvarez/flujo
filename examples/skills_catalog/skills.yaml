@@ -1,0 +1,4 @@
+echo_cmd:
+  path: "examples.skills_catalog.myskills:make_echo"
+  description: "Echo agent factory"
+

@@ -53,6 +53,15 @@ dev = [
   "pytest-cov",
   "pytest-asyncio",
   "pytest-xdist",  # Added for parallel test execution
+  "pytest-timeout",  # Hard kill hanging tests
+  "pytest-forked",  # Run each test in fresh process
+  "pytest-randomly",  # Randomize test order
+  "pytest-rerunfailures",  # Auto-rerun flakes
+  "pytest-testmon",  # Run only changed tests
+  "pytest-picked",  # Alternative to testmon
+  "pytest-split",  # Deterministic sharding for CI
+  "pytest-deadfixtures",  # Find unused fixtures
+  "pytest-profiling",  # Profile hot spots
   "hypothesis",
   "vcrpy",
   "build",     # Added for package building
@@ -312,34 +321,62 @@ disable_error_code = [
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
 per-file-ignores = { "tests/benchmarks/*.py" = ["E402"], "tests/unit/test_extract.py" = ["E402"] }
 
 
 [tool.pytest.ini_options]
+# Note: asyncio_mode is deprecated in pytest 8+, using pytest-asyncio auto mode
 asyncio_mode = "auto"
+testpaths = ["tests"]
+norecursedirs = [
+  "bug_reports",
+  "manual_testing",
+  "scripts",
+  "dist",
+  "build",
+  "output",
+  ".venv",
+  "venv",
+  ".git",
+]
 markers = [
   "e2e: marks tests as end-to-end (requires network access or VCR cassettes)",
   "benchmark: marks tests as benchmarks (requires pytest-benchmark)",
   "asyncio: marks tests as async (handled by pytest-asyncio)",
   "serial: marks tests that must run serially to avoid concurrency issues",
   "slow: marks tests that are slow and should be run separately",
-  "ultra_slow: marks tests that are extremely slow (>30s) and problematic for mass CI",
+  "veryslow: marks extremely slow tests that must never run in fast suites",
   "fast: marks tests that are fast and can be run in parallel",
   "integration: marks integration tests for subsystems like the Architect",
   "no_collect: marks classes that should not be collected as test classes",
+  "stress: marks stress/resource tests",
+  "memory: marks memory-focused tests",
+  "timeout: marks tests with custom timeout (override global)",
+  "hypothesis: marks property-based tests (requires hypothesis)",
 ]
 filterwarnings = [
   "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
   "ignore::pytest.PytestUnraisableExceptionWarning"
 ]
-# Parallel testing configuration
+# Global test execution guardrails (safe options that don't require plugins)
 addopts = [
   "--strict-markers",
   "--strict-config",
   "--tb=short",
+  "-ra",  # Show xfailed/xpassed/skip reasons
+  "--durations=25",  # List top 25 slowest tests
+  "--durations-min=0.5",  # Only report if slower than 0.5s
+  "-q",  # Quiet by default; Makefile can override with -v
 ]
+# Note: timeout and faulthandler options are set per-target in Makefile
+# to ensure proper plugin loading
 # Performance optimization: disable output capture for faster execution
 # addopts = ["--no-cov", "--tb=short"]  # Uncomment for maximum speed
+
+# Force pytest-asyncio plugin loading for all test runs
+required_plugins = ["pytest-asyncio"]
 
 # --------------------------------------------------------------------------- #
 # Build system configuration

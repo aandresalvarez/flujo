@@ -317,7 +317,9 @@ Keep this module focused on argument parsing and command wiring.
 @app.command(
     help=(
         "✨ Initialize a new Flujo workflow project in this directory.\n\n"
-        "Use --force to re-initialize templates in an existing project, and --yes to skip confirmation."
+        "Use --force to re-initialize templates in an existing project, and --yes to skip confirmation.\n\n"
+        "Tip: New projects default to an in-memory state backend (state_uri = 'memory://').\n"
+        "      To persist runs, set state_uri = 'sqlite:///.flujo/state.db' in flujo.toml or set FLUJO_STATE_URI."
     )
 )
 def init(
@@ -362,7 +364,9 @@ def init(
     help=(
         "🌟 Create a demo project with a sample research pipeline.\n\n"
         "This command initializes a new project (like `flujo init`) but with a more advanced `pipeline.yaml` "
-        "that demonstrates agents, tools, and human-in-the-loop steps."
+        "that demonstrates agents, tools, and human-in-the-loop steps.\n\n"
+        "Tip: Demo projects default to an in-memory state backend (state_uri = 'memory://').\n"
+        "      To persist runs, set state_uri = 'sqlite:///.flujo/state.db' in flujo.toml or set FLUJO_STATE_URI."
     )
 )
 def demo(
@@ -740,8 +744,14 @@ def validate(
         raise typer.Exit(1)
 
 
-@app.command(help=("🤖 Start a conversation with the AI Architect to build your workflow."))
-def create(
+@app.command(
+    help=(
+        "🤖 Start a conversation with the AI Architect to build your workflow.\n\n"
+        "By default this uses the full conversational state machine. Set FLUJO_ARCHITECT_MINIMAL=1"
+        " to use the legacy minimal generator."
+    )
+)
+def create(  # <--- REVERT BACK TO SYNC
     goal: Annotated[
         Optional[str], typer.Option("--goal", help="Natural-language goal for the architect")
     ] = None,
@@ -786,6 +796,15 @@ def create(
         help="Enable verbose logging to debug the Architect Agent's execution.",
         hidden=True,
     ),
+    agentic: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--agentic/--no-agentic",
+            help=(
+                "Force-enable the agentic Architect (state machine) or force the minimal generator for this run."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Conversational pipeline generation via the Architect pipeline.
 
@@ -887,6 +906,20 @@ def create(
                 if is_injected:
                     pipeline_obj = fn("<injected>")
                 else:
+                    # Respect explicit CLI override first
+                    try:
+                        if agentic is True:
+                            os.environ["FLUJO_ARCHITECT_STATE_MACHINE"] = "1"
+                            os.environ.pop("FLUJO_ARCHITECT_MINIMAL", None)
+                        elif agentic is False:
+                            os.environ["FLUJO_ARCHITECT_MINIMAL"] = "1"
+                            os.environ.pop("FLUJO_ARCHITECT_STATE_MACHINE", None)
+                        else:
+                            # Prefer agentic by default for users invoking `flujo create` when minimal not explicitly set
+                            if os.environ.get("FLUJO_ARCHITECT_MINIMAL", "").strip() == "":
+                                os.environ.setdefault("FLUJO_ARCHITECT_STATE_MACHINE", "1")
+                    except Exception:
+                        pass
                     from flujo.architect.builder import build_architect_pipeline as _build_arch
 
                     pipeline_obj = _build_arch()
@@ -924,7 +957,8 @@ def create(
             # Create runner and execute using shared ArchitectContext
             from flujo.architect.context import ArchitectContext as _ArchitectContext
 
-            # Load the project-aware state backend
+            # Load the project-aware state backend (config-driven). If configured
+            # as memory/ephemeral, this will select the in-memory backend.
             try:
                 from .config import load_backend_from_config as _load_backend_from_config
 
@@ -1338,6 +1372,67 @@ def create(
                 _warnings.resetwarnings()
             except Exception:
                 pass
+
+            # Comprehensive cleanup to prevent process hang
+            try:
+                import asyncio
+                import gc
+                import threading
+
+                # Force garbage collection
+                gc.collect()
+
+                # Cancel any remaining asyncio tasks
+                try:
+                    loop = asyncio.get_running_loop()
+                    # If we're in a running loop, cancel all tasks
+                    tasks = asyncio.all_tasks(loop)
+                    if tasks:
+                        for task in tasks:
+                            if not task.done():
+                                task.cancel()
+                except RuntimeError:
+                    # No running loop, which is expected
+                    pass
+
+                # Clean up any remaining threads that might be hanging
+                threads = [
+                    t
+                    for t in threading.enumerate()
+                    if t != threading.main_thread() and t.is_alive()
+                ]
+                if threads:
+                    for thread in threads:
+                        try:
+                            # Try to join with a timeout to avoid hanging
+                            thread.join(timeout=0.1)
+                        except Exception:
+                            pass
+
+                # Additional cleanup for common async libraries
+                try:
+                    # Clean up httpx connection pools
+                    import httpx
+
+                    if hasattr(httpx, "_default_limits"):
+                        httpx._default_limits = None
+                except Exception:
+                    pass
+
+                try:
+                    # Clean up any SQLite async locks
+                    # Note: sqlite3.connect._instance doesn't exist in standard Python
+                    # This cleanup was attempting to access a non-existent attribute
+                    pass
+                except Exception:
+                    pass
+
+                # Force final garbage collection
+                gc.collect()
+
+            except Exception:
+                # Don't fail the command on cleanup errors
+                pass
     except Exception as e:
         typer.echo(f"[red]Failed to create pipeline: {e}", err=True)
         raise typer.Exit(1)
@@ -1350,7 +1445,14 @@ def run(
         help="Path to the pipeline (.py or .yaml). If omitted, uses project pipeline.yaml",
     ),
     input_data: Optional[str] = typer.Option(
-        None, "--input", "--input-data", "-i", help="Initial input data for the pipeline"
+        None,
+        "--input",
+        "--input-data",
+        "-i",
+        help=(
+            "Initial input data for the pipeline. Use '-' to read from stdin. "
+            "When omitted, Flujo reads from FLUJO_INPUT (if set) or piped stdin."
+        ),
     ),
     context_model: Optional[str] = typer.Option(
         None, "--context-model", "-c", help="Context model class name to use"
@@ -1385,6 +1487,8 @@ def run(
         flujo run my_pipeline.py --input "Process this" --context-model MyContext --context-data '{"key": "value"}'
         flujo run my_pipeline.py --input "Test" --context-file context.yaml
     """
+    # Ensure we always have a symbol in scope for cleanup
+    runner: Any | None = None
     try:
         # Apply CLI defaults from configuration file
         cli_args = apply_cli_defaults(
@@ -1410,15 +1514,10 @@ def run(
             pipeline_obj = load_pipeline_from_yaml_file(pipeline_file)
             context_model_class = None
             initial_context_data = parse_context_data(context_data, context_file)
-            # Ensure input_data is provided or read from stdin for YAML runs
-            if input_data is None:
-                import sys as _sys
+            # Resolve initial input for YAML runs
+            from .helpers import resolve_initial_input as _resolve_initial_input
 
-                if not _sys.stdin.isatty():
-                    input_data = _sys.stdin.read().strip()
-                else:
-                    # Default to empty string to support pipelines that do not require initial input
-                    input_data = ""
+            input_data = _resolve_initial_input(input_data)
         else:
             pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = (
                 setup_run_command_environment(
@@ -1543,6 +1642,113 @@ def run(
             pass
         typer.echo(f"[red]Error running pipeline: {e}", err=True)
         raise typer.Exit(1)
+    finally:
+        # Best-effort cleanup to prevent post-run hangs
+        try:
+            import asyncio as _asyncio
+            import gc as _gc
+            import threading as _threading
+
+            # Force GC to clear orphaned async objects
+            try:
+                _gc.collect()
+            except Exception:
+                pass
+
+            # Cancel any remaining asyncio tasks (if a loop exists in this context)
+            try:
+                loop = _asyncio.get_running_loop()
+                for task in list(_asyncio.all_tasks(loop)):
+                    if not task.done():
+                        task.cancel()
+            except RuntimeError:
+                # No running loop in this context
+                pass
+            except Exception:
+                pass
+
+            # Join any lingering non-main threads briefly
+            try:
+                for t in [
+                    th
+                    for th in _threading.enumerate()
+                    if th is not _threading.main_thread() and th.is_alive()
+                ]:
+                    try:
+                        t.join(timeout=0.2)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # Try to gracefully shutdown the state backend if exposed on the runner
+            try:
+                sb = getattr(runner, "state_backend", None)
+                if sb is not None and hasattr(sb, "shutdown"):
+
+                    async def _do_shutdown() -> None:
+                        try:
+                            await sb.shutdown()
+                        except Exception:
+                            pass
+
+                    try:
+                        _asyncio.run(_do_shutdown())
+                    except RuntimeError:
+                        # Running loop: schedule and wait best-effort
+                        try:
+                            loop = _asyncio.get_running_loop()
+                            loop.create_task(_do_shutdown())
+                            # Best-effort - do not block indefinitely
+                            # If we cannot await, ignore silently
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            # Additional library-specific cleanups (idempotent)
+            try:
+                import httpx as _httpx
+
+                if hasattr(_httpx, "_default_limits"):
+                    _httpx._default_limits = None  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+            # Ensure any pooled SQLite connections are closed (extra safety)
+            try:
+                from flujo.state.backends.sqlite import SQLiteBackend as _SQLiteBackend
+
+                _SQLiteBackend.shutdown_all()
+            except Exception:
+                pass
+
+            # Clear dynamic skill registry entries (preserve built-ins)
+            try:
+                from flujo.infra.skill_registry import get_skill_registry as _get_reg
+
+                reg = _get_reg()
+                entries = getattr(reg, "_entries", None)
+                if isinstance(entries, dict):
+                    preserved: Dict[str, Any] = {
+                        k: v
+                        for k, v in list(entries.items())
+                        if isinstance(k, str)
+                        and (k.startswith("flujo.builtins.") or k.startswith("flujo.architect."))
+                    }
+                    entries.clear()
+                    entries.update(preserved)
+            except Exception:
+                pass
+
+            # Final GC sweep
+            try:
+                _gc.collect()
+            except Exception:
+                pass
+        except Exception:
+            # Never fail the command on cleanup
+            pass
 
 
 @dev_app.command(name="compile-yaml")

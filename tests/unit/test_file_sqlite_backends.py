@@ -11,6 +11,9 @@ import pytest
 from flujo.state.backends.file import FileBackend
 from flujo.state.backends.sqlite import SQLiteBackend
 
+# Mark as very slow to exclude from fast suites
+pytestmark = pytest.mark.veryslow
+
 
 @pytest.mark.asyncio
 async def test_file_backend_roundtrip(tmp_path: Path) -> None:

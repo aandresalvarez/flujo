@@ -1,0 +1,16 @@
+version: "0.1"
+name: "template_fallbacks_bug_test"
+
+steps:
+  - kind: step
+    name: test_fallback
+    agent:
+      id: "flujo.builtins.stringify"
+    input: "{{ context.initial_prompt or 'Fallback: No prompt provided' }}"
+    
+  - kind: step
+    name: show_result
+    agent:
+      id: "flujo.builtins.stringify"
+    input: "Template result: {{ steps.test_fallback }}"
+

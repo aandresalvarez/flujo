@@ -5,6 +5,9 @@ from datetime import datetime
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
+# Mark as very slow to exclude from fast suites
+pytestmark = pytest.mark.veryslow
+
 
 class TestSQLiteBackendRobustness:
     """Test SQLite backend robustness and error handling."""

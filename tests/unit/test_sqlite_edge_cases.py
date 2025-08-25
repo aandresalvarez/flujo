@@ -12,6 +12,9 @@ from unittest.mock import patch
 from flujo.state.backends.sqlite import SQLiteBackend
 from .conftest import capture_logs
 
+# Mark as very slow to exclude from fast suites
+pytestmark = pytest.mark.veryslow
+
 
 class TestSQLiteBackendDeleteState:
     """Test delete_state functionality as mentioned in Copilot comments."""

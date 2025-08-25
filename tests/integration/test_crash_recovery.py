@@ -127,6 +127,7 @@ async def test_resume_after_crash_file_backend(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # Uses subprocess + SQLite file; may linger on some systems
 async def test_resume_after_crash_sqlite_backend(tmp_path: Path) -> None:
     db_path = tmp_path / "state.db"
     run_id = "sqlite_run"

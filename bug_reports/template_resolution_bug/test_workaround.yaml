@@ -1,0 +1,15 @@
+version: "0.1"
+name: "template_workaround_test"
+
+steps:
+  - kind: step
+    name: step1
+    agent:
+      id: "flujo.builtins.stringify"
+    input: "Hello World"
+    
+  - kind: step
+    name: step2
+    agent:
+      id: "flujo.builtins.stringify"
+    input: "{{ previous_step }} - Processed"

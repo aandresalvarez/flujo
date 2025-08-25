@@ -32,7 +32,7 @@ from flujo.exceptions import (
     NonRetryableError,
 )
 from flujo.infra import telemetry
-from flujo.application.core.context_adapter import _inject_context, _build_context_update
+from flujo.application.core.context_adapter import _build_context_update
 
 from .context_manager import ContextManager
 from .step_coordinator import StepCoordinator
@@ -359,19 +359,47 @@ class ExecutionManager(Generic[ContextT]):
                                 context, cast(Any, step_result.branch_context)
                             )
                             context = cast(Optional[ContextT], merged)
-                        # --- CONTEXT UPDATE PATCH ---
+                        # --- CONTEXT UPDATE PATCH (deep merge + resilient fallback) ---
                         if getattr(step, "updates_context", False) and context is not None:
                             update_data = _build_context_update(step_result.output)
                             if update_data:
-                                validation_error = _inject_context(
-                                    context, update_data, type(context)
+                                from .context_adapter import (
+                                    _inject_context_with_deep_merge as _inject_deep,
                                 )
+
+                                validation_error = _inject_deep(context, update_data, type(context))
                                 if validation_error:
-                                    # Context validation failed, mark step as failed
-                                    step_result.success = False
-                                    step_result.feedback = (
-                                        f"Context validation failed: {validation_error}"
-                                    )
+                                    # Try a resilient best-effort merge when the output carries a
+                                    # nested PipelineResult (e.g., runner.as_step composition)
+                                    sub_ctx = None
+                                    out = step_result.output
+                                    if hasattr(out, "final_pipeline_context"):
+                                        sub_ctx = getattr(out, "final_pipeline_context", None)
+                                    if sub_ctx is not None:
+                                        cm = type(context)
+                                        for fname in getattr(cm, "model_fields", {}):
+                                            if not hasattr(sub_ctx, fname):
+                                                continue
+                                            new_val = getattr(sub_ctx, fname)
+                                            if new_val is None:
+                                                continue
+                                            cur_val = getattr(context, fname, None)
+                                            if isinstance(cur_val, dict) and isinstance(
+                                                new_val, dict
+                                            ):
+                                                try:
+                                                    cur_val.update(new_val)
+                                                except Exception:
+                                                    setattr(context, fname, new_val)
+                                            else:
+                                                setattr(context, fname, new_val)
+                                        validation_error = None
+                                    if validation_error:
+                                        # Context validation failed, mark step as failed
+                                        step_result.success = False
+                                        step_result.feedback = (
+                                            f"Context validation failed: {validation_error}"
+                                        )
                         # --- END PATCH ---
                         data = step_result.output
 

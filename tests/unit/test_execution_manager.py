@@ -139,55 +139,25 @@ class TestStateManager:
         assert run_id is None
 
 
-class TestUsageGovernor:
-    """Test the UsageGovernor component."""
+class TestQuotaMode:
+    """Quota-mode replacements for legacy UsageGovernor tests."""
 
-    @pytest.fixture
-    def usage_governor(self):
-        # This fixture is no longer applicable in pure quota mode
-        # The UsageGovernor has been removed in favor of proactive quota reservations
-        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
+    def test_root_quota_constructed_from_usage_limits(self):
+        """ExecutionManager constructs a root quota when usage_limits are provided."""
+        limits = UsageLimits(total_cost_usd_limit=10.0, total_tokens_limit=1000)
+        # Minimal pipeline (no steps needed for this assertion)
+        pipeline = Pipeline.model_validate({"steps": []})
+        manager = ExecutionManager(pipeline, usage_limits=limits)
+        assert getattr(manager, "root_quota", None) is not None
 
-    @pytest.fixture
-    def usage_limits(self):
-        return UsageLimits(
-            total_cost_usd_limit=10.0,
-            total_tokens_limit=1000,
-        )
-
-    @pytest.fixture
-    def pipeline_result(self):
-        result = PipelineResult()
-        result.step_history = [
-            StepResult(name="step1", output="test", success=True, cost_usd=5.0, token_counts=500),
-            StepResult(name="step2", output="test", success=True, cost_usd=3.0, token_counts=300),
-        ]
-        result.total_cost_usd = 8.0
-        return result
-
-    def test_check_usage_limits_no_limits(self, usage_governor, pipeline_result):
-        """Test usage limit checking when no limits are configured."""
-        # This test is no longer applicable in pure quota mode
-        # The UsageGovernor has been removed in favor of proactive quota reservations
-        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
-
-    def test_check_usage_limits_cost_exceeded(self, usage_limits, pipeline_result):
-        """Test usage limit checking when cost limit is exceeded."""
-        # This test is no longer applicable in pure quota mode
-        # The UsageGovernor has been removed in favor of proactive quota reservations
-        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
-
-    def test_check_usage_limits_tokens_exceeded(self, usage_limits, pipeline_result):
-        """Test usage limit checking when token limit is exceeded."""
-        # This test is no longer applicable in pure quota mode
-        # The UsageGovernor has been removed in favor of proactive quota reservations
-        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
-
-    def test_update_telemetry_span(self, usage_limits, pipeline_result):
-        """Test updating telemetry span with usage metrics."""
-        # This test is no longer applicable in pure quota mode
-        # The UsageGovernor has been removed in favor of proactive quota reservations
-        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
+    def test_execution_manager_accepts_quota_without_usage_governor(self):
+        """Ensure no legacy UsageGovernor is required; quota object is the control surface."""
+        limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=100)
+        pipeline = Pipeline.model_validate({"steps": []})
+        manager = ExecutionManager(pipeline, usage_limits=limits)
+        # Legacy attribute should not exist; root_quota should be present
+        assert not hasattr(manager, "usage_governor")
+        assert getattr(manager, "root_quota", None) is not None
 
 
 class TestTypeValidator:

@@ -1,14 +1,16 @@
 import asyncio
 import pytest
 from pathlib import Path
-from flujo.domain.models import BaseModel
 
 from flujo.domain import Step
-from flujo.domain.models import PipelineContext
+from flujo.domain.models import BaseModel, PipelineContext
 from flujo.exceptions import OrchestratorError
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+
+# Stateful HITL flows are slow and benefit from serial execution to avoid DB contention
+pytestmark = [pytest.mark.slow, pytest.mark.serial]
 
 
 async def setup_agent(data: str, *, context: PipelineContext | None = None) -> str:

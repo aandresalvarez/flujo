@@ -373,8 +373,24 @@ class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
             for key, value_template in (self.prompt_variables or {}).items():
                 if isinstance(value_template, str) and "{{" in value_template:
                     try:
+                        # Provide steps/context proxies for richer resolution
+                        from ..utils.template_vars import (
+                            get_steps_map_from_context,
+                            StepValueProxy,
+                            TemplateContextProxy,
+                        )
+
+                        steps_map = get_steps_map_from_context(context)
+                        steps_wrapped = {
+                            k: v if isinstance(v, StepValueProxy) else StepValueProxy(v)
+                            for k, v in steps_map.items()
+                        }
+                        ctx_proxy = TemplateContextProxy(context, steps=steps_wrapped)
                         resolved_vars[key] = format_prompt(
-                            value_template, context=context, previous_step=previous_step
+                            value_template,
+                            context=ctx_proxy,
+                            previous_step=previous_step,
+                            steps=steps_wrapped,
                         )
                     except Exception:
                         resolved_vars[key] = ""
@@ -383,11 +399,24 @@ class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
 
             # Render final system prompt
             try:
+                from ..utils.template_vars import (
+                    get_steps_map_from_context,
+                    StepValueProxy,
+                    TemplateContextProxy,
+                )
+
+                steps_map = get_steps_map_from_context(context)
+                steps_wrapped = {
+                    k: v if isinstance(v, StepValueProxy) else StepValueProxy(v)
+                    for k, v in steps_map.items()
+                }
+                ctx_proxy = TemplateContextProxy(context, steps=steps_wrapped)
                 final_system_prompt = format_prompt(
                     self.system_prompt_template,
                     **resolved_vars,
-                    context=context,
+                    context=ctx_proxy,
                     previous_step=previous_step,
+                    steps=steps_wrapped,
                 )
             except Exception:
                 final_system_prompt = self.system_prompt_template

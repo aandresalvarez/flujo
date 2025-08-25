@@ -8,6 +8,9 @@ from datetime import datetime
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
+# Mark as very slow to exclude from fast suites
+pytestmark = pytest.mark.veryslow
+
 
 # Helper to create a run before saving a trace
 def create_run(backend: SQLiteBackend, run_id: str) -> dict:

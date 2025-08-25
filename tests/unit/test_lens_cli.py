@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 import os
 from datetime import datetime
 from pathlib import Path
@@ -6,6 +7,9 @@ from pathlib import Path
 from typer.testing import CliRunner
 from flujo.cli.main import app
 from flujo.state.backends.sqlite import SQLiteBackend
+
+# Mark as very slow to exclude from fast suites
+pytestmark = pytest.mark.veryslow
 
 runner = CliRunner()
 

@@ -7,6 +7,9 @@ from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import HumanInTheLoopStep, Step
 from flujo.state.backends.sqlite import SQLiteBackend
 
+# HITL trace resume relies on interactive steps and persistence; treat as slow/serial
+pytestmark = [pytest.mark.slow, pytest.mark.serial]
+
 
 async def _identity(x: object) -> object:
     return x

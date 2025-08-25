@@ -11,6 +11,9 @@ import sqlite3
 from flujo.state.backends.sqlite import SQLiteBackend
 from .conftest import capture_logs
 
+# Mark as very slow to exclude from fast suites
+pytestmark = pytest.mark.veryslow
+
 
 @pytest.mark.asyncio
 async def test_sqlite_backend_logs_initialization_events(tmp_path: Path) -> None:

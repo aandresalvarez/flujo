@@ -455,15 +455,20 @@ def _generate_cache_key(
     context: Any | None = None,
     resources: Any | None = None,
 ) -> Optional[str]:
-    """Return a stable cache key for the step definition and input."""
+    """Return a stable cache key for the step definition and input.
+
+    First principles: cache identity should be derived from the step's logical
+    definition and the input payload. Ephemeral execution context and resource
+    handles are excluded to avoid spurious misses and to improve hit rates in
+    deterministic pipelines.
+    """
     # Use stable step fingerprint instead of full step serialization
     step_fingerprint = _create_step_fingerprint(step)
 
     payload = {
         "step": step_fingerprint,
         "data": _serialize_for_cache_key(data),
-        "context": _serialize_for_cache_key(context),
-        "resources": _serialize_for_cache_key(resources),
+        # Intentionally exclude context/resources to prevent volatile keys
     }
     try:
         serialized = json.dumps(payload, sort_keys=True).encode()

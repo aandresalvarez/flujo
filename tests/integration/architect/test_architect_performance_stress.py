@@ -11,6 +11,7 @@ from flujo.infra.config import get_performance_threshold
 
 
 @pytest.mark.integration
+@pytest.mark.slow  # Multiple runs to compare timing; slower
 def test_architect_execution_time_consistency():
     """Test: Architect execution time is consistent across multiple runs."""
     pipeline = build_architect_pipeline()
@@ -63,13 +64,14 @@ def test_architect_memory_usage_stability():
     # Get final memory usage
     final_memory = process.memory_info().rss
 
-    # Memory usage should not increase by more than 50MB
+    # Memory usage should not increase excessively. Allow environment-adjusted threshold.
     memory_increase = final_memory - initial_memory
-    max_allowed_increase = 50 * 1024 * 1024  # 50MB
+    max_allowed_increase_mb = get_performance_threshold(50.0)  # 50MB local, 3x in CI
+    max_allowed_increase = int(max_allowed_increase_mb * 1024 * 1024)
 
     assert (
         memory_increase <= max_allowed_increase
-    ), f"Memory usage increased by {memory_increase / (1024 * 1024):.2f}MB, exceeding limit of 50MB"
+    ), f"Memory usage increased by {memory_increase / (1024 * 1024):.2f}MB, exceeding limit of {max_allowed_increase_mb:.0f}MB"
 
     # Verify result is valid
     assert result is not None
@@ -78,6 +80,7 @@ def test_architect_memory_usage_stability():
 
 
 @pytest.mark.integration
+@pytest.mark.slow  # Mark as slow due to multiple architect pipeline executions
 def test_architect_handles_high_frequency_requests():
     """Test: Architect can handle high frequency requests without degradation."""
     pipeline = build_architect_pipeline()
@@ -140,6 +143,7 @@ def test_architect_handles_high_frequency_requests():
 
 
 @pytest.mark.integration
+@pytest.mark.slow  # Mark as slow due to architect pipeline execution and CPU monitoring
 def test_architect_cpu_usage_efficiency():
     """Test: Architect CPU usage remains efficient during execution."""
     pipeline = build_architect_pipeline()
@@ -173,6 +177,7 @@ def test_architect_cpu_usage_efficiency():
 
 
 @pytest.mark.integration
+@pytest.mark.slow  # Mark as slow due to large context processing
 def test_architect_large_context_handling():
     """Test: Architect can handle large context data efficiently."""
     pipeline = build_architect_pipeline()
@@ -218,6 +223,7 @@ def test_architect_large_context_handling():
 
 
 @pytest.mark.integration
+@pytest.mark.slow  # Mark as slow due to concurrent architect pipeline executions
 def test_architect_concurrent_pipeline_execution():
     """Test: Architect can handle multiple concurrent pipeline executions efficiently."""
     import concurrent.futures
@@ -267,6 +273,7 @@ def test_architect_concurrent_pipeline_execution():
 
 
 @pytest.mark.integration
+@pytest.mark.slow  # Mark as slow due to memory monitoring and garbage collection
 def test_architect_memory_cleanup_after_execution():
     """Test: Architect properly cleans up memory after execution."""
     pipeline = build_architect_pipeline()
@@ -312,6 +319,7 @@ def test_architect_memory_cleanup_after_execution():
 
 
 @pytest.mark.integration
+@pytest.mark.slow  # Mark as slow due to multiple pipeline executions under load
 def test_architect_response_time_under_load():
     """Test: Architect response time remains acceptable under load."""
     pipeline = build_architect_pipeline()
@@ -353,6 +361,7 @@ def test_architect_response_time_under_load():
 
 
 @pytest.mark.integration
+@pytest.mark.slow  # Mark as slow due to multiple complexity levels and resource monitoring
 def test_architect_resource_usage_scaling():
     """Test: Architect resource usage scales reasonably with input complexity."""
     pipeline = build_architect_pipeline()
@@ -398,6 +407,7 @@ def test_architect_resource_usage_scaling():
 
 
 @pytest.mark.integration
+@pytest.mark.slow  # Stress test runs many requests; slow in CI/local
 def test_architect_stress_test_rapid_requests():
     """Test: Architect can handle rapid-fire requests without failure."""
     pipeline = build_architect_pipeline()

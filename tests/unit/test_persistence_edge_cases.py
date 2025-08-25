@@ -5,6 +5,8 @@ import time
 import asyncio
 from pathlib import Path
 from typing import Any, List
+import uuid
+from datetime import datetime
 
 from flujo.domain.models import PipelineContext, StepResult, PipelineResult
 from flujo.application.core.execution_manager import ExecutionManager
@@ -13,8 +15,8 @@ from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.domain import Step
 from flujo.testing.utils import StubAgent
 
-import uuid
-from datetime import datetime
+# Mark as very slow to exclude from fast suites
+pytestmark = pytest.mark.veryslow
 
 
 class TestPersistenceOptimizationEdgeCases:

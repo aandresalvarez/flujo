@@ -39,6 +39,8 @@ class FlujoConfig(BaseModel):
 
     # Centralized budget governance
     budgets: Optional["BudgetConfig"] = None
+    # Architect defaults
+    architect: Optional["ArchitectConfig"] = None
 
 
 class SolveConfig(BaseModel):
@@ -110,6 +112,17 @@ class BudgetConfig(BaseModel):
 
     default: Optional[UsageLimits] = None
     pipeline: Dict[str, UsageLimits] = {}
+
+
+class ArchitectConfig(BaseModel):
+    """Architect-related project defaults.
+
+    Example TOML:
+    [architect]
+    state_machine_default = true
+    """
+
+    state_machine_default: Optional[bool] = None
 
 
 class ConfigManager:
@@ -210,6 +223,10 @@ class ConfigManager:
             # Budgets governance configuration
             if "budgets" in data:
                 config_data["budgets"] = data["budgets"]
+
+            # Architect configuration
+            if "architect" in data:
+                config_data["architect"] = data["architect"]
 
             config = FlujoConfig(**config_data)
 

@@ -427,12 +427,14 @@ class PipelineContext(BaseModel):
     """
 
     run_id: str = Field(default_factory=lambda: f"run_{uuid.uuid4().hex}")
-    initial_prompt: str
+    initial_prompt: Optional[str] = None
     scratchpad: Dict[str, Any] = Field(default_factory=dict)
     hitl_history: List[HumanInteraction] = Field(default_factory=list)
     command_log: List[ExecutedCommandLog] = Field(
         default_factory=list,
         description="A log of commands executed by an agentic loop pipeline.",
     )
+    # Utility counter used by test hooks; kept in base context for simplicity
+    call_count: int = 0
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
