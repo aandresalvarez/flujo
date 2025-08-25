@@ -23,33 +23,33 @@ steps:
           name: inner_step_1
           agent:
             id: "flujo.builtins.stringify"
-          input: "First inner step input - this should generate costs and tokens"
-          description: "First step inside the nested workflow"
+          input: "First inner step input"
+          description: "First step inside the nested workflow (visibility demo)"
 
         - kind: step
           name: inner_step_2
           agent:
             id: "flujo.builtins.stringify"
-          input: "Second inner step input - this should also generate costs and tokens"
-          description: "Second step inside the nested workflow"
+          input: "Second inner step input"
+          description: "Second step inside the nested workflow (visibility demo)"
 
         - kind: step
           name: inner_step_3
           agent:
             id: "flujo.builtins.stringify"
-          input: "Third inner step input - this should also generate costs and tokens"
-          description: "Third step inside the nested workflow"
+          input: "Third inner step input"
+          description: "Third step inside the nested workflow (visibility demo)"
 
         - kind: step
           name: inner_step_4
           agent:
             id: "flujo.builtins.stringify"
-          input: "Fourth inner step input - this should also generate costs and tokens"
-          description: "Fourth step inside the nested workflow"
+          input: "Fourth inner step input"
+          description: "Fourth step inside the nested workflow (visibility demo)"
 
         - kind: step
           name: inner_step_5
           agent:
             id: "flujo.builtins.stringify"
-          input: "Fifth inner step input - this should also generate costs and tokens"
-          description: "Fifth step inside the nested workflow"
+          input: "Fifth inner step input"
+          description: "Fifth step inside the nested workflow (visibility demo)"
