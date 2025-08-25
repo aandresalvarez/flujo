@@ -41,6 +41,8 @@ from .helpers import (
     scaffold_project,
     scaffold_demo_project,
     update_project_budget,
+    resolve_project_root,
+    ensure_project_root_on_sys_path,
 )
 import click.testing
 import os
@@ -262,7 +264,11 @@ if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
 
 app: typer.Typer = typer.Typer(
     rich_markup_mode="markdown",
-    help=("A project-based server for building, running, and managing AI workflows."),
+    help=(
+        "A project-based server for building, running, and managing AI workflows.\n\n"
+        "Notes: pass --project or set FLUJO_PROJECT_ROOT to force project root detection;\n"
+        "use -v/--verbose or --trace for full error traces. Stable exit codes: see flujo.cli.exit_codes."
+    ),
 )
 
 # Initialize telemetry at the start of CLI execution
@@ -693,7 +699,108 @@ def explain(path: str) -> None:
         raise typer.Exit(1)
 
 
+def _validate_impl(path: Optional[str], strict: bool, output_format: str) -> None:
+    from .exit_codes import EX_VALIDATION_FAILED, EX_IMPORT_ERROR, EX_RUNTIME_ERROR
+    import traceback as _tb
+    import os as _os
+
+    try:
+        if path is None:
+            root = find_project_root()
+            path = str((Path(root) / "pipeline.yaml").resolve())
+        report = validate_pipeline_file(path)
+
+        if output_format == "json":
+            # Emit machine-friendly JSON (errors, warnings, is_valid)
+            payload = {
+                "is_valid": bool(report.is_valid),
+                "errors": [e.model_dump() for e in report.errors],
+                "warnings": [w.model_dump() for w in report.warnings],
+                "path": path,
+            }
+            typer.echo(json.dumps(payload))
+        else:
+            if report.errors:
+                typer.echo("[red]Validation errors detected:")
+                typer.echo(
+                    "[red]See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/"
+                )
+                for f in report.errors:
+                    loc = f"{f.step_name}: " if f.step_name else ""
+                    if f.suggestion:
+                        typer.echo(
+                            f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}"
+                        )
+                    else:
+                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+            if report.warnings:
+                typer.echo("[yellow]Warnings:")
+                typer.echo(
+                    "[yellow]See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/"
+                )
+                for f in report.warnings:
+                    loc = f"{f.step_name}: " if f.step_name else ""
+                    if f.suggestion:
+                        typer.echo(
+                            f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}"
+                        )
+                    else:
+                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+            if report.is_valid:
+                typer.echo("[green]Pipeline is valid")
+
+        if strict and not report.is_valid:
+            raise typer.Exit(EX_VALIDATION_FAILED)
+    except ModuleNotFoundError as e:
+        # Improve import error messaging with hint on project root
+        mod = getattr(e, "name", None) or str(e)
+        typer.echo(
+            f"[red]Import error: module '{mod}' not found. Try PYTHONPATH=. or use --project/FLUJO_PROJECT_ROOT[/red]",
+            err=True,
+        )
+        if _os.getenv("FLUJO_CLI_VERBOSE") == "1" or _os.getenv("FLUJO_CLI_TRACE") == "1":
+            typer.echo("\nTraceback:", err=True)
+            typer.echo("".join(_tb.format_exception(e)), err=True)
+        raise typer.Exit(EX_IMPORT_ERROR)
+    except typer.Exit:
+        # Preserve intended exit status (e.g., EX_VALIDATION_FAILED)
+        raise
+    except Exception as e:
+        typer.echo(f"[red]Validation failed: {type(e).__name__}: {e}[/red]", err=True)
+        if _os.getenv("FLUJO_CLI_VERBOSE") == "1" or _os.getenv("FLUJO_CLI_TRACE") == "1":
+            typer.echo("\nTraceback:", err=True)
+            typer.echo("".join(_tb.format_exception(e)), err=True)
+        raise typer.Exit(EX_RUNTIME_ERROR)
+
+
 @dev_app.command(name="validate")
+def validate_dev(
+    path: Optional[str] = typer.Argument(
+        None,
+        help="Path to pipeline file. If omitted, uses project pipeline.yaml",
+    ),
+    strict: Annotated[
+        bool,
+        typer.Option(
+            "--strict/--no-strict",
+            help="Exit non-zero when errors are found (default: strict)",
+        ),
+    ] = True,
+    output_format: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            help="Output format for CI parsers",
+            case_sensitive=False,
+            click_type=click.Choice(["text", "json"]),
+        ),
+    ] = "text",
+) -> None:
+    """Validate a pipeline defined in a file (developer namespace)."""
+    _validate_impl(path, strict, output_format)
+
+
+@app.command(name="validate")
 def validate(
     path: Optional[str] = typer.Argument(
         None,
@@ -702,46 +809,22 @@ def validate(
     strict: Annotated[
         bool,
         typer.Option(
-            "--strict",
-            help="Exit with non-zero status if validation errors are found.",
+            "--strict/--no-strict",
+            help="Exit non-zero when errors are found (default: strict)",
         ),
-    ] = False,
+    ] = True,
+    output_format: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            help="Output format for CI parsers",
+            case_sensitive=False,
+            click_type=click.Choice(["text", "json"]),
+        ),
+    ] = "text",
 ) -> None:
-    """Validate a pipeline defined in a file."""
-    try:
-        if path is None:
-            root = find_project_root()
-            path = str((Path(root) / "pipeline.yaml").resolve())
-        report = validate_pipeline_file(path)
-        if report.errors:
-            typer.echo("[red]Validation errors detected:")
-            typer.echo(
-                "[red]See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/"
-            )
-            for f in report.errors:
-                loc = f"{f.step_name}: " if f.step_name else ""
-                if f.suggestion:
-                    typer.echo(f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}")
-                else:
-                    typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
-        if report.warnings:
-            typer.echo("[yellow]Warnings:")
-            typer.echo(
-                "[yellow]See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/"
-            )
-            for f in report.warnings:
-                loc = f"{f.step_name}: " if f.step_name else ""
-                if f.suggestion:
-                    typer.echo(f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}")
-                else:
-                    typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
-        if report.is_valid:
-            typer.echo("[green]Pipeline is valid")
-        if strict and not report.is_valid:
-            raise typer.Exit(1)
-    except Exception as e:
-        typer.echo(f"[red]Failed to load pipeline file: {e}", err=True)
-        raise typer.Exit(1)
+    """Validate a pipeline (top-level alias)."""
+    _validate_impl(path, strict, output_format)
 
 
 @app.command(
@@ -1514,6 +1597,11 @@ def run(
     json_output: bool = typer.Option(
         False, "--json", "--json-output", help="Output raw JSON instead of formatted result"
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Parse and validate only; do not execute the pipeline",
+    ),
 ) -> None:
     """
     Run a custom pipeline from a Python file.
@@ -1596,6 +1684,22 @@ def run(
                         typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
                 raise typer.Exit(1)
 
+        # If dry-run requested, stop after validation
+        if dry_run:
+            try:
+                names = [s.name for s in getattr(pipeline_obj, "steps", [])]
+            except Exception:
+                names = []
+            if json_output:
+                typer.echo(json.dumps({"validated": True, "steps": names}))
+            else:
+                typer.echo("[green]Pipeline parsed and validated (dry run)")
+                if names:
+                    typer.echo("Steps:")
+                    for n in names:
+                        typer.echo(f"- {n}")
+            return
+
         # Create Flujo runner using helper function
         runner = create_flujo_runner(
             pipeline=pipeline_obj,
@@ -1670,6 +1774,9 @@ def run(
         except Exception:
             typer.echo(f"[red]Budget exceeded: {e}[/red]", err=True)
         raise typer.Exit(1)
+    except typer.Exit:
+        # Preserve specific exit codes raised by helpers
+        raise
     except Exception as e:
         try:
             import os
@@ -1679,8 +1786,16 @@ def run(
                 fh.write(repr(e))
         except Exception:
             pass
-        typer.echo(f"[red]Error running pipeline: {e}", err=True)
-        raise typer.Exit(1)
+        import os as _os
+        import traceback as _tb
+
+        typer.echo(f"[red]Error running pipeline: {type(e).__name__}: {e}", err=True)
+        if _os.getenv("FLUJO_CLI_VERBOSE") == "1" or _os.getenv("FLUJO_CLI_TRACE") == "1":
+            typer.echo("\nTraceback:", err=True)
+            typer.echo("".join(_tb.format_exception(e)), err=True)
+        from .exit_codes import EX_RUNTIME_ERROR
+
+        raise typer.Exit(EX_RUNTIME_ERROR)
     finally:
         # Best-effort cleanup to prevent post-run hangs
         try:
@@ -1917,6 +2032,31 @@ def main(
             help="Enable verbose debug logging to '.flujo/logs/run.log'.",
         ),
     ] = False,
+    project: Annotated[
+        Optional[str],
+        typer.Option(
+            "--project",
+            help=(
+                "Project root directory (overrides FLUJO_PROJECT_ROOT). "
+                "Adds it to PYTHONPATH for imports like skills.*"
+            ),
+        ),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Show detailed error traces for debugging",
+        ),
+    ] = False,
+    trace: Annotated[
+        bool,
+        typer.Option(
+            "--trace",
+            help="Alias for --verbose to print full Python tracebacks",
+        ),
+    ] = False,
 ) -> None:
     """
     CLI entry point for flujo.
@@ -1979,6 +2119,23 @@ def main(
                 except Exception:
                     pass
     except Exception:
+        pass
+
+    # Enable verbose traces for helpers and error handlers
+    try:
+        if verbose or trace:
+            _os.environ["FLUJO_CLI_VERBOSE"] = "1"
+    except Exception:
+        pass
+    # Resolve and inject project root into sys.path for imports like skills.*
+    try:
+        explicit = Path(project).resolve() if project else None
+        root = resolve_project_root(explicit=explicit, allow_missing=True)
+        if project and root is not None:
+            _os.environ["FLUJO_PROJECT_ROOT"] = str(root)
+        ensure_project_root_on_sys_path(root)
+    except Exception:
+        # Non-fatal: individual commands may still set defaults or load explicit files
         pass
 
 

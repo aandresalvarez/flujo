@@ -428,7 +428,8 @@ def test_cli_validate_failure(tmp_path) -> None:
         "from flujo.domain import Step\npipeline = Step.model_validate({'name': 'A'}) >> Step.model_validate({'name': 'B'})\n"
     )
     result = runner.invoke(app, ["validate", str(file), "--strict"])
-    assert result.exit_code == 1
+    # Strict validation now uses stable exit code 4 (EX_VALIDATION_FAILED)
+    assert result.exit_code == 4
 
 
 def test_cli_improve_output_formatting(monkeypatch, tmp_path) -> None:

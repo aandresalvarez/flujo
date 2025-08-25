@@ -17,6 +17,10 @@ import runpy
 import yaml
 from rich.table import Table
 from typer import Exit
+from .exit_codes import (
+    EX_IMPORT_ERROR,
+    EX_RUNTIME_ERROR,
+)
 
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.domain.dsl import Pipeline, Step
@@ -48,15 +52,39 @@ def load_pipeline_from_file(
     """
     try:
         ns: Dict[str, Any] = runpy.run_path(pipeline_file)
-    except Exception as e:
-        # Provide explicit message for CLI output
+    except ModuleNotFoundError as e:
+        # Common root cause: missing project root on sys.path (skills.* imports)
+        mod = getattr(e, "name", None) or str(e)
         try:
             from typer import secho
+            import os as _os
+            import traceback as _tb
 
-            secho(f"Failed to load pipeline file: {e}", fg="red")
+            secho(
+                f"Import error: module '{mod}' not found. Try setting PYTHONPATH=. or pass --project/FLUJO_PROJECT_ROOT",
+                fg="red",
+                err=True,
+            )
+            if _os.getenv("FLUJO_CLI_VERBOSE") == "1" or _os.getenv("FLUJO_CLI_TRACE") == "1":
+                secho("\nTraceback:", fg="yellow", err=True)
+                secho("".join(_tb.format_exception(e)), err=True)
         except Exception:
             pass
-        raise Exit(1)
+        raise Exit(EX_IMPORT_ERROR)
+    except Exception as e:
+        # Provide explicit message for CLI output and allow optional traceback
+        try:
+            from typer import secho
+            import os as _os
+            import traceback as _tb
+
+            secho(f"Failed to load pipeline file: {type(e).__name__}: {e}", fg="red", err=True)
+            if _os.getenv("FLUJO_CLI_VERBOSE") == "1" or _os.getenv("FLUJO_CLI_TRACE") == "1":
+                secho("\nTraceback:", fg="yellow", err=True)
+                secho("".join(_tb.format_exception(e)), err=True)
+        except Exception:
+            pass
+        raise Exit(EX_RUNTIME_ERROR)
 
     # Find the pipeline object
     pipeline_obj = ns.get(pipeline_name)
@@ -131,11 +159,20 @@ def load_pipeline_from_yaml_file(yaml_path: str) -> "Pipeline[Any, Any]":
     except Exception as e:
         try:
             from typer import secho
+            import os as _os
+            import traceback as _tb
 
-            secho(f"Failed to load YAML pipeline: {e}", fg="red")
+            msg = f"Failed to load YAML pipeline: {type(e).__name__}: {e}"
+            # Hint import issues if present
+            if isinstance(e, ModuleNotFoundError) or "No module named" in str(e):
+                msg = f"Import error while loading YAML: {e}. Try setting PYTHONPATH=. or pass --project/FLUJO_PROJECT_ROOT"
+            secho(msg, fg="red", err=True)
+            if _os.getenv("FLUJO_CLI_VERBOSE") == "1" or _os.getenv("FLUJO_CLI_TRACE") == "1":
+                secho("\nTraceback:", fg="yellow", err=True)
+                secho("".join(_tb.format_exception(e)), err=True)
         except Exception:
             pass
-        raise Exit(1)
+        raise Exit(EX_IMPORT_ERROR if isinstance(e, ModuleNotFoundError) else EX_RUNTIME_ERROR)
 
 
 def load_dataset_from_file(dataset_path: str) -> Any:
@@ -1854,8 +1891,102 @@ def apply_cli_defaults(command: str, **kwargs: Any) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _has_project_markers(dir_path: Path) -> bool:
+    """Return True if the directory looks like a Flujo project root.
+
+    Markers:
+    - flujo.toml
+    - pipeline.yaml or pipeline.yml
+    """
+    return (
+        (dir_path / "flujo.toml").exists()
+        or (dir_path / "pipeline.yaml").exists()
+        or (dir_path / "pipeline.yml").exists()
+    )
+
+
+def resolve_project_root(
+    explicit: Optional[Path] = None, allow_missing: bool = True
+) -> Optional[Path]:
+    """Resolve the project root using explicit path, env var, or marker search.
+
+    Resolution order:
+    1) explicit path (CLI --project)
+    2) FLUJO_PROJECT_ROOT environment variable
+    3) Walk up from cwd to find a directory containing flujo.toml or pipeline.yaml
+
+    Args:
+        explicit: Optional explicit project directory.
+        allow_missing: If True and nothing found, return None instead of raising.
+
+    Returns:
+        The resolved project root Path or None.
+
+    Raises:
+        Exit: When a provided path is invalid or no project is found and allow_missing=False.
+    """
+    # 1) Explicit CLI value
+    if explicit is not None:
+        p = explicit.resolve()
+        if not p.exists() or not p.is_dir():
+            from typer import secho
+
+            secho(f"Error: --project '{p}' does not exist or is not a directory", fg="red")
+            raise Exit(1)
+        return p
+
+    # 2) Environment variable
+    env_root = os.environ.get("FLUJO_PROJECT_ROOT")
+    if isinstance(env_root, str) and env_root.strip():
+        p = Path(env_root).resolve()
+        if p.exists() and p.is_dir():
+            return p
+        if not allow_missing:
+            from typer import secho
+
+            secho(
+                f"Error: FLUJO_PROJECT_ROOT='{env_root}' does not exist or is not a directory",
+                fg="red",
+            )
+            raise Exit(1)
+        return None
+
+    # 3) Walk up from cwd using markers
+    current = Path.cwd().resolve()
+    while True:
+        if _has_project_markers(current):
+            return current
+        if current.parent == current:
+            if allow_missing:
+                return None
+            from typer import secho
+
+            secho(
+                "Error: Not a Flujo project. Please run 'flujo init' in your desired project directory first.",
+                fg="red",
+            )
+            raise Exit(1)
+        current = current.parent
+
+
+def ensure_project_root_on_sys_path(root: Optional[Path]) -> None:
+    """Add the given project root to sys.path if not already present.
+
+    This allows imports like `skills.*` to resolve when running from subdirs or CI.
+    """
+    try:
+        if root is None:
+            return
+        root_str = str(root)
+        if root_str not in sys.path:
+            sys.path.insert(0, root_str)
+    except Exception:
+        # Non-fatal: importing may still work if paths are already correct
+        pass
+
+
 def find_project_root(start: Optional[Path] = None) -> Path:
-    """Find the Flujo project root by locating a flujo.toml in cwd or parents.
+    """Find the Flujo project root by locating a flujo.toml or pipeline.yaml.
 
     Args:
         start: Optional starting directory. Defaults to current working directory.
@@ -1866,19 +1997,14 @@ def find_project_root(start: Optional[Path] = None) -> Path:
     Raises:
         Exit: If no flujo.toml is found in the directory tree.
     """
-    current = (start or Path.cwd()).resolve()
-    while True:
-        if (current / "flujo.toml").exists():
-            return current
-        if current.parent == current:
-            from typer import secho
-
-            secho(
-                "Error: Not a Flujo project. Please run 'flujo init' in your desired project directory first.",
-                fg="red",
-            )
-            raise Exit(1)
-        current = current.parent
+    # Prefer explicit start when provided, else use env/markers
+    if start is not None:
+        resolved = resolve_project_root(start, allow_missing=False)
+        assert resolved is not None
+        return resolved
+    resolved = resolve_project_root(None, allow_missing=False)
+    assert resolved is not None
+    return resolved
 
 
 def scaffold_project(directory: Path, *, overwrite_existing: bool = False) -> None:
