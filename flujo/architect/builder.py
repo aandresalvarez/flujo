@@ -1323,7 +1323,6 @@ def build_architect_pipeline() -> Pipeline[Any, Any]:
         # Fall through to minimal pipeline
         pass
 
-    # 4) Default minimal pipeline (outside tests), also include PlanApproval for parity
-    approval = Step.from_callable(_approval_noop, name="PlanApproval", updates_context=True)
+    # 4) Default minimal pipeline (outside tests): single GenerateYAML step
     gen = Step.from_callable(_emit_minimal_yaml, name="GenerateYAML", updates_context=True)
-    return Pipeline.from_step(approval) >> gen
+    return Pipeline.from_step(gen)
