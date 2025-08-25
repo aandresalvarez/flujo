@@ -348,7 +348,7 @@ class StateMachinePolicyExecutor:
             if frame.context_setter is not None:
                 from flujo.domain.models import PipelineResult as _PR
 
-                pr = _PR(
+                pr: _PR[Any] = _PR(
                     step_history=step_history,
                     total_cost_usd=total_cost,
                     total_tokens=total_tokens,
