@@ -1009,6 +1009,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
                 if isinstance(outcome, Success):
                     step_result = outcome.step_result
+                    # Guard against missing payloads normalized by Success validator
+                    if not isinstance(step_result, StepResult) or getattr(
+                        step_result, "name", None
+                    ) in (None, "<unknown>", ""):
+                        step_result = StepResult(
+                            name=self._safe_step_name(step),
+                            output=None,
+                            success=False,
+                            feedback="Missing step_result",
+                        )
                 elif isinstance(outcome, Failure):
                     step_result = (
                         outcome.step_result

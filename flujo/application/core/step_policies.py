@@ -3712,10 +3712,21 @@ class DefaultParallelStepExecutor:
                             context_setter=context_setter,
                         )
                         if isinstance(step_outcome, Success):
+                            sr = step_outcome.step_result
+                            if not isinstance(sr, StepResult) or getattr(sr, "name", None) in (
+                                None,
+                                "<unknown>",
+                                "",
+                            ):
+                                sr = StepResult(
+                                    name=getattr(branch_pipeline, "name", "<unnamed>"),
+                                    success=False,
+                                    feedback="Missing step_result",
+                                )
                             pipeline_result = PipelineResult(
-                                step_history=[step_outcome.step_result],
-                                total_cost_usd=step_outcome.step_result.cost_usd,
-                                total_tokens=step_outcome.step_result.token_counts,
+                                step_history=[sr],
+                                total_cost_usd=sr.cost_usd,
+                                total_tokens=sr.token_counts,
                                 final_pipeline_context=branch_context,
                             )
                         elif isinstance(step_outcome, Failure):
@@ -4423,6 +4434,15 @@ class DefaultConditionalStepExecutor:
                         if isinstance(res_any, StepOutcome):
                             if isinstance(res_any, Success):
                                 step_result = res_any.step_result
+                                if not isinstance(step_result, StepResult) or getattr(
+                                    step_result, "name", None
+                                ) in (None, "<unknown>", ""):
+                                    step_result = StepResult(
+                                        name=core._safe_step_name(pipeline_step),
+                                        output=None,
+                                        success=False,
+                                        feedback="Missing step_result",
+                                    )
                             elif isinstance(res_any, Failure):
                                 step_result = res_any.step_result or StepResult(
                                     name=core._safe_step_name(pipeline_step),
