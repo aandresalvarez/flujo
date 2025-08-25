@@ -995,22 +995,19 @@ def robust_serialize(obj: Any, circular_ref_placeholder: Any = "<circular-ref>")
         if isinstance(obj, PRIMITIVES):
             return obj
 
-        # Always prefer returning structured data so callers can control JSON formatting
-        serialized: Any
+        # Pydantic/Flujo models: preserve structured data
+        if hasattr(obj, "model_dump"):
+            return safe_serialize(obj, circular_ref_placeholder=circular_ref_placeholder)
+
+        # Built-in containers: preserve structured data
         if isinstance(obj, BUILTIN_CONTAINERS):
-            serialized = safe_serialize(obj, circular_ref_placeholder=circular_ref_placeholder)
-        else:
-            # For custom/unknown objects
-            serialized = safe_serialize(
-                obj,
-                circular_ref_placeholder=circular_ref_placeholder,
-            )
+            return safe_serialize(obj, circular_ref_placeholder=circular_ref_placeholder)
 
-        # If serialization produced primitives or builtin containers, return them directly
-        if isinstance(serialized, PRIMITIVES) or isinstance(serialized, BUILTIN_CONTAINERS):
-            return serialized
-
-        # As a last resort, return a concise string representation
+        # Custom/unknown types: return a concise string representation of the serialized form
+        serialized: Any = safe_serialize(
+            obj,
+            circular_ref_placeholder=circular_ref_placeholder,
+        )
         return repr(serialized)
     except Exception:
         return f"<unserializable: {type(obj).__name__}>"
