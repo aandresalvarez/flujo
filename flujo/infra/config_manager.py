@@ -307,15 +307,16 @@ class ConfigManager:
         # If an env file is declared in flujo.toml, load it before constructing Settings
         try:
             config_for_env = self.load_config(force_reload=force_reload)
-            if getattr(config_for_env, "env_file", None):
+            env_file = getattr(config_for_env, "env_file", None)
+            if env_file:
                 # Resolve relative to the directory of flujo.toml
                 base_dir = self.config_path.parent if self.config_path else Path.cwd()
-                env_path = Path(config_for_env.env_file)
+                env_path = Path(env_file)
                 if not env_path.is_absolute():
                     env_path = (base_dir / env_path).resolve()
                 # Load dotenv file (non-fatal if missing)
                 try:
-                    import dotenv as _dotenv  # type: ignore
+                    import dotenv as _dotenv
 
                     _dotenv.load_dotenv(env_path.as_posix(), override=False)
                 except Exception:
