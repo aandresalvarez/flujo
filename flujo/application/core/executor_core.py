@@ -1146,6 +1146,39 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 step_history.append(failure_result)
                 break
 
+        # Best-effort: ensure YAML fields persist on the final context if produced by any step
+        try:
+            from pydantic import BaseModel as _BM
+
+            if isinstance(current_context, _BM):
+                yt = getattr(current_context, "yaml_text", None)
+                gy = getattr(current_context, "generated_yaml", None)
+                if (
+                    not isinstance(yt, str)
+                    or not yt.strip()
+                    or not isinstance(gy, str)
+                    or not gy.strip()
+                ):
+                    for sr in reversed(step_history):
+                        out = getattr(sr, "output", None)
+                        if isinstance(out, dict):
+                            cand = out.get("yaml_text") or out.get("generated_yaml")
+                            if isinstance(cand, str) and cand.strip():
+                                try:
+                                    if (not isinstance(yt, str) or not yt.strip()) and hasattr(
+                                        current_context, "yaml_text"
+                                    ):
+                                        setattr(current_context, "yaml_text", cand)
+                                    if (not isinstance(gy, str) or not gy.strip()) and hasattr(
+                                        current_context, "generated_yaml"
+                                    ):
+                                        setattr(current_context, "generated_yaml", cand)
+                                except Exception:
+                                    pass
+                                break
+        except Exception:
+            pass
+
         return PipelineResult(
             step_history=step_history,
             total_cost_usd=total_cost,
@@ -1528,6 +1561,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context = frame.context
         resources = frame.resources
         limits = frame.limits
+        # Defensive routing: if a ConditionalStep slipped through registry resolution,
+        # delegate to the conditional policy to ensure expected spans/logs.
+        from ...domain.dsl.conditional import ConditionalStep as _ConditionalStep
+
+        if isinstance(step, _ConditionalStep):
+            return await self._policy_conditional_step(frame)
         stream = frame.stream
         on_chunk = frame.on_chunk
         cache_key = self._cache_key(frame) if self._enable_cache else None

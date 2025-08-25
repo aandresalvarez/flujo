@@ -192,6 +192,17 @@ def _reset_registry_per_test():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _clear_state_uri_env(monkeypatch):
+    """Prevent FLUJO_STATE_URI leakage between tests when using xdist/random.
+
+    Some tests set FLUJO_STATE_URI explicitly; others expect TOML defaults.
+    Clearing it at test start ensures isolation and avoids cross-test failures.
+    """
+    monkeypatch.delenv("FLUJO_STATE_URI", raising=False)
+    yield
+
+
 def create_test_flujo(
     pipeline: Pipeline[Any, Any] | Step[Any, Any],
     *,
