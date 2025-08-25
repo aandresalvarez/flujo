@@ -342,6 +342,21 @@ class StateMachinePolicyExecutor:
             branch_context=last_context,
             step_history=step_history,
         )
+        # Best-effort: inform the context_setter of the final merged context so
+        # ExecutionManager can persist it consistently across policy types.
+        try:
+            if frame.context_setter is not None:
+                from flujo.domain.models import PipelineResult as _PR
+
+                pr = _PR(
+                    step_history=step_history,
+                    total_cost_usd=total_cost,
+                    total_tokens=total_tokens,
+                    final_pipeline_context=last_context,
+                )
+                frame.context_setter(pr, context)
+        except Exception:
+            pass
         return Success(step_result=result)
 
 
