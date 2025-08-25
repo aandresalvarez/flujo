@@ -159,6 +159,19 @@ Looking to use GPT‑5 with the Architect? See the guide: `docs/guides/gpt5_arch
   - `validate`, `show-steps`, `visualize`, `compile-yaml`, `show-config`, `version`
   - `experimental`: advanced tools like `solve`, `bench`, `add-case`, `improve`
 
+### CLI Flags & Exit Codes (Quick Reference)
+
+- Global flags:
+  - `--project PATH`: Set project root and inject into `PYTHONPATH` (imports like `skills.*`).
+  - `-v/--verbose`, `--trace`: Show full tracebacks.
+- `validate`:
+  - Strict-by-default (`--no-strict` to relax), `--format=json` for CI parsers.
+- `run`:
+  - `--dry-run` validates without executing (with `--json`, prints steps).
+- Stable exit codes: `0` OK, `1` runtime, `2` config, `3` import, `4` validation failed, `130` SIGINT.
+
+See the detailed reference: `docs/reference/cli.md`.
+
 ---
 
 ## CLI Input Piping (Non‑Interactive Usage)
