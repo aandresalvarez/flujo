@@ -1487,6 +1487,8 @@ def run(
         flujo run my_pipeline.py --input "Process this" --context-model MyContext --context-data '{"key": "value"}'
         flujo run my_pipeline.py --input "Test" --context-file context.yaml
     """
+    # Ensure we always have a symbol in scope for cleanup
+    runner: Any | None = None
     try:
         # Apply CLI defaults from configuration file
         cli_args = apply_cli_defaults(
@@ -1640,6 +1642,113 @@ def run(
             pass
         typer.echo(f"[red]Error running pipeline: {e}", err=True)
         raise typer.Exit(1)
+    finally:
+        # Best-effort cleanup to prevent post-run hangs
+        try:
+            import asyncio as _asyncio
+            import gc as _gc
+            import threading as _threading
+
+            # Force GC to clear orphaned async objects
+            try:
+                _gc.collect()
+            except Exception:
+                pass
+
+            # Cancel any remaining asyncio tasks (if a loop exists in this context)
+            try:
+                loop = _asyncio.get_running_loop()
+                for task in list(_asyncio.all_tasks(loop)):
+                    if not task.done():
+                        task.cancel()
+            except RuntimeError:
+                # No running loop in this context
+                pass
+            except Exception:
+                pass
+
+            # Join any lingering non-main threads briefly
+            try:
+                for t in [
+                    th
+                    for th in _threading.enumerate()
+                    if th is not _threading.main_thread() and th.is_alive()
+                ]:
+                    try:
+                        t.join(timeout=0.2)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # Try to gracefully shutdown the state backend if exposed on the runner
+            try:
+                sb = getattr(runner, "state_backend", None)
+                if sb is not None and hasattr(sb, "shutdown"):
+
+                    async def _do_shutdown() -> None:
+                        try:
+                            await sb.shutdown()
+                        except Exception:
+                            pass
+
+                    try:
+                        _asyncio.run(_do_shutdown())
+                    except RuntimeError:
+                        # Running loop: schedule and wait best-effort
+                        try:
+                            loop = _asyncio.get_running_loop()
+                            loop.create_task(_do_shutdown())
+                            # Best-effort - do not block indefinitely
+                            # If we cannot await, ignore silently
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            # Additional library-specific cleanups (idempotent)
+            try:
+                import httpx as _httpx
+
+                if hasattr(_httpx, "_default_limits"):
+                    _httpx._default_limits = None  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+            # Ensure any pooled SQLite connections are closed (extra safety)
+            try:
+                from flujo.state.backends.sqlite import SQLiteBackend as _SQLiteBackend
+
+                _SQLiteBackend.shutdown_all()
+            except Exception:
+                pass
+
+            # Clear dynamic skill registry entries (preserve built-ins)
+            try:
+                from flujo.infra.skill_registry import get_skill_registry as _get_reg
+
+                reg = _get_reg()
+                entries = getattr(reg, "_entries", None)
+                if isinstance(entries, dict):
+                    preserved: Dict[str, Any] = {
+                        k: v
+                        for k, v in list(entries.items())
+                        if isinstance(k, str)
+                        and (k.startswith("flujo.builtins.") or k.startswith("flujo.architect."))
+                    }
+                    entries.clear()
+                    entries.update(preserved)
+            except Exception:
+                pass
+
+            # Final GC sweep
+            try:
+                _gc.collect()
+            except Exception:
+                pass
+        except Exception:
+            # Never fail the command on cleanup
+            pass
 
 
 @dev_app.command(name="compile-yaml")
