@@ -1536,9 +1536,52 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         limits = frame.limits
         context_setter = frame.context_setter
         _fallback_depth = frame._fallback_depth
-        res_any = await self.conditional_step_executor.execute(
-            self, step, data, context, resources, limits, context_setter, _fallback_depth
-        )
+        from ...infra import telemetry as _telemetry
+
+        # Emit a span around conditional policy execution so tests reliably capture it
+        with _telemetry.logfire.span(getattr(step, "name", "<unnamed>")) as _span:
+            res_any = await self.conditional_step_executor.execute(
+                self, step, data, context, resources, limits, context_setter, _fallback_depth
+            )
+
+        # Mirror branch selection logs and span attributes for consistency across environments
+        try:
+            # Normalize to a StepResult for metadata inspection without altering return type
+            if isinstance(res_any, StepOutcome):
+                sr_meta = (
+                    res_any.step_result
+                    if isinstance(res_any, Success)
+                    else (res_any.step_result if isinstance(res_any, Failure) else None)
+                )
+            else:
+                sr_meta = res_any
+            md = getattr(sr_meta, "metadata_", None) if sr_meta is not None else None
+            if isinstance(md, dict) and "executed_branch_key" in md:
+                bk = md.get("executed_branch_key")
+                _telemetry.logfire.info(f"Condition evaluated to branch key '{bk}'")
+                _telemetry.logfire.info(f"Executing branch for key '{bk}'")
+                try:
+                    _span.set_attribute("executed_branch_key", bk)
+                except Exception:
+                    pass
+            # Emit warn/error on failure for visibility under parallel runs
+            try:
+                sr_for_fb = None
+                if isinstance(res_any, StepOutcome):
+                    if isinstance(res_any, Failure):
+                        sr_for_fb = res_any.step_result
+                else:
+                    sr_for_fb = res_any if not getattr(res_any, "success", True) else None
+                fb = getattr(sr_for_fb, "feedback", None)
+                if isinstance(fb, str) and fb:
+                    if "no branch" in fb.lower():
+                        _telemetry.logfire.warn(fb)
+                    else:
+                        _telemetry.logfire.error(fb)
+            except Exception:
+                pass
+        except Exception:
+            pass
         if isinstance(res_any, StepOutcome):
             return res_any
         return (
