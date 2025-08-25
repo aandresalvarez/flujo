@@ -7,6 +7,9 @@ This page summarizes the new CLI behavior added to improve CI and developer ergo
 - `--project PATH`: Forces the project root. The directory is added to `PYTHONPATH` so imports like `skills.helpers` resolve when running from subdirectories or CI workspaces.
 - `-v/--verbose`, `--trace`: Print full Python tracebacks for easier troubleshooting. Useful in CI logs.
 
+Environment file path:
+- Declare `env_file = ".env"` in `flujo.toml` to load API keys (e.g., `OPENAI_API_KEY`) from a specific file relative to the project root. The project scaffold provides `.env.example`; copy it to `.env` and fill your secrets. You can change the path to any file (e.g., `env_file = ".secrets"`).
+
 Project root resolution order used by all commands:
 1) `--project PATH`
 2) `FLUJO_PROJECT_ROOT`
@@ -76,4 +79,3 @@ if [ "$(echo "$json" | jq -r .is_valid)" != "true" ]; then
   exit 4
 fi
 ```
-

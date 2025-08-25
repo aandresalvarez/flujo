@@ -2053,6 +2053,12 @@ def scaffold_project(directory: Path, *, overwrite_existing: bool = False) -> No
             _write(flujo_toml, f.read())
         with _res.files(template_pkg).joinpath("pipeline.yaml").open("r") as f:
             _write(directory / "pipeline.yaml", f.read())
+        # .env.example for users to copy into .env
+        try:
+            with _res.files(template_pkg).joinpath(".env.example").open("r") as f:
+                _write(directory / ".env.example", f.read())
+        except Exception:
+            pass
         # skills/__init__.py
         with _res.files(template_pkg).joinpath("skills__init__.py").open("r") as f:
             _write(skills_dir / "__init__.py", f.read())
@@ -2073,6 +2079,10 @@ def scaffold_project(directory: Path, *, overwrite_existing: bool = False) -> No
 
 # Use an in-memory state backend by default
 state_uri = "memory://"
+
+# Load environment variables (API keys, etc.) from this file.
+# Copy `.env.example` to `.env`, fill your keys, or change this path.
+env_file = ".env"
 
 [settings]
 # default_solution_model = "gpt-4o-mini"
@@ -2282,6 +2292,15 @@ async def echo_tool(x: str) -> str:
     # Write the files
     _write(flujo_toml, flujo_toml_content)
     _write(pipeline_yaml, demo_pipeline_content)
+    # Scaffold .env.example to guide users
+    try:
+        from importlib import resources as _res
+
+        template_pkg = "flujo.templates.project"
+        with _res.files(template_pkg).joinpath(".env.example").open("r") as f:
+            _write(directory / ".env.example", f.read())
+    except Exception:
+        pass
     _write(skills_dir / "__init__.py", skills_init_content)
     _write(skills_dir / "custom_tools.py", custom_tools_content)
     # Add README with architect toggle notes
