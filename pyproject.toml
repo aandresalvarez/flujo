@@ -331,6 +331,7 @@ per-file-ignores = { "tests/benchmarks/*.py" = ["E402"], "tests/unit/test_extrac
 asyncio_mode = "auto"
 testpaths = ["tests"]
 norecursedirs = [
+  ".hypothesis",  # Ensure Hypothesis' workdir is ignored to avoid plugin warnings
   "bug_reports",
   "manual_testing",
   "scripts",

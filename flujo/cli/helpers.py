@@ -961,6 +961,40 @@ def execute_pipeline_with_output_handling(
                 # Force garbage collection to clean up any orphaned async objects
                 gc.collect()
 
+                # Attempt to return freed memory to the OS (platform-specific best-effort)
+                try:
+                    import ctypes
+                    import sys as _sys
+
+                    if _sys.platform.startswith("linux"):
+                        try:
+                            libc = ctypes.CDLL("libc.so.6")
+                            # int malloc_trim(size_t pad);
+                            libc.malloc_trim(0)
+                        except Exception:
+                            pass
+                    elif _sys.platform == "darwin":
+                        # macOS: use malloc_zone_pressure_relief on the default malloc zone
+                        try:
+                            libsys = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+                            # void* malloc_default_zone(void);
+                            libsys.malloc_default_zone.restype = ctypes.c_void_p
+                            zone = libsys.malloc_default_zone()
+                            # size_t malloc_zone_pressure_relief(malloc_zone_t* zone, size_t goal);
+                            # goal=0 lets allocator decide how much to release
+                            libsys.malloc_zone_pressure_relief.argtypes = [
+                                ctypes.c_void_p,
+                                ctypes.c_size_t,
+                            ]
+                            libsys.malloc_zone_pressure_relief.restype = ctypes.c_size_t
+                            libsys.malloc_zone_pressure_relief(
+                                ctypes.c_void_p(zone), ctypes.c_size_t(0)
+                            )
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
                 # Cancel any remaining tasks in the current event loop (if any)
                 try:
                     loop = asyncio.get_running_loop()
