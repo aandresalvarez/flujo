@@ -11,6 +11,12 @@ from flujo.infra.config import get_performance_threshold
 
 # Force minimal architect pipeline for performance tests to avoid hanging
 # This ensures tests use the simple pipeline instead of the complex state machine
+#
+# NOTE: This approach aligns with the proposed architect redesign (see
+# bug_reports/architect/ARCHITECT_STATE_MACHINE_REDESIGN.md). We're implementing
+# the "Short-Term Pragmatics" while the redesign is in progress. When the redesign
+# is complete, these environment variables can be removed and tests will use the
+# unified, deterministic state machine.
 os.environ["FLUJO_ARCHITECT_IGNORE_CONFIG"] = "1"
 os.environ["FLUJO_TEST_MODE"] = "1"
 

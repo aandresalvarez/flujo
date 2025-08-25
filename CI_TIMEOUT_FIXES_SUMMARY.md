@@ -114,6 +114,29 @@ os.environ["FLUJO_TEST_MODE"] = "1"
 4. **Performance benchmarking**: Establish baseline performance metrics for CI environments
 5. **Automated timeout detection**: Implement CI checks to detect tests taking excessive time
 
+## Alignment with Architect Redesign
+
+### Current Approach vs. Long-term Vision
+Our current fixes implement the **"Short-Term Pragmatics"** mentioned in the architect redesign document:
+
+- **Environment-based selection**: We're using `FLUJO_ARCHITECT_IGNORE_CONFIG=1` and `FLUJO_TEST_MODE=1`
+- **CI stabilization**: Our timeout fixes provide immediate stability
+- **Deterministic behavior**: Minimal pipeline ensures consistent test results
+
+### Supporting the Redesign Goals
+Our fixes actually **support** the proposed redesign direction:
+
+1. **Single authoritative path**: By forcing minimal pipeline, we're moving toward consistent behavior
+2. **Deterministic state visibility**: Minimal pipeline provides predictable, testable behavior
+3. **CI reliability**: Timeout protection ensures tests don't hang during the transition
+
+### Migration Path
+When the redesign is implemented, our current approach provides a clear migration path:
+
+1. **Phase 1** (Current): Use minimal pipeline with environment variables
+2. **Phase 2** (Redesign): Remove environment variables, use unified state machine
+3. **Phase 3** (Future): Leverage improved state machine with deterministic visibility
+
 ## Conclusion
 
 These fixes address the root causes of CI timeout issues:
@@ -122,3 +145,5 @@ These fixes address the root causes of CI timeout issues:
 - **Overall**: Test suite now completes reliably without hanging
 
 The changes maintain test functionality while ensuring CI stability and preventing indefinite hangs. All tests now have appropriate timeout protection and use efficient execution paths.
+
+**Most importantly**, our approach aligns with the proposed architect redesign and provides a stable foundation for the transition to a unified, deterministic architect pipeline.
