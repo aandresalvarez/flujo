@@ -1238,6 +1238,14 @@ def create(  # <--- REVERT BACK TO SYNC
             except Exception:
                 pass
 
+            # If no YAML could be produced (e.g., user denied plan), abort
+            if not isinstance(yaml_text, str) or not yaml_text.strip():
+                typer.echo(
+                    "[red]No YAML was generated from the architect pipeline (plan rejected or writer failed). Aborting.",
+                    err=True,
+                )
+                raise typer.Exit(1)
+
             # Validate in-memory before writing
             report = validate_yaml_text(yaml_text, base_dir=output_dir or os.getcwd())
             if not report.is_valid and strict:

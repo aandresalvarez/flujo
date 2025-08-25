@@ -2184,15 +2184,34 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             if last_plugin_failure_feedback
                             else ""
                         )
+                        # Unwrap fallback outcome to a StepResult when available
+                        sr_for_metrics = None
+                        try:
+                            from ...domain.models import Failure as _Failure
+
+                            if isinstance(fb_res, _Failure) and fb_res.step_result is not None:
+                                sr_for_metrics = fb_res.step_result
+                        except Exception:
+                            sr_for_metrics = None
+                        token_counts_fb = (
+                            int(getattr(sr_for_metrics, "token_counts", 0) or 0)
+                            if sr_for_metrics is not None
+                            else 0
+                        )
+                        cost_usd_fb = (
+                            float(getattr(sr_for_metrics, "cost_usd", 0.0) or 0.0)
+                            if sr_for_metrics is not None
+                            else 0.0
+                        )
+
                         failure_sr = StepResult(
                             name=self._safe_step_name(step),
                             output=None,
                             success=False,
                             attempts=result.attempts,
                             latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
-                            token_counts=int(getattr(fb_res, "token_counts", 0) or 0)
-                            + int(add_primary or 0),
-                            cost_usd=getattr(fb_res, "cost_usd", 0.0),
+                            token_counts=int(token_counts_fb) + int(add_primary or 0),
+                            cost_usd=cost_usd_fb,
                             feedback=f"Original error: {primary_fb}{tail}; Fallback error: {fb_res.feedback}",
                             branch_context=None,
                             metadata_=result.metadata_,
