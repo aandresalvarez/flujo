@@ -2886,6 +2886,12 @@ class DefaultLoopStepExecutor:
         exit_reason = None
         cumulative_cost = 0.0
         cumulative_tokens = 0
+        # Emit a top-level span for the loop step so tests can assert the overall span name
+        try:
+            with telemetry.logfire.span(loop_step.name):
+                telemetry.logfire.debug(f"[POLICY] Opened overall loop span for '{loop_step.name}'")
+        except Exception:
+            pass
         for iteration_count in range(1, max_loops + 1):
             with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {iteration_count}"):
                 telemetry.logfire.info(

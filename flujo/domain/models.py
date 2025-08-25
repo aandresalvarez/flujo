@@ -31,6 +31,28 @@ class Success(StepOutcome[T]):
 
     step_result: "StepResult"
 
+    @field_validator("step_result", mode="before")
+    @classmethod
+    def _ensure_step_result(cls, v: Any) -> Any:
+        """Defensively prevent construction of Success with a None payload.
+
+        In some CI-only edge paths, adapters returned a None payload; constructing
+        Success(step_result=None) raises a ValidationError. Normalize this by
+        synthesizing a minimal StepResult that clearly indicates the issue,
+        allowing callers to surface a meaningful failure instead of crashing.
+        """
+        if v is None:
+            try:
+                return StepResult(
+                    name="<unknown>",
+                    output=None,
+                    success=False,
+                    feedback="Missing step_result",
+                )
+            except Exception:
+                return {"name": "<unknown>", "success": False, "feedback": "Missing step_result"}
+        return v
+
 
 class Failure(StepOutcome[T]):
     """Recoverable failure with partial result and feedback for callers/tests."""

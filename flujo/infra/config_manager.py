@@ -366,15 +366,21 @@ class ConfigManager:
     def get_state_uri(self, force_reload: bool = False) -> Optional[str]:
         """Get the state URI from configuration.
 
-        Implements the precedence: Environment Variables > TOML File > None
+        Implements the precedence: Environment Variables > TOML File > None,
+        except when this manager was initialized with an explicit config path
+        (source = "arg"). In that case, prefer the TOML value to honor
+        the caller’s explicit configuration file selection and avoid test
+        contamination from environment variables set by other suites.
 
         Args:
             force_reload: If True, bypass the cache and reload from file
         """
-        # Precedence: 1) Environment variable, 2) TOML value
-        env_uri = os.environ.get("FLUJO_STATE_URI")
-        if env_uri:
-            return env_uri
+        # If an explicit config file path was provided, prefer its value
+        # over the environment to avoid cross-test leakage in multiprocessing.
+        if getattr(self, "_config_source", "none") != "arg":
+            env_uri = os.environ.get("FLUJO_STATE_URI")
+            if env_uri:
+                return env_uri
 
         # TOML file configuration
         config = self.load_config(force_reload=force_reload)
