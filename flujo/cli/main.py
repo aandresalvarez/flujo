@@ -1711,7 +1711,7 @@ def run(
                 import httpx as _httpx
 
                 if hasattr(_httpx, "_default_limits"):
-                    _httpx._default_limits = None  # type: ignore[attr-defined]
+                    _httpx._default_limits = None
             except Exception:
                 pass
 

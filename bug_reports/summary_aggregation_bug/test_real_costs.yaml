@@ -1,0 +1,34 @@
+version: "0.1"
+name: "real_cost_aggregation_test"
+
+description: |
+  This pipeline tests cost and token aggregation with actual LLM usage
+  to verify that the summary aggregation fix is working correctly.
+
+steps:
+  - kind: parallel
+    name: cost_test_parallel
+    branches:
+      branch1:
+        - kind: step
+          name: agent_step_1
+          agent:
+            id: "openai:gpt-4o-mini"
+          input: "Generate a short creative story about a robot learning to paint"
+          description: "First LLM agent step that should generate costs and tokens"
+      
+      branch2:
+        - kind: step
+          name: agent_step_2
+          agent:
+            id: "openai:gpt-4o-mini"
+          input: "Write a haiku about artificial intelligence"
+          description: "Second LLM agent step that should generate costs and tokens"
+      
+      branch3:
+        - kind: step
+          name: agent_step_3
+          agent:
+            id: "openai:gpt-4o-mini"
+          input: "Explain quantum computing in one sentence"
+          description: "Third LLM agent step that should generate costs and tokens"

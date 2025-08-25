@@ -621,6 +621,28 @@ def create_pipeline_results_table(step_history: List[Any]) -> Table:
 
         table.add_row(step_name, status, output, cost, tokens)
 
+        # Recursively render nested step histories, if present
+        try:
+            nested_history = getattr(step_res, "step_history", None)
+            if isinstance(nested_history, list) and nested_history:
+                for child in nested_history:
+                    add_rows(child, prefix + "  ")
+        except Exception:
+            pass
+        # If the step output is a nested PipelineResult, render its history as well
+        try:
+            out = getattr(step_res, "output", None)
+            if (
+                out is not None
+                and hasattr(out, "step_history")
+                and isinstance(getattr(out, "step_history", None), list)
+                and getattr(out, "step_history")
+            ):
+                for child in getattr(out, "step_history"):
+                    add_rows(child, prefix + "  ")
+        except Exception:
+            pass
+
     for step_res in step_history:
         add_rows(step_res)
 
@@ -1099,7 +1121,11 @@ def display_pipeline_results(
             console.print(f"[bold]Final output:[/bold] {final_output}")
     console.print(f"[bold]Total cost:[/bold] ${result.total_cost_usd:.4f}")
 
-    total_tokens = sum(s.token_counts for s in result.step_history)
+    # Prefer pipeline's aggregated tokens which include nested results
+    try:
+        total_tokens = int(getattr(result, "total_tokens", 0))
+    except Exception:
+        total_tokens = sum(getattr(s, "token_counts", 0) for s in result.step_history)
     console.print(f"[bold]Total tokens:[/bold] {total_tokens}")
     console.print(f"[bold]Steps executed:[/bold] {len(result.step_history)}")
     console.print(f"[bold]Run ID:[/bold] {run_id}")
