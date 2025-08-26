@@ -4390,6 +4390,17 @@ class DefaultConditionalStepExecutor:
                 # is not a mapping by augmenting with context-derived signals.
                 # Use original data and context for condition evaluation (contract)
                 branch_key = conditional_step.condition_callable(data, context)
+                # FSD-026: tolerant resolution for boolean expressions.
+                # Prefer exact boolean keys (DSL usage), else fallback to 'true'/'false' strings (YAML usage).
+                resolved_key = None
+                if isinstance(branch_key, bool):
+                    for cand in (branch_key, str(branch_key).lower()):
+                        if cand in getattr(conditional_step, "branches", {}):
+                            resolved_key = cand
+                            break
+                else:
+                    if branch_key in getattr(conditional_step, "branches", {}):
+                        resolved_key = branch_key
                 try:
                     expr = getattr(conditional_step, "meta", {}).get("condition_expression")
                     if expr:
@@ -4439,12 +4450,14 @@ class DefaultConditionalStepExecutor:
                 telemetry.logfire.info(f"Condition evaluated to branch key '{branch_key}'")
                 try:
                     span.set_attribute("executed_branch_key", branch_key)
+                    if resolved_key is not None and resolved_key is not branch_key:
+                        span.set_attribute("resolved_branch_key", str(resolved_key))
                 except Exception:
                     pass
                 # Determine branch
                 branch_to_execute = None
-                if branch_key in conditional_step.branches:
-                    branch_to_execute = conditional_step.branches[branch_key]
+                if resolved_key is not None:
+                    branch_to_execute = conditional_step.branches[resolved_key]
                 elif conditional_step.default_branch_pipeline is not None:
                     branch_to_execute = conditional_step.default_branch_pipeline
                 else:
@@ -4460,6 +4473,8 @@ class DefaultConditionalStepExecutor:
                     return to_outcome(result)
                 # Record executed branch key (always the evaluated key, even when default is used)
                 result.metadata_["executed_branch_key"] = branch_key
+                if resolved_key is not None and resolved_key is not branch_key:
+                    result.metadata_["resolved_branch_key"] = resolved_key
                 telemetry.logfire.info(f"Executing branch for key '{branch_key}'")
                 # Execute selected branch
                 if branch_to_execute:

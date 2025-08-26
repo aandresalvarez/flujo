@@ -171,6 +171,35 @@ def _env_with_options(disable_autoload: bool) -> dict:
     return env
 
 
+_OPTION_CACHE: dict[tuple[bool, str], bool] = {}
+
+
+def _has_pytest_option(option: str, disable_autoload: bool) -> bool:
+    """Detect if pytest supports a given CLI option.
+
+    Runs `pytest --help` in a short-lived subprocess using the same plugin
+    autoload setting and caches the result to avoid repeated calls.
+    """
+    key = (bool(disable_autoload), option)
+    if key in _OPTION_CACHE:
+        return _OPTION_CACHE[key]
+    try:
+        env = _env_with_options(disable_autoload)
+        proc = sp.run(
+            [sys.executable, "-m", "pytest", "--help"],
+            stdout=sp.PIPE,
+            stderr=sp.STDOUT,
+            text=True,
+            env=env,
+            timeout=20,
+        )
+        supported = option in (proc.stdout or "")
+    except Exception:
+        supported = False
+    _OPTION_CACHE[key] = supported
+    return supported
+
+
 # -----------------------------
 # Core execution
 # -----------------------------
@@ -659,6 +688,10 @@ def main() -> int:
                 workers = 1
         parallel = workers > 1 and len(nodeids_fast) > 1
         if nodeids_fast:
+            fh_supported = _has_pytest_option(
+                "--faulthandler-timeout", args.disable_plugin_autoload
+            )
+            fh_timeout = args.faulthandler_timeout if fh_supported else None
             if parallel:
                 results_fast, first_failure_fast = _run_parallel(
                     nodeids_fast,
@@ -669,7 +702,7 @@ def main() -> int:
                     pytest_args,
                     args.disable_plugin_autoload,
                     args.fail_fast,
-                    args.faulthandler_timeout,
+                    fh_timeout,
                     _and("not slow"),
                     args.kexpr,
                 )
@@ -682,7 +715,7 @@ def main() -> int:
                     pytest_args,
                     args.disable_plugin_autoload,
                     args.fail_fast,
-                    args.faulthandler_timeout,
+                    fh_timeout,
                     _and("not slow"),
                     args.kexpr,
                 )
@@ -711,6 +744,10 @@ def main() -> int:
             slow_outer = max(slow_timeout * 3, slow_timeout + 60)
             slow_parallel = slow_workers > 1 and len(nodeids_slow) > 1
             if nodeids_slow:
+                fh_supported = _has_pytest_option(
+                    "--faulthandler-timeout", args.disable_plugin_autoload
+                )
+                fh_timeout = args.faulthandler_timeout if fh_supported else None
                 if slow_parallel:
                     results_slow, first_failure_slow = _run_parallel(
                         nodeids_slow,
@@ -721,7 +758,7 @@ def main() -> int:
                         pytest_args,
                         args.disable_plugin_autoload,
                         args.fail_fast,
-                        args.faulthandler_timeout,
+                        fh_timeout,
                         _and("(slow or veryslow)"),
                         args.kexpr,
                     )
@@ -734,7 +771,7 @@ def main() -> int:
                         pytest_args,
                         args.disable_plugin_autoload,
                         args.fail_fast,
-                        args.faulthandler_timeout,
+                        fh_timeout,
                         _and("(slow or veryslow)"),
                         args.kexpr,
                     )
@@ -764,6 +801,8 @@ def main() -> int:
             except Exception:
                 workers = 1
         parallel = workers > 1 and len(nodeids) > 1
+        fh_supported = _has_pytest_option("--faulthandler-timeout", args.disable_plugin_autoload)
+        fh_timeout = args.faulthandler_timeout if fh_supported else None
         if parallel:
             results, first_failure = _run_parallel(
                 nodeids,
@@ -774,7 +813,7 @@ def main() -> int:
                 pytest_args,
                 args.disable_plugin_autoload,
                 args.fail_fast,
-                args.faulthandler_timeout,
+                fh_timeout,
                 args.markers,
                 args.kexpr,
             )
@@ -787,7 +826,7 @@ def main() -> int:
                 pytest_args,
                 args.disable_plugin_autoload,
                 args.fail_fast,
-                args.faulthandler_timeout,
+                fh_timeout,
                 args.markers,
                 args.kexpr,
             )
@@ -824,6 +863,8 @@ def main() -> int:
         parallel = workers > 1 and len(nodeids) > 1
 
         # Run
+        fh_supported = _has_pytest_option("--faulthandler-timeout", args.disable_plugin_autoload)
+        fh_timeout = args.faulthandler_timeout if fh_supported else None
         if parallel:
             results, first_failure = _run_parallel(
                 nodeids,
@@ -834,7 +875,7 @@ def main() -> int:
                 pytest_args,
                 args.disable_plugin_autoload,
                 args.fail_fast,
-                args.faulthandler_timeout,
+                fh_timeout,
                 args.markers,
                 args.kexpr,
             )
@@ -847,7 +888,7 @@ def main() -> int:
                 pytest_args,
                 args.disable_plugin_autoload,
                 args.fail_fast,
-                args.faulthandler_timeout,
+                fh_timeout,
                 args.markers,
                 args.kexpr,
             )

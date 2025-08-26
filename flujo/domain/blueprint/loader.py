@@ -250,6 +250,22 @@ def _make_step_from_blueprint(
     # Support both native BlueprintStepModel and raw dict for custom primitives
     if isinstance(model, dict):
         kind_val = str(model.get("kind", "step"))
+        # Pre-normalize boolean branch keys for conditional steps (FSD-026)
+        if kind_val == "conditional":
+            try:
+                branches_raw = model.get("branches")
+                if isinstance(branches_raw, dict):
+                    coerced: Dict[str, Any] = {}
+                    for _k, _v in branches_raw.items():
+                        if isinstance(_k, bool):
+                            coerced[str(_k).lower()] = _v
+                        else:
+                            coerced[str(_k)] = _v if _k not in coerced else _v
+                    model = dict(model)
+                    model["branches"] = coerced
+            except Exception:
+                # Best-effort: keep original if anything goes wrong
+                pass
         # Built-in kinds handled by existing logic via typed model
         if kind_val in {
             "step",
@@ -1375,3 +1391,33 @@ def _resolve_agent_entry(agent: Union[str, Dict[str, Any]]) -> Any:
         if path:
             return _resolve_agent(path)
     raise BlueprintError("Invalid agent specification")
+
+    # Normalize input prior to field validation so we can coerce boolean
+    # branch keys for conditional steps (FSD-026)
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_conditional_branch_keys(cls, data: Any) -> Any:
+        """Coerce boolean branch keys to strings for conditional steps.
+
+        YAML parses unquoted 'true'/'false' as booleans, which previously
+        failed validation because 'branches' expected string keys. For
+        kind: conditional, convert boolean keys to their lowercase string
+        equivalents ('true'/'false').
+        """
+        try:
+            if isinstance(data, dict) and str(data.get("kind", "")) == "conditional":
+                branches = data.get("branches")
+                if isinstance(branches, dict):
+                    coerced: Dict[str, Any] = {}
+                    for k, v in branches.items():
+                        if isinstance(k, bool):
+                            coerced[str(k).lower()] = v
+                        else:
+                            coerced[str(k)] = v if k not in coerced else v
+                    new_data = dict(data)
+                    new_data["branches"] = coerced
+                    return new_data
+        except Exception:
+            # Be conservative: on any error, return original input
+            return data
+        return data
