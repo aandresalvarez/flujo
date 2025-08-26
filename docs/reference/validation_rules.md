@@ -43,3 +43,9 @@ This page documents the rule IDs emitted by `Pipeline.validate_graph()` and rela
   - Suggestion: Provide `field_mapping` or pick an explicit strategy (`OVERWRITE`/`ERROR_ON_CONFLICT`).
 
 
+### Notes
+
+- Run `flujo validate --strict` to exit non-zero on any errors.
+- `flujo run` aborts before execution when errors are present.
+- For YAML blueprints, these checks run after compilation to the typed DSL.
+

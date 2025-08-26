@@ -67,12 +67,10 @@ nav:
     - 'Extending': 'advanced/extending.md'
     - 'Troubleshooting': 'advanced/troubleshooting.md'
     - 'Development Guide': 'development/dev.md'
-  - 'Migration':
-    - 'v0.8.0': 'migration/v0.8.0.md'
-    - 'v0.4.37': 'migration/v0.4.37.md'
-    - 'v0.7.0': 'migration/v0.7.0.md'
-    - 'v0.6.0': 'migration/v0.6.0.md'
-    - 'v0.4.0': 'migration/v0.4.0.md'
+  - 'Reference':
+    - 'CLI': 'reference/cli.md'
+    - 'Trace Contract': 'reference/trace_contract.md'
+    - 'Validation Rules': 'reference/validation_rules.md'
   # API Reference - automatically generated from source code
   - 'API Reference': 'api/index.md'
 

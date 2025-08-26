@@ -1288,6 +1288,213 @@ def _register_builtins() -> None:
             description="Extract YAML string from YamlWriter output object or dict.",
         )
 
+        # --- FSD: Built-in data transforms (M1)
+        # to_csv: list[dict] -> CSV string
+        async def to_csv(rows: Any, *, headers: Optional[List[str]] = None) -> str:
+            import io
+            import csv
+
+            # Normalize input to list[dict[str, Any]] where possible
+            norm: List[Dict[str, Any]]
+            if isinstance(rows, dict):
+                norm = [rows]
+            elif isinstance(rows, list) and all(isinstance(x, dict) for x in rows):
+                norm = rows
+            else:
+                # Best-effort: coerce to list of dicts using a single 'value' column
+                if isinstance(rows, list):
+                    norm = [x if isinstance(x, dict) else {"value": x} for x in rows]
+                else:
+                    norm = [rows if isinstance(rows, dict) else {"value": rows}]
+
+            # Determine headers deterministically
+            if headers and isinstance(headers, list) and all(isinstance(h, str) for h in headers):
+                cols = list(headers)
+            else:
+                keys: set[str] = set()
+                for row in norm:
+                    try:
+                        keys.update(k for k in row.keys() if isinstance(k, str))
+                    except Exception:
+                        continue
+                cols = sorted(keys)
+
+            buf = io.StringIO()
+            writer = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+            if cols:
+                writer.writeheader()
+            for row in norm:
+                try:
+                    writer.writerow({k: row.get(k, "") for k in cols})
+                except Exception:
+                    # Skip malformed rows defensively
+                    continue
+            return buf.getvalue()
+
+        reg.register(
+            "flujo.builtins.to_csv",
+            lambda **_params: to_csv,
+            description="Convert list[dict] into CSV string (deterministic headers).",
+            arg_schema={
+                "type": "object",
+                "properties": {
+                    "rows": {"type": ["array", "object"]},
+                    "headers": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["rows"],
+            },
+            side_effects=False,
+        )
+
+        # aggregate: sum/avg/count over numeric field in list[dict]
+        async def aggregate(
+            data: Any,
+            *,
+            operation: str,
+            field: Optional[str] = None,
+        ) -> float | int:
+            op = (operation or "").strip().lower()
+            items: List[Dict[str, Any]]
+            if isinstance(data, list) and all(isinstance(x, dict) for x in data):
+                items = data
+            elif isinstance(data, dict):
+                items = [data]
+            else:
+                # Not a supported structure
+                items = []
+
+            def _nums() -> List[float]:
+                out: List[float] = []
+                if not field:
+                    return out
+                for obj in items:
+                    try:
+                        # At this point, field is guaranteed non-None by the guard above
+                        val = obj.get(field)
+                        if isinstance(val, (int, float)):
+                            out.append(float(val))
+                    except Exception:
+                        continue
+                return out
+
+            if op == "count":
+                if field:
+                    c = 0
+                    for obj in items:
+                        try:
+                            if field in obj and obj.get(field) is not None:
+                                c += 1
+                        except Exception:
+                            continue
+                    return int(c)
+                return int(len(items))
+
+            if op == "sum":
+                nums = _nums()
+                return float(sum(nums)) if nums else 0.0
+
+            if op in {"avg", "average", "mean"}:
+                nums = _nums()
+                return float(sum(nums)) / float(len(nums)) if nums else 0.0
+
+            # Unknown operation -> 0
+            return 0
+
+        reg.register(
+            "flujo.builtins.aggregate",
+            lambda **_params: aggregate,
+            description="Aggregate numeric field across list[dict]: sum/avg/count.",
+            arg_schema={
+                "type": "object",
+                "properties": {
+                    "data": {"type": ["array", "object"]},
+                    "operation": {"type": "string"},
+                    "field": {"type": "string"},
+                },
+                "required": ["data", "operation"],
+            },
+            side_effects=False,
+        )
+
+        # select_fields: projection/rename over dict or list[dict]
+        async def select_fields(
+            data: Any,
+            *,
+            include: Optional[List[str]] = None,
+            rename: Optional[Dict[str, str]] = None,
+        ) -> Any:
+            includes = list(include) if include else None
+            ren = dict(rename) if rename else {}
+
+            def _project(obj: Dict[str, Any]) -> Dict[str, Any]:
+                try:
+                    keys = list(obj.keys()) if includes is None else [k for k in includes]
+                    out: Dict[str, Any] = {}
+                    for k in keys:
+                        if k in obj:
+                            out[ren.get(k, k)] = obj.get(k)
+                    # If only rename provided without include, also consider renamed-only keys present
+                    if includes is None and ren:
+                        for k, newk in ren.items():
+                            if k in obj:
+                                out[newk] = obj.get(k)
+                    return out
+                except Exception:
+                    return {}
+
+            if isinstance(data, list) and all(isinstance(x, dict) for x in data):
+                return [_project(x) for x in data]
+            if isinstance(data, dict):
+                return _project(data)
+            # Unsupported structure: return as-is
+            return data
+
+        reg.register(
+            "flujo.builtins.select_fields",
+            lambda **_params: select_fields,
+            description="Project/rename fields on dict or list[dict] using include/rename.",
+            arg_schema={
+                "type": "object",
+                "properties": {
+                    "data": {"type": ["object", "array"]},
+                    "include": {"type": "array", "items": {"type": "string"}},
+                    "rename": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                },
+                "required": ["data"],
+            },
+            side_effects=False,
+        )
+
+        # flatten: list[list[T]] -> list[T]
+        async def flatten(items: Any) -> List[Any]:
+            if not isinstance(items, list):
+                return []
+            out: List[Any] = []
+            for sub in items:
+                if isinstance(sub, list):
+                    out.extend(sub)
+                elif isinstance(sub, tuple):
+                    out.extend(list(sub))
+                else:
+                    # Be permissive: include non-list items as-is
+                    out.append(sub)
+            return out
+
+        reg.register(
+            "flujo.builtins.flatten",
+            lambda **_params: flatten,
+            description="Flatten one level of nesting in a list of lists.",
+            arg_schema={
+                "type": "object",
+                "properties": {"items": {"type": "array"}},
+                "required": ["items"],
+            },
+            side_effects=False,
+        )
+
         # Return YAML in CLI-expected format
         reg.register(
             "flujo.builtins.return_yaml_for_cli",
