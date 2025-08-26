@@ -606,7 +606,7 @@ def status(
         if hist.get("available") and hist.get("items"):
             items = hist.get("items", [])
             preview = "; ".join(
-                f"{it.get('started_at','?')} {it.get('status','?')}" for it in items
+                f"{it.get('started_at', '?')} {it.get('status', '?')}" for it in items
             )
             console.print(f"History: {len(items)} runs: {preview}")
 

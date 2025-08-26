@@ -19,6 +19,32 @@ The `ConditionalStep` succeeds when the selected branch completes successfully. 
 
 `StepResult.metadata_['executed_branch_key']` stores the branch key that was executed.
 
+### Boolean condition results
+
+When a condition returns a boolean, Flujo resolves branches as follows:
+
+- If the `branches` mapping contains the boolean key directly (e.g., `True`/`False`) — common in Python/DSL pipelines — that branch is selected.
+- Otherwise, Flujo falls back to string keys `"true"`/`"false"` — common in YAML blueprints.
+
+YAML example (using an inline expression):
+
+```yaml
+- kind: conditional
+  name: check_flag
+  condition_expression: "previous_step.flag"  # returns True/False
+  branches:
+    true:
+      - kind: step
+        name: when_true
+    false:
+      - kind: step
+        name: when_false
+```
+
+Metadata:
+- `executed_branch_key`: the original evaluated key (boolean or string)
+- `resolved_branch_key`: present when the policy mapped a boolean to its string equivalent
+
 ## Example
 
 ```python
