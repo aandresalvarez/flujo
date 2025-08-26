@@ -39,7 +39,7 @@ class BatchProcessingStep(Step):
         results = []
         for i in range(0, len(data), self.batch_size):
             batch = data[i : i + self.batch_size]
-            print(f"   Processing batch {i//self.batch_size + 1}: {len(batch)} items")
+            print(f"   Processing batch {i // self.batch_size + 1}: {len(batch)} items")
 
             # Simulate batch processing
             batch_results = [f"processed_{item}" for item in batch]

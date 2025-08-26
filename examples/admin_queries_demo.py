@@ -286,9 +286,9 @@ async def demonstrate_monitoring_setup(backend: SQLiteBackend) -> None:
     avg_exec_time = stats["average_execution_time_ms"]
     if avg_exec_time:
         if avg_exec_time > 60000:  # 1 minute
-            print(f"  ⚠️  Slow average execution: {avg_exec_time/1000:.1f}s")
+            print(f"  ⚠️  Slow average execution: {avg_exec_time / 1000:.1f}s")
         else:
-            print(f"  ✅ Good performance: {avg_exec_time/1000:.1f}s average")
+            print(f"  ✅ Good performance: {avg_exec_time / 1000:.1f}s average")
 
 
 async def main():

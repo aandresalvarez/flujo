@@ -239,7 +239,83 @@ def _finalize_step_types(step_obj: Step[Any, Any]) -> None:
             except Exception:
                 pass
     except Exception:
+        # Best-effort static typing; ignore errors during signature analysis
         pass
+
+
+# ----------------------------
+# Module-level helpers (deduplicated)
+# ----------------------------
+
+
+def _resolve_context_target(ctx: Any, target: str) -> tuple[Any, Any]:
+    """Resolve a context.* target path to (parent, key).
+
+    - Supports dict and attribute-style traversal.
+    - Creates intermediate dicts/attributes when missing.
+    - Returns (None, None) when the target is invalid.
+    """
+    try:
+        if not isinstance(target, str) or not target.startswith("context."):
+            return None, None
+        parts = target.split(".")[1:]
+        cur = ctx
+        parent = None
+        key = None
+        for p in parts:
+            parent = cur
+            key = p
+            try:
+                if isinstance(cur, dict):
+                    if p not in cur:
+                        try:
+                            cur[p] = {}
+                        except Exception:
+                            pass
+                    cur = cur.get(p)
+                    continue
+            except Exception:
+                pass
+            nxt = getattr(cur, p, None)
+            if nxt is None:
+                try:
+                    setattr(cur, p, {})
+                    nxt = getattr(cur, p, None)
+                except Exception:
+                    nxt = None
+            cur = nxt
+        return parent, key
+    except Exception:
+        return None, None
+
+
+def _render_template_value(prev_output: Any, ctx: Any, tpl: Any) -> Any:
+    """Render a template string using context and previous output.
+
+    Exposes variables: {context, previous_step, steps}
+    """
+    try:
+        from ...utils.template_vars import (
+            TemplateContextProxy as _TCP,
+            get_steps_map_from_context as _get_steps,
+            StepValueProxy as _SVP,
+        )
+        from ...utils.prompting import AdvancedPromptFormatter as _Fmt
+
+        steps_map = _get_steps(ctx)
+        steps_wrapped = {k: v if isinstance(v, _SVP) else _SVP(v) for k, v in steps_map.items()}
+        fmt_ctx = {
+            "context": _TCP(ctx, steps=steps_wrapped),
+            "previous_step": prev_output,
+            "steps": steps_wrapped,
+        }
+        return _Fmt(str(tpl)).format(**fmt_ctx)
+    except Exception:
+        # Best effort: return raw string representation
+        try:
+            return str(tpl)
+        except Exception:
+            return tpl
 
 
 def _make_step_from_blueprint(
@@ -550,64 +626,17 @@ def _make_step_from_blueprint(
             k in state_spec for k in ("append", "set", "merge")
         ):
             try:
-                from ...utils.template_vars import (
-                    TemplateContextProxy as _TCP,
-                    get_steps_map_from_context as _get_steps,
-                    StepValueProxy as _SVP,
-                )
-                from ...utils.prompting import AdvancedPromptFormatter as _Fmt
                 import json as _json
 
                 ops_append = state_spec.get("append") or []
                 ops_set = state_spec.get("set") or []
                 ops_merge = state_spec.get("merge") or []
 
-                def _resolve_target(ctx: Any, target: str):
-                    # Only allow context.* targets
-                    if not target.startswith("context."):
-                        return None, None
-                    parts = target.split(".")[1:]
-                    cur = ctx
-                    parent = None
-                    key = None
-                    for p in parts:
-                        parent = cur
-                        key = p
-                        # Mapping-style first
-                        try:
-                            if isinstance(cur, dict):
-                                if p not in cur:
-                                    # create nested dict by default
-                                    try:
-                                        cur[p] = {}
-                                    except Exception:
-                                        pass
-                                cur = cur.get(p)
-                                continue
-                        except Exception:
-                            pass
-                        # Attribute-style fallback
-                        nxt = getattr(cur, p, None)
-                        if nxt is None:
-                            try:
-                                setattr(cur, p, {})
-                                nxt = getattr(cur, p, None)
-                            except Exception:
-                                nxt = None
-                        cur = nxt
-                    return parent, key
+                # Use module-level helpers for target resolution and template rendering
+                _resolve_target = _resolve_context_target
 
                 def _render_value(output: Any, ctx: Any, tpl: str) -> str:
-                    steps_map0 = _get_steps(ctx)
-                    steps_wrapped = {
-                        k: v if isinstance(v, _SVP) else _SVP(v) for k, v in steps_map0.items()
-                    }
-                    fmt_ctx = {
-                        "context": _TCP(ctx, steps=steps_wrapped),
-                        "previous_step": output,
-                        "steps": steps_wrapped,
-                    }
-                    return _Fmt(str(tpl)).format(**fmt_ctx)
+                    return str(_render_template_value(output, ctx, tpl))
 
                 def _apply_state_ops(output: Any, ctx: Any) -> None:
                     # append
@@ -715,56 +744,7 @@ def _make_step_from_blueprint(
             init_spec = None
         if init_spec is not None:
             try:
-                from ...utils.template_vars import (
-                    TemplateContextProxy as _TCP2,
-                    get_steps_map_from_context as _get_steps2,
-                    StepValueProxy as _SVP2,
-                )
-                from ...utils.prompting import AdvancedPromptFormatter as _Fmt2
                 import json as _json2
-
-                def _resolve_target2(ctx: Any, target: str):
-                    if not isinstance(target, str) or not target.startswith("context."):
-                        return None, None
-                    parts = target.split(".")[1:]
-                    cur = ctx
-                    parent = None
-                    key = None
-                    for p in parts:
-                        parent = cur
-                        key = p
-                        try:
-                            if isinstance(cur, dict):
-                                if p not in cur:
-                                    try:
-                                        cur[p] = {}
-                                    except Exception:
-                                        pass
-                                cur = cur.get(p)
-                                continue
-                        except Exception:
-                            pass
-                        nxt = getattr(cur, p, None)
-                        if nxt is None:
-                            try:
-                                setattr(cur, p, {})
-                                nxt = getattr(cur, p, None)
-                            except Exception:
-                                nxt = None
-                        cur = nxt
-                    return parent, key
-
-                def _render_value2(prev_output: Any, ctx: Any, tpl: Any) -> Any:
-                    steps_map0 = _get_steps2(ctx)
-                    steps_wrapped = {
-                        k: v if isinstance(v, _SVP2) else _SVP2(v) for k, v in steps_map0.items()
-                    }
-                    fmt_ctx = {
-                        "context": _TCP2(ctx, steps=steps_wrapped),
-                        "previous_step": prev_output,
-                        "steps": steps_wrapped,
-                    }
-                    return _Fmt2(str(tpl)).format(**fmt_ctx)
 
                 # Normalize init spec to ops lists
                 ops_init_append: list[dict[str, Any]] = []
@@ -833,10 +813,10 @@ def _make_step_from_blueprint(
                     # append
                     for spec in ops_init_append:
                         try:
-                            parent, key = _resolve_target2(ctx, str(spec.get("target")))
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
                             if parent is None or key is None:
                                 continue
-                            val = _render_value2(prev_output, ctx, spec.get("value", ""))
+                            val = _render_template_value(prev_output, ctx, spec.get("value", ""))
                             seq = None
                             try:
                                 seq = parent[key]
@@ -857,10 +837,10 @@ def _make_step_from_blueprint(
                     # set
                     for spec in ops_init_set:
                         try:
-                            parent, key = _resolve_target2(ctx, str(spec.get("target")))
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
                             if parent is None or key is None:
                                 continue
-                            val = _render_value2(prev_output, ctx, spec.get("value", ""))
+                            val = _render_template_value(prev_output, ctx, spec.get("value", ""))
                             if isinstance(parent, dict):
                                 parent[key] = val
                             else:
@@ -873,10 +853,12 @@ def _make_step_from_blueprint(
                     # merge
                     for spec in ops_init_merge:
                         try:
-                            parent, key = _resolve_target2(ctx, str(spec.get("target")))
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
                             if parent is None or key is None:
                                 continue
-                            val_raw = _render_value2(prev_output, ctx, spec.get("value", "{}"))
+                            val_raw = _render_template_value(
+                                prev_output, ctx, spec.get("value", "{}")
+                            )
                             try:
                                 val_obj = _json2.loads(val_raw)
                             except Exception:
@@ -1134,56 +1116,7 @@ def _make_step_from_blueprint(
             map_init = None
         if map_init is not None:
             try:
-                from ...utils.template_vars import (
-                    TemplateContextProxy as _TCPm,
-                    get_steps_map_from_context as _get_stepsm,
-                    StepValueProxy as _SVPm,
-                )
-                from ...utils.prompting import AdvancedPromptFormatter as _Fmtm
                 import json as _jsonm
-
-                def _resolve_targetm(ctx: Any, target: str):
-                    if not isinstance(target, str) or not target.startswith("context."):
-                        return None, None
-                    parts = target.split(".")[1:]
-                    cur = ctx
-                    parent = None
-                    key = None
-                    for p in parts:
-                        parent = cur
-                        key = p
-                        try:
-                            if isinstance(cur, dict):
-                                if p not in cur:
-                                    try:
-                                        cur[p] = {}
-                                    except Exception:
-                                        pass
-                                cur = cur.get(p)
-                                continue
-                        except Exception:
-                            pass
-                        nxt = getattr(cur, p, None)
-                        if nxt is None:
-                            try:
-                                setattr(cur, p, {})
-                                nxt = getattr(cur, p, None)
-                            except Exception:
-                                nxt = None
-                        cur = nxt
-                    return parent, key
-
-                def _render_valuem(prev_output: Any, ctx: Any, tpl: Any) -> Any:
-                    steps_map0 = _get_stepsm(ctx)
-                    steps_wrapped = {
-                        k: v if isinstance(v, _SVPm) else _SVPm(v) for k, v in steps_map0.items()
-                    }
-                    fmt_ctx = {
-                        "context": _TCPm(ctx, steps=steps_wrapped),
-                        "previous_step": prev_output,
-                        "steps": steps_wrapped,
-                    }
-                    return _Fmtm(str(tpl)).format(**fmt_ctx)
 
                 m_ops_append: list[dict[str, Any]] = []
                 m_ops_set: list[dict[str, Any]] = []
@@ -1234,10 +1167,10 @@ def _make_step_from_blueprint(
                     # append
                     for spec in m_ops_append:
                         try:
-                            parent, key = _resolve_targetm(ctx, str(spec.get("target")))
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
                             if parent is None or key is None:
                                 continue
-                            val = _render_valuem(prev_output, ctx, spec.get("value", ""))
+                            val = _render_template_value(prev_output, ctx, spec.get("value", ""))
                             seq = None
                             try:
                                 seq = parent[key]
@@ -1258,10 +1191,10 @@ def _make_step_from_blueprint(
                     # set
                     for spec in m_ops_set:
                         try:
-                            parent, key = _resolve_targetm(ctx, str(spec.get("target")))
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
                             if parent is None or key is None:
                                 continue
-                            val = _render_valuem(prev_output, ctx, spec.get("value", ""))
+                            val = _render_template_value(prev_output, ctx, spec.get("value", ""))
                             if isinstance(parent, dict):
                                 parent[key] = val
                             else:
@@ -1274,10 +1207,12 @@ def _make_step_from_blueprint(
                     # merge
                     for spec in m_ops_merge:
                         try:
-                            parent, key = _resolve_targetm(ctx, str(spec.get("target")))
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
                             if parent is None or key is None:
                                 continue
-                            val_raw = _render_valuem(prev_output, ctx, spec.get("value", "{}"))
+                            val_raw = _render_template_value(
+                                prev_output, ctx, spec.get("value", "{}")
+                            )
                             try:
                                 val_obj = _jsonm.loads(val_raw)
                             except Exception:

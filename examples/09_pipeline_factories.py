@@ -192,7 +192,7 @@ async def demonstrate_pipeline_inspection():
     # Show how the pipeline structure is transparent
     print("Pipeline structure:")
     for i, step in enumerate(pipeline.steps):
-        print(f"  Step {i+1}: {step.name} (max_retries: {step.config.max_retries})")
+        print(f"  Step {i + 1}: {step.name} (max_retries: {step.config.max_retries})")
     print()
 
 

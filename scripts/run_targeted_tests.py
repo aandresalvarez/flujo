@@ -358,7 +358,7 @@ def write_text_log(results: List[TestResult], path: Path, show_only_failures: bo
     counts = {k: 0 for k in keys}
     for r in results:
         counts[r.status] = counts.get(r.status, 0) + 1
-    lines.append(" " + " | ".join(f"{k}: {counts.get(k,0)}" for k in keys))
+    lines.append(" " + " | ".join(f"{k}: {counts.get(k, 0)}" for k in keys))
     lines.append("")
 
     to_show = [r for r in results if r.status != "PASS"] if show_only_failures else results

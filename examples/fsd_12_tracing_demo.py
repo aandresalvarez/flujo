@@ -129,7 +129,7 @@ async def demo_tracing_functionality():
         print("\n📋 Step History:")
         for i, step_result in enumerate(final_result.step_history):
             status = "success" if step_result.success else "failed"
-            print(f"   {i+1}. {step_result.name}: {status} ({step_result.latency_s:.3f}s)")
+            print(f"   {i + 1}. {step_result.name}: {status} ({step_result.latency_s:.3f}s)")
 
         # Access trace from database
         run_id = final_result.final_pipeline_context.run_id
@@ -217,7 +217,7 @@ async def demo_error_handling():
             status_icon = "❌" if not step_result.success else "✅"
             status = "failed" if not step_result.success else "success"
             print(
-                f"   {i+1}. {status_icon} {step_result.name}: {status} ({step_result.latency_s:.3f}s)"
+                f"   {i + 1}. {status_icon} {step_result.name}: {status} ({step_result.latency_s:.3f}s)"
             )
 
         run_id = final_result.final_pipeline_context.run_id

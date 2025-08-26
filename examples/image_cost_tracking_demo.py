@@ -102,7 +102,7 @@ async def image_cost_tracking_with_different_qualities():
         cost = step_result.cost_usd
         total_cost += cost
 
-        print(f"\nStep {i+1} ({step_result.name}):")
+        print(f"\nStep {i + 1} ({step_result.name}):")
         print(f"  Cost: ${cost:.4f}")
         print(f"  Success: {step_result.success}")
 

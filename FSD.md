@@ -137,7 +137,7 @@ Loader mapping (aliases → compiled behavior)
     - `loop.output.fields: { goal?: initial_prompt, clarifications?: conversation_history, ... }`
 - Reuse the existing “Declarative loop state sugar (M4)” machinery for `append/set/merge` ops (TemplateContextProxy, AdvancedPromptFormatter, target resolution restricted to `context.*`).
 - Compile these blocks into callables:
-  - `compiled_init_ops(ctx, prev_output) -> None` applying ops against the iteration context.
+  - `compiled_init_ops(prev_output, ctx) -> None` applying ops against the iteration context.
   - `iteration_input_mapper(prev_output, ctx, i) -> Any` honoring `next_input` presets:
     - `context` → return `ctx`
     - `previous_output` (default) → return `prev_output`
@@ -151,7 +151,7 @@ Loader mapping (aliases → compiled behavior)
 2) Policy hook (minimal)
 - File: `flujo/application/core/step_policies.py` (DefaultLoopStepExecutor)
 - At the start of each iteration, right after `iteration_context = ContextManager.isolate(current_context)`, add:
-  - If `iteration_count == 1` and `compiled_init_ops` exists in `loop_step.meta`, invoke it with `(iteration_context, current_data)` inside the same try block that already handles HITL `PausedException` correctly.
+  - If `iteration_count == 1` and `compiled_init_ops` exists in `loop_step.meta`, invoke it with `(current_data, iteration_context)` inside the same try block that already handles HITL `PausedException` correctly.
   - Do not catch control flow exceptions. Any other exception falls back to existing error handling (iteration mapper error path is acceptable if thrown when computing next_input; init exceptions should produce a failure StepResult with `exit_reason: initial_input_mapper_error`).
 - No changes to quota handling or exit condition logic.
 

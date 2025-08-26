@@ -359,8 +359,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Version bump for release
 
-## [Unreleased]
-
 ## [0.4.14] - 2024-12-19
 
 ### Changed
