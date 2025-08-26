@@ -55,6 +55,59 @@ class _SafeEvaluator(ast.NodeVisitor):
         except Exception:
             return None
 
+    def visit_Call(self, node: ast.Call) -> Any:
+        """Allow-list a tiny set of safe, read-only method calls.
+
+        Supported:
+        - dict.get(key[, default])
+        - str.lower()
+        - str.upper()
+        - str.strip()       (no args)
+        - str.startswith(x) (single string arg)
+        - str.endswith(x)   (single string arg)
+        """
+        # Only allow method calls (obj.method(...)); never bare function calls
+        if not isinstance(node.func, ast.Attribute):
+            raise ValueError("Unsupported expression element: Call")
+
+        # Disallow keyword arguments entirely for simplicity/safety
+        if node.keywords:
+            raise ValueError("Unsupported expression element: Call")
+
+        obj = self.visit(node.func.value)
+        method = node.func.attr
+
+        # dict.get(key[, default])
+        if isinstance(obj, dict) and method == "get":
+            if len(node.args) not in (1, 2):
+                raise ValueError("Unsupported expression element: Call")
+            key = self.visit(node.args[0])
+            if not isinstance(key, str):
+                # Restrict to string keys to stay consistent with other access rules
+                raise ValueError("Unsupported expression element: Call")
+            default = self.visit(node.args[1]) if len(node.args) == 2 else None
+            try:
+                return obj.get(key, default)
+            except Exception:
+                return None
+
+        # String methods
+        if isinstance(obj, str):
+            if method == "lower" and len(node.args) == 0:
+                return obj.lower()
+            if method == "upper" and len(node.args) == 0:
+                return obj.upper()
+            if method == "strip" and len(node.args) == 0:
+                return obj.strip()
+            if method in ("startswith", "endswith") and len(node.args) == 1:
+                arg = self.visit(node.args[0])
+                if not isinstance(arg, str):
+                    raise ValueError("Unsupported expression element: Call")
+                return getattr(obj, method)(arg)
+
+        # Everything else is disallowed
+        raise ValueError("Unsupported expression element: Call")
+
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
         if isinstance(node.op, ast.Not):
             return not bool(self.visit(node.operand))
