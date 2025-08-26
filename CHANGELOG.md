@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Declarative LoopStep enhancements in YAML loader:
+  - `loop.init` (runs once on isolated iteration context)
+  - `loop.propagation.next_input` (presets: `context` | `previous_output` | `auto` or template)
+  - `loop.output_template` and `loop.output` (object mapping) compiled to `loop_output_mapper`
+- Friendly presets for domain users:
+  - `conversation: true`, `stop_when: agent_finished`, `propagation: context|previous_output`,
+    `output: text: conversation_history`, and simple `init.history.start_with` helpers
+- MapStep sugars:
+  - `map.init` (pre-run init ops) and `map.finalize` (post-aggregation output mapping)
+    with the same templating semantics as loop output.
+- Parallel reduce sugar:
+  - `reduce: keys|values|union|concat|first|last` to post-process branch outputs while preserving
+    input branch order; default remains branch-output mapping.
+- CLI improvements:
+  - `flujo create --wizard` to generate a natural, friendly YAML without running the Architect.
+  - `flujo explain <path>` to summarize a YAML's structure in plain language.
+- Policy hook in `DefaultLoopStepExecutor` to execute compiled init ops at iteration 1
+
+### Notes
+- Aligns with FLUJO_TEAM_GUIDE policy-driven architecture: control-flow exceptions re-raised,
+  context idempotency preserved via isolation, and quotas unchanged.
+
 ## [0.6.3] - 2025-08-10
 
 ### Added
@@ -30,6 +55,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Notes
 - This change aligns with the policy-driven architecture in `FLUJO_TEAM_GUIDE.md` and the FSD for decomposing the ultra executor. No runtime behavior changes are intended.
+
+## [0.4.37] - 2025-08-14
+### Added
+- Project scaffolding via `flujo init` with templates (`flujo.toml`, `pipeline.yaml`, `skills/`, `.flujo/`).
+- Conversational `flujo create` enhancements: optional goal prompt, pipeline name prompt (injected as top-level `name:`), and per-run budget prompt appended to `flujo.toml` under `[budgets.pipeline."<name>"]`.
+- Project-aware defaults: `flujo run` and `flujo validate` now infer the project’s `pipeline.yaml` when no file path is provided.
+- `lens replay` now looks for `pipeline.yaml` in the project when `--file` is omitted; still supports `--file` for `.yaml` or Python definitions.
+- Template `flujo.toml` sets `state_uri = "sqlite:///.flujo/state.db"` so lens and telemetry use project-local state by default.
+
+### Changed
+- Inside a project, `flujo create` overwrites `pipeline.yaml` by default (no `--force` needed). For non-project output directories, original `--force` behavior remains.
+- Documentation updated to reflect the new project-based journey and project-aware commands.
+
+### Migration Guidance
+- Existing flows that passed explicit file paths continue to work unchanged.
+- Recommended: initialize a project (`flujo init`), then run `flujo create` and `flujo run` from inside the project.
+- For `lens` tooling, the new template sets a project-local `state_uri`. If you used a global DB, you can keep using `FLUJO_STATE_URI` or set `state_uri` in your `flujo.toml`.
 
 ## [0.4.35] - 2025-01-15
 
@@ -452,43 +494,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial project structure and core components
-## [0.4.37] - 2025-08-14
-### Added
-- Project scaffolding via `flujo init` with templates (`flujo.toml`, `pipeline.yaml`, `skills/`, `.flujo/`).
-- Conversational `flujo create` enhancements: optional goal prompt, pipeline name prompt (injected as top-level `name:`), and per-run budget prompt appended to `flujo.toml` under `[budgets.pipeline."<name>"]`.
-- Project-aware defaults: `flujo run` and `flujo validate` now infer the project’s `pipeline.yaml` when no file path is provided.
-- `lens replay` now looks for `pipeline.yaml` in the project when `--file` is omitted; still supports `--file` for `.yaml` or Python definitions.
-- Template `flujo.toml` sets `state_uri = "sqlite:///.flujo/state.db"` so lens and telemetry use project-local state by default.
-
-### Changed
-- Inside a project, `flujo create` overwrites `pipeline.yaml` by default (no `--force` needed). For non-project output directories, original `--force` behavior remains.
-- Documentation updated to reflect the new project-based journey and project-aware commands.
-
-### Migration Guidance
-- Existing flows that passed explicit file paths continue to work unchanged.
-- Recommended: initialize a project (`flujo init`), then run `flujo create` and `flujo run` from inside the project.
-- For `lens` tooling, the new template sets a project-local `state_uri`. If you used a global DB, you can keep using `FLUJO_STATE_URI` or set `state_uri` in your `flujo.toml`.
-## [Unreleased]
-
-### Added
-- Declarative LoopStep enhancements in YAML loader:
-  - `loop.init` (runs once on isolated iteration context)
-  - `loop.propagation.next_input` (presets: `context` | `previous_output` | `auto` or template)
-  - `loop.output_template` and `loop.output` (object mapping) compiled to `loop_output_mapper`
-- Friendly presets for domain users:
-  - `conversation: true`, `stop_when: agent_finished`, `propagation: context|previous_output`,
-    `output: text: conversation_history`, and simple `init.history.start_with` helpers
-- MapStep sugars:
-  - `map.init` (pre-run init ops) and `map.finalize` (post-aggregation output mapping)
-    with the same templating semantics as loop output.
-- Parallel reduce sugar:
-  - `reduce: keys|values|union|concat|first|last` to post-process branch outputs while preserving
-    input branch order; default remains branch-output mapping.
-- CLI improvements:
-  - `flujo create --wizard` to generate a natural, friendly YAML without running the Architect.
-  - `flujo explain <path>` to summarize a YAML's structure in plain language.
-- Policy hook in `DefaultLoopStepExecutor` to execute compiled init ops at iteration 1
-
-### Notes
-- Aligns with FLUJO_TEAM_GUIDE policy-driven architecture: control-flow exceptions re-raised,
-  context idempotency preserved via isolation, and quotas unchanged.

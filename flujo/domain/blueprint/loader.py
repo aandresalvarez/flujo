@@ -967,38 +967,15 @@ def _make_step_from_blueprint(
                 output_template_spec = model.loop.get("output_template")
                 output_mapping_spec = model.loop.get("output")
             if isinstance(output_template_spec, str) and output_template_spec.strip():
-                from ...utils.template_vars import (
-                    TemplateContextProxy as _TCP4,
-                    get_steps_map_from_context as _get_steps4,
-                    StepValueProxy as _SVP4,
-                )
-                from ...utils.prompting import AdvancedPromptFormatter as _Fmt4
-
                 fmt_tpl = output_template_spec.strip()
 
                 def _out_tpl(prev_output: Any, ctx: Optional[Any]) -> Any:
                     if ctx is None:
                         return prev_output
-                    steps_map0 = _get_steps4(ctx)
-                    steps_wrapped = {
-                        k: v if isinstance(v, _SVP4) else _SVP4(v) for k, v in steps_map0.items()
-                    }
-                    fmt_ctx = {
-                        "context": _TCP4(ctx, steps=steps_wrapped),
-                        "previous_step": prev_output,
-                        "steps": steps_wrapped,
-                    }
-                    return _Fmt4(fmt_tpl).format(**fmt_ctx)
+                    return _render_template_value(prev_output, ctx, fmt_tpl)
 
                 _output_tpl_override = _out_tpl
             elif isinstance(output_mapping_spec, dict) and output_mapping_spec:
-                from ...utils.template_vars import (
-                    TemplateContextProxy as _TCP5,
-                    get_steps_map_from_context as _get_steps5,
-                    StepValueProxy as _SVP5,
-                )
-                from ...utils.prompting import AdvancedPromptFormatter as _Fmt5
-
                 mapping_items: list[tuple[str, str]] = [
                     (str(k), str(v)) for k, v in output_mapping_spec.items()
                 ]
@@ -1006,19 +983,10 @@ def _make_step_from_blueprint(
                 def _out_map(prev_output: Any, ctx: Optional[Any]) -> Any:
                     if ctx is None:
                         return {k: None for k, _ in mapping_items}
-                    steps_map0 = _get_steps5(ctx)
-                    steps_wrapped = {
-                        k: v if isinstance(v, _SVP5) else _SVP5(v) for k, v in steps_map0.items()
-                    }
-                    fmt_ctx_base = {
-                        "context": _TCP5(ctx, steps=steps_wrapped),
-                        "previous_step": prev_output,
-                        "steps": steps_wrapped,
-                    }
                     out: Dict[str, Any] = {}
                     for mk, mtpl in mapping_items:
                         try:
-                            out[mk] = _Fmt5(mtpl).format(**fmt_ctx_base)
+                            out[mk] = _render_template_value(prev_output, ctx, mtpl)
                         except Exception:
                             out[mk] = None
                     return out
@@ -1258,58 +1226,24 @@ def _make_step_from_blueprint(
                 output_mapping_spec = map_finalize.get("output")
                 finalize_mapper = None
                 if isinstance(output_template_spec, str) and output_template_spec.strip():
-                    from ...utils.template_vars import (
-                        TemplateContextProxy as _TCP6,
-                        get_steps_map_from_context as _get_steps6,
-                        StepValueProxy as _SVP6,
-                    )
-                    from ...utils.prompting import AdvancedPromptFormatter as _Fmt6
-
                     tpl = output_template_spec.strip()
 
                     def _finalize_mapper(prev_output: Any, ctx: Optional[Any]) -> Any:
                         if ctx is None:
                             return prev_output
-                        steps_map0 = _get_steps6(ctx)
-                        steps_wrapped = {
-                            k: v if isinstance(v, _SVP6) else _SVP6(v)
-                            for k, v in steps_map0.items()
-                        }
-                        fmt_ctx = {
-                            "context": _TCP6(ctx, steps=steps_wrapped),
-                            "previous_step": prev_output,
-                            "steps": steps_wrapped,
-                        }
-                        return _Fmt6(tpl).format(**fmt_ctx)
+                        return _render_template_value(prev_output, ctx, tpl)
 
                     finalize_mapper = _finalize_mapper
                 elif isinstance(output_mapping_spec, dict) and output_mapping_spec:
-                    from ...utils.template_vars import (
-                        TemplateContextProxy as _TCP7,
-                        get_steps_map_from_context as _get_steps7,
-                        StepValueProxy as _SVP7,
-                    )
-                    from ...utils.prompting import AdvancedPromptFormatter as _Fmt7
-
                     items = [(str(k), str(v)) for k, v in output_mapping_spec.items()]
 
                     def _finalize_map(prev_output: Any, ctx: Optional[Any]) -> Any:
                         if ctx is None:
                             return {k: None for k, _ in items}
-                        steps_map0 = _get_steps7(ctx)
-                        steps_wrapped = {
-                            k: v if isinstance(v, _SVP7) else _SVP7(v)
-                            for k, v in steps_map0.items()
-                        }
-                        base = {
-                            "context": _TCP7(ctx, steps=steps_wrapped),
-                            "previous_step": prev_output,
-                            "steps": steps_wrapped,
-                        }
                         out: Dict[str, Any] = {}
                         for mk, mtpl in items:
                             try:
-                                out[mk] = _Fmt7(mtpl).format(**base)
+                                out[mk] = _render_template_value(prev_output, ctx, mtpl)
                             except Exception:
                                 out[mk] = None
                         return out
