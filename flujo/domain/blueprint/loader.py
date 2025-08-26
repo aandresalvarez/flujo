@@ -38,6 +38,7 @@ class BlueprintStepModel(BaseModel):
         "dynamic_router",
         "hitl",
         "cache",
+        "agentic_loop",
     ] = Field(default="step")
     # Accept both 'name' and legacy 'step' keys for step name
     name: str = Field(validation_alias=AliasChoices("name", "step"))
@@ -54,6 +55,8 @@ class BlueprintStepModel(BaseModel):
     branches: Optional[Dict[str, Any]] = None
     # Conditional only (v0: simple string identifier for callable resolution)
     condition: Optional[str] = None
+    # NEW: Expression-based conditional (mutually exclusive with 'condition')
+    condition_expression: Optional[str] = None
     default_branch: Optional[Any] = None
     # Loop only (v0)
     loop: Optional[Dict[str, Any]] = (
@@ -80,6 +83,10 @@ class BlueprintStepModel(BaseModel):
     input_schema: Optional[Dict[str, Any]] = None
     # Cache specific (optional)
     wrapped_step: Optional[Dict[str, Any]] = None
+    # Agentic loop sugar (M5)
+    planner: Optional[str] = None  # import path or agents.<name>
+    registry: Optional[Union[str, Dict[str, Any]]] = None  # import path to dict or inline map
+    output_template: Optional[str] = None
 
     # ----------------------------
     # Field validators (compile-time safety for FSD-016 / Gap #9)
@@ -253,6 +260,7 @@ def _make_step_from_blueprint(
             "dynamic_router",
             "hitl",
             "cache",
+            "agentic_loop",
         }:
             model = BlueprintStepModel.model_validate(model)
         else:
@@ -329,6 +337,17 @@ def _make_step_from_blueprint(
         # Resolve condition callable explicitly to avoid scope issues
         if model.condition:
             _cond_callable = _import_object(model.condition)
+        elif model.condition_expression:
+            try:
+                from ...utils.expressions import compile_expression_to_callable as _compile_expr
+
+                _expr_fn = _compile_expr(str(model.condition_expression))
+
+                def _cond_callable(output: Any, _ctx: Optional[Any]) -> Any:
+                    return _expr_fn(output, _ctx)
+
+            except Exception as e:
+                raise BlueprintError(f"Invalid condition_expression: {e}") from e
         else:
 
             def _cond_callable(output: Any, _ctx: Optional[Any]) -> Any:
@@ -381,6 +400,19 @@ def _make_step_from_blueprint(
         # Optional callable overrides
         if model.loop.get("exit_condition"):
             _exit_condition = _import_object(model.loop["exit_condition"])  # runtime import
+        elif model.loop.get("exit_expression"):
+            try:
+                from ...utils.expressions import compile_expression_to_callable as _compile_expr
+
+                _expr_fn2 = _compile_expr(str(model.loop["exit_expression"]))
+
+                def _exit_condition(
+                    _output: Any, _ctx: Optional[Any], *, _state: Optional[Dict[str, int]] = None
+                ) -> bool:
+                    return bool(_expr_fn2(_output, _ctx))
+
+            except Exception as e:
+                raise BlueprintError(f"Invalid exit_expression: {e}") from e
         else:
 
             def _exit_condition(
@@ -393,6 +425,177 @@ def _make_step_from_blueprint(
                     return _state["count"] >= max_loops
                 return _state["count"] >= 1
 
+        # Declarative loop state sugar (M4): compile simple mappers when 'loop.state' is present
+        from typing import Callable as _Callable, Optional as _Optional
+
+        _initial_mapper_override: _Optional[_Callable[[Any, Optional[Any]], Any]] = None
+        _iteration_mapper_override: _Optional[_Callable[[Any, Optional[Any], int], Any]] = None
+        _output_mapper_override: _Optional[_Callable[[Any, Optional[Any]], Any]] = None
+
+        try:
+            state_spec = model.loop.get("state") if isinstance(model.loop, dict) else None
+        except Exception:
+            state_spec = None
+
+        if isinstance(state_spec, dict) and any(
+            k in state_spec for k in ("append", "set", "merge")
+        ):
+            try:
+                from ...utils.template_vars import (
+                    TemplateContextProxy as _TCP,
+                    get_steps_map_from_context as _get_steps,
+                    StepValueProxy as _SVP,
+                )
+                from ...utils.prompting import AdvancedPromptFormatter as _Fmt
+                import json as _json
+
+                ops_append = state_spec.get("append") or []
+                ops_set = state_spec.get("set") or []
+                ops_merge = state_spec.get("merge") or []
+
+                def _resolve_target(ctx: Any, target: str):
+                    # Only allow context.* targets
+                    if not target.startswith("context."):
+                        return None, None
+                    parts = target.split(".")[1:]
+                    cur = ctx
+                    parent = None
+                    key = None
+                    for p in parts:
+                        parent = cur
+                        key = p
+                        # Mapping-style first
+                        try:
+                            if isinstance(cur, dict):
+                                if p not in cur:
+                                    # create nested dict by default
+                                    try:
+                                        cur[p] = {}
+                                    except Exception:
+                                        pass
+                                cur = cur.get(p)
+                                continue
+                        except Exception:
+                            pass
+                        # Attribute-style fallback
+                        nxt = getattr(cur, p, None)
+                        if nxt is None:
+                            try:
+                                setattr(cur, p, {})
+                                nxt = getattr(cur, p, None)
+                            except Exception:
+                                nxt = None
+                        cur = nxt
+                    return parent, key
+
+                def _render_value(output: Any, ctx: Any, tpl: str) -> str:
+                    steps_map0 = _get_steps(ctx)
+                    steps_wrapped = {
+                        k: v if isinstance(v, _SVP) else _SVP(v) for k, v in steps_map0.items()
+                    }
+                    fmt_ctx = {
+                        "context": _TCP(ctx, steps=steps_wrapped),
+                        "previous_step": output,
+                        "steps": steps_wrapped,
+                    }
+                    return _Fmt(str(tpl)).format(**fmt_ctx)
+
+                def _apply_state_ops(output: Any, ctx: Any) -> None:
+                    # append
+                    for spec in ops_append:
+                        try:
+                            target = str(spec.get("target"))
+                            parent, key = _resolve_target(ctx, target)
+                            if parent is None or key is None:
+                                continue
+                            val = _render_value(output, ctx, spec.get("value", ""))
+                            seq = None
+                            try:
+                                seq = parent[key]
+                            except Exception:
+                                seq = getattr(parent, key, None)
+                            if not isinstance(seq, list):
+                                seq = []
+                                if isinstance(parent, dict):
+                                    parent[key] = seq
+                                else:
+                                    try:
+                                        setattr(parent, key, seq)
+                                    except Exception:
+                                        continue
+                            seq.append(val)
+                        except Exception:
+                            continue
+                    # set
+                    for spec in ops_set:
+                        try:
+                            target = str(spec.get("target"))
+                            parent, key = _resolve_target(ctx, target)
+                            if parent is None or key is None:
+                                continue
+                            val = _render_value(output, ctx, spec.get("value", ""))
+                            if isinstance(parent, dict):
+                                parent[key] = val
+                            else:
+                                try:
+                                    setattr(parent, key, val)
+                                except Exception:
+                                    continue
+                        except Exception:
+                            continue
+                    # merge (value must render to mapping JSON)
+                    for spec in ops_merge:
+                        try:
+                            target = str(spec.get("target"))
+                            parent, key = _resolve_target(ctx, target)
+                            if parent is None or key is None:
+                                continue
+                            val_raw = _render_value(output, ctx, spec.get("value", "{}"))
+                            try:
+                                val_obj = _json.loads(val_raw)
+                            except Exception:
+                                continue
+                            if not isinstance(val_obj, dict):
+                                continue
+                            try:
+                                cur = (
+                                    parent.get(key)
+                                    if isinstance(parent, dict)
+                                    else getattr(parent, key, None)
+                                )
+                            except Exception:
+                                cur = None
+                            if not isinstance(cur, dict):
+                                cur = {}
+                            cur.update(val_obj)
+                            if isinstance(parent, dict):
+                                parent[key] = cur
+                            else:
+                                try:
+                                    setattr(parent, key, cur)
+                                except Exception:
+                                    continue
+                        except Exception:
+                            continue
+
+                def _initial_mapper_override(input_data: Any, ctx: Optional[Any]) -> Any:
+                    # Identity passthrough; state ops apply after each iteration
+                    return input_data
+
+                def _iteration_mapper_override(
+                    output: Any, ctx: Optional[Any], _iteration: int
+                ) -> Any:
+                    if ctx is not None:
+                        _apply_state_ops(output, ctx)
+                    return output
+
+                def _output_mapper_override(output: Any, ctx: Optional[Any]) -> Any:
+                    return output
+
+            except Exception:
+                # If any failure occurs while compiling state sugar, ignore and fall back to defaults
+                pass
+
         return LoopStep(
             name=model.name,
             loop_body_pipeline=body,
@@ -400,9 +603,19 @@ def _make_step_from_blueprint(
             max_retries=max(1, int(max_loops)) if isinstance(max_loops, int) else 1,
             config=step_config,
             # --- PASS THE RESOLVED MAPPERS ---
-            initial_input_to_loop_body_mapper=_initial_mapper,
-            iteration_input_mapper=_iter_mapper,
-            loop_output_mapper=_output_mapper,
+            initial_input_to_loop_body_mapper=(
+                _initial_mapper_override
+                if _initial_mapper_override is not None
+                else _initial_mapper
+            ),
+            iteration_input_mapper=(
+                _iteration_mapper_override
+                if _iteration_mapper_override is not None
+                else _iter_mapper
+            ),
+            loop_output_mapper=(
+                _output_mapper_override if _output_mapper_override is not None else _output_mapper
+            ),
         )
     elif getattr(model, "kind", None) == "map":
         from ..dsl.loop import MapStep
@@ -469,6 +682,46 @@ def _make_step_from_blueprint(
             compiled_imports=compiled_imports,
         )
         return _CacheStep.cached(inner_step)
+    elif getattr(model, "kind", None) == "agentic_loop":
+        # YAML sugar to create an agentic loop using the recipes factory
+        try:
+            from ...recipes.factories import make_agentic_loop_pipeline as _make_agentic
+        except Exception as e:
+            raise BlueprintError(f"Agentic loop factory is unavailable: {e}")
+
+        # Resolve planner agent
+        if not model.planner:
+            raise BlueprintError("agentic_loop requires 'planner'")
+        planner_agent = _resolve_agent_entry(model.planner)
+
+        # Resolve registry
+        reg_obj: Dict[str, Any] = {}
+        if isinstance(model.registry, dict):
+            reg_obj = dict(model.registry)
+        elif isinstance(model.registry, str):
+            try:
+                obj = _import_object(model.registry)
+                if isinstance(obj, dict):
+                    reg_obj = obj
+                else:
+                    raise BlueprintError(
+                        f"registry must resolve to a dict[str, Agent], got {type(obj)}"
+                    )
+            except Exception as e:
+                raise BlueprintError(f"Failed to resolve registry: {e}")
+        else:
+            raise BlueprintError("agentic_loop requires 'registry' (dict or import path)")
+
+        try:
+            p = _make_agentic(planner_agent=planner_agent, agent_registry=reg_obj)
+        except Exception as e:
+            raise BlueprintError(f"Failed to create agentic loop pipeline: {e}")
+
+        # Wrap as a single step for YAML
+        try:
+            return p.as_step(name=model.name)
+        except Exception as e:
+            raise BlueprintError(f"Failed to wrap agentic loop pipeline as step: {e}")
     else:
         # Simple step; resolve agent if provided, otherwise passthrough.
         agent_obj: Any = _PassthroughAgent()
