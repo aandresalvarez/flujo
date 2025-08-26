@@ -175,6 +175,6 @@ The v2.0 implementation replaces the previous JSON blob storage with a fully nor
 ---
 
 ## Related Documentation
-- [FSD-09: Rich Internal Tracing and Visualization](../specs/FSD-09.md)
-- [FSD-09 Implementation Results](../implementation-results/FSD-09_IMPLEMENTATION_RESULTS.md)
+- [Tracing Guide](../guides/tracing_guide.md)
+- [Trace Contract](../reference/trace_contract.md)
 - [CLI Trace Visualization](../cookbook/console_tracer.md)

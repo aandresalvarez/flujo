@@ -36,8 +36,8 @@ See the [Quickstart](quickstart.md) and the [Architect guide](../user_guide/arch
 
 - [Advanced Serialization](../cookbook/advanced_serialization.md) - Handle custom types and complex serialization scenarios
 - [SQLite Backend](../guides/sqlite_backend_guide.md) - Production-ready persistence with observability
-- [Migration Guide](../migration/v0.7.0.md) - Upgrade to the latest serialization features
-- **[Rich Tracing & Debugging](../implementation-results/FSD-12_IMPLEMENTATION_RESULTS.md)** - Debug and analyze pipeline execution with hierarchical traces
+- [Pipeline Versioning](../guides/pipeline_versioning.md) - Strategies for evolving pipelines over time
+- **[Rich Tracing & Debugging](../guides/tracing_guide.md)** - Debug and analyze pipeline execution with hierarchical traces
 - **[Cost Tracking Guide](../advanced/cost_tracking_guide.md)** - Monitor and control spending on LLM operations
 
 Use the navigation on the left to explore the guides, examples, and API reference.

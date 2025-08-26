@@ -349,6 +349,27 @@ package: .uv ## Build package distribution files
 
 
 # ------------------------------------------------------------------------------
+# Documentation
+# ------------------------------------------------------------------------------
+
+.PHONY: docs-build
+docs-build: .uv ## Build documentation site with MkDocs
+	@echo "📚 Building docs..."
+	@uv sync --all-extras
+	@uv run mkdocs build
+	@echo "\n✅ Docs built in 'site/'"
+
+.PHONY: docs-check
+docs-check: ## Check docs for broken relative links (offline)
+	@echo "🔗 Checking docs for broken links..."
+	@python3 scripts/check_docs_links.py
+
+.PHONY: docs-ci
+docs-ci: docs-build docs-check ## Build docs and run link checks
+	@echo "\n✅ Docs CI checks passed"
+
+
+# ------------------------------------------------------------------------------
 # All-in-one & Help
 # ------------------------------------------------------------------------------
 

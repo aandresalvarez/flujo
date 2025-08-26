@@ -526,6 +526,59 @@ Enhance steps with custom validation logic.
     - "custom.validators:CustomValidator"
 ```
 
+### Built-in Data Transforms
+
+Reduce Python glue in YAML by using side-effect-free, CPU-only transforms registered under `flujo.builtins.*`. These do not consume tokens or cost.
+
+- to_csv: Convert `list[dict]` to a CSV string.
+  - Parameters: `headers` (optional `list[str]`). If omitted, headers are the sorted union of keys across rows. Extra keys are ignored when headers are provided.
+  - Example:
+    ```yaml
+    - kind: step
+      name: to_csv
+      agent:
+        id: "flujo.builtins.to_csv"
+        params: { headers: ["id", "price"] }
+      input: "{{ previous_step }}"  # rows (list[dict])
+    ```
+
+- aggregate: Aggregate numeric values in a `list[dict]`.
+  - Parameters: `operation` ("sum" | "avg" | "count"), `field` (optional for count of all rows; required for sum/avg).
+  - Non-numeric values are ignored in `sum/avg`.
+  - Example:
+    ```yaml
+    - kind: step
+      name: total_price
+      agent: { id: "flujo.builtins.aggregate", params: { operation: "sum", field: "price" } }
+      input: "{{ steps.fetch_prices }}"  # list[dict]
+    ```
+
+- select_fields: Project and/or rename fields on a dict or list of dicts.
+  - Parameters: `include` (optional `list[str]`), `rename` (optional `map[str,str]`).
+  - If only `rename` is provided, other keys are preserved; renamed keys are rewritten.
+  - Example:
+    ```yaml
+    - kind: step
+      name: view
+      agent:
+        id: "flujo.builtins.select_fields"
+        params:
+          include: ["id", "name"]
+          rename: { name: "display_name" }
+      input: "{{ steps.fetch_users }}"  # dict or list[dict]
+    ```
+
+- flatten: Flatten one level of a nested list.
+  - Parameters: none.
+  - Non-list elements are passed through in the output sequence; non-list input produces an empty list.
+  - Example:
+    ```yaml
+    - kind: step
+      name: flattened
+      agent: { id: "flujo.builtins.flatten" }
+      input: "{{ steps.batch_chunks }}"  # e.g., [[1,2],[3],(4,5),6]
+    ```
+
 ## Best Practices
 
 1.  **Naming Conventions:** Use descriptive, action-oriented names for steps and agents.
@@ -535,6 +588,8 @@ Enhance steps with custom validation logic.
 5.  **Performance:** Use `parallel` and `map` steps for concurrent operations where appropriate.
 6.  **Security:** Restrict Python object imports via `blueprint_allowed_imports` in `flujo.toml`.
 7.  **Human-in-the-Loop:** Use HITL steps for approval workflows and manual validation. Prefer small, explicit `input_schema` objects so resumes are predictable and validatable.
+
+See also: Guides → [Cost and Budget Governance](guides/cost_and_budget_governance.md) for centrally managed budgets and governance controls that apply to YAML pipelines.
 
 ### 8. Cache Step (`kind: cache`)
 
