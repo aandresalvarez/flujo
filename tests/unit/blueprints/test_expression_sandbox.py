@@ -37,3 +37,26 @@ def test_disallow_mutating_or_unknown_calls() -> None:
     # bare function calls not allowed
     with pytest.raises(ValueError, match="Unsupported expression element"):
         compile_expression_to_callable("os.system('echo 1')")(None, _Ctx())
+
+
+def test_nested_attribute_and_subscript_and_none_tolerance() -> None:
+    # Access nested via attr/subscript; missing keys yield None and should short-circuit safely
+    expr = compile_expression_to_callable(
+        "context.scratchpad.user['name'].lower() if context.scratchpad.get('user') else None"
+    )
+    ctx = _Ctx({"user": {"name": "ALICE"}})
+    assert expr(None, ctx) == "alice"
+    ctx2 = _Ctx({})
+    assert expr(None, ctx2) is None
+
+
+def test_invalid_arg_types_to_allowlisted_methods_raise() -> None:
+    # dict.get with non-string key should raise per sandbox rules
+    with pytest.raises(ValueError, match="Unsupported expression element"):
+        compile_expression_to_callable("context.scratchpad.get(123)")(None, _Ctx())
+
+    # startswith requires a string
+    with pytest.raises(ValueError, match="Unsupported expression element"):
+        compile_expression_to_callable("previous_step.message.startswith(10)")(
+            {"message": "x"}, _Ctx()
+        )
