@@ -352,7 +352,25 @@ def _make_step_from_blueprint(
             )
         # Resolve condition callable explicitly to avoid scope issues
         if model.condition:
-            _cond_callable = _import_object(model.condition)
+            try:
+                _cond_callable = _import_object(model.condition)
+            except BlueprintError as be:
+                # Improve ergonomics: common mistake is providing an inline Python lambda
+                # which is intentionally not supported in YAML for security reasons.
+                try:
+                    _cond_str = str(model.condition).strip()
+                except Exception:
+                    _cond_str = ""
+                if _cond_str.startswith("lambda"):
+                    raise BlueprintError(
+                        "Invalid condition value: inline Python (e.g., 'lambda ...') is not supported in YAML. "
+                        "Use 'condition_expression' for inline logic, or reference an importable callable "
+                        "like 'pkg.mod:func'.\nExample: condition_expression: \"{{ previous_step }}\""
+                    ) from be
+                # Otherwise, surface the original error with guidance
+                raise BlueprintError(
+                    f"{be} (field: condition). Provide a Python import path like 'pkg.mod:func' or use 'condition_expression'."
+                ) from be
         elif model.condition_expression:
             try:
                 from ...utils.expressions import compile_expression_to_callable as _compile_expr

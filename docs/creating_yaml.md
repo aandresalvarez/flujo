@@ -139,6 +139,14 @@ You can also use inline expressions instead of importing a Python function:
     code: [...]
 ```
 
+Security note
+-------------
+The `condition` field accepts only importable callables (e.g., `pkg.mod:func`).
+Inline Python (such as `lambda ...`) in YAML is intentionally not supported for
+security reasons. For inline logic, use `condition_expression`, or reference a
+safe callable like `flujo.builtins.passthrough` when you already have a boolean
+from a previous step.
+
 Boolean condition expressions
 ----------------------------
 Many condition expressions evaluate to a boolean. Flujo now treats these as a
