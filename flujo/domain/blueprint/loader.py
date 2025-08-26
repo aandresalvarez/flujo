@@ -53,6 +53,8 @@ class BlueprintStepModel(BaseModel):
     validate_fields: bool = False
     # Parallel / Conditional
     branches: Optional[Dict[str, Any]] = None
+    # Parallel reduce sugar
+    reduce: Optional[Union[str, Dict[str, Any]]] = None
     # Conditional only (v0: simple string identifier for callable resolution)
     condition: Optional[str] = None
     # NEW: Expression-based conditional (mutually exclusive with 'condition')
@@ -237,7 +239,83 @@ def _finalize_step_types(step_obj: Step[Any, Any]) -> None:
             except Exception:
                 pass
     except Exception:
+        # Best-effort static typing; ignore errors during signature analysis
         pass
+
+
+# ----------------------------
+# Module-level helpers (deduplicated)
+# ----------------------------
+
+
+def _resolve_context_target(ctx: Any, target: str) -> tuple[Any, Any]:
+    """Resolve a context.* target path to (parent, key).
+
+    - Supports dict and attribute-style traversal.
+    - Creates intermediate dicts/attributes when missing.
+    - Returns (None, None) when the target is invalid.
+    """
+    try:
+        if not isinstance(target, str) or not target.startswith("context."):
+            return None, None
+        parts = target.split(".")[1:]
+        cur = ctx
+        parent = None
+        key = None
+        for p in parts:
+            parent = cur
+            key = p
+            try:
+                if isinstance(cur, dict):
+                    if p not in cur:
+                        try:
+                            cur[p] = {}
+                        except Exception:
+                            pass
+                    cur = cur.get(p)
+                    continue
+            except Exception:
+                pass
+            nxt = getattr(cur, p, None)
+            if nxt is None:
+                try:
+                    setattr(cur, p, {})
+                    nxt = getattr(cur, p, None)
+                except Exception:
+                    nxt = None
+            cur = nxt
+        return parent, key
+    except Exception:
+        return None, None
+
+
+def _render_template_value(prev_output: Any, ctx: Any, tpl: Any) -> Any:
+    """Render a template string using context and previous output.
+
+    Exposes variables: {context, previous_step, steps}
+    """
+    try:
+        from ...utils.template_vars import (
+            TemplateContextProxy as _TCP,
+            get_steps_map_from_context as _get_steps,
+            StepValueProxy as _SVP,
+        )
+        from ...utils.prompting import AdvancedPromptFormatter as _Fmt
+
+        steps_map = _get_steps(ctx)
+        steps_wrapped = {k: v if isinstance(v, _SVP) else _SVP(v) for k, v in steps_map.items()}
+        fmt_ctx = {
+            "context": _TCP(ctx, steps=steps_wrapped),
+            "previous_step": prev_output,
+            "steps": steps_wrapped,
+        }
+        return _Fmt(str(tpl)).format(**fmt_ctx)
+    except Exception:
+        # Best effort: return raw string representation
+        try:
+            return str(tpl)
+        except Exception:
+            return tpl
 
 
 def _make_step_from_blueprint(
@@ -328,7 +406,7 @@ def _make_step_from_blueprint(
                 base_path=f"{yaml_path}.branches.{branch_name}" if yaml_path else None,
                 compiled_agents=compiled_agents,
             )
-        return ParallelStep(
+        st_par: ParallelStep[Any] = ParallelStep(
             name=model.name,
             branches=branches_map,
             context_include_keys=model.context_include_keys,
@@ -340,6 +418,65 @@ def _make_step_from_blueprint(
             else False,
             config=step_config,
         )
+        # Declarative reduce sugar for parallel outputs
+        try:
+            reduce_spec = model.reduce
+        except Exception:
+            reduce_spec = None
+        if isinstance(reduce_spec, (str, dict)) and reduce_spec:
+            try:
+                branch_order = list(branches_map.keys())
+
+                mode: str
+                if isinstance(reduce_spec, str):
+                    mode = reduce_spec.strip().lower()
+                else:
+                    mode = str(reduce_spec.get("mode", "")).strip().lower()
+
+                def _reduce(output_map: Dict[str, Any], _ctx: Optional[Any]) -> Any:
+                    if mode == "keys":
+                        # Preserve declared branch order
+                        return [bn for bn in branch_order if bn in output_map]
+                    if mode == "values":
+                        return [output_map[bn] for bn in branch_order if bn in output_map]
+                    if mode == "union":
+                        # Merge dict outputs with last-wins by branch order
+                        acc: Dict[str, Any] = {}
+                        for bn in branch_order:
+                            val = output_map.get(bn)
+                            if isinstance(val, dict):
+                                acc.update(val)
+                        return acc
+                    if mode == "concat":
+                        # Concatenate list outputs in branch order
+                        res: list[Any] = []
+                        for bn in branch_order:
+                            val = output_map.get(bn)
+                            if isinstance(val, list):
+                                res.extend(val)
+                            elif val is not None:
+                                res.append(val)
+                        return res
+                    if mode == "first":
+                        for bn in branch_order:
+                            if bn in output_map:
+                                return output_map[bn]
+                        return None
+                    if mode == "last":
+                        for bn in reversed(branch_order):
+                            if bn in output_map:
+                                return output_map[bn]
+                        return None
+                    # Default: return original map
+                    return output_map
+
+                try:
+                    st_par.meta["parallel_reduce_mapper"] = _reduce
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        return st_par
     elif getattr(model, "kind", None) == "conditional":
         from ..dsl.conditional import ConditionalStep
 
@@ -475,6 +612,11 @@ def _make_step_from_blueprint(
         _iteration_mapper_override: _Optional[_Callable[[Any, Optional[Any], int], Any]] = None
         _output_mapper_override: _Optional[_Callable[[Any, Optional[Any]], Any]] = None
 
+        # Additional compiled helpers
+        _state_apply_fn: _Optional[_Callable[[Any, Any], None]] = None
+        _compiled_init_ops: _Optional[_Callable[[Any, Any], None]] = None
+        _compiled_iter_prop: _Optional[_Callable[[Any, Optional[Any], int], Any]] = None
+
         try:
             state_spec = model.loop.get("state") if isinstance(model.loop, dict) else None
         except Exception:
@@ -484,64 +626,17 @@ def _make_step_from_blueprint(
             k in state_spec for k in ("append", "set", "merge")
         ):
             try:
-                from ...utils.template_vars import (
-                    TemplateContextProxy as _TCP,
-                    get_steps_map_from_context as _get_steps,
-                    StepValueProxy as _SVP,
-                )
-                from ...utils.prompting import AdvancedPromptFormatter as _Fmt
                 import json as _json
 
                 ops_append = state_spec.get("append") or []
                 ops_set = state_spec.get("set") or []
                 ops_merge = state_spec.get("merge") or []
 
-                def _resolve_target(ctx: Any, target: str):
-                    # Only allow context.* targets
-                    if not target.startswith("context."):
-                        return None, None
-                    parts = target.split(".")[1:]
-                    cur = ctx
-                    parent = None
-                    key = None
-                    for p in parts:
-                        parent = cur
-                        key = p
-                        # Mapping-style first
-                        try:
-                            if isinstance(cur, dict):
-                                if p not in cur:
-                                    # create nested dict by default
-                                    try:
-                                        cur[p] = {}
-                                    except Exception:
-                                        pass
-                                cur = cur.get(p)
-                                continue
-                        except Exception:
-                            pass
-                        # Attribute-style fallback
-                        nxt = getattr(cur, p, None)
-                        if nxt is None:
-                            try:
-                                setattr(cur, p, {})
-                                nxt = getattr(cur, p, None)
-                            except Exception:
-                                nxt = None
-                        cur = nxt
-                    return parent, key
+                # Use module-level helpers for target resolution and template rendering
+                _resolve_target = _resolve_context_target
 
                 def _render_value(output: Any, ctx: Any, tpl: str) -> str:
-                    steps_map0 = _get_steps(ctx)
-                    steps_wrapped = {
-                        k: v if isinstance(v, _SVP) else _SVP(v) for k, v in steps_map0.items()
-                    }
-                    fmt_ctx = {
-                        "context": _TCP(ctx, steps=steps_wrapped),
-                        "previous_step": output,
-                        "steps": steps_wrapped,
-                    }
-                    return _Fmt(str(tpl)).format(**fmt_ctx)
+                    return str(_render_template_value(output, ctx, tpl))
 
                 def _apply_state_ops(output: Any, ctx: Any) -> None:
                     # append
@@ -621,6 +716,9 @@ def _make_step_from_blueprint(
                         except Exception:
                             continue
 
+                # Expose state-ops applier for possible composition with propagation
+                _state_apply_fn = _apply_state_ops
+
                 def _initial_mapper_override(input_data: Any, ctx: Optional[Any]) -> Any:
                     # Identity passthrough; state ops apply after each iteration
                     return input_data
@@ -638,6 +736,298 @@ def _make_step_from_blueprint(
             except Exception:
                 # If any failure occurs while compiling state sugar, ignore and fall back to defaults
                 pass
+
+        # --- Declarative 'init' block (runs once before first iteration) ---
+        try:
+            init_spec = model.loop.get("init") if isinstance(model.loop, dict) else None
+        except Exception:
+            init_spec = None
+        if init_spec is not None:
+            try:
+                import json as _json2
+
+                # Normalize init spec to ops lists
+                ops_init_append: list[dict[str, Any]] = []
+                ops_init_set: list[dict[str, Any]] = []
+                ops_init_merge: list[dict[str, Any]] = []
+
+                if isinstance(init_spec, dict):
+                    # Support same shape as state sugar
+                    ops_init_append = list(init_spec.get("append") or [])
+                    ops_init_set = list(init_spec.get("set") or [])
+                    ops_init_merge = list(init_spec.get("merge") or [])
+                elif isinstance(init_spec, list):
+                    for op in init_spec:
+                        try:
+                            if not isinstance(op, dict):
+                                continue
+                            if "set" in op:
+                                ops_init_set.append(
+                                    {
+                                        "target": op.get("set"),
+                                        "value": op.get("value"),
+                                    }
+                                )
+                            elif "append" in op:
+                                # allow either {append: target, value: ...} or {append: {target, value}}
+                                _tmp_a = op.get("append")
+                                if isinstance(_tmp_a, str):
+                                    ops_init_append.append(
+                                        {
+                                            "target": _tmp_a,
+                                            "value": op.get("value"),
+                                        }
+                                    )
+                                elif isinstance(_tmp_a, dict):
+                                    d = _tmp_a
+                                    ops_init_append.append(
+                                        {
+                                            "target": d.get("target"),
+                                            "value": d.get("value"),
+                                        }
+                                    )
+                            elif "merge" in op:
+                                _tmp_m = op.get("merge")
+                                if isinstance(_tmp_m, str):
+                                    ops_init_merge.append(
+                                        {
+                                            "target": _tmp_m,
+                                            "value": op.get("value") or "{}",
+                                        }
+                                    )
+                                elif isinstance(_tmp_m, dict):
+                                    d = _tmp_m
+                                    ops_init_merge.append(
+                                        {
+                                            "target": d.get("target"),
+                                            "value": d.get("value") or "{}",
+                                        }
+                                    )
+                        except Exception:
+                            continue
+                else:
+                    # Unsupported shape → ignore safely
+                    ops_init_append, ops_init_set, ops_init_merge = [], [], []
+
+                def _compiled_init(prev_output: Any, ctx: Any) -> None:
+                    # append
+                    for spec in ops_init_append:
+                        try:
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
+                            if parent is None or key is None:
+                                continue
+                            val = _render_template_value(prev_output, ctx, spec.get("value", ""))
+                            seq = None
+                            try:
+                                seq = parent[key]
+                            except Exception:
+                                seq = getattr(parent, key, None)
+                            if not isinstance(seq, list):
+                                seq = []
+                                if isinstance(parent, dict):
+                                    parent[key] = seq
+                                else:
+                                    try:
+                                        setattr(parent, key, seq)
+                                    except Exception:
+                                        continue
+                            seq.append(val)
+                        except Exception:
+                            continue
+                    # set
+                    for spec in ops_init_set:
+                        try:
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
+                            if parent is None or key is None:
+                                continue
+                            val = _render_template_value(prev_output, ctx, spec.get("value", ""))
+                            if isinstance(parent, dict):
+                                parent[key] = val
+                            else:
+                                try:
+                                    setattr(parent, key, val)
+                                except Exception:
+                                    continue
+                        except Exception:
+                            continue
+                    # merge
+                    for spec in ops_init_merge:
+                        try:
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
+                            if parent is None or key is None:
+                                continue
+                            val_raw = _render_template_value(
+                                prev_output, ctx, spec.get("value", "{}")
+                            )
+                            try:
+                                val_obj = _json2.loads(val_raw)
+                            except Exception:
+                                continue
+                            if not isinstance(val_obj, dict):
+                                continue
+                            try:
+                                cur = (
+                                    parent.get(key)
+                                    if isinstance(parent, dict)
+                                    else getattr(parent, key, None)
+                                )
+                            except Exception:
+                                cur = None
+                            if not isinstance(cur, dict):
+                                cur = {}
+                            cur.update(val_obj)
+                            if isinstance(parent, dict):
+                                parent[key] = cur
+                            else:
+                                try:
+                                    setattr(parent, key, cur)
+                                except Exception:
+                                    continue
+                        except Exception:
+                            continue
+
+                _compiled_init_ops = _compiled_init
+            except Exception:
+                _compiled_init_ops = None
+
+        # --- Declarative 'propagation.next_input' → iteration_input_mapper ---
+        try:
+            propagation_spec = (
+                model.loop.get("propagation") if isinstance(model.loop, dict) else None
+            )
+        except Exception:
+            propagation_spec = None
+        try:
+            next_input_spec = None
+            if isinstance(propagation_spec, dict):
+                next_input_spec = propagation_spec.get("next_input")
+            elif isinstance(propagation_spec, str):
+                # allow shorthand: propagation: context | previous_output | auto | <template>
+                next_input_spec = propagation_spec
+            if isinstance(next_input_spec, str) and next_input_spec.strip():
+                import json as _json3
+                from ...utils.template_vars import (
+                    TemplateContextProxy as _TCP3,
+                    get_steps_map_from_context as _get_steps3,
+                    StepValueProxy as _SVP3,
+                )
+                from ...utils.prompting import AdvancedPromptFormatter as _Fmt3
+
+                spec_raw = next_input_spec.strip().lower()
+                # Resolve 'auto' preset based on loop body steps using updates_context
+                if spec_raw == "auto":
+                    has_updates = False
+                    try:
+                        if hasattr(body, "steps") and isinstance(getattr(body, "steps"), list):
+                            for _st in getattr(body, "steps"):
+                                if bool(getattr(_st, "updates_context", False)):
+                                    has_updates = True
+                                    break
+                    except Exception:
+                        has_updates = False
+                    spec_str = "context" if has_updates else "previous_output"
+                else:
+                    spec_str = next_input_spec.strip()
+
+                def _iter_prop(prev_output: Any, ctx: Optional[Any], _iteration: int) -> Any:
+                    if spec_str.lower() == "context":
+                        return ctx
+                    if spec_str.lower() == "previous_output":
+                        return prev_output
+                    if ctx is None:
+                        return prev_output
+                    steps_map0 = _get_steps3(ctx)
+                    steps_wrapped = {
+                        k: v if isinstance(v, _SVP3) else _SVP3(v) for k, v in steps_map0.items()
+                    }
+                    fmt_ctx = {
+                        "context": _TCP3(ctx, steps=steps_wrapped),
+                        "previous_step": prev_output,
+                        "steps": steps_wrapped,
+                    }
+                    rendered = _Fmt3(spec_str).format(**fmt_ctx)
+                    # Attempt JSON decode for object/array
+                    try:
+                        if rendered and rendered.strip()[:1] in ("{", "["):
+                            return _json3.loads(rendered)
+                    except Exception:
+                        pass
+                    return rendered
+
+                _compiled_iter_prop = _iter_prop
+        except Exception:
+            _compiled_iter_prop = None
+
+        # --- Declarative 'output' or 'output_template' → loop_output_mapper ---
+        _output_tpl_override: _Optional[_Callable[[Any, Optional[Any]], Any]] = None
+        try:
+            output_template_spec = None
+            output_mapping_spec = None
+            if isinstance(model.loop, dict):
+                output_template_spec = model.loop.get("output_template")
+                output_mapping_spec = model.loop.get("output")
+            if isinstance(output_template_spec, str) and output_template_spec.strip():
+                fmt_tpl = output_template_spec.strip()
+
+                def _out_tpl(prev_output: Any, ctx: Optional[Any]) -> Any:
+                    if ctx is None:
+                        return prev_output
+                    return _render_template_value(prev_output, ctx, fmt_tpl)
+
+                _output_tpl_override = _out_tpl
+            elif isinstance(output_mapping_spec, dict) and output_mapping_spec:
+                mapping_items: list[tuple[str, str]] = [
+                    (str(k), str(v)) for k, v in output_mapping_spec.items()
+                ]
+
+                def _out_map(prev_output: Any, ctx: Optional[Any]) -> Any:
+                    if ctx is None:
+                        return {k: None for k, _ in mapping_items}
+                    out: Dict[str, Any] = {}
+                    for mk, mtpl in mapping_items:
+                        try:
+                            out[mk] = _render_template_value(prev_output, ctx, mtpl)
+                        except Exception:
+                            out[mk] = None
+                    return out
+
+                _output_tpl_override = _out_map
+        except Exception:
+            _output_tpl_override = None
+
+        # Compose iteration mapper precedence:
+        # - If propagation is provided, use it; if state ops exist, apply them first
+        if _compiled_iter_prop is not None:
+            if _state_apply_fn is not None:
+
+                def _iter_composed(_o: Any, _c: Optional[Any], _i: int) -> Any:
+                    try:
+                        if _c is not None:
+                            _state_apply_fn(_o, _c)
+                    except Exception:
+                        pass
+                    return _compiled_iter_prop(_o, _c, _i)
+
+                _iteration_mapper_override = _iter_composed
+            else:
+                _iteration_mapper_override = _compiled_iter_prop
+        else:
+            # No propagation override; if state ops exist, keep default behavior (apply ops, pass through)
+            if _state_apply_fn is not None and _iteration_mapper_override is None:
+
+                def _iter_state_only(_o: Any, _c: Optional[Any], _i: int) -> Any:
+                    try:
+                        if _c is not None:
+                            _state_apply_fn(_o, _c)
+                    except Exception:
+                        pass
+                    return _o
+
+                _iteration_mapper_override = _iter_state_only
+
+        # Output precedence: explicit output/_template wins over state sugar default
+        if _output_tpl_override is not None:
+            _output_mapper_override = _output_tpl_override
 
         st_loop: LoopStep[Any] = LoopStep(
             name=model.name,
@@ -660,6 +1050,12 @@ def _make_step_from_blueprint(
                 _output_mapper_override if _output_mapper_override is not None else _output_mapper
             ),
         )
+        # Attach compiled init ops for the policy hook to run once before iteration 1
+        try:
+            if _compiled_init_ops is not None:
+                st_loop.meta["compiled_init_ops"] = _compiled_init_ops
+        except Exception:
+            pass
         try:
             if isinstance(model.loop, dict) and model.loop.get("exit_expression"):
                 st_loop.meta["exit_expression"] = str(model.loop.get("exit_expression"))
@@ -677,9 +1073,191 @@ def _make_step_from_blueprint(
             compiled_agents=compiled_agents,
         )
         iterable_input = model.map.get("iterable_input")
-        return MapStep.from_pipeline(
+        st_map: MapStep[Any] = MapStep.from_pipeline(
             name=model.name, pipeline=body, iterable_input=str(iterable_input)
         )
+
+        # MapStep declarative 'init' sugar (runs once before mapping begins)
+        try:
+            map_init = model.map.get("init") if isinstance(model.map, dict) else None
+        except Exception:
+            map_init = None
+        if map_init is not None:
+            try:
+                import json as _jsonm
+
+                m_ops_append: list[dict[str, Any]] = []
+                m_ops_set: list[dict[str, Any]] = []
+                m_ops_merge: list[dict[str, Any]] = []
+                if isinstance(map_init, dict):
+                    m_ops_append = list(map_init.get("append") or [])
+                    m_ops_set = list(map_init.get("set") or [])
+                    m_ops_merge = list(map_init.get("merge") or [])
+                elif isinstance(map_init, list):
+                    for op in map_init:
+                        try:
+                            if not isinstance(op, dict):
+                                continue
+                            if "set" in op:
+                                m_ops_set.append(
+                                    {"target": op.get("set"), "value": op.get("value")}
+                                )
+                            elif "append" in op:
+                                _spec_a = op.get("append")
+                                if isinstance(_spec_a, str):
+                                    m_ops_append.append(
+                                        {"target": _spec_a, "value": op.get("value")}
+                                    )
+                                elif isinstance(_spec_a, dict):
+                                    m_ops_append.append(
+                                        {
+                                            "target": _spec_a.get("target"),
+                                            "value": _spec_a.get("value"),
+                                        }
+                                    )
+                            elif "merge" in op:
+                                _spec_m = op.get("merge")
+                                if isinstance(_spec_m, str):
+                                    m_ops_merge.append(
+                                        {"target": _spec_m, "value": op.get("value") or "{}"}
+                                    )
+                                elif isinstance(_spec_m, dict):
+                                    m_ops_merge.append(
+                                        {
+                                            "target": _spec_m.get("target"),
+                                            "value": _spec_m.get("value") or "{}",
+                                        }
+                                    )
+                        except Exception:
+                            continue
+
+                def _map_init_ops(prev_output: Any, ctx: Any) -> None:
+                    # append
+                    for spec in m_ops_append:
+                        try:
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
+                            if parent is None or key is None:
+                                continue
+                            val = _render_template_value(prev_output, ctx, spec.get("value", ""))
+                            seq = None
+                            try:
+                                seq = parent[key]
+                            except Exception:
+                                seq = getattr(parent, key, None)
+                            if not isinstance(seq, list):
+                                seq = []
+                                if isinstance(parent, dict):
+                                    parent[key] = seq
+                                else:
+                                    try:
+                                        setattr(parent, key, seq)
+                                    except Exception:
+                                        continue
+                            seq.append(val)
+                        except Exception:
+                            continue
+                    # set
+                    for spec in m_ops_set:
+                        try:
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
+                            if parent is None or key is None:
+                                continue
+                            val = _render_template_value(prev_output, ctx, spec.get("value", ""))
+                            if isinstance(parent, dict):
+                                parent[key] = val
+                            else:
+                                try:
+                                    setattr(parent, key, val)
+                                except Exception:
+                                    continue
+                        except Exception:
+                            continue
+                    # merge
+                    for spec in m_ops_merge:
+                        try:
+                            parent, key = _resolve_context_target(ctx, str(spec.get("target")))
+                            if parent is None or key is None:
+                                continue
+                            val_raw = _render_template_value(
+                                prev_output, ctx, spec.get("value", "{}")
+                            )
+                            try:
+                                val_obj = _jsonm.loads(val_raw)
+                            except Exception:
+                                continue
+                            if not isinstance(val_obj, dict):
+                                continue
+                            try:
+                                cur = (
+                                    parent.get(key)
+                                    if isinstance(parent, dict)
+                                    else getattr(parent, key, None)
+                                )
+                            except Exception:
+                                cur = None
+                            if not isinstance(cur, dict):
+                                cur = {}
+                            cur.update(val_obj)
+                            if isinstance(parent, dict):
+                                parent[key] = cur
+                            else:
+                                try:
+                                    setattr(parent, key, cur)
+                                except Exception:
+                                    continue
+                        except Exception:
+                            continue
+
+                try:
+                    st_map.meta["compiled_init_ops"] = _map_init_ops
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        # MapStep declarative 'finalize' sugar (post-aggregation output mapping)
+        try:
+            map_finalize = model.map.get("finalize") if isinstance(model.map, dict) else None
+        except Exception:
+            map_finalize = None
+        if isinstance(map_finalize, dict):
+            try:
+                output_template_spec = map_finalize.get("output_template")
+                output_mapping_spec = map_finalize.get("output")
+                finalize_mapper = None
+                if isinstance(output_template_spec, str) and output_template_spec.strip():
+                    tpl = output_template_spec.strip()
+
+                    def _finalize_mapper(prev_output: Any, ctx: Optional[Any]) -> Any:
+                        if ctx is None:
+                            return prev_output
+                        return _render_template_value(prev_output, ctx, tpl)
+
+                    finalize_mapper = _finalize_mapper
+                elif isinstance(output_mapping_spec, dict) and output_mapping_spec:
+                    items = [(str(k), str(v)) for k, v in output_mapping_spec.items()]
+
+                    def _finalize_map(prev_output: Any, ctx: Optional[Any]) -> Any:
+                        if ctx is None:
+                            return {k: None for k, _ in items}
+                        out: Dict[str, Any] = {}
+                        for mk, mtpl in items:
+                            try:
+                                out[mk] = _render_template_value(prev_output, ctx, mtpl)
+                            except Exception:
+                                out[mk] = None
+                        return out
+
+                    finalize_mapper = _finalize_map
+                if finalize_mapper is not None:
+                    try:
+                        st_map.meta["map_finalize_mapper"] = finalize_mapper
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        return st_map
     elif getattr(model, "kind", None) == "dynamic_router":
         from ..dsl.dynamic_router import DynamicParallelRouterStep
 

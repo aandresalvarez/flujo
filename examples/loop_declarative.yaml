@@ -1,0 +1,24 @@
+version: "0.1"
+steps:
+  - kind: step
+    name: get_goal
+    # Placeholder; in a real pipeline this would call an agent or HITL
+
+  - kind: loop
+    name: clarification_loop
+    loop:
+      conversation: true
+      init:
+        history:
+          start_with:
+            from_step: get_goal
+            prefix: "User: "
+      body:
+        - kind: step
+          name: clarify
+          # In a real pipeline, call an agent here and set updates_context
+          updates_context: true
+      stop_when: agent_finished
+      output:
+        text: conversation_history
+

@@ -435,7 +435,7 @@ class OptimizationDemo:
                 monitored_step, data
             )
 
-            logger.info(f"Step {i+1} metrics:")
+            logger.info(f"Step {i + 1} metrics:")
             logger.info(f"  Execution time: {metrics.get('execution_time_ms', 'N/A')}ms")
             logger.info(f"  Memory usage: {metrics.get('memory_usage_mb', 'N/A')}MB")
             logger.info(f"  Cache hit rate: {metrics.get('cache_hit_rate', 'N/A')}%")

@@ -56,7 +56,7 @@ async def main():
 
     # Display results
     for i, result in enumerate(results):
-        print(f"\n--- Task {i+1}: {tasks[i].prompt} ---")
+        print(f"\n--- Task {i + 1}: {tasks[i].prompt} ---")
         if isinstance(result, Exception):
             print(f"❌ Error: {result}")
         elif result:

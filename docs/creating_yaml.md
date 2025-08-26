@@ -234,6 +234,73 @@ Notes:
 - Values are rendered using the same template syntax (including filters).
 - Merge values must render to a JSON object; non-object values are ignored.
 
+Declarative init/propagation/output (no Python helpers required):
+
+```yaml
+- kind: loop
+  name: conversational_minimal
+  loop:
+    # 1) Init runs once before the first iteration (on isolated context)
+    init:
+      - append: { target: "context.scratchpad.history", value: "User: {{ steps.get_goal.output }}" }
+
+    # 2) Loop body (steps omitted)
+    body:
+      - kind: step
+        name: clarify
+        # ...
+        updates_context: true
+
+    # 3) Propagation chooses next iteration input
+    propagation:
+      next_input: context   # presets: context | previous_output | auto | template string
+
+    # 4) Exit condition and final output mapping
+    exit_expression: "context.scratchpad.last_agent_command.action == 'finish'"
+    output_template: "{{ context.scratchpad.history | join('\\n') }}"
+```
+
+Friendly presets (natural-language aliases):
+
+```yaml
+- kind: loop
+  name: conversational_friendly
+  loop:
+    conversation: true          # ensures history, propagates context, exit when agent finished
+    init:
+      history:
+        start_with:
+          from_step: get_goal
+          prefix: "User: "
+    body:
+      - kind: step
+        name: clarify
+        updates_context: true
+    stop_when: agent_finished   # alias for the common exit expression
+    output:
+      text: conversation_history  # newline-joined history as the final text
+
+Auto propagation preset:
+
+```yaml
+- kind: loop
+  name: conversational_auto
+  loop:
+    body:
+      - kind: step
+        name: clarify
+        updates_context: true
+    propagation: auto   # chooses 'context' because a body step updates the context
+    exit_expression: "context.scratchpad.counter >= 2"
+```
+```
+
+Guidance:
+- `init` is executed once and safely on the iteration clone; it never mutates the shared context directly.
+- `propagation.next_input` supports `context`, `previous_output` (default), or a template string.
+- `output_template` formats a single final string; `output: { ... }` builds an object from templates.
+- Control-flow exceptions (pause/abort/redirect) are never swallowed; they propagate per the team guide.
+
 **Enhanced Loop Configuration:**
 For sophisticated agentic workflows, you can also specify input/output mappers:
 
@@ -1153,3 +1220,74 @@ The `as_step` functionality is available through the `imports` section, where im
 
 **Note on Step Type Support:** While most step types are fully supported in YAML, Human-in-the-Loop (HITL) steps currently require the Python DSL. This limitation will be addressed in future releases to provide complete YAML coverage for all Flujo step types.
  
+MapStep pre/post hooks (sugars):
+
+```yaml
+- kind: map
+  name: summarize_values
+  map:
+    iterable_input: items
+    body:
+      - kind: step
+        name: transform
+        # ...
+    init:
+      - set: "context.scratchpad.note"
+        value: "mapping"
+    finalize:
+      output:
+        results_str: "{{ previous_step }}"   # sees the aggregated list
+```
+
+Notes:
+- `map.init` runs once before mapping begins (idempotent; isolated per run).
+- `map.finalize` sees the aggregated results list as `previous_step` and can format
+  a single string (`output_template`) or build an object (`output: { ... }`).
+- Control‑flow exceptions propagate; quotas unchanged.
+Parallel reduction (sugar):
+
+```yaml
+- kind: parallel
+  name: gather
+  branches:
+    a:
+      - kind: step
+        name: step_a
+    b:
+      - kind: step
+        name: step_b
+  reduce: keys     # presets: keys | values | union | concat | first | last
+```
+
+Notes:
+- `reduce: keys` returns branch names in declared order.
+- `reduce: values` returns outputs in branch order.
+- `reduce: union` merges dict outputs with last-wins (branch order).
+- `reduce: concat` concatenates list outputs (non-list values are appended).
+- `reduce: first|last` picks the first/last available branch output.
+- Without `reduce`, the default output is a map: `{branch: output|StepResult}`.
+### CLI Wizard and Explain
+
+Generate a minimal, natural YAML via a friendly wizard:
+
+```bash
+uv run flujo create --wizard --non-interactive \
+  --goal "Summarize latest news" \
+  --name clarification_loop \
+  --output-dir ./myproj
+```
+
+Explain a YAML file in plain language:
+
+```bash
+uv run flujo explain ./pipeline.yaml
+```
+
+The wizard uses the natural presets documented above (conversation, propagation: auto,
+stop_when: agent_finished, and simple output) and writes a ready-to-run YAML.
+
+Advanced wizard flags:
+
+- `--wizard-pattern loop|map|parallel` (default: loop)
+- For map: `--wizard-iterable-name <field>` (default: items)
+- For parallel: `--wizard-reduce-mode keys|values|union|concat|first|last` (default: keys)
