@@ -251,7 +251,7 @@ loop:
 
 - M1: Built‑in transforms
   - Code: `flujo/builtins.py`
-  - Docs: Examples in `docs/blueprints_yaml.md`
+  - Docs: Examples in `docs/creating_yaml.md`
   - Criteria: All unit tests for transforms pass; examples runnable via CLI.
 
 - M2: Template filters
@@ -309,7 +309,7 @@ loop:
 
 ## 14) Documentation Updates
 
-- `docs/blueprints_yaml.md`:
+- `docs/creating_yaml.md`:
   - New sections: Transforms, Filters, Expressions, Loop State, Agentic Loop.
 - `README.md` and CLI help: brief pointers to new features.
 - Examples in `examples/` showcasing each feature.

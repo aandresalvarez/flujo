@@ -234,12 +234,19 @@ class AdvancedPromptFormatter:
         raise ValueError(f"Unknown template filter: {name}")
 
 
+_CACHED_FILTERS: set[str] | None = None
+
+
 def _get_enabled_filters() -> set[str]:
     """Return the set of enabled template filters from configuration.
 
     Reads flujo.toml via ConfigManager settings.enabled_template_filters when available.
     Falls back to the default allow-list when not configured.
     """
+    global _CACHED_FILTERS
+    if _CACHED_FILTERS is not None:
+        return _CACHED_FILTERS
+
     default = {"join", "upper", "lower", "length", "tojson"}
     try:
         from ..infra.config_manager import get_config_manager
@@ -248,10 +255,15 @@ def _get_enabled_filters() -> set[str]:
         settings = getattr(cfg, "settings", None)
         enabled = getattr(settings, "enabled_template_filters", None) if settings else None
         if isinstance(enabled, list) and all(isinstance(x, str) for x in enabled):
-            return {s.lower() for s in enabled}
+            import re
+
+            valid = {s.lower() for s in enabled if re.fullmatch(r"[a-z_]+", s.lower())}
+            _CACHED_FILTERS = valid or default
+            return _CACHED_FILTERS
     except Exception:
         pass
-    return default
+    _CACHED_FILTERS = default
+    return _CACHED_FILTERS
 
     def format(self, **kwargs: Any) -> str:
         """Render the template with the provided keyword arguments."""
@@ -288,11 +300,6 @@ def _get_enabled_filters() -> set[str]:
         processed = EACH_BLOCK_REGEX.sub(each_replacer, processed)
 
         def _split_filters(expr: str) -> tuple[str, list[str]]:
-            """Split an expression into base part and filter segments.
-
-            Respects quotes and parentheses; only splits on top-level '|'.
-            Returns (base, [filter1, filter2(...) ...]).
-            """
             parts: list[str] = []
             buf: list[str] = []
             in_single = False
