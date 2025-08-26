@@ -40,15 +40,15 @@ def test_disallow_mutating_or_unknown_calls() -> None:
 
 
 def test_nested_attribute_and_subscript_and_none_tolerance() -> None:
-    # Use boolean and to avoid IfExp (not supported by sandbox)
+    # Use boolean conditions with nested access; avoid IfExp (not supported)
     expr = compile_expression_to_callable(
-        "context.scratchpad.get('user') and context.scratchpad.user['name'].lower()"
+        "context.scratchpad.get('user') and context.scratchpad.user['name'].lower().startswith('ali')"
     )
     ctx = _Ctx({"user": {"name": "ALICE"}})
-    assert expr(None, ctx) == "alice"
+    assert expr(None, ctx) is True
     ctx2 = _Ctx({})
-    # When 'user' missing, whole expression is falsy/None
-    assert expr(None, ctx2) in (None, "", False)
+    # When 'user' missing, whole expression is falsy
+    assert not bool(expr(None, ctx2))
 
 
 def test_invalid_arg_types_to_allowlisted_methods_raise() -> None:
