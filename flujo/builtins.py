@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Type
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, cast
 
 # Ensure framework primitives (like StateMachine) are registered when builtins load
 try:  # pragma: no cover - best-effort for import order
@@ -1299,16 +1299,13 @@ def _register_builtins() -> None:
             if isinstance(rows, dict):
                 norm = [rows]
             elif isinstance(rows, list) and all(isinstance(x, dict) for x in rows):
-                norm = rows  # type: ignore[assignment]
+                norm = rows
             else:
                 # Best-effort: coerce to list of dicts using a single 'value' column
                 if isinstance(rows, list):
-                    norm = [
-                        x if isinstance(x, dict) else {"value": x}  # type: ignore[dict-item]
-                        for x in rows
-                    ]
+                    norm = [x if isinstance(x, dict) else {"value": x} for x in rows]
                 else:
-                    norm = [rows if isinstance(rows, dict) else {"value": rows}]  # type: ignore[dict-item]
+                    norm = [rows if isinstance(rows, dict) else {"value": rows}]
 
             # Determine headers deterministically
             if headers and isinstance(headers, list) and all(isinstance(h, str) for h in headers):
@@ -1359,7 +1356,7 @@ def _register_builtins() -> None:
             op = (operation or "").strip().lower()
             items: List[Dict[str, Any]]
             if isinstance(data, list) and all(isinstance(x, dict) for x in data):
-                items = data  # type: ignore[assignment]
+                items = data
             elif isinstance(data, dict):
                 items = [data]
             else:
@@ -1372,7 +1369,9 @@ def _register_builtins() -> None:
                     return out
                 for obj in items:
                     try:
-                        val = obj.get(field)  # type: ignore[arg-type]
+                        # At this point, field is guaranteed non-None by the guard above
+                        fld = cast(str, field)
+                        val = obj.get(fld)
                         if isinstance(val, (int, float)):
                             out.append(float(val))
                     except Exception:
