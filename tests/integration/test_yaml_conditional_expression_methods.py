@@ -66,12 +66,16 @@ steps:
 
     core = ExecutorCore()
     result1 = await core.run_pipeline(pipeline, "go", PipelineContext(initial_prompt="go"))
-    assert result1.step_history[-1].name == "ok"
+    # Conditional step is final; assert branch metadata reflects True
+    assert result1.step_history[-1].name == "route_by_prefix"
+    assert result1.step_history[-1].metadata_.get("executed_branch_key") is True
 
     # Hello! → true (endswith '!') → ok
     result2 = await core.run_pipeline(pipeline, "Hello!", PipelineContext(initial_prompt="Hello!"))
-    assert result2.step_history[-1].name == "ok"
+    assert result2.step_history[-1].name == "route_by_prefix"
+    assert result2.step_history[-1].metadata_.get("executed_branch_key") is True
 
     # xyz → false → no
     result3 = await core.run_pipeline(pipeline, "xyz", PipelineContext(initial_prompt="xyz"))
-    assert result3.step_history[-1].name == "no"
+    assert result3.step_history[-1].name == "route_by_prefix"
+    assert result3.step_history[-1].metadata_.get("executed_branch_key") is False
