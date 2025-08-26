@@ -2949,6 +2949,43 @@ class DefaultLoopStepExecutor:
             iteration_context = (
                 ContextManager.isolate(current_context) if current_context is not None else None
             )
+            # Run compiled init ops once before the first iteration on the isolated context.
+            # This follows idempotency and control-flow safety: operate on the iteration clone,
+            # and re-raise control-flow exceptions without conversion.
+            try:
+                if iteration_count == 1:
+                    try:
+                        init_fn = None
+                        meta = getattr(loop_step, "meta", None)
+                        if isinstance(meta, dict):
+                            init_fn = meta.get("compiled_init_ops")
+                    except Exception:
+                        init_fn = None
+                    if callable(init_fn):
+                        init_fn(current_data, iteration_context)
+            except PausedException as e:
+                # Control-flow exceptions must propagate
+                raise e
+            except Exception as e:
+                # Treat init errors similarly to initial input mapper errors
+                return to_outcome(
+                    StepResult(
+                        name=loop_step.name,
+                        success=False,
+                        output=None,
+                        attempts=0,
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=0,
+                        cost_usd=cumulative_cost,
+                        feedback=f"Error in loop.init for LoopStep '{loop_step.name}': {e}",
+                        branch_context=iteration_context,
+                        metadata_={
+                            "iterations": 0,
+                            "exit_reason": "initial_input_mapper_error",
+                        },
+                        step_history=[],
+                    )
+                )
             config = None
             try:
                 if hasattr(body_pipeline, "steps") and getattr(body_pipeline, "steps"):
@@ -3517,7 +3554,17 @@ class DefaultLoopStepExecutor:
             if current_data is not None:
                 results.append(current_data)
             final_output = results
-            output_mapper = None  # Skip custom mapper for MapStep final aggregation
+            # By default, skip custom mapper for MapStep aggregation. However, allow a
+            # declarative post-aggregation finalize mapper when provided via meta.
+            output_mapper = None
+            try:
+                meta = getattr(loop_step, "meta", {})
+                if isinstance(meta, dict):
+                    candidate = meta.get("map_finalize_mapper")
+                    if callable(candidate):
+                        output_mapper = candidate
+            except Exception:
+                output_mapper = None
         if output_mapper:
             try:
                 # Maintain attempts semantics for post-loop adapter: reflect the number
@@ -3527,7 +3574,18 @@ class DefaultLoopStepExecutor:
                     unpacker = getattr(core, "unpacker", DefaultAgentResultUnpacker())
                 except Exception:
                     unpacker = DefaultAgentResultUnpacker()
-                unpacked_data = unpacker.unpack(current_data)
+                # For MapStep finalize mapping, pass the aggregated final_output.
+                # Otherwise, pass the last iteration's data.
+                try:
+                    meta = getattr(loop_step, "meta", {})
+                    use_final = bool(
+                        is_map_step
+                        and isinstance(meta, dict)
+                        and meta.get("map_finalize_mapper") is not None
+                    )
+                except Exception:
+                    use_final = False
+                unpacked_data = unpacker.unpack(final_output if use_final else current_data)
                 # Pass the UNPACKED data to the mapper
                 mapped = output_mapper(unpacked_data, current_context)
                 try:
@@ -4088,6 +4146,15 @@ class DefaultParallelStepExecutor:
         for bn, br in branch_results.items():
             output_dict[bn] = br.output if br.success else br
         result.output = output_dict
+        # Apply declarative reduce mapper if present
+        try:
+            meta = getattr(parallel_step, "meta", {})
+            reducer = meta.get("parallel_reduce_mapper") if isinstance(meta, dict) else None
+            if callable(reducer):
+                result.output = reducer(output_dict, context)
+        except Exception:
+            # On reducer error, keep original map for debuggability
+            pass
         # Preserve input branch order deterministically
         result.metadata_["executed_branches"] = branch_names
         # Context merging using ContextManager

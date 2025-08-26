@@ -1181,6 +1181,82 @@ def create(  # <--- REVERT BACK TO SYNC
             ),
         ),
     ] = None,
+    wizard: Annotated[
+        bool,
+        typer.Option(
+            "--wizard",
+            help="Run a simple interactive wizard to emit a natural YAML pipeline (skips Architect)",
+        ),
+    ] = False,
+    wizard_pattern: Annotated[
+        Optional[str],
+        typer.Option(
+            "--wizard-pattern",
+            help="Pattern to generate when using --wizard",
+            case_sensitive=False,
+            click_type=click.Choice(["loop", "map", "parallel"]),
+        ),
+    ] = None,
+    wizard_iterable_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--wizard-iterable-name",
+            help="Iterable name for --wizard-pattern=map (default: items)",
+        ),
+    ] = None,
+    wizard_reduce_mode: Annotated[
+        Optional[str],
+        typer.Option(
+            "--wizard-reduce-mode",
+            help="Reduce mode for --wizard-pattern=parallel",
+            case_sensitive=False,
+            click_type=click.Choice(["keys", "values", "union", "concat", "first", "last"]),
+        ),
+    ] = None,
+    wizard_conversation: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--wizard-conversation/--no-wizard-conversation",
+            help="Set conversation: true|false for loop preset",
+        ),
+    ] = None,
+    wizard_stop_when: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--wizard-stop-when/--no-wizard-stop-when",
+            help="Include or skip stop_when: agent_finished for loop preset",
+        ),
+    ] = None,
+    wizard_propagation: Annotated[
+        Optional[str],
+        typer.Option(
+            "--wizard-propagation",
+            help="Propagation mode for loop preset",
+            case_sensitive=False,
+            click_type=click.Choice(["context", "previous_output", "auto"]),
+        ),
+    ] = None,
+    wizard_body_steps: Annotated[
+        Optional[str],
+        typer.Option(
+            "--wizard-body-steps",
+            help="Comma-separated body step names for loop preset",
+        ),
+    ] = None,
+    wizard_map_step_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--wizard-map-step-name",
+            help="Name for the single map body step (default: process)",
+        ),
+    ] = None,
+    wizard_branch_names: Annotated[
+        Optional[str],
+        typer.Option(
+            "--wizard-branch-names",
+            help="Comma-separated branch names for parallel preset",
+        ),
+    ] = None,
 ) -> None:
     """Conversational pipeline generation via the Architect pipeline.
 
@@ -1191,6 +1267,24 @@ def create(  # <--- REVERT BACK TO SYNC
     step-level `config.timeout` (alias to `timeout_s`) for plugin/validator phases.
     """
     try:
+        # Wizard shortcut: generate natural YAML without running the Architect
+        if wizard:
+            _run_create_wizard(
+                goal=goal,
+                name=name,
+                output_dir=output_dir,
+                non_interactive=non_interactive,
+                pattern=wizard_pattern,
+                iterable_name=wizard_iterable_name,
+                reduce_mode=wizard_reduce_mode,
+                conversation=wizard_conversation,
+                stop_when=wizard_stop_when,
+                propagation=wizard_propagation,
+                body_steps=wizard_body_steps,
+                map_step_name=wizard_map_step_name,
+                branch_names=wizard_branch_names,
+            )
+            raise typer.Exit(0)
         # Make --debug effective even if passed after the command name (Click quirk)
         try:
             _ctx = click.get_current_context(silent=True)
@@ -1848,6 +1942,9 @@ def create(  # <--- REVERT BACK TO SYNC
             except Exception:
                 # Don't fail the command on cleanup errors
                 pass
+    except typer.Exit:
+        # Preserve explicit exit codes for wizard/architect flows without wrapping
+        raise
     except Exception as e:
         typer.echo(f"[red]Failed to create pipeline: {e}", err=True)
         raise typer.Exit(1)
@@ -2430,6 +2527,223 @@ def main(
     except Exception:
         # Non-fatal: individual commands may still set defaults or load explicit files
         pass
+
+
+# Wizard helper and top-level explain command (NS4)
+
+
+def _run_create_wizard(
+    *,
+    goal: Optional[str],
+    name: Optional[str],
+    output_dir: Optional[str],
+    non_interactive: bool,
+    pattern: Optional[str],
+    iterable_name: Optional[str],
+    reduce_mode: Optional[str],
+    conversation: Optional[bool],
+    stop_when: Optional[bool],
+    propagation: Optional[str],
+    body_steps: Optional[str],
+    map_step_name: Optional[str],
+    branch_names: Optional[str],
+) -> None:
+    import os as _os
+    import typer as _ty
+
+    nm = name or (goal.replace(" ", "_")[:30] if goal else None)
+    if nm is None and not non_interactive:
+        nm = _ty.prompt("Pipeline name", default="my_pipeline")
+    if nm is None:
+        nm = "my_pipeline"
+
+    # Pick pattern
+    if pattern is None and not non_interactive:
+        pattern = _ty.prompt("Pattern (loop/map/parallel)", default="loop")
+    if pattern is None:
+        pattern = "loop"
+    pattern = str(pattern).lower().strip()
+
+    conv = (
+        conversation
+        if conversation is not None
+        else (
+            True
+            if non_interactive
+            else _ty.confirm("Is this a conversation/iterative loop?", default=True)
+        )
+    )
+    stop_when_finished = (
+        stop_when
+        if stop_when is not None
+        else (
+            True
+            if non_interactive
+            else _ty.confirm("Stop when the agent signals 'finish'?", default=True)
+        )
+    )
+    # If propagation is not provided, ask for 'auto' guidance in interactive mode
+    if propagation is None and not non_interactive:
+        default_auto = _ty.confirm("Use propagation: auto?", default=True)
+        propagation = "auto" if default_auto else "previous_output"
+    out_mode = (
+        "text" if non_interactive else _ty.prompt("Output mode (text/fields)", default="text")
+    )
+
+    lines: list[str] = ['version: "0.1"', "steps:"]
+    lines.append("  - kind: step\n    name: get_goal")
+
+    if pattern == "loop":
+        lines.append("  - kind: loop")
+        lines.append(f"    name: {nm}")
+        lines.append("    loop:")
+        if conv:
+            lines.append("      conversation: true")
+        lines.append("      init:")
+        if goal:
+            lines.append(
+                '        history:\n          start_with:\n            from_step: get_goal\n            prefix: "User: "'
+            )
+        else:
+            lines.append("        # add init ops as needed")
+        lines.append("      body:")
+        names = [
+            s.strip() for s in (body_steps.split(",") if body_steps else ["clarify"]) if s.strip()
+        ]
+        for nm_step in names:
+            lines.append(
+                f"        - kind: step\n          name: {nm_step}\n          updates_context: true"
+            )
+        if propagation is not None and propagation != "auto":
+            lines.append("      propagation:\n        next_input: " + propagation)
+        else:
+            lines.append("      propagation: auto")
+        if stop_when_finished:
+            lines.append("      stop_when: agent_finished")
+        if out_mode == "text":
+            lines.append("      output:\n        text: conversation_history")
+        else:
+            lines.append(
+                "      output:\n        fields:\n          goal: initial_prompt\n          clarifications: conversation_history"
+            )
+    elif pattern == "map":
+        lines.append("  - kind: map")
+        lines.append(f"    name: {nm}")
+        lines.append("    map:")
+        it_name = iterable_name or "items"
+        lines.append(f"      iterable_input: {it_name}")
+        lines.append("      body:")
+        lines.append(
+            "        - kind: step\n          name: process\n          updates_context: false"
+        )
+        lines.append("      init:")
+        lines.append('        - set: "context.scratchpad.note"\n          value: "mapping"')
+        lines.append("      finalize:")
+        lines.append('        output:\n          results_str: "{{ previous_step }}"')
+    elif pattern == "parallel":
+        lines.append("  - kind: parallel")
+        lines.append(f"    name: {nm}")
+        names = [
+            s.strip()
+            for s in (branch_names.split(",") if branch_names else ["a", "b"])
+            if s.strip()
+        ]
+        lines.append("    branches:")
+        for bn in names:
+            lines.append(f"      {bn}:")
+            lines.append(f"        - kind: step\n          name: step_{bn}")
+        lines.append(f"    reduce: {reduce_mode or 'keys'}")
+    else:
+        # Default to loop if unknown pattern
+        lines.append("  - kind: loop")
+        lines.append(f"    name: {nm}")
+        lines.append("    loop:\n      body:\n        - kind: step\n          name: clarify")
+
+    yaml_text = "\n".join(lines)
+
+    if output_dir:
+        try:
+            _os.makedirs(output_dir, exist_ok=True)
+            path = _os.path.join(output_dir, "pipeline.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(yaml_text)
+            typer.secho(f"Wrote natural YAML to {path}", fg=typer.colors.GREEN)
+        except Exception as e:
+            typer.secho(f"Failed to write YAML: {e}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+    else:
+        _ty.echo(yaml_text)
+
+
+@app.command(name="explain", help="Explain a pipeline YAML in plain language")
+def explain_cmd(
+    path: Annotated[Optional[str], typer.Argument(help="Path to pipeline.yaml")],
+) -> None:
+    import yaml as _yaml
+
+    try:
+        if not path:
+            typer.secho("Path to YAML is required", fg=typer.colors.RED)
+            raise typer.Exit(2)
+        with open(path, "r", encoding="utf-8") as f:
+            data = _yaml.safe_load(f)
+        if not isinstance(data, dict):
+            typer.secho("Invalid YAML format", fg=typer.colors.RED)
+            raise typer.Exit(2)
+        steps = data.get("steps") or []
+        summary: list[str] = []
+        if isinstance(data.get("name"), str):
+            summary.append(f"Name: {data.get('name')}")
+        summary.append(f"Steps count: {len(steps)}")
+        for idx, st in enumerate(steps):
+            if not isinstance(st, dict):
+                continue
+            kind = st.get("kind", "step")
+            nm = st.get("name", f"step_{idx}")
+            if kind == "loop":
+                loop = st.get("loop") or {}
+                conv = loop.get("conversation")
+                prop = loop.get("propagation")
+                out = loop.get("output") or {}
+                has_tpl = bool(loop.get("output_template"))
+                line = f"Loop '{nm}':"
+                if conv:
+                    line += " conversation: true;"
+                if prop:
+                    nxt = prop if isinstance(prop, str) else prop.get("next_input")
+                    line += f" propagation: {nxt};"
+                if has_tpl:
+                    line += " output: template;"
+                elif out:
+                    line += " output: text;" if "text" in out else " output: fields;"
+                summary.append(line)
+            elif kind == "map":
+                mp = st.get("map") or {}
+                init = mp.get("init")
+                fin = mp.get("finalize")
+                iterable = mp.get("iterable_input")
+                line = f"Map '{nm}': items from {iterable}"
+                if init:
+                    line += "; init present"
+                if fin:
+                    line += "; finalize present"
+                summary.append(line)
+            elif kind == "parallel":
+                brs = (st.get("branches") or {}).keys()
+                red = st.get("reduce")
+                line = f"Parallel '{nm}': branches={list(brs)}"
+                if red:
+                    line += f"; reduce={red}"
+                summary.append(line)
+            else:
+                summary.append(f"Step '{nm}' ({kind})")
+        typer.echo("\n".join(summary))
+    except FileNotFoundError:
+        typer.secho(f"File not found: {path}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    except Exception as e:
+        typer.secho(f"Failed to explain: {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
 
 
 # Explicit exports

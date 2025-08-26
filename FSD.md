@@ -1,6 +1,6 @@
 # FSD-028: Declarative LoopStep Init/Propagation/Output
 
-Status: proposed  
+Status: in_progress  
 Status values: planned | in_progress | done
 
 ## Overview
@@ -205,27 +205,27 @@ Loader mapping (aliases → compiled behavior)
 Execution is sequential and test‑gated. Do not start the next item until the prior item’s Exit Tests pass.
 
 1. Loader: core declarative blocks  
-   Status: planned  
+   Status: done  
    Exit Tests: loader unit tests parse/compile `init`, `propagation.next_input`, `output[_template]`; invalid targets ignored.
 
 2. Policy: iteration‑1 init hook  
-   Status: planned  
+   Status: done  
    Exit Tests: integration test shows init applies on isolated context; HITL pause re‑raises (no swallowing); idempotency preserved.
 
 3. Aliases: friendly YAML presets  
-   Status: planned  
+   Status: done  
    Exit Tests: loader unit tests for `conversation`, `stop_when`, `propagation` preset, `init.history.start_with`, `init.notes.set`, `output.text/fields`.
 
 4. E2E example (natural form)  
-   Status: planned  
+   Status: done  
    Exit Tests: end‑to‑end run of conversational loop without Python helpers, including pause/resume.
 
 5. Docs & examples  
-   Status: planned  
+   Status: done  
    Exit Tests: examples render in docs site; copy‑paste runs locally.
 
 6. Changelog entry  
-   Status: planned  
+   Status: done  
    Exit Tests: CHANGELOG updated under Unreleased → Added.
 
 7. CI Gate  
@@ -237,22 +237,22 @@ Execution is sequential and test‑gated. Do not start the next item until the p
 These are queued after core delivery. Each item is independently testable and must pass its Exit Tests before starting the next.
 
 NS1. Propagation preset: `propagation: auto`  
-Status: planned  
+Status: done  
 Design: chooses `context` when any body step uses `updates_context: true`, else `previous_output`. Explicit user setting always wins.  
 Exit Tests: integration pipeline where body updates context → next input is full context; pipeline without updates → previous output; explicit `propagation` overrides auto; idempotency maintained.
 
 NS2. MapStep equivalents: `map.init` and `map.finalize` sugars  
-Status: planned  
+Status: in_progress  
 Design: pre/post hooks compiled like loop init/output; run once per mapping run (not per item).  
 Exit Tests: mapping pipeline applies `map.init` exactly once before first item; `map.finalize` once after last; results aggregated correctly; concurrency safety via ContextVar; mypy strict.
 
 NS3. Parallel reduce sugar: `parallel.reduce`  
-Status: planned  
+Status: done  
 Design: declarative reducers (union/concat/dedupe/keys) applied to branch outputs with stable branch order and quota split preserved.  
 Exit Tests: multi‑branch pipeline validates each reducer; order preserved; quotas split deterministically; error messages precise; no governor/breach_event.
 
 NS4. CLI boosters  
-Status: planned  
+Status: in_progress  
 Design: `flujo create --wizard` emits natural YAML; `flujo explain` summarizes YAML intent in plain language.  
 Exit Tests: golden‑file tests for wizard outputs across scenarios; explain renders concise, accurate summaries; help text updated.
 

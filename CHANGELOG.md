@@ -470,3 +470,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Existing flows that passed explicit file paths continue to work unchanged.
 - Recommended: initialize a project (`flujo init`), then run `flujo create` and `flujo run` from inside the project.
 - For `lens` tooling, the new template sets a project-local `state_uri`. If you used a global DB, you can keep using `FLUJO_STATE_URI` or set `state_uri` in your `flujo.toml`.
+## [Unreleased]
+
+### Added
+- Declarative LoopStep enhancements in YAML loader:
+  - `loop.init` (runs once on isolated iteration context)
+  - `loop.propagation.next_input` (presets: `context` | `previous_output` | `auto` or template)
+  - `loop.output_template` and `loop.output` (object mapping) compiled to `loop_output_mapper`
+- Friendly presets for domain users:
+  - `conversation: true`, `stop_when: agent_finished`, `propagation: context|previous_output`,
+    `output: text: conversation_history`, and simple `init.history.start_with` helpers
+- MapStep sugars:
+  - `map.init` (pre-run init ops) and `map.finalize` (post-aggregation output mapping)
+    with the same templating semantics as loop output.
+- Parallel reduce sugar:
+  - `reduce: keys|values|union|concat|first|last` to post-process branch outputs while preserving
+    input branch order; default remains branch-output mapping.
+- CLI improvements:
+  - `flujo create --wizard` to generate a natural, friendly YAML without running the Architect.
+  - `flujo explain <path>` to summarize a YAML's structure in plain language.
+- Policy hook in `DefaultLoopStepExecutor` to execute compiled init ops at iteration 1
+
+### Notes
+- Aligns with FLUJO_TEAM_GUIDE policy-driven architecture: control-flow exceptions re-raised,
+  context idempotency preserved via isolation, and quotas unchanged.
