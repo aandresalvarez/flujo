@@ -59,23 +59,22 @@ steps:
           name: no_step
 """
     pipeline = load_pipeline_blueprint_from_yaml(yaml_text)
+    # Use standard runner helpers for consistency with the suite
+    from tests.conftest import create_test_flujo
+    from flujo.testing.utils import gather_result
 
-    # go → true → ok
-    from flujo.application.core.executor_core import ExecutorCore
-    from flujo.domain.models import PipelineContext
-
-    core = ExecutorCore()
-    result1 = await core.run_pipeline(pipeline, "go", PipelineContext(initial_prompt="go"))
+    runner = create_test_flujo(pipeline)
+    result1 = await gather_result(runner, "go")
     # Conditional step is final; assert branch metadata reflects True
     assert result1.step_history[-1].name == "route_by_prefix"
     assert result1.step_history[-1].metadata_.get("executed_branch_key") is True
 
     # Hello! → true (endswith '!') → ok
-    result2 = await core.run_pipeline(pipeline, "Hello!", PipelineContext(initial_prompt="Hello!"))
+    result2 = await gather_result(runner, "Hello!")
     assert result2.step_history[-1].name == "route_by_prefix"
     assert result2.step_history[-1].metadata_.get("executed_branch_key") is True
 
     # xyz → false → no
-    result3 = await core.run_pipeline(pipeline, "xyz", PipelineContext(initial_prompt="xyz"))
+    result3 = await gather_result(runner, "xyz")
     assert result3.step_history[-1].name == "route_by_prefix"
     assert result3.step_history[-1].metadata_.get("executed_branch_key") is False
