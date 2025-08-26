@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from flujo.domain.blueprint.loader import load_pipeline_blueprint_from_yaml
 from flujo.domain.models import PipelineContext
 
@@ -40,7 +42,8 @@ steps:
     assert cond.meta.get("condition_expression") is not None
 
 
-def test_conditional_expression_string_methods_runtime_event_loop(event_loop) -> None:
+@pytest.mark.asyncio
+async def test_conditional_expression_string_methods_runtime() -> None:
     yaml_text = """
 version: "0.1"
 steps:
@@ -57,24 +60,18 @@ steps:
 """
     pipeline = load_pipeline_blueprint_from_yaml(yaml_text)
 
-    async def _run(msg: str):
-        from flujo.application.core.executor_core import ExecutorCore
-        from flujo.domain.models import PipelineContext
-
-        core = ExecutorCore()
-        ctx = PipelineContext(initial_prompt=msg)
-        res = await core.run_pipeline(pipeline, msg, ctx)
-        # Done if no exception
-        return res
-
     # go → true → ok
-    result1 = event_loop.run_until_complete(_run("go"))
+    from flujo.application.core.executor_core import ExecutorCore
+    from flujo.domain.models import PipelineContext
+
+    core = ExecutorCore()
+    result1 = await core.run_pipeline(pipeline, "go", PipelineContext(initial_prompt="go"))
     assert result1.step_history[-1].name == "ok"
 
     # Hello! → true (endswith '!') → ok
-    result2 = event_loop.run_until_complete(_run("Hello!"))
+    result2 = await core.run_pipeline(pipeline, "Hello!", PipelineContext(initial_prompt="Hello!"))
     assert result2.step_history[-1].name == "ok"
 
     # xyz → false → no
-    result3 = event_loop.run_until_complete(_run("xyz"))
+    result3 = await core.run_pipeline(pipeline, "xyz", PipelineContext(initial_prompt="xyz"))
     assert result3.step_history[-1].name == "no"
