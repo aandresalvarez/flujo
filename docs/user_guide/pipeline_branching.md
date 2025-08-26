@@ -45,6 +45,15 @@ Metadata:
 - `executed_branch_key`: the original evaluated key (boolean or string)
 - `resolved_branch_key`: present when the policy mapped a boolean to its string equivalent
 
+## Security note
+
+When authoring YAML blueprints, the `condition` field accepts only importable
+callables (e.g., `pkg.mod:func`). Inline Python (such as `lambda ...`) inside
+YAML is intentionally not supported for security reasons. For inline logic, use
+`condition_expression`, or reference a safe callable like
+`flujo.builtins.passthrough` when you already have a boolean produced by a
+previous step.
+
 ## Example
 
 ```python
