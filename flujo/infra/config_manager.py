@@ -99,6 +99,9 @@ class SettingsOverrides(BaseModel):
     otlp_endpoint: Optional[str] = None
     agent_timeout: Optional[int] = None
 
+    # Template filter controls
+    enabled_template_filters: Optional[list[str]] = None
+
 
 class BudgetConfig(BaseModel):
     """Budget governance configuration loaded from flujo.toml.
@@ -230,6 +233,16 @@ class ConfigManager:
             if "settings" in data:
                 config_data["settings"] = data["settings"]
 
+            # Compatibility: map [blueprint].enabled_filters -> settings.enabled_template_filters
+            try:
+                blueprint = data.get("blueprint")
+                if isinstance(blueprint, dict) and "enabled_filters" in blueprint:
+                    cfg_settings = dict(config_data.get("settings", {}))
+                    cfg_settings["enabled_template_filters"] = blueprint.get("enabled_filters")
+                    config_data["settings"] = cfg_settings
+            except Exception:
+                pass
+
             # Optional dotenv file path for API keys and secrets
             if "env_file" in data:
                 config_data["env_file"] = data["env_file"]
@@ -253,6 +266,18 @@ class ConfigManager:
             # Architect configuration
             if "architect" in data:
                 config_data["architect"] = data["architect"]
+
+            # Environment override for template filters (env > file)
+            try:
+                env_filters = os.environ.get("FLUJO_ENABLED_FILTERS")
+                if env_filters:
+                    parts = [p.strip() for p in env_filters.split(",") if p.strip()]
+                    if parts:
+                        cfg_settings = dict(config_data.get("settings", {}))
+                        cfg_settings["enabled_template_filters"] = parts
+                        config_data["settings"] = cfg_settings
+            except Exception:
+                pass
 
             config = FlujoConfig(**config_data)
 

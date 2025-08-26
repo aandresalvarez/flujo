@@ -364,6 +364,8 @@ YAML sugar to define a conversational loop using the built-in factory.
   # Optional: classic loop knobs
   config:
     max_retries: 5                      # per-step retries inside the loop
+  # Optional: render final result via template (applies after internal mapping)
+  output_template: "FINAL: {{ previous_step.execution_result }}"
 ```
 
 This compiles to the existing LoopStep powered by `recipes.make_agentic_loop_pipeline`. It does not change executor behavior.
@@ -538,6 +540,11 @@ input: "{{ context.maybe_value or 'default' | upper }}"  # → DEFAULT if maybe_
 Notes:
 - Unknown filters raise an explicit error during template rendering.
 - Filters only operate on already-resolved values; they do not evaluate code or access the environment.
+- Allow-list: configure enabled filters in `flujo.toml` under `[settings]` using `enabled_template_filters`. Example:
+  ```toml
+  [settings]
+  enabled_template_filters = ["upper", "join", "tojson"]
+  ```
 
 ### Enhanced Loop Mappers
 
