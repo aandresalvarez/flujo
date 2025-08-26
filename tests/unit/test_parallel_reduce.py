@@ -24,9 +24,7 @@ steps:
     core = ExecutorCore()
     import asyncio
 
-    res = asyncio.get_event_loop().run_until_complete(
-        core._execute_pipeline_via_policies(p, None, None, None, None, None, None)
-    )
+    res = asyncio.run(core._execute_pipeline_via_policies(p, None, None, None, None, None, None))
     out = res.step_history[0].output if res.step_history else None
     assert out == ["a", "b"]
 
@@ -78,24 +76,18 @@ steps:
     core = ExecutorCore()
     import asyncio
 
-    res = asyncio.get_event_loop().run_until_complete(
-        core._execute_pipeline_via_policies(p, None, None, None, None, None, None)
-    )
+    res = asyncio.run(core._execute_pipeline_via_policies(p, None, None, None, None, None, None))
     out = res.step_history[0].output if res.step_history else None
     assert out == [1, 2]
 
     yaml_text_first = yaml_text.replace("reduce: values", "reduce: first")
     p2 = load_pipeline_blueprint_from_yaml(yaml_text_first)
-    res2 = asyncio.get_event_loop().run_until_complete(
-        core._execute_pipeline_via_policies(p2, None, None, None, None, None, None)
-    )
+    res2 = asyncio.run(core._execute_pipeline_via_policies(p2, None, None, None, None, None, None))
     assert (res2.step_history[0].output if res2.step_history else None) == 1
 
     yaml_text_last = yaml_text.replace("reduce: values", "reduce: last")
     p3 = load_pipeline_blueprint_from_yaml(yaml_text_last)
-    res3 = asyncio.get_event_loop().run_until_complete(
-        core._execute_pipeline_via_policies(p3, None, None, None, None, None, None)
-    )
+    res3 = asyncio.run(core._execute_pipeline_via_policies(p3, None, None, None, None, None, None))
     assert (res3.step_history[0].output if res3.step_history else None) == 2
 
 
@@ -121,9 +113,7 @@ steps:
     core = ExecutorCore()
     import asyncio
 
-    res = asyncio.get_event_loop().run_until_complete(
-        core._execute_pipeline_via_policies(p, None, None, None, None, None, None)
-    )
+    res = asyncio.run(core._execute_pipeline_via_policies(p, None, None, None, None, None, None))
     out = res.step_history[0].output if res.step_history else None
     assert out == {"x": 1, "y": 2}
 
@@ -149,8 +139,6 @@ steps:
     core = ExecutorCore()
     import asyncio
 
-    res2 = asyncio.get_event_loop().run_until_complete(
-        core._execute_pipeline_via_policies(p2, None, None, None, None, None, None)
-    )
+    res2 = asyncio.run(core._execute_pipeline_via_policies(p2, None, None, None, None, None, None))
     out2 = res2.step_history[0].output if res2.step_history else None
     assert out2 == [1, 2]

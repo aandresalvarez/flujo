@@ -48,7 +48,7 @@ steps:
     # Run the pipeline via the core (policy-driven)
     import asyncio
 
-    result = asyncio.get_event_loop().run_until_complete(  # type: ignore[attr-defined]
+    result = asyncio.run(
         core._execute_pipeline_via_policies(
             pipeline,
             "input",  # initial data
