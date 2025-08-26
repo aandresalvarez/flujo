@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Type, cast
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Type
 
 # Ensure framework primitives (like StateMachine) are registered when builtins load
 try:  # pragma: no cover - best-effort for import order
@@ -1370,8 +1370,7 @@ def _register_builtins() -> None:
                 for obj in items:
                     try:
                         # At this point, field is guaranteed non-None by the guard above
-                        fld = cast(str, field)
-                        val = obj.get(fld)
+                        val = obj.get(field)
                         if isinstance(val, (int, float)):
                             out.append(float(val))
                     except Exception:
