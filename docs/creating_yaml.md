@@ -139,6 +139,36 @@ You can also use inline expressions instead of importing a Python function:
     code: [...]
 ```
 
+Boolean condition expressions
+----------------------------
+Many condition expressions evaluate to a boolean. Flujo now treats these as a
+first‑class routing pattern for YAML:
+
+```yaml
+- kind: conditional
+  name: check_ok
+  # Any expression that returns True/False
+  condition_expression: "{{ previous_step.ok }}"
+  branches:
+    true:
+      - kind: step
+        name: on_true
+        uses: agents.handle_success
+    false:
+      - kind: step
+        name: on_false
+        uses: agents.handle_failure
+```
+
+Notes:
+- YAML parses unquoted `true`/`false` as booleans. The loader automatically coerces
+  these branch keys to strings ("true"/"false") so validation succeeds.
+- The execution policy also resolves boolean results by preferring exact boolean keys
+  (for programmatic DSL usage) and falling back to string keys (for YAML). This keeps
+  both styles working consistently.
+- Telemetry stores the evaluated key in `executed_branch_key` and, when a fallback
+  mapping occurs (e.g., `True` -> `"true"`), the `resolved_branch_key` metadata is added.
+
 ### 4. Loop Step (`kind: loop`)
 
 Execute a pipeline repeatedly until a condition is met.
