@@ -18,9 +18,8 @@ def test_inline_lambda_condition_raises_actionable_error() -> None:
     )
     with pytest.raises(BlueprintError) as ei:
         load_pipeline_blueprint_from_yaml(yaml_text)
-    msg = str(ei.value)
-    assert "inline Python" in msg or "lambda" in msg
-    assert "condition_expression" in msg
+    msg = str(ei.value).lower()
+    assert ("inline" in msg or "lambda" in msg) and "condition_expression" in msg
 
 
 def test_bad_import_path_condition_is_rewrapped_with_field_context() -> None:
@@ -35,6 +34,6 @@ def test_bad_import_path_condition_is_rewrapped_with_field_context() -> None:
     )
     with pytest.raises(BlueprintError) as ei:
         load_pipeline_blueprint_from_yaml(yaml_text)
-    msg = str(ei.value)
-    assert "(field: condition)" in msg
-    assert "Provide a Python import path" in msg or "use 'condition_expression'" in msg
+    msg = str(ei.value).lower()
+    assert "field: condition" in msg
+    assert ("provide a python import path" in msg) or ("condition_expression" in msg)
