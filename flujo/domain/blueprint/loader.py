@@ -363,13 +363,19 @@ def _make_step_from_blueprint(
             if model.default_branch
             else None
         )
-        return ConditionalStep(
+        st_cond: ConditionalStep[Any] = ConditionalStep(
             name=model.name,
             condition_callable=_cond_callable,
             branches=branches_map2,
             default_branch_pipeline=default_branch,
             config=step_config,
         )
+        try:
+            if model.condition_expression:
+                st_cond.meta["condition_expression"] = str(model.condition_expression)
+        except Exception:
+            pass
+        return st_cond
     elif getattr(model, "kind", None) == "loop":
         from ..dsl.loop import LoopStep
 
@@ -596,7 +602,7 @@ def _make_step_from_blueprint(
                 # If any failure occurs while compiling state sugar, ignore and fall back to defaults
                 pass
 
-        return LoopStep(
+        st_loop: LoopStep[Any] = LoopStep(
             name=model.name,
             loop_body_pipeline=body,
             exit_condition_callable=_exit_condition,
@@ -617,6 +623,12 @@ def _make_step_from_blueprint(
                 _output_mapper_override if _output_mapper_override is not None else _output_mapper
             ),
         )
+        try:
+            if isinstance(model.loop, dict) and model.loop.get("exit_expression"):
+                st_loop.meta["exit_expression"] = str(model.loop.get("exit_expression"))
+        except Exception:
+            pass
+        return st_loop
     elif getattr(model, "kind", None) == "map":
         from ..dsl.loop import MapStep
 
@@ -716,6 +728,48 @@ def _make_step_from_blueprint(
             p = _make_agentic(planner_agent=planner_agent, agent_registry=reg_obj)
         except Exception as e:
             raise BlueprintError(f"Failed to create agentic loop pipeline: {e}")
+
+        # Optionally apply an output template via loop_output_mapper wrapper
+        if isinstance(model.output_template, str) and model.output_template.strip():
+            try:
+                step0 = p.steps[0]
+                fmt_tpl = str(model.output_template)
+                orig_mapper = getattr(step0, "loop_output_mapper", None)
+
+                def _wrapped_output_mapper(output: Any, ctx: Optional[Any]) -> Any:
+                    base = output
+                    try:
+                        if callable(orig_mapper):
+                            base = orig_mapper(output, ctx)
+                    except Exception:
+                        base = output
+                    try:
+                        from ...utils.template_vars import (
+                            TemplateContextProxy as _TCP,
+                            get_steps_map_from_context as _get_steps,
+                            StepValueProxy as _SVP,
+                        )
+                        from ...utils.prompting import AdvancedPromptFormatter as _Fmt
+
+                        steps_map0 = _get_steps(ctx)
+                        steps_wrapped = {
+                            k: v if isinstance(v, _SVP) else _SVP(v) for k, v in steps_map0.items()
+                        }
+                        fmt_ctx = {
+                            "context": _TCP(ctx, steps=steps_wrapped),
+                            "previous_step": base,
+                            "steps": steps_wrapped,
+                        }
+                        return _Fmt(fmt_tpl).format(**fmt_ctx)
+                    except Exception:
+                        return base
+
+                try:
+                    setattr(step0, "loop_output_mapper", _wrapped_output_mapper)
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
         # Wrap as a single step for YAML
         try:

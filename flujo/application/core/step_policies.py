@@ -3422,6 +3422,27 @@ class DefaultLoopStepExecutor:
                     except TypeError:
                         # Compatibility: allow cond(pipeline_result, context)
                         should_exit = bool(cond(pipeline_result, current_context))
+                    try:
+                        expr = getattr(loop_step, "meta", {}).get("exit_expression")
+                        if expr:
+                            # Attach a tiny span for the evaluation details
+                            with telemetry.logfire.span(
+                                f"Loop '{loop_step.name}' - ExitCheck {iteration_count}"
+                            ) as _span:
+                                try:
+                                    _span.set_attribute("evaluated_expression", str(expr))
+                                    _span.set_attribute("evaluated_value", bool(should_exit))
+                                except Exception:
+                                    pass
+                            # Also stash on context for final metadata
+                            try:
+                                if current_context is not None:
+                                    setattr(current_context, "_last_exit_expression", str(expr))
+                                    setattr(current_context, "_last_exit_value", bool(should_exit))
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                     if should_exit:
                         telemetry.logfire.info(
                             f"LoopStep '{loop_step.name}' exit condition met at iteration {iteration_count}."
@@ -3604,7 +3625,20 @@ class DefaultLoopStepExecutor:
             cost_usd=cumulative_cost,
             feedback=feedback_msg,
             branch_context=current_context,
-            metadata_={"iterations": iteration_count, "exit_reason": exit_reason or "max_loops"},
+            metadata_={
+                "iterations": iteration_count,
+                "exit_reason": exit_reason or "max_loops",
+                **(
+                    {
+                        "evaluated_expression": getattr(
+                            current_context, "_last_exit_expression", None
+                        ),
+                        "evaluated_value": getattr(current_context, "_last_exit_value", None),
+                    }
+                    if current_context is not None
+                    else {}
+                ),
+            },
             step_history=iteration_results,
         )
         return to_outcome(result)
@@ -4356,6 +4390,21 @@ class DefaultConditionalStepExecutor:
                 # is not a mapping by augmenting with context-derived signals.
                 # Use original data and context for condition evaluation (contract)
                 branch_key = conditional_step.condition_callable(data, context)
+                try:
+                    expr = getattr(conditional_step, "meta", {}).get("condition_expression")
+                    if expr:
+                        try:
+                            span.set_attribute("evaluated_expression", str(expr))
+                            span.set_attribute("evaluated_value", str(branch_key))
+                        except Exception:
+                            pass
+                        try:
+                            result.metadata_["evaluated_expression"] = str(expr)
+                            result.metadata_["evaluated_value"] = branch_key
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 # Architect-specific safety: ensure ValidityBranch honors context validity/shape
                 try:
                     if (

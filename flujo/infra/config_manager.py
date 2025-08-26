@@ -99,6 +99,9 @@ class SettingsOverrides(BaseModel):
     otlp_endpoint: Optional[str] = None
     agent_timeout: Optional[int] = None
 
+    # Template filter controls
+    enabled_template_filters: Optional[list[str]] = None
+
 
 class BudgetConfig(BaseModel):
     """Budget governance configuration loaded from flujo.toml.

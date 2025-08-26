@@ -102,6 +102,177 @@ class AdvancedPromptFormatter:
                 return ""
             parts = []
             for item in items:
+                inner_formatter = AdvancedPromptFormatter(block)
+                rendered = inner_formatter.format(**kwargs, this=item)
+                rendered = self._escape_template_syntax(rendered)
+                parts.append(rendered)
+            return "".join(parts)
+
+        processed = EACH_BLOCK_REGEX.sub(each_replacer, processed)
+
+        def _split_filters(expr: str) -> tuple[str, list[str]]:
+            parts: list[str] = []
+            buf: list[str] = []
+            in_single = False
+            in_double = False
+            paren = 0
+            for ch in expr:
+                if ch == "'" and not in_double:
+                    in_single = not in_single
+                    buf.append(ch)
+                    continue
+                if ch == '"' and not in_single:
+                    in_double = not in_double
+                    buf.append(ch)
+                    continue
+                if ch == "(" and not in_single and not in_double:
+                    paren += 1
+                    buf.append(ch)
+                    continue
+                if ch == ")" and not in_single and not in_double and paren > 0:
+                    paren -= 1
+                    buf.append(ch)
+                    continue
+                if ch == "|" and not in_single and not in_double and paren == 0:
+                    parts.append("".join(buf).strip())
+                    buf = []
+                else:
+                    buf.append(ch)
+            if buf:
+                parts.append("".join(buf).strip())
+            if not parts:
+                return expr, []
+            base = parts[0]
+            filters = parts[1:]
+            return base, filters
+
+        def _apply_filter(value: Any, flt: str) -> Any:
+            return AdvancedPromptFormatter._apply_filter_static(value, flt)
+
+        def _evaluate_with_fallback(expr: str) -> Any:
+            candidates = (
+                [s.strip() for s in re.split(r"\s+or\s+", expr)] if " or " in expr else [expr]
+            )
+            chosen: Any = None
+            for subexpr in candidates:
+                if (len(subexpr) >= 2) and (
+                    (subexpr[0] == subexpr[-1] == '"') or (subexpr[0] == subexpr[-1] == "'")
+                ):
+                    literal = subexpr[1:-1]
+                    if literal:
+                        chosen = literal
+                        break
+                    else:
+                        continue
+                v = self._get_nested_value({**kwargs, **{"this": kwargs.get("this")}}, subexpr)
+                if v is not None and (str(v) != ""):
+                    chosen = v
+                    break
+            return chosen
+
+        def placeholder_replacer(match: re.Match[str]) -> str:
+            raw = match.group(1).strip()
+            base_expr, filters = _split_filters(raw)
+            value = _evaluate_with_fallback(base_expr)
+            for flt in filters:
+                value = _apply_filter(value, flt)
+            serialized_value = self._serialize(value)
+            return self._escape_template_syntax(serialized_value)
+
+        processed = PLACEHOLDER_REGEX.sub(placeholder_replacer, processed)
+        processed = self._unescape_template_syntax(processed)
+        return processed
+
+    @staticmethod
+    def _apply_filter_static(value: Any, flt: str) -> Any:
+        name = flt
+        arg: str | None = None
+        if "(" in flt and flt.endswith(")"):
+            name = flt[: flt.index("(")].strip()
+            arg_str = flt[flt.index("(") + 1 : -1].strip()
+            if arg_str:
+                if (len(arg_str) >= 2) and (
+                    (arg_str[0] == arg_str[-1] == '"') or (arg_str[0] == arg_str[-1] == "'")
+                ):
+                    arg = arg_str[1:-1]
+                else:
+                    arg = arg_str
+
+        lname = name.lower()
+        try:
+            allowed = _get_enabled_filters()
+        except Exception:
+            allowed = {"join", "upper", "lower", "length", "tojson"}
+        if lname not in allowed:
+            raise ValueError(f"Unknown template filter: {name}")
+        if lname == "upper":
+            return str(value).upper()
+        if lname == "lower":
+            return str(value).lower()
+        if lname == "length":
+            try:
+                return len(value)
+            except Exception:
+                return 0
+        if lname == "tojson":
+            try:
+                serialized = robust_serialize(value)
+            except Exception:
+                serialized = value
+            try:
+                return json.dumps(serialized)
+            except Exception:
+                return json.dumps(str(serialized))
+        if lname == "join":
+            delim = arg or ""
+            if isinstance(value, (list, tuple)):
+                try:
+                    return delim.join(str(x) for x in value)
+                except Exception:
+                    return delim.join([str(value)])
+            return str(value)
+        raise ValueError(f"Unknown template filter: {name}")
+
+
+def _get_enabled_filters() -> set[str]:
+    """Return the set of enabled template filters from configuration.
+
+    Reads flujo.toml via ConfigManager settings.enabled_template_filters when available.
+    Falls back to the default allow-list when not configured.
+    """
+    default = {"join", "upper", "lower", "length", "tojson"}
+    try:
+        from ..infra.config_manager import get_config_manager
+
+        cfg = get_config_manager().load_config()
+        settings = getattr(cfg, "settings", None)
+        enabled = getattr(settings, "enabled_template_filters", None) if settings else None
+        if isinstance(enabled, list) and all(isinstance(x, str) for x in enabled):
+            return {s.lower() for s in enabled}
+    except Exception:
+        pass
+    return default
+
+    def format(self, **kwargs: Any) -> str:
+        """Render the template with the provided keyword arguments."""
+
+        # First, escape literal \{{ in the template
+        processed = self.template.replace(r"\{{", self._escape_marker)
+
+        def if_replacer(match: re.Match[str]) -> str:
+            key, content = match.groups()
+            value = self._get_nested_value(kwargs, key.strip())
+            return content if value else ""
+
+        processed = IF_BLOCK_REGEX.sub(if_replacer, processed)
+
+        def each_replacer(match: re.Match[str]) -> str:
+            key, block = match.groups()
+            items = self._get_nested_value(kwargs, key.strip())
+            if not isinstance(items, list):
+                return ""
+            parts = []
+            for item in items:
                 # Render the block with access to the current item via ``this``
                 # without pre-inserting the serialized value. This prevents any
                 # template syntax contained within ``item`` from being
@@ -158,53 +329,7 @@ class AdvancedPromptFormatter:
             return base, filters
 
         def _apply_filter(value: Any, flt: str) -> Any:
-            """Apply a single filter specification (e.g., 'upper', "join(', ')")."""
-            name = flt
-            arg: str | None = None
-            if "(" in flt and flt.endswith(")"):
-                name = flt[: flt.index("(")].strip()
-                arg_str = flt[flt.index("(") + 1 : -1].strip()
-                # Only a single, optional string argument is supported (for join)
-                if arg_str:
-                    # Strip one layer of quotes if present
-                    if (len(arg_str) >= 2) and (
-                        (arg_str[0] == arg_str[-1] == '"') or (arg_str[0] == arg_str[-1] == "'")
-                    ):
-                        arg = arg_str[1:-1]
-                    else:
-                        arg = arg_str
-
-            lname = name.lower()
-            if lname == "upper":
-                return str(value).upper()
-            if lname == "lower":
-                return str(value).lower()
-            if lname == "length":
-                try:
-                    return len(value)
-                except Exception:
-                    return 0
-            if lname == "tojson":
-                # JSON-safe serialization of the current value
-                try:
-                    serialized = robust_serialize(value)
-                except Exception:
-                    serialized = value
-                try:
-                    return json.dumps(serialized)
-                except Exception:
-                    return json.dumps(str(serialized))
-            if lname == "join":
-                delim = arg or ""
-                # Join only on list/tuple; otherwise coerce to str
-                if isinstance(value, (list, tuple)):
-                    try:
-                        return delim.join(str(x) for x in value)
-                    except Exception:
-                        return delim.join([str(value)])
-                return str(value)
-
-            raise ValueError(f"Unknown template filter: {name}")
+            return AdvancedPromptFormatter._apply_filter_static(value, flt)
 
         def _evaluate_with_fallback(expr: str) -> Any:
             # Support simple "a or b or c" fallback semantics within placeholders.
