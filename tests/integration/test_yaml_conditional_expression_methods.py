@@ -56,7 +56,7 @@ steps:
           name: ok
       false:
         - kind: step
-          name: no
+          name: no_step
 """
     pipeline = load_pipeline_blueprint_from_yaml(yaml_text)
 
