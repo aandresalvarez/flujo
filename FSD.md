@@ -1,7 +1,7 @@
 # FSD: Declarative YAML UX vNext (Expressions, Loop State, Transforms, Agentic Loop)
 
 Author: Flujo Team
-Status: Draft → Proposed
+Status: In Progress (M1–M2 Completed)
 Target Release: staged across Milestones (M1–M5)
 
 ## 1) Goals & Non‑Goals
@@ -112,7 +112,42 @@ async def flatten(items: list[list[Any]]) -> list[Any]
   - `|tojson` for JSON‑safe serialization
 - Parser changes: keep current placeholder evaluation; add optional `|filter` suffix chain with a small map of filter functions.
 - Safety: No evaluation of arbitrary code; filters operate only on the already‑resolved value. No side effects.
-- Docs: Update `docs/blueprints_yaml.md` with filter reference and examples.
+- Docs: Update `docs/creating_yaml.md` with filter reference and examples.
+
+## 10) Progress & Milestones
+
+- Completed: M1 — Built‑in Data Transforms
+  - Implemented `to_csv`, `aggregate`, `select_fields`, `flatten` under `flujo.builtins.*`.
+  - Unit/regression tests: `tests/unit/builtins/test_transforms.py` (passing in CI).
+  - Documentation updated: Built‑in Data Transforms section added to `docs/creating_yaml.md`.
+  - Docs CI + link checker added (`.github/workflows/docs.yml`), Make targets: `docs-build`, `docs-check`, `docs-ci`.
+  - Typecheck/lint green; stabilized ConditionalStep branch span visibility under xdist in `executor_core` to keep integration test green.
+  - PR: https://github.com/aandresalvarez/flujo/pull/428 (merged once all checks pass).
+
+- Completed: M2 — Template Filters
+  - Added support for `|join(',')`, `|upper`, `|lower`, `|length`, `|tojson` in `AdvancedPromptFormatter`.
+  - Filter chain parsing respects quotes/parentheses; unknown filters raise explicit errors.
+  - Unit tests: `tests/unit/prompting/test_filters.py` (covers happy paths, chaining, unknown filter errors, and list joining).
+  - Docs: Added "Template Filters" section with examples in `docs/creating_yaml.md`.
+
+- Completed: M3 — Expression strings (loader + evaluator)
+  - Added `condition_expression` for conditional steps and `exit_expression` under `loop:`.
+  - Safe evaluator with whitelisted AST (no calls/assignments); dotted access, subscripts, boolean ops, comparisons.
+  - Loader compiles expressions into callables used by the DSL steps.
+  - Unit tests: `tests/unit/blueprints/test_expression_conditions.py`.
+
+- Completed: M4 — Declarative loop state sugar
+  - Added support for `loop.state` with `append`/`set`/`merge` operations targeting `context.*` dotted paths.
+  - Compiler generates identity mappers that apply state updates per-iteration while preserving control-flow semantics.
+  - Unit tests: `tests/unit/blueprints/test_loop_state_sugar.py`.
+
+- Completed: M5 — `agentic_loop` YAML sugar (compiler)
+  - Added `kind: agentic_loop` to the blueprint compiler that wraps `recipes.make_agentic_loop_pipeline` as a single step.
+  - Supports `planner` (agent import path) and `registry` (dict or import path) fields.
+  - Unit test: `tests/unit/blueprints/test_agentic_loop_sugar.py`.
+
+Open follow-ups:
+- Add broader parity/e2e tests mirroring `tests/e2e/test_golden_transcript_agentic_loop.py` for the YAML sugar path.
 
 ### 6.3 Expressions for Conditions (M3)
 

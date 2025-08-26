@@ -128,6 +128,17 @@ Route execution to different branches based on a runtime condition.
 **Use Cases:**
 - Content type routing, user role-based workflows, error handling branches, and dynamic workflow selection.
 
+You can also use inline expressions instead of importing a Python function:
+
+```yaml
+- kind: conditional
+  name: route_by_kind
+  condition_expression: "previous_step.kind"  # Returns a branch key
+  branches:
+    text: [...]
+    code: [...]
+```
+
 ### 4. Loop Step (`kind: loop`)
 
 Execute a pipeline repeatedly until a condition is met.
@@ -148,6 +159,42 @@ Execute a pipeline repeatedly until a condition is met.
 - `body`: The pipeline to execute in each iteration.
 - `max_loops`: The maximum number of iterations.
 - `exit_condition`: A callable that returns `True` to stop the loop.
+
+Alternatively, use an inline expression for exit logic:
+
+```yaml
+- kind: loop
+  name: conversational
+  loop:
+    body: [...]
+    max_loops: 10
+    exit_expression: "previous_step.action == 'finish'"
+```
+
+Declarative per-iteration state updates can be specified under `loop.state`:
+
+```yaml
+- kind: loop
+  name: stateful
+  loop:
+    body: [...]
+    max_loops: 5
+    state:
+      append:
+        - target: "context.scratchpad.history"
+          value: "OUT: {{ previous_step }}"
+      set:
+        - target: "context.summary"
+          value: "{{ previous_step }}"
+      merge:
+        - target: "context.metrics"
+          value: '{"count": 1}'  # JSON object required for merge
+```
+
+Notes:
+- Targets must begin with `context.` and may use dotted paths.
+- Values are rendered using the same template syntax (including filters).
+- Merge values must render to a JSON object; non-object values are ignored.
 
 **Enhanced Loop Configuration:**
 For sophisticated agentic workflows, you can also specify input/output mappers:
@@ -305,6 +352,22 @@ Drive execution across named states; each state maps to its own Pipeline.
 
 For full details, see “State Machine Step”.
 
+### 9. Agentic Loop (`kind: agentic_loop`)
+
+YAML sugar to define a conversational loop using the built-in factory.
+
+```yaml
+- kind: agentic_loop
+  name: clarification_loop
+  planner: "agents.clarifier"          # or import path
+  registry: "agents.registry"          # dict mapping tool-name -> agent
+  # Optional: classic loop knobs
+  config:
+    max_retries: 5                      # per-step retries inside the loop
+```
+
+This compiles to the existing LoopStep powered by `recipes.make_agentic_loop_pipeline`. It does not change executor behavior.
+
 ## Custom Step Primitives
 
 Flujo supports first-class custom primitives via `flujo.framework.registry`. Once registered, you can reference them by `kind` in YAML, and they are executed by their corresponding policies.
@@ -453,6 +516,28 @@ Define a step to run if the primary step fails.
 ```
 
 ## Advanced Features
+
+### Template Filters
+
+You can apply deterministic, side-effect-free filters to template placeholders to transform values inline. Filters operate on the resolved placeholder value and can be chained.
+
+- join(delim): Join iterable values into a string with the given delimiter.
+  - Example: `"{{ steps.items | join(', ') }}"` → `"a, b, c"`
+  - Works on `list`/`tuple`; other types are stringified.
+- upper: Convert to uppercase. Example: `"{{ previous_step | upper }}"`
+- lower: Convert to lowercase. Example: `"{{ previous_step | lower }}"`
+- length: Length of strings, lists, or dicts. Example: `"{{ context.tags | length }}"`
+- tojson: JSON-safe serialization. Example: `"{{ context.payload | tojson }}"`
+
+Filters compose after fallback expressions. For example:
+
+```yaml
+input: "{{ context.maybe_value or 'default' | upper }}"  # → DEFAULT if maybe_value is empty
+```
+
+Notes:
+- Unknown filters raise an explicit error during template rendering.
+- Filters only operate on already-resolved values; they do not evaluate code or access the environment.
 
 ### Enhanced Loop Mappers
 
