@@ -5149,40 +5149,15 @@ class DefaultHitlStepExecutor:
     ) -> StepOutcome[StepResult]:
         """Handle Human-In-The-Loop step execution."""
         import time
-        from flujo.domain.models import Success as _Success, StepResult as _StepResult
 
         telemetry.logfire.debug("=== HANDLE HITL STEP ===")
         telemetry.logfire.debug(f"HITL step name: {step.name}")
 
         # Note: HITL step raises PausedException immediately, so no result tracking needed
 
-        # Fast path for resume: if a human response has been provided on context
-        # (e.g., via runner.resume_async), consume it and return a synthetic success
-        # result so execution can proceed without pausing again.
-        try:
-            if (
-                context is not None
-                and hasattr(context, "scratchpad")
-                and isinstance(context.scratchpad, dict)
-                and "resume_human_response" in context.scratchpad
-            ):
-                human_resp = context.scratchpad.pop("resume_human_response")
-                # Clear paused status if present
-                try:
-                    context.scratchpad["status"] = "running"
-                except Exception:
-                    pass
-                return _Success(
-                    step_result=_StepResult(
-                        name=getattr(step, "name", "<hitl>"),
-                        output=human_resp,
-                        success=True,
-                        attempts=1,
-                        branch_context=context,
-                    )
-                )
-        except Exception:
-            pass
+        # Do not auto-consume human responses from context. Resumption
+        # should pause again when encountering subsequent HITL steps
+        # (e.g., Map over multiple items) to preserve expected semantics.
 
         if context is not None:
             try:
