@@ -3558,6 +3558,22 @@ class DefaultLoopStepExecutor:
                                             )
                             except Exception:
                                 pass
+
+                            # Prepare flattened view of step results (captures nested/parallel)
+                            def _flatten(results: list[Any]) -> list[Any]:
+                                flat: list[Any] = []
+                                for _sr in results or []:
+                                    flat.append(_sr)
+                                    try:
+                                        children = getattr(_sr, "step_history", None) or []
+                                        for ch in children:
+                                            flat.append(ch)
+                                    except Exception:
+                                        pass
+                                return flat
+
+                            all_srs = _flatten(pipeline_result.step_history)
+
                             # Assistant turns per ai_turn_source
                             try:
                                 src = ai_src
@@ -3573,21 +3589,19 @@ class DefaultLoopStepExecutor:
                                                 )
                                             )
                                 elif src == "all_agents":
-                                    for sr in pipeline_result.step_history:
-                                        n = getattr(sr, "name", "")
-                                        if not sr.success:
+                                    for sr in all_srs:
+                                        if not getattr(sr, "success", False):
                                             continue
-                                        if n in agent_step_names:
-                                            txta = str(getattr(sr, "output", "") or "")
-                                            if txta.strip():
-                                                hist.append(
-                                                    ConversationTurn(
-                                                        role=ConversationRole.assistant,
-                                                        content=txta,
-                                                    )
+                                        txta = str(getattr(sr, "output", "") or "")
+                                        if txta.strip():
+                                            hist.append(
+                                                ConversationTurn(
+                                                    role=ConversationRole.assistant,
+                                                    content=txta,
                                                 )
+                                            )
                                 elif src == "named_steps":
-                                    for sr in pipeline_result.step_history:
+                                    for sr in all_srs:
                                         n = getattr(sr, "name", "")
                                         if not sr.success:
                                             continue

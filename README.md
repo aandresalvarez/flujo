@@ -155,6 +155,7 @@ Looking to use GPT‑5 with the Architect? See the guide: `docs/guides/gpt5_arch
 - `create`: 🤖 Start a conversation with the AI Architect to build your workflow.
 - `run`: 🚀 Run the workflow in the current project.
 - `lens`: 🔍 Inspect, debug, and trace past workflow runs.
+  - `lens trace <run_id>` now shows prompt injection events per step (redacted preview). Use this to inspect how conversational history was rendered.
 - `dev`: 🛠️ Access advanced developer and diagnostic tools.
   - `validate`, `show-steps`, `visualize`, `compile-yaml`, `show-config`, `version`
   - `experimental`: advanced tools like `solve`, `bench`, `add-case`, `improve`
@@ -198,6 +199,45 @@ FLUJO_INPUT='Translate this to Spanish' uv run flujo run
 # Run a specific pipeline file
 printf 'hello' | uv run flujo run path/to/pipeline.yaml
 ```
+
+---
+
+## Conversational Loops (Zero‑Boilerplate)
+
+Enable iterative, state‑aware conversations in loops using an opt‑in flag. Flujo automatically captures turns, injects conversation history into prompts, and surfaces a sanitized preview in `lens trace`.
+
+Quick start:
+```yaml
+- kind: loop
+  name: clarify
+  loop:
+    conversation: true
+    history_management:
+      strategy: truncate_tokens
+      max_tokens: 4096
+    body:
+      - kind: step
+        name: clarify
+```
+
+Advanced controls:
+- `ai_turn_source`: `last` (default) | `all_agents` | `named_steps`
+- `user_turn_sources`: include `'hitl'` and/or step names (e.g., `['hitl','ask_user']`)
+- `history_template`: custom rendering
+
+Use the `--wizard` flags to scaffold conversational loops with presets:
+```bash
+uv run flujo create \
+  --wizard \
+  --wizard-pattern loop \
+  --wizard-conversation \
+  --wizard-ai-turn-source all_agents \
+  --wizard-user-turn-sources hitl,clarify \
+  --wizard-history-strategy truncate_tokens \
+  --wizard-history-max-tokens 4096
+```
+
+See `docs/conversational_loops.md` for details.
 
 These semantics are implemented in the CLI layer only; policies and domain logic must not read from stdin or environment directly.
 

@@ -190,7 +190,12 @@ class HistoryManager:
         try:
             from ...infra.config_manager import get_config_manager
 
-            cfg: Any = get_config_manager().load_config() or {}
+            cfg_obj: Any = get_config_manager().load_config()
+            # Coerce to dict to support FlujoConfig (pydantic model)
+            if hasattr(cfg_obj, "model_dump") and callable(getattr(cfg_obj, "model_dump")):
+                cfg: Any = cfg_obj.model_dump()
+            else:
+                cfg = cfg_obj or {}
             conv: Any = (cfg.get("conversation") or {}) if isinstance(cfg, dict) else {}
             hm: Any = (conv.get("history_management") or {}) if isinstance(conv, dict) else {}
             if not isinstance(hm, dict):

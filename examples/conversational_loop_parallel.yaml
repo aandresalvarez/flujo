@@ -1,0 +1,21 @@
+version: "0.1"
+steps:
+  - kind: loop
+    name: parallel_conversation
+    loop:
+      conversation: true
+      ai_turn_source: all_agents
+      history_management:
+        strategy: truncate_tokens
+        max_tokens: 2048
+      body:
+        - kind: parallel
+          name: par
+          branches:
+            a:
+              - kind: step
+                name: branch_a
+            b:
+              - kind: step
+                name: branch_b
+

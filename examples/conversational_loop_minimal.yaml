@@ -1,0 +1,17 @@
+version: "0.1"
+steps:
+  - kind: step
+    name: get_goal
+
+  - kind: loop
+    name: clarification_loop
+    loop:
+      conversation: true
+      history_management:
+        strategy: truncate_tokens
+        max_tokens: 4096
+      body:
+        - kind: step
+          name: clarify
+          updates_context: false
+

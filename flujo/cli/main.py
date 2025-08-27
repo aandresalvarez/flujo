@@ -1257,6 +1257,48 @@ def create(  # <--- REVERT BACK TO SYNC
             help="Comma-separated branch names for parallel preset",
         ),
     ] = None,
+    wizard_ai_turn_source: Annotated[
+        Optional[str],
+        typer.Option(
+            "--wizard-ai-turn-source",
+            help="AI turn source for loop (last/all_agents/named_steps)",
+        ),
+    ] = None,
+    wizard_user_turn_sources: Annotated[
+        Optional[str],
+        typer.Option(
+            "--wizard-user-turn-sources",
+            help="Comma-separated user turn sources (e.g., hitl,stepA,stepB)",
+        ),
+    ] = None,
+    wizard_history_strategy: Annotated[
+        Optional[str],
+        typer.Option(
+            "--wizard-history-strategy",
+            help="History strategy (truncate_tokens/truncate_turns/summarize)",
+        ),
+    ] = None,
+    wizard_history_max_tokens: Annotated[
+        Optional[int],
+        typer.Option(
+            "--wizard-history-max-tokens",
+            help="History max_tokens when using truncate_tokens/summarize",
+        ),
+    ] = None,
+    wizard_history_max_turns: Annotated[
+        Optional[int],
+        typer.Option(
+            "--wizard-history-max-turns",
+            help="History max_turns when using truncate_turns",
+        ),
+    ] = None,
+    wizard_history_summarize_ratio: Annotated[
+        Optional[float],
+        typer.Option(
+            "--wizard-history-summarize-ratio",
+            help="Summarize ratio when using summarize (0..1)",
+        ),
+    ] = None,
 ) -> None:
     """Conversational pipeline generation via the Architect pipeline.
 
@@ -1283,6 +1325,12 @@ def create(  # <--- REVERT BACK TO SYNC
                 body_steps=wizard_body_steps,
                 map_step_name=wizard_map_step_name,
                 branch_names=wizard_branch_names,
+                ai_turn_source=wizard_ai_turn_source,
+                user_turn_sources=wizard_user_turn_sources,
+                history_strategy=wizard_history_strategy,
+                history_max_tokens=wizard_history_max_tokens,
+                history_max_turns=wizard_history_max_turns,
+                history_summarize_ratio=wizard_history_summarize_ratio,
             )
             raise typer.Exit(0)
         # Make --debug effective even if passed after the command name (Click quirk)
@@ -2547,6 +2595,12 @@ def _run_create_wizard(
     body_steps: Optional[str],
     map_step_name: Optional[str],
     branch_names: Optional[str],
+    ai_turn_source: Optional[str] = None,
+    user_turn_sources: Optional[str] = None,
+    history_strategy: Optional[str] = None,
+    history_max_tokens: Optional[int] = None,
+    history_max_turns: Optional[int] = None,
+    history_summarize_ratio: Optional[float] = None,
 ) -> None:
     import os as _os
     import typer as _ty
@@ -2599,6 +2653,67 @@ def _run_create_wizard(
         lines.append("    loop:")
         if conv:
             lines.append("      conversation: true")
+            # History management presets
+            # Determine strategy
+            if non_interactive:
+                hs = (history_strategy or "truncate_tokens").strip().lower()
+            else:
+                import click as _click
+
+                hs = history_strategy or _click.prompt(
+                    "History strategy (truncate_tokens/ truncate_turns/ summarize)",
+                    default="truncate_tokens",
+                )
+            # Emit history_management block with reasonable defaults
+            lines.append("      history_management:")
+            if hs == "truncate_turns":
+                mt = history_max_turns if history_max_turns is not None else 20
+                lines.append("        strategy: truncate_turns")
+                lines.append(f"        max_turns: {int(mt)}")
+            elif hs == "summarize":
+                ratio = history_summarize_ratio if history_summarize_ratio is not None else 0.5
+                mtok = history_max_tokens if history_max_tokens is not None else 4096
+                lines.append("        strategy: summarize")
+                lines.append(f"        summarize_ratio: {float(ratio)}")
+                lines.append(f"        max_tokens: {int(mtok)}")
+            else:
+                mtok = history_max_tokens if history_max_tokens is not None else 4096
+                lines.append("        strategy: truncate_tokens")
+                lines.append(f"        max_tokens: {int(mtok)}")
+            # ai_turn_source / user_turn_sources presets
+            ats = (
+                (ai_turn_source or "last").strip().lower()
+                if non_interactive
+                else (
+                    ai_turn_source
+                    or _ty.prompt("AI turn source (last/all_agents/named_steps)", default="last")
+                )
+            )
+            if ats in {"last", "all_agents", "named_steps"}:
+                lines.append(f"      ai_turn_source: {ats}")
+                if ats == "named_steps":
+                    # Provide a placeholder named step list
+                    lines.append('      named_steps: ["clarify"]')
+            uts = (
+                (user_turn_sources or "hitl").strip()
+                if non_interactive
+                else (
+                    user_turn_sources
+                    or _ty.prompt(
+                        "User turn sources (comma names, include 'hitl' to capture HITL)",
+                        default="hitl",
+                    )
+                )
+            )
+            if uts:
+                # Normalize to YAML list
+                sources = [s.strip() for s in str(uts).split(",") if s.strip()]
+                if sources:
+                    if len(sources) == 1:
+                        lines.append(f"      user_turn_sources: [{sources[0]!r}]")
+                    else:
+                        joined = ", ".join(repr(s) for s in sources)
+                        lines.append(f"      user_turn_sources: [{joined}]")
         lines.append("      init:")
         if goal:
             lines.append(

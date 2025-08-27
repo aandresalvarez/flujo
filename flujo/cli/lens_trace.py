@@ -10,6 +10,50 @@ import datetime
 from .config import load_backend_from_config
 
 
+def _format_node_label(node: Dict[str, Any]) -> str:
+    name = node.get("name", "(unknown)")
+    status = node.get("status", "unknown")
+    start = node.get("start_time")
+    end = node.get("end_time")
+    duration = None
+    # Use robust timestamp conversion to handle string, int, float, or None
+    start_timestamp = _convert_to_timestamp(start)
+    end_timestamp = _convert_to_timestamp(end)
+    if start_timestamp is not None and end_timestamp is not None:
+        duration = end_timestamp - start_timestamp
+    status_icon = "✅" if status == "completed" else ("❌" if status == "failed" else "⏳")
+    label = f"{status_icon} [bold]{name}[/bold]"
+    if duration is not None:
+        label += f" [dim](duration: {duration:.2f}s)[/dim]"
+    attrs = node.get("attributes", {})
+    if attrs:
+        attr_str = ", ".join(f"{k}={v}" for k, v in attrs.items() if v is not None)
+        if attr_str:
+            label += f" [dim]{attr_str}[/dim]"
+    return label
+
+
+def _render_trace_tree(node: Dict[str, Any], parent: Optional[Tree] = None) -> Tree:
+    label = _format_node_label(node)
+    tree = Tree(label) if parent is None else parent.add(label)
+    # Render notable events (e.g., agent.prompt) under the span
+    events = node.get("events") or []
+    try:
+        for ev in events:
+            name = str(ev.get("name"))
+            if name == "agent.prompt":
+                attrs = ev.get("attributes", {}) or {}
+                preview = str(attrs.get("rendered_history", ""))
+                if len(preview) > 200:
+                    preview = preview[:200] + "..."
+                tree.add(f"[dim]event[/dim] [cyan]{name}[/cyan]: {preview}")
+    except Exception:
+        pass
+    for child in node.get("children", []):
+        _render_trace_tree(child, tree)
+    return tree
+
+
 def _convert_to_timestamp(val: Any) -> Optional[float]:
     """Convert a value to a timestamp, handling exceptions."""
     try:
@@ -47,34 +91,7 @@ def trace_command(run_id: str) -> None:
         typer.echo("  - The backend doesn't support trace storage", err=True)
         raise typer.Exit(1)
 
-    def _format_node_label(node: Dict[str, Any]) -> str:
-        name = node.get("name", "(unknown)")
-        status = node.get("status", "unknown")
-        start = node.get("start_time")
-        end = node.get("end_time")
-        duration = None
-        # Use robust timestamp conversion to handle string, int, float, or None
-        start_timestamp = _convert_to_timestamp(start)
-        end_timestamp = _convert_to_timestamp(end)
-        if start_timestamp is not None and end_timestamp is not None:
-            duration = end_timestamp - start_timestamp
-        status_icon = "✅" if status == "completed" else ("❌" if status == "failed" else "⏳")
-        label = f"{status_icon} [bold]{name}[/bold]"
-        if duration is not None:
-            label += f" [dim](duration: {duration:.2f}s)[/dim]"
-        attrs = node.get("attributes", {})
-        if attrs:
-            attr_str = ", ".join(f"{k}={v}" for k, v in attrs.items() if v is not None)
-            if attr_str:
-                label += f" [dim]{attr_str}[/dim]"
-        return label
-
-    def _render_trace_tree(node: Dict[str, Any], parent: Optional[Tree] = None) -> Tree:
-        label = _format_node_label(node)
-        tree = Tree(label) if parent is None else parent.add(label)
-        for child in node.get("children", []):
-            _render_trace_tree(child, tree)
-        return tree
+    # helper defs removed; using top-level versions
 
     def _print_trace_summary(
         trace: Dict[str, Any], run_details: Optional[Dict[str, Any]] = None

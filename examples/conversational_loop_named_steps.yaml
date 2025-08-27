@@ -1,0 +1,20 @@
+version: "0.1"
+steps:
+  - kind: loop
+    name: guided
+    loop:
+      conversation: true
+      ai_turn_source: named_steps
+      named_steps: ["planner"]
+      user_turn_sources: [hitl]
+      history_management:
+        strategy: summarize
+        summarize_ratio: 0.4
+      body:
+        - kind: step
+          name: clarify
+        - kind: hitl
+          name: ask_user
+        - kind: step
+          name: planner
+
