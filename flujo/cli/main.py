@@ -281,7 +281,7 @@ if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
 app: typer.Typer = typer.Typer(
     rich_markup_mode="markdown",
     help=(
-        "Build, run, and debug Flujo AI workflows.\n\n"
+        "A project-based server to build, run, and debug Flujo AI workflows.\n\n"
         "Common Commands:\n"
         "- `init` / `demo`: scaffold a project or a demo\n"
         "- `run`: run the current project's pipeline (YAML or Python)\n"
