@@ -9,6 +9,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+from contextvars import ContextVar
 
 from ..domain.events import (
     PreRunPayload,
@@ -258,3 +259,23 @@ class TraceManager:
                 )
         except Exception:
             pass
+
+
+# Global contextvar to reference the active TraceManager for processors/utilities
+_ACTIVE_TRACE_MANAGER: ContextVar[Optional[TraceManager]] = ContextVar(
+    "flujo_active_trace_manager", default=None
+)
+
+
+def set_active_trace_manager(manager: Optional[TraceManager]) -> None:
+    try:
+        _ACTIVE_TRACE_MANAGER.set(manager)
+    except Exception:
+        pass
+
+
+def get_active_trace_manager() -> Optional[TraceManager]:
+    try:
+        return _ACTIVE_TRACE_MANAGER.get()
+    except Exception:
+        return None

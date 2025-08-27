@@ -279,9 +279,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         # Tracing: honor caller's enable_tracing flag in all environments
         # Do not auto-disable during tests; tests assert presence of trace data.
         if enable_tracing:
-            from flujo.tracing.manager import TraceManager
+            from flujo.tracing.manager import TraceManager, set_active_trace_manager
 
             self._trace_manager = TraceManager()
+            # Expose the active trace manager via contextvar for processors/utilities
+            try:
+                set_active_trace_manager(self._trace_manager)
+            except Exception:
+                pass
             self.hooks.append(self._trace_manager.hook)
         else:
             self._trace_manager = None
@@ -365,6 +370,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             # Remove the TraceManager hook from the hooks list
             self.hooks = [hook for hook in self.hooks if hook != self._trace_manager.hook]
             self._trace_manager = None
+        # Clear active trace manager reference
+        try:
+            from flujo.tracing.manager import set_active_trace_manager
+
+            set_active_trace_manager(None)
+        except Exception:
+            pass
 
     def _ensure_pipeline(self) -> Pipeline[RunnerInT, RunnerOutT]:
         """Load the configured pipeline from the registry if needed."""

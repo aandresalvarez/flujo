@@ -515,6 +515,8 @@ class StateManager(Generic[ContextT]):
                 "end_time": getattr(trace_tree, "end_time", 0.0),
                 "parent_span_id": getattr(trace_tree, "parent_span_id", None),
                 "attributes": getattr(trace_tree, "attributes", {}),
+                # Preserve span events for CLI/lens rendering (e.g., agent.prompt)
+                "events": getattr(trace_tree, "events", []) or [],
                 "children": [],
                 "status": getattr(trace_tree, "status", "unknown"),
             }

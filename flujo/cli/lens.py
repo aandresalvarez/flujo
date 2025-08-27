@@ -71,8 +71,15 @@ def show_command(
 
 
 @lens_app.command("trace")
-def trace_command_cli(run_id: str) -> None:
-    trace_command(run_id)
+def trace_command_cli(
+    run_id: str,
+    prompt_preview_len: int = typer.Option(
+        200,
+        "--prompt-preview-len",
+        help="Max characters to show for agent.prompt previews (-1 for full).",
+    ),
+) -> None:
+    trace_command(run_id, prompt_preview_len=prompt_preview_len)
 
 
 @lens_app.command("replay")

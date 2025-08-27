@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Conversational Loops (FSD-033):
+  - `conversation: true` loop mode with automatic conversation_history capture and prompt injection via processors
+  - History management strategies: `truncate_tokens`, `truncate_turns`, `summarize` with centralized defaults and loop-level overrides
+  - Selection controls: `ai_turn_source` (last/all_agents/named_steps), `user_turn_sources` (hitl and/or named steps)
+  - Lens trace shows `agent.prompt` events with a sanitized preview of rendered history
+  - Wizard support to scaffold conversation blocks and presets
+  - Persistence: conversation_history survives pause/resume and project restarts (SQLite backend tested)
+
+
+### Added
 - Declarative LoopStep enhancements in YAML loader:
   - `loop.init` (runs once on isolated iteration context)
   - `loop.propagation.next_input` (presets: `context` | `previous_output` | `auto` or template)
