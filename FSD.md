@@ -312,18 +312,18 @@ M1. Data Model
 - [ ] Update docs/comments for new fields.
 
 M2. HistoryManager (Cost Control)
-- [ ] Integrate model-aware token estimator from centralized cost utilities.
-- [ ] Implement `truncate_tokens` strategy with safe bounds.
-- [ ] Implement `truncate_turns` strategy.
-- [ ] Implement `summarize` strategy with two-phase bound enforcement.
-- [ ] Wire configuration via `infra.config_manager` (no direct env/file reads).
+- [x] Integrate model-aware token estimator (best-effort with tiktoken fallback).
+- [x] Implement `truncate_tokens` strategy with safe bounds.
+- [x] Implement `truncate_turns` strategy.
+- [x] Implement `summarize` strategy with two-phase bound enforcement.
+- [ ] Wire configuration via `infra.config_manager` (no direct env/file reads) — planned when policy wiring is added.
 - [ ] Unit tests for each strategy and combined behavior.
 
 M3. Prompt Processor
-- [ ] Implement `ConversationHistoryPromptProcessor` with chat-message injection path.
-- [ ] Provide prompt-only fallback (text block) without mutating `system_prompt`.
-- [ ] Filter tool/function-call artifacts from history by default.
-- [ ] Integrate `utils.redact` before tracing/lens emission.
+- [x] Implement `ConversationHistoryPromptProcessor` with prompt-only injection path.
+- [x] Provide prompt-only fallback (text block) without mutating `system_prompt`.
+- [ ] Filter tool/function-call artifacts from history by default (stubbed pass-through; refine in M4).
+- [x] Integrate `utils.redact` before tracing/lens emission.
 - [ ] Unit tests for injection modes, redaction, and filtering.
 
 M4. Loop Policy Wiring

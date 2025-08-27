@@ -327,6 +327,13 @@ def _make_step_from_blueprint(
 ) -> Step[Any, Any]:
     # Support both native BlueprintStepModel and raw dict for custom primitives
     if isinstance(model, dict):
+        # Preserve custom per-step flags before validation (e.g., use_history)
+        _raw_use_history = None
+        try:
+            if "use_history" in model:
+                _raw_use_history = bool(model.get("use_history"))
+        except Exception:
+            _raw_use_history = None
         kind_val = str(model.get("kind", "step"))
         # Pre-normalize boolean branch keys for conditional steps (FSD-026)
         if kind_val == "conditional":
@@ -357,6 +364,12 @@ def _make_step_from_blueprint(
             "agentic_loop",
         }:
             model = BlueprintStepModel.model_validate(model)
+            # Attach preserved extras to the validated model for later consumption via meta
+            try:
+                if _raw_use_history is not None:
+                    setattr(model, "_use_history_extra", _raw_use_history)
+            except Exception:
+                pass
         else:
             # Attempt framework registry lookup for custom primitives
             try:
@@ -1061,6 +1074,36 @@ def _make_step_from_blueprint(
                 st_loop.meta["exit_expression"] = str(model.loop.get("exit_expression"))
         except Exception:
             pass
+        # Conversation-related options (FSD-033). Store in meta for policy consumption.
+        try:
+            if isinstance(model.loop, dict):
+                if "conversation" in model.loop:
+                    st_loop.meta["conversation"] = bool(model.loop.get("conversation"))
+                if "history_management" in model.loop and isinstance(
+                    model.loop.get("history_management"), dict
+                ):
+                    st_loop.meta["history_management"] = dict(
+                        model.loop.get("history_management") or {}
+                    )
+                if "history_template" in model.loop and isinstance(
+                    model.loop.get("history_template"), str
+                ):
+                    st_loop.meta["history_template"] = str(model.loop.get("history_template"))
+                if "ai_turn_source" in model.loop:
+                    st_loop.meta["ai_turn_source"] = str(model.loop.get("ai_turn_source"))
+                if "user_turn_sources" in model.loop:
+                    uts = model.loop.get("user_turn_sources")
+                    if isinstance(uts, list):
+                        st_loop.meta["user_turn_sources"] = list(uts)
+                    else:
+                        st_loop.meta["user_turn_sources"] = [uts]
+                if "named_steps" in model.loop:
+                    ns = model.loop.get("named_steps")
+                    if isinstance(ns, list):
+                        st_loop.meta["named_steps"] = [str(x) for x in ns]
+        except Exception:
+            # Best-effort: ignore malformed fields
+            pass
         return st_loop
     elif getattr(model, "kind", None) == "map":
         from ..dsl.loop import MapStep
@@ -1393,6 +1436,12 @@ def _make_step_from_blueprint(
             raise BlueprintError(f"Failed to wrap agentic loop pipeline as step: {e}")
     else:
         # Simple step; resolve agent if provided, otherwise passthrough.
+        # Recover preserved extras if present on the validated model
+        _use_history_extra = None
+        try:
+            _use_history_extra = getattr(model, "_use_history_extra", None)
+        except Exception:
+            _use_history_extra = None
         agent_obj: Any = _PassthroughAgent()
         st: Optional[Step[Any, Any]] = None
         # Priority: 'uses' -> 'agent' -> passthrough
@@ -1537,6 +1586,12 @@ def _make_step_from_blueprint(
         try:
             if model.input is not None:
                 st.meta["templated_input"] = model.input
+        except Exception:
+            pass
+        # Attach per-step use_history opt-out/in if preserved
+        try:
+            if _use_history_extra is not None:
+                st.meta["use_history"] = bool(_use_history_extra)
         except Exception:
             pass
         # Finalize static types
