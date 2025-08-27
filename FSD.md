@@ -334,10 +334,10 @@ M4. Loop Policy Wiring
 - [x] Ensure idempotency via `ContextManager.isolate()` and safe merge (existing policy preserved).
 - [x] Reserve/reconcile quota per iteration; ensure branch policies split quota in parallel bodies (existing semantics preserved).
 - [x] Re-raise control-flow exceptions after safe state handling (existing pattern preserved).
-- [ ] Integration tests for happy path and variants (to be added next).
+- [x] Integration tests for happy path, HITL pause/resume, AI-turn variants (all_agents, named_steps), and nested conversation:true.
 
 M5. Tracing & Lens
-- [ ] Emit `agent.prompt` trace event with sanitized, final messages post-processor.
+- [x] Emit `agent.prompt` trace event with sanitized, final messages post-processor.
 - [ ] Add lens rendering for final prompts/messages with expand/collapse and redaction.
 - [ ] Tests for lens visibility and redaction behavior.
 
