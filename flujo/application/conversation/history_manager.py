@@ -212,7 +212,7 @@ class HistoryManager:
                 return None
             # Support both signatures: get_config_manager() and get_config_manager(force_reload: bool)
             try:
-                mgr = cfg_loader(False)  # type: ignore[misc]
+                mgr = cfg_loader(False)
             except TypeError:
                 mgr = cfg_loader()  # type: ignore[call-arg]
             cfg_obj: Any = mgr.load_config()
