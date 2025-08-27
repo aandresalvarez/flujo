@@ -7,6 +7,7 @@ from ..application.conversation.history_manager import HistoryManager, HistorySt
 from ..domain.models import BaseModel, PipelineContext
 from ..utils.prompting import format_prompt
 from ..utils.redact import summarize_and_redact_prompt
+from ..tracing.manager import get_active_trace_manager
 
 
 class ConversationHistoryPromptProcessor(Processor):
@@ -52,7 +53,13 @@ class ConversationHistoryPromptProcessor(Processor):
             rendered = "\n".join(f"{t.role.value}: {t.content}" for t in bounded)
 
         # Redact and clamp logging size for safety when surfaced in tracing
-        _ = summarize_and_redact_prompt(rendered, max_length=2000)
+        redacted_preview = summarize_and_redact_prompt(rendered, max_length=1000)
+        try:
+            tm = get_active_trace_manager()
+            if tm is not None:
+                tm.add_event("agent.prompt", {"rendered_history": redacted_preview})
+        except Exception:
+            pass
 
         # Injection strategy:
         # - If input is a string, prepend history block.
