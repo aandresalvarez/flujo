@@ -37,6 +37,9 @@ from flujo.application.core.context_manager import ContextManager
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import HumanInTheLoopStep, MergeStrategy, BranchFailureStrategy, Step
+from flujo.domain.dsl.pipeline import Pipeline as _PipelineDSL
+from ..conversation.history_manager import HistoryManager, HistoryStrategyConfig
+from ...processors.conversation import ConversationHistoryPromptProcessor
 from flujo.domain.models import PipelineResult
 from flujo.steps.cache_step import CacheStep, _generate_cache_key
 
@@ -2902,6 +2905,28 @@ class DefaultLoopStepExecutor:
                 step_history=[],
             )
             return to_outcome(sr)
+        # Conversation mode wiring (FSD-033): detect loop-scoped settings
+        conv_enabled = False
+        history_cfg: HistoryStrategyConfig | None = None
+        history_template: str | None = None
+        try:
+            meta = getattr(loop_step, "meta", None)
+            if isinstance(meta, dict):
+                conv_enabled = bool(meta.get("conversation") is True)
+                hm = meta.get("history_management")
+                if isinstance(hm, dict):
+                    history_cfg = HistoryStrategyConfig(
+                        strategy=str(hm.get("strategy") or "truncate_tokens"),
+                        max_tokens=int(hm.get("max_tokens") or 4096),
+                        max_turns=int(hm.get("max_turns") or 20),
+                        summarizer_agent=None,
+                        summarize_ratio=float(hm.get("summarize_ratio") or 0.5),
+                    )
+                if isinstance(meta.get("history_template"), str):
+                    history_template = str(meta.get("history_template"))
+        except Exception:
+            conv_enabled = False
+
         # Determine max_loops after initial mapper (MapStep sets it dynamically)
         max_loops = (
             loop_step.get_max_loops()
@@ -2963,6 +2988,25 @@ class DefaultLoopStepExecutor:
                         init_fn = None
                     if callable(init_fn):
                         init_fn(current_data, iteration_context)
+                    # Seed initial user turn for conversation:true if history empty
+                    if conv_enabled and iteration_context is not None:
+                        try:
+                            hist = getattr(iteration_context, "conversation_history", None)
+                            if isinstance(hist, list) and not hist:
+                                initial_text = str(current_data) if current_data is not None else ""
+                                if (initial_text or "").strip():
+                                    from flujo.domain.models import (
+                                        ConversationTurn,
+                                        ConversationRole,
+                                    )
+
+                                    hist.append(
+                                        ConversationTurn(
+                                            role=ConversationRole.user, content=initial_text
+                                        )
+                                    )
+                        except Exception:
+                            pass
             except PausedException as e:
                 # Control-flow exceptions must propagate
                 raise e
@@ -2996,6 +3040,56 @@ class DefaultLoopStepExecutor:
             # For loop bodies, disable retries when a fallback is configured OR plugins are present.
             # This prevents retries from overshadowing plugin failures (e.g., agent exhaustion)
             # and aligns loop tests that assert specific plugin failure messaging.
+            # Prepare a loop-scoped pipeline with conversation processors attached when enabled
+            instrumented_pipeline = body_pipeline
+            hitl_step_names: set[str] = set()
+            try:
+                if conv_enabled and hasattr(body_pipeline, "steps"):
+                    new_steps = []
+                    for st in list(getattr(body_pipeline, "steps", [])):
+                        try:
+                            if isinstance(st, HumanInTheLoopStep):
+                                hitl_step_names.add(getattr(st, "name", ""))
+                        except Exception:
+                            pass
+                        # Only attach to simple (non-complex) agent steps by default
+                        use_hist = True
+                        try:
+                            if isinstance(getattr(st, "meta", None), dict):
+                                uh = st.meta.get("use_history")
+                                if uh is not None:
+                                    use_hist = bool(uh)
+                        except Exception:
+                            use_hist = True
+                        if (
+                            conv_enabled
+                            and use_hist
+                            and isinstance(st, Step)
+                            and not getattr(st, "is_complex", False)
+                        ):
+                            try:
+                                st_copy = st.model_copy(deep=True)
+                                hm = (
+                                    HistoryManager(history_cfg) if history_cfg else HistoryManager()
+                                )
+                                proc = ConversationHistoryPromptProcessor(
+                                    history_manager=hm,
+                                    history_template=history_template,
+                                    model_id=None,
+                                )
+                                pp = list(
+                                    getattr(st_copy.processors, "prompt_processors", []) or []
+                                )
+                                st_copy.processors.prompt_processors = [proc] + pp
+                                new_steps.append(st_copy)
+                            except Exception:
+                                new_steps.append(st)
+                        else:
+                            new_steps.append(st)
+                    instrumented_pipeline = _PipelineDSL.model_construct(steps=new_steps)
+            except Exception:
+                instrumented_pipeline = body_pipeline
+
             if config is not None and (
                 (hasattr(body_step, "fallback_step") and body_step.fallback_step is not None)
                 or (hasattr(body_step, "plugins") and getattr(body_step, "plugins"))
@@ -3013,7 +3107,7 @@ class DefaultLoopStepExecutor:
                     pipeline_result: PipelineResult[
                         Any
                     ] = await core._execute_pipeline_via_policies(
-                        body_pipeline,
+                        instrumented_pipeline,
                         current_data,
                         iteration_context,
                         resources,
@@ -3107,7 +3201,7 @@ class DefaultLoopStepExecutor:
                         f"[POLICY] About to call _execute_pipeline_via_policies for iteration {iteration_count}"
                     )
                     pipeline_result = await core._execute_pipeline_via_policies(
-                        body_pipeline,
+                        instrumented_pipeline,
                         current_data,
                         iteration_context,
                         resources,
@@ -3397,6 +3491,47 @@ class DefaultLoopStepExecutor:
                 current_context = merged_context or pipeline_result.final_pipeline_context
             elif pipeline_result.final_pipeline_context is not None:
                 current_context = pipeline_result.final_pipeline_context
+            # Append conversational turns for this iteration when enabled
+            if conv_enabled:
+                try:
+                    from flujo.domain.models import ConversationTurn, ConversationRole
+
+                    ctx_target = (
+                        pipeline_result.final_pipeline_context
+                        if pipeline_result.final_pipeline_context is not None
+                        else iteration_context
+                    )
+                    if ctx_target is not None and hasattr(ctx_target, "conversation_history"):
+                        hist = getattr(ctx_target, "conversation_history", None)
+                        if isinstance(hist, list):
+                            # User turns from HITL outputs (top-level only)
+                            try:
+                                for sr in pipeline_result.step_history:
+                                    if sr.success and getattr(sr, "name", "") in hitl_step_names:
+                                        txt = str(getattr(sr, "output", "") or "")
+                                        if txt.strip():
+                                            hist.append(
+                                                ConversationTurn(
+                                                    role=ConversationRole.user, content=txt
+                                                )
+                                            )
+                            except Exception:
+                                pass
+                            # Assistant turn from last step output (default ai_turn_source: last)
+                            try:
+                                if pipeline_result.step_history:
+                                    last_sr = pipeline_result.step_history[-1]
+                                    txt2 = str(getattr(last_sr, "output", "") or "")
+                                    if txt2.strip():
+                                        hist.append(
+                                            ConversationTurn(
+                                                role=ConversationRole.assistant, content=txt2
+                                            )
+                                        )
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
             cumulative_cost += pipeline_result.total_cost_usd
             cumulative_tokens += pipeline_result.total_tokens
             if limits:

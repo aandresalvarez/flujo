@@ -327,14 +327,14 @@ M3. Prompt Processor
 - [x] Unit tests for injection modes, redaction, and filtering.
 
 M4. Loop Policy Wiring
-- [ ] Attach prompt processor per step when `loop.conversation: true` and `use_history != false`.
-- [ ] Seed initial user turn from initial input or explicit init mapping.
-- [ ] Append user turns from HITL outputs.
-- [ ] Append assistant turns per `ai_turn_source` (last|all_agents|named_steps).
-- [ ] Ensure idempotency via `ContextManager.isolate()` and safe merge.
-- [ ] Reserve/reconcile quota per iteration; ensure branch policies split quota in parallel bodies.
-- [ ] Re-raise control-flow exceptions after safe state handling (no data-failure conversion).
-- [ ] Integration tests for happy path, AI-turn variants, and error propagation.
+- [x] Attach prompt processor per step when `loop.conversation: true` and `use_history != false` (non-complex steps, loop body scope).
+- [x] Seed initial user turn from initial input (iteration 1) when history is empty.
+- [x] Append user turns from HITL outputs (top-level HITL steps in loop body).
+- [x] Append assistant turns per default `ai_turn_source: last` (last step output).
+- [x] Ensure idempotency via `ContextManager.isolate()` and safe merge (existing policy preserved).
+- [x] Reserve/reconcile quota per iteration; ensure branch policies split quota in parallel bodies (existing semantics preserved).
+- [x] Re-raise control-flow exceptions after safe state handling (existing pattern preserved).
+- [ ] Integration tests for happy path and variants (to be added next).
 
 M5. Tracing & Lens
 - [ ] Emit `agent.prompt` trace event with sanitized, final messages post-processor.
