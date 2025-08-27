@@ -96,6 +96,8 @@ __all__ = [
     "ExecutedCommandLog",
     "PipelineContext",
     "HumanInteraction",
+    "ConversationTurn",
+    "ConversationRole",
     "BaseModel",
 ]
 
@@ -426,6 +428,24 @@ class ExecutedCommandLog(BaseModel):
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
 
+class ConversationRole(str, Enum):
+    """Canonical roles for conversational turns.
+
+    Using lower-case values aligns with common chat semantics and future
+    compatibility with multi-provider chat message schemas.
+    """
+
+    user = "user"
+    assistant = "assistant"
+
+
+class ConversationTurn(BaseModel):
+    """A single conversational turn captured during a run."""
+
+    role: ConversationRole
+    content: str
+
+
 class PipelineContext(BaseModel):
     """Runtime context shared by all steps in a pipeline run.
 
@@ -446,6 +466,10 @@ class PipelineContext(BaseModel):
         Records each human interaction when using HITL steps.
     command_log:
         Stores commands executed by an :class:`~flujo.recipes.AgenticLoop`.
+    conversation_history:
+        Ordered list of conversational turns (user/assistant) maintained when
+        a loop is configured with ``conversation: true``. Persisted with the
+        context to support pause/resume and restarts.
     """
 
     run_id: str = Field(default_factory=lambda: f"run_{uuid.uuid4().hex}")
@@ -455,6 +479,13 @@ class PipelineContext(BaseModel):
     command_log: List[ExecutedCommandLog] = Field(
         default_factory=list,
         description="A log of commands executed by an agentic loop pipeline.",
+    )
+    conversation_history: List[ConversationTurn] = Field(
+        default_factory=list,
+        description=(
+            "Conversation history (user/assistant turns) for conversational loops. "
+            "This field is optional and empty unless conversational mode is enabled."
+        ),
     )
     # Utility counter used by test hooks; kept in base context for simplicity
     call_count: int = 0

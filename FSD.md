@@ -1,269 +1,366 @@
-# FSD-028: Declarative LoopStep Init/Propagation/Output
+# FSD-033: Intelligent, Scoped Conversational History Management
 
-Status: in_progress  
-Status values: planned | in_progress | done
+Status: Approved for Implementation
+Owner: Flujo Core Architecture Team
+Last Updated: 2025-08-26
+Supersedes: FSD-032
 
-## Overview
+## 1) Purpose & Scope
 
-- Goal: Reduce boilerplate for conversational and iterative workflows by adding declarative `init`, `propagation`, and `output` blocks to `loop` steps in YAML blueprints.
-- Why: Today, common loop patterns (e.g., clarification loops) require 2–3 Python mappers. This hides intent, scatters logic, and slows down users.
-- Approach: Compile new YAML blocks into existing loop mappers in the loader, plus a minimal policy hook for running `init` safely. Preserve all Flujo architectural guarantees.
+Deliver a zero‑boilerplate, production‑ready conversational loop for Flujo that:
+- Automatically manages conversation history during iterative loops.
+- Injects history into agent prompts safely and transparently.
+- Preserves strict architectural principles (policy-driven, idempotent, proactive quota, centralized config).
+- Provides robust cost controls (truncation + summarization) and full observability (lens/tracing).
 
-## User Value & Roadmap Alignment
+Out of scope: Non-loop conversational primitives and third‑party chat history backends.
 
-- Phase 1 (Generate): Fewer YAML lines and no helper modules increase Time‑to‑First‑Run and first-try success for `flujo create` generated pipelines.
-- Phase 2 (Debug/Refine): Intent becomes visible in YAML; easier to reason about diffs and tune, while traces remain unchanged.
-- Phase 3 (Teams): Clearer PR diffs and fewer moving parts (no ad‑hoc helpers) aid review and governance.
+## 2) First Principles
 
-Success indicators
-- ≥ 80% of conversational loops can be authored without custom mappers.
-- −40–60% YAML lines for typical loops (vs. current examples).
-- No regressions on pause/resume, quotas, or typed outcomes.
+- Explicit over implicit: Feature is opt‑in and scoped to a loop step.
+- Strong invariants: Control‑flow exceptions re‑raised; context updates idempotent; configs centralized.
+- Composition over mutation: Augment agents via processors/wrappers, not by rewriting agent definitions.
+- Production‑grade UX: Defaults that “just work,” with clear overrides and complete lens visibility.
+- Governance first: Cost and token limits enforced proactively; histories bounded and auditable.
 
-## Non‑Goals
+## 3) Requirements
 
-- No change to default loop exit semantics or retry semantics.
-- No new I/O behavior; CLI input precedence remains unchanged.
-- No direct env or `flujo.toml` reads from policies/domain to drive these features.
+### 3.1 Functional
+- Add `loop.conversation: true` to enable conversational behavior within that loop’s body only.
+- Maintain `conversation_history` on the `PipelineContext` as first‑class state.
+- Populate conversation turns automatically:
+  - Initial user turn from initial input (or explicit init mapping).
+  - HITL step outputs count as user turns.
+  - AI turns come from agent steps per policy (configurable source).
+- Inject conversation into agent prompts of loop body steps by default.
+- Allow step‑instance opt‑out from history injection.
+- Provide history management strategies: truncate by tokens, truncate by turns, summarize.
+- Full prompt/messages observability in lens/tracing after all processors applied (with redaction).
 
-## Proposed UX (minimal YAML)
+### 3.2 Non‑Functional
+- MyPy strict typing compliance and complete test coverage for added logic.
+- Minimal overhead (< 5 ms per loop iteration excluding model calls).
+- Deterministic behavior on pause/resume and restarts (SQLite backend persistence).
+- Centralized configuration via `infra.config_manager` only.
 
-The blocks are optional. If omitted, behavior matches today.
+## 4) Architecture Overview
 
-- Init (runs once before 1st iteration, on the isolated iteration context):
-  loop.init supports `set`, `append`, and `merge` operations targeting `context.*` only.
+- Policy-driven: Implement entirely in `DefaultLoopStepExecutor` within `flujo/application/core/step_policies.py`.
+- Context state: Extend `PipelineContext` with `conversation_history: list[ConversationTurn]`.
+- Injection path: Add a prompt processor (ConversationHistoryPromptProcessor) dynamically to step execution when inside a `conversation: true` loop. No mutation of agent definitions; use `AgentProcessors` on the step instance.
+- Cost controls: A `HistoryManager` prepares a bounded/summarized history slice per step based on configured limits and target model context.
+- Observability: Emit sanitized final prompt/messages via tracing hook; enhance `flujo lens` to render them.
+- Persistence: `conversation_history` is pydantic-serializable and stored with the context for pause/resume.
 
-- Propagation (defines next iteration’s input):
-  `loop.propagation.next_input` accepts presets `context`, `previous_output`, or a template.
+## 5) Data Model
 
-- Output (final loop output mapping):
-  Either `loop.output_template: "..."` (single string), or `loop.output: { ... }` (object mapping).
+```python
+# flujo/domain/models.py
+from enum import Enum
+from pydantic import BaseModel, Field
+from typing import List
 
-Example (concise conversational loop):
+class ConversationRole(str, Enum):
+    user = "user"
+    assistant = "assistant"
+
+class ConversationTurn(BaseModel):
+    role: ConversationRole
+    content: str
+
+class PipelineContext(BaseModel):
+    # existing fields ...
+    conversation_history: List[ConversationTurn] = Field(default_factory=list)
+```
+
+Notes:
+- Roles intentionally use `user|assistant` to match common chat semantics and future API portability.
+- Content is `str` only in v1; rich content (images/files) can be added later in a backward-compatible way.
+
+## 6) DSL Additions
 
 ```yaml
 - kind: loop
   name: clarification_loop
   loop:
-    init:
-      - append: { target: "context.scratchpad.history", value: "User: {{ steps.get_goal.output }}" }
+    conversation: true
+    history_management:
+      strategy: truncate_tokens   # truncate_tokens | truncate_turns | summarize
+      max_tokens: 4096            # when truncate_tokens
+      max_turns: 20               # when truncate_turns
+      summarizer_agent: architect_summarizer  # when summarize
+      summarize_ratio: 0.5        # optional; proportion of older turns to condense
+    ai_turn_source: last          # last | all_agents | named_steps
+    user_turn_sources: [hitl]     # hitl | named_steps
+    history_template: |
+      {{#each history}}
+      {{ this.role }}: {{ this.content }}
+      {{/each}}
     body:
-      # steps elided for brevity; they use updates_context: true
-    propagation:
-      next_input: context  # common case
-    exit_expression: "context.scratchpad.last_agent_command.action == 'finish'"
-    output_template: "{{ context.scratchpad.history | join('\n') }}"
+      - kind: step
+        name: clarify
+        use_history: true         # step-instance override (default true when conversation: true)
+      - kind: step
+        name: extract_entities
+        use_history: false        # example opt-out for this step only
 ```
 
-## Natural-Language Presets (friendly YAML)
+Rules:
+- `conversation: true` enables history capture and injection for this loop’s body.
+- `use_history` applies per step instance, not globally to agent definitions.
+- `ai_turn_source` determines which agent outputs become assistant turns:
+  - `last`: final agent step in body (default)
+  - `all_agents`: every agent-producing step in body
+  - `named_steps`: only steps listed in `named_steps` (array)
+- `user_turn_sources` controls which steps contribute user turns:
+  - `hitl`: any `HumanInTheLoopStep` output becomes a user turn
+  - `named_steps`: only steps explicitly listed
 
-Audience: domain experts (e.g., medical scientists) who are smart but not YAML/templating experts. These presets read like instructions and compile to the same safe internals.
+## 7) Execution Semantics (Loop Policy)
 
-Principles
-- Plain words over templates: prefer presets to `{{ ... }}`.
-- Defaults everywhere: most loops should work with 2–4 lines.
-- Progressive disclosure: advanced templates still work when needed.
+In `DefaultLoopStepExecutor`:
+- Idempotency: wrap each iteration in `ContextManager.isolate()`. Merge back on success. On `PausedException`, re‑raise after copying safe iteration state into parent context (preserving resume correctness) without poisoning other state.
+- Turn updates:
+  - First iteration: seed `conversation_history` with initial input when present (configurable via optional mapper, see §9).
+  - After a HITL step in the iteration: append a `user` turn.
+  - After iteration finishes: append an `assistant` turn based on `ai_turn_source`.
+- Quotas: Reserve at iteration start from the loop’s quota; reconcile at end. Inside the body, parallel steps must split quota using branch policy helpers; the loop policy itself remains in single-quota mode.
+- Exceptions: Never convert control‑flow exceptions (PausedException, PipelineAbortSignal, InfiniteRedirectError) into data failures. Re‑raise immediately after safe context handling.
 
-New friendly keys (all optional)
-- `conversation: true`
-  - Ensures `context.scratchpad.history` exists (list)
-  - Sets `propagation: context` as default
-  - Sets the common exit alias `stop_when: agent_finished`
-- `stop_when: agent_finished`
-  - Alias for `exit_expression: "context.scratchpad.last_agent_command.action == 'finish'"`
-- `propagation: context | previous_output`
-  - Shorthand for `loop.propagation.next_input: context` (or default `previous_output`)
-- `init.history.start_with: { from_step: <name>, prefix: "User: " }`
-  - Seeds conversation history with a value derived from another step’s output
-- `init.notes.set: "..."`
-  - Writes to `context.scratchpad.notes` (string)
-- `output: text: conversation_history`
-  - Returns a newline-joined `context.scratchpad.history`
-- `output: fields: { goal: initial_prompt, clarifications: conversation_history }`
-  - Builds a final object from known fields; `conversation_history` expands to joined history
+## 8) Prompt Injection Path (Processor)
 
-Friendly example (no templates)
+Implement `ConversationHistoryPromptProcessor`:
+- Inputs: `context`, step instance config (`use_history`, `history_template`), effective `HistoryManager` (see §10), and model ID (for token estimation).
+- Behavior: Before calling the agent, compute the bounded/summarized slice of `context.conversation_history`, render via template (default or custom), and inject as chat messages rather than mutating `system_prompt`.
+  - If the underlying agent supports chat messages: prepend rendered turns as message history (`[ {role, content}, ... ]`).
+  - If the agent is prompt‑only: prepend a formatted textual history block to the prompt input (clearly delimited), preserving the agent’s system prompt unchanged.
+- Safety: Filter tool/function-call artifacts; only natural language content is included by default. Allow opt‑in for structured inclusion in future versions.
+- Redaction: Apply `utils.redact` to sensitive data before emitting trace/lens artifacts.
+
+Wiring:
+- The loop policy, when `conversation: true`, augments the step instance’s `AgentProcessors.prompt_processors` with this processor for the duration of that step execution only (no mutation of underlying agent definition).
+
+## 9) Initial Input and Custom Seeding (Optional)
+
+Provide an optional loop `init.history` mapper for explicit control:
 
 ```yaml
-- kind: loop
-  name: clarification_loop
-  loop:
-    conversation: true              # history + context propagation + agent_finished
-    init:
-      history:
-        start_with:
-          from_step: get_goal
-          prefix: "User: "
-    body:
-      # steps elided for brevity; use updates_context: true
-    output:
-      text: conversation_history
+loop:
+  conversation: true
+  init:
+    history:
+      start_with:
+        from_initial_input: true   # default behavior
+        prefix: "User: "           # optional formatting hint for prompt-only models
 ```
 
-Loader mapping (aliases → compiled behavior)
-- `conversation: true` → ensure `context.scratchpad.history = []` if missing; set `propagation: context`; set `stop_when: agent_finished` if neither an explicit `exit_expression` nor `exit_condition` is provided
-- `stop_when: agent_finished` → install the exit expression shown above (unless explicit exit already provided)
-- `propagation: context|previous_output` → set `iteration_input_mapper` preset
-- `init.history.start_with` → compiled to a first-iteration `append` op resolving `steps.<name>.output` with optional `prefix`
-- `init.notes.set` → compiled to a first-iteration `set` op targeting `context.scratchpad.notes`
-- `output.text: conversation_history` → compiled to `loop_output_mapper` that joins `context.scratchpad.history` with `"\n"`
-- `output.fields` → compiled to `loop_output_mapper` that constructs an object; supports `initial_prompt` and `conversation_history` shorthands
+If unspecified, the first non-empty initial input is seeded as the first `user` turn.
 
-## Architecture & Principles Compliance
+## 10) History Management (Cost Control)
 
-- Policy‑Driven Execution: Execution logic stays in the Loop policy. The loader compiles declarative blocks to functions assigned on the LoopStep. A small policy hook runs `init` at the correct time on the isolated iteration context.
-- Control Flow Exception Safety: All control‑flow exceptions (PausedException, PipelineAbortSignal, InfiniteRedirectError) are re‑raised. Declarative functions must not catch/convert them.
-- Context Idempotency: Each iteration operates on `ContextManager.isolate(current_context)`; `init` applies to that isolation before Iteration 1. Merges only occur after successful iterations per existing policy behavior.
-- Proactive Quota System: No changes to Reserve → Execute → Reconcile. No governor/breach_event. Limits continue to error precisely with preserved partial history.
-- Centralized Configuration: No direct env/TOML reads; if future toggles are needed, use `config_manager` helpers.
-- Agent Creation: No changes; feature acts at blueprint and policy layers.
+Introduce `HistoryManager` with strategies:
+- `truncate_tokens`: Use centralized token estimator (existing cost/token utilities) based on the target model context window. Keep most recent turns within `max_tokens`.
+- `truncate_turns`: Keep the last `max_turns` turns.
+- `summarize`: When the raw history exceeds thresholds, summarize the oldest portion using a configured `summarizer_agent` (created via `flujo.agents` factory) into a compact `assistant` turn and retain the most recent turns. Summarization obeys the same quota rules and is traced.
 
-## Detailed Design
+Implementation details:
+- Token estimation is model-aware and routed via centralized config (`infra.config_manager` → `get_settings()` and pricing/model metadata).
+- Strategies can be combined via a two‑phase pass: (1) summarize older chunk if present and configured; (2) enforce final token/turn bounds.
 
-1) Loader compilation (primary)
-- File: `flujo/domain/blueprint/loader.py`
-- Add support under `kind: loop` for optional keys:
-  - `loop.init: [ { set|append|merge }... ]`
-  - `loop.propagation.next_input: <preset|string template>`
-  - `loop.output_template: <string template>`
-  - `loop.output: <mapping of templates>` (mutually exclusive with `output_template`)
-  - Friendly aliases (natural language):
-    - `loop.conversation: true`
-    - `loop.stop_when: agent_finished`
-    - `loop.propagation: context | previous_output`
-    - `loop.init.history.start_with: { from_step: <name>, prefix?: <str> }`
-    - `loop.init.notes.set: <str>`
-    - `loop.output.text: conversation_history`
-    - `loop.output.fields: { goal?: initial_prompt, clarifications?: conversation_history, ... }`
-- Reuse the existing “Declarative loop state sugar (M4)” machinery for `append/set/merge` ops (TemplateContextProxy, AdvancedPromptFormatter, target resolution restricted to `context.*`).
-- Compile these blocks into callables:
-  - `compiled_init_ops(prev_output, ctx) -> None` applying ops against the iteration context.
-  - `iteration_input_mapper(prev_output, ctx, i) -> Any` honoring `next_input` presets:
-    - `context` → return `ctx`
-    - `previous_output` (default) → return `prev_output`
-    - template → format with `{context, previous_step, steps}` and return rendered value (auto JSON decode when the template looks like JSON; otherwise return string).
-  - `loop_output_mapper(output, ctx) -> Any`:
-    - if `output_template`: format once at the end
-    - if `output` mapping: format each field and return object
-- Store `compiled_init_ops` on the step meta for the policy to invoke at Iteration 1, e.g., `step.meta["compiled_init_ops"] = fn`.
-  - When friendly keys are present, compile them into the same callables (no new policy types).
+## 11) Observability & Lens
 
-2) Policy hook (minimal)
-- File: `flujo/application/core/step_policies.py` (DefaultLoopStepExecutor)
-- At the start of each iteration, right after `iteration_context = ContextManager.isolate(current_context)`, add:
-  - If `iteration_count == 1` and `compiled_init_ops` exists in `loop_step.meta`, invoke it with `(current_data, iteration_context)` inside the same try block that already handles HITL `PausedException` correctly.
-  - Do not catch control flow exceptions. Any other exception falls back to existing error handling (iteration mapper error path is acceptable if thrown when computing next_input; init exceptions should produce a failure StepResult with `exit_reason: initial_input_mapper_error`).
-- No changes to quota handling or exit condition logic.
+- Tracing: Add a step event (e.g., `agent.prompt`) recording the sanitized, fully rendered message set (after processors). Never crash if tracing fails.
+- Lens: Enhance `flujo lens trace/show` to display the final rendered prompt/messages for each step when available, with expand/collapse and redaction. Clearly badge “conversation injected” when `conversation: true`.
 
-3) Templates & formatting
-- Use `AdvancedPromptFormatter` + `TemplateContextProxy` already used by loader sugar.
-- Provide `{context}`, `{previous_step}`, and `{steps}` variables. Preserve current joining/filter behaviors (e.g., `| join('\n')`).
-- For `merge` ops, require rendered value to be a JSON mapping; ignore invalid values safely.
- - For friendly keys, avoid templates; when needed, the loader constructs the appropriate operations and mappers without exposing templating syntax to users.
+## 12) Persistence & Resume
 
-4) Defaults (to minimize YAML)
-- Omit `propagation` → identical to today: next input equals previous output.
-- Omit `output`/`output_template` → identical to today: final loop output equals last iteration output, or MapStep’s collected results.
-- Omit `init` → no initialization performed.
+- `PipelineContext.conversation_history` is persisted alongside the rest of context (SQLite backend compatibility retained).
+- On `PausedException`, loop policy merges safe iteration state to the parent context and re‑raises. Upon resume, the runner restores the context and continues the loop with correct history and iteration counters.
 
-## Backward Compatibility
+## 13) Configuration
 
-- All new keys are optional. Existing blueprints and recipes continue to work.
-- Existing Python mappers remain supported; declarative blocks, if present, override them.
-- `agentic_loop`’s special `output_template` stays intact and is harmonized with the general loop `output_template` behavior.
+- All configuration is accessed via `flujo.infra.config_manager`:
+  - Defaults for history strategy and limits.
+  - Model context windows and token pricing.
+  - Summarizer agent defaults (if not provided at loop level).
+- No direct reads from `flujo.toml` or environment in policies/processors.
 
-## Risks & Mitigations
+## 14) Failure Modes & Edge Cases
 
-- Incorrect context mutation in `init`: Apply only on iteration context isolation; never mutate the shared `current_context` directly. Covered by tests.
-- Control flow swallowing: Ensure the policy hook re‑raises PausedException and similar. Add tests with HITL pause inside the first iteration.
-- Template runtime errors: Loader compilers are defensive; runtime formatting errors surface as mapper errors with clear feedback.
+- Non‑agent final step: If the last body step is not agent-driven, `ai_turn_source=last` contributes no assistant turn; prefer `named_steps` to specify which agent step contributes.
+- Multi‑agent bodies: `ai_turn_source=all_agents` will append an assistant turn after each agent step in order.
+- Parallel bodies: Each branch can read from the same bounded history; only the selected `ai_turn_source` steps contribute assistant turns when the iteration completes. Quotas are split at branch executors, not in the loop policy.
+- Streaming: Assistant turns are appended only after the agent’s stream completes. If streaming fails mid-way, no partial turn is added.
+- Tool/function calls: Omit tool call JSON from history; only natural text content is injected by default.
+- Nested loops: `conversation: true` scoped to the innermost loop. Inner loop history does not leak to outer loop unless explicitly merged by the parent pipeline logic.
 
-## Test Plan
+## 15) Security & Privacy
 
-- Unit (loader):
-  - Parses `loop.init/propagation/output[_template]` and compiles expected callables.
-  - Parses friendly aliases: `conversation`, `stop_when`, `propagation` preset, `init.history.start_with`, `init.notes.set`, and `output.text/fields`.
-  - Invalid targets (non‑`context.*`) are ignored.
-  - Template rendering with `{context, previous_step, steps}` variables.
-- Integration (policy):
-  - `init` runs exactly once on isolated iteration context; values appear in pipeline context during the first body step.
-  - `propagation: context` cycles full context through iterations.
-  - `output_template` returns formatted final value.
-  - Friendly outputs (`text: conversation_history`, `fields`) produce expected results.
-  - Paused HITL step in Iteration 1 pauses the loop; no swallowing.
-  - Quota breach preserves partial history and precise messages.
-- E2E: Conversational clarification loop authored with only YAML runs end‑to‑end (no Python helpers), including pause/resume.
+- Redact secrets and tokens via `utils.redact` before tracing/lens output.
+- Bound maximum history size to prevent prompt injection and cost blowups.
+- Template rendering is sandboxed; only the provided history fields are exposed.
 
-## Acceptance Criteria
+## 16) Performance Targets
 
-- Users can remove `initial_input_mapper`, `iteration_input_mapper`, and `loop_output_mapper` from common loops.
-- No regressions in `make all` (format, lint, mypy strict, tests, coverage).
-- Observability: Loop spans and step histories remain unchanged; metadata includes evaluated exit expression when applicable.
+- History preparation + injection adds < 5 ms per iteration average in benchmarks (excluding model calls) on a standard developer machine.
+- Summarization work is amortized and only triggered when bounds are exceeded.
 
-## Work Breakdown
+## 17) Testing Strategy
 
-Execution is sequential and test‑gated. Do not start the next item until the prior item’s Exit Tests pass.
+Unit (`@pytest.mark.fast`):
+- Token and turn truncation correctness.
+- Summarization path triggers and output size limits.
+- Template rendering default and custom template.
+- Step-level `use_history` overrides.
 
-1. Loader: core declarative blocks  
-   Status: done  
-   Exit Tests: loader unit tests parse/compile `init`, `propagation.next_input`, `output[_template]`; invalid targets ignored.
+Integration (`@pytest.mark.slow`, `@pytest.mark.serial` where applicable):
+- Happy‑path multi‑turn conversation (HITL + agent) with correct turns.
+- Pause and resume with SQLite backend; history preserved and correct.
+- Multi‑agent body with `ai_turn_source` variants.
+- Non‑agent final step behavior.
+- Nested `conversation: true` loops isolation.
 
-2. Policy: iteration‑1 init hook  
-   Status: done  
-   Exit Tests: integration test shows init applies on isolated context; HITL pause re‑raises (no swallowing); idempotency preserved.
+Benchmark (`@pytest.mark.benchmark`):
+- 100-iteration conversational loop measuring overhead of history management + injection.
 
-3. Aliases: friendly YAML presets  
-   Status: done  
-   Exit Tests: loader unit tests for `conversation`, `stop_when`, `propagation` preset, `init.history.start_with`, `init.notes.set`, `output.text/fields`.
+Lens/Tracing:
+- Rendered message sets appear in lens; secrets are redacted.
 
-4. E2E example (natural form)  
-   Status: done  
-   Exit Tests: end‑to‑end run of conversational loop without Python helpers, including pause/resume.
+## 18) Migration & Backward Compatibility
 
-5. Docs & examples  
-   Status: done  
-   Exit Tests: examples render in docs site; copy‑paste runs locally.
+- Feature is off by default; enabling requires `loop.conversation: true`.
+- No changes to existing agents or pipelines unless opted in.
+- `hitl_history` remains; when `conversation: true`, HITL outputs are also reflected as user turns in `conversation_history`.
 
-6. Changelog entry  
-   Status: done  
-   Exit Tests: CHANGELOG updated under Unreleased → Added.
+## 19) Implementation Plan
 
-7. CI Gate  
-   Status: planned  
-   Exit Tests: `make all` passes (format, lint, mypy strict, tests, coverage).
+1. Data model: add `ConversationTurn` + `conversation_history` to `PipelineContext`.
+2. HistoryManager: token/turn truncation; summarization with optional summarizer agent.
+3. Prompt processor: `ConversationHistoryPromptProcessor` with chat/prompt modes and redaction.
+4. Loop policy wiring: attach processor per step in `conversation: true` loops; manage turn creation per §7.
+5. Tracing & lens: add post-processor prompt/messages trace event; lens render support.
+6. Configuration plumbing: defaults via `infra.config_manager`.
+7. Tests: unit, integration, benchmarks as described.
+8. Docs: update `docs/` and CLI wizard hints; add examples.
 
-## Next Steps (Milestones & Status)
+## 20) Acceptance Criteria
 
-These are queued after core delivery. Each item is independently testable and must pass its Exit Tests before starting the next.
+- All new code passes `make all` (format, lint, typecheck, tests) with zero errors.
+- Demonstrated e2e pipeline with `conversation: true` where lens shows final injected messages and history evolves correctly across pause/resume.
+- Benchmarks show < 5 ms overhead per iteration (excluding model calls).
+- Summarization strategy demonstrably bounds long histories without regressions.
+- No direct env/config reads from policies/processors; only via config manager APIs.
 
-NS1. Propagation preset: `propagation: auto`  
-Status: done  
-Design: chooses `context` when any body step uses `updates_context: true`, else `previous_output`. Explicit user setting always wins.  
-Exit Tests: integration pipeline where body updates context → next input is full context; pipeline without updates → previous output; explicit `propagation` overrides auto; idempotency maintained.
+## 21) Examples
 
-NS2. MapStep equivalents: `map.init` and `map.finalize` sugars  
-Status: in_progress  
-Design: pre/post hooks compiled like loop init/output; run once per mapping run (not per item).  
-Exit Tests: mapping pipeline applies `map.init` exactly once before first item; `map.finalize` once after last; results aggregated correctly; concurrency safety via ContextVar; mypy strict.
+Minimal conversational loop:
+```yaml
+version: "0.1"
+steps:
+  - kind: step
+    name: get_goal
+  - kind: loop
+    name: clarification_loop
+    loop:
+      conversation: true
+      history_management:
+        strategy: truncate_tokens
+        max_tokens: 4096
+      ai_turn_source: last
+      body:
+        - kind: step
+          name: clarify
+          use_history: true
+    
+  - kind: step
+    name: planner
+```
 
-NS3. Parallel reduce sugar: `parallel.reduce`  
-Status: done  
-Design: declarative reducers (union/concat/dedupe/keys) applied to branch outputs with stable branch order and quota split preserved.  
-Exit Tests: multi‑branch pipeline validates each reducer; order preserved; quotas split deterministically; error messages precise; no governor/breach_event.
+Named sources and custom template:
+```yaml
+loop:
+  conversation: true
+  ai_turn_source: named_steps
+  named_steps: ["clarify", "finalize"]
+  user_turn_sources: [hitl]
+  history_management:
+    strategy: summarize
+    summarizer_agent: convo_summarizer
+    summarize_ratio: 0.4
+  history_template: |
+    <history>
+    {{#each history}}
+    <turn role="{{ this.role }}">{{ this.content }}</turn>
+    {{/each}}
+    </history>
+```
 
-NS4. CLI boosters  
-Status: in_progress  
-Design: `flujo create --wizard` emits natural YAML; `flujo explain` summarizes YAML intent in plain language.  
-Exit Tests: golden‑file tests for wizard outputs across scenarios; explain renders concise, accurate summaries; help text updated.
+---
 
-## Rollout
+Notes to Implementers
+- Keep changes minimal and localized; do not alter `ExecutorCore` semantics.
+- Prefer composition using `AgentProcessors` on step instances.
+- Ensure strict typing and no leaking of internal objects to public APIs.
 
-- Ship behind no flags; behavior is additive and backward compatible.
-- Announce as “Declarative Loop Enhancements” with before/after diff in README and a new example.
+## 22) Milestones & Open Tasks
 
-## Future Extensions (out of scope for this PR)
+M1. Data Model
+- [x] Add `ConversationRole` enum and `ConversationTurn` model.
+- [x] Extend `PipelineContext` with `conversation_history: list[ConversationTurn]`.
+- [ ] Ensure serialization/persistence compatibility (SQLite backend).
+- [ ] MyPy strict typing for new symbols and references.
+- [ ] Update docs/comments for new fields.
 
-- `propagation: auto` preset (choose `context` when any body step uses `updates_context: true`).
-- MapStep equivalents: `map.init` and `map.finalize` sugars for pre/post hooks.
-- Parallel reduce sugar: declarative `parallel.reduce` for branch result merging.
- - CLI boosters: `flujo create --wizard` to generate the natural form interactively; `flujo explain` to summarize YAML intent in plain language.
+M2. HistoryManager (Cost Control)
+- [ ] Integrate model-aware token estimator from centralized cost utilities.
+- [ ] Implement `truncate_tokens` strategy with safe bounds.
+- [ ] Implement `truncate_turns` strategy.
+- [ ] Implement `summarize` strategy with two-phase bound enforcement.
+- [ ] Wire configuration via `infra.config_manager` (no direct env/file reads).
+- [ ] Unit tests for each strategy and combined behavior.
+
+M3. Prompt Processor
+- [ ] Implement `ConversationHistoryPromptProcessor` with chat-message injection path.
+- [ ] Provide prompt-only fallback (text block) without mutating `system_prompt`.
+- [ ] Filter tool/function-call artifacts from history by default.
+- [ ] Integrate `utils.redact` before tracing/lens emission.
+- [ ] Unit tests for injection modes, redaction, and filtering.
+
+M4. Loop Policy Wiring
+- [ ] Attach prompt processor per step when `loop.conversation: true` and `use_history != false`.
+- [ ] Seed initial user turn from initial input or explicit init mapping.
+- [ ] Append user turns from HITL outputs.
+- [ ] Append assistant turns per `ai_turn_source` (last|all_agents|named_steps).
+- [ ] Ensure idempotency via `ContextManager.isolate()` and safe merge.
+- [ ] Reserve/reconcile quota per iteration; ensure branch policies split quota in parallel bodies.
+- [ ] Re-raise control-flow exceptions after safe state handling (no data-failure conversion).
+- [ ] Integration tests for happy path, AI-turn variants, and error propagation.
+
+M5. Tracing & Lens
+- [ ] Emit `agent.prompt` trace event with sanitized, final messages post-processor.
+- [ ] Add lens rendering for final prompts/messages with expand/collapse and redaction.
+- [ ] Tests for lens visibility and redaction behavior.
+
+M6. Persistence & Resume
+- [ ] Verify `conversation_history` persists across pause/resume and process restarts.
+- [ ] E2E test with SQLite backend and HITL pause/resume.
+
+M7. Configuration & Defaults
+- [ ] Define defaults for history strategies and limits in settings via `config_manager`.
+- [ ] Allow loop-level overrides to take precedence over global defaults.
+- [ ] Update CLI wizard to hint/show `conversation: true` and `history_management` scaffold.
+- [ ] Tests for precedence and default resolution.
+
+M8. Performance & Benchmarks
+- [ ] Add benchmark test (100-iteration loop) measuring history prep + injection overhead.
+- [ ] Validate < 5 ms/iteration overhead (excluding model calls) on reference machine.
+
+M9. Documentation & Samples
+- [ ] Update docs with “Conversational Loops” guide and DSL reference.
+- [ ] Provide examples under `examples/` showcasing summarization and named sources.
+- [ ] Update README and changelog with feature overview and migration notes.
+
+M10. Release Readiness
+- [ ] `make all` passes: format, lint, typecheck, unit/integration tests.
+- [ ] Security/privacy review for redaction coverage and bounds.
+- [ ] Final acceptance demo: lens shows injected history; pause/resume correctness; cost bounded.
