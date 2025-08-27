@@ -132,16 +132,18 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         - V-F1: Incompatible fallback signature between step and fallback_step
         """
         from typing import Any, get_origin, get_args, Union as TypingUnion
+        import types as _types
 
         def _compatible(a: Any, b: Any) -> bool:  # noqa: D401
             if a is Any or b is Any:
                 return True
 
             origin_a, origin_b = get_origin(a), get_origin(b)
+            _UnionType = getattr(_types, "UnionType", None)
 
-            if origin_b is TypingUnion:
+            if origin_b is TypingUnion or (_UnionType is not None and origin_b is _UnionType):
                 return any(_compatible(a, arg) for arg in get_args(b))
-            if origin_a is TypingUnion:
+            if origin_a is TypingUnion or (_UnionType is not None and origin_a is _UnionType):
                 return all(_compatible(arg, b) for arg in get_args(a))
 
             try:
