@@ -8,10 +8,19 @@ from rich.console import Console
 from .config import load_backend_from_config
 from .helpers import find_project_root, load_pipeline_from_yaml_file
 from .lens_show import show_run
-from .lens_trace import trace_command
+from .lens_trace import trace_command, trace_from_file
 
 lens_app = typer.Typer(
-    rich_markup_mode=None, help="🔍 Inspect, debug, and trace past workflow runs."
+    rich_markup_mode="markdown",
+    help=(
+        "🔍 Inspect, debug, and trace past workflow runs.\n\n"
+        "Commands:\n"
+        "- `list`: show recent runs\n"
+        "- `show <run_id>`: step-by-step details\n"
+        "- `trace <run_id>`: rich hierarchical trace tree\n"
+        "- `from-file <path>`: render a saved debug export (from `--debug-export`)\n"
+        "- `replay <run_id>`: re-run deterministically using recorded responses (when available)\n"
+    ),
 )
 
 
@@ -80,6 +89,19 @@ def trace_command_cli(
     ),
 ) -> None:
     trace_command(run_id, prompt_preview_len=prompt_preview_len)
+
+
+@lens_app.command("from-file")
+def trace_from_file_cli(
+    path: str,
+    prompt_preview_len: int = typer.Option(
+        200,
+        "--prompt-preview-len",
+        help="Max characters to show for prompt/response previews (-1 for full).",
+    ),
+) -> None:
+    """Render a saved debug JSON (from --debug-export) as a rich trace tree."""
+    trace_from_file(path, prompt_preview_len=prompt_preview_len)
 
 
 @lens_app.command("replay")

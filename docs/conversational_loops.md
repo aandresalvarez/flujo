@@ -7,7 +7,10 @@ Core concepts
 - History: `PipelineContext.conversation_history` stores ordered turns (`user|assistant`), persisted to state backends.
 - Injection: History is injected via a prompt processor attached to steps at runtime — agents themselves are not mutated.
 - Governance: Token/turn bounds and summarization ensure predictable costs.
-- Observability: A sanitized preview of the rendered history is emitted as an `agent.prompt` event in the trace tree.
+- Observability: The loop emits rich trace events under each iteration:
+  - `agent.prompt`: preview of the injected history block
+  - `agent.system` / `agent.input` / `agent.response` / `agent.usage`: full agent-call lifecycle
+  - `loop.iteration`: iteration counter
 
 DSL fields
 - loop.conversation: boolean
@@ -88,12 +91,13 @@ All agents as assistant sources
 ```
 
 Behavior
-- Seeding: On iteration 1, if history is empty, the loop seeds a `user` turn from the iteration input.
-- HITL: `user_turn_sources` includes `'hitl'` by default; HITL outputs contribute `user` turns when listed.
-- Assistant turns: Selected per `ai_turn_source` after each iteration.
-- Parallel branches: Loop policy preserves existing quota and isolation semantics. Assistant/user turn collection is based on top-level step results; complex nested branches may require tailored selection rules.
+- Seeding: On iteration 1, if history is empty, the loop seeds a `user` turn from the iteration input and pins it as the first turn in injection so templates like `history.0` reliably refer to the initial goal.
+- HITL capture (nested-aware): When `user_turn_sources` includes `hitl`, human responses from HITL steps are captured as `user` turns — including those inside `conditional` or `parallel` branches.
+- Resume sync: After a HITL pause/resume, the latest `hitl_history[-1].human_response` is synced into `conversation_history` before the next agent call so the agent sees the user’s last answer.
+- Assistant turns: Selected per `ai_turn_source` after each iteration. For structured outputs, the loop prefers the `question` field when present to keep assistant turns readable.
+- Parallel branches: Loop policy preserves isolation and quotas. Turn collection flattens nested step histories recursively to capture relevant outputs.
 
 Notes
 - Centralized configuration can provide defaults for `history_management`; loop-level values override defaults.
-- Prompt tracing: The injected history preview is redacted and truncated before emitting to the trace tree.
-
+- Prompt tracing: Previews are redacted and truncated by default; use `--debug-prompts` for full text in local-only debugging.
+- Debugging: Run with `--debug` to print the compact Debug Trace. Add `--trace-preview-len` to increase preview size and `--debug-export` to save a full JSON log (trace + step history + final context).

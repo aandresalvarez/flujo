@@ -43,10 +43,30 @@ class ConversationHistoryPromptProcessor(Processor):
         filtered = self._hm.filter_natural_text(turns)
         bounded = self._hm.bound_history(filtered, model_id=self._model_id)
 
+        # Pin the original initial user turn as the first element when it would
+        # otherwise be truncated, so templates like `history.0` reliably refer
+        # to the initial goal. Avoid duplication when already present.
+        try:
+            initial_turn = filtered[0] if filtered else None
+            if initial_turn is not None:
+                need_pin = True
+                if bounded:
+                    b0 = bounded[0]
+                    need_pin = not (
+                        getattr(b0, "role", None) == getattr(initial_turn, "role", None)
+                        and getattr(b0, "content", None) == getattr(initial_turn, "content", None)
+                    )
+                if need_pin:
+                    bounded = [initial_turn] + bounded
+        except Exception:
+            # Best-effort: if anything goes wrong, fall back to bounded
+            pass
+
         # Render via template
         try:
             rendered = format_prompt(
-                self._tpl, history=[{"role": t.role.value, "content": t.content} for t in bounded]
+                self._tpl,
+                history=[{"role": t.role.value, "content": t.content} for t in bounded],
             )
         except Exception:
             # Fallback to a simple text join

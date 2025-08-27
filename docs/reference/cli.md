@@ -49,6 +49,40 @@ Example:
 - `flujo --project . run --dry-run --json`
 - `FLUJO_PROJECT_ROOT=$PWD flujo run --input 'hello'`
 
+### Debugging flags
+
+- `--debug`: Enables step-by-step tracing and prints a compact Debug Trace tree at the end of the run.
+  - Shows spans with attributes like `flujo.step.type`, `flujo.step.policy`, latency, and cache hits.
+  - Includes notable events such as prompt injection previews.
+- `--trace-preview-len N`: Sets max characters for prompt/response previews in the Debug Trace (default 1000).
+- `--debug-prompts`: Also emit full, unredacted prompts and responses in trace events.
+  - Unsafe for production; intended for local debugging only. Implies `--debug`.
+- `--debug-export`: Enable full JSON debug log export. If `--debug-export-path` is omitted, Flujo auto-writes to `./debug/<timestamp>_<run_id>.json`.
+- `--debug-export-path PATH`: Write the full JSON debug log to PATH.
+  - `trace_tree`: complete spans, attributes, and events
+  - `result.step_history`: full recursive step history with outputs/feedback/metrics
+  - `final_context`: serialized context plus `scratchpad`, `conversation_history`, `hitl_history`, `command_log`
+  - `env`: debug-related flags active for the run
+
+Examples:
+- Safe previews:
+  - `flujo run --debug --trace-preview-len 1500 --input 'hello'`
+- Full unredacted content (local only):
+  - `flujo run --debug-prompts --trace-preview-len 4000 --input 'hello'`
+- Export everything to a file:
+  - `flujo run --debug --debug-export-path output/last_run_debug.json --input 'hello'`
+  - or rely on auto-export to `./debug/...` by running: `flujo run --debug --debug-export --input 'hello'`
+
+## Lens
+
+- `flujo lens list`: List stored runs.
+- `flujo lens show <run_id>`: Show step-by-step details of a prior run.
+- `flujo lens trace <run_id>`: Render the hierarchical execution trace for a prior run.
+  - Options: `--prompt-preview-len N` to control preview length for prompt-related events.
+- `flujo lens from-file <path>`: Render a saved debug JSON (created by `--debug-export`) as a rich trace tree.
+  - Options: `--prompt-preview-len N` to control preview length.
+  - Useful for offline analysis or sharing a single file that contains trace + step history + final context.
+
 ## Error Messages and Troubleshooting
 
 - Import errors now surface the actual missing module and hints:

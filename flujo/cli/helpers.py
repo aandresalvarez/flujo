@@ -883,6 +883,8 @@ def create_flujo_runner(
     context_model_class: Optional[Type[PipelineContext]],
     initial_context_data: Optional[Dict[str, Any]],
     state_backend: Optional[Any] = None,
+    *,
+    debug: bool = False,
 ) -> Any:
     """Create a Flujo runner instance with the given configuration.
 
@@ -918,6 +920,9 @@ def create_flujo_runner(
     except Exception:
         usage_limits_arg = None
 
+    # Select local tracer when debug is enabled
+    local_tracer_arg: Any = "default" if debug else None
+
     if context_model_class is not None:
         # Use custom context model with proper typing
         runner = Flujo[Any, Any, PipelineContext](
@@ -927,6 +932,7 @@ def create_flujo_runner(
             state_backend=state_backend,
             pipeline_name=inferred_name,
             usage_limits=usage_limits_arg,
+            local_tracer=local_tracer_arg,
         )
     else:
         # Use default PipelineContext
@@ -937,6 +943,7 @@ def create_flujo_runner(
             state_backend=state_backend,
             pipeline_name=inferred_name,
             usage_limits=usage_limits_arg,
+            local_tracer=local_tracer_arg,
         )
 
     return runner
@@ -2239,40 +2246,7 @@ state_machine_default = true
     )
 
     demo_pipeline_content = (
-        """
-version: "0.1"
-name: "research_demo"
-
-agents:
-  result_formatter:
-    model: "openai:gpt-4o-mini"
-    system_prompt: |
-      You are a research assistant. You will be given a JSON object containing web search results.
-      Format these results into a clear, concise, and human-readable summary.
-      Present the title, a brief snippet, and the link for each result in a numbered list.
-      If the input is empty or contains no results, say "I couldn't find any information on that topic."
-    output_schema:
-      type: string
-
-steps:
-  - kind: hitl
-    name: get_research_topic
-    message: "What would you like to research on the web?"
-
-  - kind: step
-    name: perform_web_search
-    agent:
-      id: "flujo.builtins.web_search"
-      params:
-        max_results: 3
-    input: "{{ previous_step }}"
-
-  - kind: step
-    name: format_search_results
-    uses: agents.result_formatter
-    input: "{{ previous_step }}"
-""".strip()
-        + "\n"
+        generate_demo_yaml(demo_name="research_demo", preset="research_demo") + "\n"
     )
 
     skills_init_content = "# This marks the skills package for your project.\n"
@@ -2386,7 +2360,7 @@ def update_project_budget(flujo_toml_path: Path, pipeline_name: str, cost_limit:
 
 def generate_demo_yaml(
     *,
-    name: str = "demo",
+    demo_name: str = "demo",
     preset: str = "conversational_loop",
     conversation: bool = True,
     ai_turn_source: Optional[str] = None,
@@ -2412,7 +2386,7 @@ def generate_demo_yaml(
         return (
             """
 version: "0.1"
-name: "{name}"
+name: "{demo_name}"
 
 steps:
   - kind: map
@@ -2426,7 +2400,44 @@ steps:
         name: Combine
         agent: {{ id: "flujo.builtins.stringify" }}
 """.strip()
-        ).format(name=name)
+        ).format(demo_name=demo_name)
+
+    if preset == "research_demo":
+        return (
+            """
+version: "0.1"
+name: "{demo_name}"
+
+agents:
+  result_formatter:
+    model: "openai:gpt-4o-mini"
+    system_prompt: |
+      You are a research assistant. You will be given a JSON object containing web search results.
+      Format these results into a clear, concise, and human-readable summary.
+      Present the title, a brief snippet, and the link for each result in a numbered list.
+      If the input is empty or contains no results, say "I couldn't find any information on that topic."
+    output_schema:
+      type: string
+
+steps:
+  - kind: hitl
+    name: get_research_topic
+    message: "What would you like to research on the web?"
+
+  - kind: step
+    name: perform_web_search
+    agent:
+      id: "flujo.builtins.web_search"
+      params:
+        max_results: 3
+    input: "{{ previous_step }}"
+
+  - kind: step
+    name: format_search_results
+    uses: agents.result_formatter
+    input: "{{ previous_step }}"
+""".strip()
+        ).format(demo_name=demo_name)
 
     # Default preset: conversational loop with history wiring
     meta_lines: list[str] = []
@@ -2455,7 +2466,7 @@ steps:
     yaml_text = (
         """
 version: "0.1"
-name: "{name}"
+name: "{demo_name}"
 
 steps:
   - kind: loop
@@ -2468,5 +2479,5 @@ steps:
         name: answer
         agent: {{ id: "flujo.builtins.stringify" }}
 """.strip()
-    ).format(name=name, loop_meta=loop_meta)
+    ).format(demo_name=demo_name, loop_meta=loop_meta)
     return yaml_text

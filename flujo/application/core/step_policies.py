@@ -2989,6 +2989,15 @@ class DefaultLoopStepExecutor:
                 telemetry.logfire.info(
                     f"LoopStep '{loop_step.name}': Starting Iteration {iteration_count}/{max_loops}"
                 )
+            # Emit a trace event for the iteration so CLI can show it
+            try:
+                from ...tracing.manager import get_active_trace_manager as _get_tm
+
+                _tm = _get_tm()
+                if _tm is not None:
+                    _tm.add_event("loop.iteration", {"iteration": iteration_count})
+            except Exception:
+                pass
             # Snapshot state BEFORE this iteration so we can construct a clean
             # loop-level result if a usage limit is breached during/after it.
             prev_current_context = current_context
@@ -3001,6 +3010,7 @@ class DefaultLoopStepExecutor:
             # This follows idempotency and control-flow safety: operate on the iteration clone,
             # and re-raise control-flow exceptions without conversion.
             try:
+                # Run init ops only on first iteration
                 if iteration_count == 1:
                     try:
                         init_fn = None
@@ -3011,25 +3021,51 @@ class DefaultLoopStepExecutor:
                         init_fn = None
                     if callable(init_fn):
                         init_fn(current_data, iteration_context)
-                    # Seed initial user turn for conversation:true if history empty
-                    if conv_enabled and iteration_context is not None:
-                        try:
-                            hist = getattr(iteration_context, "conversation_history", None)
-                            if isinstance(hist, list) and not hist:
-                                initial_text = str(current_data) if current_data is not None else ""
-                                if (initial_text or "").strip():
-                                    from flujo.domain.models import (
-                                        ConversationTurn,
-                                        ConversationRole,
-                                    )
 
-                                    hist.append(
-                                        ConversationTurn(
-                                            role=ConversationRole.user, content=initial_text
-                                        )
+                # Conversation seeding/sync for every iteration
+                if conv_enabled and iteration_context is not None:
+                    try:
+                        from flujo.domain.models import ConversationTurn, ConversationRole
+
+                        hist = getattr(iteration_context, "conversation_history", None)
+                        # Ensure list container exists
+                        if not isinstance(hist, list):
+                            try:
+                                setattr(iteration_context, "conversation_history", [])
+                            except Exception:
+                                pass
+                            hist = getattr(iteration_context, "conversation_history", None)
+
+                        # 1) Seed initial user turn when empty and input present
+                        if isinstance(hist, list) and not hist:
+                            initial_text = str(current_data) if current_data is not None else ""
+                            if (initial_text or "").strip():
+                                hist.append(
+                                    ConversationTurn(
+                                        role=ConversationRole.user, content=initial_text
                                     )
+                                )
+
+                        # 2) Sync latest HITL response (resume) to history if not already added
+                        try:
+                            hitl_hist = getattr(iteration_context, "hitl_history", None)
+                            if isinstance(hitl_hist, list) and hitl_hist:
+                                last_resp = getattr(hitl_hist[-1], "human_response", None)
+                                text = str(last_resp) if last_resp is not None else ""
+                                if text.strip():
+                                    last_content = (
+                                        getattr(hist[-1], "content", None) if hist else None
+                                    )
+                                    if last_content != text:
+                                        hist.append(
+                                            ConversationTurn(
+                                                role=ConversationRole.user, content=text
+                                            )
+                                        )
                         except Exception:
                             pass
+                    except Exception:
+                        pass
             except PausedException as e:
                 # Control-flow exceptions must propagate
                 raise e
@@ -3067,17 +3103,57 @@ class DefaultLoopStepExecutor:
             instrumented_pipeline = body_pipeline
             hitl_step_names: set[str] = set()
             agent_step_names: set[str] = set()
+
+            # Helper: recursively collect step names from nested pipelines (Conditional/Parallel/Loop)
+            def _collect_names_recursive(p: Any) -> None:
+                try:
+                    steps_list = list(getattr(p, "steps", []) or [])
+                except Exception:
+                    steps_list = []
+                for _st in steps_list:
+                    try:
+                        if isinstance(_st, HumanInTheLoopStep):
+                            hitl_step_names.add(getattr(_st, "name", ""))
+                        elif isinstance(_st, Step) and not getattr(_st, "is_complex", False):
+                            agent_step_names.add(getattr(_st, "name", ""))
+                    except Exception:
+                        pass
+                    # Recurse into known complex step types by inspecting common attributes
+                    try:
+                        # Conditional branches
+                        branches = getattr(_st, "branches", None)
+                        if isinstance(branches, dict):
+                            for _bp in branches.values():
+                                _collect_names_recursive(_bp)
+                    except Exception:
+                        pass
+                    try:
+                        # Default branch (Conditional)
+                        def_branch = getattr(_st, "default_branch_pipeline", None)
+                        if def_branch is not None:
+                            _collect_names_recursive(def_branch)
+                    except Exception:
+                        pass
+                    try:
+                        # Loop body
+                        lbp = (
+                            _st.get_loop_body_pipeline()
+                            if hasattr(_st, "get_loop_body_pipeline")
+                            else getattr(_st, "loop_body_pipeline", None)
+                        )
+                        if lbp is not None:
+                            _collect_names_recursive(lbp)
+                    except Exception:
+                        pass
+
             try:
                 if conv_enabled and hasattr(body_pipeline, "steps"):
+                    # Collect names from entire body graph (including nested constructs)
+                    _collect_names_recursive(body_pipeline)
+
+                    # Attach history processors to simple top-level agent steps only (preserve behavior)
                     new_steps = []
                     for st in list(getattr(body_pipeline, "steps", [])):
-                        try:
-                            if isinstance(st, HumanInTheLoopStep):
-                                hitl_step_names.add(getattr(st, "name", ""))
-                            elif isinstance(st, Step) and not getattr(st, "is_complex", False):
-                                agent_step_names.add(getattr(st, "name", ""))
-                        except Exception:
-                            pass
                         # Only attach to simple (non-complex) agent steps by default
                         use_hist = True
                         try:
@@ -3536,74 +3612,167 @@ class DefaultLoopStepExecutor:
                     if ctx_target is not None and hasattr(ctx_target, "conversation_history"):
                         hist = getattr(ctx_target, "conversation_history", None)
                         if isinstance(hist, list):
+                            # Prepare flattened view of step results (captures nested/parallel)
+                            def _flatten(results: list[Any]) -> list[Any]:
+                                flat: list[Any] = []
+
+                                def _rec(items: list[Any]) -> None:
+                                    for _sr in items or []:
+                                        flat.append(_sr)
+                                        try:
+                                            children = getattr(_sr, "step_history", None) or []
+                                        except Exception:
+                                            children = []
+                                        if children:
+                                            _rec(children)
+
+                                _rec(results or [])
+                                return flat
+
+                            all_srs = _flatten(pipeline_result.step_history)
+
                             # User turns: sources can include 'hitl' and/or named steps
                             try:
                                 sources_set = set(s for s in user_src if isinstance(s, str))
-                                for sr in pipeline_result.step_history:
+                                for sr in all_srs:
                                     n = getattr(sr, "name", "")
-                                    if not sr.success:
+                                    if not getattr(sr, "success", False):
                                         continue
-                                    # From HITL
+                                    # From HITL (including nested HITL inside conditionals/parallel)
                                     if "hitl" in sources_set and n in hitl_step_names:
                                         txt = str(getattr(sr, "output", "") or "")
                                         if txt.strip():
-                                            hist.append(
-                                                ConversationTurn(
-                                                    role=ConversationRole.user, content=txt
-                                                )
+                                            last_content = (
+                                                getattr(hist[-1], "content", None) if hist else None
                                             )
+                                            if last_content != txt:
+                                                hist.append(
+                                                    ConversationTurn(
+                                                        role=ConversationRole.user, content=txt
+                                                    )
+                                                )
                                             continue
                                     # From named steps
                                     if n in sources_set:
                                         txt = str(getattr(sr, "output", "") or "")
                                         if txt.strip():
-                                            hist.append(
-                                                ConversationTurn(
-                                                    role=ConversationRole.user, content=txt
-                                                )
+                                            last_content = (
+                                                getattr(hist[-1], "content", None) if hist else None
                                             )
+                                            if last_content != txt:
+                                                hist.append(
+                                                    ConversationTurn(
+                                                        role=ConversationRole.user, content=txt
+                                                    )
+                                                )
                             except Exception:
                                 pass
 
-                            # Prepare flattened view of step results (captures nested/parallel)
-                            def _flatten(results: list[Any]) -> list[Any]:
-                                flat: list[Any] = []
-                                for _sr in results or []:
-                                    flat.append(_sr)
-                                    try:
-                                        children = getattr(_sr, "step_history", None) or []
-                                        for ch in children:
-                                            flat.append(ch)
-                                    except Exception:
-                                        pass
-                                return flat
-
-                            all_srs = _flatten(pipeline_result.step_history)
-
                             # Assistant turns per ai_turn_source
+                            def _extract_assistant_question(
+                                val: Any,
+                            ) -> tuple[Optional[str], Optional[str]]:
+                                """Return (question_text, action) from a step output.
+
+                                - Supports dict and pydantic-like objects with .action/.question
+                                - Treats action == 'finish' (case-insensitive) as a signal to skip logging
+                                - Falls back to None when no usable question is present
+                                """
+                                try:
+                                    # Dict-like
+                                    if isinstance(val, dict):
+                                        act = val.get("action")
+                                        action = str(act).lower() if act is not None else None
+                                        q = val.get("question")
+                                        qtxt = q if isinstance(q, str) and q.strip() else None
+                                        return qtxt, action
+                                    # Pydantic-like object with attributes
+                                    action_attr = getattr(val, "action", None)
+                                    question_attr = getattr(val, "question", None)
+                                    if action_attr is not None or question_attr is not None:
+                                        action = (
+                                            str(action_attr).lower()
+                                            if action_attr is not None
+                                            else None
+                                        )
+                                        qtxt = (
+                                            str(question_attr).strip()
+                                            if isinstance(question_attr, str)
+                                            and str(question_attr).strip()
+                                            else None
+                                        )
+                                        return qtxt, action
+                                    # String fallback: try to detect finish markers or JSON
+                                    if isinstance(val, str):
+                                        raw = val.strip()
+                                        # Quick JSON detection
+                                        if (raw.startswith("{") and raw.endswith("}")) or (
+                                            raw.startswith("[") and raw.endswith("]")
+                                        ):
+                                            import json as _json
+
+                                            try:
+                                                obj = _json.loads(raw)
+                                                if isinstance(obj, dict):
+                                                    act = obj.get("action")
+                                                    action = (
+                                                        str(act).lower()
+                                                        if act is not None
+                                                        else None
+                                                    )
+                                                    q = obj.get("question")
+                                                    qtxt = (
+                                                        q
+                                                        if isinstance(q, str) and q.strip()
+                                                        else None
+                                                    )
+                                                    return qtxt, action
+                                            except Exception:
+                                                pass
+                                        # Heuristic finish detection in string repr
+                                        low = raw.lower()
+                                        if '"action":"finish"' in low or "action='finish'" in low:
+                                            return None, "finish"
+                                        # Otherwise treat the whole string as assistant content
+                                        return (raw if raw else None), None
+                                except Exception:
+                                    pass
+                                return None, None
+
                             try:
                                 src = ai_src
                                 if src == "last":
                                     if pipeline_result.step_history:
                                         last_sr = pipeline_result.step_history[-1]
-                                        txt2 = str(getattr(last_sr, "output", "") or "")
-                                        if txt2.strip():
+                                        qtxt, action = _extract_assistant_question(
+                                            getattr(last_sr, "output", None)
+                                        )
+                                        # Skip finish/no-question outputs
+                                        if (
+                                            (action or "").lower() != "finish"
+                                            and qtxt
+                                            and qtxt.strip()
+                                        ):
                                             hist.append(
                                                 ConversationTurn(
-                                                    role=ConversationRole.assistant,
-                                                    content=txt2,
+                                                    role=ConversationRole.assistant, content=qtxt
                                                 )
                                             )
                                 elif src == "all_agents":
                                     for sr in all_srs:
                                         if not getattr(sr, "success", False):
                                             continue
-                                        txta = str(getattr(sr, "output", "") or "")
-                                        if txta.strip():
+                                        qtxt, action = _extract_assistant_question(
+                                            getattr(sr, "output", None)
+                                        )
+                                        if (
+                                            (action or "").lower() != "finish"
+                                            and qtxt
+                                            and qtxt.strip()
+                                        ):
                                             hist.append(
                                                 ConversationTurn(
-                                                    role=ConversationRole.assistant,
-                                                    content=txta,
+                                                    role=ConversationRole.assistant, content=qtxt
                                                 )
                                             )
                                 elif src == "named_steps":
@@ -3612,12 +3781,18 @@ class DefaultLoopStepExecutor:
                                         if not sr.success:
                                             continue
                                         if n in named_steps_set:
-                                            txtn = str(getattr(sr, "output", "") or "")
-                                            if txtn.strip():
+                                            qtxt, action = _extract_assistant_question(
+                                                getattr(sr, "output", None)
+                                            )
+                                            if (
+                                                (action or "").lower() != "finish"
+                                                and qtxt
+                                                and qtxt.strip()
+                                            ):
                                                 hist.append(
                                                     ConversationTurn(
                                                         role=ConversationRole.assistant,
-                                                        content=txtn,
+                                                        content=qtxt,
                                                     )
                                                 )
                             except Exception:
@@ -5171,14 +5346,65 @@ class DefaultHitlStepExecutor:
 
         if context is not None and hasattr(context, "scratchpad"):
             try:
-                try:
-                    hitl_message = (
-                        step.message_for_user if step.message_for_user is not None else str(data)
-                    )
-                except Exception:
-                    hitl_message = "Data conversion failed"
+                # Render message_for_user with templating support when it contains {{ }}
+                def _render_message(raw: Optional[str]) -> str:
+                    try:
+                        msg = raw if raw is not None else str(data)
+                    except Exception:
+                        msg = None
+                    if not isinstance(msg, str):
+                        return "Data conversion failed"
+                    text = msg
+                    if "{{" in text and "}}" in text:
+                        try:
+                            from flujo.utils.prompting import AdvancedPromptFormatter
+                            from flujo.utils.template_vars import (
+                                get_steps_map_from_context,
+                                TemplateContextProxy,
+                                StepValueProxy,
+                            )
+
+                            steps_map = get_steps_map_from_context(context)
+                            steps_wrapped = {
+                                k: v if isinstance(v, StepValueProxy) else StepValueProxy(v)
+                                for k, v in steps_map.items()
+                            }
+                            fmt_ctx = {
+                                "context": TemplateContextProxy(context, steps=steps_wrapped),
+                                "previous_step": data,
+                                "steps": steps_wrapped,
+                            }
+                            return AdvancedPromptFormatter(text).format(**fmt_ctx)
+                        except Exception:
+                            # Fall back to raw message on templating errors
+                            return text
+                    return text
+
+                hitl_message = _render_message(step.message_for_user)
                 context.scratchpad["hitl_message"] = hitl_message
                 context.scratchpad["hitl_data"] = data
+                # Append assistant turn to conversation history so loops in conversation:true
+                # capture the question even when the iteration pauses here.
+                try:
+                    if hasattr(context, "conversation_history") and isinstance(
+                        context.conversation_history, list
+                    ):
+                        from flujo.domain.models import ConversationTurn, ConversationRole
+
+                        # Avoid immediate duplicates
+                        last = (
+                            context.conversation_history[-1]
+                            if context.conversation_history
+                            else None
+                        )
+                        if not last or getattr(last, "content", None) != hitl_message:
+                            context.conversation_history.append(
+                                ConversationTurn(
+                                    role=ConversationRole.assistant, content=hitl_message
+                                )
+                            )
+                except Exception:
+                    pass
                 # Preserve pending AskHuman command for resumption logging
                 try:
                     from flujo.domain.commands import AskHumanCommand as _AskHuman
@@ -5192,7 +5418,19 @@ class DefaultHitlStepExecutor:
                 telemetry.logfire.error(f"Failed to update context scratchpad: {e}")
 
         try:
-            message = step.message_for_user if step.message_for_user is not None else str(data)
+            # Reuse same rendering path for the outgoing pause message
+            if context is not None and hasattr(context, "scratchpad"):
+                tmp_msg = context.scratchpad.get("hitl_message", "Paused")
+                message = tmp_msg if isinstance(tmp_msg, str) else str(tmp_msg)
+            else:
+                # Render directly when context is not available
+                def _render_direct(raw: Optional[str]) -> str:
+                    try:
+                        return raw if raw is not None else str(data)
+                    except Exception:
+                        return "Data conversion failed"
+
+                message = _render_direct(step.message_for_user)
         except Exception:
             message = "Data conversion failed"
         return Paused(message=message)
