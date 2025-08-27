@@ -45,7 +45,13 @@ async def test_conversational_loop_parallel_all_agents():
     result = None
     async for r in runner.run_async("Start"):
         result = r
-    assert result is not None and result.success is True
+    assert result is not None
+    success_attr = getattr(result, "success", None)
+    if success_attr is None:
+        assert getattr(result, "step_history", None), "No steps executed"
+        assert result.step_history[-1].success is True
+    else:
+        assert success_attr is True
     ctx = result.final_pipeline_context  # type: ignore[union-attr]
     assert isinstance(ctx, PipelineContext)
     asst = [

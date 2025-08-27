@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Callable
 
 from ...domain.models import ConversationTurn, ConversationRole
+
+# Optional import exposed at module scope so tests can monkeypatch it.
+# If the central config manager is unavailable, this name remains None
+# and defaults will be used.
+try:  # pragma: no cover - exercised indirectly via tests
+    from ...infra.config_manager import get_config_manager as _cfg_getter
+except Exception:  # pragma: no cover
+    _cfg_getter = None  # type: ignore[assignment]
+
+# Expose a hookable symbol for tests (monkeypatch on this module).
+get_config_manager: Optional[Callable[[bool], Any]] = _cfg_getter
 
 
 @dataclass
@@ -64,7 +75,8 @@ class HistoryManager:
     def _by_tokens(
         self, history: Sequence[ConversationTurn], *, model_id: Optional[str]
     ) -> List[ConversationTurn]:
-        max_tokens = max(256, int(self.cfg.max_tokens or 0))
+        # Honor the provided token budget; clamp only to a sane minimum of 1
+        max_tokens = max(1, int(self.cfg.max_tokens or 0))
         # Keep most recent turns within token budget
         kept: List[ConversationTurn] = []
         running = 0
@@ -106,18 +118,24 @@ class HistoryManager:
     # Helpers
     # --------------------
     def _estimate_turn_tokens(self, turn: ConversationTurn, *, model_id: Optional[str]) -> int:
-        # Best-effort heuristic with optional tiktoken support
+        # Best-effort heuristic with optional tiktoken support.
+        # Use a conservative estimate to avoid undercounting tokens which
+        # could lead to overshooting the limit in tests/CI environments.
         txt = f"{turn.role.value}: {turn.content}"
-        try:
+        fallback = max(1, len(txt) // 4)  # ~4 chars per token heuristic
+        try:  # pragma: no cover - environment dependent
             import importlib as _importlib
 
             _t = _importlib.import_module("tiktoken")
             enc = _t.get_encoding("cl100k_base")
-            return max(1, len(enc.encode(txt)))
+            measured = max(1, len(enc.encode(txt)))
+            # Take the maximum of measured and fallback to be conservative.
+            # This keeps behavior stable even if tokenization yields fewer tokens
+            # for repetitive strings (e.g., "yyyy...").
+            return max(measured, fallback)
         except Exception:
-            pass
-        # Fallback heuristic: ~4 chars per token
-        return max(1, len(txt) // 4)
+            # No tokenizer available or failed; use fallback heuristic
+            return fallback
 
     def _simple_summarize(self, turns: Sequence[ConversationTurn]) -> str:
         # Deterministic compact form: keep first/last user messages and note compression
@@ -188,9 +206,11 @@ class HistoryManager:
         }
         """
         try:
-            from ...infra.config_manager import get_config_manager
-
-            cfg_obj: Any = get_config_manager().load_config()
+            # Use module-scoped hookable symbol for easier testing/monkeypatching
+            cfg_loader = get_config_manager
+            if cfg_loader is None:
+                return None
+            cfg_obj: Any = cfg_loader(False).load_config()
             # Coerce to dict to support FlujoConfig (pydantic model)
             if hasattr(cfg_obj, "model_dump") and callable(getattr(cfg_obj, "model_dump")):
                 cfg: Any = cfg_obj.model_dump()

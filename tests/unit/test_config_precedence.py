@@ -56,7 +56,15 @@ def test_loop_meta_overrides_config_defaults(monkeypatch):
     import asyncio
 
     result = asyncio.get_event_loop().run_until_complete(_run())
-    assert result is not None and result.success is True
+    # Accept either a StepResult (legacy) or PipelineResult (current)
+    assert result is not None
+    success_attr = getattr(result, "success", None)
+    if success_attr is None:
+        # Assume PipelineResult; check last step
+        assert getattr(result, "step_history", None), "No steps executed"
+        assert result.step_history[-1].success is True
+    else:
+        assert success_attr is True
 
     # Assert that the cfg used by HistoryManager reflects loop meta, not config default
     assert captured["cfgs"], "HistoryManager was not constructed by policy"

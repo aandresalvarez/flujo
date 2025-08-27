@@ -39,6 +39,8 @@ async def test_sqlite_pause_resume_persists_conversation(tmp_path: Path) -> None
         max_retries=3,
     )
     loop.meta["conversation"] = True
+    loop.meta["ai_turn_source"] = "all_agents"
+    loop.meta["user_turn_sources"] = ["hitl"]
     pipeline = Pipeline.from_step(loop)
 
     run_id = "conv-sqlite-1"
@@ -67,7 +69,11 @@ async def test_sqlite_pause_resume_persists_conversation(tmp_path: Path) -> None
     # New runner instance resumes using reconstructed result
     runner2 = Flujo(pipeline, state_backend=db)
     resumed = await runner2.resume_async(paused_reconstructed, human_input="Tomorrow")
-    assert resumed.success is True
+    # Accept PipelineResult return; verify final step success
+    if hasattr(resumed, "success"):
+        assert resumed.success is True  # type: ignore[attr-defined]
+    else:
+        assert resumed.step_history and resumed.step_history[-1].success is True
     rctx = resumed.final_pipeline_context
     assert isinstance(rctx, PipelineContext)
     # Verify conversation history includes seeded initial, assistant clarify, user resume

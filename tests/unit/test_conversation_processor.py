@@ -21,7 +21,8 @@ def test_processor_injects_into_string_prompt() -> None:
 
     out = asyncio.get_event_loop().run_until_complete(proc.process("Task: do X", context=ctx))
     assert isinstance(out, str)
-    assert "user: Hello" in out.lower()
+    # Compare in lowercase to avoid case-sensitivity issues
+    assert "user: hello" in out.lower()
     assert "assistant: hi!" in out.lower()
     assert out.strip().endswith("Task: do X")
 

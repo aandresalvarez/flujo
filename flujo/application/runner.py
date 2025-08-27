@@ -1047,6 +1047,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 )
             )
             ctx.scratchpad["status"] = "running"
+            # Stash the human response for nested HITL steps (e.g., inside loops)
+            # so the HITL executor can consume it without pausing again.
+            try:
+                ctx.scratchpad["resume_human_response"] = human_input
+            except Exception:
+                pass
 
         paused_step_result = StepResult(
             name=paused_step.name,

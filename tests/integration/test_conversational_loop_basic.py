@@ -32,11 +32,9 @@ async def test_conversational_loop_injection_and_history_evolution():
     body = Pipeline.from_step(clarify) >> planner
 
     def exit_when_finished(last_output: str, ctx: PipelineContext | None) -> bool:
-        # Loop should stop after second clarify returns 'finish'
-        try:
-            return str(last_output).strip().lower() == "finish"
-        except Exception:
-            return False
+        # Loop should stop after the clarifier has been called twice.
+        # This avoids coupling to which step runs last in the loop body.
+        return calls["clarify"] >= 2
 
     loop = LoopStep(
         name="clarification_loop",
@@ -46,6 +44,8 @@ async def test_conversational_loop_injection_and_history_evolution():
     )
     # Enable conversation features and set simple history management
     loop.meta["conversation"] = True
+    # Include all agent step outputs in assistant turns to capture clarifier output
+    loop.meta["ai_turn_source"] = "all_agents"
     loop.meta["history_management"] = {"strategy": "truncate_turns", "max_turns": 10}
 
     pipeline = Pipeline.from_step(loop)
@@ -58,7 +58,14 @@ async def test_conversational_loop_injection_and_history_evolution():
     result = None
     async for r in runner.run_async("Initial Goal"):
         result = r
-    assert result is not None and result.success is True
+    assert result is not None
+    # Accept either StepResult or PipelineResult as the final item
+    success_attr = getattr(result, "success", None)
+    if success_attr is None:
+        assert getattr(result, "step_history", None), "No steps executed"
+        assert result.step_history[-1].success is True
+    else:
+        assert success_attr is True
     ctx = result.final_pipeline_context  # type: ignore[union-attr]
     assert isinstance(ctx, PipelineContext)
     # Verify history has at least the seeded user turn and one assistant turn
