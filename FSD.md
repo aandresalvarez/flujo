@@ -316,15 +316,15 @@ M2. HistoryManager (Cost Control)
 - [x] Implement `truncate_tokens` strategy with safe bounds.
 - [x] Implement `truncate_turns` strategy.
 - [x] Implement `summarize` strategy with two-phase bound enforcement.
-- [ ] Wire configuration via `infra.config_manager` (no direct env/file reads) — planned when policy wiring is added.
-- [ ] Unit tests for each strategy and combined behavior.
+- [x] Wire configuration via `infra.config_manager` (defaults loaded when cfg not provided).
+- [x] Unit tests for each strategy and combined behavior.
 
 M3. Prompt Processor
 - [x] Implement `ConversationHistoryPromptProcessor` with prompt-only injection path.
 - [x] Provide prompt-only fallback (text block) without mutating `system_prompt`.
-- [ ] Filter tool/function-call artifacts from history by default (stubbed pass-through; refine in M4).
+- [x] Filter tool/function-call artifacts from history by default.
 - [x] Integrate `utils.redact` before tracing/lens emission.
-- [ ] Unit tests for injection modes, redaction, and filtering.
+- [x] Unit tests for injection modes, redaction, and filtering.
 
 M4. Loop Policy Wiring
 - [ ] Attach prompt processor per step when `loop.conversation: true` and `use_history != false`.

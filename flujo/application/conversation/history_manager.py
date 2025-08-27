@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from ...domain.models import ConversationTurn, ConversationRole
 
@@ -29,7 +29,11 @@ class HistoryManager:
     """
 
     def __init__(self, cfg: Optional[HistoryStrategyConfig] = None) -> None:
-        self.cfg = cfg or HistoryStrategyConfig()
+        # Initialize from explicit cfg or centralized config defaults
+        if cfg is not None:
+            self.cfg = cfg
+        else:
+            self.cfg = self._load_defaults_from_config_manager() or HistoryStrategyConfig()
 
     def bound_history(
         self,
@@ -143,5 +147,64 @@ class HistoryManager:
 
     @staticmethod
     def filter_natural_text(turns: Sequence[ConversationTurn]) -> List[ConversationTurn]:
-        # Future: strip tool-call artifacts; for now, pass through unchanged
-        return list(turns)
+        # Strip obvious tool/function-call artifacts heuristically; keep natural text
+        out: List[ConversationTurn] = []
+        for t in turns:
+            content = (t.content or "").strip()
+            if not content:
+                continue
+            # Heuristics for tool/function-call artifacts
+            lower = content.lower()
+            if lower.startswith("tool:") or lower.startswith("[tool]") or "function_call" in lower:
+                continue
+            # Skip JSON-like tool call payloads with common keys
+            if content.startswith("{") and content.endswith("}"):
+                try:
+                    import json as _json
+
+                    obj: Dict[str, Any] = _json.loads(content)
+                    keys = {str(k).lower() for k in obj.keys()}
+                    if {"tool", "tool_call", "function", "arguments", "name"} & keys:
+                        continue
+                except Exception:
+                    # Non-JSON or large text; keep it
+                    pass
+            out.append(t)
+        return out
+
+    def _load_defaults_from_config_manager(self) -> Optional[HistoryStrategyConfig]:
+        """Load default strategy from centralized configuration, if available.
+
+        Expected shape (flujo.toml → dict):
+        {
+          "conversation": {
+            "history_management": {
+              "strategy": "truncate_tokens|truncate_turns|summarize",
+              "max_tokens": 4096,
+              "max_turns": 20,
+              "summarize_ratio": 0.5
+            }
+          }
+        }
+        """
+        try:
+            from ...infra.config_manager import get_config_manager
+
+            cfg: Any = get_config_manager().load_config() or {}
+            conv: Any = (cfg.get("conversation") or {}) if isinstance(cfg, dict) else {}
+            hm: Any = (conv.get("history_management") or {}) if isinstance(conv, dict) else {}
+            if not isinstance(hm, dict):
+                return None
+            strategy = str(hm.get("strategy") or "truncate_tokens")
+            max_tokens = int(hm.get("max_tokens") or 4096)
+            max_turns = int(hm.get("max_turns") or 20)
+            summarize_ratio = float(hm.get("summarize_ratio") or 0.5)
+            return HistoryStrategyConfig(
+                strategy=strategy,
+                max_tokens=max_tokens,
+                max_turns=max_turns,
+                summarizer_agent=None,
+                summarize_ratio=summarize_ratio,
+            )
+        except Exception:
+            return None
