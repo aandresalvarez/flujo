@@ -132,16 +132,18 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         - V-F1: Incompatible fallback signature between step and fallback_step
         """
         from typing import Any, get_origin, get_args, Union as TypingUnion
+        import types as _types
 
         def _compatible(a: Any, b: Any) -> bool:  # noqa: D401
             if a is Any or b is Any:
                 return True
 
             origin_a, origin_b = get_origin(a), get_origin(b)
+            _UnionType = getattr(_types, "UnionType", None)
 
-            if origin_b is TypingUnion:
+            if origin_b is TypingUnion or (_UnionType is not None and origin_b is _UnionType):
                 return any(_compatible(a, arg) for arg in get_args(b))
-            if origin_a is TypingUnion:
+            if origin_a is TypingUnion or (_UnionType is not None and origin_a is _UnionType):
                 return all(_compatible(arg, b) for arg in get_args(a))
 
             try:
@@ -152,9 +154,23 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 origin_a = get_origin(a)
                 origin_b = get_origin(b)
                 is_dict_like_a = (a is dict) or (origin_a is dict)
+                # Treat Pydantic models as dict-like for validation bridge
+                try:
+                    from pydantic import BaseModel as _PydanticBaseModel
+
+                    if isinstance(a, type) and issubclass(a, _PydanticBaseModel):
+                        is_dict_like_a = True
+                except Exception:
+                    pass
+
                 if is_dict_like_a and (b is object or b is str or origin_b is dict):
                     return True
-                return issubclass(a, b)
+                # Avoid issubclass checks with typing constructs (e.g., typing.Dict)
+                b_eff = origin_b if origin_b is not None else b
+                a_eff = origin_a if origin_a is not None else a
+                if not isinstance(b_eff, type) or not isinstance(a_eff, type):
+                    return False
+                return issubclass(a_eff, b_eff)
             except Exception as e:  # pragma: no cover
                 logging.warning("_compatible: issubclass(%s, %s) raised %s", a, b, e)
                 return False
@@ -215,8 +231,17 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                         )
 
             in_type = getattr(step, "__step_input_type__", Any)
+            # If this step uses templated input, static type compatibility from previous step
+            # does not directly apply. For safety, relax the check.
+            templated_input_present = False
+            try:
+                meta = getattr(step, "meta", None)
+                if isinstance(meta, dict) and meta.get("templated_input") is not None:
+                    templated_input_present = True
+            except Exception:
+                templated_input_present = False
             if prev_step is not None and prev_out_type is not None:
-                if not _compatible(prev_out_type, in_type):
+                if not templated_input_present and not _compatible(prev_out_type, in_type):
                     report.errors.append(
                         ValidationFinding(
                             rule_id="V-A2",
