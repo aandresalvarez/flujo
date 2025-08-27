@@ -27,4 +27,4 @@ def test_history_manager_overhead_benchmark(monkeypatch):
     import os
 
     if str(os.environ.get("FLUJO_STRICT_PERF", "")).strip() in {"1", "true", "on", "yes"}:
-        assert per_iter < 0.005, f"Per-iteration overhead too high: {per_iter*1000:.2f} ms"
+        assert per_iter < 0.005, f"Per-iteration overhead too high: {per_iter * 1000:.2f} ms"

@@ -33,7 +33,9 @@ def _format_node_label(node: Dict[str, Any]) -> str:
     return label
 
 
-def _render_trace_tree(node: Dict[str, Any], parent: Optional[Tree] = None) -> Tree:
+def _render_trace_tree(
+    node: Dict[str, Any], parent: Optional[Tree] = None, *, preview_len: int = 200
+) -> Tree:
     label = _format_node_label(node)
     tree = Tree(label) if parent is None else parent.add(label)
     # Render notable events (e.g., agent.prompt) under the span
@@ -44,13 +46,13 @@ def _render_trace_tree(node: Dict[str, Any], parent: Optional[Tree] = None) -> T
             if name == "agent.prompt":
                 attrs = ev.get("attributes", {}) or {}
                 preview = str(attrs.get("rendered_history", ""))
-                if len(preview) > 200:
+                if preview_len is not None and preview_len >= 0 and len(preview) > preview_len:
                     preview = preview[:200] + "..."
                 tree.add(f"[dim]event[/dim] [cyan]{name}[/cyan]: {preview}")
     except Exception:
         pass
     for child in node.get("children", []):
-        _render_trace_tree(child, tree)
+        _render_trace_tree(child, tree, preview_len=preview_len)
     return tree
 
 
@@ -62,7 +64,7 @@ def _convert_to_timestamp(val: Any) -> Optional[float]:
         return None
 
 
-def trace_command(run_id: str) -> None:
+def trace_command(run_id: str, *, prompt_preview_len: int = 200) -> None:
     """Show the hierarchical execution trace for a run as a tree, with a summary."""
     backend = load_backend_from_config()
     try:
@@ -141,5 +143,5 @@ def trace_command(run_id: str) -> None:
         console.print(Panel(summary, title="[bold cyan]Run Summary[/bold cyan]", expand=False))
 
     _print_trace_summary(trace, run_details)
-    tree = _render_trace_tree(trace)
+    tree = _render_trace_tree(trace, preview_len=prompt_preview_len)
     Console().print(tree)
