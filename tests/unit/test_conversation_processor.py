@@ -19,7 +19,7 @@ def test_processor_injects_into_string_prompt() -> None:
         )
     )
 
-    out = asyncio.get_event_loop().run_until_complete(proc.process("Task: do X", context=ctx))
+    out = asyncio.run(proc.process("Task: do X", context=ctx))
     assert isinstance(out, str)
     # Compare in lowercase to avoid case-sensitivity issues
     assert "user: hello" in out.lower()
@@ -31,7 +31,7 @@ def test_processor_injects_into_dict_prompt() -> None:
     ctx = _mk_ctx([("user", "Question?"), ("assistant", "Answer.")])
     proc = ConversationHistoryPromptProcessor()
     data = {"prompt": "Original"}
-    out = asyncio.get_event_loop().run_until_complete(proc.process(data, context=ctx))
+    out = asyncio.run(proc.process(data, context=ctx))
     assert isinstance(out, dict)
     assert "question?" in out["prompt"].lower()
     assert out["prompt"].endswith("Original")
@@ -41,7 +41,7 @@ def test_processor_no_history_passthrough() -> None:
     ctx = _mk_ctx([])
     proc = ConversationHistoryPromptProcessor()
     s = "Hello"
-    out = asyncio.get_event_loop().run_until_complete(proc.process(s, context=ctx))
+    out = asyncio.run(proc.process(s, context=ctx))
     assert out == s
 
 
@@ -53,7 +53,7 @@ def test_processor_filters_tool_artifacts_injection() -> None:
         ]
     )
     proc = ConversationHistoryPromptProcessor()
-    out = asyncio.get_event_loop().run_until_complete(proc.process("Do it", context=ctx))
+    out = asyncio.run(proc.process("Do it", context=ctx))
     assert "tool_call" not in out
     assert "plain message" in out
 
@@ -70,5 +70,5 @@ def test_processor_calls_redaction(monkeypatch) -> None:
     monkeypatch.setattr(mod, "summarize_and_redact_prompt", _fake_redact)
     ctx = _mk_ctx([("user", "hello")])
     proc = ConversationHistoryPromptProcessor()
-    _ = asyncio.get_event_loop().run_until_complete(proc.process("Hi", context=ctx))
+    _ = asyncio.run(proc.process("Hi", context=ctx))
     assert called["v"] is True

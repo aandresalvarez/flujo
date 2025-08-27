@@ -55,7 +55,7 @@ def test_loop_meta_overrides_config_defaults(monkeypatch):
 
     import asyncio
 
-    result = asyncio.get_event_loop().run_until_complete(_run())
+    result = asyncio.run(_run())
     # Accept either a StepResult (legacy) or PipelineResult (current)
     assert result is not None
     success_attr = getattr(result, "success", None)

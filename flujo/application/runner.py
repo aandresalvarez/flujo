@@ -1047,12 +1047,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 )
             )
             ctx.scratchpad["status"] = "running"
-            # Stash the human response for nested HITL steps (e.g., inside loops)
-            # so the HITL executor can consume it without pausing again.
-            try:
-                ctx.scratchpad["resume_human_response"] = human_input
-            except Exception:
-                pass
 
         paused_step_result = StepResult(
             name=paused_step.name,
@@ -1154,6 +1148,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             # Do not append synthetic success for non-HITL steps; allow the step to handle input
             data = human_input
             resume_start_idx = start_idx
+            # For non-HITL control-flow pauses, allow the next HITL step to consume the
+            # provided human input automatically.
+            try:
+                if isinstance(ctx, PipelineContext) and hasattr(ctx, "scratchpad"):
+                    ctx.scratchpad["resume_human_response"] = human_input
+            except Exception:
+                pass
 
         run_id_for_state = getattr(ctx, "run_id", None)
         state_created_at: datetime | None = None

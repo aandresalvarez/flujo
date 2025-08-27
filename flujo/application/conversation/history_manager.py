@@ -210,7 +210,12 @@ class HistoryManager:
             cfg_loader = get_config_manager
             if cfg_loader is None:
                 return None
-            cfg_obj: Any = cfg_loader(False).load_config()
+            # Support both signatures: get_config_manager() and get_config_manager(force_reload: bool)
+            try:
+                mgr = cfg_loader(False)  # type: ignore[misc]
+            except TypeError:
+                mgr = cfg_loader()  # type: ignore[call-arg]
+            cfg_obj: Any = mgr.load_config()
             # Coerce to dict to support FlujoConfig (pydantic model)
             if hasattr(cfg_obj, "model_dump") and callable(getattr(cfg_obj, "model_dump")):
                 cfg: Any = cfg_obj.model_dump()
