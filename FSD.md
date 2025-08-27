@@ -307,9 +307,9 @@ Notes to Implementers
 M1. Data Model
 - [x] Add `ConversationRole` enum and `ConversationTurn` model.
 - [x] Extend `PipelineContext` with `conversation_history: list[ConversationTurn]`.
-- [ ] Ensure serialization/persistence compatibility (SQLite backend).
-- [ ] MyPy strict typing for new symbols and references.
-- [ ] Update docs/comments for new fields.
+- [x] Ensure serialization/persistence compatibility (SQLite backend).
+- [x] MyPy strict typing for new symbols and references.
+- [x] Update docs/comments for new fields.
 
 M2. HistoryManager (Cost Control)
 - [x] Integrate model-aware token estimator (best-effort with tiktoken fallback).
