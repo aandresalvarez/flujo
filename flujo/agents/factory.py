@@ -19,6 +19,7 @@ from pydantic_ai import Agent
 
 from ..domain.processors import AgentProcessors
 from ..exceptions import ConfigurationError
+from ..utils.model_utils import extract_provider_and_model
 
 
 def _unwrap_type_adapter(output_type: Any) -> Any:
@@ -90,13 +91,59 @@ def make_agent(
     actual_type = _unwrap_type_adapter(output_type)
 
     try:
-        agent = Agent(
-            model=model,
-            system_prompt=system_prompt,
-            output_type=actual_type,
-            tools=tools or [],
-            **kwargs,
-        )
+        # Specialized handling for OpenAI GPT-5 and other reasoning models using Responses API
+        provider, base_model = extract_provider_and_model(model)
+        base_model_lc = (base_model or "").lower()
+
+        # Detect GPT-5 family (gpt-5 and gpt-5-mini) and allow future o-series by prefix
+        is_openai = (provider_name == "openai") or (provider == "openai")
+        is_gpt5_family = base_model_lc.startswith("gpt-5")
+
+        if is_openai and is_gpt5_family:
+            # Import lazily to avoid module import errors when GPT-5 isn't used
+            try:
+                from pydantic_ai.models.openai import (
+                    OpenAIResponsesModel,
+                    OpenAIResponsesModelSettings,
+                )
+            except Exception as e:  # pragma: no cover - defensive
+                raise ConfigurationError(
+                    "GPT-5 requires pydantic-ai Responses model support (>=0.7). "
+                    f"Import failed: {e}"
+                )
+            # Convert model_settings dict (if provided) into OpenAIResponsesModelSettings
+            ms = kwargs.pop("model_settings", None)
+            settings_obj: Any | None = None
+            if isinstance(ms, dict):
+                try:
+                    settings_obj = OpenAIResponsesModelSettings(**ms)  # type: ignore[typeddict-item]
+                except Exception as e:  # pragma: no cover - defensive
+                    raise ConfigurationError(f"Invalid model_settings for GPT-5: {ms} ({e})")
+            elif ms is not None:
+                # If user already provided a typed settings object, accept it
+                settings_obj = ms
+
+            # Build Responses wrapper for GPT-5
+            responses_model = OpenAIResponsesModel(base_model)
+
+            agent = Agent(
+                model=responses_model,
+                system_prompt=system_prompt,
+                output_type=actual_type,
+                tools=tools or [],
+                # Pass typed settings (Pydantic AI will ignore None)
+                model_settings=settings_obj,
+                **kwargs,
+            )
+        else:
+            # Default path: rely on pydantic-ai to resolve profile from string
+            agent = Agent(
+                model=model,
+                system_prompt=system_prompt,
+                output_type=actual_type,
+                tools=tools or [],
+                **kwargs,
+            )
     except (ValueError, TypeError, RuntimeError) as e:  # pragma: no cover - defensive
         raise ConfigurationError(f"Failed to create pydantic-ai agent: {e}") from e
 
