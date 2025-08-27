@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 
 from flujo.domain.dsl.step import Step
@@ -8,9 +7,10 @@ from flujo.application.runner import Flujo
 from flujo.domain.models import PipelineContext, ConversationRole
 
 
+@pytest.mark.asyncio
 @pytest.mark.slow
 @pytest.mark.serial
-def test_conversational_loop_injection_and_history_evolution():
+async def test_conversational_loop_injection_and_history_evolution():
     calls = {"clarify": 0}
 
     async def clarify_agent(msg: str, *, context: PipelineContext | None = None) -> str:
@@ -55,10 +55,11 @@ def test_conversational_loop_injection_and_history_evolution():
     # - seed initial user turn
     # - append assistant turn from clarify("What is the deadline?")
     # - then planner runs; exit after clarify returns "finish"
-    result = asyncio.get_event_loop().run_until_complete(runner.run_async("Initial Goal"))
-
-    assert result.success is True
-    ctx = result.final_pipeline_context
+    result = None
+    async for r in runner.run_async("Initial Goal"):
+        result = r
+    assert result is not None and result.success is True
+    ctx = result.final_pipeline_context  # type: ignore[union-attr]
     assert isinstance(ctx, PipelineContext)
     # Verify history has at least the seeded user turn and one assistant turn
     assert len(ctx.conversation_history) >= 2

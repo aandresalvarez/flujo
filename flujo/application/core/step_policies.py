@@ -2924,6 +2924,29 @@ class DefaultLoopStepExecutor:
                     )
                 if isinstance(meta.get("history_template"), str):
                     history_template = str(meta.get("history_template"))
+                # Optional selection controls
+                ai_turn_source = str(meta.get("ai_turn_source") or "last").strip().lower()
+                user_turn_sources = meta.get("user_turn_sources")
+                named_steps = meta.get("named_steps")
+                try:
+                    _ai_turn_source = ai_turn_source
+                except Exception:
+                    _ai_turn_source = "last"
+                try:
+                    _user_turn_sources = (
+                        list(user_turn_sources)
+                        if isinstance(user_turn_sources, (list, tuple))
+                        else ([user_turn_sources] if user_turn_sources else ["hitl"])
+                    )
+                except Exception:
+                    _user_turn_sources = ["hitl"]
+                try:
+                    _named_steps = set(str(s) for s in (named_steps or []))
+                except Exception:
+                    _named_steps = set()
+                ai_src: str = _ai_turn_source
+                user_src: list[str] = list(_user_turn_sources)
+                named_steps_set: set[str] = set(_named_steps)
         except Exception:
             conv_enabled = False
 
@@ -3043,6 +3066,7 @@ class DefaultLoopStepExecutor:
             # Prepare a loop-scoped pipeline with conversation processors attached when enabled
             instrumented_pipeline = body_pipeline
             hitl_step_names: set[str] = set()
+            agent_step_names: set[str] = set()
             try:
                 if conv_enabled and hasattr(body_pipeline, "steps"):
                     new_steps = []
@@ -3050,6 +3074,8 @@ class DefaultLoopStepExecutor:
                         try:
                             if isinstance(st, HumanInTheLoopStep):
                                 hitl_step_names.add(getattr(st, "name", ""))
+                            elif isinstance(st, Step) and not getattr(st, "is_complex", False):
+                                agent_step_names.add(getattr(st, "name", ""))
                         except Exception:
                             pass
                         # Only attach to simple (non-complex) agent steps by default
@@ -3504,10 +3530,25 @@ class DefaultLoopStepExecutor:
                     if ctx_target is not None and hasattr(ctx_target, "conversation_history"):
                         hist = getattr(ctx_target, "conversation_history", None)
                         if isinstance(hist, list):
-                            # User turns from HITL outputs (top-level only)
+                            # User turns: sources can include 'hitl' and/or named steps
                             try:
+                                sources_set = set(s for s in user_src if isinstance(s, str))
                                 for sr in pipeline_result.step_history:
-                                    if sr.success and getattr(sr, "name", "") in hitl_step_names:
+                                    n = getattr(sr, "name", "")
+                                    if not sr.success:
+                                        continue
+                                    # From HITL
+                                    if "hitl" in sources_set and n in hitl_step_names:
+                                        txt = str(getattr(sr, "output", "") or "")
+                                        if txt.strip():
+                                            hist.append(
+                                                ConversationTurn(
+                                                    role=ConversationRole.user, content=txt
+                                                )
+                                            )
+                                            continue
+                                    # From named steps
+                                    if n in sources_set:
                                         txt = str(getattr(sr, "output", "") or "")
                                         if txt.strip():
                                             hist.append(
@@ -3517,17 +3558,48 @@ class DefaultLoopStepExecutor:
                                             )
                             except Exception:
                                 pass
-                            # Assistant turn from last step output (default ai_turn_source: last)
+                            # Assistant turns per ai_turn_source
                             try:
-                                if pipeline_result.step_history:
-                                    last_sr = pipeline_result.step_history[-1]
-                                    txt2 = str(getattr(last_sr, "output", "") or "")
-                                    if txt2.strip():
-                                        hist.append(
-                                            ConversationTurn(
-                                                role=ConversationRole.assistant, content=txt2
+                                src = ai_src
+                                if src == "last":
+                                    if pipeline_result.step_history:
+                                        last_sr = pipeline_result.step_history[-1]
+                                        txt2 = str(getattr(last_sr, "output", "") or "")
+                                        if txt2.strip():
+                                            hist.append(
+                                                ConversationTurn(
+                                                    role=ConversationRole.assistant,
+                                                    content=txt2,
+                                                )
                                             )
-                                        )
+                                elif src == "all_agents":
+                                    for sr in pipeline_result.step_history:
+                                        n = getattr(sr, "name", "")
+                                        if not sr.success:
+                                            continue
+                                        if n in agent_step_names:
+                                            txta = str(getattr(sr, "output", "") or "")
+                                            if txta.strip():
+                                                hist.append(
+                                                    ConversationTurn(
+                                                        role=ConversationRole.assistant,
+                                                        content=txta,
+                                                    )
+                                                )
+                                elif src == "named_steps":
+                                    for sr in pipeline_result.step_history:
+                                        n = getattr(sr, "name", "")
+                                        if not sr.success:
+                                            continue
+                                        if n in named_steps_set:
+                                            txtn = str(getattr(sr, "output", "") or "")
+                                            if txtn.strip():
+                                                hist.append(
+                                                    ConversationTurn(
+                                                        role=ConversationRole.assistant,
+                                                        content=txtn,
+                                                    )
+                                                )
                             except Exception:
                                 pass
                 except Exception:
