@@ -7,6 +7,7 @@ from rich.panel import Panel
 from rich.text import Text
 from typing import Dict, Any, Optional
 import datetime
+import json as _json
 from .config import load_backend_from_config
 
 
@@ -145,3 +146,55 @@ def trace_command(run_id: str, *, prompt_preview_len: int = 200) -> None:
     _print_trace_summary(trace, run_details)
     tree = _render_trace_tree(trace, preview_len=prompt_preview_len)
     Console().print(tree)
+
+
+def trace_from_file(file_path: str, *, prompt_preview_len: int = 200) -> None:
+    """Render a saved debug JSON (from --debug-export) as a rich trace tree.
+
+    Accepts either a full export payload (with a 'trace_tree' key) or a bare
+    trace root object.
+    """
+    try:
+        with open(file_path, "r", encoding="utf-8") as fh:
+            payload = _json.load(fh)
+    except Exception as e:
+        typer.echo(f"[red]Failed to read file:[/red] {e}", err=True)
+        raise typer.Exit(1)
+
+    # Detect shape
+    if isinstance(payload, dict) and "trace_tree" in payload:
+        trace = payload.get("trace_tree")
+        run_details = {
+            "run_id": payload.get("run_id"),
+            "pipeline_name": payload.get("pipeline_name"),
+            "status": None,
+            "created_at": payload.get("exported_at"),
+            "end_time": None,
+            "total_steps": None,
+        }
+    else:
+        trace = payload
+        run_details = None
+
+    if not isinstance(trace, dict):
+        typer.echo("[red]Invalid trace payload: expected a JSON object[/red]", err=True)
+        raise typer.Exit(1)
+
+    # Print a lightweight summary when available
+    try:
+        console = Console()
+        console.rule("Trace (from file)")
+        if run_details is not None:
+            rid = run_details.get("run_id") or "-"
+            pipe = run_details.get("pipeline_name") or "-"
+            created = run_details.get("created_at") or "-"
+            summary = Text()
+            summary.append(f"Run ID: {rid}\n")
+            summary.append(f"Pipeline: {pipe}\n")
+            summary.append(f"Exported At: {created}\n")
+            console.print(Panel(summary, title="Summary", expand=False))
+        tree = _render_trace_tree(trace, preview_len=prompt_preview_len)
+        console.print(tree)
+    except Exception as e:
+        typer.echo(f"[red]Failed to render trace:[/red] {e}", err=True)
+        raise typer.Exit(1)

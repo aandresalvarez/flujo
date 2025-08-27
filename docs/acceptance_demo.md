@@ -76,7 +76,23 @@ uv run python resume_demo.py
 uv run flujo lens trace <run_id>
 ```
 
-Look for `agent.prompt` events under spans to see a redacted preview of the injected history.
+Look for these events under spans:
+- `agent.prompt` for a redacted preview of the injected history
+- `agent.system` / `agent.input` / `agent.response` / `agent.usage` for full agent-call lifecycle
+- `loop.iteration` to correlate messages with iterations
+
+Alternatively, you can use the run command with debug flags to see a rich Debug Trace and export a full log:
+
+```bash
+# Safe previews only
+uv run flujo run --debug --trace-preview-len 1500 --input "Initial Goal"
+
+# Full unredacted prompts/responses (unsafe; local only)
+uv run flujo run --debug-prompts --trace-preview-len 4000 --input "Initial Goal"
+
+# Export everything to a JSON file
+uv run flujo run --debug --debug-export output/last_run_debug.json --input "Initial Goal"
+```
 
 ## 5) Notes on cost guards
 - Use `history_management` to bound cost (token/turn limits).

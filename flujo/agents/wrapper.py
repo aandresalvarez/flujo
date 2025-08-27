@@ -29,6 +29,8 @@ from ..exceptions import OrchestratorError, OrchestratorRetryError
 from ..utils.serialization import safe_serialize
 from .repair import DeterministicRepairProcessor
 from ..infra.telemetry import logfire
+from ..tracing.manager import get_active_trace_manager
+from ..utils.redact import summarize_and_redact_prompt
 
 # Import the agent factory from the new dedicated module
 from .factory import make_agent, _unwrap_type_adapter
@@ -154,6 +156,43 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         try:
             async for attempt in retryer:
                 with attempt:
+                    # Prepare trace helpers
+                    tm = get_active_trace_manager()
+                    try:
+                        import os as _os
+
+                        debug_prompts = _os.getenv("FLUJO_DEBUG_PROMPTS") == "1"
+                        try:
+                            preview_len_env = int(_os.getenv("FLUJO_TRACE_PREVIEW_LEN", "1000"))
+                        except Exception:
+                            preview_len_env = 1000
+                    except Exception:
+                        debug_prompts = False
+                        preview_len_env = 1000
+
+                    # Record agent.system and agent.input events before call
+                    try:
+                        if tm is not None:
+                            sys_txt_raw = getattr(self._agent, "system_prompt", None)
+                            sys_preview = summarize_and_redact_prompt(
+                                sys_txt_raw if isinstance(sys_txt_raw, str) else str(sys_txt_raw),
+                                max_length=preview_len_env,
+                            )
+                            attrs_sys = {
+                                "model_id": self.model_id,
+                                "attempt": getattr(attempt.retry_state, "attempt_number", 1),
+                                "system_prompt_preview": sys_preview,
+                            }
+                            if debug_prompts:
+                                attrs_sys["system_prompt_full"] = (
+                                    sys_txt_raw
+                                    if isinstance(sys_txt_raw, str)
+                                    else str(sys_txt_raw)
+                                )
+                            tm.add_event("agent.system", attrs_sys)
+                    except Exception:
+                        pass
+
                     raw_agent_response = await asyncio.wait_for(
                         self._call_agent_with_dynamic_args(
                             *processed_args,
@@ -184,6 +223,41 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     # Get the actual output content to be processed
                     unpacked_output = getattr(raw_agent_response, "output", raw_agent_response)
 
+                    # Emit agent.input event (post-processor prompt snapshot)
+                    try:
+                        if tm is not None:
+                            prompt_payload = processed_args[0] if processed_args else None
+                            # stringify and redact
+                            prompt_str = (
+                                prompt_payload
+                                if isinstance(prompt_payload, str)
+                                else safe_serialize(prompt_payload)
+                            )
+                            prompt_preview = summarize_and_redact_prompt(
+                                prompt_str, max_length=preview_len_env
+                            )
+                            attrs_in = {
+                                "model_id": self.model_id,
+                                "attempt": getattr(attempt.retry_state, "attempt_number", 1),
+                                "input_preview": prompt_preview,
+                            }
+                            if debug_prompts:
+                                attrs_in["input_full"] = prompt_str
+                            # Attach agent options snapshot for this attempt
+                            try:
+                                # Basic options exposed at wrapper level when set in ExecutorCore.
+                                # We cannot directly access step.config here; ExecutorCore logs options separately.
+                                attrs_in["options"] = (
+                                    processed_kwargs.get("options")
+                                    if isinstance(processed_kwargs, dict)
+                                    else None
+                                )
+                            except Exception:
+                                pass
+                            tm.add_event("agent.input", attrs_in)
+                    except Exception:
+                        pass
+
                     if self.processors.output_processors:
                         processed = unpacked_output
                         for proc in self.processors.output_processors:
@@ -206,8 +280,66 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                             def usage(self) -> Any:
                                 return self._usage_info
 
+                        # Trace the response with preview and usage
+                        try:
+                            if tm is not None:
+                                out_str = (
+                                    unpacked_output
+                                    if isinstance(unpacked_output, str)
+                                    else safe_serialize(unpacked_output)
+                                )
+                                out_prev = summarize_and_redact_prompt(
+                                    out_str, max_length=preview_len_env
+                                )
+                                attrs_out = {
+                                    "model_id": self.model_id,
+                                    "attempt": getattr(attempt.retry_state, "attempt_number", 1),
+                                    "response_preview": out_prev,
+                                }
+                                if debug_prompts:
+                                    attrs_out["response_full"] = out_str
+                                tm.add_event("agent.response", attrs_out)
+                                # Usage event
+                                try:
+                                    u = agent_usage_info
+                                    # pydantic-ai returns an object with .input_tokens/.output_tokens sometimes
+                                    it = getattr(u, "input_tokens", None)
+                                    ot = getattr(u, "output_tokens", None)
+                                    cost = getattr(u, "cost_usd", None)
+                                    tm.add_event(
+                                        "agent.usage",
+                                        {
+                                            "input_tokens": it,
+                                            "output_tokens": ot,
+                                            "cost_usd": cost,
+                                        },
+                                    )
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                         return ProcessedOutputWithUsage(unpacked_output, agent_usage_info)
                     else:
+                        try:
+                            if tm is not None:
+                                out_str = (
+                                    unpacked_output
+                                    if isinstance(unpacked_output, str)
+                                    else safe_serialize(unpacked_output)
+                                )
+                                out_prev = summarize_and_redact_prompt(
+                                    out_str, max_length=preview_len_env
+                                )
+                                attrs_out = {
+                                    "model_id": self.model_id,
+                                    "attempt": getattr(attempt.retry_state, "attempt_number", 1),
+                                    "response_preview": out_prev,
+                                }
+                                if debug_prompts:
+                                    attrs_out["response_full"] = out_str
+                                tm.add_event("agent.response", attrs_out)
+                        except Exception:
+                            pass
                         return unpacked_output
         except RetryError as e:
             last_exc = e.last_attempt.exception()
@@ -420,6 +552,26 @@ class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
                 )
             except Exception:
                 final_system_prompt = self.system_prompt_template
+
+            # Trace the resolved variables for debugging (redacted)
+            try:
+                tm = get_active_trace_manager()
+                if tm is not None:
+                    import os as _os
+                    from ..utils.redact import summarize_and_redact_prompt as _sum
+
+                    full_flag = _os.getenv("FLUJO_DEBUG_PROMPTS") == "1"
+                    try:
+                        prev_len = int(_os.getenv("FLUJO_TRACE_PREVIEW_LEN", "1000"))
+                    except Exception:
+                        prev_len = 1000
+                    vars_preview = {
+                        k: (_sum(str(v), max_length=prev_len) if not full_flag else str(v))
+                        for k, v in (resolved_vars or {}).items()
+                    }
+                    tm.add_event("agent.system.vars", {"vars": vars_preview})
+            except Exception:
+                pass
 
             # Temporarily override system prompt with concurrency protection
             async with self._prompt_lock:

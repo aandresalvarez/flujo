@@ -883,6 +883,8 @@ def create_flujo_runner(
     context_model_class: Optional[Type[PipelineContext]],
     initial_context_data: Optional[Dict[str, Any]],
     state_backend: Optional[Any] = None,
+    *,
+    debug: bool = False,
 ) -> Any:
     """Create a Flujo runner instance with the given configuration.
 
@@ -918,6 +920,9 @@ def create_flujo_runner(
     except Exception:
         usage_limits_arg = None
 
+    # Select local tracer when debug is enabled
+    local_tracer_arg: Any = "default" if debug else None
+
     if context_model_class is not None:
         # Use custom context model with proper typing
         runner = Flujo[Any, Any, PipelineContext](
@@ -927,6 +932,7 @@ def create_flujo_runner(
             state_backend=state_backend,
             pipeline_name=inferred_name,
             usage_limits=usage_limits_arg,
+            local_tracer=local_tracer_arg,
         )
     else:
         # Use default PipelineContext
@@ -937,6 +943,7 @@ def create_flujo_runner(
             state_backend=state_backend,
             pipeline_name=inferred_name,
             usage_limits=usage_limits_arg,
+            local_tracer=local_tracer_arg,
         )
 
     return runner
@@ -2239,40 +2246,7 @@ state_machine_default = true
     )
 
     demo_pipeline_content = (
-        """
-version: "0.1"
-name: "research_demo"
-
-agents:
-  result_formatter:
-    model: "openai:gpt-4o-mini"
-    system_prompt: |
-      You are a research assistant. You will be given a JSON object containing web search results.
-      Format these results into a clear, concise, and human-readable summary.
-      Present the title, a brief snippet, and the link for each result in a numbered list.
-      If the input is empty or contains no results, say "I couldn't find any information on that topic."
-    output_schema:
-      type: string
-
-steps:
-  - kind: hitl
-    name: get_research_topic
-    message: "What would you like to research on the web?"
-
-  - kind: step
-    name: perform_web_search
-    agent:
-      id: "flujo.builtins.web_search"
-      params:
-        max_results: 3
-    input: "{{ previous_step }}"
-
-  - kind: step
-    name: format_search_results
-    uses: agents.result_formatter
-    input: "{{ previous_step }}"
-""".strip()
-        + "\n"
+        generate_demo_yaml(demo_name="research_demo", preset="research_demo") + "\n"
     )
 
     skills_init_content = "# This marks the skills package for your project.\n"
@@ -2377,3 +2351,133 @@ def update_project_budget(flujo_toml_path: Path, pipeline_name: str, cost_limit:
         text = text.rstrip() + "\n\n[budgets]\n"
 
     flujo_toml_path.write_text(text.rstrip() + new_section)
+
+
+# --------------------------------------------------------------------------- #
+# Demo YAML generator
+# --------------------------------------------------------------------------- #
+
+
+def generate_demo_yaml(
+    *,
+    demo_name: str = "demo",
+    preset: str = "conversational_loop",
+    conversation: bool = True,
+    ai_turn_source: Optional[str] = None,
+    user_turn_sources: Optional[list[str]] = None,
+    history_strategy: Optional[str] = None,
+    history_max_tokens: Optional[int] = None,
+    history_max_turns: Optional[int] = None,
+    history_summarize_ratio: Optional[float] = None,
+) -> str:
+    """Generate a ready-to-run demo pipeline YAML.
+
+    Presets:
+    - conversational_loop: HITL clarify + assistant answer inside a loop, with optional
+      conversation history controls.
+    - map_hitl: Map over an `items` list and pause for a note per item, then combine.
+    """
+    preset = (preset or "conversational_loop").strip().lower()
+    # Normalize options
+    uts = user_turn_sources or ["hitl"]
+
+    if preset == "map_hitl":
+        # Simple map demo with HITL annotation per item
+        return (
+            """
+version: "0.1"
+name: "{demo_name}"
+
+steps:
+  - kind: map
+    name: AnnotateItems
+    iterable_input: items
+    body:
+      - kind: hitl
+        name: AnnotateItem
+        message: "Provide a short note for this item"
+      - kind: step
+        name: Combine
+        agent: {{ id: "flujo.builtins.stringify" }}
+""".strip()
+        ).format(demo_name=demo_name)
+
+    if preset == "research_demo":
+        return (
+            """
+version: "0.1"
+name: "{demo_name}"
+
+agents:
+  result_formatter:
+    model: "openai:gpt-4o-mini"
+    system_prompt: |
+      You are a research assistant. You will be given a JSON object containing web search results.
+      Format these results into a clear, concise, and human-readable summary.
+      Present the title, a brief snippet, and the link for each result in a numbered list.
+      If the input is empty or contains no results, say "I couldn't find any information on that topic."
+    output_schema:
+      type: string
+
+steps:
+  - kind: hitl
+    name: get_research_topic
+    message: "What would you like to research on the web?"
+
+  - kind: step
+    name: perform_web_search
+    agent:
+      id: "flujo.builtins.web_search"
+      params:
+        max_results: 3
+    input: "{{ previous_step }}"
+
+  - kind: step
+    name: format_search_results
+    uses: agents.result_formatter
+    input: "{{ previous_step }}"
+""".strip()
+        ).format(demo_name=demo_name)
+
+    # Default preset: conversational loop with history wiring
+    meta_lines: list[str] = []
+    if conversation:
+        meta_lines.append("    conversation: true")
+        if ai_turn_source:
+            meta_lines.append(f"    ai_turn_source: {ai_turn_source}")
+        if uts:
+            quoted = ", ".join(repr(x) for x in uts)
+            meta_lines.append(f"    user_turn_sources: [{quoted}]")
+        hm: dict[str, object] = {}
+        if history_strategy:
+            hm["strategy"] = history_strategy
+        if history_max_tokens is not None:
+            hm["max_tokens"] = history_max_tokens
+        if history_max_turns is not None:
+            hm["max_turns"] = history_max_turns
+        if history_summarize_ratio is not None:
+            hm["summarize_ratio"] = history_summarize_ratio
+        if hm:
+            meta_lines.append("    history_management:")
+            for k, v in hm.items():
+                meta_lines.append(f"      {k}: {v}")
+
+    loop_meta = ("\n" + "\n".join(meta_lines) + "\n") if meta_lines else "\n"
+    yaml_text = (
+        """
+version: "0.1"
+name: "{demo_name}"
+
+steps:
+  - kind: loop
+    name: conversational_loop
+    stop_when: agent_finished{loop_meta}    body:
+      - kind: hitl
+        name: clarify
+        message: "What do you want to achieve?"
+      - kind: step
+        name: answer
+        agent: {{ id: "flujo.builtins.stringify" }}
+""".strip()
+    ).format(demo_name=demo_name, loop_meta=loop_meta)
+    return yaml_text

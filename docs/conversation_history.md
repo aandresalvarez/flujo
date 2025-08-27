@@ -12,5 +12,8 @@ Key properties
 
 Notes
 - The slot is intentionally simple (text only) in v1 to maximize portability across providers. Rich content can be added in a backward‑compatible evolution.
-- For HITL workflows, human responses can be mirrored as `user` turns by the loop policy when enabled.
-
+- For HITL workflows:
+-  - On pause, the HITL question is appended as an `assistant` turn so the next iteration “remembers” what was asked.
+-  - On resume, the latest `hitl_history[-1].human_response` is mirrored as a `user` turn before the next agent call.
+-  - When `user_turn_sources` includes `hitl`, successful HITL outputs also contribute `user` turns at iteration end (including nested HITL inside conditionals/parallel branches).
+- Injection pinning: The initial goal is pinned as the first turn in the injected history even when truncation is applied, so templates like `history.0` reliably refer to the initial goal.

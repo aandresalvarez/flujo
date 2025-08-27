@@ -78,6 +78,37 @@ Completion attributes to set before closing the span:
   - When: execution resumes after HITL
   - Attributes: { human_input: string }
 
+- agent.prompt
+  - When: a conversation history block is injected into an agent prompt
+  - Attributes: { rendered_history: string (redacted/previewed) }
+
+- agent.system
+  - When: an agent call is about to execute
+  - Attributes: { model_id: string | null, attempt: int, system_prompt_preview: string }
+  - If `--debug-prompts` is enabled, may include `system_prompt_full`.
+
+- agent.system.vars
+  - When: a templated system prompt is rendered
+  - Attributes: { vars: map[string,string] (redacted/previewed per var) }
+
+- agent.input
+  - When: the final input payload (after processors) is ready for the agent
+  - Attributes: { model_id: string | null, attempt: int, input_preview: string }
+  - If `--debug-prompts` is enabled, may include `input_full`.
+
+- agent.response
+  - When: the agent returns an output (after output processors)
+  - Attributes: { model_id: string | null, attempt: int, response_preview: string }
+  - If `--debug-prompts` is enabled, may include `response_full`.
+
+- agent.usage
+  - When: usage metrics are available from the model/provider
+  - Attributes: { input_tokens: int | null, output_tokens: int | null, cost_usd: float | null }
+
+- loop.iteration
+  - When: a loop iteration begins
+  - Attributes: { iteration: int }
+
 - flujo.budget.violation
   - When: a UsageLimitExceededError is raised
   - Attributes: { limit_type: "cost" | "tokens", limit_value: number, actual_value: number }
@@ -131,5 +162,4 @@ The golden trace test must:
 ### Versioning
 
 - This is version 1 of the contract. Any breaking change requires incrementing the version and regenerating the golden trace file with the same version suffix.
-
 

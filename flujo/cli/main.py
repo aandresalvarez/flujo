@@ -34,7 +34,6 @@ from .helpers import (
     load_mermaid_code,
     get_pipeline_step_names,
     validate_pipeline_file,
-    validate_yaml_text,
     parse_context_data,
     load_pipeline_from_file,
     find_project_root,
@@ -43,6 +42,8 @@ from .helpers import (
     update_project_budget,
     resolve_project_root,
     ensure_project_root_on_sys_path,
+    generate_demo_yaml,
+    validate_yaml_text,
 )
 from .exit_codes import (
     EX_OK,
@@ -280,9 +281,22 @@ if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
 app: typer.Typer = typer.Typer(
     rich_markup_mode="markdown",
     help=(
-        "A project-based server for building, running, and managing AI workflows.\n\n"
-        "Notes: pass --project or set FLUJO_PROJECT_ROOT to force project root detection;\n"
-        "use -v/--verbose or --trace for full error traces. Stable exit codes: see flujo.cli.exit_codes."
+        "A project-based server to build, run, and debug Flujo AI workflows.\n\n"
+        "Common Commands:\n"
+        "- `init` / `demo`: scaffold a project or a demo\n"
+        "- `run`: run the current project's pipeline (YAML or Python)\n"
+        "- `validate`: validate a pipeline file\n"
+        "- `lens`: inspect past runs (`list`, `show`, `trace`, `from-file`)\n"
+        "- `dev`: developer tools (`version`, `show-config`, `validate`, `visualize`, `budgets`)\n\n"
+        "Debugging Flags for `run`:\n"
+        "- `--debug`: step-by-step trace tree (safe previews)\n"
+        "- `--trace-preview-len N`: preview size for prompts/responses\n"
+        "- `--debug-prompts`: include full prompts/responses in trace (unsafe)\n"
+        "- `--debug-export PATH`: write full debug JSON (trace + steps + context).\n"
+        "  If omitted with `--debug`, auto-writes to `./debug/<timestamp>_<run_id>.json`.\n\n"
+        "Project Root: pass `--project` or set `FLUJO_PROJECT_ROOT`.\n"
+        "Verbose Errors: add `-v`/`--verbose` or `--trace`.\n"
+        "Stable exit codes: see flujo.cli.exit_codes."
     ),
 )
 
@@ -2040,6 +2054,31 @@ def run(
         "--dry-run",
         help="Parse and validate only; do not execute the pipeline",
     ),
+    debug: bool = typer.Option(
+        False,
+        "--debug",
+        help="Enable verbose step-by-step logs and console tracing",
+    ),
+    debug_prompts: bool = typer.Option(
+        False,
+        "--debug-prompts",
+        help="Also include full prompts and responses in trace events (unsafe)",
+    ),
+    trace_preview_len: Optional[int] = typer.Option(
+        None,
+        "--trace-preview-len",
+        help="Max characters for prompt/response previews in the debug trace (default 1000)",
+    ),
+    debug_export: bool = typer.Option(
+        False,
+        "--debug-export",
+        help="Enable full debug log export (default path if --debug-export-path omitted)",
+    ),
+    debug_export_path: Optional[str] = typer.Option(
+        None,
+        "--debug-export-path",
+        help="Write a full debug log (trace tree, step history, final context) to this JSON file",
+    ),
 ) -> None:
     """
     Run a custom pipeline from a Python file.
@@ -2139,10 +2178,26 @@ def run(
             return
 
         # Create Flujo runner using helper function
+        # Enable debug environment hints for deeper logs and stack traces
+        if debug or debug_prompts:
+            try:
+                import os as _os
+
+                _os.environ.setdefault("FLUJO_CLI_VERBOSE", "1")
+                _os.environ.setdefault("FLUJO_CLI_TRACE", "1")
+                _os.environ.setdefault("FLUJO_DEBUG", "1")
+                if debug_prompts:
+                    _os.environ["FLUJO_DEBUG_PROMPTS"] = "1"
+                if trace_preview_len is not None:
+                    _os.environ["FLUJO_TRACE_PREVIEW_LEN"] = str(int(trace_preview_len))
+            except Exception:
+                pass
+
         runner = create_flujo_runner(
             pipeline=pipeline_obj,
             context_model_class=context_model_class,
             initial_context_data=initial_context_data,
+            debug=debug,
         )
 
         # Execute pipeline using helper function
@@ -2191,6 +2246,248 @@ def run(
             typer.echo(result)
         else:
             display_pipeline_results(result, run_id, json_output)
+            # When debugging, print a compact trace tree with step attributes and key events
+            if debug or debug_prompts:
+                try:
+                    from rich.console import Console
+                    from rich.tree import Tree
+
+                    console = Console()
+
+                    def _span_label(span: Any) -> str:
+                        try:
+                            name = getattr(span, "name", "span")
+                            status = getattr(span, "status", "?")
+                            dur = 0.0
+                            st = getattr(span, "start_time", None)
+                            en = getattr(span, "end_time", None)
+                            if isinstance(st, (int, float)) and isinstance(en, (int, float)):
+                                dur = max(0.0, float(en) - float(st))
+                            return f"{name} [{status}] ({dur:.3f}s)"
+                        except Exception:
+                            return "span"
+
+                    def _add_span(tree: Tree, span: Any) -> None:
+                        node = tree.add(_span_label(span))
+                        # Attributes
+                        try:
+                            attrs = getattr(span, "attributes", {}) or {}
+                            # Show selected keys to keep it readable
+                            keys = [
+                                k
+                                for k in attrs.keys()
+                                if k.startswith("flujo.")
+                                or k in ("success", "latency_s", "step_input")
+                            ]
+                            for k in keys:
+                                v = attrs.get(k)
+                                node.add(f"[grey62]{k}: {v}[/grey62]")
+                        except Exception:
+                            pass
+                        # Events
+                        try:
+                            import os as _os
+
+                            try:
+                                prev_len = int(_os.getenv("FLUJO_TRACE_PREVIEW_LEN", "1000"))
+                            except Exception:
+                                prev_len = 1000
+                            full_flag = _os.getenv("FLUJO_DEBUG_PROMPTS") == "1"
+                            for ev in getattr(span, "events", []) or []:
+                                ename = str(ev.get("name"))
+                                eattrs = ev.get("attributes", {}) or {}
+                                # Specialized formatting for agent events with previews
+                                if ename in {
+                                    "agent.system",
+                                    "agent.input",
+                                    "agent.response",
+                                    "agent.prompt",
+                                }:
+                                    if ename == "agent.system":
+                                        txt = eattrs.get(
+                                            "system_prompt_full"
+                                            if full_flag
+                                            else "system_prompt_preview",
+                                            "",
+                                        )
+                                    elif ename == "agent.input":
+                                        txt = eattrs.get(
+                                            "input_full" if full_flag else "input_preview", ""
+                                        )
+                                    elif ename == "agent.response":
+                                        txt = eattrs.get(
+                                            "response_full" if full_flag else "response_preview", ""
+                                        )
+                                    else:  # agent.prompt from history injector
+                                        txt = eattrs.get("rendered_history", "")
+                                    s = str(txt)
+                                    if not full_flag and prev_len >= 0 and len(s) > prev_len:
+                                        s = s[:prev_len] + "..."
+                                    node.add(f"[yellow]event[/yellow] {ename}: {s}")
+                                elif ename == "agent.usage":
+                                    node.add(
+                                        f"[yellow]event[/yellow] {ename}: tokens_in={eattrs.get('input_tokens')} tokens_out={eattrs.get('output_tokens')} cost=${eattrs.get('cost_usd')}"
+                                    )
+                                elif ename == "agent.system.vars":
+                                    node.add(f"[yellow]event[/yellow] {ename}: {eattrs}")
+                                else:
+                                    node.add(f"[yellow]event[/yellow] {ename}: {eattrs}")
+                        except Exception:
+                            pass
+                        # Children
+                        try:
+                            for ch in getattr(span, "children", []) or []:
+                                _add_span(node, ch)
+                        except Exception:
+                            pass
+
+                    trace_root = getattr(result, "trace_tree", None)
+                    if trace_root is not None:
+                        console.rule("[bold]Debug Trace")
+                        root_tree = Tree(_span_label(trace_root))
+                        for child in getattr(trace_root, "children", []) or []:
+                            _add_span(root_tree, child)
+                        console.print(root_tree)
+                except Exception:
+                    pass
+
+        # If export enabled (via --debug-export) or --debug set and no explicit path, choose default path
+        export_path: Optional[str] = None
+        if (debug_export or debug) and not debug_export_path:
+            try:
+                from pathlib import Path as _Path
+                from datetime import datetime as _dt
+
+                root = find_project_root()
+                base_dir = _Path(root) if root else _Path.cwd()
+                debug_dir = base_dir / "debug"
+                ts = _dt.utcnow().strftime("%Y%m%d_%H%M%S")
+                rid = run_id or "run"
+                safe_rid = "".join(ch if ch.isalnum() else "-" for ch in str(rid))[:24]
+                export_path = str((debug_dir / f"{ts}_{safe_rid}.json").resolve())
+            except Exception:
+                export_path = None
+        elif debug_export_path:
+            export_path = debug_export_path
+
+        # Optional: export a full debug log to a file for deep analysis
+        if export_path:
+            try:
+                from pathlib import Path as _Path
+                from datetime import datetime as _dt
+                from flujo.utils.serialization import safe_serialize as _safe
+                import os as _os
+
+                export_path_obj = _Path(export_path).expanduser().resolve()
+                export_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+                def _span_to_dict(span: Any) -> dict[str, Any]:
+                    if span is None:
+                        return {}
+                    try:
+                        children = [_span_to_dict(ch) for ch in getattr(span, "children", []) or []]
+                    except Exception:
+                        children = []
+                    try:
+                        events = list(getattr(span, "events", []) or [])
+                    except Exception:
+                        events = []
+                    return {
+                        "name": getattr(span, "name", ""),
+                        "status": getattr(span, "status", ""),
+                        "start_time": getattr(span, "start_time", None),
+                        "end_time": getattr(span, "end_time", None),
+                        "attributes": getattr(span, "attributes", {}) or {},
+                        "events": events,
+                        "children": children,
+                    }
+
+                def _step_result_to_dict(sr: Any) -> dict[str, Any]:
+                    try:
+                        nested = [
+                            _step_result_to_dict(ch)
+                            for ch in (getattr(sr, "step_history", []) or [])
+                        ]
+                    except Exception:
+                        nested = []
+                    return {
+                        "name": getattr(sr, "name", None),
+                        "success": getattr(sr, "success", None),
+                        "attempts": getattr(sr, "attempts", None),
+                        "latency_s": getattr(sr, "latency_s", None),
+                        "token_counts": getattr(sr, "token_counts", None),
+                        "cost_usd": getattr(sr, "cost_usd", None),
+                        "feedback": getattr(sr, "feedback", None),
+                        "output": _safe(getattr(sr, "output", None)),
+                        "metadata": getattr(sr, "metadata_", {}) or {},
+                        "step_history": nested,
+                    }
+
+                def _context_to_dict(ctx: Any) -> dict[str, Any]:
+                    if ctx is None:
+                        return {}
+                    try:
+                        base = ctx.model_dump() if hasattr(ctx, "model_dump") else _safe(ctx)
+                    except Exception:
+                        base = {}
+                    # Augment with common transient fields for debugging
+                    try:
+                        base["scratchpad"] = _safe(getattr(ctx, "scratchpad", {}))
+                    except Exception:
+                        pass
+                    try:
+                        base["conversation_history"] = [
+                            {
+                                "role": getattr(getattr(t, "role", None), "value", None),
+                                "content": getattr(t, "content", None),
+                            }
+                            for t in (getattr(ctx, "conversation_history", []) or [])
+                        ]
+                    except Exception:
+                        pass
+                    try:
+                        base["hitl_history"] = _safe(getattr(ctx, "hitl_history", []))
+                    except Exception:
+                        pass
+                    try:
+                        base["command_log"] = _safe(getattr(ctx, "command_log", []))
+                    except Exception:
+                        pass
+                    return base if isinstance(base, dict) else {"context": base}
+
+                # Final payload
+                payload = {
+                    "exported_at": _dt.utcnow().isoformat() + "Z",
+                    "pipeline_name": pipeline_name,
+                    "run_id": run_id,
+                    "env": {
+                        "FLUJO_DEBUG": _os.getenv("FLUJO_DEBUG"),
+                        "FLUJO_DEBUG_PROMPTS": _os.getenv("FLUJO_DEBUG_PROMPTS"),
+                        "FLUJO_TRACE_PREVIEW_LEN": _os.getenv("FLUJO_TRACE_PREVIEW_LEN"),
+                    },
+                    "trace_tree": _span_to_dict(getattr(result, "trace_tree", None)),
+                    "result": {
+                        "total_cost_usd": getattr(result, "total_cost_usd", None),
+                        "total_tokens": getattr(result, "total_tokens", None),
+                        "step_history": [
+                            _step_result_to_dict(sr)
+                            for sr in (getattr(result, "step_history", []) or [])
+                        ],
+                    },
+                    "final_context": _context_to_dict(
+                        getattr(result, "final_pipeline_context", None)
+                    ),
+                }
+
+                import json as _json
+
+                with open(export_path_obj, "w", encoding="utf-8") as fh:
+                    _json.dump(payload, fh, indent=2, ensure_ascii=False)
+                if not json_output:
+                    typer.echo(f"[green]Wrote full debug log to[/green] {export_path_obj}")
+            except Exception as e:
+                if not json_output:
+                    typer.echo(f"[red]Failed to export debug log:[/red] {e}", err=True)
 
     except UsageLimitExceededError as e:
         # Friendly budget exceeded messaging with partial results if available
@@ -2861,6 +3158,118 @@ def explain_cmd(
         raise typer.Exit(1)
 
 
+def demo_yaml_cmd(
+    demo_name: Annotated[
+        str,
+        typer.Option("demo", help="Name of the demo pipeline"),
+    ] = "demo",
+    output: Annotated[
+        Optional[str],
+        typer.Option(
+            "--output", "-o", help="Path to write the demo YAML (default: ./pipeline.demo.yaml)"
+        ),
+    ] = None,
+    preset: Annotated[
+        str,
+        typer.Option(
+            "--preset",
+            help="Demo preset",
+            case_sensitive=False,
+            click_type=click.Choice(["conversational_loop", "map_hitl"]),
+        ),
+    ] = "conversational_loop",
+    conversation: Annotated[
+        bool,
+        typer.Option(
+            "--conversation/--no-conversation",
+            help="Enable conversation:true on loop preset",
+        ),
+    ] = True,
+    ai_turn_source: Annotated[
+        Optional[str],
+        typer.Option("--ai-turn-source", help="AI turn source (last/all_agents/named_steps)"),
+    ] = None,
+    user_turn_sources: Annotated[
+        Optional[str],
+        typer.Option(
+            "--user-turn-sources",
+            help="Comma-separated user turn sources (e.g., hitl,stepA,stepB)",
+        ),
+    ] = None,
+    history_strategy: Annotated[
+        Optional[str],
+        typer.Option(
+            "--history-strategy",
+            help="History strategy (truncate_tokens/truncate_turns/summarize)",
+        ),
+    ] = None,
+    history_max_tokens: Annotated[
+        Optional[int],
+        typer.Option("--history-max-tokens", help="History max_tokens"),
+    ] = None,
+    history_max_turns: Annotated[
+        Optional[int],
+        typer.Option("--history-max-turns", help="History max_turns"),
+    ] = None,
+    history_summarize_ratio: Annotated[
+        Optional[float],
+        typer.Option("--history-summarize-ratio", help="History summarize_ratio (0..1)"),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Overwrite output if it exists"),
+    ] = False,
+) -> None:
+    """Generate a modern, ready-to-run demo pipeline YAML.
+
+    The default preset produces a conversational loop demo with robust history wiring.
+    """
+    try:
+        uts_list = (
+            [s.strip() for s in user_turn_sources.split(",") if s.strip()]
+            if user_turn_sources
+            else None
+        )
+        yaml_text = generate_demo_yaml(
+            demo_name=demo_name,
+            preset=preset,
+            conversation=conversation,
+            ai_turn_source=ai_turn_source,
+            user_turn_sources=uts_list,
+            history_strategy=history_strategy,
+            history_max_tokens=history_max_tokens,
+            history_max_turns=history_max_turns,
+            history_summarize_ratio=history_summarize_ratio,
+        )
+        # Validate for user-friendliness; do not block on failures
+        try:
+            report = validate_yaml_text(yaml_text)
+            if not getattr(report, "is_valid", True):
+                typer.secho(
+                    "[yellow]Warning: generated YAML reported validation issues. Proceeding anyway.[/yellow]",
+                    err=True,
+                )
+        except Exception:
+            # Non-fatal validation failure
+            pass
+
+        path = Path(output or "pipeline.demo.yaml").resolve()
+        if path.exists() and not force:
+            typer.secho(
+                f"Refusing to overwrite existing file: {path}. Use --force to overwrite.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(2)
+        path.write_text(yaml_text, encoding="utf-8")
+        typer.secho(f"✅ Demo YAML written to {path}", fg=typer.colors.GREEN)
+        # Quick next-steps hint
+        if path.name != "pipeline.yaml":
+            typer.secho(f"Run with: flujo run --file {path}", fg=typer.colors.CYAN)
+    except Exception as e:
+        typer.secho(f"Failed to generate demo YAML: {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
 # Explicit exports
 __all__ = [
     "app",
@@ -2902,6 +3311,14 @@ def get_cli_defaults(command: str) -> Dict[str, Any]:
     Delegates to the real config manager function unless monkeypatched in tests.
     """
     return _get_cli_defaults(command)
+
+
+# Conditionally register experimental commands to avoid breaking CLI tests
+try:
+    if _os.environ.get("FLUJO_ENABLE_DEMO_YAML") == "1":
+        app.command(name="demo-yaml", help="Scaffold a robust demo pipeline YAML")(demo_yaml_cmd)
+except Exception:
+    pass
 
 
 # Compatibility functions for testing - re-export functions that tests expect to monkeypatch

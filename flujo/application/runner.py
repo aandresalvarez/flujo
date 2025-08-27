@@ -1054,6 +1054,37 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             success=True,
             attempts=1,
         )
+        # Ensure the last HITL output is accessible to subsequent steps via
+        # context.scratchpad['steps'][<step_name>] so templates like
+        # {{ steps.ask_user_for_clarification.output }} resolve after resume.
+        try:
+            if isinstance(ctx, PipelineContext):
+                sp = getattr(ctx, "scratchpad", None)
+                if not isinstance(sp, dict):
+                    setattr(ctx, "scratchpad", {"steps": {}})
+                    sp = getattr(ctx, "scratchpad", None)
+                if isinstance(sp, dict):
+                    steps_map = sp.get("steps")
+                    if not isinstance(steps_map, dict):
+                        steps_map = {}
+                        sp["steps"] = steps_map
+                    # Compact snapshot: stringify and cap size
+                    try:
+                        val = human_input
+                        if isinstance(val, bytes):
+                            try:
+                                val = val.decode("utf-8", errors="ignore")
+                            except Exception:
+                                val = str(val)
+                        else:
+                            val = str(val)
+                        if len(val) > 1024:
+                            val = val[:1024]
+                        steps_map[getattr(paused_step, "name", "")] = val
+                    except Exception:
+                        steps_map[getattr(paused_step, "name", "")] = ""
+        except Exception:
+            pass
         if isinstance(ctx, PipelineContext):
             pending = ctx.scratchpad.pop("paused_step_input", None)
             if pending is not None:
