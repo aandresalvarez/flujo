@@ -54,7 +54,7 @@ async def main():
     from flujo.application.core.state_manager import StateManager
     from flujo.state.backends.sqlite import SQLiteBackend
     backend = SQLiteBackend()
-    sm = StateManager[PipelineContext] (backend)
+    sm = StateManager[PipelineContext](backend)
     ctx, last_output, idx, created_at, pname, pver, step_history = await sm.load_workflow_state(run_id, PipelineContext)
     from flujo.domain.models import PipelineResult
     paused = PipelineResult(step_history=step_history, final_pipeline_context=ctx)
