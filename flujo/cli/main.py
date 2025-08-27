@@ -34,7 +34,6 @@ from .helpers import (
     load_mermaid_code,
     get_pipeline_step_names,
     validate_pipeline_file,
-    validate_yaml_text,
     parse_context_data,
     load_pipeline_from_file,
     find_project_root,
@@ -43,6 +42,8 @@ from .helpers import (
     update_project_budget,
     resolve_project_root,
     ensure_project_root_on_sys_path,
+    generate_demo_yaml,
+    validate_yaml_text,
 )
 from .exit_codes import (
     EX_OK,
@@ -2858,6 +2859,119 @@ def explain_cmd(
         raise typer.Exit(1)
     except Exception as e:
         typer.secho(f"Failed to explain: {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+
+@app.command(name="demo-yaml", help="Scaffold a robust demo pipeline YAML")
+def demo_yaml_cmd(
+    name: Annotated[
+        str,
+        typer.Option("demo", help="Name of the demo pipeline"),
+    ] = "demo",
+    output: Annotated[
+        Optional[str],
+        typer.Option(
+            "--output", "-o", help="Path to write the demo YAML (default: ./pipeline.demo.yaml)"
+        ),
+    ] = None,
+    preset: Annotated[
+        str,
+        typer.Option(
+            "--preset",
+            help="Demo preset",
+            case_sensitive=False,
+            click_type=click.Choice(["conversational_loop", "map_hitl"]),
+        ),
+    ] = "conversational_loop",
+    conversation: Annotated[
+        bool,
+        typer.Option(
+            "--conversation/--no-conversation",
+            help="Enable conversation:true on loop preset",
+        ),
+    ] = True,
+    ai_turn_source: Annotated[
+        Optional[str],
+        typer.Option("--ai-turn-source", help="AI turn source (last/all_agents/named_steps)"),
+    ] = None,
+    user_turn_sources: Annotated[
+        Optional[str],
+        typer.Option(
+            "--user-turn-sources",
+            help="Comma-separated user turn sources (e.g., hitl,stepA,stepB)",
+        ),
+    ] = None,
+    history_strategy: Annotated[
+        Optional[str],
+        typer.Option(
+            "--history-strategy",
+            help="History strategy (truncate_tokens/truncate_turns/summarize)",
+        ),
+    ] = None,
+    history_max_tokens: Annotated[
+        Optional[int],
+        typer.Option("--history-max-tokens", help="History max_tokens"),
+    ] = None,
+    history_max_turns: Annotated[
+        Optional[int],
+        typer.Option("--history-max-turns", help="History max_turns"),
+    ] = None,
+    history_summarize_ratio: Annotated[
+        Optional[float],
+        typer.Option("--history-summarize-ratio", help="History summarize_ratio (0..1)"),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Overwrite output if it exists"),
+    ] = False,
+) -> None:
+    """Generate a modern, ready-to-run demo pipeline YAML.
+
+    The default preset produces a conversational loop demo with robust history wiring.
+    """
+    try:
+        uts_list = (
+            [s.strip() for s in user_turn_sources.split(",") if s.strip()]
+            if user_turn_sources
+            else None
+        )
+        yaml_text = generate_demo_yaml(
+            name=name,
+            preset=preset,
+            conversation=conversation,
+            ai_turn_source=ai_turn_source,
+            user_turn_sources=uts_list,
+            history_strategy=history_strategy,
+            history_max_tokens=history_max_tokens,
+            history_max_turns=history_max_turns,
+            history_summarize_ratio=history_summarize_ratio,
+        )
+        # Validate for user-friendliness; do not block on failures
+        try:
+            report = validate_yaml_text(yaml_text)
+            if not getattr(report, "is_valid", True):
+                typer.secho(
+                    "[yellow]Warning: generated YAML reported validation issues. Proceeding anyway.[/yellow]",
+                    err=True,
+                )
+        except Exception:
+            # Non-fatal validation failure
+            pass
+
+        path = Path(output or "pipeline.demo.yaml").resolve()
+        if path.exists() and not force:
+            typer.secho(
+                f"Refusing to overwrite existing file: {path}. Use --force to overwrite.",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(2)
+        path.write_text(yaml_text, encoding="utf-8")
+        typer.secho(f"✅ Demo YAML written to {path}", fg=typer.colors.GREEN)
+        # Quick next-steps hint
+        if path.name != "pipeline.yaml":
+            typer.secho(f"Run with: flujo run --file {path}", fg=typer.colors.CYAN)
+    except Exception as e:
+        typer.secho(f"Failed to generate demo YAML: {e}", fg=typer.colors.RED)
         raise typer.Exit(1)
 
 

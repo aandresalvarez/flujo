@@ -2377,3 +2377,96 @@ def update_project_budget(flujo_toml_path: Path, pipeline_name: str, cost_limit:
         text = text.rstrip() + "\n\n[budgets]\n"
 
     flujo_toml_path.write_text(text.rstrip() + new_section)
+
+
+# --------------------------------------------------------------------------- #
+# Demo YAML generator
+# --------------------------------------------------------------------------- #
+
+
+def generate_demo_yaml(
+    *,
+    name: str = "demo",
+    preset: str = "conversational_loop",
+    conversation: bool = True,
+    ai_turn_source: Optional[str] = None,
+    user_turn_sources: Optional[list[str]] = None,
+    history_strategy: Optional[str] = None,
+    history_max_tokens: Optional[int] = None,
+    history_max_turns: Optional[int] = None,
+    history_summarize_ratio: Optional[float] = None,
+) -> str:
+    """Generate a ready-to-run demo pipeline YAML.
+
+    Presets:
+    - conversational_loop: HITL clarify + assistant answer inside a loop, with optional
+      conversation history controls.
+    - map_hitl: Map over an `items` list and pause for a note per item, then combine.
+    """
+    preset = (preset or "conversational_loop").strip().lower()
+    # Normalize options
+    uts = user_turn_sources or ["hitl"]
+
+    if preset == "map_hitl":
+        # Simple map demo with HITL annotation per item
+        return (
+            """
+version: "0.1"
+name: "{name}"
+
+steps:
+  - kind: map
+    name: AnnotateItems
+    iterable_input: items
+    body:
+      - kind: hitl
+        name: AnnotateItem
+        message: "Provide a short note for this item"
+      - kind: step
+        name: Combine
+        agent: {{ id: "flujo.builtins.stringify" }}
+""".strip()
+        ).format(name=name)
+
+    # Default preset: conversational loop with history wiring
+    meta_lines: list[str] = []
+    if conversation:
+        meta_lines.append("    conversation: true")
+        if ai_turn_source:
+            meta_lines.append(f"    ai_turn_source: {ai_turn_source}")
+        if uts:
+            quoted = ", ".join(repr(x) for x in uts)
+            meta_lines.append(f"    user_turn_sources: [{quoted}]")
+        hm: dict[str, object] = {}
+        if history_strategy:
+            hm["strategy"] = history_strategy
+        if history_max_tokens is not None:
+            hm["max_tokens"] = history_max_tokens
+        if history_max_turns is not None:
+            hm["max_turns"] = history_max_turns
+        if history_summarize_ratio is not None:
+            hm["summarize_ratio"] = history_summarize_ratio
+        if hm:
+            meta_lines.append("    history_management:")
+            for k, v in hm.items():
+                meta_lines.append(f"      {k}: {v}")
+
+    loop_meta = ("\n" + "\n".join(meta_lines) + "\n") if meta_lines else "\n"
+    yaml_text = (
+        """
+version: "0.1"
+name: "{name}"
+
+steps:
+  - kind: loop
+    name: conversational_loop
+    stop_when: agent_finished{loop_meta}    body:
+      - kind: hitl
+        name: clarify
+        message: "What do you want to achieve?"
+      - kind: step
+        name: answer
+        agent: {{ id: "flujo.builtins.stringify" }}
+""".strip()
+    ).format(name=name, loop_meta=loop_meta)
+    return yaml_text
