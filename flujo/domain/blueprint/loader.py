@@ -210,6 +210,16 @@ def _finalize_step_types(step_obj: Step[Any, Any]) -> None:
             return t is object or str(t) == "typing.Any"
 
         agent_obj = getattr(step_obj, "agent", None)
+        # Enhancement: use agent-declared target_output_type when available (e.g., AsyncAgentWrapper)
+        try:
+            if _is_default_type(getattr(step_obj, "__step_output_type__", object)) and hasattr(
+                agent_obj, "target_output_type"
+            ):
+                out_t = getattr(agent_obj, "target_output_type")
+                if out_t is not None:
+                    step_obj.__step_output_type__ = out_t
+        except Exception:
+            pass
         fn = getattr(agent_obj, "_step_callable", None)
         # Unwrap bound method to original function if needed
         if hasattr(fn, "__func__"):
