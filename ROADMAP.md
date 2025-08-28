@@ -42,6 +42,8 @@ This plan is broken into three phases, each with a clear objective, target user 
 *   **Refine `architect_pipeline.yaml`:** The prompts and logic within this pipeline are now the most critical part of the product. Test it relentlessly with the scenarios above and harden it.
 *   **Strengthen `flujo.builtins`:** Ensure the core skills (`web_search`, `http_get`, `fs_write_file`, `extract_from_text`) are robust and well-documented.
 *   **Improve the Repair Loop:** The `ValidateAndRepair` loop in the architect is key. It must be resilient. The `sanitize_blueprint_yaml` helper is a great start; make it even more robust.
+*   **Prebuilt test-time compute recipes:** Add high-level helpers in `flujo/recipes/factories.py` for (a) K-variant generation + aggregator ("mixture-of-agents" atop `ParallelStep`), and (b) `refine_until` iterative loops with safe defaults.
+*   **Docs and examples:** Provide runnable examples under `examples/` and short guides in `docs/` showing how to enable K-variants, aggregation, and refine-until patterns from `flujo create`.
 
 ---
 
@@ -79,6 +81,38 @@ This plan is broken into three phases, each with a clear objective, target user 
 
 ---
 
+#### **Phase 2.5: Parallel UX & Monitor**
+
+**Objective:** Provide real-time progress while long-running branches execute, without blocking the main work, by introducing a concurrent monitor pattern and streaming lens output.
+
+**Target User:** The same developer from Phase 2, plus product teams that value responsiveness and progressive feedback during long compute steps.
+
+**Key Scenarios to Validate:**
+
+1.  **The Live Progress Monitor:**
+    *   **Scenario:** A compute-heavy branch runs for minutes. A monitor pipeline runs concurrently and prints periodic status to the console.
+    *   **Tests:** Monitor branch runs alongside main branches via `ParallelStep`; emits non-intrusive updates; does not affect outcome.
+
+2.  **Asynchronous User Nudges:**
+    *   **Scenario:** While branches execute, user feedback (e.g., "focus on source B") is accepted and routed to active agents.
+    *   **Tests:** Monitor can accept simple signals and safely forward them without breaking idempotency.
+
+3.  **Streaming Lens:**
+    *   **Scenario:** Developer runs `flujo lens stream <run_id>` to see progressive branch updates.
+    *   **Tests:** Traces reflect branch start/end, partial results, and merges in near real time using `flujo/tracing/manager.py`.
+
+**Success Metrics:**
+
+*   **Perceived Responsiveness:** Qualitative rating ≥ 4/5 for responsiveness during long runs.
+*   **No Outcome Regressions:** Monitor branch must not change results of compute branches.
+*   **Low Overhead:** Monitor adds negligible cost and latency (<2%).
+
+**Implementation Focus for this Phase:**
+
+*   **Monitor pattern:** Provide a reusable `monitor_pipeline` pattern that runs concurrently in a `ParallelStep`. Keep all execution logic in policies (`flujo/application/core/step_policies.py`).
+*   **Streaming lens mode:** Add a `lens stream` CLI that tails trace events from `flujo/tracing/manager.py` and prints compact updates via `flujo/infra/console_tracer.py`.
+*   **Agent monitoring hooks:** Use `flujo/agents/monitoring.py` to emit consistent telemetry around long-running agents; avoid any executor-core branching.
+
 #### **Phase 3: Validate for Teams: Collaboration & Governance**
 
 **Objective:** Prove that Flujo is not just a tool for solo developers but a platform for teams to build and manage workflows reliably and safely.
@@ -110,5 +144,41 @@ This plan is broken into three phases, each with a clear objective, target user 
 *   **First-Class Budget Commands:** Create `flujo budget set <pipeline_name> --cost-limit 5.0`. This makes the governance features visible and accessible, building on the solid foundation you already have.
 *   **Implement a `flujo diff` Command:** This is the most important feature from Roadmap Phase 4a. A command that shows a human-readable summary of changes between two YAML files ("Added step 'X', removed validator from step 'Y'") would be invaluable for PRs.
 *   **Side-Effect Warnings:** When `flujo create` generates a pipeline using a skill marked with `side_effects=True`, it should print a bold warning to the console, making the user aware of the potential impact. The logic for this is already in `flujo/cli/helpers.py`.
+*   **Parallel budgets & lens:** Ensure `Quota.split()` per branch is surfaced in traces, and `lens trace` visualizes branch-level success, cost/tokens, and merge strategy (`CONTEXT_UPDATE` vs. explicit `field_mapping`).
 
 By following this validation-driven plan, you ensure that you are building on the strongest parts of your current system and prioritizing the features that deliver the most immediate and tangible value to your users.
+
+---
+
+#### **Phase 4: Architect-Driven Decomposition & Parallel Coordination**
+
+**Objective:** Enable the Architect to detect parallelizable sub-goals and emit `ParallelStep` plans with safe merge semantics and aggregation, aligning with mixture-of-agents and scalable test-time compute.
+
+**Target User:** Developers who state compound goals (e.g., research + implementation) and teams seeking faster wall-clock results via parallel work.
+
+**Key Scenarios to Validate:**
+
+1.  **Automatic Parallel Plan:**
+    *   **Scenario:** Goal includes clearly disjoint tasks ("Research X and also implement Y").
+    *   **Tests:** Architect emits a `ParallelStep` containing sub-pipelines; uses `MergeStrategy.CONTEXT_UPDATE` with explicit `field_mapping` to avoid conflicts.
+
+2.  **Mixture-of-Agents Aggregation:**
+    *   **Scenario:** K different agents/models produce candidate outputs; an aggregator agent synthesizes the final result.
+    *   **Tests:** Recipes use `ParallelStep` branches for candidates and a deterministic aggregation step; no executor-specific conditionals.
+
+3.  **Refine-Until for Hard Tasks:**
+    *   **Scenario:** Architect proposes a loop for iterative improvement when results fail validation.
+    *   **Tests:** Uses `LoopStep` with `ContextManager.isolate()` semantics; merges back only on success.
+
+**Success Metrics:**
+
+*   **Decomposition Quality:** ≥ 60% of suitable goals produce correct `ParallelStep` plans on first try; < 3 edits for the rest.
+*   **Speedup:** For N branches, wall-clock approaches max(branch) vs. sum(branch).
+*   **Safety:** No context poisoning across retries/branches; zero control-flow demotions.
+
+**Implementation Focus for this Phase:**
+
+*   **Architect planner heuristics:** Extend `flujo/architect/builder.py` to detect disjoint sub-goals and emit `ParallelStep` with explicit `field_mapping`. Keep logic in policies; Architect only describes the plan.
+*   **High-level recipes:** Provide `mixture-of-agents` and `refine_until` presets in `flujo/recipes/factories.py` with examples/docs.
+*   **Policy-driven execution:** Reuse `DefaultParallelStepExecutor` and loop policies in `flujo/application/core/step_policies.py`; never branch in `ExecutorCore`.
+*   **Centralized config & quotas:** Continue to use `flujo.infra.config_manager` for settings and `Quota.split()` for branch limits; no reactive governors.
