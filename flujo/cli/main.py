@@ -3089,19 +3089,68 @@ def _run_create_wizard(
 
 @app.command(name="explain", help="Explain a pipeline YAML in plain language")
 def explain_cmd(
-    path: Annotated[Optional[str], typer.Argument(help="Path to pipeline.yaml")],
+    path: Annotated[
+        Optional[str],
+        typer.Argument(
+            help="Path to pipeline.yaml (defaults to project pipeline.yaml)",
+        ),
+    ] = None,
 ) -> None:
+    import sys as _sys
+    from pathlib import Path as _Path
     import yaml as _yaml
 
     try:
-        if not path:
-            typer.secho("Path to YAML is required", fg=typer.colors.RED)
-            raise typer.Exit(2)
-        with open(path, "r", encoding="utf-8") as f:
-            data = _yaml.safe_load(f)
+        # Resolve default path if omitted
+        resolved_path: Optional[str]
+        if path is None or str(path).strip() == "":
+            root = find_project_root()
+            # Prefer pipeline.yaml, fallback to pipeline.yml
+            pyaml = (_Path(root) / "pipeline.yaml").resolve()
+            pyml = (_Path(root) / "pipeline.yml").resolve()
+            if pyaml.exists():
+                resolved_path = str(pyaml)
+            elif pyml.exists():
+                resolved_path = str(pyml)
+            else:
+                typer.secho(
+                    "No pipeline.yaml found in project. Provide a PATH to a YAML file.",
+                    fg=typer.colors.RED,
+                )
+                raise typer.Exit(2)
+        elif path == "-":
+            # Read YAML from stdin
+            yaml_text = _sys.stdin.read()
+            data = _yaml.safe_load(yaml_text)
+            resolved_path = None
+        else:
+            # Support passing a directory; use project markers to find YAML
+            p = _Path(path).resolve()
+            if p.is_dir():
+                pyaml = (p / "pipeline.yaml").resolve()
+                pyml = (p / "pipeline.yml").resolve()
+                if pyaml.exists():
+                    resolved_path = str(pyaml)
+                elif pyml.exists():
+                    resolved_path = str(pyml)
+                else:
+                    typer.secho(
+                        f"Directory does not contain pipeline.yaml: {p}",
+                        fg=typer.colors.RED,
+                    )
+                    raise typer.Exit(2)
+            else:
+                resolved_path = str(p)
+
+        # Load YAML if we haven't already from stdin
+        if resolved_path is not None:
+            with open(resolved_path, "r", encoding="utf-8") as f:
+                data = _yaml.safe_load(f)
+
         if not isinstance(data, dict):
             typer.secho("Invalid YAML format", fg=typer.colors.RED)
             raise typer.Exit(2)
+
         steps = data.get("steps") or []
         summary: list[str] = []
         if isinstance(data.get("name"), str):
@@ -3151,7 +3200,9 @@ def explain_cmd(
                 summary.append(f"Step '{nm}' ({kind})")
         typer.echo("\n".join(summary))
     except FileNotFoundError:
-        typer.secho(f"File not found: {path}", fg=typer.colors.RED)
+        # Use the most relevant path in the message
+        missing = resolved_path if "resolved_path" in locals() else path
+        typer.secho(f"File not found: {missing}", fg=typer.colors.RED)
         raise typer.Exit(1)
     except Exception as e:
         typer.secho(f"Failed to explain: {e}", fg=typer.colors.RED)
