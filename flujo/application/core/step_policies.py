@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import copy
 from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple, Type
 from typing import Any as _Any
 from unittest.mock import Mock, MagicMock, AsyncMock
@@ -5605,7 +5606,6 @@ class DefaultImportStepExecutor:
     ) -> StepOutcome[StepResult]:
         from .context_manager import ContextManager
         import json
-        import copy
 
         # Build child context based on inherit_context and inherit_conversation flags
         sub_context = None
@@ -5616,7 +5616,8 @@ class DefaultImportStepExecutor:
                 try:
                     sub_context = type(context).model_validate(context.model_dump())
                 except Exception:
-                    sub_context = context
+                    # Final fallback: defensive copy to avoid mutating parent context
+                    sub_context = copy.deepcopy(context)
         else:
             # Clean base (fresh context instance) of same type when possible
             if context is not None:
@@ -5648,10 +5649,18 @@ class DefaultImportStepExecutor:
         try:
             if step.input_to in ("scratchpad", "both") and sub_context is not None:
                 sp = getattr(sub_context, "scratchpad", None)
+                if not isinstance(sp, dict):
+                    try:
+                        setattr(sub_context, "scratchpad", {})
+                        sp = getattr(sub_context, "scratchpad", None)
+                    except Exception:
+                        sp = None
                 if isinstance(sp, dict):
                     if isinstance(data, dict):
                         # Deep-merge dicts into scratchpad
-                        def _deep_merge_dict(a: dict, b: dict) -> dict:
+                        def _deep_merge_dict(
+                            a: dict[str, Any], b: dict[str, Any]
+                        ) -> dict[str, Any]:
                             res = dict(a)
                             for k, v in b.items():
                                 if k in res and isinstance(res[k], dict) and isinstance(v, dict):
@@ -5790,51 +5799,64 @@ class DefaultImportStepExecutor:
             step_history=[inner_sr],
         )
 
-        if getattr(step, "updates_context", False) and getattr(step, "outputs", None):
-            # Build a minimal context update dict using outputs mapping
-            update_data: Dict[str, Any] = {}
-
-            def _get_child(path: str) -> Any:
-                parts = [p for p in path.split(".") if p]
-                cur: Any = getattr(inner_sr.output, "final_pipeline_context", None)
-                if cur is None and sub_context is not None:
-                    cur = sub_context
-                for part in parts:
-                    if cur is None:
-                        return None
-                    if hasattr(cur, part):
-                        cur = getattr(cur, part)
-                    elif isinstance(cur, dict):
-                        cur = cur.get(part)
-                    else:
-                        return None
-                return cur
-
-            def _assign_parent(path: str, value: Any) -> None:
-                parts = [p for p in path.split(".") if p]
-                if not parts:
-                    return
-                tgt = update_data
-                for part in parts[:-1]:
-                    if part not in tgt or not isinstance(tgt[part], dict):
-                        tgt[part] = {}
-                    tgt = tgt[part]
-                tgt[parts[-1]] = value
-
-            try:
-                for mapping in step.outputs:
-                    try:
-                        parent_path = mapping.parent
-                        child_val = _get_child(mapping.child)
-                        # Skip missing child paths
-                        if child_val is None:
-                            continue
-                        _assign_parent(parent_path, child_val)
-                    except Exception:
-                        continue
-                parent_sr.output = update_data
-            except Exception:
+        if getattr(step, "updates_context", False):
+            if step.outputs is None:
                 parent_sr.output = inner_sr.output
+            elif not step.outputs:
+                parent_sr.output = {}
+            else:
+                # Build a minimal context update dict using outputs mapping
+                update_data: Dict[str, Any] = {}
+
+                def _get_child(path: str) -> Any:
+                    parts = [p for p in path.split(".") if p]
+                    # Prefer the child's final context produced by the imported pipeline
+                    cur: Any = getattr(inner_sr, "branch_context", None)
+                    if cur is None and sub_context is not None:
+                        cur = sub_context
+                    for part in parts:
+                        if cur is None:
+                            return None
+                        if hasattr(cur, part):
+                            cur = getattr(cur, part)
+                        elif isinstance(cur, dict):
+                            cur = cur.get(part)
+                        else:
+                            return None
+                    return cur
+
+                def _assign_parent(path: str, value: Any) -> None:
+                    parts = [p for p in path.split(".") if p]
+                    if not parts:
+                        return
+                    tgt = update_data
+                    for part in parts[:-1]:
+                        if part not in tgt or not isinstance(tgt[part], dict):
+                            tgt[part] = {}
+                        tgt = tgt[part]
+                    tgt[parts[-1]] = value
+
+                try:
+                    for mapping in step.outputs:
+                        try:
+                            parent_path = getattr(mapping, "parent", None) or (
+                                mapping.get("parent") if isinstance(mapping, dict) else None
+                            )
+                            child_spec = getattr(mapping, "child", None) or (
+                                mapping.get("child") if isinstance(mapping, dict) else None
+                            )
+                            if not isinstance(parent_path, str) or not isinstance(child_spec, str):
+                                continue
+                            child_val = _get_child(child_spec)
+                            # Skip missing child paths
+                            if child_val is None:
+                                continue
+                            _assign_parent(parent_path, child_val)
+                        except Exception:
+                            continue
+                    parent_sr.output = update_data
+                except Exception:
+                    parent_sr.output = inner_sr.output
         else:
             parent_sr.output = inner_sr.output
 

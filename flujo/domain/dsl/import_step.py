@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, Literal, List
+from typing import Any, Literal
 
 from pydantic import Field
 from ..base_model import BaseModel
@@ -15,8 +15,8 @@ class OutputMapping(BaseModel):
     Example: { child: "scratchpad.final_sql", parent: "scratchpad.final_sql" }
     """
 
-    child: str
-    parent: str
+    child: str = Field(min_length=1)
+    parent: str = Field(min_length=1)
 
 
 class ImportStep(Step[Any, Any]):
@@ -37,8 +37,10 @@ class ImportStep(Step[Any, Any]):
         Optional key when projecting scalar inputs into the scratchpad.
     outputs:
         Optional list of mappings from child context paths → parent context paths.
-        When provided and ``updates_context=True``, only these mapped fields are
-        merged back.
+        Semantics with ``updates_context=True``:
+        - outputs is None → merge all child fields (legacy behavior)
+        - outputs is []   → merge nothing
+        - outputs has items → merge only the listed fields
     inherit_conversation:
         If True, conversation-related fields are preserved end-to-end. This is
         a hint for future enhancements; current implementation relies on context
@@ -53,8 +55,8 @@ class ImportStep(Step[Any, Any]):
     pipeline: Pipeline[Any, Any]
     inherit_context: bool = False
     input_to: Literal["initial_prompt", "scratchpad", "both"] = "initial_prompt"
-    input_scratchpad_key: Optional[str] = "initial_input"
-    outputs: List[OutputMapping] = Field(default_factory=list)
+    input_scratchpad_key: str | None = "initial_input"
+    outputs: list[OutputMapping] | None = None
     inherit_conversation: bool = True
     on_failure: Literal["abort", "skip", "continue_with_default"] = "abort"
 

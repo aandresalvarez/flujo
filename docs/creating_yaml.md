@@ -1221,9 +1221,10 @@ Imported blueprints are compiled relative to the parent YAML directory and wrapp
 Key options (under `steps[*].config` when `uses: imports.<alias>`):
 - `input_to`: Where to project the parent step input for the child run. One of `initial_prompt`, `scratchpad`, or `both`.
 - `input_scratchpad_key`: Key name used when the input is a scalar and `input_to: scratchpad` (default: `initial_input`).
-- `outputs`: List of mappings `{ child: <path>, parent: <path> }` for deterministic merges when `updates_context: true`.
+ - `outputs`: List of mappings `{ child: <path>, parent: <path> }` for deterministic merges when `updates_context: true`. Omit to merge all child fields; use an empty list to merge none.
 - `inherit_context`: Whether to inherit and deep‑copy the parent context into the child run (default: false).
-- `inherit_conversation`: Whether HITL prompts from the child participate in the parent conversation (default: true).
+ - `inherit_conversation`: Whether HITL prompts from the child participate in the parent's conversation (default: true).
+ - `on_failure`: Behavior when the child import fails: `abort` (default), `skip`, or `continue_with_default`.
 
 Example — three imported pipelines chained end‑to‑end without re‑prompting:
 

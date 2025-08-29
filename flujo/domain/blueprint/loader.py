@@ -1504,9 +1504,9 @@ def _make_step_from_blueprint(
                     input_scratchpad_key = raw_cfg.get("input_scratchpad_key", "initial_input")
                     # Accept either a dict mapping (backward compat) or a list of {child, parent}
                     outputs_spec = raw_cfg.get("outputs")
-                    outputs_list: list[_OutputMapping] = []
+                    outputs_list: list[_OutputMapping] | None = None
                     if isinstance(outputs_spec, dict):
-                        # Convert mapping child_path -> parent_path into list of OutputMapping
+                        outputs_list = []
                         for c_path, p_path in outputs_spec.items():
                             try:
                                 outputs_list.append(
@@ -1515,16 +1515,18 @@ def _make_step_from_blueprint(
                             except Exception:
                                 continue
                     elif isinstance(outputs_spec, list):
+                        tmp: list[_OutputMapping] = []
                         for item in outputs_spec:
                             try:
                                 if isinstance(item, dict) and "child" in item and "parent" in item:
-                                    outputs_list.append(
+                                    tmp.append(
                                         _OutputMapping(
                                             child=str(item["child"]), parent=str(item["parent"])
                                         )
                                     )
                             except Exception:
                                 continue
+                        outputs_list = tmp if tmp or outputs_spec == [] else None
                     inherit_conversation = bool(raw_cfg.get("inherit_conversation", True))
                     on_failure = str(raw_cfg.get("on_failure", "abort")).strip().lower()
                     if on_failure not in {"abort", "skip", "continue_with_default"}:
