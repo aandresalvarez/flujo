@@ -2130,35 +2130,79 @@ def _import_object(path: str) -> Any:
                 import importlib.util as _iu
                 import hashlib as _hashlib
                 import os as _os
+                import sys as _sys
+                import types as _types
 
                 # Build filesystem path under the child base dir
                 tail = module_name.split(".", 1)[1] if module_name != "skills" else ""
                 parts = [p for p in tail.split(".") if p]
-                mod_path = _os.path.join(base_dir, "skills", *parts)
+                skills_root = _os.path.join(base_dir, "skills")
+
+                # Compute the source path (file or package __init__.py)
+                mod_path = _os.path.join(skills_root, *parts)
+                is_package = False
                 py_path = mod_path + (".py" if parts else _os.sep + "__init__.py")
                 if parts and not _os.path.exists(py_path):
                     # Try package directory with __init__.py
-                    pkg_init = _os.path.join(base_dir, "skills", *parts, "__init__.py")
+                    pkg_init = _os.path.join(skills_root, *parts, "__init__.py")
                     if _os.path.exists(pkg_init):
                         py_path = pkg_init
+                        is_package = True
+                elif not parts:
+                    # 'skills' root is always a package
+                    is_package = True
                 if not _os.path.exists(py_path):
                     raise BlueprintError(
                         f"Unable to locate module '{module_name}' under '{base_dir}/skills'"
                     )
-                # Derive a unique, stable module name for this child + module
+
+                # Derive a unique, stable package prefix for this child
                 token = _hashlib.sha1(str(base_dir).encode("utf-8")).hexdigest()[:10]
-                unique_name = f"__flujo_import__{token}__{module_name.replace('.', '__')}"
-                if unique_name in importlib.sys.modules:
-                    mod = importlib.sys.modules[unique_name]
+                root_pkg = f"__flujo_import__{token}"
+                skills_pkg = f"{root_pkg}.skills"
+
+                # Ensure root and skills packages exist with proper __path__
+                if root_pkg not in _sys.modules:
+                    root_mod = _types.ModuleType(root_pkg)
+                    # __path__ marks as package; empty list is acceptable for a synthetic root
+                    root_mod.__path__ = []  # noqa: B950
+                    root_mod.__package__ = root_pkg
+                    _sys.modules[root_pkg] = root_mod
+                if skills_pkg not in _sys.modules:
+                    skills_mod = _types.ModuleType(skills_pkg)
+                    skills_mod.__path__ = [skills_root]
+                    skills_mod.__package__ = skills_pkg
+                    _sys.modules[skills_pkg] = skills_mod
+
+                # Ensure any intermediate packages for dotted parts exist
+                pkg_prefix = skills_pkg
+                pkg_dir = skills_root
+                for i, part in enumerate(parts[:-1]):
+                    pkg_prefix = f"{pkg_prefix}.{part}"
+                    pkg_dir = _os.path.join(pkg_dir, part)
+                    if pkg_prefix not in _sys.modules:
+                        pm = _types.ModuleType(pkg_prefix)
+                        pm.__path__ = [pkg_dir]
+                        pm.__package__ = pkg_prefix
+                        _sys.modules[pkg_prefix] = pm
+
+                # Determine fully qualified module name under isolated package
+                fqmn = skills_pkg if not parts else f"{skills_pkg}.{'.'.join(parts)}"
+
+                if fqmn in _sys.modules:
+                    mod = _sys.modules[fqmn]
                 else:
-                    spec = _iu.spec_from_file_location(unique_name, py_path)
+                    # For packages, provide submodule_search_locations
+                    subloc = [mod_path] if is_package else None
+                    spec = _iu.spec_from_file_location(
+                        fqmn, py_path, submodule_search_locations=subloc
+                    )
                     if spec is None or spec.loader is None:
                         raise BlueprintError(
                             f"Unable to locate module '{module_name}' at '{py_path}'"
                         )
                     mod = _iu.module_from_spec(spec)
-                    # Register under unique key to avoid collisions
-                    importlib.sys.modules[unique_name] = mod
+                    _sys.modules[fqmn] = mod
                     spec.loader.exec_module(mod)
                 return getattr(mod, attr_name) if attr_name else mod
             except Exception as e:
