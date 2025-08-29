@@ -1912,6 +1912,26 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
 def load_pipeline_blueprint_from_yaml(
     yaml_text: str, base_dir: Optional[str] = None
 ) -> Pipeline[Any, Any]:
+    """Load a Pipeline from YAML with correct relative-import semantics.
+
+    When ``base_dir`` is provided, temporarily add it to ``sys.path`` so that
+    imports like ``skills.*`` inside that directory resolve during both
+    validation and runtime. This ensures parity between ``dev validate`` and
+    ``run`` without requiring PYTHONPATH/sitecustomize hacks.
+    """
+    import sys as _sys
+    import os
+
+    _pushed_sys_path = False
+    if base_dir:
+        try:
+            base_dir_abs = os.path.abspath(base_dir)
+            if base_dir_abs not in _sys.path:
+                _sys.path.insert(0, base_dir_abs)
+                _pushed_sys_path = True
+        except Exception:
+            # Non-fatal; relative skills may still be resolved via registry
+            _pushed_sys_path = False
     # Proactively auto-load skills to honor docs: load skills.yaml before parsing.
     # This ensures CLI and any programmatic use benefit from the same behavior.
     try:
@@ -1933,41 +1953,51 @@ def load_pipeline_blueprint_from_yaml(
     except Exception:
         pass
     try:
-        data = yaml.safe_load(yaml_text)
-        if not isinstance(data, dict) or "steps" not in data:
-            raise BlueprintError("YAML blueprint must be a mapping with a 'steps' key")
-        bp = BlueprintPipelineModel.model_validate(data)
-        # If declarative agents or imports are present, compile them first
-        from .compiler import DeclarativeBlueprintCompiler  # lazy import
-
-        if bp.agents or getattr(bp, "imports", None):
-            try:
-                compiler = DeclarativeBlueprintCompiler(bp, base_dir=base_dir)
-                return compiler.compile_to_pipeline()
-            except Exception as e:
-                # Surface a clear error instead of silently falling back and failing later
-                raise BlueprintError(
-                    f"Failed to compile declarative blueprint (agents/imports): {e}"
-                ) from e
-        return build_pipeline_from_blueprint(bp)
-    except ValidationError as ve:
-        # Construct readable error with locations
         try:
-            errs = ve.errors()
-            messages = [
-                f"{e.get('msg')} at {'.'.join(str(p) for p in e.get('loc', []))}" for e in errs
-            ]
-            raise BlueprintError("; ".join(messages)) from ve
+            data = yaml.safe_load(yaml_text)
+            if not isinstance(data, dict) or "steps" not in data:
+                raise BlueprintError("YAML blueprint must be a mapping with a 'steps' key")
+            bp = BlueprintPipelineModel.model_validate(data)
+            # If declarative agents or imports are present, compile them first
+            from .compiler import DeclarativeBlueprintCompiler  # lazy import
+
+            if bp.agents or getattr(bp, "imports", None):
+                try:
+                    compiler = DeclarativeBlueprintCompiler(bp, base_dir=base_dir)
+                    return compiler.compile_to_pipeline()
+                except Exception as e:
+                    # Surface a clear error instead of silently falling back and failing later
+                    raise BlueprintError(
+                        f"Failed to compile declarative blueprint (agents/imports): {e}"
+                    ) from e
+            return build_pipeline_from_blueprint(bp)
+        except ValidationError as ve:
+            # Construct readable error with locations
+            try:
+                errs = ve.errors()
+                messages = [
+                    f"{e.get('msg')} at {'.'.join(str(p) for p in e.get('loc', []))}" for e in errs
+                ]
+                raise BlueprintError("; ".join(messages)) from ve
+            except Exception:
+                raise BlueprintError(str(ve)) from ve
+        except yaml.YAMLError as ye:
+            # Surface line/column details when available
+            mark = getattr(ye, "problem_mark", None)
+            if mark is not None:
+                msg = f"Invalid YAML at line {getattr(mark, 'line', -1) + 1}, column {getattr(mark, 'column', -1) + 1}: {getattr(ye, 'problem', ye)}"
+            else:
+                msg = f"Invalid YAML: {ye}"
+            raise BlueprintError(msg) from ye
+    finally:
+        # Remove base_dir from sys.path if we added it
+        try:
+            if _pushed_sys_path and base_dir:
+                base_dir_abs = os.path.abspath(base_dir)
+                if base_dir_abs in _sys.path:
+                    _sys.path.remove(base_dir_abs)
         except Exception:
-            raise BlueprintError(str(ve)) from ve
-    except yaml.YAMLError as ye:
-        # Surface line/column details when available
-        mark = getattr(ye, "problem_mark", None)
-        if mark is not None:
-            msg = f"Invalid YAML at line {getattr(mark, 'line', -1) + 1}, column {getattr(mark, 'column', -1) + 1}: {getattr(ye, 'problem', ye)}"
-        else:
-            msg = f"Invalid YAML: {ye}"
-        raise BlueprintError(msg) from ye
+            pass
 
 
 def _resolve_plugins(specs: List[Union[str, Dict[str, Any]]]) -> List[Tuple[Any, int]]:
