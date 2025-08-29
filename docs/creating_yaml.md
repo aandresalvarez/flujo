@@ -844,7 +844,7 @@ result = runner.run("input_data")
 2.  **Import Failures**: Verify import paths and the `blueprint_allowed_imports` list in `flujo.toml`.
 3.  **Agent Resolution**: Ensure `uses` references are correct (e.g., `agents.my_agent` or `imports.my_alias`).
 4.  **Template Errors**: Check syntax (`{{ ... }}`) and variable names (`context`, `previous_step`, `this`).
-5.  **HITL Steps**: Human-in-the-Loop steps (`kind: hitl`) are not yet supported in YAML format. Use the Python DSL for HITL functionality.
+5.  **HITL Steps**: Human-in-the-Loop steps (`kind: hitl`) are supported in YAML. See docs/hitl.md and the imports demo under `examples/imports_demo/main_with_hitl.yaml`.
 
 ### Validation Command
 
@@ -1214,11 +1214,63 @@ The real-world development experience revealed several critical insights for Flu
 
 Flujo's YAML syntax provides a powerful, declarative way to define complex AI workflows. By understanding the available step types, configuration options, and best practices, you can create maintainable, scalable pipelines that leverage the full power of the Flujo framework.
 
-The `as_step` functionality is available through the `imports` section, where imported pipelines are automatically wrapped as steps, providing the same modular composition capabilities as the Python API.
+### Imports & Composition (ImportStep)
+
+Imported blueprints are compiled relative to the parent YAML directory and wrapped as a first‑class ImportStep with policy‑driven execution. This enables predictable input propagation and context merging without ad‑hoc adapters.
+
+Key options (under `steps[*].config` when `uses: imports.<alias>`):
+- `input_to`: Where to project the parent step input for the child run. One of `initial_prompt`, `scratchpad`, or `both`.
+- `input_scratchpad_key`: Key name used when the input is a scalar and `input_to: scratchpad`.
+- `outputs`: Mapping of child context paths → parent context paths for deterministic merges when `updates_context: true`. Example: `scratchpad.final_sql: scratchpad.final_sql`.
+- `inherit_context`: Whether to inherit and deep‑copy the parent context into the child run (default: true).
+- `inherit_conversation`: Hint to keep conversation‑related fields aligned across parent and child (context content is already inherited; explicit session bridging may be added in future versions).
+
+Example — three imported pipelines chained end‑to‑end without re‑prompting:
+
+```yaml
+version: "0.1"
+imports:
+  clarification: "clarification.yaml"
+  concept_discovery: "concept_discovery.yaml"
+  query_builder: "query_builder.yaml"
+
+steps:
+  - kind: step
+    name: clarification
+    uses: imports.clarification
+    updates_context: true
+    config:
+      input_to: initial_prompt
+      outputs:
+        scratchpad.cohort_definition: scratchpad.cohort_definition
+
+  - kind: step
+    name: concept_discovery
+    uses: imports.concept_discovery
+    updates_context: true
+    config:
+      input_to: scratchpad
+      outputs:
+        scratchpad.concept_sets: scratchpad.concept_sets
+
+  - kind: step
+    name: query_builder
+    uses: imports.query_builder
+    updates_context: true
+    config:
+      input_to: scratchpad
+      outputs:
+        scratchpad.final_sql: scratchpad.final_sql
+```
+
+Notes:
+- Relative skills inside imported children resolve automatically: a `skills.yaml` or Python modules next to the child YAML are auto‑loaded based on the child’s directory.
+- For JSON inputs to child `initial_prompt`, dict/list inputs are JSON‑encoded; for `scratchpad` inputs, dicts deep‑merge and scalars store under `input_scratchpad_key`.
+- Control‑flow (pause/abort) in the child propagates; context merges occur only on successful child completion.
 
 **Enhanced Loop Support:** Flujo now provides comprehensive YAML support for sophisticated loop workflows through enhanced mappers (`initial_input_mapper`, `iteration_input_mapper`, `loop_output_mapper`). This enables declarative conversational AI patterns and complex iterative workflows without requiring custom adapter steps.
 
-**Note on Step Type Support:** While most step types are fully supported in YAML, Human-in-the-Loop (HITL) steps currently require the Python DSL. This limitation will be addressed in future releases to provide complete YAML coverage for all Flujo step types.
+**Note on Step Type Support:** All core step types, including Human-in-the-Loop (`kind: hitl`), are supported in YAML. For a working example that pauses and then resumes within an imported child, see `examples/imports_demo/main_with_hitl.yaml`.
  
 MapStep pre/post hooks (sugars):
 

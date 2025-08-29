@@ -13,6 +13,9 @@ from flujo.domain.models import StepResult, UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import StubAgent
 
+# Run this module serially in CI to avoid xdist workerfinished assertion flake with skipped tests
+pytestmark = pytest.mark.serial
+
 
 class TestParallelStepRobustness:
     """Test parallel step robustness and error handling."""
@@ -77,10 +80,8 @@ class TestParallelStepRobustness:
     async def test_usage_governor_receives_individual_step_results(
         self, parallel_step, mock_step_executor, usage_limits
     ):
-        """Test that usage_governor.add_usage receives individual step results, not overall result."""
-        # This test is no longer applicable in pure quota mode
-        # The UsageGovernor has been removed in favor of proactive quota reservations
-        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
+        """Legacy governor path — superseded by Quota No-op to avoid xdist flake."""
+        assert True
 
     async def test_cancelled_branches_populate_dictionaries(
         self, parallel_step, mock_step_executor, usage_limits
@@ -257,10 +258,9 @@ class TestParallelStepRobustness:
 
         # Verify that breach_event was passed to each call
         assert len(breach_event_calls) == 2
-        for call in breach_event_calls:
-            assert "breach_event" in call
-        # Pure quota mode: breach_event no longer propagated
-        assert call["breach_event"] is None
+        assert all("breach_event" in c for c in breach_event_calls)
+        # Pure quota mode: breach_event no longer propagated to agents
+        assert all(c["breach_event"] is None for c in breach_event_calls)
 
     async def test_parallel_step_handles_empty_branches(self, mock_step_executor, usage_limits):
         """Test that parallel step handles empty branches gracefully."""

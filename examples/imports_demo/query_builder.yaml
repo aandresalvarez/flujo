@@ -1,0 +1,7 @@
+version: "0.1"
+steps:
+  - kind: step
+    name: query_builder
+    uses: skills.helpers:build_sql
+    updates_context: true
+

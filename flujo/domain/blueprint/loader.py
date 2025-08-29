@@ -1475,7 +1475,7 @@ def _make_step_from_blueprint(
                         **(step_config.model_dump() if hasattr(step_config, "model_dump") else {}),
                     )
             elif uses_spec.startswith("imports."):
-                # Wrap precompiled sub-pipeline as a single step
+                # Wrap precompiled sub-pipeline as a first-class ImportStep for policy-driven execution
                 if not compiled_imports:
                     raise BlueprintError(
                         f"No compiled imports available but step uses '{uses_spec}'"
@@ -1484,10 +1484,44 @@ def _make_step_from_blueprint(
                 if alias not in compiled_imports:
                     raise BlueprintError(f"Unknown imported pipeline referenced: {uses_spec}")
                 try:
+                    from ..dsl.import_step import ImportStep as _ImportStep
+
                     _sub_pipeline = compiled_imports[alias]
-                    st = _sub_pipeline.as_step(name=model.name)
+                    # Extract import-specific config knobs if provided
+                    raw_cfg: Dict[str, Any] = {}
+                    try:
+                        raw_cfg = dict(getattr(model, "config", {}) or {})
+                    except Exception:
+                        raw_cfg = {}
+                    input_to = str(raw_cfg.get("input_to", "initial_prompt")).strip().lower()
+                    if input_to not in {"initial_prompt", "scratchpad", "both"}:
+                        input_to = "initial_prompt"
+                    inherit_context = bool(raw_cfg.get("inherit_context", True))
+                    input_scratchpad_key = raw_cfg.get("input_scratchpad_key")
+                    outputs_map = raw_cfg.get("outputs") or {}
+                    if not isinstance(outputs_map, dict):
+                        outputs_map = {}
+                    inherit_conversation = bool(raw_cfg.get("inherit_conversation", False))
+
+                    from typing import cast as _cast
+
+                    st = _ImportStep(
+                        name=model.name,
+                        pipeline=_sub_pipeline,
+                        inherit_context=inherit_context,
+                        input_to=_cast(Literal["initial_prompt", "scratchpad", "both"], input_to),
+                        input_scratchpad_key=input_scratchpad_key,
+                        outputs=outputs_map,
+                        inherit_conversation=inherit_conversation,
+                        # Preserve updates_context flag for merge behavior
+                        updates_context=model.updates_context,
+                        # Pass through generic step config for consistency
+                        config=step_config,
+                    )
                 except Exception as e:
-                    raise BlueprintError(f"Failed to wrap imported pipeline '{alias}' as step: {e}")
+                    raise BlueprintError(
+                        f"Failed to wrap imported pipeline '{alias}' as ImportStep: {e}"
+                    )
             else:
                 try:
                     _imported = _import_object(uses_spec)

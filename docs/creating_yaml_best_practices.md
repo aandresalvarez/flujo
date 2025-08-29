@@ -436,6 +436,12 @@ steps:
 ### 3. **Pipeline Composition with `as_step`**
 The `as_step` functionality is automatically available through `imports`, where imported pipelines are wrapped as steps.
 
+ImportStep tips:
+- Use `updates_context: true` and an explicit `config.outputs` mapping to make merges predictable and reviewable in PRs.
+- Prefer `config.input_to: scratchpad` for structured handoff between parent and child; reserve `initial_prompt` for purely conversational handoffs.
+- Keep child blueprints self‑contained and place any local skills (`skills.yaml`, Python modules) next to the child YAML; Flujo auto‑loads them relative to the child file.
+- Avoid step‑local env reads inside children; use centralized config (`flujo.infra.config_manager`).
+
 ```yaml
 # This automatically uses pipeline.as_step(name=...) under the hood
 imports:

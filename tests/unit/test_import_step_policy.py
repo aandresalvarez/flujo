@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+import pytest
+from flujo.domain.models import PipelineContext
+
+
+@pytest.mark.asyncio
+async def test_import_step_projects_input_and_merges_context() -> None:
+    from flujo.domain.dsl.step import Step
+    from flujo.domain.dsl.pipeline import Pipeline
+    from flujo.application.runner import Flujo
+    from flujo.domain.dsl.import_step import ImportStep
+    from flujo.testing.utils import gather_result
+
+    # Child pipeline: consumes cohort_definition/concept_sets from scratchpad
+    # and writes final_sql into scratchpad
+    async def build_query(_data: object, *, context: PipelineContext | None = None) -> dict:
+        assert context is not None
+        cd = context.scratchpad.get("cohort_definition")
+        cs = context.scratchpad.get("concept_sets") or []
+        # Ensure values were projected without prompting
+        assert cd is not None
+        final_sql = f"-- cohorts: {str(cd)}; concepts: {len(cs)}"
+        return {"scratchpad": {"final_sql": final_sql}}
+
+    child = Pipeline.from_step(
+        Step.from_callable(build_query, name="query_builder", updates_context=True)
+    )
+
+    # Parent: Import the child pipeline via ImportStep with scratchpad input projection
+    import_step = ImportStep(
+        name="run_qb",
+        pipeline=child,
+        inherit_context=True,
+        input_to="scratchpad",
+        outputs={  # explicit mapping to verify predictable merge
+            "scratchpad.final_sql": "scratchpad.final_sql"
+        },
+        updates_context=True,
+    )
+    parent = Pipeline.from_step(import_step)
+
+    runner = Flujo(parent, context_model=PipelineContext)
+    payload = {"cohort_definition": {"name": "demo"}, "concept_sets": [1, 2, 3]}
+    res = await gather_result(runner, payload, initial_context_data={"initial_prompt": "goal"})
+    ctx = res.final_pipeline_context
+    assert isinstance(ctx, PipelineContext)
+    # Ensure mapped value is available without re-prompt
+    assert "final_sql" in ctx.scratchpad
+    assert str(ctx.scratchpad["final_sql"]).startswith("-- cohorts:")

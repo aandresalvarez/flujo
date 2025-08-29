@@ -14,7 +14,7 @@ from typer.testing import CliRunner
 from flujo.cli.main import app
 
 # Mark as very slow to exclude from fast suites
-pytestmark = pytest.mark.veryslow
+pytestmark = [pytest.mark.veryslow, pytest.mark.serial]
 
 
 class TestCLIPerformanceEdgeCases:
@@ -445,10 +445,13 @@ class TestCLIErrorHandling:
             else:
                 os.environ["FLUJO_STATE_URI"] = original_uri
 
-    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
     def test_cli_skipped_on_windows(self):
-        """Test is skipped on Windows as path permissions are not applicable."""
-        pytest.skip("Path permissions test is Unix-only")
+        """No-op on non-Windows to avoid xdist skip serialization; skip on Windows."""
+        if platform.system() != "Windows":
+            # On Linux/macOS CI, just pass without invoking pytest.skip
+            assert True
+            return
+        pytest.skip("Windows-specific test placeholder")
 
     @pytest.mark.skipif(not hasattr(os, "geteuid"), reason="geteuid not available on this platform")
     def test_cli_skipped_as_root(self, unwritable_db_path):

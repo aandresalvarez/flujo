@@ -1,6 +1,6 @@
 # Human-in-the-Loop (HITL) in YAML
 
-This page explains how to declare Human-in-the-Loop steps in YAML, how pause/resume works, and patterns for using HITL with map and conditional steps.
+This page explains how to declare Human-in-the-Loop steps in YAML, how pause/resume works, and patterns for using HITL with map and conditional steps. For a runnable end‑to‑end example that pauses inside an imported child pipeline and resumes in the parent session, see `examples/imports_demo/main_with_hitl.yaml`.
 
 ## Overview
 

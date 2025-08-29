@@ -1,0 +1,14 @@
+version: "0.1"
+steps:
+  - kind: hitl
+    name: review
+    message: |
+      Please review or provide a cohort definition.
+      - If acceptable, type "Looks good".
+      - Or paste JSON like {"name": "demo", "criteria": ["age > 18"]}
+    # updates_context is controlled by the post step
+  - kind: step
+    name: accept_review
+    uses: skills.helpers:accept_review
+    updates_context: true
+

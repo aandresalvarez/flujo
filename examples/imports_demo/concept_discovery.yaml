@@ -1,0 +1,7 @@
+version: "0.1"
+steps:
+  - kind: step
+    name: concept_discovery
+    uses: skills.helpers:discover_concepts
+    updates_context: true
+

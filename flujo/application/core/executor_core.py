@@ -19,6 +19,7 @@ from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.dsl.step import HumanInTheLoopStep, Step
+from ...domain.dsl.import_step import ImportStep
 from ...domain.models import (
     PipelineResult,
     StepResult,
@@ -309,6 +310,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
         self.hitl_step_executor = hitl_step_executor or DefaultHitlStepExecutor()
         self.cache_step_executor = cache_step_executor or DefaultCacheStepExecutor()
+        # ImportStep executor (policy-driven)
+        from typing import Optional as _Optional
+        from .step_policies import (
+            DefaultImportStepExecutor as _DefaultImportStepExecutor,
+            ImportStepExecutor as _ImportStepExecutor,
+        )
+
+        self.import_step_executor: _Optional[_ImportStepExecutor] = None
+        try:
+            self.import_step_executor = _DefaultImportStepExecutor()
+        except Exception:  # pragma: no cover - defensive
+            self.import_step_executor = None
 
         # FSD-010: Initialize and populate the policy registry used for dispatch
         self.policy_registry = PolicyRegistry()
@@ -320,6 +333,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self.policy_registry.register(DynamicParallelRouterStep, self._policy_dynamic_router_step)
         self.policy_registry.register(HumanInTheLoopStep, self._policy_hitl_step)
         self.policy_registry.register(CacheStep, self._policy_cache_step)
+        # Register ImportStep policy if executor available
+        try:
+            if self.import_step_executor is not None:
+                self.policy_registry.register(ImportStep, self._policy_import_step)
+        except Exception:
+            pass
 
         # Adapt any framework-registered policies to bound callables if needed
         try:
@@ -1459,6 +1478,30 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             None,
         )
         return outcome
+
+    async def _policy_import_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+        step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        breach_event = frame.breach_event
+        context_setter = frame.context_setter
+        if self.import_step_executor is None:
+            # Fallback: treat as default step (should not happen if executor is present)
+            return await self._policy_default_step(frame)
+        from typing import cast as _cast
+
+        return await self.import_step_executor.execute(
+            self,
+            _cast(ImportStep, step),
+            data,
+            context,
+            resources,
+            limits,
+            breach_event,
+            context_setter,
+        )
 
     async def _policy_parallel_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         step = frame.step
