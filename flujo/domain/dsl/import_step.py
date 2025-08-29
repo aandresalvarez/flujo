@@ -36,8 +36,10 @@ class ImportStep(Step[Any, Any]):
         Optional key when projecting scalar inputs into the scratchpad.
     outputs:
         Optional list of mappings from child context paths → parent context paths.
-        When provided and ``updates_context=True``, only these mapped fields are
-        merged back.
+        Semantics with ``updates_context=True``:
+        - outputs is None → merge all child fields (legacy behavior)
+        - outputs is []   → merge nothing
+        - outputs has items → merge only the listed fields
     inherit_conversation:
         If True, conversation-related fields are preserved end-to-end. This is
         a hint for future enhancements; current implementation relies on context
