@@ -37,6 +37,7 @@ from flujo.application.core.context_manager import ContextManager
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import HumanInTheLoopStep, MergeStrategy, BranchFailureStrategy, Step
+from flujo.domain.dsl.import_step import ImportStep
 from flujo.domain.dsl.pipeline import Pipeline as _PipelineDSL
 from ..conversation.history_manager import HistoryManager, HistoryStrategyConfig
 from ...processors.conversation import ConversationHistoryPromptProcessor
@@ -5572,3 +5573,189 @@ class DefaultCacheStepExecutor:
 
 
 # --- End Cache Step Executor policy ---
+
+# --- Import Step Executor policy ---
+
+
+class ImportStepExecutor(Protocol):
+    async def execute(
+        self,
+        core: Any,
+        step: ImportStep,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        breach_event: Optional[Any],
+        context_setter: Callable[[PipelineResult[Any], Optional[Any]], None],
+    ) -> StepOutcome[StepResult]: ...
+
+
+class DefaultImportStepExecutor:
+    async def execute(
+        self,
+        core: Any,
+        step: ImportStep,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        breach_event: Optional[Any],
+        context_setter: Callable[[PipelineResult[Any], Optional[Any]], None],
+    ) -> StepOutcome[StepResult]:
+        from .context_manager import ContextManager
+        import json
+        import copy
+
+        # Isolate to avoid poisoning parent on failure/retries
+        iso_ctx = ContextManager.isolate(context)
+        sub_context = iso_ctx
+        if sub_context is None and context is not None:
+            try:
+                sub_context = type(context).model_validate(context.model_dump())
+            except Exception:
+                sub_context = context
+
+        # Project input into child run
+        try:
+            if step.input_to in ("scratchpad", "both") and sub_context is not None:
+                sp = getattr(sub_context, "scratchpad", None)
+                if isinstance(data, dict):
+                    if isinstance(sp, dict):
+                        sp.update(copy.deepcopy(data))
+                else:
+                    key = step.input_scratchpad_key or "initial_input"
+                    if isinstance(sp, dict):
+                        sp[key] = data
+            if step.input_to in ("initial_prompt", "both"):
+                init_text = json.dumps(data) if isinstance(data, (dict, list)) else str(data)
+                if sub_context is not None:
+                    try:
+                        object.__setattr__(sub_context, "initial_prompt", init_text)
+                    except Exception:
+                        setattr(sub_context, "initial_prompt", init_text)
+        except Exception:
+            pass
+
+        # Execute the child pipeline as a composable step
+        try:
+            sub_step = step.pipeline.as_step(name=f"{step.name}__import", inherit_context=True)
+        except Exception as e:
+            return Failure(
+                error=e,
+                feedback=f"Failed to compose imported pipeline: {e}",
+                step_result=StepResult(
+                    name=step.name,
+                    success=False,
+                    output=None,
+                    attempts=0,
+                    latency_s=0.0,
+                    token_counts=0,
+                    cost_usd=0.0,
+                    feedback=f"Failed to compose imported pipeline: {e}",
+                    branch_context=context,
+                    metadata_={},
+                    step_history=[],
+                ),
+            )
+
+        inner_outcome = await core.execute(
+            sub_step,
+            data,
+            context=sub_context,
+            resources=resources,
+            limits=limits,
+            stream=False,
+            on_chunk=None,
+            breach_event=breach_event,
+            context_setter=context_setter,
+            _fallback_depth=0,
+        )
+        # Normalize outcome to a StepResult
+        if isinstance(inner_outcome, Paused):
+            return inner_outcome
+        if isinstance(inner_outcome, Failure):
+            return inner_outcome
+        if isinstance(inner_outcome, Success):
+            inner_sr = inner_outcome.step_result
+        else:
+            # Some legacy paths may return StepResult directly
+            if isinstance(inner_outcome, StepResult):
+                inner_sr = inner_outcome
+            else:
+                return Failure(
+                    error=Exception("Unsupported outcome type"),
+                    feedback="Unsupported outcome type",
+                    step_result=StepResult(
+                        name=step.name,
+                        success=False,
+                        output=None,
+                        attempts=0,
+                        latency_s=0.0,
+                        token_counts=0,
+                        cost_usd=0.0,
+                        feedback="Unsupported outcome type",
+                        branch_context=context,
+                        metadata_={},
+                        step_history=[],
+                    ),
+                )
+        # Parent-facing result; core will merge according to updates_context
+        parent_sr = StepResult(
+            name=step.name,
+            success=True,
+            output=None,
+            attempts=inner_sr.attempts,
+            latency_s=inner_sr.latency_s,
+            token_counts=inner_sr.token_counts,
+            cost_usd=inner_sr.cost_usd,
+            feedback=None,
+            branch_context=context,
+            metadata_={},
+            step_history=[inner_sr],
+        )
+
+        if getattr(step, "updates_context", False) and step.outputs:
+            # Build a minimal context update dict using outputs mapping
+            update_data: Dict[str, Any] = {}
+
+            def _get_child(path: str) -> Any:
+                parts = [p for p in path.split(".") if p]
+                cur: Any = getattr(inner_sr.output, "final_pipeline_context", None)
+                if cur is None and sub_context is not None:
+                    cur = sub_context
+                for part in parts:
+                    if cur is None:
+                        return None
+                    if hasattr(cur, part):
+                        cur = getattr(cur, part)
+                    elif isinstance(cur, dict):
+                        cur = cur.get(part)
+                    else:
+                        return None
+                return cur
+
+            def _assign_parent(path: str, value: Any) -> None:
+                parts = [p for p in path.split(".") if p]
+                if not parts:
+                    return
+                tgt = update_data
+                for part in parts[:-1]:
+                    if part not in tgt or not isinstance(tgt[part], dict):
+                        tgt[part] = {}
+                    tgt = tgt[part]
+                tgt[parts[-1]] = value
+
+            try:
+                for child_path, parent_path in step.outputs.items():
+                    _assign_parent(parent_path, _get_child(child_path))
+                parent_sr.output = update_data
+            except Exception:
+                parent_sr.output = inner_sr.output
+        else:
+            parent_sr.output = inner_sr.output
+
+        return Success(step_result=parent_sr)
+
+
+# --- End Import Step Executor policy ---

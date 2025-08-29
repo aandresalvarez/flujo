@@ -1,0 +1,7 @@
+version: "0.1"
+steps:
+  - kind: step
+    name: clarify
+    uses: skills.helpers:clarify
+    updates_context: true
+
