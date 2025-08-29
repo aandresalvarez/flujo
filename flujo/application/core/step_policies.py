@@ -5616,7 +5616,11 @@ class DefaultImportStepExecutor:
                 try:
                     sub_context = type(context).model_validate(context.model_dump())
                 except Exception:
-                    sub_context = context
+                    # Final fallback: defensive deepcopy to avoid mutating parent context
+                    try:
+                        sub_context = copy.deepcopy(context)
+                    except Exception:
+                        sub_context = context
         else:
             # Clean base (fresh context instance) of same type when possible
             if context is not None:
