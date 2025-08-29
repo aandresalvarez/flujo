@@ -291,12 +291,11 @@ async def test_execution_manager_no_usage_limits():
     assert abs(result.total_cost_usd - 0.3) < 1e-10
 
 
+@pytest.mark.skip(reason="UsageGovernor removed in pure quota mode - see quota tests instead")
 @pytest.mark.asyncio
 async def test_usage_governor_check_usage_limits_efficient():
-    """Test the new efficient usage limit checking method."""
-    # This test is no longer applicable in pure quota mode
-    # The UsageGovernor has been removed in favor of proactive quota reservations
-    pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
+    """(Skipped) Test for legacy governor path — superseded by Quota."""
+    return None
 
 
 @pytest.mark.asyncio

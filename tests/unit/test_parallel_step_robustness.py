@@ -74,13 +74,12 @@ class TestParallelStepRobustness:
             },
         )
 
+    @pytest.mark.skip(reason="UsageGovernor removed in pure quota mode - see quota tests instead")
     async def test_usage_governor_receives_individual_step_results(
         self, parallel_step, mock_step_executor, usage_limits
     ):
-        """Test that usage_governor.add_usage receives individual step results, not overall result."""
-        # This test is no longer applicable in pure quota mode
-        # The UsageGovernor has been removed in favor of proactive quota reservations
-        pytest.skip("UsageGovernor removed in pure quota mode - see quota tests instead")
+        """(Skipped) Legacy governor path — superseded by Quota."""
+        return None
 
     async def test_cancelled_branches_populate_dictionaries(
         self, parallel_step, mock_step_executor, usage_limits
