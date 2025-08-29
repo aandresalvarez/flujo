@@ -14,7 +14,7 @@ from typer.testing import CliRunner
 from flujo.cli.main import app
 
 # Mark as very slow to exclude from fast suites
-pytestmark = pytest.mark.veryslow
+pytestmark = [pytest.mark.veryslow, pytest.mark.serial]
 
 
 class TestCLIPerformanceEdgeCases:
