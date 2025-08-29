@@ -13,6 +13,9 @@ from flujo.domain.models import StepResult, UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import StubAgent
 
+# Run this module serially in CI to avoid xdist workerfinished assertion flake with skipped tests
+pytestmark = pytest.mark.serial
+
 
 class TestParallelStepRobustness:
     """Test parallel step robustness and error handling."""

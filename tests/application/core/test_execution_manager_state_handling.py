@@ -17,6 +17,9 @@ from flujo.domain.models import (
 )
 from flujo.exceptions import UsageLimitExceededError
 
+# Avoid xdist worker crashes observed in CI by running tests in this module serially
+pytestmark = pytest.mark.serial
+
 
 class MockContext(BaseModel):
     """Mock context for testing."""
