@@ -1503,9 +1503,10 @@ def _make_step_from_blueprint(
                     inherit_context = bool(raw_cfg.get("inherit_context", False))
                     input_scratchpad_key = raw_cfg.get("input_scratchpad_key", "initial_input")
                     # Accept either a dict mapping (backward compat) or a list of {child, parent}
-                    outputs_spec = raw_cfg.get("outputs")
-                    outputs_list: list[_OutputMapping] = []
+                    outputs_spec = raw_cfg.get("outputs", None)
+                    outputs_list: Optional[list[_OutputMapping]] = None
                     if isinstance(outputs_spec, dict):
+                        outputs_list = []
                         # Convert mapping child_path -> parent_path into list of OutputMapping
                         for c_path, p_path in outputs_spec.items():
                             try:
@@ -1515,6 +1516,7 @@ def _make_step_from_blueprint(
                             except Exception:
                                 continue
                     elif isinstance(outputs_spec, list):
+                        outputs_list = []
                         for item in outputs_spec:
                             try:
                                 if isinstance(item, dict) and "child" in item and "parent" in item:

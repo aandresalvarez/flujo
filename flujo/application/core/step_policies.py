@@ -5790,13 +5790,17 @@ class DefaultImportStepExecutor:
             step_history=[inner_sr],
         )
 
-        if getattr(step, "updates_context", False) and getattr(step, "outputs", None):
+        # Determine child's final context for default-merge behavior
+        child_final_ctx = getattr(inner_sr, "branch_context", None) or sub_context
+
+        if getattr(step, "updates_context", False) and step.outputs:
             # Build a minimal context update dict using outputs mapping
             update_data: Dict[str, Any] = {}
 
             def _get_child(path: str) -> Any:
                 parts = [p for p in path.split(".") if p]
-                cur: Any = getattr(inner_sr.output, "final_pipeline_context", None)
+                # Prefer the child's final context produced by the imported pipeline
+                cur: Any = getattr(inner_sr, "branch_context", None)
                 if cur is None and sub_context is not None:
                     cur = sub_context
                 for part in parts:
@@ -5833,6 +5837,19 @@ class DefaultImportStepExecutor:
                     except Exception:
                         continue
                 parent_sr.output = update_data
+            except Exception:
+                parent_sr.output = inner_sr.output
+        elif getattr(step, "updates_context", False) and step.outputs == []:
+            # Explicit empty mapping provided: do not merge anything back
+            parent_sr.output = None
+        elif (
+            getattr(step, "updates_context", False)
+            and getattr(step, "outputs", None) is None
+            and child_final_ctx is not None
+        ):
+            # No mapping provided: merge entire child context back deterministically
+            try:
+                parent_sr.output = PipelineResult(final_pipeline_context=child_final_ctx)
             except Exception:
                 parent_sr.output = inner_sr.output
         else:

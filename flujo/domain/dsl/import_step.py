@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Optional, Literal, List
 
-from pydantic import Field
 from ..base_model import BaseModel
 
 from .step import Step
@@ -54,7 +53,7 @@ class ImportStep(Step[Any, Any]):
     inherit_context: bool = False
     input_to: Literal["initial_prompt", "scratchpad", "both"] = "initial_prompt"
     input_scratchpad_key: Optional[str] = "initial_input"
-    outputs: List[OutputMapping] = Field(default_factory=list)
+    outputs: Optional[List[OutputMapping]] = None
     inherit_conversation: bool = True
     on_failure: Literal["abort", "skip", "continue_with_default"] = "abort"
 
