@@ -1214,8 +1214,6 @@ The real-world development experience revealed several critical insights for Flu
 
 Flujo's YAML syntax provides a powerful, declarative way to define complex AI workflows. By understanding the available step types, configuration options, and best practices, you can create maintainable, scalable pipelines that leverage the full power of the Flujo framework.
 
-The `as_step` functionality is available through the `imports` section, where imported pipelines are automatically wrapped as steps, providing the same modular composition capabilities as the Python API.
-
 ### Imports & Composition (ImportStep)
 
 Imported blueprints are compiled relative to the parent YAML directory and wrapped as a first‑class ImportStep with policy‑driven execution. This enables predictable input propagation and context merging without ad‑hoc adapters.
