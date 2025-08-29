@@ -258,10 +258,9 @@ class TestParallelStepRobustness:
 
         # Verify that breach_event was passed to each call
         assert len(breach_event_calls) == 2
-        for call in breach_event_calls:
-            assert "breach_event" in call
-        # Pure quota mode: breach_event no longer propagated
-        assert call["breach_event"] is None
+        assert all("breach_event" in c for c in breach_event_calls)
+        # Pure quota mode: breach_event no longer propagated to agents
+        assert all(c["breach_event"] is None for c in breach_event_calls)
 
     async def test_parallel_step_handles_empty_branches(self, mock_step_executor, usage_limits):
         """Test that parallel step handles empty branches gracefully."""
