@@ -1484,7 +1484,10 @@ def _make_step_from_blueprint(
                 if alias not in compiled_imports:
                     raise BlueprintError(f"Unknown imported pipeline referenced: {uses_spec}")
                 try:
-                    from ..dsl.import_step import ImportStep as _ImportStep
+                    from ..dsl.import_step import (
+                        ImportStep as _ImportStep,
+                        OutputMapping as _OutputMapping,
+                    )
 
                     _sub_pipeline = compiled_imports[alias]
                     # Extract import-specific config knobs if provided
@@ -1496,12 +1499,36 @@ def _make_step_from_blueprint(
                     input_to = str(raw_cfg.get("input_to", "initial_prompt")).strip().lower()
                     if input_to not in {"initial_prompt", "scratchpad", "both"}:
                         input_to = "initial_prompt"
-                    inherit_context = bool(raw_cfg.get("inherit_context", True))
-                    input_scratchpad_key = raw_cfg.get("input_scratchpad_key")
-                    outputs_map = raw_cfg.get("outputs") or {}
-                    if not isinstance(outputs_map, dict):
-                        outputs_map = {}
-                    inherit_conversation = bool(raw_cfg.get("inherit_conversation", False))
+                    # Defaults per first principles: do not inherit context by default; do inherit conversation
+                    inherit_context = bool(raw_cfg.get("inherit_context", False))
+                    input_scratchpad_key = raw_cfg.get("input_scratchpad_key", "initial_input")
+                    # Accept either a dict mapping (backward compat) or a list of {child, parent}
+                    outputs_spec = raw_cfg.get("outputs")
+                    outputs_list: list[_OutputMapping] = []
+                    if isinstance(outputs_spec, dict):
+                        # Convert mapping child_path -> parent_path into list of OutputMapping
+                        for c_path, p_path in outputs_spec.items():
+                            try:
+                                outputs_list.append(
+                                    _OutputMapping(child=str(c_path), parent=str(p_path))
+                                )
+                            except Exception:
+                                continue
+                    elif isinstance(outputs_spec, list):
+                        for item in outputs_spec:
+                            try:
+                                if isinstance(item, dict) and "child" in item and "parent" in item:
+                                    outputs_list.append(
+                                        _OutputMapping(
+                                            child=str(item["child"]), parent=str(item["parent"])
+                                        )
+                                    )
+                            except Exception:
+                                continue
+                    inherit_conversation = bool(raw_cfg.get("inherit_conversation", True))
+                    on_failure = str(raw_cfg.get("on_failure", "abort")).strip().lower()
+                    if on_failure not in {"abort", "skip", "continue_with_default"}:
+                        on_failure = "abort"
 
                     from typing import cast as _cast
 
@@ -1510,9 +1537,14 @@ def _make_step_from_blueprint(
                         pipeline=_sub_pipeline,
                         inherit_context=inherit_context,
                         input_to=_cast(Literal["initial_prompt", "scratchpad", "both"], input_to),
-                        input_scratchpad_key=input_scratchpad_key,
-                        outputs=outputs_map,
+                        input_scratchpad_key=input_scratchpad_key
+                        if isinstance(input_scratchpad_key, str)
+                        else "initial_input",
+                        outputs=outputs_list,
                         inherit_conversation=inherit_conversation,
+                        on_failure=_cast(
+                            Literal["abort", "skip", "continue_with_default"], on_failure
+                        ),
                         # Preserve updates_context flag for merge behavior
                         updates_context=model.updates_context,
                         # Pass through generic step config for consistency

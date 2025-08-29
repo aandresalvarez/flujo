@@ -64,7 +64,8 @@ async def test_yaml_import_step_with_config(tmp_path, monkeypatch):
             config:
               input_to: scratchpad
               outputs:
-                scratchpad.final_sql: scratchpad.final_sql
+                - child: scratchpad.final_sql
+                  parent: scratchpad.final_sql
         """
     )
 

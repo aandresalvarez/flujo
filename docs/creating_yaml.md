@@ -1220,10 +1220,10 @@ Imported blueprints are compiled relative to the parent YAML directory and wrapp
 
 Key options (under `steps[*].config` when `uses: imports.<alias>`):
 - `input_to`: Where to project the parent step input for the child run. One of `initial_prompt`, `scratchpad`, or `both`.
-- `input_scratchpad_key`: Key name used when the input is a scalar and `input_to: scratchpad`.
-- `outputs`: Mapping of child context paths → parent context paths for deterministic merges when `updates_context: true`. Example: `scratchpad.final_sql: scratchpad.final_sql`.
-- `inherit_context`: Whether to inherit and deep‑copy the parent context into the child run (default: true).
-- `inherit_conversation`: Hint to keep conversation‑related fields aligned across parent and child (context content is already inherited; explicit session bridging may be added in future versions).
+- `input_scratchpad_key`: Key name used when the input is a scalar and `input_to: scratchpad` (default: `initial_input`).
+- `outputs`: List of mappings `{ child: <path>, parent: <path> }` for deterministic merges when `updates_context: true`.
+- `inherit_context`: Whether to inherit and deep‑copy the parent context into the child run (default: false).
+- `inherit_conversation`: Whether HITL prompts from the child participate in the parent conversation (default: true).
 
 Example — three imported pipelines chained end‑to‑end without re‑prompting:
 
@@ -1242,7 +1242,7 @@ steps:
     config:
       input_to: initial_prompt
       outputs:
-        scratchpad.cohort_definition: scratchpad.cohort_definition
+        - { child: scratchpad.cohort_definition, parent: scratchpad.cohort_definition }
 
   - kind: step
     name: concept_discovery
@@ -1251,7 +1251,7 @@ steps:
     config:
       input_to: scratchpad
       outputs:
-        scratchpad.concept_sets: scratchpad.concept_sets
+        - { child: scratchpad.concept_sets, parent: scratchpad.concept_sets }
 
   - kind: step
     name: query_builder
@@ -1260,7 +1260,7 @@ steps:
     config:
       input_to: scratchpad
       outputs:
-        scratchpad.final_sql: scratchpad.final_sql
+        - { child: scratchpad.final_sql, parent: scratchpad.final_sql }
 ```
 
 Notes:

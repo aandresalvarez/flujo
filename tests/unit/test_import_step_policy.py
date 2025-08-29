@@ -9,7 +9,7 @@ async def test_import_step_projects_input_and_merges_context() -> None:
     from flujo.domain.dsl.step import Step
     from flujo.domain.dsl.pipeline import Pipeline
     from flujo.application.runner import Flujo
-    from flujo.domain.dsl.import_step import ImportStep
+    from flujo.domain.dsl.import_step import ImportStep, OutputMapping
     from flujo.testing.utils import gather_result
 
     # Child pipeline: consumes cohort_definition/concept_sets from scratchpad
@@ -33,9 +33,7 @@ async def test_import_step_projects_input_and_merges_context() -> None:
         pipeline=child,
         inherit_context=True,
         input_to="scratchpad",
-        outputs={  # explicit mapping to verify predictable merge
-            "scratchpad.final_sql": "scratchpad.final_sql"
-        },
+        outputs=[OutputMapping(child="scratchpad.final_sql", parent="scratchpad.final_sql")],
         updates_context=True,
     )
     parent = Pipeline.from_step(import_step)

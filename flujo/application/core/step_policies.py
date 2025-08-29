@@ -5607,28 +5607,71 @@ class DefaultImportStepExecutor:
         import json
         import copy
 
-        # Isolate to avoid poisoning parent on failure/retries
-        iso_ctx = ContextManager.isolate(context)
-        sub_context = iso_ctx
-        if sub_context is None and context is not None:
-            try:
-                sub_context = type(context).model_validate(context.model_dump())
-            except Exception:
-                sub_context = context
+        # Build child context based on inherit_context and inherit_conversation flags
+        sub_context = None
+        if step.inherit_context:
+            # Isolate to avoid poisoning parent on failure/retries
+            sub_context = ContextManager.isolate(context)
+            if sub_context is None and context is not None:
+                try:
+                    sub_context = type(context).model_validate(context.model_dump())
+                except Exception:
+                    sub_context = context
+        else:
+            # Clean base (fresh context instance) of same type when possible
+            if context is not None:
+                try:
+                    sub_context = type(context)()  # rely on defaults
+                except Exception:
+                    try:
+                        # v2-safe construction without validation
+                        sub_context = type(context).model_construct()
+                    except Exception:
+                        sub_context = None
+        # Copy conversation fields when requested but not inheriting full context
+        if (
+            step.inherit_conversation
+            and sub_context is not None
+            and context is not None
+            and not step.inherit_context
+        ):
+            for conv_field in ("hitl_history", "conversation_history"):
+                try:
+                    if hasattr(context, conv_field):
+                        setattr(
+                            sub_context, conv_field, copy.deepcopy(getattr(context, conv_field))
+                        )
+                except Exception:
+                    pass
 
         # Project input into child run
         try:
             if step.input_to in ("scratchpad", "both") and sub_context is not None:
                 sp = getattr(sub_context, "scratchpad", None)
-                if isinstance(data, dict):
-                    if isinstance(sp, dict):
-                        sp.update(copy.deepcopy(data))
-                else:
-                    key = step.input_scratchpad_key or "initial_input"
-                    if isinstance(sp, dict):
+                if isinstance(sp, dict):
+                    if isinstance(data, dict):
+                        # Deep-merge dicts into scratchpad
+                        def _deep_merge_dict(a: dict, b: dict) -> dict:
+                            res = dict(a)
+                            for k, v in b.items():
+                                if k in res and isinstance(res[k], dict) and isinstance(v, dict):
+                                    res[k] = _deep_merge_dict(res[k], v)
+                                else:
+                                    res[k] = v
+                            return res
+
+                        merged = _deep_merge_dict(sp, copy.deepcopy(data))
+                        try:
+                            setattr(sub_context, "scratchpad", merged)
+                        except Exception:
+                            sp.update(copy.deepcopy(data))
+                    else:
+                        key = step.input_scratchpad_key or "initial_input"
                         sp[key] = data
             if step.input_to in ("initial_prompt", "both"):
-                init_text = json.dumps(data) if isinstance(data, (dict, list)) else str(data)
+                init_text = (
+                    json.dumps(data, default=str) if isinstance(data, (dict, list)) else str(data)
+                )
                 if sub_context is not None:
                     try:
                         object.__setattr__(sub_context, "initial_prompt", init_text)
@@ -5675,6 +5718,38 @@ class DefaultImportStepExecutor:
         if isinstance(inner_outcome, Paused):
             return inner_outcome
         if isinstance(inner_outcome, Failure):
+            # Honor on_failure behavior
+            mode = getattr(step, "on_failure", "abort")
+            if mode == "skip":
+                parent_sr = StepResult(
+                    name=step.name,
+                    success=True,
+                    output=None,
+                    attempts=inner_outcome.step_result.attempts,
+                    latency_s=inner_outcome.step_result.latency_s,
+                    token_counts=inner_outcome.step_result.token_counts,
+                    cost_usd=inner_outcome.step_result.cost_usd,
+                    feedback=None,
+                    branch_context=context,
+                    metadata_={},
+                    step_history=[inner_outcome.step_result],
+                )
+                return Success(step_result=parent_sr)
+            if mode == "continue_with_default":
+                parent_sr = StepResult(
+                    name=step.name,
+                    success=True,
+                    output={},
+                    attempts=inner_outcome.step_result.attempts,
+                    latency_s=inner_outcome.step_result.latency_s,
+                    token_counts=inner_outcome.step_result.token_counts,
+                    cost_usd=inner_outcome.step_result.cost_usd,
+                    feedback=None,
+                    branch_context=context,
+                    metadata_={},
+                    step_history=[inner_outcome.step_result],
+                )
+                return Success(step_result=parent_sr)
             return inner_outcome
         if isinstance(inner_outcome, Success):
             inner_sr = inner_outcome.step_result
@@ -5715,7 +5790,7 @@ class DefaultImportStepExecutor:
             step_history=[inner_sr],
         )
 
-        if getattr(step, "updates_context", False) and step.outputs:
+        if getattr(step, "updates_context", False) and getattr(step, "outputs", None):
             # Build a minimal context update dict using outputs mapping
             update_data: Dict[str, Any] = {}
 
@@ -5747,8 +5822,16 @@ class DefaultImportStepExecutor:
                 tgt[parts[-1]] = value
 
             try:
-                for child_path, parent_path in step.outputs.items():
-                    _assign_parent(parent_path, _get_child(child_path))
+                for mapping in step.outputs:
+                    try:
+                        parent_path = mapping.parent
+                        child_val = _get_child(mapping.child)
+                        # Skip missing child paths
+                        if child_val is None:
+                            continue
+                        _assign_parent(parent_path, child_val)
+                    except Exception:
+                        continue
                 parent_sr.output = update_data
             except Exception:
                 parent_sr.output = inner_sr.output

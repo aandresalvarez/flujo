@@ -1,11 +1,22 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Literal
+from typing import Any, Optional, Literal, List
 
 from pydantic import Field
+from ..base_model import BaseModel
 
 from .step import Step
 from .pipeline import Pipeline
+
+
+class OutputMapping(BaseModel):
+    """Declarative mapping from child → parent context paths.
+
+    Example: { child: "scratchpad.final_sql", parent: "scratchpad.final_sql" }
+    """
+
+    child: str
+    parent: str
 
 
 class ImportStep(Step[Any, Any]):
@@ -25,21 +36,27 @@ class ImportStep(Step[Any, Any]):
     input_scratchpad_key:
         Optional key when projecting scalar inputs into the scratchpad.
     outputs:
-        Optional mapping of child context paths → parent context paths.
-        When provided and ``updates_context=True``, only these mapped fields
-        are merged back; otherwise the full child context is merged back.
+        Optional list of mappings from child context paths → parent context paths.
+        When provided and ``updates_context=True``, only these mapped fields are
+        merged back.
     inherit_conversation:
         If True, conversation-related fields are preserved end-to-end. This is
         a hint for future enhancements; current implementation relies on context
         inheritance behavior.
+    on_failure:
+        Control behavior when the child import fails. One of:
+        - "abort": propagate failure to parent (default)
+        - "skip": treat as success and merge nothing
+        - "continue_with_default": treat as success with empty/default output
     """
 
     pipeline: Pipeline[Any, Any]
-    inherit_context: bool = True
+    inherit_context: bool = False
     input_to: Literal["initial_prompt", "scratchpad", "both"] = "initial_prompt"
-    input_scratchpad_key: Optional[str] = None
-    outputs: Dict[str, str] = Field(default_factory=dict)
-    inherit_conversation: bool = False
+    input_scratchpad_key: Optional[str] = "initial_input"
+    outputs: List[OutputMapping] = Field(default_factory=list)
+    inherit_conversation: bool = True
+    on_failure: Literal["abort", "skip", "continue_with_default"] = "abort"
 
     @property
     def is_complex(self) -> bool:  # pragma: no cover - metadata only

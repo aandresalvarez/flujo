@@ -12,7 +12,7 @@ steps:
     config:
       input_to: initial_prompt
       outputs:
-        scratchpad.cohort_definition: scratchpad.cohort_definition
+        - { child: scratchpad.cohort_definition, parent: scratchpad.cohort_definition }
 
   - kind: step
     name: concept_discovery
@@ -21,7 +21,7 @@ steps:
     config:
       input_to: scratchpad
       outputs:
-        scratchpad.concept_sets: scratchpad.concept_sets
+        - { child: scratchpad.concept_sets, parent: scratchpad.concept_sets }
 
   - kind: step
     name: query_builder
@@ -30,5 +30,4 @@ steps:
     config:
       input_to: scratchpad
       outputs:
-        scratchpad.final_sql: scratchpad.final_sql
-
+        - { child: scratchpad.final_sql, parent: scratchpad.final_sql }
