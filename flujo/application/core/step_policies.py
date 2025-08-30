@@ -5623,10 +5623,10 @@ class DefaultImportStepExecutor:
         else:
             if context is not None:
                 try:
-                    sub_context = type(context)()
+                    sub_context = type(context).model_construct()
                 except Exception:
                     try:
-                        sub_context = type(context).model_construct()
+                        sub_context = type(context)()
                     except Exception:
                         sub_context = None
 
@@ -5697,7 +5697,7 @@ class DefaultImportStepExecutor:
                 sub_context,
                 resources,
                 limits,
-                None,
+                breach_event,
                 context_setter,
             )
         except PausedException as e:
@@ -5715,10 +5715,18 @@ class DefaultImportStepExecutor:
                 cost_usd=0.0,
                 feedback=None,
                 branch_context=context,
-                metadata_={},
+                metadata_={"hitl_propagation": "suppressed"},
                 step_history=[],
             )
             return Success(step_result=parent_sr)
+        except (
+            UsageLimitExceededError,
+            InfiniteRedirectError,
+            NonRetryableError,
+            PricingNotConfiguredError,
+        ):
+            # Re-raise control-flow/config exceptions per policy
+            raise
         except Exception as e:
             return Failure(
                 error=e,
@@ -5748,12 +5756,20 @@ class DefaultImportStepExecutor:
             inner_sr = None
 
         # Parent-facing result; core will merge according to updates_context
+        # Aggregate child latency across steps
+        try:
+            _total_child_latency = sum(
+                float(getattr(sr, "latency_s", 0.0) or 0.0)
+                for sr in (getattr(pipeline_result, "step_history", []) or [])
+            )
+        except Exception:
+            _total_child_latency = float(getattr(inner_sr, "latency_s", 0.0) or 0.0)
         parent_sr = StepResult(
             name=step.name,
             success=True,
             output=None,
             attempts=(getattr(inner_sr, "attempts", 1) if inner_sr is not None else 1),
-            latency_s=(getattr(inner_sr, "latency_s", 0.0) if inner_sr is not None else 0.0),
+            latency_s=_total_child_latency,
             token_counts=int(getattr(pipeline_result, "total_tokens", 0) or 0),
             cost_usd=float(getattr(pipeline_result, "total_cost_usd", 0.0) or 0.0),
             feedback=None,
@@ -5800,6 +5816,9 @@ class DefaultImportStepExecutor:
                 )
                 return Success(step_result=parent_sr)
             # Default abort behavior: bubble child's failure
+            # Mark the synthesized parent result as failed
+            parent_sr.success = False
+            parent_sr.feedback = getattr(inner_sr, "feedback", None)
             return Failure(
                 error=Exception(getattr(inner_sr, "feedback", "child failed")),
                 feedback=getattr(inner_sr, "feedback", None),
