@@ -5606,6 +5606,35 @@ class DefaultImportStepExecutor:
         from .context_manager import ContextManager
         import json
         import copy
+        from flujo.infra import telemetry
+
+        def _looks_like_status_string(text: str) -> bool:
+            try:
+                if not isinstance(text, str):
+                    return False
+                s = text.strip()
+                if not s:
+                    return False
+                # Short, emoji/prefix-driven status messages commonly used in logs
+                prefixes = (
+                    "✅",
+                    "✔",
+                    "ℹ",
+                    "Info:",
+                    "Status:",
+                    "Ready",
+                    "Done",
+                    "OK",
+                    "Definition ready",
+                    "[OK]",
+                    "[Info]",
+                )
+                if any(s.startswith(p) for p in prefixes) and len(s) <= 120:
+                    return True
+                # Single-line very short confirmations
+                return (len(s) <= 40) and s.lower() in {"ok", "done", "ready", "success"}
+            except Exception:
+                return False
 
         # Build child context based on inherit_context and inherit_conversation flags
         sub_context = None
@@ -5646,8 +5675,24 @@ class DefaultImportStepExecutor:
                 except Exception:
                     pass
 
-        # Project input into child run and compute the child's initial_input explicitly
+        # Project input into child run and compute the child's initial_input explicitly,
+        # honoring explicit inputs over inherited conversation or parent data.
+        # Precedence:
+        #   1) sub_context.scratchpad[input_scratchpad_key] when present (explicit artifact)
+        #   2) provided data argument (parent current_data)
+        #   3) empty string fallback
+        resolved_origin = "parent_data"
         sub_initial_input = data
+        try:
+            if sub_context is not None and hasattr(sub_context, "scratchpad"):
+                sp = getattr(sub_context, "scratchpad")
+                if isinstance(sp, dict):
+                    key = step.input_scratchpad_key or "initial_input"
+                    if key in sp and sp.get(key) is not None:
+                        sub_initial_input = sp.get(key)
+                        resolved_origin = f"scratchpad:{key}"
+        except Exception:
+            pass
         try:
             # scratchpad projection (deep merge for dicts)
             if step.input_to in ("scratchpad", "both") and sub_context is not None:
@@ -5675,18 +5720,38 @@ class DefaultImportStepExecutor:
 
             # initial_prompt projection and precedence for child's initial_input
             if step.input_to in ("initial_prompt", "both"):
+                # Recompute init_text from the resolved explicit input (not blindly from `data`)
                 init_text = (
-                    json.dumps(data, default=str) if isinstance(data, (dict, list)) else str(data)
+                    json.dumps(sub_initial_input, default=str)
+                    if isinstance(sub_initial_input, (dict, list))
+                    else str(sub_initial_input)
                 )
                 if sub_context is not None:
                     try:
                         object.__setattr__(sub_context, "initial_prompt", init_text)
                     except Exception:
                         setattr(sub_context, "initial_prompt", init_text)
-                # Enforce explicit input precedence: use the provided mapping as child's initial_input
+                # Enforce explicit input precedence: child's effective initial_input is the resolved one
                 sub_initial_input = init_text
         except Exception:
             # Non-fatal: continue with best-effort routing
+            pass
+
+        # Lightweight diagnostics for import input routing
+        try:
+            preview = None
+            try:
+                preview = (
+                    str(sub_initial_input)[:200]
+                    if not isinstance(sub_initial_input, (dict, list))
+                    else json.dumps(sub_initial_input, default=str)[:200]
+                )
+            except Exception:
+                preview = str(type(sub_initial_input))
+            telemetry.logfire.info(
+                f"[ImportStep] initial_input_resolved origin={resolved_origin} preview={preview}"
+            )
+        except Exception:
             pass
 
         # Execute the child pipeline directly via core orchestration to preserve control-flow semantics
@@ -5777,6 +5842,43 @@ class DefaultImportStepExecutor:
             metadata_={},
             step_history=([inner_sr] if inner_sr is not None else []),
         )
+
+        # Attach traceable metadata for diagnostics and tests
+        try:
+            if parent_sr.metadata_ is None:
+                parent_sr.metadata_ = {}
+            md = parent_sr.metadata_
+            # Track where the child's input came from and a short preview
+            md["import.initial_input_resolved"] = {
+                "origin": resolved_origin,
+                "type": type(sub_initial_input).__name__,
+                "length": (
+                    len(sub_initial_input)
+                    if isinstance(sub_initial_input, (str, list, dict))
+                    else None
+                ),
+                "preview": (
+                    str(sub_initial_input)[:200]
+                    if not isinstance(sub_initial_input, (dict, list))
+                    else json.dumps(sub_initial_input, default=str)[:200]
+                ),
+            }
+            # Heuristic validator warning for status-only strings when structured content is expected
+            try:
+                if step.input_to in ("initial_prompt", "both") and _looks_like_status_string(
+                    sub_initial_input if isinstance(sub_initial_input, str) else ""
+                ):
+                    warn_msg = (
+                        "ImportStep received a status-like string as initial input; "
+                        "if the child expects structured content, route an explicit artifact "
+                        "via scratchpad or ensure the correct payload is provided."
+                    )
+                    telemetry.logfire.warn(warn_msg)
+                    md["import.initial_input_warning"] = warn_msg
+            except Exception:
+                pass
+        except Exception:
+            pass
 
         # Determine child's final context for default-merge behavior
         child_final_ctx = getattr(pipeline_result, "final_pipeline_context", sub_context)
