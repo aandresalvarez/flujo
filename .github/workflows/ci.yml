@@ -95,6 +95,13 @@ jobs:
           name: coverage-fast-${{ matrix.python-version }}-${{ matrix.mode }}
           path: .coverage.*
 
+      - name: Check for stray xdist flags
+        run: |
+          if git grep -nE 'pytest[^\n]*\s-+n' -- ':!**/.github/workflows/*'; then
+            echo 'pytest -n usage detected outside CI workflows';
+            exit 1;
+          fi
+
   # ----------------------------------------------------------------------------
   # Job 3: Run Slow Tests (Serial) - Comprehensive Testing
   # ----------------------------------------------------------------------------
