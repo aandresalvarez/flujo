@@ -1272,7 +1272,10 @@ steps:
 Notes:
 - Child‑local skills resolve robustly: `skills.*` modules next to each child YAML are resolved relative to that child with per‑import namespace isolation. This avoids `sys.modules` collisions across multiple imported children with the same `skills` package name and works in both `dev validate` and `run` without PYTHONPATH hacks.
 - For JSON inputs to child `initial_prompt`, dict/list inputs are JSON‑encoded; for `scratchpad` inputs, dicts deep‑merge and scalars store under `input_scratchpad_key`.
-- Control‑flow (pause/abort) in the child propagates to the parent when `propagate_hitl: true`; context merges occur only on successful child completion.
+- Control-flow propagation:
+  - HITL pauses propagate to the parent only when `propagate_hitl: true`.
+  - Aborts/redirects always propagate to the parent (independent of `propagate_hitl`).
+  - Context merges occur only on successful child completion.
 - When a downstream child needs to read fields written by an upstream child, set `inherit_context: true` on that import step so the child receives the parent context built so far.
 
 **Enhanced Loop Support:** Flujo now provides comprehensive YAML support for sophisticated loop workflows through enhanced mappers (`initial_input_mapper`, `iteration_input_mapper`, `loop_output_mapper`). This enables declarative conversational AI patterns and complex iterative workflows without requiring custom adapter steps.

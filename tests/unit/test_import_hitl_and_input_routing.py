@@ -91,7 +91,7 @@ async def test_import_input_to_initial_prompt_has_precedence() -> None:
 
     # Dict input must be JSON-dumped into child's initial_prompt deterministically
     data = {"x": 1, "y": [2, 3]}
-    expected = json.dumps(data)
+    expected_obj = data
 
     final: PipelineResult[PipelineContext] | None = None
     async for item in runner.run_async(data):
@@ -100,7 +100,134 @@ async def test_import_input_to_initial_prompt_has_precedence() -> None:
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    assert ctx.scratchpad.get("captured") == expected
+    captured = ctx.scratchpad.get("captured")
+    assert isinstance(captured, str)
+    assert json.loads(captured) == expected_obj
+
+
+@pytest.mark.asyncio
+async def test_import_hitl_propagation_opt_out(tmp_path: Path) -> None:
+    child_dir = tmp_path / "child_hitl_no_prop"
+    child_dir.mkdir(parents=True, exist_ok=True)
+    (child_dir / "pipeline.yaml").write_text(
+        """
+version: "0.1"
+steps:
+  - kind: hitl
+    name: Ask
+    message: "Confirm"
+""".strip()
+    )
+
+    parent_dir = tmp_path / "parent_no_prop"
+    parent_dir.mkdir(parents=True, exist_ok=True)
+    (parent_dir / "pipeline.yaml").write_text(
+        f"""
+version: "0.1"
+imports:
+  clar: "{child_dir}/pipeline.yaml"
+steps:
+  - kind: step
+    name: run_clarification
+    uses: imports.clar
+    updates_context: true
+    config:
+      input_to: initial_prompt
+      propagate_hitl: false
+""".strip()
+    )
+
+    parent_text = (parent_dir / "pipeline.yaml").read_text()
+    pipeline = load_pipeline_blueprint_from_yaml(parent_text, base_dir=str(parent_dir))
+    runner = Flujo(pipeline, context_model=PipelineContext)
+
+    final: PipelineResult[PipelineContext] | None = None
+    async for item in runner.run_async("goal"):
+        if isinstance(item, PipelineResult):
+            final = item
+    assert final is not None
+    ctx = final.final_pipeline_context
+    assert isinstance(ctx, PipelineContext)
+    assert ctx.scratchpad.get("status") == "running"
+
+
+@pytest.mark.asyncio
+async def test_import_input_to_both_merges_and_sets_prompt() -> None:
+    async def capture(_: object, *, context: PipelineContext | None = None) -> dict:
+        assert context is not None
+        return {
+            "scratchpad": {
+                "captured_sp": context.scratchpad,
+                "captured_prompt": context.initial_prompt,
+            }
+        }
+
+    child = Pipeline.from_step(Step.from_callable(capture, name="cap", updates_context=True))
+
+    import_step = ImportStep(
+        name="import_child",
+        pipeline=child,
+        inherit_context=True,
+        input_to="both",
+        outputs=[
+            OutputMapping(
+                child="scratchpad.captured_sp",
+                parent="scratchpad.captured_sp",
+            ),
+            OutputMapping(
+                child="scratchpad.captured_prompt",
+                parent="scratchpad.captured_prompt",
+            ),
+        ],
+        propagate_hitl=True,
+        updates_context=True,
+    )
+    parent = Pipeline.from_step(import_step)
+    runner = Flujo(parent, context_model=PipelineContext)
+
+    data = {"x": 1}
+    final: PipelineResult[PipelineContext] | None = None
+    async for item in runner.run_async(data):
+        if isinstance(item, PipelineResult):
+            final = item
+    assert final is not None
+    ctx = final.final_pipeline_context
+    assert isinstance(ctx, PipelineContext)
+    captured_sp = ctx.scratchpad["captured_sp"]
+    assert captured_sp.get("x") == 1
+    assert json.loads(ctx.scratchpad["captured_prompt"]) == {"x": 1}
+
+
+@pytest.mark.asyncio
+async def test_import_scalar_to_scratchpad_key() -> None:
+    async def capture(_: object, *, context: PipelineContext | None = None) -> dict:
+        assert context is not None
+        return {"scratchpad": {"captured": context.scratchpad}}
+
+    child = Pipeline.from_step(Step.from_callable(capture, name="cap", updates_context=True))
+
+    import_step = ImportStep(
+        name="import_child",
+        pipeline=child,
+        inherit_context=True,
+        input_to="scratchpad",
+        input_scratchpad_key="msg",
+        outputs=[OutputMapping(child="scratchpad.captured", parent="scratchpad.captured")],
+        propagate_hitl=True,
+        updates_context=True,
+    )
+    parent = Pipeline.from_step(import_step)
+    runner = Flujo(parent, context_model=PipelineContext)
+
+    final: PipelineResult[PipelineContext] | None = None
+    async for item in runner.run_async("hello"):
+        if isinstance(item, PipelineResult):
+            final = item
+    assert final is not None
+    ctx = final.final_pipeline_context
+    assert isinstance(ctx, PipelineContext)
+    captured = ctx.scratchpad["captured"]
+    assert captured.get("msg") == "hello"
 
 
 def _write_passthrough_child(tmp: Path, name: str) -> Path:
