@@ -44,6 +44,11 @@ class ImportStep(Step[Any, Any]):
         If True, conversation-related fields are preserved end-to-end. This is
         a hint for future enhancements; current implementation relies on context
         inheritance behavior.
+    propagate_hitl:
+        When True, a HITL pause raised within the child pipeline will be
+        propagated to the parent as a Paused outcome, allowing the runner to
+        surface the question and resume correctly. When False, the import step
+        will not proxy pauses (legacy behavior).
     on_failure:
         Control behavior when the child import fails. One of:
         - "abort": propagate failure to parent (default)
@@ -57,6 +62,7 @@ class ImportStep(Step[Any, Any]):
     input_scratchpad_key: Optional[str] = "initial_input"
     outputs: Optional[List[OutputMapping]] = None
     inherit_conversation: bool = True
+    propagate_hitl: bool = True
     on_failure: Literal["abort", "skip", "continue_with_default"] = "abort"
 
     @property

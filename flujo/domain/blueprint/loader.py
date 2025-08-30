@@ -1476,7 +1476,7 @@ def _make_step_from_blueprint(
                     )
             elif uses_spec.startswith("imports."):
                 # Wrap precompiled sub-pipeline as a first-class ImportStep for policy-driven execution
-                if not compiled_imports:
+                if compiled_imports is None:
                     raise BlueprintError(
                         f"No compiled imports available but step uses '{uses_spec}'"
                     )
@@ -1531,6 +1531,8 @@ def _make_step_from_blueprint(
                     on_failure = str(raw_cfg.get("on_failure", "abort")).strip().lower()
                     if on_failure not in {"abort", "skip", "continue_with_default"}:
                         on_failure = "abort"
+                    # Optional HITL propagation flag (defaults True)
+                    propagate_hitl = bool(raw_cfg.get("propagate_hitl", True))
 
                     from typing import cast as _cast
 
@@ -1544,6 +1546,7 @@ def _make_step_from_blueprint(
                         else "initial_input",
                         outputs=outputs_list,
                         inherit_conversation=inherit_conversation,
+                        propagate_hitl=propagate_hitl,
                         on_failure=_cast(
                             Literal["abort", "skip", "continue_with_default"], on_failure
                         ),

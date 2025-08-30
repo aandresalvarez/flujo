@@ -1224,6 +1224,11 @@ Key options (under `steps[*].config` when `uses: imports.<alias>`):
 - `outputs`: List of mappings `{ child: <path>, parent: <path> }` for deterministic merges when `updates_context: true`.
 - `inherit_context`: Whether to inherit and deep‑copy the parent context into the child run (default: false).
 - `inherit_conversation`: Whether HITL prompts from the child participate in the parent conversation (default: true).
+- `propagate_hitl`: If `true`, a HITL pause inside the child import propagates to the parent so the runner surfaces the question and pauses the parent run (default: true).
+
+Input precedence and conversation
+- When `input_to` is set, the mapped value is used as the child’s actual initial input. For `initial_prompt`, dict/list inputs are JSON‑encoded. This explicit input takes precedence over any inherited conversation turns, preventing accidental “previous assistant message” bleed‑through.
+- `inherit_conversation: true` still preserves conversation history for continuity and traceability, but it will not override the explicit input provided via `input_to`.
 
 Example — three imported pipelines chained end‑to‑end without re‑prompting:
 
@@ -1236,13 +1241,14 @@ imports:
 
 steps:
   - kind: step
-    name: clarification
-    uses: imports.clarification
-    updates_context: true
-    config:
-      input_to: initial_prompt
-      outputs:
-        - { child: scratchpad.cohort_definition, parent: scratchpad.cohort_definition }
+  name: clarification
+  uses: imports.clarification
+  updates_context: true
+  config:
+    input_to: initial_prompt
+    propagate_hitl: true  # Surface child HITL questions to the parent
+    outputs:
+      - { child: scratchpad.cohort_definition, parent: scratchpad.cohort_definition }
 
   - kind: step
     name: concept_discovery
@@ -1266,7 +1272,7 @@ steps:
 Notes:
 - Child‑local skills resolve robustly: `skills.*` modules next to each child YAML are resolved relative to that child with per‑import namespace isolation. This avoids `sys.modules` collisions across multiple imported children with the same `skills` package name and works in both `dev validate` and `run` without PYTHONPATH hacks.
 - For JSON inputs to child `initial_prompt`, dict/list inputs are JSON‑encoded; for `scratchpad` inputs, dicts deep‑merge and scalars store under `input_scratchpad_key`.
-- Control‑flow (pause/abort) in the child propagates; context merges occur only on successful child completion.
+- Control‑flow (pause/abort) in the child propagates to the parent when `propagate_hitl: true`; context merges occur only on successful child completion.
 - When a downstream child needs to read fields written by an upstream child, set `inherit_context: true` on that import step so the child receives the parent context built so far.
 
 **Enhanced Loop Support:** Flujo now provides comprehensive YAML support for sophisticated loop workflows through enhanced mappers (`initial_input_mapper`, `iteration_input_mapper`, `loop_output_mapper`). This enables declarative conversational AI patterns and complex iterative workflows without requiring custom adapter steps.
