@@ -117,10 +117,10 @@ jobs:
       - name: Set dummy OpenAI API key for tests
         run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
 
-      - name: Run unit tests only
+      - name: Run unit tests only (no xdist on 3.12)
         run: |
-          # Run unit tests only for ultra-fast feedback
-          uv run pytest tests/unit/ -n auto
+          # Run unit tests serially on 3.12 to avoid rare xdist worker crashes
+          uv run pytest tests/unit/
 
   # ----------------------------------------------------------------------------
   # Job 4: Security Tests (Critical)
