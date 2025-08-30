@@ -5616,22 +5616,20 @@ class DefaultImportStepExecutor:
                 try:
                     sub_context = type(context).model_validate(context.model_dump())
                 except Exception:
-                    # Final fallback: defensive deepcopy to avoid mutating parent context
                     try:
                         sub_context = copy.deepcopy(context)
                     except Exception:
                         sub_context = context
         else:
-            # Clean base (fresh context instance) of same type when possible
             if context is not None:
                 try:
-                    sub_context = type(context)()  # rely on defaults
+                    sub_context = type(context)()
                 except Exception:
                     try:
-                        # v2-safe construction without validation
                         sub_context = type(context).model_construct()
                     except Exception:
                         sub_context = None
+
         # Copy conversation fields when requested but not inheriting full context
         if (
             step.inherit_conversation
@@ -5648,13 +5646,15 @@ class DefaultImportStepExecutor:
                 except Exception:
                     pass
 
-        # Project input into child run
+        # Project input into child run and compute the child's initial_input explicitly
+        sub_initial_input = data
         try:
+            # scratchpad projection (deep merge for dicts)
             if step.input_to in ("scratchpad", "both") and sub_context is not None:
                 sp = getattr(sub_context, "scratchpad", None)
                 if isinstance(sp, dict):
                     if isinstance(data, dict):
-                        # Deep-merge dicts into scratchpad
+
                         def _deep_merge_dict(a: dict, b: dict) -> dict:
                             res = dict(a)
                             for k, v in b.items():
@@ -5672,6 +5672,8 @@ class DefaultImportStepExecutor:
                     else:
                         key = step.input_scratchpad_key or "initial_input"
                         sp[key] = data
+
+            # initial_prompt projection and precedence for child's initial_input
             if step.input_to in ("initial_prompt", "both"):
                 init_text = (
                     json.dumps(data, default=str) if isinstance(data, (dict, list)) else str(data)
@@ -5681,16 +5683,46 @@ class DefaultImportStepExecutor:
                         object.__setattr__(sub_context, "initial_prompt", init_text)
                     except Exception:
                         setattr(sub_context, "initial_prompt", init_text)
+                # Enforce explicit input precedence: use the provided mapping as child's initial_input
+                sub_initial_input = init_text
         except Exception:
+            # Non-fatal: continue with best-effort routing
             pass
 
-        # Execute the child pipeline as a composable step
+        # Execute the child pipeline directly via core orchestration to preserve control-flow semantics
         try:
-            sub_step = step.pipeline.as_step(name=f"{step.name}__import", inherit_context=True)
+            pipeline_result: PipelineResult[Any] = await core._execute_pipeline_via_policies(
+                step.pipeline,
+                sub_initial_input,
+                sub_context,
+                resources,
+                limits,
+                None,
+                context_setter,
+            )
+        except PausedException as e:
+            # Proxy child HITL to parent when requested
+            if getattr(step, "propagate_hitl", True):
+                return Paused(message=str(e))
+            # Legacy/opt-out: do not pause parent; return empty success result
+            parent_sr = StepResult(
+                name=step.name,
+                success=True,
+                output={},
+                attempts=1,
+                latency_s=0.0,
+                token_counts=0,
+                cost_usd=0.0,
+                feedback=None,
+                branch_context=context,
+                metadata_={},
+                step_history=[],
+            )
+            return Success(step_result=parent_sr)
         except Exception as e:
             return Failure(
                 error=e,
-                feedback=f"Failed to compose imported pipeline: {e}",
+                feedback=f"Failed to execute imported pipeline: {e}",
                 step_result=StepResult(
                     name=step.name,
                     success=False,
@@ -5699,29 +5731,42 @@ class DefaultImportStepExecutor:
                     latency_s=0.0,
                     token_counts=0,
                     cost_usd=0.0,
-                    feedback=f"Failed to compose imported pipeline: {e}",
+                    feedback=f"Failed to execute imported pipeline: {e}",
                     branch_context=context,
                     metadata_={},
                     step_history=[],
                 ),
             )
 
-        inner_outcome = await core.execute(
-            sub_step,
-            data,
-            context=sub_context,
-            resources=resources,
-            limits=limits,
-            stream=False,
-            on_chunk=None,
-            breach_event=breach_event,
-            context_setter=context_setter,
-            _fallback_depth=0,
+        # Normalize successful child outcome
+        inner_sr = None
+        try:
+            # Prefer the last step result from the child pipeline when available
+            if getattr(pipeline_result, "step_history", None):
+                inner_sr = pipeline_result.step_history[-1]
+        except Exception:
+            inner_sr = None
+
+        # Parent-facing result; core will merge according to updates_context
+        parent_sr = StepResult(
+            name=step.name,
+            success=True,
+            output=None,
+            attempts=(getattr(inner_sr, "attempts", 1) if inner_sr is not None else 1),
+            latency_s=(getattr(inner_sr, "latency_s", 0.0) if inner_sr is not None else 0.0),
+            token_counts=int(getattr(pipeline_result, "total_tokens", 0) or 0),
+            cost_usd=float(getattr(pipeline_result, "total_cost_usd", 0.0) or 0.0),
+            feedback=None,
+            branch_context=context,
+            metadata_={},
+            step_history=([inner_sr] if inner_sr is not None else []),
         )
-        # Normalize outcome to a StepResult
-        if isinstance(inner_outcome, Paused):
-            return inner_outcome
-        if isinstance(inner_outcome, Failure):
+
+        # Determine child's final context for default-merge behavior
+        child_final_ctx = getattr(pipeline_result, "final_pipeline_context", sub_context)
+
+        if inner_sr is not None and not getattr(inner_sr, "success", True):
+            # Honor on_failure behavior for explicit child failure
             # Honor on_failure behavior
             mode = getattr(step, "on_failure", "abort")
             if mode == "skip":
@@ -5729,14 +5774,14 @@ class DefaultImportStepExecutor:
                     name=step.name,
                     success=True,
                     output=None,
-                    attempts=inner_outcome.step_result.attempts,
-                    latency_s=inner_outcome.step_result.latency_s,
-                    token_counts=inner_outcome.step_result.token_counts,
-                    cost_usd=inner_outcome.step_result.cost_usd,
+                    attempts=getattr(inner_sr, "attempts", 1),
+                    latency_s=getattr(inner_sr, "latency_s", 0.0),
+                    token_counts=int(getattr(pipeline_result, "total_tokens", 0) or 0),
+                    cost_usd=float(getattr(pipeline_result, "total_cost_usd", 0.0) or 0.0),
                     feedback=None,
                     branch_context=context,
                     metadata_={},
-                    step_history=[inner_outcome.step_result],
+                    step_history=([inner_sr] if inner_sr is not None else []),
                 )
                 return Success(step_result=parent_sr)
             if mode == "continue_with_default":
@@ -5744,58 +5789,22 @@ class DefaultImportStepExecutor:
                     name=step.name,
                     success=True,
                     output={},
-                    attempts=inner_outcome.step_result.attempts,
-                    latency_s=inner_outcome.step_result.latency_s,
-                    token_counts=inner_outcome.step_result.token_counts,
-                    cost_usd=inner_outcome.step_result.cost_usd,
+                    attempts=getattr(inner_sr, "attempts", 1),
+                    latency_s=getattr(inner_sr, "latency_s", 0.0),
+                    token_counts=int(getattr(pipeline_result, "total_tokens", 0) or 0),
+                    cost_usd=float(getattr(pipeline_result, "total_cost_usd", 0.0) or 0.0),
                     feedback=None,
                     branch_context=context,
                     metadata_={},
-                    step_history=[inner_outcome.step_result],
+                    step_history=([inner_sr] if inner_sr is not None else []),
                 )
                 return Success(step_result=parent_sr)
-            return inner_outcome
-        if isinstance(inner_outcome, Success):
-            inner_sr = inner_outcome.step_result
-        else:
-            # Some legacy paths may return StepResult directly
-            if isinstance(inner_outcome, StepResult):
-                inner_sr = inner_outcome
-            else:
-                return Failure(
-                    error=Exception("Unsupported outcome type"),
-                    feedback="Unsupported outcome type",
-                    step_result=StepResult(
-                        name=step.name,
-                        success=False,
-                        output=None,
-                        attempts=0,
-                        latency_s=0.0,
-                        token_counts=0,
-                        cost_usd=0.0,
-                        feedback="Unsupported outcome type",
-                        branch_context=context,
-                        metadata_={},
-                        step_history=[],
-                    ),
-                )
-        # Parent-facing result; core will merge according to updates_context
-        parent_sr = StepResult(
-            name=step.name,
-            success=True,
-            output=None,
-            attempts=inner_sr.attempts,
-            latency_s=inner_sr.latency_s,
-            token_counts=inner_sr.token_counts,
-            cost_usd=inner_sr.cost_usd,
-            feedback=None,
-            branch_context=context,
-            metadata_={},
-            step_history=[inner_sr],
-        )
-
-        # Determine child's final context for default-merge behavior
-        child_final_ctx = getattr(inner_sr, "branch_context", None) or sub_context
+            # Default abort behavior: bubble child's failure
+            return Failure(
+                error=Exception(getattr(inner_sr, "feedback", "child failed")),
+                feedback=getattr(inner_sr, "feedback", None),
+                step_result=parent_sr,
+            )
 
         if getattr(step, "updates_context", False) and step.outputs:
             # Build a minimal context update dict using outputs mapping
@@ -5804,9 +5813,7 @@ class DefaultImportStepExecutor:
             def _get_child(path: str) -> Any:
                 parts = [p for p in path.split(".") if p]
                 # Prefer the child's final context produced by the imported pipeline
-                cur: Any = getattr(inner_sr, "branch_context", None)
-                if cur is None and sub_context is not None:
-                    cur = sub_context
+                cur: Any = child_final_ctx
                 for part in parts:
                     if cur is None:
                         return None
@@ -5857,7 +5864,7 @@ class DefaultImportStepExecutor:
             except Exception:
                 parent_sr.output = inner_sr.output
         else:
-            parent_sr.output = inner_sr.output
+            parent_sr.output = getattr(inner_sr, "output", None)
 
         return Success(step_result=parent_sr)
 

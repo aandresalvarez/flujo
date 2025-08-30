@@ -1,0 +1,145 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import pytest
+
+from flujo.domain.models import PipelineContext, PipelineResult
+from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
+from flujo import Flujo, Step
+from flujo.domain.dsl.import_step import ImportStep, OutputMapping
+from flujo.domain.dsl.pipeline import Pipeline
+
+
+@pytest.mark.asyncio
+async def test_import_propagates_child_hitl_pause(tmp_path: Path) -> None:
+    # Child with a HITL step
+    child_dir = tmp_path / "child_hitl"
+    child_dir.mkdir(parents=True, exist_ok=True)
+    (child_dir / "pipeline.yaml").write_text(
+        """
+version: "0.1"
+steps:
+  - kind: hitl
+    name: Ask
+    message: "Please confirm the cohort definition"
+        """.strip()
+    )
+
+    # Parent importing the child, with HITL propagation enabled
+    parent_dir = tmp_path / "parent"
+    parent_dir.mkdir(parents=True, exist_ok=True)
+    (parent_dir / "pipeline.yaml").write_text(
+        f"""
+version: "0.1"
+imports:
+  clar: "{child_dir}/pipeline.yaml"
+steps:
+  - kind: step
+    name: run_clarification
+    uses: imports.clar
+    updates_context: true
+    config:
+      input_to: initial_prompt
+      propagate_hitl: true
+        """.strip()
+    )
+
+    parent_text = (parent_dir / "pipeline.yaml").read_text()
+    pipeline = load_pipeline_blueprint_from_yaml(parent_text, base_dir=str(parent_dir))
+    runner = Flujo(pipeline, context_model=PipelineContext)
+
+    final: PipelineResult[PipelineContext] | None = None
+    async for item in runner.run_async("goal"):
+        if isinstance(item, PipelineResult):
+            final = item
+    assert final is not None
+    ctx = final.final_pipeline_context
+    assert isinstance(ctx, PipelineContext)
+    assert ctx.scratchpad.get("status") == "paused"
+    assert (
+        isinstance(ctx.scratchpad.get("pause_message"), str)
+        and ctx.scratchpad["pause_message"].strip()
+    )
+
+
+@pytest.mark.asyncio
+async def test_import_input_to_initial_prompt_has_precedence() -> None:
+    # Child pipeline that captures its initial_prompt into scratchpad.captured
+    async def capture_initial_prompt(_: object, *, context: PipelineContext | None = None) -> dict:
+        assert context is not None
+        return {"scratchpad": {"captured": context.initial_prompt}}
+
+    child = Pipeline.from_step(
+        Step.from_callable(capture_initial_prompt, name="capture", updates_context=True)
+    )
+
+    # Parent uses ImportStep to invoke the child; route input to child's initial_prompt
+    import_step = ImportStep(
+        name="import_child",
+        pipeline=child,
+        inherit_context=True,
+        input_to="initial_prompt",
+        outputs=[OutputMapping(child="scratchpad.captured", parent="scratchpad.captured")],
+        inherit_conversation=True,
+        propagate_hitl=True,
+        on_failure="abort",
+        updates_context=True,
+    )
+    parent = Pipeline.from_step(import_step)
+    runner = Flujo(parent, context_model=PipelineContext)
+
+    # Dict input must be JSON-dumped into child's initial_prompt deterministically
+    data = {"x": 1, "y": [2, 3]}
+    expected = json.dumps(data)
+
+    final: PipelineResult[PipelineContext] | None = None
+    async for item in runner.run_async(data):
+        if isinstance(item, PipelineResult):
+            final = item
+    assert final is not None
+    ctx = final.final_pipeline_context
+    assert isinstance(ctx, PipelineContext)
+    assert ctx.scratchpad.get("captured") == expected
+
+
+def _write_passthrough_child(tmp: Path, name: str) -> Path:
+    d = tmp / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "pipeline.yaml").write_text(
+        """
+version: "0.1"
+steps:
+  - name: Child
+        """.strip()
+    )
+    return d
+
+
+def _make_parent_with_two_imports(child_dir: Path) -> str:
+    return f"""
+version: "0.1"
+imports:
+  c: "{child_dir}/pipeline.yaml"
+steps:
+  - name: UseC1
+    uses: imports.c
+  - name: UseC2
+    uses: imports.c
+""".strip()
+
+
+def test_repeated_import_alias_compiles(tmp_path: Path) -> None:
+    child = _write_passthrough_child(tmp_path, "child_repeat")
+    parent = tmp_path / "parent_repeat"
+    parent.mkdir(parents=True, exist_ok=True)
+    (parent / "pipeline.yaml").write_text(_make_parent_with_two_imports(child))
+
+    text = (parent / "pipeline.yaml").read_text()
+    pipe = load_pipeline_blueprint_from_yaml(text, base_dir=str(parent))
+    # Ensure both steps are ImportSteps and compile succeeded
+    from flujo.domain.dsl.import_step import ImportStep as _IS
+
+    assert len(pipe.steps) == 2
+    assert isinstance(pipe.steps[0], _IS)
+    assert isinstance(pipe.steps[1], _IS)

@@ -70,10 +70,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
-      - name: Run fast tests with coverage
+      - name: Run fast tests with coverage (limited xdist)
         run: |
-          # Run fast tests in parallel with coverage
-          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n auto
+          # Run fast tests with limited parallelism to speed up CI without instability
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n 3
 
       - name: Store coverage file
         uses: actions/upload-artifact@v4
@@ -117,10 +117,10 @@ jobs:
       - name: Set dummy OpenAI API key for tests
         run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
 
-      - name: Run unit tests only
+      - name: Run unit tests only (limited xdist)
         run: |
-          # Run unit tests only for ultra-fast feedback
-          uv run pytest tests/unit/ -n auto
+          # Use limited xdist workers for faster feedback while minimizing flake risk
+          uv run pytest tests/unit/ -n 3
 
   # ----------------------------------------------------------------------------
   # Job 4: Security Tests (Critical)
