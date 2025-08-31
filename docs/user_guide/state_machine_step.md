@@ -50,6 +50,44 @@ steps:
 
 The YAML loader converts each `states.<name>` block into a Pipeline and instantiates the model through the registry.
 
+## Imports In States
+
+StateMachine states can import child pipelines via `uses: imports.<alias>`. The loader compiles these into first‑class `ImportStep`s, preserving policy‑driven execution and ImportStep semantics (context inheritance and outputs mapping).
+
+Example:
+
+```yaml
+version: "0.1"
+imports:
+  clarify: "./clarification/pipeline.yaml"
+  refine: "./refinement/pipeline.yaml"
+steps:
+  - kind: StateMachine
+    name: Orchestrate
+    start_state: clarification
+    end_states: [done]
+    states:
+      clarification:
+        - name: Clarify
+          uses: imports.clarify
+          updates_context: true
+          config:
+            inherit_context: true
+            outputs:
+              - { child: "scratchpad.cohort", parent: "scratchpad.cohort" }
+        - name: SetNext
+          uses: flujo.builtins.stringify  # or any agent
+          updates_context: true
+      done:
+        - kind: step
+          name: Done
+```
+
+Notes:
+- Use `config.inherit_context: true` to run the child with a deep copy of the parent context.
+- Use `config.outputs` to map child context fields back into the parent when `updates_context: true`.
+- Execution for state pipelines uses the core policy router; no separate runner is spawned.
+
 ## Execution Semantics
 
 - The policy executor reads `current_state` from `context.scratchpad["current_state"]` when present; otherwise starts with `start_state`
@@ -67,4 +105,3 @@ The YAML loader converts each `states.<name>` block into a Pipeline and instanti
 - Unit test your step pipelines independently
 - For integration, build a `Pipeline` with `StateMachineStep` and run via `ExecutorCore` to exercise policy routing
 - If a state is terminal (in `end_states`), the policy won’t execute its body
-

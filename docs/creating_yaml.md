@@ -457,6 +457,40 @@ Drive execution across named states; each state maps to its own Pipeline.
 
 For full details, see “State Machine Step”.
 
+Imports inside StateMachine states
+---------------------------------
+
+You can use `uses: imports.<alias>` within `states` to compose precompiled child pipelines. The loader compiles these into `ImportStep`s, so you can leverage `inherit_context`, `input_to`, and `outputs` mapping just like a top‑level import.
+
+Example:
+
+```yaml
+version: "0.1"
+imports:
+  clar: "./clarification/pipeline.yaml"
+steps:
+  - kind: StateMachine
+    name: sm
+    start_state: s1
+    end_states: [done]
+    states:
+      s1:
+        - name: Clarification
+          uses: imports.clar
+          updates_context: true
+          config:
+            inherit_context: true
+            outputs:
+              - { child: "scratchpad.foo", parent: "scratchpad.foo" }
+      done:
+        - kind: step
+          name: Done
+```
+
+Tips:
+- Set `updates_context: true` on the import step and use `config.outputs` to map explicit fields from the child back to the parent context.
+- Use `config.input_to` (`initial_prompt` | `scratchpad` | `both`) to route the parent input into the child. For scratchpad routing of scalars, `config.input_scratchpad_key` can help.
+
 ### 9. Agentic Loop (`kind: agentic_loop`)
 
 YAML sugar to define a conversational loop using the built-in factory.
