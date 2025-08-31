@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Wizard support to scaffold conversation blocks and presets
   - Persistence: conversation_history survives pause/resume and project restarts (SQLite backend tested)
 
+### Fixed
+- StateMachine YAML loader now compiles `states` that use `uses: imports.<alias>` into first-class `ImportStep`s. This preserves policy-driven execution and prevents fallback to the default Step policy (which could trigger `MissingAgentError` if no agent is present on the import step). Tests include unit, integration, and a regression covering the original scenario.
+
 
 ### Added
 - Declarative LoopStep enhancements in YAML loader:
