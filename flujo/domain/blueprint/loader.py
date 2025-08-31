@@ -362,6 +362,45 @@ def _make_step_from_blueprint(
                 # Best-effort: keep original if anything goes wrong
                 pass
         # Built-in kinds handled by existing logic via typed model
+        # First-class handling for StateMachine (bypasses typed BlueprintStepModel)
+        if kind_val == "StateMachine":
+            # Build states → Pipeline map with compiled imports/agents available
+            from ..dsl.state_machine import StateMachineStep as _StateMachineStep
+
+            name = str(model.get("name", "StateMachine"))
+            start_state = str(model.get("start_state"))
+            end_states_val = model.get("end_states") or []
+            if not isinstance(end_states_val, list):
+                end_states_val = [end_states_val]
+            end_states = [str(x) for x in end_states_val]
+
+            states_raw = model.get("states") or {}
+            if not isinstance(states_raw, dict):
+                raise BlueprintError("StateMachine.states must be a mapping of state → steps")
+
+            coerced_states: Dict[str, Pipeline[Any, Any]] = {}
+            for _state_name, _branch_spec in states_raw.items():
+                coerced_states[str(_state_name)] = _build_pipeline_from_branch(
+                    _branch_spec,
+                    base_path=f"{yaml_path}.states.{_state_name}" if yaml_path else None,
+                    compiled_agents=compiled_agents,
+                    compiled_imports=compiled_imports,
+                )
+
+            sm = _StateMachineStep(
+                name=name,
+                states=coerced_states,
+                start_state=start_state,
+                end_states=end_states,
+            )
+            # Attach yaml_path for telemetry if available
+            if yaml_path:
+                try:
+                    sm.meta["yaml_path"] = yaml_path
+                except Exception:
+                    pass
+            return sm
+
         if kind_val in {
             "step",
             "parallel",
