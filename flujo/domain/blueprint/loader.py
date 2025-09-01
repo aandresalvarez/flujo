@@ -1781,9 +1781,9 @@ def _build_pipeline_from_branch(
             if "steps" in branch_spec:
                 steps_val = branch_spec.get("steps")
                 if isinstance(steps_val, list):
-                    steps: List[Step[Any, Any]] = []
+                    step_list: List[Step[Any, Any]] = []
                     for idx, s in enumerate(steps_val):
-                        steps.append(
+                        step_list.append(
                             _make_step_from_blueprint(
                                 s,
                                 yaml_path=(
@@ -1793,7 +1793,7 @@ def _build_pipeline_from_branch(
                                 compiled_imports=compiled_imports,
                             )
                         )
-                    return Pipeline.model_construct(steps=steps)
+                    return Pipeline.model_construct(steps=step_list)
                 else:
                     path_txt = base_path or "<branch>"
                     raise BlueprintError(
