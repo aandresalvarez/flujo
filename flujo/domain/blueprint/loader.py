@@ -1776,6 +1776,39 @@ def _build_pipeline_from_branch(
             )
         return Pipeline.model_construct(steps=steps)
     elif isinstance(branch_spec, dict):
+        # Developer ergonomics: allow inline pipeline dicts like { steps: [...] }
+        try:
+            if "steps" in branch_spec:
+                steps_val = branch_spec.get("steps")
+                if isinstance(steps_val, list):
+                    step_list: List[Step[Any, Any]] = []
+                    for idx, s in enumerate(steps_val):
+                        step_list.append(
+                            _make_step_from_blueprint(
+                                s,
+                                yaml_path=(
+                                    f"{base_path}.steps[{idx}]" if base_path is not None else None
+                                ),
+                                compiled_agents=compiled_agents,
+                                compiled_imports=compiled_imports,
+                            )
+                        )
+                    return Pipeline.model_construct(steps=step_list)
+                else:
+                    path_txt = base_path or "<branch>"
+                    raise BlueprintError(
+                        "Invalid inline pipeline: 'steps' must be a list of step dicts. "
+                        f"Found type={type(steps_val).__name__} at {path_txt}.\n"
+                        "Hint: either provide a list directly (e.g., states.s1: [ ... ]) or "
+                        "define a single step dict without the 'steps:' wrapper."
+                    )
+        except BlueprintError:
+            raise
+        except Exception:
+            # Fall through to single-step handling on unexpected shapes
+            pass
+
+        # Single step dict (canonical path)
         return Pipeline.from_step(
             _make_step_from_blueprint(
                 branch_spec,
