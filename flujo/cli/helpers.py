@@ -1361,17 +1361,14 @@ def get_pipeline_step_names(path: str) -> list[str]:
 def validate_pipeline_file(path: str) -> Any:
     """Return the validation report for a pipeline file."""
     if path.endswith((".yaml", ".yml")):
-        try:
-            with open(path, "r") as f:
-                yaml_text = f.read()
-            from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
+        # Load YAML and surface loader errors directly so CLI can show helpful messages
+        with open(path, "r") as f:
+            yaml_text = f.read()
+        from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
 
-            # Ensure relative imports resolve from the YAML file directory
-            base_dir = os.path.dirname(os.path.abspath(path))
-            pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
-        except Exception as e:
-            warnings.warn(f"Failed to validate YAML pipeline file: {e}", RuntimeWarning)
-            raise Exit(1)
+        # Ensure relative imports resolve from the YAML file directory
+        base_dir = os.path.dirname(os.path.abspath(path))
+        pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
     else:
         pipeline, _ = load_pipeline_from_file(path)
     from typing import cast as _cast
@@ -1395,11 +1392,7 @@ def validate_yaml_text(yaml_text: str, base_dir: Optional[str] = None) -> Valida
     from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
     from typing import cast as _cast
 
-    try:
-        pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
-    except Exception as e:
-        warnings.warn(f"Failed to load YAML blueprint for validation: {e}", RuntimeWarning)
-        raise Exit(1)
+    pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
     return _cast(Any, pipeline).validate_graph()
 
 
