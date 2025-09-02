@@ -174,7 +174,10 @@ Telemetry additions
 
 ### 6.5 Security & Safety
 
-- Use existing safe expression engine; no new names are introduced beyond `output`, `context`, `steps`, `previous_step`.
+- Use the existing safe expression engine. `when` expressions evaluate with:
+  - `output`: a small payload dict containing `event`, `last_output`, `last_step`.
+  - `context`: the pipeline context (via TemplateContextProxy).
+  - Additionally, the engine exposes `previous_step` and `steps` for parity with other DSL expressions.
 - Do not execute user code; only evaluate restricted AST.
 - On expression failure, treat as non-match (log warning), do not crash policy.
 

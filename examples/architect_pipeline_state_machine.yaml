@@ -39,7 +39,7 @@ steps:
         steps:
           - kind: hitl
             name: AskForDetails
-            message_for_user: "Please provide any missing details or constraints for your goal."
+            message: "Please provide any missing details or constraints for your goal."
       Design:
         steps:
           - kind: step
@@ -88,7 +88,7 @@ steps:
                           {{ context.generated_yaml or context.yaml_text or '' }}
 
                           VALIDATION_REPORT_JSON:
-                          {{ previous_step }}
+                          {{ steps.ValidateGeneratedYAML }}
       Done:
         steps: []
       Failed:
@@ -119,4 +119,3 @@ steps:
       - from: "*"
         on: failure
         to: Failed
-

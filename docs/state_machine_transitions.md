@@ -25,7 +25,7 @@ Transitions are evaluated in list order (first-match-wins) and take precedence o
       steps:
         - kind: hitl
           name: ask_for_input
-          message_for_user: "Provide details?"
+          message: "Provide details?"
     concept_discovery:
       steps:
         - kind: step
@@ -100,4 +100,3 @@ Some YAML parsers coerce `on` into a boolean. If you encounter validation errors
 - Removes boilerplate and centralizes control flow in YAML.
 - Improves pause/resume robustness with a single declarative rule.
 - Aligns with policy-driven architecture and idempotent context handling.
-

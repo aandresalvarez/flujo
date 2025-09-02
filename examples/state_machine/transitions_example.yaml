@@ -6,9 +6,9 @@ steps:
     states:
       clarification:
         steps:
-          - kind: hitl
-            name: ask_for_input
-            message_for_user: "Provide details?"
+        - kind: hitl
+          name: ask_for_input
+          message: "Provide details?"
       concept_discovery:
         steps: []
       review:
@@ -28,6 +28,9 @@ steps:
       - from: concept_discovery
         on: success
         to: review
+      - from: review
+        on: success
+        to: done
       - from: "*"
         on: failure
         to: failed

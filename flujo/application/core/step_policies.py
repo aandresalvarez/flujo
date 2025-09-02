@@ -296,7 +296,7 @@ class StateMachinePolicyExecutor:
                             "last_step": None,
                         }
                         target = _resolve_transition(
-                            step, current_state, "pause", pause_payload, last_context
+                            step, current_state, "pause", pause_payload, iteration_context
                         )
                         if (
                             isinstance(target, str)

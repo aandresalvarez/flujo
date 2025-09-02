@@ -20,7 +20,7 @@ def _yaml_pause_self_transition() -> str:
         "        steps:\n"
         "          - kind: hitl\n"
         "            name: ask\n"
-        "            message_for_user: 'Proceed?'\n"
+        "            message: 'Proceed?'\n"
         "      done:\n"
         "        steps: []\n"
         "    transitions:\n"
