@@ -374,6 +374,19 @@ class StateMachinePolicyExecutor:
                         lc.update(sc)
             except Exception:
                 pass
+            # Additionally, merge any scratchpad updates emitted via step outputs
+            try:
+                if last_context is not None and hasattr(last_context, "scratchpad"):
+                    lcd = getattr(last_context, "scratchpad")
+                    if isinstance(lcd, dict):
+                        for _sr in getattr(pipeline_result, "step_history", []) or []:
+                            _out = getattr(_sr, "output", None)
+                            if isinstance(_out, dict):
+                                _sp = _out.get("scratchpad")
+                                if isinstance(_sp, dict):
+                                    lcd.update(_sp)
+            except Exception:
+                pass
             # Re-apply intended state transition to the merged context when available
             try:
                 if last_context is not None and hasattr(last_context, "scratchpad"):
