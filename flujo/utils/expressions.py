@@ -24,9 +24,17 @@ class _SafeEvaluator(ast.NodeVisitor):
         return self.visit(node.body)
 
     def visit_Name(self, node: ast.Name) -> Any:
-        if node.id not in {"previous_step", "output", "context", "steps"}:
+        # Support common literal aliases used in YAML-like expressions
+        lid = node.id
+        if lid in {"true", "True"}:  # accept lowercase/uppercase
+            return True
+        if lid in {"false", "False"}:  # accept lowercase/uppercase
+            return False
+        if lid in {"null", "none", "None", "NULL"}:  # null/none aliases
+            return None
+        if lid not in {"previous_step", "output", "context", "steps"}:
             raise ValueError(f"Unknown name: {node.id}")
-        return self.names.get(node.id)
+        return self.names.get(lid)
 
     def visit_Constant(self, node: ast.Constant) -> Any:
         return node.value
