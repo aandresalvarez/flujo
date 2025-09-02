@@ -307,6 +307,13 @@ class StateMachinePolicyExecutor:
                             if isinstance(scd, dict):
                                 scd["current_state"] = target
                                 scd["next_state"] = target
+                                # Mark paused status and message on main context for persistence
+                                try:
+                                    scd["status"] = "paused"
+                                    msg = getattr(e, "message", None)
+                                    scd["pause_message"] = msg if isinstance(msg, str) else str(e)
+                                except Exception:
+                                    pass
                                 telemetry.logfire.info(
                                     f"[StateMachinePolicy] pause in state={current_state!r}; transitioning to={target!r}"
                                 )
@@ -353,6 +360,20 @@ class StateMachinePolicyExecutor:
             except Exception:
                 # Defensive: if merge fails, fall back to sub_ctx to avoid losing progress
                 last_context = sub_ctx
+            # Ensure scratchpad updates from the sub-context are preserved
+            try:
+                if (
+                    sub_ctx is not None
+                    and last_context is not None
+                    and hasattr(sub_ctx, "scratchpad")
+                    and hasattr(last_context, "scratchpad")
+                ):
+                    sc = getattr(sub_ctx, "scratchpad")
+                    lc = getattr(last_context, "scratchpad")
+                    if isinstance(sc, dict) and isinstance(lc, dict):
+                        lc.update(sc)
+            except Exception:
+                pass
             # Re-apply intended state transition to the merged context when available
             try:
                 if last_context is not None and hasattr(last_context, "scratchpad"):
@@ -517,7 +538,7 @@ class StateMachinePolicyExecutor:
                     total_tokens=total_tokens,
                     final_pipeline_context=last_context,
                 )
-                frame.context_setter(pr, context)
+                frame.context_setter(pr, last_context)
         except Exception:
             pass
         return Success(step_result=result)
