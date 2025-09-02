@@ -187,6 +187,47 @@ class StateMachinePolicyExecutor:
         telemetry.logfire.info(f"[StateMachinePolicy] starting at state={current_state!r}")
 
         max_hops = max(1, len(getattr(step, "states", {})) * 10)
+
+        # Helper: resolve transitions with first-match-wins semantics
+        def _resolve_transition(
+            _step: Any,
+            _from_state: Optional[str],
+            _event: str,
+            _payload: Dict[str, Any],
+            _context: Optional[Any],
+        ) -> Optional[str]:
+            try:
+                trs = getattr(_step, "transitions", None) or []
+            except Exception:
+                trs = []
+            if not trs:
+                return None
+            for tr in trs:
+                try:
+                    frm = getattr(tr, "from_state", None)
+                    ev = getattr(tr, "on", None)
+                    if ev != _event:
+                        continue
+                    if frm not in ("*", _from_state):
+                        continue
+                    # Evaluate predicate if present
+                    when_fn = getattr(tr, "_when_fn", None)
+                    if when_fn is not None:
+                        try:
+                            ok = bool(when_fn(_payload, _context))
+                        except Exception:
+                            telemetry.logfire.warning(
+                                "[StateMachinePolicy] when() evaluation failed; skipping rule"
+                            )
+                            ok = False
+                        if not ok:
+                            continue
+                    return getattr(tr, "to", None)
+                except Exception:
+                    # Skip malformed rules defensively
+                    continue
+            return None
+
         for _hop in range(max_hops):
             if current_state is None:
                 break
@@ -216,6 +257,15 @@ class StateMachinePolicyExecutor:
             except Exception:
                 _ = None
 
+            # Persist control metadata so resume knows current state
+            try:
+                if last_context is not None and hasattr(last_context, "scratchpad"):
+                    spm = getattr(last_context, "scratchpad")
+                    if isinstance(spm, dict) and isinstance(current_state, str):
+                        spm["current_state"] = current_state
+            except Exception:
+                pass
+
             iteration_context = (
                 ContextManager.isolate(last_context) if last_context is not None else None
             )
@@ -224,15 +274,45 @@ class StateMachinePolicyExecutor:
             original_cache_enabled = getattr(core, "_enable_cache", True)
             try:
                 setattr(core, "_enable_cache", False)
-                pipeline_result: PipelineResult[_Any] = await core._execute_pipeline_via_policies(
-                    state_pipeline,
-                    data,
-                    iteration_context,
-                    resources,
-                    limits,
-                    None,
-                    frame.context_setter,
-                )
+                try:
+                    pipeline_result: PipelineResult[
+                        _Any
+                    ] = await core._execute_pipeline_via_policies(
+                        state_pipeline,
+                        data,
+                        iteration_context,
+                        resources,
+                        limits,
+                        None,
+                        frame.context_setter,
+                    )
+                except PausedException as e:
+                    # On pause, do not merge iteration context; resolve pause transition and re-raise
+                    try:
+                        # Build minimal payload for expressions
+                        pause_payload: Dict[str, Any] = {
+                            "event": "pause",
+                            "last_output": None,
+                            "last_step": None,
+                        }
+                        target = _resolve_transition(
+                            step, current_state, "pause", pause_payload, last_context
+                        )
+                        if (
+                            isinstance(target, str)
+                            and last_context is not None
+                            and hasattr(last_context, "scratchpad")
+                        ):
+                            scd = getattr(last_context, "scratchpad")
+                            if isinstance(scd, dict):
+                                scd["current_state"] = target
+                                scd["next_state"] = target
+                                telemetry.logfire.info(
+                                    f"[StateMachinePolicy] pause in state={current_state!r}; transitioning to={target!r}"
+                                )
+                    except Exception:
+                        pass
+                    raise e
             finally:
                 try:
                     setattr(core, "_enable_cache", original_cache_enabled)
@@ -280,19 +360,69 @@ class StateMachinePolicyExecutor:
                     if isinstance(lcd, dict):
                         if isinstance(intended_next, str):
                             lcd["next_state"] = intended_next
-                            # Default current_state to intended_next when not explicitly provided
+                            # Update current_state to reflect the intended hop
                             if isinstance(intended_curr, str):
                                 lcd["current_state"] = intended_curr
                             else:
-                                lcd.setdefault("current_state", intended_next)
+                                lcd["current_state"] = intended_next
             except Exception:
                 pass
+            # Decide transition based on pipeline_result event before legacy fallbacks
             next_state: Optional[str] = None
+            try:
+                # Determine event from last step result
+                last_sr = None
+                try:
+                    if getattr(pipeline_result, "step_history", None):
+                        last_sr = pipeline_result.step_history[-1]
+                except Exception:
+                    last_sr = None
+                event = "success"
+                if last_sr is not None and isinstance(getattr(last_sr, "success", None), bool):
+                    event = "success" if last_sr.success else "failure"
+                # Prepare payload for expressions
+                event_payload: Dict[str, Any] = {
+                    "event": event,
+                    "last_output": getattr(last_sr, "output", None)
+                    if last_sr is not None
+                    else None,
+                    "last_step": {
+                        "name": getattr(last_sr, "name", None) if last_sr is not None else None,
+                        "success": getattr(last_sr, "success", None)
+                        if last_sr is not None
+                        else None,
+                        "feedback": getattr(last_sr, "feedback", None)
+                        if last_sr is not None
+                        else None,
+                    },
+                }
+                target = _resolve_transition(
+                    step, current_state, event, event_payload, last_context
+                )
+                if isinstance(target, str):
+                    next_state = target
+                    # Persist transition into context scratchpad
+                    try:
+                        if last_context is not None and hasattr(last_context, "scratchpad"):
+                            lcd2 = getattr(last_context, "scratchpad")
+                            if isinstance(lcd2, dict):
+                                lcd2["next_state"] = str(target)
+                                lcd2["current_state"] = str(target)
+                        telemetry.logfire.info(
+                            f"[StateMachinePolicy] event={event} from={current_state!r} matched to={target!r}"
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # If no transition rule matched, look for explicit next_state in context
             try:
                 if last_context is not None and hasattr(last_context, "scratchpad"):
                     sp2 = getattr(last_context, "scratchpad")
                     if isinstance(sp2, dict):
-                        next_state = sp2.get("next_state")
+                        if not isinstance(next_state, str):
+                            next_state = sp2.get("next_state")
             except Exception:
                 next_state = None
 

@@ -387,11 +387,33 @@ def _make_step_from_blueprint(
                     compiled_imports=compiled_imports,
                 )
 
+            # Transitions: pass raw list of dicts to be validated by the model
+            transitions_raw = model.get("transitions")
+            if transitions_raw is not None and not isinstance(transitions_raw, list):
+                raise BlueprintError("StateMachine.transitions must be a list of rules")
+            # Normalize YAML 1.1 boolean key coercion for 'on' (PyYAML may parse 'on' as True)
+            coerced_transitions = []
+            if isinstance(transitions_raw, list):
+                for _idx, _rule in enumerate(transitions_raw):
+                    if isinstance(_rule, dict):
+                        _coerced: Dict[str, Any] = {}
+                        for _k, _v in _rule.items():
+                            if _k is True:  # YAML 'on' key parsed as boolean True
+                                _coerced["on"] = _v
+                            elif _k is False:  # defensive symmetry (not expected here)
+                                _coerced["off"] = _v  # unlikely used; preserve intent
+                            else:
+                                _coerced[str(_k)] = _v
+                        coerced_transitions.append(_coerced)
+                    else:
+                        coerced_transitions.append(_rule)
+
             sm = _StateMachineStep(
                 name=name,
                 states=coerced_states,
                 start_state=start_state,
                 end_states=end_states,
+                transitions=coerced_transitions or [],
             )
             # Attach yaml_path for telemetry if available
             if yaml_path:
