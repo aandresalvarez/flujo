@@ -1,0 +1,121 @@
+name: FlujoArchitect-GPT5-StateMachine
+version: "2.0"
+
+agents:
+  architect_agent:
+    model: "openai:gpt-5"
+    model_settings:
+      reasoning: { effort: "high" }
+      text: { verbosity: "low" }
+    system_prompt: |
+      You are the Flujo AI Architect. Convert a user's goal into a valid pipeline.yaml.
+    output_schema:
+      type: object
+      properties:
+        yaml_text: { type: string }
+      required: [yaml_text]
+
+  repair_agent:
+    model: "openai:gpt-5"
+    model_settings:
+      reasoning: { effort: "medium" }
+      text: { verbosity: "high" }
+    timeout: 120
+    system_prompt: |
+      You are a Flujo YAML debugger. Fix the YAML and return YamlWriter(yaml_text: str).
+    output_schema:
+      type: object
+      properties:
+        yaml_text: { type: string }
+      required: [yaml_text]
+
+steps:
+  - kind: StateMachine
+    name: ArchitectStateMachine
+    start_state: Clarification
+    end_states: [Done, Failed]
+    states:
+      Clarification:
+        steps:
+          - kind: hitl
+            name: AskForDetails
+            message: "Please provide any missing details or constraints for your goal."
+      Design:
+        steps:
+          - kind: step
+            name: DesignAndBuildBlueprint
+            uses: agents.architect_agent
+            updates_context: true
+            input: |
+              USER_GOAL:
+              {{ context.user_goal }}
+
+              AVAILABLE_SKILLS_JSON:
+              {{ context.available_skills }}
+      ValidateAndRepair:
+        steps:
+          - kind: loop
+            name: ValidateAndRepairLoop
+            loop:
+              max_loops: 2
+              exit_condition: "flujo.builtins:exit_when_yaml_valid"
+              body:
+                - kind: step
+                  name: ExtractYamlForValidation
+                  agent: { id: "flujo.builtins.extract_yaml_text" }
+                - kind: step
+                  name: ValidateGeneratedYAML
+                  agent: { id: "flujo.builtins.validate_yaml" }
+                - kind: step
+                  name: SetValidationFlag
+                  agent: { id: "flujo.builtins.validation_report_to_flag" }
+                  updates_context: true
+                - kind: conditional
+                  name: ValidityBranch
+                  condition: "flujo.utils.context:predicate_is_valid_report"
+                  branches:
+                    valid:
+                      - kind: step
+                        name: Finish
+                        agent: { id: "flujo.builtins.passthrough" }
+                    invalid:
+                      - kind: step
+                        name: RepairBlueprint
+                        uses: agents.repair_agent
+                        updates_context: true
+                        input: |
+                          CURRENT_YAML:
+                          {{ context.generated_yaml or context.yaml_text or '' }}
+
+                          VALIDATION_REPORT_JSON:
+                          {{ steps.ValidateGeneratedYAML }}
+      Done:
+        steps: []
+      Failed:
+        steps: []
+
+    transitions:
+      # Robust HITL pause/resume: re-enter Clarification until user provides details
+      - from: Clarification
+        on: pause
+        to: Clarification
+
+      # After Clarification (once resumed), proceed to Design
+      - from: Clarification
+        on: success
+        to: Design
+
+      # After Design completes, run YAML validation/repair loop
+      - from: Design
+        on: success
+        to: ValidateAndRepair
+
+      # Validation success leads to Done
+      - from: ValidateAndRepair
+        on: success
+        to: Done
+
+      # Catch-all failures go to Failed
+      - from: "*"
+        on: failure
+        to: Failed

@@ -39,6 +39,8 @@ See `examples/architect_pipeline.yaml` for a full example (reference). Highlight
 - Validation loop uses `flujo.builtins.validate_yaml` and branches on `flujo.utils.context:predicate_is_valid_report`.
 - Valid branch is a passthrough; invalid branch uses `agents.repair_agent` (also with `model_settings`).
 
+If you prefer a declarative state machine that handles interactive clarification (HITL) and validation phases, see `examples/architect_pipeline_state_machine.yaml`. It demonstrates a `transitions:` block with an `on: pause` self‑transition for the `Clarification` state so that, upon resume, the state re‑enters to process new user input.
+
 ## Timeouts & Retries
 
 Complex GPT‑5 calls can take longer than typical LLM requests. You can tune timeouts and retries in two places:

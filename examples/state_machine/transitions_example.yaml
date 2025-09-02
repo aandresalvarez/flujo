@@ -1,0 +1,36 @@
+steps:
+  - kind: StateMachine
+    name: orchestrate
+    start_state: clarification
+    end_states: [done, failed]
+    states:
+      clarification:
+        steps:
+        - kind: hitl
+          name: ask_for_input
+          message: "Provide details?"
+      concept_discovery:
+        steps: []
+      review:
+        steps: []
+      failed:
+        steps: []
+      done:
+        steps: []
+    transitions:
+      - from: clarification
+        on: pause
+        to: clarification
+      - from: clarification
+        on: success
+        to: concept_discovery
+        when: "context.scratchpad.get('cohort_definition')"
+      - from: concept_discovery
+        on: success
+        to: review
+      - from: review
+        on: success
+        to: done
+      - from: "*"
+        on: failure
+        to: failed

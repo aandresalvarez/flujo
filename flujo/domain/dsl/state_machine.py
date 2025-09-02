@@ -1,12 +1,32 @@
 from __future__ import annotations
 
-from typing import Any, ClassVar, Dict, List
+from typing import Any, ClassVar, Dict, List, Optional, Callable, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, PrivateAttr
 
 from .pipeline import Pipeline
 from .step import Step
 from .conditional import ConditionalStep
+from ..base_model import BaseModel
+
+
+class TransitionRule(BaseModel):
+    """Declarative transition rule for StateMachineStep.
+
+    YAML fields:
+      - from: source state name or "*" wildcard
+      - on: one of {success, failure, pause}
+      - to: destination state name
+      - when: optional expression evaluated with (output, context)
+    """
+
+    from_state: str = Field(alias="from")
+    on: Literal["success", "failure", "pause"]
+    to: str
+    when: Optional[str] = None
+
+    # Compiled predicate (not serialized)
+    _when_fn: Optional[Callable[[Any, Optional[Any]], Any]] = PrivateAttr(default=None)
 
 
 class StateMachineStep(Step[Any, Any]):
@@ -23,6 +43,7 @@ class StateMachineStep(Step[Any, Any]):
     states: Dict[str, Pipeline[Any, Any]] = Field(default_factory=dict)
     start_state: str
     end_states: List[str] = Field(default_factory=list)
+    transitions: List[TransitionRule] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -42,6 +63,40 @@ class StateMachineStep(Step[Any, Any]):
             # Best-effort; let Pydantic raise if still invalid
             pass
         return data
+
+    @model_validator(mode="after")
+    def _validate_and_compile_transitions(self) -> "StateMachineStep":
+        try:
+            # Build lookup sets
+            state_keys = set(self.states.keys())
+            end_keys = set(self.end_states or [])
+
+            # Compile expressions
+            if self.transitions:
+                from flujo.utils.expressions import compile_expression_to_callable
+
+                for tr in self.transitions:
+                    # Validate 'from'
+                    if tr.from_state != "*" and tr.from_state not in state_keys:
+                        raise ValueError(
+                            f"Transition 'from' references unknown state: {tr.from_state!r}"
+                        )
+                    # Validate 'to'
+                    if tr.to not in state_keys and tr.to not in end_keys:
+                        raise ValueError(
+                            f"Transition 'to' must be an existing state or an end state: {tr.to!r}"
+                        )
+                    # Precompile predicate
+                    if tr.when is not None and isinstance(tr.when, str) and tr.when.strip():
+                        try:
+                            tr._when_fn = compile_expression_to_callable(tr.when)
+                        except Exception as e:
+                            # Raise a clear error so blueprint validation fails early
+                            raise ValueError(f"Invalid transition 'when' expression: {e}")
+        except Exception:
+            # Let Pydantic surface the validation error
+            raise
+        return self
 
     @property
     def is_complex(self) -> bool:  # noqa: D401
