@@ -2193,10 +2193,22 @@ def run(
             except Exception:
                 pass
 
+        # Load the project-aware state backend from configuration so `flujo run`
+        # honors flujo.toml/FLUJO_STATE_URI (e.g., default memory:// from `flujo init`).
+        # Falls back to None on errors which lets Runner choose safe defaults.
+        _state_backend = None
+        try:
+            from .config import load_backend_from_config as _load_backend_from_config
+
+            _state_backend = _load_backend_from_config()
+        except Exception:
+            _state_backend = None
+
         runner = create_flujo_runner(
             pipeline=pipeline_obj,
             context_model_class=context_model_class,
             initial_context_data=initial_context_data,
+            state_backend=_state_backend,
             debug=debug,
         )
 

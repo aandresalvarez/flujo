@@ -133,10 +133,29 @@ def load_backend_from_config() -> StateBackend:
             # Allow override for test DB directory
             override_dir = os.getenv("FLUJO_TEST_STATE_DIR")
             if override_dir and override_dir.strip():
+                # Respect explicit test dir exactly (no per-worker subdir)
                 temp_dir = Path(override_dir.strip())
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                uri = f"sqlite:///{(temp_dir / 'flujo_ops.db').as_posix()}"
+                logging.warning(
+                    f"[flujo.config] FLUJO_STATE_URI not set; using isolated test DB '{uri}'"
+                )
+                # Return early since we've constructed the final URI
+                return SQLiteBackend(temp_dir / "flujo_ops.db")
             else:
-                # Place DB in a temp directory unique per user/session to avoid collisions
-                temp_dir = Path(os.getenv("PYTEST_TMPDIR", tempfile.gettempdir())) / "flujo-test-db"
+                # Base directory under system temp
+                base_dir = Path(os.getenv("PYTEST_TMPDIR", tempfile.gettempdir())) / "flujo-test-db"
+            # Create a per-worker/per-process subdirectory to avoid cross-test collisions
+            try:
+                worker_id = os.getenv("PYTEST_XDIST_WORKER", "")
+            except Exception:
+                worker_id = ""
+            try:
+                pid = os.getpid()
+            except Exception:
+                pid = 0
+            subdir = f"worker-{worker_id or 'single'}-pid-{pid}"
+            temp_dir = base_dir / subdir
             temp_dir.mkdir(parents=True, exist_ok=True)
             uri = f"sqlite:///{(temp_dir / 'flujo_ops.db').as_posix()}"
             logging.warning(

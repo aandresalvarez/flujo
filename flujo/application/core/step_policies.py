@@ -379,12 +379,22 @@ class StateMachinePolicyExecutor:
                 if last_context is not None and hasattr(last_context, "scratchpad"):
                     lcd = getattr(last_context, "scratchpad")
                     if isinstance(lcd, dict):
+
+                        def _merge_out(out_obj: Any) -> None:
+                            if isinstance(out_obj, dict):
+                                sp = out_obj.get("scratchpad")
+                                if isinstance(sp, dict):
+                                    lcd.update(sp)
+
+                        # Merge top-level step outputs
                         for _sr in getattr(pipeline_result, "step_history", []) or []:
-                            _out = getattr(_sr, "output", None)
-                            if isinstance(_out, dict):
-                                _sp = _out.get("scratchpad")
-                                if isinstance(_sp, dict):
-                                    lcd.update(_sp)
+                            _merge_out(getattr(_sr, "output", None))
+                            # Also merge nested outputs (e.g., ImportStep may carry child history)
+                            try:
+                                for _nsr in getattr(_sr, "step_history", []) or []:
+                                    _merge_out(getattr(_nsr, "output", None))
+                            except Exception:
+                                pass
             except Exception:
                 pass
             # Re-apply intended state transition to the merged context when available
@@ -5930,8 +5940,55 @@ class DefaultImportStepExecutor:
                 context_setter,
             )
         except PausedException as e:
+            # Preserve child (imported) context state on pause and proxy to parent when requested
+            # Rationale: The child pipeline (e.g., a LoopStep with HITL) may update
+            # conversation/hitl state inside its isolated context. Without merging
+            # that state back to the parent's context before propagating the pause,
+            # resuming will re-enter with stale state and cause repeated questions.
+            try:
+                if context is not None and sub_context is not None:
+                    try:
+                        # Prefer robust merge that preserves lists/history and dicts
+                        from flujo.utils.context import safe_merge_context_updates as _safe_merge
+
+                        _safe_merge(context, sub_context)
+                    except Exception:
+                        # Fallback to model-level merge when available
+                        try:
+                            merged_ctx = ContextManager.merge(context, sub_context)
+                            if merged_ctx is not None:
+                                context = merged_ctx
+                        except Exception:
+                            pass
+                # Mark parent context as paused only when propagation is enabled
+                propagate = bool(getattr(step, "propagate_hitl", True))
+                if propagate:
+                    if context is not None and hasattr(context, "scratchpad"):
+                        try:
+                            sp = getattr(context, "scratchpad")
+                            if isinstance(sp, dict):
+                                sp["status"] = "paused"
+                                msg = getattr(e, "message", None)
+                                sp["pause_message"] = msg if isinstance(msg, str) else str(e)
+                        except Exception:
+                            pass
+                else:
+                    # Ensure status remains running when not propagating
+                    if context is not None and hasattr(context, "scratchpad"):
+                        try:
+                            sp = getattr(context, "scratchpad")
+                            if isinstance(sp, dict):
+                                if sp.get("status") == "paused":
+                                    sp["status"] = "running"
+                                sp.pop("pause_message", None)
+                        except Exception:
+                            pass
+            except Exception:
+                # Non-fatal: propagate pause regardless
+                pass
+
             # Proxy child HITL to parent when requested
-            if getattr(step, "propagate_hitl", True):
+            if propagate:
                 return Paused(message=str(e))
             # Legacy/opt-out: do not pause parent; return empty success result
             parent_sr = StepResult(

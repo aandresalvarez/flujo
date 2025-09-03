@@ -1460,6 +1460,28 @@ class SQLiteBackend(StateBackend):
 
             async def _save() -> None:
                 async with aiosqlite.connect(self.db_path) as db:
+                    # Enforce referential integrity consistently
+                    await db.execute("PRAGMA foreign_keys = ON")
+
+                    # Ensure parent run row exists to avoid FK failures in concurrent/resume scenarios
+                    try:
+                        run_id = step_data.get("run_id")
+                        if run_id is not None:
+                            now = datetime.utcnow().isoformat()
+                            await db.execute(
+                                """
+                                INSERT OR IGNORE INTO runs (
+                                    run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                                    created_at, updated_at
+                                ) VALUES (?, 'unknown', 'unknown', 'latest', 'running', ?, ?)
+                                """,
+                                (run_id, now, now),
+                            )
+                            # Do not commit yet; the final commit below will include both insert and step
+                    except sqlite3.Error:
+                        # Best-effort only; continue to step insert and let FK enforcement handle it
+                        pass
+
                     # OPTIMIZATION: Use simplified schema for better performance
                     await db.execute(
                         """
@@ -1583,29 +1605,40 @@ class SQLiteBackend(StateBackend):
                 async with aiosqlite.connect(self.db_path) as db:
                     await db.execute("PRAGMA foreign_keys = ON")
 
+                    # Ensure parent run exists to satisfy FK on spans(run_id)
+                    try:
+                        now = datetime.utcnow().isoformat()
+                        await db.execute(
+                            """
+                            INSERT OR IGNORE INTO runs (
+                                run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                                created_at, updated_at
+                            ) VALUES (?, 'unknown', 'unknown', 'latest', 'running', ?, ?)
+                            """,
+                            (run_id, now, now),
+                        )
+                    except sqlite3.Error:
+                        # Non-fatal; if the insert fails, FK enforcement on spans will report it
+                        pass
+
                     # Extract all spans from the trace tree recursively
                     spans_to_insert = self._extract_spans_from_tree(trace, run_id)
 
                     if spans_to_insert:
-                        # Use a transaction for atomic replacement
-                        # Note: We use DELETE + INSERT instead of UPSERT because:
-                        # 1. We need to replace ALL spans for a run_id, not individual spans
-                        # 2. Different trace saves may have different span_id values
-                        # 3. We must ensure no orphaned spans remain from previous saves
-                        async with db.execute("BEGIN TRANSACTION"):
-                            # Delete existing spans for this run_id to ensure clean replacement
-                            await db.execute("DELETE FROM spans WHERE run_id = ?", (run_id,))
+                        # Replace all spans for this run_id atomically within the current transaction
+                        # Delete existing spans for this run_id to ensure clean replacement
+                        await db.execute("DELETE FROM spans WHERE run_id = ?", (run_id,))
 
-                            # Insert new spans
-                            await db.executemany(
-                                """
-                                INSERT INTO spans (
-                                    span_id, run_id, parent_span_id, name, start_time,
-                                    end_time, status, attributes, created_at
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                                """,
-                                spans_to_insert,
-                            )
+                        # Insert new spans
+                        await db.executemany(
+                            """
+                            INSERT INTO spans (
+                                span_id, run_id, parent_span_id, name, start_time,
+                                end_time, status, attributes, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                            """,
+                            spans_to_insert,
+                        )
                         await db.commit()
 
             await self._with_retries(_save)
