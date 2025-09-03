@@ -1467,24 +1467,18 @@ class SQLiteBackend(StateBackend):
                     try:
                         run_id = step_data.get("run_id")
                         if run_id is not None:
-                            cur = await db.execute(
-                                "SELECT 1 FROM runs WHERE run_id = ? LIMIT 1", (run_id,)
+                            now = datetime.utcnow().isoformat()
+                            await db.execute(
+                                """
+                                INSERT OR IGNORE INTO runs (
+                                    run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                                    created_at, updated_at
+                                ) VALUES (?, 'unknown', 'unknown', 'latest', 'running', ?, ?)
+                                """,
+                                (run_id, now, now),
                             )
-                            exists = await cur.fetchone()
-                            await cur.close()
-                            if exists is None:
-                                now = datetime.utcnow().isoformat()
-                                await db.execute(
-                                    """
-                                    INSERT INTO runs (
-                                        run_id, pipeline_id, pipeline_name, pipeline_version, status,
-                                        created_at, updated_at
-                                    ) VALUES (?, 'unknown', 'unknown', 'latest', 'running', ?, ?)
-                                    """,
-                                    (run_id, now, now),
-                                )
-                                # Do not commit yet; the final commit below will include both insert and step
-                    except Exception:
+                            # Do not commit yet; the final commit below will include both insert and step
+                    except sqlite3.Error:
                         # Best-effort only; continue to step insert and let FK enforcement handle it
                         pass
 
@@ -1613,23 +1607,17 @@ class SQLiteBackend(StateBackend):
 
                     # Ensure parent run exists to satisfy FK on spans(run_id)
                     try:
-                        cur = await db.execute(
-                            "SELECT 1 FROM runs WHERE run_id = ? LIMIT 1", (run_id,)
+                        now = datetime.utcnow().isoformat()
+                        await db.execute(
+                            """
+                            INSERT OR IGNORE INTO runs (
+                                run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                                created_at, updated_at
+                            ) VALUES (?, 'unknown', 'unknown', 'latest', 'running', ?, ?)
+                            """,
+                            (run_id, now, now),
                         )
-                        exists = await cur.fetchone()
-                        await cur.close()
-                        if exists is None:
-                            now = datetime.utcnow().isoformat()
-                            await db.execute(
-                                """
-                                INSERT INTO runs (
-                                    run_id, pipeline_id, pipeline_name, pipeline_version, status,
-                                    created_at, updated_at
-                                ) VALUES (?, 'unknown', 'unknown', 'latest', 'running', ?, ?)
-                                """,
-                                (run_id, now, now),
-                            )
-                    except Exception:
+                    except sqlite3.Error:
                         # Non-fatal; if the insert fails, FK enforcement on spans will report it
                         pass
 
