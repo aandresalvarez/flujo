@@ -102,6 +102,43 @@ class TestNormalizedTraceStorage:
         assert children[1]["name"] == "step_2"
         assert children[1]["status"] == "failed"
 
+    async def test_save_trace_without_prior_run_row(self, sqlite_backend, sample_trace_tree):
+        """Saving a trace without an existing run should auto-create the run to satisfy FKs."""
+        run_id = "orphan-trace-run"
+
+        # Intentionally do NOT call save_run_start here
+        await sqlite_backend.save_trace(run_id, sample_trace_tree)
+
+        # The helper should have created the run row; spans should be retrievable
+        trace = await sqlite_backend.get_trace(run_id)
+        assert trace is not None
+        assert trace["span_id"] == sample_trace_tree["span_id"]
+
+    async def test_save_step_without_prior_run_row(self, sqlite_backend):
+        """Saving a step without an existing run should auto-create the run to satisfy FKs."""
+        run_id = "orphan-steps-run"
+
+        # Save a single step result without creating the run first
+        await sqlite_backend.save_step_result(
+            {
+                "run_id": run_id,
+                "step_name": "dummy",
+                "step_index": 0,
+                "status": "completed",
+                "output": {"ok": True},
+                "raw_response": None,
+                "cost_usd": 0.0,
+                "token_counts": 1,
+                "execution_time_ms": 10,
+                "created_at": datetime.utcnow().isoformat(),
+            }
+        )
+
+        # Verify step exists and run metadata row was created implicitly
+        steps = await sqlite_backend.list_run_steps(run_id)
+        assert len(steps) == 1
+        assert steps[0]["step_name"] == "dummy"
+
     async def test_get_spans_with_filtering(self, sqlite_backend, sample_trace_tree):
         """Test retrieving individual spans with filtering."""
         run_id = "test-run-456"
