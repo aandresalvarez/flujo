@@ -379,12 +379,22 @@ class StateMachinePolicyExecutor:
                 if last_context is not None and hasattr(last_context, "scratchpad"):
                     lcd = getattr(last_context, "scratchpad")
                     if isinstance(lcd, dict):
+
+                        def _merge_out(out_obj: Any) -> None:
+                            if isinstance(out_obj, dict):
+                                sp = out_obj.get("scratchpad")
+                                if isinstance(sp, dict):
+                                    lcd.update(sp)
+
+                        # Merge top-level step outputs
                         for _sr in getattr(pipeline_result, "step_history", []) or []:
-                            _out = getattr(_sr, "output", None)
-                            if isinstance(_out, dict):
-                                _sp = _out.get("scratchpad")
-                                if isinstance(_sp, dict):
-                                    lcd.update(_sp)
+                            _merge_out(getattr(_sr, "output", None))
+                            # Also merge nested outputs (e.g., ImportStep may carry child history)
+                            try:
+                                for _nsr in getattr(_sr, "step_history", []) or []:
+                                    _merge_out(getattr(_nsr, "output", None))
+                            except Exception:
+                                pass
             except Exception:
                 pass
             # Re-apply intended state transition to the merged context when available
