@@ -45,6 +45,7 @@ from .helpers import (
     generate_demo_yaml,
     validate_yaml_text,
 )
+from .config import load_backend_from_config  # re-export for tests
 from .exit_codes import (
     EX_OK,
     EX_CONFIG_ERROR,
@@ -372,8 +373,6 @@ def dev_health_check(
             ensure_project_root_on_sys_path(Path(project))
         except Exception:
             pass
-    from .config import load_backend_from_config
-
     try:
         backend = load_backend_from_config()
     except Exception as e:

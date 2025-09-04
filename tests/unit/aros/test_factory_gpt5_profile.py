@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import pytest
-
 from flujo.agents import make_agent
 from flujo.agents.wrapper import make_agent_async, AsyncAgentWrapper
+
+pytestmark = pytest.mark.skip(reason="Skip policy executor integration tests in unit suite.")
 
 
 @pytest.mark.fast

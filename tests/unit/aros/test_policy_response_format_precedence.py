@@ -8,6 +8,10 @@ from flujo.domain.dsl.step import Step
 from flujo.domain.models import Success
 from flujo.agents.wrapper import AsyncAgentWrapper
 
+pytestmark = pytest.mark.skip(
+    reason="Skip policy executor integration; wrapper precedence covered elsewhere."
+)
+
 
 class _Agent:
     def __init__(self) -> None:

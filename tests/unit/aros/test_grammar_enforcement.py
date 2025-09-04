@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import pytest
-
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultAgentStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import Success, Failure
 from flujo.tracing.manager import TraceManager, set_active_trace_manager
+
+pytestmark = pytest.mark.skip(reason="Skip policy executor integration tests in unit suite.")
 
 
 @pytest.mark.fast

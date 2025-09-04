@@ -47,7 +47,7 @@ async def test_precheck_passes_max_tokens_to_validator():
     _ = await execu.execute(
         core=core,
         step=step,
-        data="",
+        data="<thinking>plan</thinking>",
         context=None,
         resources=None,
         limits=None,
