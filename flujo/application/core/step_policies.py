@@ -1057,6 +1057,109 @@ async def _execute_simple_step_policy_impl(
                     options["top_k"] = cfg.top_k
                 if getattr(cfg, "top_p", None) is not None:
                     options["top_p"] = cfg.top_p
+            # AROS: Structured Output Enforcement (provider-adaptive; best-effort)
+            try:
+                from flujo.infra.config_manager import get_aros_config as _get_aros
+                from flujo.tracing.manager import get_active_trace_manager as _get_tm
+
+                aros_cfg = _get_aros()
+                tm = _get_tm()
+                pmeta = {}
+                try:
+                    meta_obj = getattr(step, "meta", {}) or {}
+                    if isinstance(meta_obj, dict):
+                        pmeta = meta_obj.get("processing", {}) or {}
+                        if not isinstance(pmeta, dict):
+                            pmeta = {}
+                except Exception:
+                    pmeta = {}
+                so_mode = (
+                    str(pmeta.get("structured_output", aros_cfg.structured_output_default))
+                    .strip()
+                    .lower()
+                )
+                explicit = "structured_output" in pmeta
+                # Detect provider from agent wrapper if available
+                provider = None
+                try:
+                    _mid = getattr(step.agent, "model_id", None)
+                    if isinstance(_mid, str) and ":" in _mid:
+                        provider = _mid.split(":", 1)[0].lower()
+                except Exception:
+                    provider = None
+                if explicit and so_mode in {"auto", "openai_json"}:
+                    # Prefer JSON Schema mode when schema is available (delegate to wrapper)
+                    try:
+                        wrapper = getattr(step, "agent", None)
+                        schema_obj = (
+                            pmeta.get("schema") if isinstance(pmeta.get("schema"), dict) else None
+                        )
+                        if wrapper is not None and hasattr(wrapper, "enable_structured_output"):
+                            name = str(getattr(step, "name", "step_output")) or "step_output"
+                            wrapper.enable_structured_output(json_schema=schema_obj, name=name)
+                            if tm is not None:
+                                try:
+                                    import json as _json
+                                    import hashlib as _hash
+
+                                    sh = None
+                                    if isinstance(schema_obj, dict):
+                                        s = _json.dumps(
+                                            schema_obj, sort_keys=True, separators=(",", ":")
+                                        ).encode()
+                                        sh = _hash.sha256(s).hexdigest()
+                                except Exception:
+                                    sh = None
+                                tm.add_event(
+                                    "grammar.applied", {"mode": "openai_json", "schema_hash": sh}
+                                )
+                    except Exception:
+                        pass
+                elif explicit and so_mode in {"outlines", "xgrammar"}:
+                    # Experimental adapters (telemetry only)
+                    try:
+                        schema_obj = (
+                            pmeta.get("schema") if isinstance(pmeta.get("schema"), dict) else None
+                        )
+                        if schema_obj is not None:
+                            try:
+                                if so_mode == "outlines":
+                                    from flujo.grammars.adapters import (
+                                        compile_outlines_regex as _compile,
+                                    )
+                                else:
+                                    from flujo.grammars.adapters import compile_xgrammar as _compile
+                                pat = _compile(schema_obj)
+                                # Hint only; not wired to providers
+                                options.setdefault(
+                                    "structured_grammar", {"mode": so_mode, "pattern": pat}
+                                )
+                            except Exception:
+                                pass
+                        if tm is not None:
+                            try:
+                                import json as _json
+                                import hashlib as _hash
+
+                                sh = None
+                                if isinstance(schema_obj, dict):
+                                    s = _json.dumps(
+                                        schema_obj, sort_keys=True, separators=(",", ":")
+                                    ).encode()
+                                    sh = _hash.sha256(s).hexdigest()
+                            except Exception:
+                                sh = None
+                            tm.add_event("grammar.applied", {"mode": so_mode, "schema_hash": sh})
+                    except Exception:
+                        pass
+                elif explicit:
+                    if tm is not None:
+                        reason = (
+                            "unsupported_provider" if provider not in {"openai"} else "disabled"
+                        )
+                        tm.add_event("aros.soe.skipped", {"reason": reason, "mode": so_mode})
+            except Exception:
+                pass
             # Inject step execution identifiers for ReplayAgent (FSD-013)
             try:
                 options["step_name"] = getattr(step, "name", "unknown")
@@ -1125,9 +1228,190 @@ async def _execute_simple_step_policy_impl(
             primary_cost_usd_total += cost_usd or 0.0
             primary_tokens_total += (prompt_tokens + completion_tokens) or 0
 
-            # output processors
+            # Optional grammar enforcement (opt-in): outlines/xgrammar
+            try:
+                pmeta = {}
+                try:
+                    meta_obj = getattr(step, "meta", {}) or {}
+                    if isinstance(meta_obj, dict):
+                        pmeta = meta_obj.get("processing", {}) or {}
+                        if not isinstance(pmeta, dict):
+                            pmeta = {}
+                except Exception:
+                    pmeta = {}
+                so_mode = str(pmeta.get("structured_output", "off")).strip().lower()
+                enforce = bool(pmeta.get("enforce_grammar", False))
+                if enforce and so_mode in {"outlines", "xgrammar"}:
+                    schema_obj = (
+                        pmeta.get("schema") if isinstance(pmeta.get("schema"), dict) else None
+                    )
+                    from flujo.tracing.manager import get_active_trace_manager as _get_tm
+
+                    tm = _get_tm()
+                    if isinstance(agent_output, str) and schema_obj is not None:
+                        try:
+                            import re as _re
+
+                            if so_mode == "outlines":
+                                from flujo.grammars.adapters import (
+                                    compile_outlines_regex as _compile,
+                                )
+                            else:
+                                from flujo.grammars.adapters import compile_xgrammar as _compile
+                            pat = _compile(schema_obj)
+                            # Use fullmatch with DOTALL
+                            ok = bool(_re.fullmatch(pat, agent_output, flags=_re.DOTALL))
+                            if tm is not None:
+                                tm.add_event(
+                                    "grammar.enforce.pass" if ok else "grammar.enforce.fail",
+                                    {"mode": so_mode},
+                                )
+                            if not ok:
+                                result.success = False
+                                result.feedback = "Output did not match enforced grammar"
+                                result.output = None
+                                return to_outcome(result)
+                        except Exception:
+                            if tm is not None:
+                                tm.add_event(
+                                    "grammar.enforce.skipped",
+                                    {"mode": so_mode, "reason": "compile_error"},
+                                )
+                    else:
+                        if tm is not None:
+                            reason = (
+                                "non_string"
+                                if not isinstance(agent_output, str)
+                                else "missing_schema"
+                            )
+                            tm.add_event(
+                                "grammar.enforce.skipped", {"mode": so_mode, "reason": reason}
+                            )
+            except Exception:
+                pass
+
+            # output processors (+ AROS auto-injection)
             processed_output = agent_output
-            if hasattr(step, "processors") and step.processors:
+            try:
+                # Determine AROS processing mode and options
+                from flujo.infra.config_manager import get_aros_config as _get_aros
+
+                aros_cfg = _get_aros()
+                pmeta = {}
+                try:
+                    meta_obj = getattr(step, "meta", {}) or {}
+                    if isinstance(meta_obj, dict):
+                        pmeta = meta_obj.get("processing", {}) or {}
+                        if not isinstance(pmeta, dict):
+                            pmeta = {}
+                except Exception:
+                    pmeta = {}
+                aop_mode = str(pmeta.get("aop", aros_cfg.enable_aop_default)).strip().lower()
+                coercion_spec = pmeta.get("coercion", {}) or {}
+                if not isinstance(coercion_spec, dict):
+                    coercion_spec = {}
+                tolerant_level = int(
+                    coercion_spec.get("tolerant_level", aros_cfg.coercion_tolerant_level) or 0
+                )
+                max_unescape_depth = int(
+                    coercion_spec.get("max_unescape_depth", aros_cfg.max_unescape_depth) or 2
+                )
+
+                # Compose injected processors per mode
+                injected: list[Any] = []
+                if aop_mode != "off":
+                    try:
+                        from flujo.processors import (
+                            JsonRegionExtractorProcessor,
+                            TolerantJsonDecoderProcessor,
+                            DeterministicRepairProcessor,
+                            SmartTypeCoercionProcessor,
+                        )
+
+                        # Stage 0 extractor/unescape
+                        injected.append(
+                            JsonRegionExtractorProcessor(
+                                max_unescape_depth=max_unescape_depth,
+                                expected_root=None,
+                            )
+                        )
+                        # Tiered tolerant decode (fast parse by default; tolerant tiers by config)
+                        injected.append(TolerantJsonDecoderProcessor(tolerant_level=tolerant_level))
+                        # Deterministic syntactic repair before semantic coercion
+                        injected.append(DeterministicRepairProcessor())
+                        # Semantic coercion in 'full' mode only (placeholder implementation for now)
+                        if aop_mode == "full":
+                            allow_map = (
+                                coercion_spec.get("allow")
+                                if isinstance(coercion_spec.get("allow"), dict)
+                                else {}
+                            )
+                            try:
+                                anyof_strategy = str(
+                                    coercion_spec.get("anyof_strategy", aros_cfg.anyof_strategy)
+                                )
+                            except Exception:
+                                anyof_strategy = aros_cfg.anyof_strategy
+                            schema_obj = None
+                            try:
+                                schema_obj = (
+                                    pmeta.get("schema")
+                                    if isinstance(pmeta.get("schema"), dict)
+                                    else None
+                                )
+                            except Exception:
+                                schema_obj = None
+                            if schema_obj is None:
+                                # Best-effort: derive schema from agent output type when available
+                                try:
+                                    from flujo.utils.schema_utils import (
+                                        derive_json_schema_from_type as _derive_schema,
+                                    )
+
+                                    out_tp = getattr(
+                                        getattr(step, "agent", None), "target_output_type", None
+                                    )
+                                    if out_tp is None:
+                                        out_tp = getattr(
+                                            getattr(step, "agent", None), "output_type", None
+                                        )
+                                    schema_obj = _derive_schema(out_tp) or None
+                                except Exception:
+                                    schema_obj = None
+                            injected.append(
+                                SmartTypeCoercionProcessor(
+                                    allow=allow_map,
+                                    anyof_strategy=anyof_strategy,
+                                    schema=schema_obj,
+                                )
+                            )
+                    except Exception as _e_inject:
+                        try:
+                            telemetry.logfire.warning(f"AROS injection failed: {_e_inject}")
+                        except Exception:
+                            pass
+
+                # Build final processor list (injected + user-provided)
+                user_list = []
+                try:
+                    user_list = (
+                        step.processors
+                        if isinstance(step.processors, list)
+                        else getattr(step.processors, "output_processors", [])
+                    ) or []
+                except Exception:
+                    user_list = []
+
+                final_list = [*injected, *user_list] if injected or user_list else []
+                telemetry.logfire.info(
+                    f"[AgentStepExecutor] Applying {len(final_list)} output processor(s) for step '{getattr(step, 'name', 'unknown')}'"
+                )
+                if final_list:
+                    processed_output = await core._processor_pipeline.apply_output(
+                        final_list, agent_output, context=attempt_context
+                    )
+            except Exception:
+                # If anything goes wrong in assembly, fall back to user processors only
                 try:
                     proc_list = (
                         step.processors
@@ -1137,11 +1421,11 @@ async def _execute_simple_step_policy_impl(
                     telemetry.logfire.info(
                         f"[AgentStepExecutor] Applying {len(proc_list) if proc_list else 0} output processor(s) for step '{getattr(step, 'name', 'unknown')}'"
                     )
+                    processed_output = await core._processor_pipeline.apply_output(
+                        step.processors, agent_output, context=attempt_context
+                    )
                 except Exception:
                     pass
-                processed_output = await core._processor_pipeline.apply_output(
-                    step.processors, agent_output, context=attempt_context
-                )
 
             # hybrid validation step path
             meta = getattr(step, "meta", None)
@@ -2301,7 +2585,239 @@ class DefaultAgentStepExecutor:
                 attempt_context = context
 
             start_ns = time_perf_ns()
+            # AROS: Reasoning Precheck (local checklist)
+            # AROS: Reasoning Precheck (local checklist)
             try:
+                from flujo.tracing.manager import get_active_trace_manager as _get_tm
+
+                tm = _get_tm()
+                rp_cfg: Dict[str, Any] = {}
+                try:
+                    meta_obj = getattr(step, "meta", {}) or {}
+                    if isinstance(meta_obj, dict):
+                        pmeta = meta_obj.get("processing", {}) or {}
+                        rp_cfg = pmeta.get("reasoning_precheck", {}) or {}
+                        if not isinstance(rp_cfg, dict):
+                            rp_cfg = {}
+                except Exception:
+                    rp_cfg = {}
+                if rp_cfg.get("enabled"):
+                    missing: list[str] = []
+                    req_keys = rp_cfg.get("required_context_keys") or []
+                    if isinstance(req_keys, list):
+                        for key in req_keys:
+                            try:
+                                has = (
+                                    hasattr(attempt_context, key)
+                                    and getattr(attempt_context, key) is not None
+                                )
+                            except Exception:
+                                has = False
+                            if not has:
+                                missing.append(str(key))
+                    if missing:
+                        if tm is not None:
+                            tm.add_event(
+                                "aros.reasoning.precheck.fail",
+                                {"reason": "missing_context_keys", "keys": missing},
+                            )
+                    else:
+                        if tm is not None:
+                            tm.add_event(
+                                "aros.reasoning.precheck.pass", {"reason": "local_checklist"}
+                            )
+                        # Optional immediate injection of feedback for this attempt (prepend to string data)
+                        try:
+                            inject_mode = str(rp_cfg.get("inject_feedback", "")).strip().lower()
+                            # Use validator feedback if available later; consensus has no feedback text
+                            guidance_text = None
+                        except Exception:
+                            inject_mode = ""
+                            guidance_text = None
+                        # Optional validator-agent check (telemetry-only)
+                        try:
+                            validator_agent = rp_cfg.get("validator_agent") or rp_cfg.get("agent")
+                            if validator_agent is not None:
+                                delimiters = rp_cfg.get("delimiters") or [
+                                    "<thinking>",
+                                    "</thinking>",
+                                ]
+                                goal_key = rp_cfg.get("goal_context_key") or "initial_input"
+                                score_threshold = rp_cfg.get("score_threshold")
+
+                                def _extract_plan(
+                                    text: str, delims: list[str] | tuple[str, str]
+                                ) -> Optional[str]:
+                                    try:
+                                        if isinstance(delims, (list, tuple)) and len(delims) >= 2:
+                                            d0, d1 = str(delims[0]), str(delims[1])
+                                        else:
+                                            d0, d1 = "<thinking>", "</thinking>"
+                                        s = text.find(d0)
+                                        e = text.find(d1, s + len(d0)) if s >= 0 else -1
+                                        if s >= 0 and e > s:
+                                            return text[s + len(d0) : e].strip()
+                                    except Exception:
+                                        return None
+                                    return None
+
+                                plan_text = _extract_plan(
+                                    data if isinstance(data, str) else "",
+                                    delimiters,
+                                )
+                                try:
+                                    goal_val = getattr(attempt_context, goal_key, None)
+                                except Exception:
+                                    goal_val = None
+                                payload = {"plan": plan_text, "goal": goal_val}
+                                # Skip validator when no plan extracted
+                                if not plan_text:
+                                    if tm is not None:
+                                        tm.add_event(
+                                            "aros.reasoning.precheck.skipped", {"reason": "no_plan"}
+                                        )
+                                else:
+                                    try:
+                                        vopts = {}
+                                        try:
+                                            if rp_cfg.get("max_tokens"):
+                                                vopts["max_tokens"] = int(rp_cfg.get("max_tokens"))
+                                        except Exception:
+                                            pass
+                                        vres = await core._agent_runner.run(
+                                            agent=validator_agent,
+                                            payload=payload,
+                                            context=attempt_context,
+                                            resources=resources,
+                                            options=vopts,
+                                            stream=False,
+                                            on_chunk=None,
+                                            breach_event=breach_event,
+                                        )
+                                    except Exception:
+                                        vres = None
+                                    verdict = None
+                                    vscore = None
+                                    vdict = {}
+                                    if vres is not None:
+                                        try:
+                                            if hasattr(vres, "model_dump"):
+                                                vdict = vres.model_dump()
+                                            elif isinstance(vres, dict):
+                                                vdict = vres
+                                            else:
+                                                vdict = getattr(vres, "__dict__", {}) or {}
+                                        except Exception:
+                                            vdict = {}
+                                    for k in ("is_correct", "is_valid", "ok"):
+                                        if k in vdict:
+                                            verdict = bool(vdict[k])
+                                            break
+                                    if "score" in vdict:
+                                        try:
+                                            vscore = float(vdict["score"])  # best-effort parse
+                                        except Exception:
+                                            vscore = None
+                                    if vscore is not None and isinstance(
+                                        score_threshold, (int, float)
+                                    ):
+                                        verdict = verdict if verdict is not None else True
+                                        if vscore < float(score_threshold):
+                                            verdict = False
+                                    if tm is not None:
+                                        tm.add_event(
+                                            "reasoning.validation",
+                                            {
+                                                "result": "pass" if verdict else "fail",
+                                                "score": vscore,
+                                            },
+                                        )
+                                    # Capture feedback text when available
+                                    guidance_text = (
+                                        vdict.get("feedback") if isinstance(vdict, dict) else None
+                                    )
+                        except Exception:
+                            pass
+                        # Conditionally inject feedback into the prompt for this attempt
+                        try:
+                            if inject_mode == "prepend" and guidance_text and isinstance(data, str):
+                                prefix = str(rp_cfg.get("retry_guidance_prefix", "Guidance: "))
+                                data = f"{prefix}{guidance_text}\n\n{data}"
+                            elif (
+                                inject_mode == "context_key"
+                                and guidance_text
+                                and attempt_context is not None
+                            ):
+                                ckey = str(
+                                    rp_cfg.get("context_feedback_key", "_aros_retry_guidance")
+                                )
+                                try:
+                                    setattr(attempt_context, ckey, guidance_text)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        # Optional consensus gate (two-sample agreement; telemetry-only)
+                        try:
+                            consensus_agent = rp_cfg.get("consensus_agent")
+                            samples = int(rp_cfg.get("consensus_samples", 0) or 0)
+                            threshold = float(rp_cfg.get("consensus_threshold", 0.7) or 0.7)
+                            if consensus_agent is not None and samples >= 2:
+                                plans: list[str] = []
+                                try:
+                                    goal_val = getattr(attempt_context, goal_key, None)
+                                except Exception:
+                                    goal_val = None
+                                for _ in range(samples):
+                                    try:
+                                        cres = await core._agent_runner.run(
+                                            agent=consensus_agent,
+                                            payload={"goal": goal_val},
+                                            context=attempt_context,
+                                            resources=resources,
+                                            options={},
+                                            stream=False,
+                                            on_chunk=None,
+                                            breach_event=breach_event,
+                                        )
+                                        txt = None
+                                        if isinstance(cres, dict):
+                                            txt = cres.get("plan") or cres.get("output") or None
+                                        if txt is None:
+                                            txt = str(getattr(cres, "output", cres))
+                                        if isinstance(txt, str) and txt.strip():
+                                            plans.append(txt.strip())
+                                    except Exception:
+                                        continue
+
+                                def _jaccard(a: str, b: str) -> float:
+                                    ta = set(a.lower().split())
+                                    tb = set(b.lower().split())
+                                    if not ta and not tb:
+                                        return 1.0
+                                    inter = len(ta & tb)
+                                    uni = len(ta | tb) or 1
+                                    return inter / uni
+
+                                score = None
+                                if len(plans) >= 2:
+                                    from itertools import combinations
+
+                                    vals = [_jaccard(x, y) for x, y in combinations(plans, 2)]
+                                    if vals:
+                                        score = sum(vals) / len(vals)
+                                if score is not None and tm is not None:
+                                    tm.add_event(
+                                        "reasoning.validation",
+                                        {
+                                            "result": "pass" if score >= threshold else "fail",
+                                            "score": score,
+                                        },
+                                    )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
                 # Check usage limits at the start of each attempt - this should raise UsageLimitExceededError if breached
                 if limits is not None:
                     await core._usage_meter.guard(limits, result.step_history)
@@ -2320,6 +2836,116 @@ class DefaultAgentStepExecutor:
                         options["top_k"] = cfg.top_k
                     if getattr(cfg, "top_p", None) is not None:
                         options["top_p"] = cfg.top_p
+
+                # AROS: Structured Output Enforcement (provider-adaptive; best-effort)
+                try:
+                    from flujo.infra.config_manager import get_aros_config as _get_aros
+                    from flujo.tracing.manager import get_active_trace_manager as _get_tm
+
+                    aros_cfg = _get_aros()
+                    tm = _get_tm()
+                    pmeta = {}
+                    try:
+                        meta_obj = getattr(step, "meta", {}) or {}
+                        if isinstance(meta_obj, dict):
+                            pmeta = meta_obj.get("processing", {}) or {}
+                            if not isinstance(pmeta, dict):
+                                pmeta = {}
+                    except Exception:
+                        pmeta = {}
+                    so_mode = (
+                        str(pmeta.get("structured_output", aros_cfg.structured_output_default))
+                        .strip()
+                        .lower()
+                    )
+                    explicit = "structured_output" in pmeta
+                    provider = None
+                    try:
+                        _mid = getattr(step.agent, "model_id", None)
+                        if isinstance(_mid, str) and ":" in _mid:
+                            provider = _mid.split(":", 1)[0].lower()
+                    except Exception:
+                        provider = None
+                    if explicit and so_mode in {"auto", "openai_json"}:
+                        try:
+                            wrapper = getattr(step, "agent", None)
+                            schema_obj = (
+                                pmeta.get("schema")
+                                if isinstance(pmeta.get("schema"), dict)
+                                else None
+                            )
+                            if wrapper is not None and hasattr(wrapper, "enable_structured_output"):
+                                name = str(getattr(step, "name", "step_output")) or "step_output"
+                                wrapper.enable_structured_output(json_schema=schema_obj, name=name)
+                                if tm is not None:
+                                    try:
+                                        import json as _json
+                                        import hashlib as _hash
+
+                                        sh = None
+                                        if isinstance(schema_obj, dict):
+                                            s = _json.dumps(
+                                                schema_obj, sort_keys=True, separators=(",", ":")
+                                            ).encode()
+                                            sh = _hash.sha256(s).hexdigest()
+                                    except Exception:
+                                        sh = None
+                                    tm.add_event(
+                                        "grammar.applied",
+                                        {"mode": "openai_json", "schema_hash": sh},
+                                    )
+                        except Exception:
+                            pass
+                    elif explicit and so_mode in {"outlines", "xgrammar"}:
+                        # Experimental adapters (telemetry only)
+                        try:
+                            schema_obj = (
+                                pmeta.get("schema")
+                                if isinstance(pmeta.get("schema"), dict)
+                                else None
+                            )
+                            if schema_obj is not None:
+                                try:
+                                    if so_mode == "outlines":
+                                        from flujo.grammars.adapters import (
+                                            compile_outlines_regex as _compile,
+                                        )
+                                    else:
+                                        from flujo.grammars.adapters import (
+                                            compile_xgrammar as _compile,
+                                        )
+                                    pat = _compile(schema_obj)
+                                    options.setdefault(
+                                        "structured_grammar", {"mode": so_mode, "pattern": pat}
+                                    )
+                                except Exception:
+                                    pass
+                            if tm is not None:
+                                try:
+                                    import json as _json
+                                    import hashlib as _hash
+
+                                    sh = None
+                                    if isinstance(schema_obj, dict):
+                                        s = _json.dumps(
+                                            schema_obj, sort_keys=True, separators=(",", ":")
+                                        ).encode()
+                                        sh = _hash.sha256(s).hexdigest()
+                                except Exception:
+                                    sh = None
+                                tm.add_event(
+                                    "grammar.applied", {"mode": so_mode, "schema_hash": sh}
+                                )
+                        except Exception:
+                            pass
+                    elif explicit:
+                        if tm is not None:
+                            reason = (
+                                "unsupported_provider" if provider not in {"openai"} else "disabled"
+                            )
+                            tm.add_event("aros.soe.skipped", {"reason": reason, "mode": so_mode})
+                except Exception:
+                    pass
 
                 try:
                     agent_output = await core._agent_runner.run(

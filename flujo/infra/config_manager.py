@@ -17,6 +17,21 @@ from ..domain.models import UsageLimits
 from ..exceptions import ConfigurationError
 
 
+class ArosConfig(BaseModel):
+    """AROS defaults loaded from flujo.toml [aros] section.
+
+    These values are accessed via ConfigManager; do not read TOML directly.
+    """
+
+    enabled: bool = True
+    structured_output_default: str = "off"  # off | auto | openai_json | outlines | xgrammar
+    enable_aop_default: str = "off"  # off | minimal | full
+    coercion_tolerant_level: int = 0  # 0=off, 1=json5, 2=json-repair
+    max_unescape_depth: int = 2  # Stage 0b depth cap
+    anyof_strategy: str = "first-pass"  # branch chooser strategy
+    enable_reasoning_precheck: bool = False
+
+
 class FlujoConfig(BaseModel):
     """Configuration loaded from flujo.toml files."""
 
@@ -44,6 +59,9 @@ class FlujoConfig(BaseModel):
     budgets: Optional["BudgetConfig"] = None
     # Architect defaults
     architect: Optional["ArchitectConfig"] = None
+
+    # AROS defaults
+    aros: Optional[ArosConfig] = None
 
 
 class SolveConfig(BaseModel):
@@ -373,6 +391,20 @@ class ConfigManager:
 
         return settings
 
+    def get_aros_config(self, force_reload: bool = False) -> ArosConfig:
+        """Return AROS defaults from flujo.toml with safe fallbacks.
+
+        This does not read environment variables directly and provides
+        conservative defaults when the section is absent.
+        """
+        try:
+            cfg = self.load_config(force_reload=force_reload)
+            if cfg.aros and isinstance(cfg.aros, ArosConfig):
+                return cfg.aros
+        except Exception:
+            pass
+        return ArosConfig()  # defaults
+
     def _is_field_set_by_env(self, field_name: str, field_info: Any) -> bool:
         """Check if a field was set by an environment variable.
 
@@ -459,3 +491,8 @@ def get_cli_defaults(command: str, force_reload: bool = False) -> Dict[str, Any]
 def get_state_uri(force_reload: bool = False) -> Optional[str]:
     """Get the state URI from configuration. If force_reload is True, reload config/settings."""
     return get_config_manager(force_reload=force_reload).get_state_uri()
+
+
+def get_aros_config(force_reload: bool = False) -> ArosConfig:
+    """Convenience accessor for AROS defaults."""
+    return get_config_manager(force_reload=force_reload).get_aros_config()
