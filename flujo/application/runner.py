@@ -710,6 +710,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     else None
                 ),
             )
+            _yielded_pipeline_result = False
             async for chunk in self._execute_steps(
                 start_idx,
                 data,
@@ -720,9 +721,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 state_backend=self.state_backend,
                 state_created_at=state_created_at,
             ):
+                # Track if the manager yielded a PipelineResult (e.g., paused/failed early)
+                if isinstance(chunk, PipelineResult):
+                    pipeline_result_obj = chunk
+                    _yielded_pipeline_result = True
                 yield chunk
             # After streaming, yield the final PipelineResult for sync runners
-            yield pipeline_result_obj
+            if not _yielded_pipeline_result:
+                yield pipeline_result_obj
         except asyncio.CancelledError:
             telemetry.logfire.info("Pipeline cancelled")
             cancelled = True
