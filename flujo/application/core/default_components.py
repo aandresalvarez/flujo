@@ -751,11 +751,35 @@ class DefaultAgentRunner:
 
             # Non-streaming execution
             if inspect.iscoroutinefunction(executable_func):
-                return await executable_func(payload, **filtered_kwargs)
-            result = executable_func(payload, **filtered_kwargs)
-            if inspect.iscoroutine(result):
-                return await result
-            return result
+                _res = await executable_func(payload, **filtered_kwargs)
+            else:
+                _res = executable_func(payload, **filtered_kwargs)
+                if inspect.iscoroutine(_res):
+                    _res = await _res
+
+            # Detect mock objects in agent outputs
+            # Mock detection: don't swallow exceptions; only guard imports
+            def _is_mock(obj: Any) -> bool:
+                try:
+                    from unittest.mock import Mock as _M, MagicMock as _MM
+
+                    try:
+                        from unittest.mock import AsyncMock as _AM
+
+                        if isinstance(obj, (_M, _MM, _AM)):
+                            return True
+                    except Exception:
+                        if isinstance(obj, (_M, _MM)):
+                            return True
+                except Exception:
+                    pass
+                return bool(getattr(obj, "_is_mock", False) or hasattr(obj, "assert_called"))
+
+            if _is_mock(_res):
+                from ...exceptions import MockDetectionError as _MDE
+
+                raise _MDE(f"Agent {type(agent).__name__} returned a Mock object")
+            return _res
         except (
             PausedException,
             InfiniteFallbackError,

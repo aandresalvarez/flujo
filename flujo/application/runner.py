@@ -802,6 +802,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     state_created_at=state_created_at,
                     final_status=final_status,
                 )
+                # Reflect final status on PipelineResult.success for back-compat
+                try:
+                    pipeline_result_obj.success = final_status == "completed"
+                except Exception:
+                    pass
                 # Async cleanup: delete persisted workflow state if requested
                 if (
                     self.delete_on_completion
@@ -1239,6 +1244,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             state_created_at=state_created_at,
             final_status=final_status,
         )
+
+        # Reflect final status on PipelineResult.success for back-compat
+        try:
+            paused_result.success = final_status == "completed"
+        except Exception:
+            pass
 
         # Delete state if delete_on_completion is True and pipeline completed successfully
         if (

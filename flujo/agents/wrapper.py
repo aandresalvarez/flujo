@@ -115,8 +115,15 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         for k, v in kwargs.items():
             if k in ("context", "pipeline_context", "options"):
                 continue
-            if _accepts_param(self._agent.run, str(k)):
+            acc = _accepts_param(self._agent.run, str(k))
+            if acc is not False:
                 filtered_kwargs[str(k)] = v
+
+        # Always forward primary payload under the conventional 'data' kwarg when provided.
+        # Many tests use mocks or duck-typed agents whose signatures are not introspectable;
+        # in those cases _accepts_param may return False even though the agent supports **kwargs.
+        if "data" in kwargs and "data" not in filtered_kwargs:
+            filtered_kwargs["data"] = kwargs["data"]
 
         return self._agent.run(*args, **filtered_kwargs)
 

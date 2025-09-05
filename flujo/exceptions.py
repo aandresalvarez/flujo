@@ -87,8 +87,9 @@ class ContextInheritanceError(OrchestratorError):
         child_model_name: str,
     ) -> None:
         msg = (
-            f"Failed to inherit context for {child_model_name}. Missing required fields: "
-            f"{', '.join(missing_fields)}. Parent context provided: {', '.join(parent_context_keys)}."
+            f"Context Inheritance Error: Failed to inherit context for {child_model_name}. "
+            f"Missing required fields: {', '.join(missing_fields)}. "
+            f"Parent context provided: {', '.join(parent_context_keys)}."
         )
         super().__init__(msg)
         self.missing_fields = missing_fields

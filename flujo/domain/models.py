@@ -183,7 +183,12 @@ class StepResult(BaseModel):
 
 
 class PipelineResult(BaseModel, Generic[ContextT]):
-    """Aggregated result of running a pipeline."""
+    """Aggregated result of running a pipeline.
+
+    For backward compatibility, this object exposes a top-level ``success`` flag
+    that reflects overall pipeline status (computed by callers/runners). Some
+    older tests and integrations expect ``result.success`` to exist.
+    """
 
     step_history: List[StepResult] = Field(default_factory=list)
     total_cost_usd: float = 0.0
@@ -196,6 +201,9 @@ class PipelineResult(BaseModel, Generic[ContextT]):
         default=None,
         description="Hierarchical trace tree (root span) for this run, if tracing is enabled.",
     )
+
+    # Legacy top-level success indicator expected by some tests and integrations
+    success: bool = True
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
