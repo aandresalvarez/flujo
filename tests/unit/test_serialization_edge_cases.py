@@ -531,9 +531,9 @@ class TestSerializationEdgeCases:
 
         # Test that safe_serialize handles circular references gracefully
         serialized = safe_serialize(request_data)
-        assert (
-            serialized is not None
-        ), "safe_serialize should not return None for circular references"
+        assert serialized is not None, (
+            "safe_serialize should not return None for circular references"
+        )
 
         # Test that robust serialization doesn't crash or hang
         from flujo.utils.serialization import serialize_to_json_robust
