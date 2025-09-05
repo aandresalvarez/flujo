@@ -1375,6 +1375,24 @@ async def _execute_simple_step_policy_impl(
                     if isinstance(agent_output, str) and schema_obj is not None:
                         try:
                             import re as _re
+                            import json as _json
+                            import hashlib as _hash
+
+                            # Guardrail: cap input length to avoid catastrophic backtracking costs
+                            try:
+                                MAX_ENFORCEMENT_LEN = int(
+                                    pmeta.get("max_enforcement_len", 200_000) or 200_000
+                                )
+                            except Exception:
+                                MAX_ENFORCEMENT_LEN = 200_000
+                            if len(agent_output) > MAX_ENFORCEMENT_LEN:
+                                if tm is not None:
+                                    tm.add_event(
+                                        "grammar.enforce.skipped",
+                                        {"mode": so_mode, "reason": "oversize_input"},
+                                    )
+                                # Skip enforcement; continue normal flow
+                                return to_outcome(result)
 
                             if so_mode == "outlines":
                                 from flujo.grammars.adapters import (
@@ -1386,9 +1404,17 @@ async def _execute_simple_step_policy_impl(
                             # Use fullmatch with DOTALL
                             ok = bool(_re.fullmatch(pat, agent_output, flags=_re.DOTALL))
                             if tm is not None:
+                                # Derive schema hash for parity with grammar.applied telemetry
+                                try:
+                                    s = _json.dumps(
+                                        schema_obj, sort_keys=True, separators=(",", ":")
+                                    ).encode()
+                                    sh = _hash.sha256(s).hexdigest()
+                                except Exception:
+                                    sh = None
                                 tm.add_event(
                                     "grammar.enforce.pass" if ok else "grammar.enforce.fail",
-                                    {"mode": so_mode},
+                                    {"mode": so_mode, "schema_hash": sh},
                                 )
                             if not ok:
                                 result.success = False
@@ -3031,7 +3057,9 @@ class DefaultAgentStepExecutor:
                         # Optional consensus gate (two-sample agreement; telemetry-only)
                         try:
                             consensus_agent = rp_cfg.get("consensus_agent")
-                            samples = int(rp_cfg.get("consensus_samples", 0) or 0)
+                            # Enforce an upper cap on consensus samples to avoid fan-out
+                            raw_samples = int(rp_cfg.get("consensus_samples", 0) or 0)
+                            samples = min(max(raw_samples, 0), 5)
                             threshold = float(rp_cfg.get("consensus_threshold", 0.7) or 0.7)
                             if consensus_agent is not None and samples >= 2:
                                 plans: list[str] = []
@@ -3041,16 +3069,40 @@ class DefaultAgentStepExecutor:
                                     goal_val = None
                                 for _ in range(samples):
                                     try:
-                                        cres = await core._agent_runner.run(
-                                            agent=consensus_agent,
-                                            payload={"goal": goal_val},
-                                            context=attempt_context,
-                                            resources=resources,
-                                            options={},
-                                            stream=False,
-                                            on_chunk=None,
-                                            breach_event=breach_event,
-                                        )
+                                        # Reserve a sub-quota per sample (best-effort)
+                                        quota_token = None
+                                        try:
+                                            if (
+                                                hasattr(core, "CURRENT_QUOTA")
+                                                and core.CURRENT_QUOTA.get() is not None
+                                            ):
+                                                try:
+                                                    subq = core.CURRENT_QUOTA.get().split(1)[0]
+                                                    quota_token = core.CURRENT_QUOTA.set(subq)
+                                                except Exception:
+                                                    quota_token = None
+                                        except Exception:
+                                            quota_token = None
+                                        try:
+                                            cres = await core._agent_runner.run(
+                                                agent=consensus_agent,
+                                                payload={"goal": goal_val},
+                                                context=attempt_context,
+                                                resources=resources,
+                                                options={},
+                                                stream=False,
+                                                on_chunk=None,
+                                                breach_event=breach_event,
+                                            )
+                                        finally:
+                                            # Reconcile quota reservation
+                                            try:
+                                                if quota_token is not None and hasattr(
+                                                    core, "CURRENT_QUOTA"
+                                                ):
+                                                    core.CURRENT_QUOTA.reset(quota_token)
+                                            except Exception:
+                                                pass
                                         txt = None
                                         if isinstance(cres, dict):
                                             txt = cres.get("plan") or cres.get("output") or None
