@@ -5676,14 +5676,14 @@ class DefaultParallelStepExecutor:
                     pass
                 # Build a PipelineResult with any branch results we have so far
                 try:
-                    pr = PipelineResult(
+                    pr: PipelineResult[Any] = PipelineResult(
                         step_history=list(branch_results.values()),
                         total_cost_usd=sum(br.cost_usd for br in branch_results.values()),
                         total_tokens=sum(br.token_counts for br in branch_results.values()),
                         final_pipeline_context=context,
                     )
                 except Exception:
-                    pr = PipelineResult(step_history=[], total_cost_usd=0.0, total_tokens=0)
+                    pr = PipelineResult[Any](step_history=[], total_cost_usd=0.0, total_tokens=0)
                 msg = usage_limit_error_msg or "Usage limit exceeded"
                 raise UsageLimitExceededError(msg, pr)
                 # Proactive limit check after each branch completes
