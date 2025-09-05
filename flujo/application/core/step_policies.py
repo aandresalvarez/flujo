@@ -5637,24 +5637,55 @@ class DefaultParallelStepExecutor:
         completed_count = 0
         while pending:
             done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            # Process all finished tasks, aggregating successful results first.
+            usage_limit_error: UsageLimitExceededError | None = None
+            usage_limit_error_msg: str | None = None
             for d in done:
                 try:
                     res = d.result()
+                except UsageLimitExceededError as ex:
+                    # Defer raising until we aggregate any other completed successes
+                    usage_limit_error = ex
+                    try:
+                        usage_limit_error_msg = str(ex)
+                    except Exception:
+                        usage_limit_error_msg = None
+                    continue
                 except Exception:
-                    # On ANY exception from a branch, cancel all remaining branches immediately
-                    # to prevent resource leaks and unintended side effects.
+                    # On ANY other exception from a branch, cancel all remaining branches immediately
                     for p in pending:
                         p.cancel()
                     try:
-                        # Drain cancellations to avoid 'Task exception was never retrieved'
                         if pending:
                             await asyncio.gather(*pending, return_exceptions=True)
                     except Exception:
                         pass
-                    # Propagate the original exception (control-flow, usage limits, or others)
                     raise
                 await _handle_branch_result(res, completed_count)
                 completed_count += 1
+
+            # If a usage limit breach occurred in any completed branch, cancel the rest and
+            # raise an error that includes the aggregated step history so far.
+            if usage_limit_error is not None:
+                for p in pending:
+                    p.cancel()
+                try:
+                    if pending:
+                        await asyncio.gather(*pending, return_exceptions=True)
+                except Exception:
+                    pass
+                # Build a PipelineResult with any branch results we have so far
+                try:
+                    pr = PipelineResult(
+                        step_history=list(branch_results.values()),
+                        total_cost_usd=sum(br.cost_usd for br in branch_results.values()),
+                        total_tokens=sum(br.token_counts for br in branch_results.values()),
+                        final_pipeline_context=context,
+                    )
+                except Exception:
+                    pr = PipelineResult(step_history=[], total_cost_usd=0.0, total_tokens=0)
+                msg = usage_limit_error_msg or "Usage limit exceeded"
+                raise UsageLimitExceededError(msg, pr)
                 # Proactive limit check after each branch completes
                 if limits is not None:
                     try:
