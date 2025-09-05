@@ -384,23 +384,38 @@ def dev_health_check(
     async def _run() -> None:
         runs = await backend.list_runs(pipeline_name=pipeline, limit=limit)
         # Optional time window filter (best-effort)
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
         parsed_times: dict[str, datetime] = {}
         cutoff = None
-        if since_hours:
+        if since_hours is not None:
             cutoff = datetime.utcnow() - timedelta(hours=int(since_hours))
 
-            def _parse(ts: str):
+            def _parse(ts: object) -> datetime | None:
                 try:
-                    return datetime.fromisoformat(ts)
+                    # Numeric epoch
+                    if isinstance(ts, (int, float)):
+                        return datetime.utcfromtimestamp(float(ts))
+                    if isinstance(ts, str):
+                        s = ts.strip()
+                        # Support Z-terminated ISO by normalizing to UTC
+                        try:
+                            return (
+                                datetime.fromisoformat(s.replace("Z", "+00:00"))
+                                .astimezone(timezone.utc)
+                                .replace(tzinfo=None)
+                            )
+                        except Exception:
+                            # Try epoch encoded as string
+                            return datetime.utcfromtimestamp(float(s))
+                    return None
                 except Exception:
                     return None
 
             filtered: list[dict] = []
             for r in runs:
                 ts = r.get("start_time") or r.get("created_at")
-                dt = _parse(ts) if isinstance(ts, str) else None
+                dt = _parse(ts)
                 if dt is not None:
                     parsed_times[r.get("run_id", "")] = dt
                 if dt is None or (cutoff and dt >= cutoff):
@@ -430,7 +445,7 @@ def dev_health_check(
         # Optional N-bucket trends across the selected window
         buckets: list[dict[str, Any]] = []
         now = None
-        if since_hours and cutoff is not None:
+        if since_hours is not None and cutoff is not None:
             now = datetime.utcnow()
             mid = cutoff + (now - cutoff) / 2
             last_half_cut = mid
@@ -513,10 +528,6 @@ def dev_health_check(
                 if isinstance(mid, str) and mid:
                     pm = per_model.setdefault(mid, {"coercions": 0})
                     pm["coercions"] += ct
-                    # Stage breakdowns by model
-                    mst = per_model_stages.setdefault(mid, {})
-                    for sk, sv in run_stage_counts.items():
-                        mst[sk] = int(mst.get(sk, 0)) + int(sv or 0)
                 # Aggregate transforms
                 tlist = attrs.get("aros.coercion.transforms")
                 if isinstance(tlist, list):
@@ -529,6 +540,12 @@ def dev_health_check(
                 if last_half_cut is not None and run_dt is not None:
                     # Assign this run's total coercions to half buckets once per run
                     pass
+            # After iterating spans, aggregate per-model stage breakdowns once per run
+            for _m, _stmap in run_model_stage_counts.items():
+                mst = per_model_stages.setdefault(_m, {})
+                for sk, sv in _stmap.items():
+                    mst[sk] = int(mst.get(sk, 0)) + int(sv or 0)
+
             # After iterating spans, update trends per run once
             if last_half_cut is not None and run_dt is not None:
                 if run_dt >= last_half_cut:
