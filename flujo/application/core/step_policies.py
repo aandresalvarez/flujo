@@ -423,17 +423,58 @@ class StateMachinePolicyExecutor:
                         lc.update(sc)
             except Exception:
                 pass
-            # Additionally, merge any scratchpad updates emitted via step outputs
+            # Additionally, merge any context updates emitted via step outputs
+            # Priority: perform a deep merge of scratchpad updates, then apply
+            # broader context updates when present (e.g., PipelineResult from as_step).
             try:
                 if last_context is not None and hasattr(last_context, "scratchpad"):
                     lcd = getattr(last_context, "scratchpad")
                     if isinstance(lcd, dict):
 
+                        def _deep_merge_dict(
+                            a: Dict[str, Any], b: Dict[str, Any]
+                        ) -> Dict[str, Any]:
+                            res = dict(a)
+                            for k, v in b.items():
+                                if k in res and isinstance(res[k], dict) and isinstance(v, dict):
+                                    res[k] = _deep_merge_dict(res[k], v)
+                                else:
+                                    res[k] = v
+                            return res
+
                         def _merge_out(out_obj: Any) -> None:
+                            # 1) Scratchpad-only fast path
                             if isinstance(out_obj, dict):
                                 sp = out_obj.get("scratchpad")
                                 if isinstance(sp, dict):
-                                    lcd.update(sp)
+                                    try:
+                                        merged = _deep_merge_dict(lcd, sp)
+                                        lcd.clear()
+                                        lcd.update(merged)
+                                    except Exception:
+                                        # Fallback to shallow update if deep merge fails
+                                        lcd.update(sp)
+                                # 2) Broader context updates via _build_context_update
+                                try:
+                                    from flujo.application.core.context_adapter import (
+                                        _build_context_update,
+                                    )
+
+                                    update_data = _build_context_update(out_obj)
+                                except Exception:
+                                    update_data = None
+                                if isinstance(update_data, dict):
+                                    # Only merge scratchpad portion here; other fields are handled by
+                                    # ContextManager.merge already. This ensures we don't lose
+                                    # state-machine hops due to excluded-fields behavior.
+                                    sp2 = update_data.get("scratchpad")
+                                    if isinstance(sp2, dict):
+                                        try:
+                                            merged2 = _deep_merge_dict(lcd, sp2)
+                                            lcd.clear()
+                                            lcd.update(merged2)
+                                        except Exception:
+                                            lcd.update(sp2)
 
                         # Merge top-level step outputs
                         for _sr in getattr(pipeline_result, "step_history", []) or []:
