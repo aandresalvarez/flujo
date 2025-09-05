@@ -116,6 +116,13 @@ class PolicyRegistry:
         self._registry: Dict[Type[Step], Any] = {}
         # Preload any globally registered policies from framework registry
         try:
+            # Ensure core primitives/policies are registered by importing the framework
+            # module which performs registration at import time.
+            try:  # pragma: no cover - import side-effect
+                import flujo.framework  # noqa: F401
+            except Exception:
+                # Defensive: if import fails, continue with whatever was registered explicitly
+                pass
             from ...framework.registry import get_registered_policies
 
             for step_cls, policy_instance in get_registered_policies().items():
