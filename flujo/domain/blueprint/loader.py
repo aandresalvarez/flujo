@@ -23,6 +23,102 @@ class BlueprintError(ConfigurationError):
     pass
 
 
+class _CoercionConfig(BaseModel):
+    tolerant_level: int = 0
+    max_unescape_depth: int | None = None
+    anyof_strategy: str | None = None
+    allow: Dict[str, List[str]] | None = None
+
+    @model_validator(mode="after")
+    def _validate_values(self) -> "_CoercionConfig":
+        if self.tolerant_level not in (0, 1, 2):
+            raise ValueError("coercion.tolerant_level must be 0, 1 or 2")
+        if self.max_unescape_depth is not None and self.max_unescape_depth < 0:
+            raise ValueError("coercion.max_unescape_depth must be >= 0")
+        if self.anyof_strategy is not None and str(self.anyof_strategy).lower() not in {
+            "first-pass"
+        }:
+            raise ValueError("coercion.anyof_strategy must be 'first-pass' if set")
+        if self.allow:
+            valid = {
+                "integer": {"str->int"},
+                "number": {"str->float"},
+                "boolean": {"str->bool"},
+                "array": {"str->array"},
+            }
+            for k, v in self.allow.items():
+                if k not in valid:
+                    raise ValueError(f"coercion.allow has invalid key '{k}'")
+                for t in v:
+                    if t not in valid[k]:
+                        raise ValueError(f"coercion.allow[{k}] has invalid transform '{t}'")
+        return self
+
+
+class _ReasoningPrecheckConfig(BaseModel):
+    enabled: bool = False
+    validator_agent: Any | None = None
+    agent: Any | None = None
+    delimiters: List[str] | None = None
+    goal_context_key: str | None = None
+    score_threshold: float | None = None
+    required_context_keys: List[str] | None = None
+    inject_feedback: str | None = None
+    retry_guidance_prefix: str | None = None
+    context_feedback_key: str | None = None
+    consensus_agent: Any | None = None
+    consensus_samples: int | None = None
+    consensus_threshold: float | None = None
+
+    @model_validator(mode="after")
+    def _validate_values(self) -> "_ReasoningPrecheckConfig":
+        if self.delimiters is not None and not (
+            isinstance(self.delimiters, list) and len(self.delimiters) >= 2
+        ):
+            raise ValueError("reasoning_precheck.delimiters must be a list of at least 2 strings")
+        if self.inject_feedback is not None and str(self.inject_feedback).lower() not in {
+            "prepend",
+            "context_key",
+        }:
+            raise ValueError(
+                "reasoning_precheck.inject_feedback must be 'prepend' or 'context_key'"
+            )
+        if self.consensus_samples is not None and self.consensus_samples < 2:
+            raise ValueError("reasoning_precheck.consensus_samples must be >= 2")
+        return self
+
+
+class ProcessingConfigModel(BaseModel):
+    structured_output: str | None = None
+    aop: str | None = None
+    coercion: _CoercionConfig | None = None
+    output_schema: Dict[str, Any] | None = Field(default=None, alias="schema")
+    enforce_grammar: bool | None = None
+    reasoning_precheck: _ReasoningPrecheckConfig | None = None
+
+    model_config = {
+        "populate_by_name": True,
+        # Avoid pydantic BaseModel attribute collision warnings for 'schema' alias
+        "protected_namespaces": (),
+    }
+
+    @model_validator(mode="after")
+    def _normalize(self) -> "ProcessingConfigModel":
+        if self.structured_output is not None:
+            val = str(self.structured_output).lower()
+            if val not in {"off", "auto", "openai_json", "outlines", "xgrammar"}:
+                raise ValueError(
+                    "processing.structured_output must be one of off|auto|openai_json|outlines|xgrammar"
+                )
+            self.structured_output = val
+        if self.aop is not None:
+            val = str(self.aop).lower()
+            if val not in {"off", "minimal", "full"}:
+                raise ValueError("processing.aop must be one of off|minimal|full")
+            self.aop = val
+        return self
+
+
 class BlueprintStepModel(BaseModel):
     """Declarative step spec (minimal v0).
 
@@ -89,6 +185,8 @@ class BlueprintStepModel(BaseModel):
     planner: Optional[str] = None  # import path or agents.<name>
     registry: Optional[Union[str, Dict[str, Any]]] = None  # import path to dict or inline map
     output_template: Optional[str] = None
+    # AROS/processing options (stored under step.meta["processing"])
+    processing: Optional[Dict[str, Any]] = None
 
     # ----------------------------
     # Field validators (compile-time safety for FSD-016 / Gap #9)
@@ -435,6 +533,20 @@ def _make_step_from_blueprint(
             "agentic_loop",
         }:
             model = BlueprintStepModel.model_validate(model)
+            # Validate processing early to surface errors before step assembly
+            try:
+                proc_raw = getattr(model, "processing", None)
+                if isinstance(proc_raw, dict) and proc_raw:
+                    pc = ProcessingConfigModel.model_validate(proc_raw)
+                    # replace with normalized dict using aliases (keeps 'schema' key)
+                    try:
+                        setattr(
+                            model, "processing", pc.model_dump(exclude_none=True, by_alias=True)
+                        )
+                    except Exception:
+                        pass
+            except Exception as e:
+                raise BlueprintError(f"Invalid processing configuration: {e}") from e
             # Attach preserved extras to the validated model for later consumption via meta
             try:
                 if _raw_use_history is not None:
@@ -1724,6 +1836,19 @@ def _make_step_from_blueprint(
                 updates_context=model.updates_context,
                 validate_fields=model.validate_fields,
             )
+        # Attach per-step AROS processing config to step.meta for policies
+        try:
+            if isinstance(model.processing, dict) and model.processing:
+                # Validate and normalize processing config
+                try:
+                    pc = ProcessingConfigModel.model_validate(model.processing)
+                    proc_dict = pc.model_dump(exclude_none=True, by_alias=True)
+                except Exception as e:
+                    raise BlueprintError(f"Invalid processing configuration: {e}") from e
+                st.meta.setdefault("processing", {})
+                st.meta["processing"].update(proc_dict)
+        except Exception:
+            pass
         # Attach templated input if provided in blueprint
         try:
             if model.input is not None:

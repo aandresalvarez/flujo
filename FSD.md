@@ -1,338 +1,400 @@
-# FSD-0XX: Declarative State Transitions for StateMachineStep
+## Engineering Specification: Flujo AROS (Adaptive Reasoning & Output System)
 
-Author: Flujo Core Team
-Date: 2025-09-02
-Status: Approved for implementation
-Target Release: vNEXT (Phase 1 – Developer Experience)
+Version: 1.2 (policy-aligned + strengthened AOP)
+Status: Proposed
+Owner: Flujo Core Team
 
-## 1. Abstract
+1) Overview & Vision
 
-Introduce a declarative `transitions` block to `StateMachineStep` so authors can express state hops in YAML based on outcome events (`success`, `failure`, `pause`) with optional conditions (`when`). This removes boilerplate glue tools, makes pause/resume robust and explicit, and keeps control flow centralized in the policy layer while preserving Flujo’s non-negotiable principles.
+LLM agents can fail with malformed, stringified, or loosely typed outputs and occasionally flawed plans. AROS improves reliability by:
+- Preventing format errors with model-native structured outputs when supported.
+- Repairing or coercing minor output mismatches via the existing processor pipeline.
+- Optionally pre-checking reasoning for high-assurance steps.
+- Surfacing rich trace events for health analysis without adding storage tables.
 
-## 2. Background & Problem Statement
+This revision aligns fully with the Flujo Team Guide: policy-driven execution, control-flow exception safety, context idempotency, proactive quotas, centralized configuration, and agent factories.
 
-Today, `StateMachineStep` requires users to set `scratchpad.next_state` from custom Python tools. This has downsides:
-- Glue code: bespoke if/elif chains tightly coupled to pipeline internals.
-- Pause/resume fragility: on HITL pause, users must manually force re-entry into the paused state.
-- Hidden control flow: transitions live outside YAML, reducing blueprint clarity.
+2) Non-Negotiable Architectural Constraints
 
-This FSD proposes a first-class, declarative transition model resolved by the `StateMachinePolicyExecutor` after each state finishes (or pauses), with strict adherence to control-flow exception safety and idempotent context handling.
+- Policy-driven: All step behavior lives in the AgentStep policy; no special-casing inside ExecutorCore.
+- Exception safety: Never convert control-flow exceptions into data failures—re-raise them.
+- Idempotency: All added logic must operate within per-attempt isolated context; only merge on success.
+- Quotas: No reactive budget gating; continue Reserve → Execute → Reconcile patterns already enforced by policies.
+- Central config: Read global defaults via ConfigManager; step-level toggles come from DSL step config. Never read env directly in domain/policies.
+- Agent creation: Continue using `flujo.agents` factories/wrappers.
 
-## 3. Goals & Non-Goals
+3) Components (Practical, Minimal, Robust)
 
-Goals
-- Express state transitions in YAML via ordered rules with optional conditions.
-- Robust pause handling via `on: pause` rules, ensuring correct re-entry on resume.
-- Preserve policy-driven architecture; no changes to the executor dispatcher.
-- Maintain idempotency: per-iteration isolation, only merge on success; never poison shared context.
-- Backward-compatible: pipelines without `transitions` continue to work unchanged.
+3.1 Structured Output Enforcement (SOE)
+- Purpose: Use pydantic‑ai model capabilities for structured outputs to reduce JSON-shape failures up front.
+- Integration point: Wrapper/factory-level enablement; policies only signal intent. The wrapper inspects the pydantic‑ai model and attaches the appropriate response_format hint when supported (e.g., JSON Schema mode).
+- Phase 1: Best-effort JSON object/JSON schema mode via pydantic‑ai; if unsupported, no-ops safely. Experimental Outlines/XGrammar adapters remain telemetry-only (no runtime effect) and off by default.
+- Observability: Trace `grammar.applied {mode}` when enabled; otherwise omit events unless explicitly configured.
 
-Non-Goals
-- No new control-flow exception types.
-- No expansion of the safe expression engine beyond existing capabilities.
-- No changes to quota semantics or centralized configuration.
+3.2 Adaptive Output Processors (AOP) via Existing Processor Pipeline
+- Purpose: Deterministically normalize agent outputs after generation using the existing output-processor chain.
+- Design:
+  - Stage 0: Deterministic JSON extraction + bounded unescape
+    - Add a streaming, stack-based brace/bracket matcher to extract the largest balanced `{...}` or `[...]` region from mixed text/code-fenced outputs. If both exist, choose the one matching the schema root (`object` vs `array`).
+    - Add a bounded double-encoded fix: detect quoted/escaped JSON (e.g., `"{\"k\":1}"`) and iteratively unescape up to max depth (default 2). Guard with size/time caps.
+  - Stage 1: Tiered tolerant decode (opt-in)
+    - Default: `orjson.loads` when available, else Python `json.loads`.
+    - If configured (`tolerant_level >= 1`): try `json5/pyjson5` for comments/single quotes/trailing commas.
+    - If configured (`tolerant_level >= 2`): try `json-repair` and log a patch preview. Off by default for safety.
+  - Stage 2: Syntactic JSON fixer
+    - Reuse DeterministicRepairProcessor as last resort before retry/repair, only for JSON-shaped expectations.
+  - Stage 3: Schema-aware Smart Coercion
+    - Add `SmartTypeCoercionProcessor` that walks the decoded structure against JSON Schema and applies whitelisted, unambiguous conversions:
+      - `"42"→42` (integer), `"3.14"→3.14` (number), `"true"/"false"/"0"/"1"→bool` (boolean)
+      - String→list when schema is `array` and the string looks like `[...]`
+      - Respect `anyOf/oneOf`: try branches in order, choose the first that fully validates; record chosen index in trace.
+    - Fail fast on ambiguous cases; never guess semantics.
+  - Custom coercion
+    - Encourage users to implement custom output processors; avoid a bespoke rules DSL in core. AROS auto-injects built-ins when enabled; user processors run in the same chain.
+- Safety:
+  - Processors run inside the per-attempt isolated context; the policy merges context back only on success.
+  - Final schema/type validation remains strict; if coercion doesn’t resolve, fail with precise feedback and let the normal retry loop handle it.
+- Observability: Emit `aros.aop.syntactic.{success|skip|fail}` and `aros.aop.coercion.{success|skip|fail}` trace events with concise details.
 
-## 4. Design Overview
+3.2.1 Optional high-performance typed validation (hot path)
+- For hot paths, optionally decode directly into typed structures (e.g., `msgspec.Struct` or Pydantic v2 `TypeAdapter`) to combine speed and validation in one pass. This remains optional and must be feature-gated to avoid mandatory dependencies.
 
-Add `transitions` to `StateMachineStep`. Each rule matches `(from, on, when)` to a `to` state.
+3.3 Optional Reasoning Precheck (Preflight)
+- Purpose: Catch obvious plan issues cheaply before a costly generation.
+- Mode: Off by default. When enabled in step config, run a low-cost pre-validation inside the AgentStep attempt loop.
+- Implementation:
+  - Add a local checklist pre-gate: run a fast required-field/shape presence check from the schema. If basics are missing, skip validator and proceed to repair/coercion path.
+  - Provide a `PlanCheckValidator` that takes a short plan representation and returns pass/fail plus feedback. Use it only when a plan is available; otherwise skip gracefully (no forced prompt changes).
+  - Optional scoring integration: allow a simple scoring/threshold plugin; if score < threshold, treat as precheck fail and provide precise retry feedback.
+  - Optional consensus gate: for high-stakes steps, sample two very short plans; if they disagree on key actions, run validator; else proceed.
+  - If precheck fails, record an `aros.reasoning.precheck.fail` event and continue within the same attempt by turning validator/scorer feedback into retry guidance (no control-flow exception conversion). Keep it lightweight (small token budget) and explicitly optional.
+- Observability: `aros.reasoning.precheck.{pass|fail|skipped}`.
 
-YAML example:
+3.4 Health Reporting via Traces (No New Tables in Phase 1)
+- Purpose: Provide visibility into how often AROS intervenes, by agent/model/step.
+- Storage: Use existing TraceManager events persisted through the SQLite backend (`spans`/`traces` tables). Do not add a new `correction_ledger` table in Phase 1.
+- CLI: Add `flujo dev health-check` that aggregates AROS events from traces and reports:
+  - Top steps by coercion frequency
+  - Models with frequent SOE skips (unsupported)
+  - Precheck failure rates
+  - Suggested actions (e.g., enable SOE where supported; add a custom processor)
 
-```yaml
-- kind: StateMachine
-  name: orchestrate
-  start_state: clarification
-  end_states: [done, failed]
-  states:
-    clarification:
-      steps:
-        - name: run_clarification
-          uses: imports.clarification
-    concept_discovery:
-      steps:
-        - name: run_concept_discovery
-          uses: imports.concept_discovery
-    review: { steps: [ ... ] }
-    failed: { steps: [] }
-    done: { steps: [] }
+3.4.1 Future: Optional Correction Ledger (Phase 2)
+- If trace querying proves insufficient, introduce a `correction_ledger` table with fields:
+  - `id, timestamp, step_name, agent_id, provider_model, schema_hash, coercion_policy_version, stage, repair_depth, transforms_applied, latency_ms_saved`
+  - Carefully gate writes; keep it optional and behind `[aros].correction_ledger_enabled`.
 
-  transitions:
-    - from: clarification
-      on: pause
-      to: clarification
-    - from: clarification
-      on: success
-      to: concept_discovery
-      when: "context.scratchpad.cohort_definition"
-    - from: concept_discovery
-      on: pause
-      to: concept_discovery
-    - from: concept_discovery
-      on: success
-      to: review
-    - from: "*"
-      on: failure
-      to: failed
+4) Execution Flow (AgentStep Policy)
+
+Within the existing AgentStepExecutor attempt loop:
+1. Determine AROS options from step config + global defaults (via ConfigManager).
+2. If SOE is enabled and supported for the model, set structured-output hints via the agent wrapper/factory.
+3. Call the agent as usual (respecting quotas, timeouts, retries).
+4. Run output processors. If AOP is enabled, auto-inject built-ins in the processor chain order:
+   - Stage 0 extractor/unescape
+   - Tiered tolerant decode (per tolerant_level)
+   - DeterministicRepairProcessor (syntactic JSON fix)
+   - SmartTypeCoercionProcessor (semantic coercion + anyOf/oneOf disambiguation)
+   User-defined processors run as configured.
+5. Run validators as today. If precheck is enabled, run `PlanCheckValidator` as a preflight prior to generation or as an early short pass when plan text is available; on fail, continue within the attempt using the validator feedback as retry guidance.
+6. On success, strict-validate final output shape; on failure, proceed with standard retry feedback. Never swallow control-flow exceptions.
+7. Emit AROS trace events throughout. Merge context only on success.
+
+5) Configuration (Centralized)
+
+5.1 Global defaults (flujo.toml, accessed via ConfigManager)
+```
+[aros]
+enabled = true                      # master switch; defaults to true but does nothing unless per-step opts are set
+structured_output_default = "auto"  # off | auto | openai_json
+enable_aop_default = "minimal"      # off | minimal | full
+coercion_tolerant_level = 0          # 0=off, 1=json5, 2=json-repair (logs patch previews)
+max_unescape_depth = 2               # depth limit for Stage 0b
+anyof_strategy = "first-pass"        # branch selection strategy
+enable_reasoning_precheck = false
 ```
 
-Event mapping
-- success: sub-pipeline completed and last `StepResult.success` is True.
-- failure: sub-pipeline completed and last `StepResult.success` is False.
-- pause: sub-pipeline raised `PausedException` (HITL).
-
-Rule resolution: first-match-wins among rules in list order. `from: "*"` is a wildcard.
-
-## 5. Architecture Alignment (Non-Negotiables)
-
-- Policy-driven execution: All logic lives in `StateMachinePolicyExecutor`; `ExecutorCore` remains a dispatcher. No `isinstance` special-casing in core.
-- Control-flow exception safety: Catch `PausedException` only to annotate control state in context, then re-raise immediately. Never convert to data failure.
-- Context idempotency: Per-state iteration runs on isolated context; merge back only on completion (success/failure). On pause, do not merge iteration context.
-- Proactive quotas: Unchanged; no reactive checks introduced.
-- Centralized configuration: No direct env/TOML reads in policy/domain.
-- Agent creation: Unchanged.
-
-## 6. Detailed Design
-
-### 6.1 DSL Schema
-
-File: `flujo/domain/dsl/state_machine.py`
-
-- Add Pydantic model:
-  - `class TransitionRule(BaseModel):`
-    - `from_state: str` (field name `from` in YAML; model alias)
-    - `on: Literal["success", "failure", "pause"]`
-    - `to: str`
-    - `when: Optional[str] = None` (expression)
-    - Internal (not serialized): `when_fn: Optional[Callable[[Any, Any], Any]] = PrivateAttr(default=None)`
-
-- Extend `StateMachineStep`:
-  - `transitions: list[TransitionRule] = Field(default_factory=list)`
-  - `@model_validator(mode="after")`:
-    - Ensure `to` is either a key in `states` or listed in `end_states`.
-    - Ensure `from` is `*` or present in `states`.
-    - Precompile `when` using `compile_expression_to_callable`, store in `when_fn`.
-
-Notes
-- Use Pydantic `Field(alias="from")` to accept `from:` in YAML while mapping to `from_state` internally.
-- Validation errors should produce clear `BlueprintError` messages when raised via loader.
-
-### 6.2 Blueprint Loader
-
-File: `flujo/domain/blueprint/loader.py`
-
-- In the StateMachine branch:
-  - Parse `transitions` if present. Coerce to `TransitionRule` instances via `StateMachineStep` validation.
-  - Maintain existing `states`, `start_state`, `end_states` handling.
-  - Backward compatibility: if `transitions` missing, feature is inactive.
-
-### 6.3 Policy Execution
-
-File: `flujo/application/core/step_policies.py` (StateMachinePolicyExecutor)
-
-Core loop changes (high-level algorithm):
-1) Determine `current_state` from `context.scratchpad.current_state` or `step.start_state`.
-2) At the start of each hop, write `context.scratchpad.current_state = current_state` (control metadata only; not part of iteration context) so resume knows where we were.
-3) Build `iteration_context = ContextManager.isolate(context)`.
-4) Run the state sub-pipeline via `core._execute_pipeline_via_policies` with cache disabled (unchanged).
-5) On completion:
-   - Aggregate totals and step_history (unchanged).
-   - Merge sub-context into main context (unchanged) for success/failure paths.
-   - Compute `event` as success/failure.
-   - Resolve transition via `self._resolve_transition(step, current_state, event, output, context)` (see below).
-   - If rule found: set `next_state = rule.to` and update `scratchpad.current_state = rule.to`.
-   - Else: fallback to legacy `next_state` resolution from context or step outputs.
-6) On pause (`PausedException`):
-   - Compute `event = "pause"`.
-   - Resolve transition with the current main context (do NOT merge iteration context).
-   - If rule found: set `scratchpad.current_state = rule.to` and optionally `scratchpad.next_state = rule.to`.
-   - Re-raise `PausedException` immediately.
-7) Terminate when `current_state in end_states` or maximum hops reached.
-
-Helper: `_resolve_transition(step, from_state, event, output, context)`
-- Iterate `step.transitions` in order.
-- Match `from_state` (or `*`) and `on == event`.
-- If `when_fn` exists: call with `output=payload, context=context_proxy`; treat truthiness.
-- Return the first match (first-match-wins) or `None`.
-
-Expression payload (`output`) for `when` evaluation
-- `{ "event": <event>, "last_output": <last_step_output_or_none>, "last_step": <last_step_result_summary> }`
-- Keep it small and read-only; the evaluator will also see `context` via `TemplateContextProxy`.
-
-Telemetry additions
-- Log on every hop: starting state, event, rule match, applied transition, and terminal detection.
-- Examples:
-  - `[StateMachinePolicy] event=success from='clarification' matched to='concept_discovery'`
-  - `[StateMachinePolicy] pause detected in state='clarification'; transitioning to='clarification' and re-raising`
-
-### 6.4 Backward Compatibility & Precedence
-
-- If `transitions` is empty/missing, behavior is unchanged.
-- If transitions exist:
-  - Transitions take precedence over implicit `scratchpad.next_state` produced by tools.
-  - Fallback to legacy `next_state` only when no rule matches.
-- `end_states` remain terminal regardless of transitions.
-
-### 6.5 Security & Safety
-
-- Use the existing safe expression engine. `when` expressions evaluate with:
-  - `output`: a small payload dict containing `event`, `last_output`, `last_step`.
-  - `context`: the pipeline context (via TemplateContextProxy).
-  - Additionally, the engine exposes `previous_step` and `steps` for parity with other DSL expressions.
-- Do not execute user code; only evaluate restricted AST.
-- On expression failure, treat as non-match (log warning), do not crash policy.
-
-## 7. Implementation Tasks & Checklist
-
-### 7.1 Schema & Loader
-- [x] Add `TransitionRule` model with aliases and validation.
-- [x] Extend `StateMachineStep` with `transitions` and model validator to precompile `when`.
-- [x] Update loader to accept `transitions` and attach to `StateMachineStep`.
-- [x] Clear error messages for invalid `from`/`to`/`on` values.
-
-### 7.2 Policy
-- [x] Add `current_state` control metadata write at hop entry.
-- [x] Wrap sub-pipeline execution with try/except for `PausedException` and apply rule resolution for `on: pause` before re-raising.
-- [x] Implement `_resolve_transition` helper with first-match-wins semantics and `when_fn` evaluation.
-- [x] Apply transition precedence over legacy `next_state` extraction.
-- [x] Add structured telemetry logs.
-
-### 7.3 Docs & Examples
-- [x] Add docs section for StateMachine transitions with YAML samples and event semantics.
-- [x] Update examples (architect pipeline) to show `on: pause` self-transition.
-- [x] Add migration note: optional feature, BC maintained.
-
-### 7.4 Tests
-
-Unit tests (DSL & Loader)
-- [x] Parse valid transitions including wildcard `from: "*"`.
-- [x] Reject `to` states not in `states|end_states`.
-- [x] Reject `from` states not in `states` (except `*`).
-- [x] Reject invalid `on` values.
-- [x] Load `when` expressions (compiled at load time; runtime errors treated as non-match).
-
-Unit tests (Policy)
-- [x] Success path: rule match moves to expected state; telemetry message present.
-- [x] Failure path: wildcard rule directs to `failed` end-state.
-- [x] Pause path: rule re-enters same state; current_state persisted; `PausedException` re-raised.
-- [x] No matching rule: fallback to legacy next_state from outputs/context.
-- [x] End-state detection (covered by existing tests).
-- [x] Unknown-state handling (covered by existing tests).
-
-Integration tests
-- [x] YAML-defined orchestrator with pause transition and self re-entry; verify paused context and control metadata.
-- [x] YAML-defined orchestrator across 3+ states; verify control flow and final state.
-- [x] Conditional `when` depending on `context.scratchpad` values; verify both true/false branches.
-
-Regression tests
-- [x] Pipelines without `transitions` behave exactly as before (verified via legacy next_state flow and step_history assertions; existing suites also cover baseline behavior).
-- [x] Ensure `breach_event` not used/introduced; guard added asserting StateMachine policy does not reference it.
-- [x] Quota semantics unchanged; totals aggregate as before (unit test aggregates costs/tokens across states).
-- [x] State history telemetry still coherent; existing parsing tests pass, and added assertions on step_history integrity.
-
-Performance tests
-- [ ] Measure overhead of rule resolution across 100 hops; verify negligible impact (<1% vs baseline) under typical pipelines.
-
-## 8. Acceptance Criteria
-
-- Authors can add a `transitions` block in YAML; rules are applied deterministically with first-match-wins.
-- Pause handling is robust: on HITL pause, resume continues in the declared `to` state when a `pause` rule exists.
-- No changes are required for existing pipelines; behavior is backward compatible when `transitions` is absent.
-- All tests pass under `make all` including mypy strictness.
-- No direct env/TOML reads introduced in policies/domain.
-
-## 9. Telemetry & Observability
-
-- New logs in `StateMachinePolicyExecutor`:
-  - Hop start: `starting at state=...`
-  - Rule match: `event={event} from={state} matched to={to}`
-  - Pause handling: `pause detected in state=...; transitioning to=...`
-  - Terminal: `reached terminal state=...`
-- Span annotations remain unchanged; optional: add `executed_transition_from`, `executed_transition_to` attributes.
-
-## 10. Risks & Mitigations
-
-- Mis-specified transitions causing loops: mitigate with `max_hops = len(states) * 10` cap (already present); clear telemetry aids debugging.
-- Expression misuse: safe evaluator guards; invalid expressions treated as non-match; provide crisp error messages during validation where possible.
-- Context poisoning on pause: we never merge iteration context on pause; only write control metadata (`current_state`) to main context.
-
-## 11. Rollout Plan
-
-- Implement behind “presence of transitions” behavior (implicit feature flag).
-- Land PR with unit + integration tests and docs.
-- Release notes: highlight declarative transitions and pause handling improvement.
-
-## 12. Work Estimates & Ownership
-
-- Schema/Loader: 1–2 days
-- Policy changes: 2–3 days
-- Tests (unit/integration/regression): 2–3 days
-- Docs & examples: 0.5–1 day
-
-Owner: Core Runtime Team
-Reviewers: DSL Owner, Policy/Executor Owner, Docs Lead
-
-## 13. Open Questions
-
-- Should transitions to undefined but declared end states be allowed without `states[...]` bodies? Current design: yes, if listed in `end_states`.
-- Should `when` be allowed to reference `output.last_step.metadata_`? Current design: expression engine can reach it via `last_step` summary (we’ll expose a minimal dict).
-- Should we synthesize a `failure` rule by default if none provided? Current design: no; maintain explicitness.
-
-## 14. Pseudocode Snippets
-
-Transition resolution in policy:
-
-```python
-def _resolve_transition(step, from_state, event, payload, context):
-    for rule in getattr(step, "transitions", []) or []:
-        if rule.on != event:
-            continue
-        if rule.from_state != "*" and rule.from_state != from_state:
-            continue
-        if rule.when_fn is not None:
-            try:
-                if not bool(rule.when_fn(payload, context)):
-                    continue
-            except Exception:
-                telemetry.logfire.warning("[StateMachinePolicy] when() evaluation failed; skipping rule")
-                continue
-        return rule
-    return None
+5.2 Step-level toggles (DSL/YAML excerpt)
+```
+agents:
+  my_agent_step:
+    processing:
+      structured_output: auto          # off | auto | openai_json | outlines | xgrammar
+      aop: minimal                     # off | minimal | full
+      coercion:
+        tolerant_level: 0              # 0=off, 1=json5, 2=json-repair
+        allow:
+          integer: ["str->int"]
+          number:  ["str->float"]
+          boolean: ["str->bool"]
+        max_unescape_depth: 2
+        anyof_strategy: "first-pass"
+      reasoning_precheck:
+        enabled: false
+        validator_agent: agents.plan_checker   # optional
+        max_tokens: 200                        # budget cap for the precheck
+        score_threshold: 0.7                   # optional scoring gate
+        required_context_keys: ["initial_input"]
+        inject_feedback: "prepend"             # prepend | context_key | (unset)
+        retry_guidance_prefix: "Guidance: "    # for prepend mode
+        context_feedback_key: "_aros_retry_guidance"  # for context_key mode
 ```
 
-Pause handling (simplified):
+Notes:
+- “minimal” AOP auto-injects Stage 0 extractor/unescape + fast JSON parse and limited whitelisted conversions; “full” also enables tolerant decoders and advanced anyOf/oneOf handling.
+- User processors can still be provided explicitly; AROS injections prepend in a safe order.
 
-```python
-try:
-    pr = await core._execute_pipeline_via_policies(...)
-    event = "success" if pr.step_history and pr.step_history[-1].success else "failure"
-    rule = _resolve_transition(step, current_state, event, payload, last_context)
-    if rule:
-        set_next_state(rule.to)
-    else:
-        legacy_next_state_fallback()
-except PausedException:
-    payload = {"event": "pause", ...}
-    rule = _resolve_transition(step, current_state, "pause", payload, last_context)
-    if rule:
-        set_current_state(rule.to)  # control metadata
-    raise
+Example schema-aware coercion (AOP full)
+```
+processing:
+  aop: full
+  coercion:
+    allow:
+      integer: ["str->int"]
+      number: ["str->float"]
+      boolean: ["str->bool"]
+  schema:
+    type: object
+    required: ["count"]
+    properties:
+      count: { type: integer }
 ```
 
-## 15. Documentation Tasks
+Example structured outputs via pydantic‑ai (OpenAI JSON)
+```
+processing:
+  structured_output: openai_json
+  schema:
+    type: object
+    properties:
+      ok: { type: boolean }
+```
 
-- New doc page: “StateMachine Transitions”
-  - Syntax: fields, wildcard, events
-  - `when` expressions; available variables
-  - Pause/resume patterns and HITL notes
-  - Precedence over legacy `next_state`
-- Update examples and templates to demonstrate common patterns.
+6) Observability & Health Check
 
-## 16. Regression Guardrails
+- Trace events (examples, aligned with Trace Contract):
+  - `grammar.applied` `{ mode: "openai_json|outlines|xgrammar", schema_hash }`
+  - `aros.soe.enabled|skipped`
+  - `output.coercion.attempt` `{ stage: "syntactic|semantic|custom|extract|tolerant", reason, expected_type, actual_type }`
+  - `output.coercion.success` `{ stage, transforms: ["json.loads","str->int"], branch_index? }`
+  - `output.coercion.fail` `{ stage, error_preview }`
+  - `reasoning.validation` `{ result: "pass|fail", score? }`
+- CLI `flujo dev health-check`:
+  - Reads spans/traces; aggregates AROS events per step/agent/model.
+  - Outputs top-N offenders and recommendations (enable SOE, add custom processor, adjust prompts).
+  - No schema changes required in SQLite backend.
 
-- Grep-based CI check to ensure no `breach_event` usage is reintroduced.
-- Ensure `ExecutorCore` remains free of StateMachine-specific logic.
-- Keep coverage for pause paths and no-transition paths.
+7) Testing Strategy
 
----
+7.1 Unit tests
+- SOE/OpenAI mapping emits correct options via wrapper/factory and logs `aros.soe.enabled`.
+- Stage 0 extractor + bounded unescape: property-based tests (Hypothesis) across fenced/double-encoded inputs.
+- DeterministicRepairProcessor regression tests (existing) + integration with AOP flagging.
+- SmartTypeCoercionProcessor: success cases (str→int/bool/float, T→[T]), nested objects, anyOf/oneOf disambiguation, and negative cases (ambiguous/unsafe).
+- PlanCheckValidator: parsing optional plan snippets; pass/fail propagation as retry feedback.
 
-This FSD is the single source of truth for implementation and validation of declarative transitions in `StateMachineStep`. All changes must pass `make all` (format, lint, typecheck, tests) prior to merge.
+7.2 Integration tests
+- Happy-path agent bypasses AOP; trace shows no AROS interventions.
+- Mixed/fenced/double-encoded JSON is extracted/unescaped and parsed; final object validated; events recorded.
+- SOE enabled with OpenAI model adds response_format; trace shows `aros.soe.enabled`.
+- Precheck fail produces retry feedback; no control-flow exceptions are swallowed; final retry path executes.
+- Global disable `[aros].enabled=false` preserves legacy behavior.
+
+7.3 Performance tests
+- Overhead of AOP on correct outputs < 5 ms.
+- Precheck adds bounded tokens/time; disabled by default.
+ - Microbenchmarks: compare `json` vs `orjson` vs `msgspec` typed decode.
+ - Shadow mode: monitor-only runs that log AOP decisions without mutation.
+
+8) Rollout Plan
+
+Phase 1 (this spec):
+- SOE for OpenAI JSON via wrapper/factory integration; optional and auto-detected.
+- AOP via existing processor pipeline: auto-inject Stage 0 extractor/unescape + fast parse + DeterministicRepairProcessor (minimal); add SmartTypeCoercionProcessor and tolerant decoders for “full”.
+- Reasoning precheck: local checklist + optional validator/scorer; off by default.
+- Trace-only health reporting; `flujo dev health-check` reads traces.
+
+Phase 2:
+- Add other providers’ native JSON modes.
+- Consider regex/CFG grammars (Outlines/XGrammar) as experimental opt-ins (off by default) with strict tests.
+- Expand health-check analytics (time-sliced trends, per-pipeline summarization).
+ - Optional correction ledger table with the proposed schema fields if trace queries are insufficient.
+
+9) Risks & Mitigations
+
+- Over-coercion hiding real bugs → Keep final strict validation; “minimal” default safe conversions only; make tolerant decoders and broader coercions opt-in via `tolerant_level`.
+- Provider coupling for SOE → Contain in wrapper/factory; policy reads intent only.
+- Precheck cost/latency → Off by default; small token caps; skip when no plan available.
+- Storage creep → Use traces first; add a dedicated ledger only if query/retention needs justify it later.
+
+10) Backward Compatibility
+
+- Defaults do not change behavior unless explicitly enabled per step or via sensible global defaults.
+- No DB schema changes in Phase 1.
+- All control-flow and idempotency guarantees preserved.
+
+11) Change Log (v1.1 vs v1.0)
+
+- Replaced generic “grammar enforcement” with provider-native SOE (OpenAI JSON in Phase 1).
+ - Implemented AOP as standard processors; add Stage 0 extractor/unescape; reuse DeterministicRepair; add SmartTypeCoercionProcessor; add optional tolerant decoders.
+ - Reasoning validation made optional, lightweight, and non-intrusive; no forced prompt markers.
+ - Dropped new “correction_ledger” table; use trace events + health-check CLI.
+ - Tightened exception and context semantics to match Team Guide.
+
+13) Implementation Progress (live)
+
+- AOP pipeline
+  - Stage 0 extractor/unescape: Completed and tested (nested/fenced, double-encoded).
+  - Tiered tolerant decode: Completed (orjson/json; json5/json-repair opt-ins) + tests.
+  - DeterministicRepair ordering: Integrated.
+  - SmartTypeCoercion: Completed (schema-aware, anyOf/oneOf; allowlisted coercions) + tests.
+  - Schema auto-derivation from agent output type: Implemented.
+
+- Structured Output Enforcement (SOE)
+  - Wrapper-based (pydantic‑ai): Implemented best‑effort enabling for JSON object/JSON Schema when explicitly enabled per step; policies only signal intent. Defaults guarded.
+  - Experimental adapters (Outlines/XGrammar): Telemetry-only stubs in place; no runtime effect. Deeper wiring is Phase 2.
+  - Tests: Policy-path unit tests ensure `response_format` is attached when `processing.structured_output` is set; safe no-op when agent doesn't accept kwargs.
+  - Provider-profile coverage: factory creates OpenAI Responses model for GPT‑5 family; wrapper tests ensure response_format hinting without network; policy emits `grammar.applied` for GPT‑5 profile under `auto`.
+  - Schema hash: `grammar.applied` events include `schema_hash` (sha256 of JSON schema) for openai_json and outlines/xgrammar in both initial and retry paths.
+
+- Reasoning Precheck
+  - Local checklist pre-gate: Implemented (required_context_keys) with aros.reasoning.precheck.{pass|fail} events.
+  - Validator agent + scoring: Implemented (telemetry-only) with optional score_threshold and opt‑in feedback injection (prepend/context_key).
+  - Consensus gate: Implemented (telemetry-only) using N‑sample Jaccard; does not alter execution.
+
+- Observability & Health
+  - Trace events and on-span aggregation: Implemented (including aros.model_id and transforms).
+  - CLI health-check: Implemented with since-hours, top steps/models/transforms, basic + targeted recommendations (top step/model hints), and JSON/CSV export. Added N-bucket trends via `--trend-buckets` with per-bucket coercion counts and per-stage breakdowns. Added overall per-step and per-model stage distributions; extended trend buckets to include per-step/per-model stage distributions as well. Stage-aware recommendations (tolerant/semantic/extract) and trend-based hints (top rising step/model and stage-specific rises) now included. Added `--step/--model` filters and JSON export metadata (`version`, `generated_at`), plus stdout export with `--output -`.
+
+- Config & DSL
+  - [aros] defaults wired via ConfigManager; defaults OFF by design.
+  - Step-level processing accepted via step.meta["processing"].
+  - Validation: ProcessingConfigModel validates structured_output/aop/coercion/reasoning_precheck; invalid configs raise BlueprintError.
+  - Grammar enforcement flag: `processing.enforce_grammar` accepted (boolean).
+
+- Tests & Golden
+  - Unit tests for AOP (Stage 0, tolerant decode, SmartCoercion) added and passing.
+  - SOE policy-path tests (openai_json, auto=JSON, outlines, xgrammar) and wrapper schema-name propagation.
+  - Health-check CLI tests for JSON export bucket breakdowns, stage-aware recs, and edge cases (no runs, no since-hours).
+  - Integration test: grammar.applied aggregates via TraceManager hook across a mock pipeline step.
+  - Provider-profile tests: GPT‑5 (OpenAI Responses model) and GPT‑4o wrappers accept structured_output hints without network; policy emits grammar.applied in auto mode.
+  - Precheck tests: skipped when no plan; max_tokens forwarded to validator.
+  - Grammar enforcement tests: outlines enforcement pass/fail on matching/non-matching outputs.
+  - anyOf coercion test: branch selection recorded with branch_choices.
+  - Golden traces validated (defaults off prevent deltas).
+
+Next up (Phase 2)
+- SOE deeper integration via pydantic‑ai across supported models (JSON Schema), plus unit mocks; Outlines/XGrammar wiring (opt-in).
+- Health‑check trend windows and richer, per-step/model recommendations; extended exports.
+- Optional typed fast path (feature‑gated) and microbenchmarks.
+- Additional negative/edge tests for processing validation and docs/examples polish.
+
+12) Implementation Checklist
+
+- Foundations: setup and config
+  - Define `[aros]` in `flujo.toml` and wire via `ConfigManager` (`structured_output_default`, `enable_aop_default`, `coercion_tolerant_level`, `max_unescape_depth`, `anyof_strategy`, `enable_reasoning_precheck`).
+  - Add step-level `processing` keys (`structured_output`, `aop`, `coercion.*`, `reasoning_precheck.*`) to DSL schema/validation.
+  - Done when: Config loads without direct env reads; defaults applied; mypy strict passes.
+
+- Structured Output Enforcement (SOE)
+  - Add provider capability probe in agent factories/wrappers for OpenAI JSON mode.
+  - Map step `processing.structured_output` to wrapper options; keep policy side declarative.
+  - Emit `grammar.applied` and `aros.soe.{enabled|skipped}` trace events.
+  - Tests: unit (option mapping), integration (payload shows JSON mode), negative (unsupported → skipped).
+  - Done when: opt‑in SOE works; fallbacks safe; no policy/provider coupling leaks.
+
+- AOP: Stage 0 extractor/unescape
+  - Implement streaming brace/bracket matcher for largest balanced JSON/array; prefer schema root.
+  - Add bounded double‑unescape (depth ≤ `max_unescape_depth`, size/time guards).
+  - Integrate as auto‑injected processor when `aop != off`.
+  - Emit `output.coercion.attempt|success|fail` with stage `extract`.
+  - Tests: property‑based (fenced/double‑encoded), size/timeout guards.
+  - Done when: plain `json`/`orjson` succeeds more often after Stage 0.
+
+- AOP: Tiered tolerant decode (opt‑in)
+  - Default parser: `orjson.loads` (fallback to `json.loads`).
+  - If `tolerant_level >= 1`: try `json5/pyjson5`.
+  - If `tolerant_level >= 2`: try `json-repair`; log patch preview (before/after snippet).
+  - Emit events with stage `tolerant` and transformations.
+  - Tests: unit for each tier; security: off by default; logs present.
+  - Done when: tiers activate only by config; strict validation still final gate.
+
+- AOP: DeterministicRepair integration
+  - Reuse `DeterministicRepairProcessor` late in chain for JSON expectations.
+  - Ensure ordering: Stage 0 → tolerant decode → DeterministicRepair → Smart Coercion.
+  - Emit stage `syntactic` events.
+  - Tests: regressions on malformed/near‑valid JSON.
+  - Done when: repair never masks large semantic diffs; strict validation follows.
+
+- AOP: Smart Type Coercion
+  - Implement `SmartTypeCoercionProcessor` (schema‑aware, Ajv‑style rules).
+  - Whitelist conversions per type; fail fast on ambiguity.
+  - Support `anyOf/oneOf` branch trial; record chosen index.
+  - Emit stage `semantic` events with `transforms` and `branch_index`.
+  - Tests: unit (success/negative), nested objects, arrays, branch selection.
+  - Done when: unambiguous coercions pass; ambiguous cases fail with precise feedback.
+
+- Optional: Typed decode fast path
+  - Feature‑gate direct decode to `msgspec.Struct` or Pydantic v2 `TypeAdapter`.
+  - Benchmarks: small/medium/large payloads vs `orjson`.
+  - Done when: measurable speedups; remains optional; no hard deps.
+
+- Reasoning Precheck
+  - Add local schema checklist for required fields/shape; cheap and local.
+  - Optional `PlanCheckValidator` + scoring plugin + consensus gate; integrate in attempt loop.
+  - Config: `reasoning_precheck.enabled`, `max_tokens`, `score_threshold`.
+  - Emit `aros.reasoning.precheck.{pass|fail|skipped}` with scores.
+  - Tests: unit (precheck logic), integration (retry feedback path).
+  - Done when: off by default; no control‑flow exceptions converted; retries use feedback.
+
+- Observability (Trace Contract)
+  - Add standardized events:
+    - `grammar.applied` {mode, schema_hash}
+    - `output.coercion.{attempt|success|fail}` {stage, reason, transforms, branch_index?}
+    - `aros.soe.{enabled|skipped}`, `reasoning.validation` {result, score?}
+  - Wire event emission in processors/wrapper/policy at each stage.
+  - Tests: golden traces; attributes stable; spans untouched on failures.
+  - Done when: events appear with correct attributes across scenarios.
+
+- Health‑Check CLI
+  - Implement `flujo dev health-check`:
+    - Aggregate AROS events from traces/spans.
+    - Report: top steps by coercions/100 runs, SOE skips by model, precheck fail rates, recommendations.
+  - Support filters (pipeline/step/time span).
+  - Tests: unit (aggregators), smoke (end‑to‑end on sample runs).
+  - Done when: actionable output; no new tables required (Phase 1).
+
+- Policy & Idempotency
+  - Ensure AOP injections run inside per‑attempt isolated context.
+  - Only merge context on success; never catch/rewrite control‑flow exceptions.
+  - Tests: retries do not “poison” context; fallbacks unchanged.
+  - Done when: matches Team Guide invariants.
+
+- Configuration & DSL
+  - Document global and per‑step knobs; validate DSL schema.
+  - Backward compatibility: defaults keep legacy behavior when disabled.
+  - Tests: config precedence (global vs step), invalid config errors.
+  - Done when: mypy strict; docs reflect accurate defaults.
+
+- Dependencies & Packaging
+  - Make tolerant decoders optional extras (e.g., `flujo[aop-extra]`).
+  - Guard imports; degrade gracefully when not installed.
+  - Update `pyproject.toml` and `Makefile` targets if needed.
+  - Done when: core installs cleanly; extras opt‑in.
+
+- Testing & Benchmarks
+  - Unit: Stage 0, tolerant decoders, Smart Coercion, SOE mapping, precheck.
+  - Integration: AOP happy/repair; SOE on/off; precheck retry; global disable.
+  - Performance: overhead < 5ms on correct outputs; microbench comparisons; shadow mode toggle.
+  - Done when: `make all` passes; coverage maintained.
+
+- Docs & Examples
+  - Update spec links, contributor guide sections, and usage docs.
+  - Add example YAML showing `structured_output`, `aop`, `coercion.*`, `reasoning_precheck`.
+  - Provide migration notes and “safe defaults” guidance.
+  - Done when: examples run; docs consistent.
+
+- Rollout & Safety
+  - Phase 1 flags default: `structured_output=auto`, `aop=minimal`, `tolerant_level=0`, precheck off.
+  - Add monitoring period (shadow mode) before enabling broader coercions.
+  - Done when: feature flags verified; monitoring reports reviewed.

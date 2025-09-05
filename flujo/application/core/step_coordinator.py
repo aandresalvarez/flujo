@@ -171,6 +171,38 @@ class StepCoordinator(Generic[ContextT]):
 
                         # Call the backend directly (typed StepOutcome)
                         step_outcome = await backend.execute_step(request)
+                        # Detect mock outputs in successful outcomes and raise
+                        try:
+                            if isinstance(step_outcome, Success):
+                                sr = step_outcome.step_result
+
+                                def _is_mock(obj: Any) -> bool:
+                                    try:
+                                        from unittest.mock import Mock as _M, MagicMock as _MM
+
+                                        try:
+                                            from unittest.mock import AsyncMock as _AM
+
+                                            if isinstance(obj, (_M, _MM, _AM)):
+                                                return True
+                                        except Exception:
+                                            if isinstance(obj, (_M, _MM)):
+                                                return True
+                                    except Exception:
+                                        pass
+                                    return bool(
+                                        getattr(obj, "_is_mock", False)
+                                        or hasattr(obj, "assert_called")
+                                    )
+
+                                if _is_mock(getattr(sr, "output", None)):
+                                    from flujo.exceptions import MockDetectionError as _MDE
+
+                                    raise _MDE(
+                                        f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object"
+                                    )
+                        except Exception:
+                            pass
 
                         # Repair known internal attribute-error masking during streaming failures
                         # If chunks were produced and the failure error looks like an internal attribute error,
@@ -238,6 +270,36 @@ class StepCoordinator(Generic[ContextT]):
                         if isinstance(step_outcome, StepOutcome):
                             if isinstance(step_outcome, Success):
                                 step_result = step_outcome.step_result
+                                # Detect direct Mock outputs and raise
+                                try:
+
+                                    def _is_mock(obj: Any) -> bool:
+                                        try:
+                                            from unittest.mock import Mock as _M, MagicMock as _MM
+
+                                            try:
+                                                from unittest.mock import AsyncMock as _AM
+
+                                                if isinstance(obj, (_M, _MM, _AM)):
+                                                    return True
+                                            except Exception:
+                                                if isinstance(obj, (_M, _MM)):
+                                                    return True
+                                        except Exception:
+                                            pass
+                                        return bool(
+                                            getattr(obj, "_is_mock", False)
+                                            or hasattr(obj, "assert_called")
+                                        )
+
+                                    if _is_mock(getattr(step_result, "output", None)):
+                                        from flujo.exceptions import MockDetectionError as _MDE
+
+                                        raise _MDE(
+                                            f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object"
+                                        )
+                                except Exception:
+                                    pass
                                 yield step_outcome
                             elif isinstance(step_outcome, Failure):
                                 step_result = step_outcome.step_result or StepResult(

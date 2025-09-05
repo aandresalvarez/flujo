@@ -192,6 +192,59 @@ class TraceManager:
                 return
             current_span = self._span_stack[-1]
             current_span.events.append({"name": name, "attributes": attributes})
+            # Persist lightweight AROS summaries into span attributes so they survive DB storage
+            try:
+                attrs = current_span.attributes or {}
+                # Coercion stages
+                if name.startswith("output.coercion."):
+                    stage = (
+                        str(attributes.get("stage", "")).strip().lower()
+                        if isinstance(attributes, dict)
+                        else ""
+                    )
+                    # total count
+                    attrs["aros.coercion.total"] = int(attrs.get("aros.coercion.total", 0)) + 1
+                    if stage:
+                        key = f"aros.coercion.stage.{stage}"
+                        attrs[key] = int(attrs.get(key, 0)) + 1
+                    # transforms aggregation (unique, bounded)
+                    xforms = attributes.get("transforms") if isinstance(attributes, dict) else None
+                    if isinstance(xforms, (list, set, tuple)):
+                        cur = set(attrs.get("aros.coercion.transforms", []))
+                        for t in xforms:
+                            try:
+                                cur.add(str(t))
+                            except Exception:
+                                continue
+                        # Bound size to avoid bloat
+                        attrs["aros.coercion.transforms"] = list(sorted(cur))[:20]
+                elif name == "grammar.applied":
+                    mode = attributes.get("mode") if isinstance(attributes, dict) else None
+                    attrs["aros.soe.count"] = int(attrs.get("aros.soe.count", 0)) + 1
+                    if isinstance(mode, str) and mode:
+                        attrs["aros.soe.mode"] = mode
+                elif name == "aros.soe.skipped":
+                    attrs["aros.soe.skipped"] = int(attrs.get("aros.soe.skipped", 0)) + 1
+                    reason = attributes.get("reason") if isinstance(attributes, dict) else None
+                    if isinstance(reason, str) and reason:
+                        # Count per reason
+                        key = f"aros.soe.skipped.{reason}"
+                        attrs[key] = int(attrs.get(key, 0)) + 1
+                elif name == "agent.system":
+                    # Persist model_id snapshot for health summaries
+                    mid = attributes.get("model_id") if isinstance(attributes, dict) else None
+                    if isinstance(mid, str) and mid:
+                        attrs["aros.model_id"] = mid
+                elif name == "reasoning.validation" or name.startswith("aros.reasoning.precheck."):
+                    attrs["aros.precheck.total"] = int(attrs.get("aros.precheck.total", 0)) + 1
+                    res = attributes.get("result") if isinstance(attributes, dict) else None
+                    if isinstance(res, str):
+                        key = f"aros.precheck.{res.lower()}"
+                        attrs[key] = int(attrs.get(key, 0)) + 1
+                current_span.attributes = attrs
+            except Exception:
+                # Never fail production due to tracing aggregation
+                pass
         except Exception:
             # Never fail production due to tracing utilities
             pass

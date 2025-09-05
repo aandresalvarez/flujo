@@ -60,9 +60,9 @@ def test_architect_plan_rejection_triggers_refinement(monkeypatch: pytest.Monkey
         assert any(n == "PlanApproval" for n in names), f"PlanApproval step not found in: {names}"
 
         # MakePlan should appear at least once
-        assert (
-            names.count("MakePlan") >= 1
-        ), f"MakePlan step should appear at least once, found {names.count('MakePlan')} times in: {names}"
+        assert names.count("MakePlan") >= 1, (
+            f"MakePlan step should appear at least once, found {names.count('MakePlan')} times in: {names}"
+        )
 
         # Final YAML exists
         ctx = getattr(result, "final_pipeline_context", None)

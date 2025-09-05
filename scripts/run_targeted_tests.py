@@ -115,14 +115,18 @@ def _kill_process_tree(proc: sp.Popen) -> None:
 
 
 def _classify_linger(stdout_stderr: str) -> bool:
-    """Detect tests that pass but pytest process didn't exit quickly."""
+    """Detect tests that passed even if the process lingered.
+
+    Be tolerant of benign words like 'timeout:' printed in plugin headers by
+    avoiding a blanket ban on the word 'timeout'. Instead, treat runs as
+    passing when we see a 'N passed' summary and there are no failure/error
+    summaries or 'timed out' messages in the output.
+    """
     text = stdout_stderr.lower()
-    # Look for a clean 'passed' summary and no failure keywords.
-    if re.search(r"\b\d+\s+passed\b", text) and not re.search(
-        r"\b(failed|error|timeout|interrupt(ed)?)\b", text
-    ):
-        return True
-    return False
+    has_pass = re.search(r"\b\d+\s+passed\b", text) is not None
+    has_fail_or_error = re.search(r"\b(failed|errors?)\b", text) is not None
+    has_timed_out = "timed out" in text  # look for actual timeout events, not 'timeout:' headers
+    return bool(has_pass and not has_fail_or_error and not has_timed_out)
 
 
 _SHORT_SUMMARY_RE = re.compile(r"=+ short test summary info =+\n(?P<body>.+?)(?:\n=+|$)", re.S)

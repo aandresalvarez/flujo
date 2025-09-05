@@ -268,9 +268,9 @@ class TestBug3FixBrittleProviderInference:
 
             # FIXED: For ambiguous models, should return None to avoid incorrect pricing
             # The user should use explicit provider:model format
-            assert (
-                provider is None
-            ), f"Provider inference should be None for ambiguous model: {model_name}"
+            assert provider is None, (
+                f"Provider inference should be None for ambiguous model: {model_name}"
+            )
 
     def test_fix_provider_inference_with_new_provider_patterns(self):
         """Test that provider inference doesn't break with new provider patterns."""

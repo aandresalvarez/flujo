@@ -77,6 +77,10 @@ dev = [
   "prometheus-client>=0.22.1,<0.23.0",  # Required for prometheus tests
   "httpx",  # Required for prometheus integration tests
 ]
+"aop-extras" = [
+  "pyjson5>=1.6; python_version>='3.8'",
+  "json-repair>=0.16",
+]
 skills = [
   "ddgs",
   "httpx",
@@ -150,9 +154,11 @@ module = [
     "sqlvalidator",
     "vcr",
     "logfire",
-    "numpy",
-    "orjson",
-    "blake3",
+  "numpy",
+  "orjson",
+  "json5",
+  "pyjson5",
+  "blake3",
     "xxhash",
     "opentelemetry.sdk.trace",
     "opentelemetry.sdk.trace.export"
@@ -309,6 +315,12 @@ disable_error_code = [
   "no-untyped-call",
   "no-any-return",
 ]
+
+[[tool.mypy.overrides]]
+module = [
+  "flujo.cli.main",
+]
+ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = [

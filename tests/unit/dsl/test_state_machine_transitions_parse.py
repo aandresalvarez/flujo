@@ -55,15 +55,13 @@ def test_transitions_parse_and_validate_success() -> None:
 
 
 def test_transitions_invalid_to_state_raises() -> None:
-    yaml_text = _build_yaml(
-        "      - from: s1\n" "        on: success\n" "        to: not_a_state\n"
-    )
+    yaml_text = _build_yaml("      - from: s1\n        on: success\n        to: not_a_state\n")
     with pytest.raises(BlueprintError):
         load_pipeline_blueprint_from_yaml(yaml_text)
 
 
 def test_transitions_wildcard_from_ok() -> None:
-    yaml_text = _build_yaml('      - from: "*"\n' "        on: success\n" "        to: s3\n")
+    yaml_text = _build_yaml('      - from: "*"\n        on: success\n        to: s3\n')
     pipe: Pipeline[Any, Any] = load_pipeline_blueprint_from_yaml(yaml_text)
     sm = pipe.steps[0]
     assert isinstance(sm, StateMachineStep)
@@ -71,7 +69,7 @@ def test_transitions_wildcard_from_ok() -> None:
 
 
 def test_transitions_invalid_on_raises() -> None:
-    yaml_text = _build_yaml("      - from: s1\n" "        on: bogus\n" "        to: s3\n")
+    yaml_text = _build_yaml("      - from: s1\n        on: bogus\n        to: s3\n")
     with pytest.raises(BlueprintError):
         load_pipeline_blueprint_from_yaml(yaml_text)
 

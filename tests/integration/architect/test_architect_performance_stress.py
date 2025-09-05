@@ -51,9 +51,9 @@ def test_architect_execution_time_consistency():
     max_variance = avg_time * 0.5
 
     for exec_time in execution_times:
-        assert (
-            abs(exec_time - avg_time) <= max_variance
-        ), f"Execution time {exec_time}s varies too much from average {avg_time}s"
+        assert abs(exec_time - avg_time) <= max_variance, (
+            f"Execution time {exec_time}s varies too much from average {avg_time}s"
+        )
 
 
 @pytest.mark.integration
@@ -82,9 +82,9 @@ def test_architect_memory_usage_stability():
     max_allowed_increase_mb = get_performance_threshold(50.0)  # 50MB local, 3x in CI
     max_allowed_increase = int(max_allowed_increase_mb * 1024 * 1024)
 
-    assert (
-        memory_increase <= max_allowed_increase
-    ), f"Memory usage increased by {memory_increase / (1024 * 1024):.2f}MB, exceeding limit of {max_allowed_increase_mb:.0f}MB"
+    assert memory_increase <= max_allowed_increase, (
+        f"Memory usage increased by {memory_increase / (1024 * 1024):.2f}MB, exceeding limit of {max_allowed_increase_mb:.0f}MB"
+    )
 
     # Verify result is valid
     assert result is not None
@@ -141,16 +141,16 @@ def test_architect_handles_high_frequency_requests():
         avg_execution_time = sum(execution_times) / len(execution_times)
         # Each individual request should complete within 2 seconds (adjusted for environment)
         max_avg_time = get_performance_threshold(2.0)
-        assert (
-            avg_execution_time <= max_avg_time
-        ), f"Average execution time {avg_execution_time:.2f}s exceeds {max_avg_time}s limit"
+        assert avg_execution_time <= max_avg_time, (
+            f"Average execution time {avg_execution_time:.2f}s exceeds {max_avg_time}s limit"
+        )
 
         # Total time should be reasonable (allow for some overhead)
         # Base expectation: 10 requests × 2s each = 20s, but allow for CI variance
         max_total_time = get_performance_threshold(20.0)  # Environment-adjusted threshold
-        assert (
-            total_time <= max_total_time
-        ), f"Total execution time {total_time:.2f}s exceeds {max_total_time}s limit"
+        assert total_time <= max_total_time, (
+            f"Total execution time {total_time:.2f}s exceeds {max_total_time}s limit"
+        )
     else:
         # If no successful executions, fail the test
         assert False, "No successful executions to measure performance"
@@ -230,9 +230,9 @@ def test_architect_large_context_handling():
 
     # Should complete within reasonable time; allow CI multiplier.
     max_time = get_performance_threshold(5.0)
-    assert (
-        execution_time <= max_time
-    ), f"Execution time {execution_time:.2f}s exceeds {max_time}s limit for large context"
+    assert execution_time <= max_time, (
+        f"Execution time {execution_time:.2f}s exceeds {max_time}s limit for large context"
+    )
 
     # Should generate YAML even with large context
     yaml_text = getattr(ctx, "yaml_text", None)
@@ -274,9 +274,9 @@ def test_architect_concurrent_pipeline_execution():
 
     # All executions should succeed
     successful_executions = [r for r in results if r["success"]]
-    assert (
-        len(successful_executions) == 5
-    ), f"Expected 5 successful executions, got {len(successful_executions)}"
+    assert len(successful_executions) == 5, (
+        f"Expected 5 successful executions, got {len(successful_executions)}"
+    )
 
     # Execution times should be reasonable
     execution_times = [r["execution_time"] for r in results]
@@ -285,9 +285,9 @@ def test_architect_concurrent_pipeline_execution():
     # No single execution should take more than 3x the average
     max_allowed_time = avg_time * 3
     for exec_time in execution_times:
-        assert (
-            exec_time <= max_allowed_time
-        ), f"Execution time {exec_time:.2f}s exceeds {max_allowed_time:.2f}s limit"
+        assert exec_time <= max_allowed_time, (
+            f"Execution time {exec_time:.2f}s exceeds {max_allowed_time:.2f}s limit"
+        )
 
 
 @pytest.mark.integration
@@ -332,9 +332,9 @@ def test_architect_memory_cleanup_after_execution():
     memory_increase_after_gc = memory_after_gc - memory_before
     max_allowed_increase = 10 * 1024 * 1024  # 10MB
 
-    assert (
-        memory_increase_after_gc <= max_allowed_increase
-    ), f"Memory not properly cleaned up: increase of {memory_increase_after_gc / (1024 * 1024):.2f}MB"
+    assert memory_increase_after_gc <= max_allowed_increase, (
+        f"Memory not properly cleaned up: increase of {memory_increase_after_gc / (1024 * 1024):.2f}MB"
+    )
 
 
 @pytest.mark.integration
@@ -370,15 +370,15 @@ def test_architect_response_time_under_load():
     max_avg = get_performance_threshold(2.0)
     max_single = get_performance_threshold(5.0)
     assert avg_time <= max_avg, f"Average response time {avg_time:.2f}s exceeds {max_avg}s limit"
-    assert (
-        max_time <= max_single
-    ), f"Maximum response time {max_time:.2f}s exceeds {max_single}s limit"
+    assert max_time <= max_single, (
+        f"Maximum response time {max_time:.2f}s exceeds {max_single}s limit"
+    )
 
     # Response time should not degrade significantly (max should not be more than 3x min)
     time_ratio = max_time / min_time if min_time > 0 else float("inf")
-    assert (
-        time_ratio <= 3
-    ), f"Response time degradation: max/min ratio {time_ratio:.2f} exceeds 3x limit"
+    assert time_ratio <= 3, (
+        f"Response time degradation: max/min ratio {time_ratio:.2f} exceeds 3x limit"
+    )
 
 
 @pytest.mark.integration
@@ -423,9 +423,9 @@ def test_architect_resource_usage_scaling():
         # Execution time should scale reasonably with complexity
         # Allow for some variance but should not exceed expected time by more than 50%
         max_allowed_time = test_case["expected_time"] * 1.5
-        assert (
-            execution_time <= max_allowed_time
-        ), f"Execution time {execution_time:.2f}s exceeds expected {max_allowed_time:.2f}s for complexity level"
+        assert execution_time <= max_allowed_time, (
+            f"Execution time {execution_time:.2f}s exceeds expected {max_allowed_time:.2f}s for complexity level"
+        )
 
 
 @pytest.mark.integration
@@ -482,19 +482,19 @@ def test_architect_stress_test_rapid_requests():
         max_avg_time = get_performance_threshold(3.0)
         max_single_time = get_performance_threshold(5.0)
 
-        assert (
-            avg_execution_time <= max_avg_time
-        ), f"Average execution time {avg_execution_time:.2f}s exceeds {max_avg_time}s limit"
-        assert (
-            max_execution_time <= max_single_time
-        ), f"Maximum execution time {max_execution_time:.2f}s exceeds {max_single_time}s limit"
+        assert avg_execution_time <= max_avg_time, (
+            f"Average execution time {avg_execution_time:.2f}s exceeds {max_avg_time}s limit"
+        )
+        assert max_execution_time <= max_single_time, (
+            f"Maximum execution time {max_execution_time:.2f}s exceeds {max_single_time}s limit"
+        )
 
         # Total time should be reasonable (allow for CI environment differences)
         # Base expectation: 20 requests × 3s each = 60s, but allow for CI variance
         max_total_time = get_performance_threshold(60.0)  # Environment-adjusted threshold
-        assert (
-            total_time <= max_total_time
-        ), f"Total time {total_time:.2f}s exceeds {max_total_time}s limit"
+        assert total_time <= max_total_time, (
+            f"Total time {total_time:.2f}s exceeds {max_total_time}s limit"
+        )
     else:
         # If no successful executions, fail the test
         assert False, "No successful executions to measure performance"

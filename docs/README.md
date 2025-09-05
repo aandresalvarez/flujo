@@ -18,6 +18,12 @@ This directory contains comprehensive documentation for the Flujo framework.
   - Error handling patterns
   - Systematic debugging methodology
   - Quick reference patterns
+- **Guides**
+  - [AROS: Adaptive Reasoning & Output System](./guides/aros.md)
+    - Structured outputs via pydantic-ai (wrapper-based)
+    - AOP (extraction/repair/coercion) with schema-aware options
+    - Reasoning precheck (checklist, validator, consensus, feedback injection)
+    - Health-check CLI and telemetry
 
 ### **For Core Team (Building Flujo Itself)**
 - **[FLUJO_TEAM_GUIDE.md](https://github.com/aandresalvarez/flujo/blob/main/FLUJO_TEAM_GUIDE.md)**: Guide for framework contributors

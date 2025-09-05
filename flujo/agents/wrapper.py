@@ -86,6 +86,8 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         self.processors: AgentProcessors = processors or AgentProcessors()
         self.auto_repair = auto_repair
         self.target_output_type = getattr(agent, "output_type", Any)
+        # Optional structured output configuration (best-effort, pydantic-ai centric)
+        self._structured_output_config: dict[str, Any] | None = None
 
     def _call_agent_with_dynamic_args(self, *args: Any, **kwargs: Any) -> Any:
         """Invoke the underlying agent with arbitrary arguments."""
@@ -93,14 +95,35 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         # Check if the underlying agent accepts context parameters
         from flujo.application.core.context_manager import _accepts_param
 
-        filtered_kwargs = {}
+        filtered_kwargs: dict[str, Any] = {}
+        # Context/pipeline_context
         for k, v in kwargs.items():
             if k in ["context", "pipeline_context"]:
-                # Only pass context if the underlying agent accepts it
                 if _accepts_param(self._agent.run, "context"):
                     filtered_kwargs["context"] = v
+        # Structured options pass-through: expand known keys if underlying agent doesn't accept 'options'
+        options = kwargs.get("options")
+        if isinstance(options, dict):
+            if _accepts_param(self._agent.run, "options"):
+                filtered_kwargs["options"] = options
             else:
-                filtered_kwargs[k] = v
+                # Expand only keys accepted by the underlying agent
+                for ok, ov in options.items():
+                    if _accepts_param(self._agent.run, str(ok)):
+                        filtered_kwargs[str(ok)] = ov
+        # Pass any other explicitly recognized kwargs that the underlying agent accepts
+        for k, v in kwargs.items():
+            if k in ("context", "pipeline_context", "options"):
+                continue
+            acc = _accepts_param(self._agent.run, str(k))
+            if acc is not False:
+                filtered_kwargs[str(k)] = v
+
+        # Always forward primary payload under the conventional 'data' kwarg when provided.
+        # Many tests use mocks or duck-typed agents whose signatures are not introspectable;
+        # in those cases _accepts_param may return False even though the agent supports **kwargs.
+        if "data" in kwargs and "data" not in filtered_kwargs:
+            filtered_kwargs["data"] = kwargs["data"]
 
         return self._agent.run(*args, **filtered_kwargs)
 
@@ -146,6 +169,15 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             key: value.model_dump() if isinstance(value, PydanticBaseModel) else value
             for key, value in filtered_kwargs.items()
         }
+
+        # Attach structured output configuration when present (best-effort)
+        if self._structured_output_config:
+            try:
+                # Prefer direct response_format param
+                if "response_format" not in processed_kwargs:
+                    processed_kwargs["response_format"] = self._structured_output_config
+            except Exception:
+                pass
 
         retryer = AsyncRetrying(
             reraise=False,
@@ -459,6 +491,27 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
 
     async def run(self, *args: Any, **kwargs: Any) -> Any:
         return await self.run_async(*args, **kwargs)
+
+    # Structured output helpers (pydantic-ai centric; best-effort)
+    def enable_structured_output(
+        self, *, json_schema: dict[str, Any] | None = None, name: str | None = None
+    ) -> None:
+        """Enable structured output with JSON schema when supported.
+
+        This sets a best-effort response_format hint; pydantic-ai/provider may
+        ignore it when unsupported. Kept non-fatal by design.
+        """
+        try:
+            if json_schema:
+                nm = name or "step_output"
+                self._structured_output_config = {
+                    "type": "json_schema",
+                    "json_schema": {"name": nm, "schema": json_schema},
+                }
+            else:
+                self._structured_output_config = {"type": "json_object"}
+        except Exception:
+            self._structured_output_config = None
 
 
 class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
