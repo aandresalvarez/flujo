@@ -276,8 +276,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             self.usage_limits = usage_limits
 
         self.hooks: list[Any] = []
-        # Tracing: honor caller's enable_tracing flag in all environments
-        # Do not auto-disable during tests; tests assert presence of trace data.
+        # Tracing: honor caller's enable_tracing flag, with an env opt-out to reduce perf overhead
+        # in performance/stress tests (does not affect correctness tests that assert traces).
+        try:
+            if str(os.getenv("FLUJO_DISABLE_TRACING", "")).strip().lower() in {
+                "1",
+                "true",
+                "on",
+                "yes",
+            }:
+                enable_tracing = False
+        except Exception:
+            pass
+        # Do not auto-disable during tests by default; tests may assert presence of trace data.
         if enable_tracing:
             from flujo.tracing.manager import TraceManager, set_active_trace_manager
 
@@ -1058,6 +1069,25 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 )
             )
             ctx.scratchpad["status"] = "running"
+
+        # Ensure conversational history captures the user's resume input when present.
+        # This complements loop policy handling, which may not see the HITL step in
+        # step_history on resume (since we inject a synthetic paused_step_result).
+        try:
+            if isinstance(ctx, PipelineContext):
+                # Ensure list container exists
+                if not isinstance(getattr(ctx, "conversation_history", None), list):
+                    setattr(ctx, "conversation_history", [])
+                from flujo.domain.models import ConversationTurn, ConversationRole
+
+                # Append user turn if not a duplicate of the last entry
+                hist = ctx.conversation_history
+                last_content = hist[-1].content if hist else None
+                text = str(human_input)
+                if text and text != last_content:
+                    hist.append(ConversationTurn(role=ConversationRole.user, content=text))
+        except Exception:
+            pass
 
         paused_step_result = StepResult(
             name=paused_step.name,

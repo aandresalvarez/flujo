@@ -437,6 +437,7 @@ class SQLiteBackend(StateBackend):
                 await db.execute("PRAGMA temp_store = MEMORY")  # Use memory for temp tables
                 await db.execute("PRAGMA mmap_size = 268435456")  # 256MB memory mapping
                 await db.execute("PRAGMA page_size = 4096")
+                await db.execute("PRAGMA busy_timeout = 1000")
 
                 # Batch DDL inside a transaction to reduce fsyncs
                 await db.execute("BEGIN")
@@ -493,6 +494,9 @@ class SQLiteBackend(StateBackend):
                 )
                 await db.execute(
                     "CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at)"
+                )
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_name ON runs(pipeline_name)"
                 )
 
                 # Create the steps table for step tracking
@@ -871,6 +875,7 @@ class SQLiteBackend(StateBackend):
                             await self._connection_pool.execute("PRAGMA cache_size = 10000")
                             await self._connection_pool.execute("PRAGMA mmap_size = 268435456")
                             await self._connection_pool.execute("PRAGMA page_size = 4096")
+                            await self._connection_pool.execute("PRAGMA busy_timeout = 1000")
                             await self._connection_pool.commit()
                         except Exception:
                             # If pool creation fails, fall back to per-call connections
@@ -1133,7 +1138,17 @@ class SQLiteBackend(StateBackend):
         """Enhanced workflow listing with additional filters and metadata."""
         await self._ensure_init()
         async with self._lock:
-            async with aiosqlite.connect(self.db_path) as db:
+            # Prefer pooled connection for lower latency; fallback to ad-hoc connection
+            db = self._connection_pool
+            _temp_conn = False
+            if db is None:
+                db = await aiosqlite.connect(self.db_path)
+                try:
+                    await db.execute("PRAGMA busy_timeout = 1000")
+                except Exception:
+                    pass
+                _temp_conn = True
+            try:
                 # Build query with optional filters
                 query = """
                     SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
@@ -1185,6 +1200,12 @@ class SQLiteBackend(StateBackend):
                         }
                     )
                 return result
+            finally:
+                if _temp_conn:
+                    try:
+                        await db.close()
+                    except Exception:
+                        pass
 
     async def list_runs(
         self,
@@ -1196,8 +1217,18 @@ class SQLiteBackend(StateBackend):
         """List runs from the new structured schema for lens CLI."""
         await self._ensure_init()
         async with self._lock:
-            async with aiosqlite.connect(self.db_path) as db:
+            db = self._connection_pool
+            _temp_conn = False
+            if db is None:
+                db = await aiosqlite.connect(self.db_path)
+                try:
+                    await db.execute("PRAGMA busy_timeout = 1000")
+                except Exception:
+                    pass
+                _temp_conn = True
+            try:
                 # Optimize query based on filters to use appropriate indexes
+                params: List[Any]
                 if status and not pipeline_name:
                     # Use status index for better performance
                     query = """
@@ -1236,10 +1267,10 @@ class SQLiteBackend(StateBackend):
 
                 if limit is not None:
                     query += " LIMIT ?"
-                    params.append(str(limit))
+                    params.append(int(limit))
                 if offset:
                     query += " OFFSET ?"
-                    params.append(str(offset))
+                    params.append(int(offset))
 
                 async with db.execute(query, params) as cursor:
                     rows = await cursor.fetchall()
@@ -1266,6 +1297,12 @@ class SQLiteBackend(StateBackend):
                         }
                     )
                 return result
+            finally:
+                if _temp_conn:
+                    try:
+                        await db.close()
+                    except Exception:
+                        pass
 
     async def get_workflow_stats(self) -> Dict[str, Any]:
         """Get comprehensive workflow statistics."""
