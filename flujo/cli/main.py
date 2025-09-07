@@ -172,6 +172,40 @@ if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
                 _ty.echo()
                 _ty.echo()
 
+            # Print a concise, non-truncated flags summary line to ensure full option names
+            # are present in the help output (avoids ellipsizing like "--allow-side-eff…").
+            try:
+                option_names: list[str] = []
+                for param in obj.get_params(ctx):
+                    if getattr(param, "hidden", False):
+                        continue
+                    if isinstance(param, _click.Option):
+                        # Prefer long options; fall back to short if needed
+                        longs = [o for o in getattr(param, "opts", []) if o.startswith("--")]
+                        shorts = [
+                            o
+                            for o in getattr(param, "opts", [])
+                            if o.startswith("-") and not o.startswith("--")
+                        ]
+                        if longs:
+                            option_names.append(longs[0])
+                        elif getattr(param, "secondary_opts", None):
+                            # e.g., boolean pairs like --flag/--no-flag
+                            secs = [
+                                o
+                                for o in getattr(param, "secondary_opts", [])
+                                if o.startswith("--")
+                            ]
+                            if secs:
+                                option_names.append(f"{secs[0]}")
+                        elif shorts:
+                            option_names.append(shorts[0])
+                if option_names:
+                    _ty.echo(" Flags: " + ", ".join(option_names))
+                    _ty.echo()
+            except Exception:
+                pass
+
             console = _tru._get_rich_console()
             from collections import defaultdict as _defaultdict
             from typing import DefaultDict as _DefaultDict, List as _List
@@ -1872,7 +1906,8 @@ def validate(
     help=(
         "🤖 Start a conversation with the AI Architect to build your workflow.\n\n"
         "By default this uses the full conversational state machine. Set FLUJO_ARCHITECT_MINIMAL=1"
-        " to use the legacy minimal generator."
+        " to use the legacy minimal generator.\n\n"
+        "Tip: pass --allow-side-effects to permit pipelines that reference side-effect skills."
     )
 )
 def create(  # <--- REVERT BACK TO SYNC
