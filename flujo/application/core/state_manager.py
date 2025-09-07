@@ -328,13 +328,13 @@ class StateManager(Generic[ContextT]):
                 elif is_initial_snapshot:
                     # Prime hash cache but persist minimal for first snapshot to reduce overhead
                     _ = self._serializer.should_serialize_context(context, run_id)
-                    # Avoid writing a blob for the initial snapshot; other columns capture metadata
-                    pipeline_context = None
+                    # Persist a minimal dict to satisfy schema with negligible cost
+                    pipeline_context = self._serializer.serialize_context_minimal(context)
                 elif self._serializer.should_serialize_context(context, run_id):
                     # Context changed mid-run: prefer minimal to reduce churn; final snapshot will be full
-                    pipeline_context = None
+                    pipeline_context = self._serializer.serialize_context_minimal(context)
                 else:
-                    pipeline_context = None
+                    pipeline_context = self._serializer.serialize_context_minimal(context)
             except Exception as e:
                 logger.warning(f"Failed to serialize context for run {run_id}: {e}")
                 pipeline_context = {
@@ -343,15 +343,11 @@ class StateManager(Generic[ContextT]):
                     "run_id": getattr(context, "run_id", ""),
                 }
 
-        # OPTIMIZATION: Skip step history blob unless we are finalizing or have non-empty history
-        serialized_step_history = None
-        try:
-            if status != "running" and step_history:
-                serialized_step_history = self._serializer.serialize_step_history_minimal(
-                    step_history
-                )
-        except Exception:
-            serialized_step_history = None
+        # OPTIMIZATION: Keep step_history as a list to satisfy schema (empty during running snapshots)
+        if status != "running" and step_history:
+            serialized_step_history = self._serializer.serialize_step_history_minimal(step_history)
+        else:
+            serialized_step_history = []
 
         # OPTIMIZATION: Use minimal state data structure
         state_data = {
