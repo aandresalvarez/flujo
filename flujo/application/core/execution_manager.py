@@ -1,8 +1,6 @@
 """Main execution manager that orchestrates pipeline execution components."""
 
 from __future__ import annotations
-
-import os
 from datetime import datetime
 from typing import Any, AsyncIterator, Generic, Optional, TypeVar
 
@@ -167,7 +165,6 @@ class ExecutionManager(Generic[ContextT]):
                 run_id is not None
                 and not self.inside_loop_step
                 and self.state_manager.state_backend is not None
-                and not os.getenv("FLUJO_TEST_MODE")
             )
 
             try:
@@ -425,8 +422,9 @@ class ExecutionManager(Generic[ContextT]):
 
                     # Update the state (moved from the old usage check location)
                     if step_result:
-                        # Record step result in persistence backend
-                        if run_id is not None:
+                        # Record step result (only once). Success cases are recorded here;
+                        # failure/paused cases are recorded in their respective branches.
+                        if run_id is not None and step_result.success:
                             await self.state_manager.record_step_result(run_id, step_result, idx)
 
                         # ✅ CRITICAL FIX: Persist state AFTER successful step execution for crash recovery
@@ -498,6 +496,14 @@ class ExecutionManager(Generic[ContextT]):
                         except Exception:
                             pass
 
+                        # Record failed step for diagnostics/persistence
+                        try:
+                            if run_id is not None and step_result is not None:
+                                await self.state_manager.record_step_result(
+                                    run_id, step_result, idx
+                                )
+                        except Exception:
+                            pass
                         # Persist final state when pipeline halts due to step failure
                         if run_id is not None and not self.inside_loop_step:
                             await self.persist_final_state(
@@ -557,6 +563,12 @@ class ExecutionManager(Generic[ContextT]):
                                 scratch["pause_message"] = "Paused for HITL"
                     except Exception:
                         pass
+                    # Best-effort: record latest step result for pause diagnostics
+                    try:
+                        if run_id is not None and step_result is not None:
+                            await self.state_manager.record_step_result(run_id, step_result, idx)
+                    except Exception:
+                        pass
                     # Persist paused state for stateful HITL
                     if run_id is not None:
                         await self.state_manager.persist_workflow_state(
@@ -582,6 +594,12 @@ class ExecutionManager(Generic[ContextT]):
                     # Add current step result to pipeline result before yielding
                     if step_result is not None and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
+                    # Best-effort: record latest step result for pause diagnostics
+                    try:
+                        if run_id is not None and step_result is not None:
+                            await self.state_manager.record_step_result(run_id, step_result, idx)
+                    except Exception:
+                        pass
                     # Persist paused state for stateful HITL
                     if run_id is not None:
                         await self.state_manager.persist_workflow_state(

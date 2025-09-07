@@ -234,18 +234,9 @@ class StateManager(Generic[ContextT]):
         step_history: Optional[list[StepResult]] = None,
     ) -> None:
         """Persist current workflow state with intelligent caching and delta detection."""
-        # Skip persistence entirely in test mode to reduce overhead in perf suites
-        try:
-            from flujo.infra.config_manager import get_config_manager as _get_cfg
-
-            _settings = _get_cfg().get_settings()
-            if bool(getattr(_settings, "test_mode", False)):
-                return
-        except Exception:
-            import os as _os
-
-            if bool(_os.getenv("FLUJO_TEST_MODE")):
-                return
+        # Persist state even in test mode so unit tests that inspect workflow_state succeed.
+        # Test-mode optimizations are applied in other paths (e.g., background monitors),
+        # but core state persistence remains enabled for correctness.
 
         if self.state_backend is None or run_id is None:
             return
@@ -428,18 +419,7 @@ class StateManager(Generic[ContextT]):
     ) -> None:
         if self.state_backend is None:
             return
-        # In test mode, skip per-step persistence to reduce overhead for perf suites
-        try:
-            from flujo.infra.config_manager import get_config_manager as _get_cfg
-
-            _settings = _get_cfg().get_settings()
-            _test_mode = bool(getattr(_settings, "test_mode", False))
-        except Exception:
-            import os as _os
-
-            _test_mode = bool(_os.getenv("FLUJO_TEST_MODE"))
-        if _test_mode:
-            return
+        # Persist step results even in test mode to satisfy tests that assert on steps persistence.
         try:
             await self.state_backend.save_step_result(
                 {
@@ -468,39 +448,7 @@ class StateManager(Generic[ContextT]):
             pass
 
     async def record_run_end(self, run_id: str, result: PipelineResult[ContextT]) -> None:
-        # Disable per-run end persistence in test mode for performance (cleanup still runs below)
-        try:
-            from flujo.infra.config_manager import get_config_manager as _get_cfg
-
-            _settings = _get_cfg().get_settings()
-            if bool(getattr(_settings, "test_mode", False)):
-                # Perform cleanup paths even when skipping persistence
-                try:
-                    self._serializer.clear_cache(run_id)
-                except Exception:
-                    pass
-                try:
-                    from ..core.optimization.memory.memory_utils import trigger_memory_cleanup
-
-                    trigger_memory_cleanup(force=True)
-                except Exception:
-                    pass
-                return
-        except Exception:
-            import os as _os
-
-            if bool(_os.getenv("FLUJO_TEST_MODE")):
-                try:
-                    self._serializer.clear_cache(run_id)
-                except Exception:
-                    pass
-                try:
-                    from ..core.optimization.memory.memory_utils import trigger_memory_cleanup
-
-                    trigger_memory_cleanup(force=True)
-                except Exception:
-                    pass
-                return
+        # Persist run end even in test mode so trace saving and final status updates are exercised in tests.
         if self.state_backend is None:
             return
         try:
