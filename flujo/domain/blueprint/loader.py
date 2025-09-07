@@ -2008,6 +2008,36 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                 "merge_strategy": getattr(step.merge_strategy, "name", None),
             }
         try:
+            from ..dsl.dynamic_router import DynamicParallelRouterStep
+
+            if isinstance(step, DynamicParallelRouterStep):
+                branches = {
+                    str(k): [step_to_yaml(s) for s in p.steps] for k, p in step.branches.items()
+                }
+                router_data: Dict[str, Any] = {"branches": branches}
+                agent = getattr(step, "router_agent", None)
+                try:
+                    if (
+                        agent is not None
+                        and hasattr(agent, "__module__")
+                        and hasattr(agent, "__name__")
+                    ):
+                        router_data["router_agent"] = f"{agent.__module__}:{agent.__name__}"
+                except Exception:
+                    pass
+                router_step_data: Dict[str, Any] = {
+                    "kind": "dynamic_router",
+                    "name": step.name,
+                    "router": router_data,
+                }
+                merge_strategy = getattr(step, "merge_strategy", None)
+                merge_strategy_name = getattr(merge_strategy, "name", None)
+                if merge_strategy_name is not None:
+                    router_step_data["merge_strategy"] = merge_strategy_name
+                return router_step_data
+        except Exception:
+            pass
+        try:
             from ..dsl.loop import MapStep
 
             if isinstance(step, MapStep):
