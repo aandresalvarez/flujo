@@ -1462,8 +1462,55 @@ class SQLiteBackend(StateBackend):
     # ------------------------------------------------------------------
 
     async def save_run_start(self, run_data: Dict[str, Any]) -> None:
-        await self._ensure_init()
         async with self._lock:
+            # Fast path: if backend not fully initialized yet, bootstrap only the 'runs' table
+            # to avoid heavy DDL/PRAGMA costs on first write. Full initialization (other tables,
+            # indexes, pragmas) will happen lazily on subsequent calls that need them.
+            if not self._initialized:
+                try:
+                    import aiosqlite as _aiosqlite  # local alias to avoid confusion
+
+                    async with _aiosqlite.connect(self.db_path) as _db:
+                        created_at = run_data.get("created_at") or datetime.utcnow().isoformat()
+                        updated_at = run_data.get("updated_at") or created_at
+                        # Minimal schema for the fast insert
+                        await _db.execute(
+                            """
+                            CREATE TABLE IF NOT EXISTS runs (
+                                run_id TEXT PRIMARY KEY,
+                                pipeline_id TEXT NOT NULL,
+                                pipeline_name TEXT NOT NULL,
+                                pipeline_version TEXT NOT NULL,
+                                status TEXT NOT NULL,
+                                created_at TEXT NOT NULL,
+                                updated_at TEXT NOT NULL
+                            )
+                            """
+                        )
+                        await _db.execute(
+                            """
+                            INSERT OR REPLACE INTO runs (
+                                run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                                created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                run_data["run_id"],
+                                run_data.get("pipeline_id", "unknown"),
+                                run_data.get("pipeline_name", "unknown"),
+                                run_data.get("pipeline_version", "latest"),
+                                run_data.get("status", "running"),
+                                created_at,
+                                updated_at,
+                            ),
+                        )
+                        await _db.commit()
+                    return
+                except Exception:
+                    # Fall back to full initialization path on any error
+                    pass
+
+            await self._ensure_init()
 
             async def _save() -> None:
                 # Use pooled connection when available to avoid connect() overhead
