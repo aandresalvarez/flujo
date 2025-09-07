@@ -37,7 +37,7 @@ def list_runs(
     # Ultra-fast path for SQLite in CI/tests: use sqlite3 directly to avoid event loop overhead
     runs = None
     try:
-        from flujo.state.backends.sqlite import SQLiteBackend as _SB  # type: ignore
+        from flujo.state.backends.sqlite import SQLiteBackend as _SB
 
         if isinstance(backend, _SB) and hasattr(backend, "db_path"):
             import sqlite3 as _sqlite3
@@ -45,7 +45,7 @@ def list_runs(
             db_path = getattr(backend, "db_path")
             with _sqlite3.connect(db_path) as _conn:
                 _conn.row_factory = _sqlite3.Row
-                params = []
+                params: list[object] = []
                 query = "SELECT run_id, pipeline_name, status, created_at FROM runs "
                 have_where = False
                 if status:
