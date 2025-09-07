@@ -343,8 +343,8 @@ class StateManager(Generic[ContextT]):
                     "run_id": getattr(context, "run_id", ""),
                 }
 
-        # OPTIMIZATION: Keep step_history as a list to satisfy schema (empty during running snapshots)
-        if status != "running" and step_history:
+        # Keep step_history: include minimal entries when provided (for crash recovery), else empty list
+        if step_history:
             serialized_step_history = self._serializer.serialize_step_history_minimal(step_history)
         else:
             serialized_step_history = []
