@@ -470,35 +470,35 @@ class StateManager(Generic[ContextT]):
             pass
 
     async def record_run_end(self, run_id: str, result: PipelineResult[ContextT]) -> None:
-        # In test mode, skip run-end persistence to reduce overhead in micro-benchmarks
+        # In test mode, avoid heavy run-end writes but still save trace for integration tests
+        test_mode = False
         try:
             from flujo.infra.config_manager import get_config_manager as _get_cfg
 
             _settings = _get_cfg().get_settings()
-            if bool(getattr(_settings, "test_mode", False)):
-                return
+            test_mode = bool(getattr(_settings, "test_mode", False))
         except Exception:
             import os as _os
 
-            if bool(_os.getenv("FLUJO_TEST_MODE")):
-                return
+            test_mode = bool(_os.getenv("FLUJO_TEST_MODE"))
 
         if self.state_backend is None:
             return
         try:
-            await self.state_backend.save_run_end(
-                run_id,
-                {
-                    "status": "completed"
-                    if all(s.success for s in result.step_history)
-                    else "failed",
-                    "end_time": datetime.utcnow(),
-                    "total_cost": result.total_cost_usd,
-                    "final_context": result.final_pipeline_context.model_dump()
-                    if result.final_pipeline_context
-                    else None,
-                },
-            )
+            if not test_mode:
+                await self.state_backend.save_run_end(
+                    run_id,
+                    {
+                        "status": "completed"
+                        if all(s.success for s in result.step_history)
+                        else "failed",
+                        "end_time": datetime.utcnow(),
+                        "total_cost": result.total_cost_usd,
+                        "final_context": result.final_pipeline_context.model_dump()
+                        if result.final_pipeline_context
+                        else None,
+                    },
+                )
 
             # Save trace tree if available
             if result.trace_tree is not None:
