@@ -1468,13 +1468,12 @@ class SQLiteBackend(StateBackend):
             # indexes, pragmas) will happen lazily on subsequent calls that need them.
             if not self._initialized:
                 try:
-                    import aiosqlite as _aiosqlite  # local alias to avoid confusion
+                    import sqlite3 as _sqlite
 
-                    async with _aiosqlite.connect(self.db_path) as _db:
-                        created_at = run_data.get("created_at") or datetime.utcnow().isoformat()
-                        updated_at = run_data.get("updated_at") or created_at
-                        # Minimal schema for the fast insert
-                        await _db.execute(
+                    created_at = run_data.get("created_at") or datetime.utcnow().isoformat()
+                    updated_at = run_data.get("updated_at") or created_at
+                    with _sqlite.connect(self.db_path) as _db:
+                        _db.execute(
                             """
                             CREATE TABLE IF NOT EXISTS runs (
                                 run_id TEXT PRIMARY KEY,
@@ -1487,7 +1486,7 @@ class SQLiteBackend(StateBackend):
                             )
                             """
                         )
-                        await _db.execute(
+                        _db.execute(
                             """
                             INSERT OR REPLACE INTO runs (
                                 run_id, pipeline_id, pipeline_name, pipeline_version, status,
@@ -1504,7 +1503,7 @@ class SQLiteBackend(StateBackend):
                                 updated_at,
                             ),
                         )
-                        await _db.commit()
+                        _db.commit()
                     return
                 except Exception:
                     # Fall back to full initialization path on any error
