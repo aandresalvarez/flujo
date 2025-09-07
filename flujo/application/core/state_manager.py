@@ -433,6 +433,18 @@ class StateManager(Generic[ContextT]):
                     "updated_at": updated_at,
                 }
             )
+            try:
+                from ...infra.audit import log_audit as _audit
+
+                _audit(
+                    "run_start",
+                    run_id=run_id,
+                    pipeline_id=pipeline_id,
+                    pipeline_name=pipeline_name,
+                    pipeline_version=pipeline_version,
+                )
+            except Exception:
+                pass
         except NotImplementedError:
             pass
 
@@ -499,6 +511,18 @@ class StateManager(Generic[ContextT]):
                         else None,
                     },
                 )
+            try:
+                from ...infra.audit import log_audit as _audit
+
+                _audit(
+                    "run_end",
+                    run_id=run_id,
+                    status="completed" if all(s.success for s in result.step_history) else "failed",
+                    steps=len(result.step_history),
+                    total_cost=result.total_cost_usd,
+                )
+            except Exception:
+                pass
 
             # Save trace tree if available
             if result.trace_tree is not None:

@@ -1772,6 +1772,12 @@ class SQLiteBackend(StateBackend):
                             spans_to_insert,
                         )
                         await db.commit()
+                        try:
+                            from flujo.infra.audit import log_audit as _audit
+
+                            _audit("trace_saved", run_id=run_id, span_count=len(spans_to_insert))
+                        except Exception:
+                            pass
 
             await self._with_retries(_save)
 
@@ -1897,8 +1903,13 @@ class SQLiteBackend(StateBackend):
         """Retrieve and reconstruct the trace tree for a given run_id. Audit log access."""
         await self._ensure_init()
         async with self._lock:
-            # Structured-ish audit log for consistency across entries
-            telemetry.logfire.info(f"[audit] event=trace_access run_id={run_id}")
+            # Structured audit log for trace access
+            try:
+                from flujo.infra.audit import log_audit as _audit
+
+                _audit("trace_access", run_id=run_id)
+            except Exception:
+                pass
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("PRAGMA foreign_keys = ON")
                 async with db.execute(
@@ -1934,9 +1945,12 @@ class SQLiteBackend(StateBackend):
         """Get individual spans with optional filtering. Audit log export."""
         await self._ensure_init()
         async with self._lock:
-            telemetry.logfire.info(
-                f"AUDIT: Spans exported for run_id={run_id}, status={status}, name={name}"
-            )
+            try:
+                from flujo.infra.audit import log_audit as _audit
+
+                _audit("spans_exported", run_id=run_id, status=status, name=name)
+            except Exception:
+                pass
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("PRAGMA foreign_keys = ON")
                 query = """
@@ -2045,7 +2059,12 @@ class SQLiteBackend(StateBackend):
         """Delete a run from the runs table (cascades to traces). Audit log deletion."""
         await self._ensure_init()
         async with self._lock:
-            telemetry.logfire.info(f"AUDIT: Run and associated traces deleted for run_id={run_id}")
+            try:
+                from flujo.infra.audit import log_audit as _audit
+
+                _audit("run_deleted", run_id=run_id)
+            except Exception:
+                pass
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("PRAGMA foreign_keys = ON")
                 await db.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
