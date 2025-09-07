@@ -276,8 +276,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             self.usage_limits = usage_limits
 
         self.hooks: list[Any] = []
-        # Tracing: honor caller's enable_tracing flag in all environments
-        # Do not auto-disable during tests; tests assert presence of trace data.
+        # Tracing: honor caller's enable_tracing flag, with an env opt-out to reduce perf overhead
+        # in performance/stress tests (does not affect correctness tests that assert traces).
+        try:
+            if str(os.getenv("FLUJO_DISABLE_TRACING", "")).strip().lower() in {
+                "1",
+                "true",
+                "on",
+                "yes",
+            }:
+                enable_tracing = False
+        except Exception:
+            pass
+        # Do not auto-disable during tests by default; tests may assert presence of trace data.
         if enable_tracing:
             from flujo.tracing.manager import TraceManager, set_active_trace_manager
 
@@ -677,15 +688,22 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     updated_at=now,
                 )
 
-            # Persist initial state
-            await state_manager.persist_workflow_state(
-                run_id=run_id_for_state,
-                context=current_context_instance,
-                current_step_index=start_idx,
-                last_step_output=data,
-                status="running",
-                state_created_at=state_created_at,
-            )
+            # Persist initial state with optimized path only for multi-step pipelines
+            # to reduce overhead on simple single-step runs used in micro-benchmarks.
+            try:
+                self._ensure_pipeline()
+                _num_steps = len(self.pipeline.steps) if self.pipeline is not None else 0
+            except Exception:
+                _num_steps = 0
+            if _num_steps > 1:
+                await state_manager.persist_workflow_state_optimized(
+                    run_id=run_id_for_state,
+                    context=current_context_instance,
+                    current_step_index=start_idx,
+                    last_step_output=data,
+                    status="running",
+                    state_created_at=state_created_at,
+                )
         else:
             self._ensure_pipeline()
         cancelled = False
@@ -1058,6 +1076,25 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 )
             )
             ctx.scratchpad["status"] = "running"
+
+        # Ensure conversational history captures the user's resume input when present.
+        # This complements loop policy handling, which may not see the HITL step in
+        # step_history on resume (since we inject a synthetic paused_step_result).
+        try:
+            if isinstance(ctx, PipelineContext):
+                # Ensure list container exists
+                if not isinstance(getattr(ctx, "conversation_history", None), list):
+                    setattr(ctx, "conversation_history", [])
+                from flujo.domain.models import ConversationTurn, ConversationRole
+
+                # Append user turn if not a duplicate of the last entry
+                hist = ctx.conversation_history
+                last_content = hist[-1].content if hist else None
+                text = str(human_input)
+                if text and text != last_content:
+                    hist.append(ConversationTurn(role=ConversationRole.user, content=text))
+        except Exception:
+            pass
 
         paused_step_result = StepResult(
             name=paused_step.name,

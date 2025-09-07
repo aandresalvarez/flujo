@@ -12,8 +12,10 @@ import threading
 import os as _os
 import re
 
-# Set test mode environment variable
+# Set test mode environment variables for deterministic, low-overhead runs
 os.environ["FLUJO_TEST_MODE"] = "1"
+# Disable background memory monitoring to cut per-test overhead and avoid linger
+os.environ.setdefault("FLUJO_DISABLE_MEMORY_MONITOR", "1")
 
 
 # Define mock classes that need serialization support

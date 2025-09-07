@@ -621,7 +621,22 @@ def get_global_memory_optimizer() -> MemoryOptimization:
     """Get the global memory optimizer instance."""
     global _global_memory_optimizer
     if _global_memory_optimizer is None:
-        _global_memory_optimizer = MemoryOptimization()
+        # Allow CI/tests to disable background memory monitoring to reduce overhead.
+        try:
+            import os as _os
+
+            disable = str(_os.environ.get("FLUJO_DISABLE_MEMORY_MONITOR", "")).strip().lower() in {
+                "1",
+                "true",
+                "on",
+                "yes",
+            }
+        except Exception:
+            disable = False
+        _global_memory_optimizer = MemoryOptimization(
+            enable_pressure_detection=not disable,
+            enable_tracking=not disable,
+        )
     return _global_memory_optimizer
 
 

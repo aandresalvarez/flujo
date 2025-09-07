@@ -160,24 +160,23 @@ class StateSerializer(Generic[ContextT]):
     ) -> Optional[Dict[str, Any]]:
         if context is None:
             return None
-        # Optimize: compute hash once and avoid double hashing on cached path
+        # Compute hash once and check caches
         current_hash = self.compute_context_hash(context)
         cached_hash = self._context_hash_cache.get(run_id)
-        if cached_hash != current_hash:
-            # Context changed: update hash and serialize full
-            self._context_hash_cache[run_id] = current_hash
-            # If already present for this hash, reuse
-            cached_full = self._cache_get_by_hash(run_id, current_hash)
-            if cached_full is not None:
-                return cached_full
-            serialized = self.serialize_context_full(context)
-            self._cache_put_by_hash(run_id, current_hash, serialized)
-            return serialized
-        # Unchanged: if a full serialization for this hash is cached, reuse it.
-        # Otherwise, return the minimal representation to reduce I/O overhead.
+
+        # If we already have a cached full serialization for this (run, hash), reuse it
         cached_full = self._cache_get_by_hash(run_id, current_hash)
         if cached_full is not None:
             return cached_full
+
+        # Hash not seen for this run yet, or it changed -> produce FULL serialization and cache it
+        if cached_hash != current_hash:
+            self._context_hash_cache[run_id] = current_hash
+            full = self.serialize_context_full(context)
+            self._cache_put_by_hash(run_id, current_hash, full)
+            return full
+
+        # Hash unchanged but no cached full exists (e.g., hash primed elsewhere): return minimal
         return self.serialize_context_minimal(context)
 
     def serialize_step_history_full(

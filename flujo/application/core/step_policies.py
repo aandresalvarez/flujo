@@ -4969,6 +4969,9 @@ class DefaultLoopStepExecutor:
                                                 pass
                                         # Heuristic finish detection in string repr
                                         low = raw.lower()
+                                        # Treat a bare finish/done string as a terminal action (do not log)
+                                        if low in {"finish", "done"}:
+                                            return None, "finish"
                                         if '"action":"finish"' in low or "action='finish'" in low:
                                             return None, "finish"
                                         # Otherwise treat the whole string as assistant content
@@ -4980,29 +4983,54 @@ class DefaultLoopStepExecutor:
                             try:
                                 src = ai_src
                                 if src == "last":
-                                    if pipeline_result.step_history:
-                                        last_sr = pipeline_result.step_history[-1]
+                                    # Pick the last non-finish assistant-style output across all step results
+                                    chosen: Optional[str] = None
+                                    for _sr in reversed(all_srs):
+                                        if not getattr(_sr, "success", False):
+                                            continue
                                         qtxt, action = _extract_assistant_question(
-                                            getattr(last_sr, "output", None)
+                                            getattr(_sr, "output", None)
                                         )
-                                        # Skip finish/no-question outputs
                                         if (
                                             (action or "").lower() != "finish"
                                             and qtxt
                                             and qtxt.strip()
                                         ):
-                                            hist.append(
-                                                ConversationTurn(
-                                                    role=ConversationRole.assistant, content=qtxt
-                                                )
+                                            chosen = qtxt
+                                            break
+                                    if chosen:
+                                        hist.append(
+                                            ConversationTurn(
+                                                role=ConversationRole.assistant, content=chosen
                                             )
+                                        )
                                 elif src == "all_agents":
                                     for sr in all_srs:
                                         if not getattr(sr, "success", False):
                                             continue
-                                        qtxt, action = _extract_assistant_question(
-                                            getattr(sr, "output", None)
-                                        )
+                                        out_val = getattr(sr, "output", None)
+                                        # Handle ParallelStep outputs which are dicts of branch results
+                                        if (
+                                            isinstance(out_val, dict)
+                                            and out_val
+                                            and not ("action" in out_val or "question" in out_val)
+                                        ):
+                                            for _v in out_val.values():
+                                                qtxt, action = _extract_assistant_question(_v)
+                                                if (
+                                                    (action or "").lower() != "finish"
+                                                    and qtxt
+                                                    and qtxt.strip()
+                                                ):
+                                                    hist.append(
+                                                        ConversationTurn(
+                                                            role=ConversationRole.assistant,
+                                                            content=qtxt,
+                                                        )
+                                                    )
+                                            continue
+                                        # Single output
+                                        qtxt, action = _extract_assistant_question(out_val)
                                         if (
                                             (action or "").lower() != "finish"
                                             and qtxt
@@ -5738,38 +5766,43 @@ class DefaultParallelStepExecutor:
                     pr = PipelineResult[Any](step_history=[], total_cost_usd=0.0, total_tokens=0)
                 msg = usage_limit_error_msg or "Usage limit exceeded"
                 raise UsageLimitExceededError(msg, pr)
-                # Proactive limit check after each branch completes
-                if limits is not None:
-                    try:
-                        from flujo.utils.formatting import format_cost as _fmt
 
-                        if (
-                            getattr(limits, "total_cost_usd_limit", None) is not None
-                            and total_cost > float(limits.total_cost_usd_limit)
-                        ) or (
-                            getattr(limits, "total_tokens_limit", None) is not None
-                            and total_tokens > int(limits.total_tokens_limit)
-                        ):
-                            # Cancel remaining tasks
-                            for p in pending:
-                                p.cancel()
-                            pipeline_result: PipelineResult[Any] = PipelineResult(
-                                step_history=list(branch_results.values()),
-                                total_cost_usd=total_cost,
-                                total_tokens=total_tokens,
-                                final_pipeline_context=context,
-                            )
-                            if getattr(
-                                limits, "total_cost_usd_limit", None
-                            ) is not None and total_cost > float(limits.total_cost_usd_limit):
-                                msg = f"Cost limit of ${_fmt(float(limits.total_cost_usd_limit))} exceeded"
-                            else:
-                                msg = f"Token limit of {int(limits.total_tokens_limit)} exceeded"
-                            raise UsageLimitExceededError(msg, pipeline_result)
-                    except UsageLimitExceededError:
-                        raise
-                    except Exception:
-                        pass
+            # Proactive limit check after each branch completes (dedented: always evaluated)
+            if limits is not None:
+                try:
+                    from flujo.utils.formatting import format_cost as _fmt
+
+                    breached_cost = getattr(
+                        limits, "total_cost_usd_limit", None
+                    ) is not None and total_cost > float(limits.total_cost_usd_limit)
+                    breached_tokens = getattr(
+                        limits, "total_tokens_limit", None
+                    ) is not None and total_tokens > int(limits.total_tokens_limit)
+                    if breached_cost or breached_tokens:
+                        # Cancel remaining tasks promptly
+                        for p in pending:
+                            p.cancel()
+                        if pending:
+                            try:
+                                await asyncio.gather(*pending, return_exceptions=True)
+                            except Exception:
+                                pass
+                        pipeline_result: PipelineResult[Any] = PipelineResult(
+                            step_history=list(branch_results.values()),
+                            total_cost_usd=total_cost,
+                            total_tokens=total_tokens,
+                            final_pipeline_context=context,
+                        )
+                        if breached_cost:
+                            msg = f"Cost limit of ${_fmt(float(limits.total_cost_usd_limit))} exceeded"
+                        else:
+                            msg = f"Token limit of {int(limits.total_tokens_limit)} exceeded"
+                        raise UsageLimitExceededError(msg, pipeline_result)
+                except UsageLimitExceededError:
+                    raise
+                except Exception:
+                    # Do not disrupt normal execution on unexpected check errors
+                    pass
         # FSD-009: Enforce limits deterministically at aggregation time (pure quota mode)
         if limits is not None:
             try:
@@ -6248,10 +6281,32 @@ class DefaultConditionalStepExecutor:
                                     _fallback_depth=_fallback_depth,
                                 )
                             except (_Abort, _PausedExc) as _pe:
-                                # If the branch step is an explicit HITL, bubble up the pause
+                                # If the branch step is an explicit HITL, merge branch context state
+                                # (conversation/hitl) back into the parent before re-raising pause.
+                                # This preserves nested HITL state across loop/conditional boundaries.
                                 from flujo.domain.dsl.step import HumanInTheLoopStep as _HITL
 
                                 if isinstance(pipeline_step, _HITL):
+                                    try:
+                                        if context is not None and branch_context is not None:
+                                            try:
+                                                from flujo.utils.context import (
+                                                    safe_merge_context_updates as _merge,
+                                                )
+
+                                                _merge(context, branch_context)
+                                            except Exception:
+                                                # Fallback to model-level merge
+                                                try:
+                                                    mc = ContextManager.merge(
+                                                        context, branch_context
+                                                    )
+                                                    if mc is not None:
+                                                        context = mc
+                                                except Exception:
+                                                    pass
+                                    except Exception:
+                                        pass
                                     raise
                                 # Non-HITL pause inside a branch should be treated as failure
                                 return to_outcome(
@@ -6717,23 +6772,21 @@ class DefaultHitlStepExecutor:
                 # Append assistant turn to conversation history so loops in conversation:true
                 # capture the question even when the iteration pauses here.
                 try:
-                    if hasattr(context, "conversation_history") and isinstance(
-                        context.conversation_history, list
+                    # Ensure conversation_history container exists
+                    if not hasattr(context, "conversation_history") or not isinstance(
+                        getattr(context, "conversation_history", None), list
                     ):
-                        from flujo.domain.models import ConversationTurn, ConversationRole
+                        setattr(context, "conversation_history", [])
+                    # Append assistant question turn if not duplicated
+                    from flujo.domain.models import ConversationTurn, ConversationRole
 
-                        # Avoid immediate duplicates
-                        last = (
-                            context.conversation_history[-1]
-                            if context.conversation_history
-                            else None
+                    hist_list = getattr(context, "conversation_history", [])
+                    last = hist_list[-1] if hist_list else None
+                    if not last or getattr(last, "content", None) != hitl_message:
+                        hist_list.append(
+                            ConversationTurn(role=ConversationRole.assistant, content=hitl_message)
                         )
-                        if not last or getattr(last, "content", None) != hitl_message:
-                            context.conversation_history.append(
-                                ConversationTurn(
-                                    role=ConversationRole.assistant, content=hitl_message
-                                )
-                            )
+                        setattr(context, "conversation_history", hist_list)
                 except Exception:
                     pass
                 # Preserve pending AskHuman command for resumption logging
