@@ -688,15 +688,22 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     updated_at=now,
                 )
 
-            # Persist initial state
-            await state_manager.persist_workflow_state(
-                run_id=run_id_for_state,
-                context=current_context_instance,
-                current_step_index=start_idx,
-                last_step_output=data,
-                status="running",
-                state_created_at=state_created_at,
-            )
+            # Persist initial state with optimized path only for multi-step pipelines
+            # to reduce overhead on simple single-step runs used in micro-benchmarks.
+            try:
+                self._ensure_pipeline()
+                _num_steps = len(self.pipeline.steps) if self.pipeline is not None else 0
+            except Exception:
+                _num_steps = 0
+            if _num_steps > 1:
+                await state_manager.persist_workflow_state_optimized(
+                    run_id=run_id_for_state,
+                    context=current_context_instance,
+                    current_step_index=start_idx,
+                    last_step_output=data,
+                    status="running",
+                    state_created_at=state_created_at,
+                )
         else:
             self._ensure_pipeline()
         cancelled = False

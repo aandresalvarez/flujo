@@ -730,7 +730,8 @@ class ExecutionManager(Generic[ContextT]):
                 # For paused or failed scenarios, use the current step index
                 final_step_index = len(result.step_history)
 
-            await self.state_manager.persist_workflow_state(
+            # Use optimized persistence for final snapshot to reduce overhead when context unchanged
+            await self.state_manager.persist_workflow_state_optimized(
                 run_id=run_id,
                 context=context,
                 current_step_index=final_step_index,
