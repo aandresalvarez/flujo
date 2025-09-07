@@ -1187,9 +1187,6 @@ class SQLiteBackend(StateBackend):
 
                 query += " ORDER BY created_at DESC"
 
-                # Enforce a sensible default limit when not provided to avoid large scans
-                if limit is None:
-                    limit = 100
                 if limit is not None:
                     query += " LIMIT ?"
                     params.append(limit)
@@ -1286,9 +1283,6 @@ class SQLiteBackend(StateBackend):
                     """
                     params = []
 
-                # Enforce a sensible default limit when not provided to avoid large scans
-                if limit is None:
-                    limit = 100
                 if limit is not None:
                     query += " LIMIT ?"
                     params.append(int(limit))
