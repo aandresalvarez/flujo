@@ -51,11 +51,13 @@ def list_runs(
 
     table = Table("run_id", "pipeline", "status", "created_at")
     for r in runs:
+        # Prefer created_at field exposed by backends; fall back gracefully
+        created_at = r.get("created_at") or r.get("start_time") or "-"
         table.add_row(
             r.get("run_id", "-"),
             r.get("pipeline_name", "-"),
             r.get("status", "-"),
-            str(r.get("start_time", "-")),
+            str(created_at),
         )
     Console().print(table)
 

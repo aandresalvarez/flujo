@@ -1102,10 +1102,22 @@ class SQLiteBackend(StateBackend):
                 await db.commit()
 
     async def list_states(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
-        """List workflow states with optional status filter."""
+        """List workflow states with optional status filter.
+
+        Uses the pooled connection when available to minimize connection overhead.
+        """
         await self._ensure_init()
         async with self._lock:
-            async with aiosqlite.connect(self.db_path) as db:
+            db = self._connection_pool
+            _temp_conn = False
+            if db is None:
+                db = await aiosqlite.connect(self.db_path)
+                _temp_conn = True
+                try:
+                    await db.execute("PRAGMA busy_timeout = 1000")
+                except Exception:
+                    pass
+            try:
                 if status:
                     async with db.execute(
                         "SELECT run_id, status, created_at, updated_at FROM workflow_state WHERE status = ? ORDER BY created_at DESC",
@@ -1127,6 +1139,12 @@ class SQLiteBackend(StateBackend):
                     }
                     for row in rows
                 ]
+            finally:
+                if _temp_conn:
+                    try:
+                        await db.close()
+                    except Exception:
+                        pass
 
     async def list_workflows(
         self,
@@ -1169,6 +1187,9 @@ class SQLiteBackend(StateBackend):
 
                 query += " ORDER BY created_at DESC"
 
+                # Enforce a sensible default limit when not provided to avoid large scans
+                if limit is None:
+                    limit = 100
                 if limit is not None:
                     query += " LIMIT ?"
                     params.append(limit)
@@ -1265,6 +1286,9 @@ class SQLiteBackend(StateBackend):
                     """
                     params = []
 
+                # Enforce a sensible default limit when not provided to avoid large scans
+                if limit is None:
+                    limit = 100
                 if limit is not None:
                     query += " LIMIT ?"
                     params.append(int(limit))
@@ -1496,10 +1520,25 @@ class SQLiteBackend(StateBackend):
         async with self._lock:
 
             async def _save() -> None:
-                async with aiosqlite.connect(self.db_path) as db:
-                    # Enforce referential integrity consistently
-                    await db.execute("PRAGMA foreign_keys = ON")
+                # Prefer pooled connection to avoid connection setup overhead on hot paths
+                db = self._connection_pool
+                _temp_conn = False
+                if db is None:
+                    db_cm = aiosqlite.connect(self.db_path)
+                    db = await db_cm.__aenter__()
+                    _temp_conn = True
+                    try:
+                        await db.execute("PRAGMA foreign_keys = ON")
+                        await db.execute("PRAGMA busy_timeout = 1000")
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        await db.execute("PRAGMA foreign_keys = ON")
+                    except Exception:
+                        pass
 
+                try:
                     # Ensure parent run row exists to avoid FK failures in concurrent/resume scenarios
                     try:
                         run_id = step_data.get("run_id")
@@ -1522,11 +1561,11 @@ class SQLiteBackend(StateBackend):
                     # OPTIMIZATION: Use simplified schema for better performance
                     await db.execute(
                         """
-                    INSERT OR REPLACE INTO steps (
-                        run_id, step_name, step_index, status, output, raw_response, cost_usd,
-                        token_counts, execution_time_ms, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
+                        INSERT OR REPLACE INTO steps (
+                            run_id, step_name, step_index, status, output, raw_response, cost_usd,
+                            token_counts, execution_time_ms, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
                         (
                             step_data["run_id"],
                             step_data["step_name"],
@@ -1543,6 +1582,9 @@ class SQLiteBackend(StateBackend):
                         ),
                     )
                     await db.commit()
+                finally:
+                    if _temp_conn:
+                        await db_cm.__aexit__(None, None, None)
 
             await self._with_retries(_save)
 
@@ -1551,7 +1593,17 @@ class SQLiteBackend(StateBackend):
         async with self._lock:
 
             async def _save() -> None:
-                async with aiosqlite.connect(self.db_path) as db:
+                db = self._connection_pool
+                _temp_conn = False
+                if db is None:
+                    db_cm = aiosqlite.connect(self.db_path)
+                    db = await db_cm.__aenter__()
+                    _temp_conn = True
+                    try:
+                        await db.execute("PRAGMA busy_timeout = 1000")
+                    except Exception:
+                        pass
+                try:
                     await db.execute(
                         """
                         UPDATE runs
@@ -1570,6 +1622,9 @@ class SQLiteBackend(StateBackend):
                         ),
                     )
                     await db.commit()
+                finally:
+                    if _temp_conn:
+                        await db_cm.__aexit__(None, None, None)
 
             await self._with_retries(_save)
 
