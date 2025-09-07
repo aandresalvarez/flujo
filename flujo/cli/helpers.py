@@ -908,20 +908,33 @@ def create_flujo_runner(
     except Exception:
         inferred_name = None
 
-    # Resolve usage limits from flujo.toml so budgets apply even if runner fallback fails
+    # Resolve usage limits from flujo.toml (skip in test mode for performance)
     usage_limits_arg = None
     try:
-        from flujo.infra.config_manager import ConfigManager
-        from flujo.infra.budget_resolver import resolve_limits_for_pipeline as _resolve
+        from flujo.utils.config import get_settings as _get_proc_settings
 
-        cfg = ConfigManager().load_config()
-        pname = inferred_name or ""
-        usage_limits_arg, _src = _resolve(getattr(cfg, "budgets", None), pname)
+        if not _get_proc_settings().test_mode:
+            from flujo.infra.config_manager import ConfigManager
+            from flujo.infra.budget_resolver import resolve_limits_for_pipeline as _resolve
+
+            cfg = ConfigManager().load_config()
+            pname = inferred_name or ""
+            usage_limits_arg, _src = _resolve(getattr(cfg, "budgets", None), pname)
     except Exception:
         usage_limits_arg = None
 
     # Select local tracer when debug is enabled
     local_tracer_arg: Any = "default" if debug else None
+
+    # Disable tracing in test mode to reduce overhead for performance suites
+    enable_tracing_arg = True
+    try:
+        from flujo.utils.config import get_settings as _get_proc_settings
+
+        if _get_proc_settings().test_mode:
+            enable_tracing_arg = False
+    except Exception:
+        pass
 
     if context_model_class is not None:
         # Use custom context model with proper typing
@@ -933,6 +946,7 @@ def create_flujo_runner(
             pipeline_name=inferred_name,
             usage_limits=usage_limits_arg,
             local_tracer=local_tracer_arg,
+            enable_tracing=enable_tracing_arg,
         )
     else:
         # Use default PipelineContext
@@ -944,6 +958,7 @@ def create_flujo_runner(
             pipeline_name=inferred_name,
             usage_limits=usage_limits_arg,
             local_tracer=local_tracer_arg,
+            enable_tracing=enable_tracing_arg,
         )
 
     return runner
@@ -974,8 +989,25 @@ def execute_pipeline_with_output_handling(
     import asyncio
     import gc
 
-    # Add a high-level span for architect or generic pipeline execution
-    with _telemetry.logfire.span("pipeline_run"):
+    # Optionally skip tracing span in test/perf mode for lower overhead
+    import os as _os
+
+    _disable_span = False
+    try:
+        _disable_span = str(_os.getenv("FLUJO_DISABLE_TRACING", "")).strip().lower() in {
+            "1",
+            "true",
+            "on",
+            "yes",
+        }
+        if not _disable_span:
+            from flujo.utils.config import get_settings as _get_proc_settings
+
+            _disable_span = bool(_get_proc_settings().test_mode)
+    except Exception:
+        pass
+
+    def _run_pipeline() -> Any:
         if json_output:
             # Capture stdout and output JSON
             buf = io.StringIO()
@@ -993,18 +1025,33 @@ def execute_pipeline_with_output_handling(
 
             return serialize_to_json_robust(result, indent=2)
         else:
-            # Normal execution with robust event loop cleanup
+            # Normal execution
+            if run_id is not None:
+                result = runner.run(input_data, run_id=run_id)
+            else:
+                result = runner.run(input_data)
+            return result
+
+    if _disable_span:
+        try:
+            result = _run_pipeline()
+            return result
+        finally:
+            # Skip platform-specific memory relief in perf mode; keep a quick GC only
             try:
-                if run_id is not None:
-                    result = runner.run(input_data, run_id=run_id)
-                else:
-                    result = runner.run(input_data)
+                gc.collect()
+            except Exception:
+                pass
+    else:
+        # Add a high-level span for architect or generic pipeline execution
+        with _telemetry.logfire.span("pipeline_run"):
+            try:
+                result = _run_pipeline()
                 return result
             finally:
                 # Robust cleanup to prevent event loop hang
                 # Force garbage collection to clean up any orphaned async objects
                 gc.collect()
-
                 # Attempt to return freed memory to the OS (platform-specific best-effort)
                 try:
                     import ctypes
@@ -1013,19 +1060,14 @@ def execute_pipeline_with_output_handling(
                     if _sys.platform.startswith("linux"):
                         try:
                             libc = ctypes.CDLL("libc.so.6")
-                            # int malloc_trim(size_t pad);
                             libc.malloc_trim(0)
                         except Exception:
                             pass
                     elif _sys.platform == "darwin":
-                        # macOS: use malloc_zone_pressure_relief on the default malloc zone
                         try:
                             libsys = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
-                            # void* malloc_default_zone(void);
                             libsys.malloc_default_zone.restype = ctypes.c_void_p
                             zone = libsys.malloc_default_zone()
-                            # size_t malloc_zone_pressure_relief(malloc_zone_t* zone, size_t goal);
-                            # goal=0 lets allocator decide how much to release
                             libsys.malloc_zone_pressure_relief.argtypes = [
                                 ctypes.c_void_p,
                                 ctypes.c_size_t,

@@ -121,26 +121,43 @@ class OpenTelemetryHook:
         run_span = self._active_spans.get("pre_run")
         if run_span is None:
             return
+        # Guard against payload.step being None in some tests
+        step_obj = getattr(payload, "step", None)
+        step_name = getattr(step_obj, "name", None)
+        name_for_span = step_name if isinstance(step_name, str) else "step"
+
         ctx = trace.set_span_in_context(run_span)
-        span = self.tracer.start_span(payload.step.name, context=ctx)
-        # Canonical attributes
-        span.set_attribute("step_input", str(payload.step_input))
-        span.set_attribute("flujo.step.type", type(payload.step).__name__)
+        span = self.tracer.start_span(name_for_span, context=ctx)
+        # Canonical attributes (best-effort)
+        try:
+            span.set_attribute("step_input", str(getattr(payload, "step_input", "")))
+        except Exception:
+            pass
+        try:
+            span.set_attribute(
+                "flujo.step.type",
+                type(step_obj).__name__ if step_obj is not None else "UnknownStep",
+            )
+        except Exception:
+            pass
         # Attach YAML path if present on step meta
         try:
-            meta = getattr(payload.step, "meta", None)
+            meta = getattr(step_obj, "meta", None)
             yaml_path = meta.get("yaml_path") if isinstance(meta, dict) else None
             if yaml_path:
                 span.set_attribute("flujo.yaml.path", yaml_path)
         except Exception:
             pass
-        step_id = getattr(payload.step, "id", None)
-        if step_id is not None:
-            span.set_attribute("flujo.step.id", str(step_id))
-        # Policy name is not currently in payload; we can set from class if available on step
+        # Optional identifiers/policy
+        try:
+            step_id = getattr(step_obj, "id", None)
+            if step_id is not None:
+                span.set_attribute("flujo.step.id", str(step_id))
+        except Exception:
+            pass
         try:
             policy_name = getattr(
-                getattr(payload.step, "_policy", object()), "__class__", type(None)
+                getattr(step_obj, "_policy", object()), "__class__", type(None)
             ).__name__
             if policy_name and policy_name != "NoneType":
                 span.set_attribute("flujo.step.policy", policy_name)
@@ -159,11 +176,9 @@ class OpenTelemetryHook:
         if getattr(payload, "cache_hit", None) is not None:
             span.set_attribute("flujo.cache.hit", bool(payload.cache_hit))
 
-        # Use step ID if available, otherwise just the name
-        step_id = getattr(payload.step, "id", None)
-        key = self._get_step_span_key(payload.step.name, step_id)
+        # Track span by a stable key and remember monotonic start
+        key = self._get_step_span_key(name_for_span, getattr(step_obj, "id", None))
         self._active_spans[key] = span
-        # Record monotonic start for robust duration computation if needed
         try:
             self._mono_start[key] = time.monotonic()
         except Exception:

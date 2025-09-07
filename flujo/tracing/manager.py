@@ -129,24 +129,31 @@ class TraceManager:
         # else: silently ignore missing root span or stack
 
     async def _handle_pre_step(self, payload: PreStepPayload) -> None:
-        """Handle pre-step event - create child span."""
+        """Handle pre-step event - create child span.
+
+        Guards against payload.step being None (some tests dispatch with None to
+        scaffold spans) and falls back to generic names to avoid noisy hook errors.
+        """
         if not self._span_stack:
             return
 
         parent_span = self._span_stack[-1]
+        step_obj = getattr(payload, "step", None)
+        step_name = getattr(step_obj, "name", None)
         # Step span per Trace Contract
         step_attrs: Dict[str, Any] = {
-            "flujo.step.type": type(payload.step).__name__,
-            "step_input": str(payload.step_input),
+            "flujo.step.type": type(step_obj).__name__ if step_obj is not None else "UnknownStep",
+            "step_input": str(getattr(payload, "step_input", "")),
         }
         # Attach policy name based on step type mapping (registry parity)
         try:
-            step_attrs["flujo.step.policy"] = policy_name_for_step(payload.step)
+            if step_obj is not None:
+                step_attrs["flujo.step.policy"] = policy_name_for_step(step_obj)
         except Exception:
             # Best-effort: omit policy if detection fails
             pass
         # Optional enriched fields
-        step_id = getattr(payload.step, "id", None)
+        step_id = getattr(step_obj, "id", None)
         if step_id is not None:
             step_attrs["flujo.step.id"] = str(step_id)
         attempt = getattr(payload, "attempt_number", None)
@@ -161,7 +168,7 @@ class TraceManager:
 
         child_span = Span(
             span_id=str(uuid.uuid4()),
-            name=payload.step.name,
+            name=str(step_name) if isinstance(step_name, str) else "step",
             start_time=time.monotonic(),  # Use monotonic time for accurate timing
             parent_span_id=parent_span.span_id,
             attributes=step_attrs,

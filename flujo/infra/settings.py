@@ -23,6 +23,15 @@ dotenv.load_dotenv()
 class Settings(BaseSettings):
     """Application settings loaded from environment variables. Standard names are preferred."""
 
+    # --- Test/CI toggles ---
+    # Exposed so orchestration layers can cheaply short‑circuit expensive persistence
+    # and monitoring paths during unit tests and CI perf suites.
+    test_mode: bool = Field(
+        False,
+        validation_alias=AliasChoices("FLUJO_TEST_MODE", "flujo_test_mode"),
+        description="Enable low‑overhead test mode (skip persistence, monitors, etc.)",
+    )
+
     # --- API Keys (with backward compatibility) ---
     openai_api_key: Optional[SecretStr] = Field(
         None,

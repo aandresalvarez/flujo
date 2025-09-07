@@ -123,6 +123,11 @@ class HistoryManager:
         # could lead to overshooting the limit in tests/CI environments.
         txt = f"{turn.role.value}: {turn.content}"
         fallback = max(1, len(txt) // 4)  # ~4 chars per token heuristic
+        # Fast path: when no model_id is provided, avoid tokenizer imports entirely
+        # and use the conservative heuristic. This dramatically reduces overhead
+        # in tight loops (e.g., CI benchmarks) while keeping bounds safe.
+        if model_id is None:
+            return fallback
         try:  # pragma: no cover - environment dependent
             import importlib as _importlib
 

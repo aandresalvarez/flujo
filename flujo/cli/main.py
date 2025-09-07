@@ -172,6 +172,40 @@ if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
                 _ty.echo()
                 _ty.echo()
 
+            # Print a concise, non-truncated flags summary line to ensure full option names
+            # are present in the help output (avoids ellipsizing like "--allow-side-eff…").
+            try:
+                option_names: list[str] = []
+                for param in obj.get_params(ctx):
+                    if getattr(param, "hidden", False):
+                        continue
+                    if isinstance(param, _click.Option):
+                        # Prefer long options; fall back to short if needed
+                        longs = [o for o in getattr(param, "opts", []) if o.startswith("--")]
+                        shorts = [
+                            o
+                            for o in getattr(param, "opts", [])
+                            if o.startswith("-") and not o.startswith("--")
+                        ]
+                        if longs:
+                            option_names.append(longs[0])
+                        elif getattr(param, "secondary_opts", None):
+                            # e.g., boolean pairs like --flag/--no-flag
+                            secs = [
+                                o
+                                for o in getattr(param, "secondary_opts", [])
+                                if o.startswith("--")
+                            ]
+                            if secs:
+                                option_names.append(f"{secs[0]}")
+                        elif shorts:
+                            option_names.append(shorts[0])
+                if option_names:
+                    _ty.echo(" Flags: " + ", ".join(option_names))
+                    _ty.echo()
+            except Exception:
+                pass
+
             console = _tru._get_rich_console()
             from collections import defaultdict as _defaultdict
             from typing import DefaultDict as _DefaultDict, List as _List
@@ -440,7 +474,10 @@ def dev_health_check(
         per_model_stages: dict[str, dict[str, int]] = {}
         transforms_count: dict[str, int] = {}
         # Trend windows (last half vs previous half of the selected time window)
-        trend: dict[str, Any] = {"last_half": {"coercions": 0}, "prev_half": {"coercions": 0}}
+        trend: dict[str, Any] = {
+            "last_half": {"coercions": 0},
+            "prev_half": {"coercions": 0},
+        }
         last_half_cut: datetime | None = None
         # Optional N-bucket trends across the selected window
         buckets: list[dict[str, Any]] = []
@@ -549,16 +586,28 @@ def dev_health_check(
             # After iterating spans, update trends per run once
             if last_half_cut is not None and run_dt is not None:
                 if run_dt >= last_half_cut:
-                    trend["last_half"]["coercions"] += run_coercions
-                    # accumulate per-stage breakdown
-                    st = trend["last_half"].setdefault("stages", {})
-                    for k, v in run_stage_counts.items():
-                        st[k] = int(st.get(k, 0)) + int(v or 0)
+                    half_key = "last_half"
                 else:
-                    trend["prev_half"]["coercions"] += run_coercions
-                    st = trend["prev_half"].setdefault("stages", {})
-                    for k, v in run_stage_counts.items():
-                        st[k] = int(st.get(k, 0)) + int(v or 0)
+                    half_key = "prev_half"
+                # Totals
+                trend[half_key]["coercions"] = int(trend[half_key].get("coercions", 0)) + int(
+                    run_coercions
+                )
+                # Aggregate per-stage totals for the half
+                st = trend[half_key].setdefault("stages", {})
+                for k, v in run_stage_counts.items():
+                    st[k] = int(st.get(k, 0)) + int(v or 0)
+                # Also aggregate per-step and per-model stage distributions per half
+                h_step = trend[half_key].setdefault("step_stages", {})
+                for sname, stmap in run_step_stage_counts.items():
+                    cur = h_step.setdefault(sname, {})
+                    for sk, sv in stmap.items():
+                        cur[sk] = int(cur.get(sk, 0)) + int(sv or 0)
+                h_model = trend[half_key].setdefault("model_stages", {})
+                for mname, stmap in run_model_stage_counts.items():
+                    curm = h_model.setdefault(mname, {})
+                    for sk, sv in stmap.items():
+                        curm[sk] = int(curm.get(sk, 0)) + int(sv or 0)
                 # N-bucket assignment
                 if buckets and now is not None:
                     try:
@@ -760,7 +809,7 @@ def dev_health_check(
                     recs.append(
                         f"Model '{worst_model}' outputs mixed text; enable structured_output or tighten prompts to return raw JSON."
                     )
-        # Trend-based hints (per-step/model increases between first and last buckets)
+        # Trend-based hints (per-step/model increases)
         try:
             bkt_list = trend.get("buckets") if isinstance(trend, dict) else None
             if isinstance(bkt_list, list) and len(bkt_list) >= 2:
@@ -908,6 +957,72 @@ def dev_health_check(
                                 break
                         except Exception:
                             continue
+        except Exception:
+            pass
+
+        # Half-window trend hints (fallback or complement to buckets)
+        try:
+            last_half = trend.get("last_half") if isinstance(trend, dict) else None
+            prev_half = trend.get("prev_half") if isinstance(trend, dict) else None
+            if isinstance(last_half, dict) and isinstance(prev_half, dict):
+                # Per-step stage deltas
+                lss = last_half.get("step_stages") or {}
+                pss = prev_half.get("step_stages") or {}
+                steps = set(lss.keys()) | set(pss.keys())
+                for sname in steps:
+                    lmap = lss.get(sname, {}) if isinstance(lss, dict) else {}
+                    pmap = pss.get(sname, {}) if isinstance(pss, dict) else {}
+                    try:
+                        dt_tol = int(lmap.get("tolerant", 0) or 0) - int(
+                            pmap.get("tolerant", 0) or 0
+                        )
+                        dt_sem = int(lmap.get("semantic", 0) or 0) - int(
+                            pmap.get("semantic", 0) or 0
+                        )
+                        dt_ext = int(lmap.get("extract", 0) or 0) - int(pmap.get("extract", 0) or 0)
+                    except Exception:
+                        dt_tol = dt_sem = dt_ext = 0
+                    if dt_tol >= 2:
+                        recs.append(
+                            f"Trend: Step '{sname}' tolerant coercions rising; consider tolerant_level=1 (json5) or 2 (json-repair)."
+                        )
+                    if dt_sem >= 2:
+                        recs.append(
+                            f"Trend: Step '{sname}' semantic coercions rising; add a JSON schema and allowlisted coercions with 'aop: full'."
+                        )
+                    if dt_ext >= 2 and totals.get("soe_applied", 0) == 0:
+                        recs.append(
+                            f"Trend: Step '{sname}' extraction activity rising; enable structured_output or adjust prompts to emit raw JSON."
+                        )
+                # Per-model stage deltas
+                lms = last_half.get("model_stages") or {}
+                pms = prev_half.get("model_stages") or {}
+                models = set(lms.keys()) | set(pms.keys())
+                for mname in models:
+                    lmap = lms.get(mname, {}) if isinstance(lms, dict) else {}
+                    pmap = pms.get(mname, {}) if isinstance(pms, dict) else {}
+                    try:
+                        dt_tol = int(lmap.get("tolerant", 0) or 0) - int(
+                            pmap.get("tolerant", 0) or 0
+                        )
+                        dt_sem = int(lmap.get("semantic", 0) or 0) - int(
+                            pmap.get("semantic", 0) or 0
+                        )
+                        dt_ext = int(lmap.get("extract", 0) or 0) - int(pmap.get("extract", 0) or 0)
+                    except Exception:
+                        dt_tol = dt_sem = dt_ext = 0
+                    if dt_tol >= 2:
+                        recs.append(
+                            f"Trend: Model '{mname}' tolerant coercions rising; consider tolerant_level=1 (json5) or 2 (json-repair)."
+                        )
+                    if dt_sem >= 2:
+                        recs.append(
+                            f"Trend: Model '{mname}' semantic coercions rising; use schemas and explicit coercion.allow with 'aop: full'."
+                        )
+                    if dt_ext >= 2 and totals.get("soe_applied", 0) == 0:
+                        recs.append(
+                            f"Trend: Model '{mname}' extraction activity rising; enable structured_output or tighten prompts to return raw JSON."
+                        )
         except Exception:
             pass
 
@@ -1791,7 +1906,8 @@ def validate(
     help=(
         "🤖 Start a conversation with the AI Architect to build your workflow.\n\n"
         "By default this uses the full conversational state machine. Set FLUJO_ARCHITECT_MINIMAL=1"
-        " to use the legacy minimal generator."
+        " to use the legacy minimal generator.\n\n"
+        "Tip: pass --allow-side-effects to permit pipelines that reference side-effect skills."
     )
 )
 def create(  # <--- REVERT BACK TO SYNC
