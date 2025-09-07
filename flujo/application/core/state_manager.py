@@ -252,9 +252,10 @@ class StateManager(Generic[ContextT]):
 
         if context is not None:
             try:
-                # Avoid costly size introspection to minimize overhead
+                # Final/full persistence path: always serialize full context so nested structures
+                # are available to tests that inspect persisted state.
                 memory_usage_mb = None
-                pipeline_context = self._serializer.serialize_context_for_state(context, run_id)
+                pipeline_context = self._serializer.serialize_context_full(context)
             except Exception as e:
                 logger.warning(f"Failed to serialize context for run {run_id}: {e}")
                 # Comprehensive fallback to prevent data loss even in error cases

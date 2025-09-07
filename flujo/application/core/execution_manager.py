@@ -165,6 +165,7 @@ class ExecutionManager(Generic[ContextT]):
                 run_id is not None
                 and not self.inside_loop_step
                 and self.state_manager.state_backend is not None
+                and len(self.pipeline.steps) > 1
             )
 
             try:
