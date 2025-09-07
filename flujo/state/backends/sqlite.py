@@ -1897,7 +1897,8 @@ class SQLiteBackend(StateBackend):
         """Retrieve and reconstruct the trace tree for a given run_id. Audit log access."""
         await self._ensure_init()
         async with self._lock:
-            telemetry.logfire.info(f"AUDIT: Trace accessed for run_id={run_id}")
+            # Structured-ish audit log for consistency across entries
+            telemetry.logfire.info(f"[audit] event=trace_access run_id={run_id}")
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute("PRAGMA foreign_keys = ON")
                 async with db.execute(
