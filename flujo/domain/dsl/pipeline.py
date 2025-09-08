@@ -128,6 +128,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         *,
         raise_on_error: bool = False,
         include_imports: bool = False,
+        _visited_pipelines: Optional[set[int]] = None,
     ) -> ValidationReport:
         """Validate that all steps have agents, compatible types, and static lints.
 
@@ -181,6 +182,13 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 return False
 
         report = ValidationReport()
+        # Initialize visited set to guard recursion/cycles
+        if _visited_pipelines is None:
+            _visited_pipelines = set()
+        cur_id = id(self)
+        if cur_id in _visited_pipelines:
+            return report
+        _visited_pipelines.add(cur_id)
 
         seen_steps: set[int] = set()
         prev_step: Step[Any, Any] | None = None
@@ -453,7 +461,8 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                             child = getattr(step, "pipeline", None)
                             if child is not None and hasattr(child, "validate_graph"):
                                 child_report: ValidationReport = child.validate_graph(
-                                    include_imports=False
+                                    include_imports=True,
+                                    _visited_pipelines=_visited_pipelines,
                                 )
                                 # Aggregate child findings with step context
                                 # Prefer import alias stored in step.meta, fallback to step.name

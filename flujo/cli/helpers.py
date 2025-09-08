@@ -1400,7 +1400,7 @@ def get_pipeline_step_names(path: str) -> list[str]:
     return [step.name for step in pipeline.steps]
 
 
-def validate_pipeline_file(path: str, *, include_imports: bool = False) -> Any:
+def validate_pipeline_file(path: str, *, include_imports: bool = True) -> Any:
     """Return the validation report for a pipeline file.
 
     Args:
