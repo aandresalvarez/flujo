@@ -91,8 +91,9 @@ def test_validate_imports_aggregates_child_findings(tmp_path: Path) -> None:
     report_no_children = pipeline.validate_graph(include_imports=False)
     # Parent only; child warnings should not be present
     assert all("[import:RunChild]" not in w.message for w in report_no_children.warnings)
+    assert all("[import:child]" not in w.message for w in report_no_children.warnings)
 
-    # With children aggregated, we should see the child's V-A1 surfaced
+    # With children aggregated, we should see the child's V-T1 surfaced
     report_with_children = pipeline.validate_graph(include_imports=True)
     msgs = [w.message for w in report_with_children.warnings]
     assert any("[import:child]" in m for m in msgs), msgs

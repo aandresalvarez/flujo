@@ -334,8 +334,15 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 try:
                     meta = getattr(step, "meta", None)
                     templ = None
+                    yloc: dict[str, Any] = {}
                     if isinstance(meta, dict):
                         templ = meta.get("templated_input")
+                        yloc = meta.get("_yaml_loc") or {}
+                    loc_path = yloc.get("path")
+                    fpath = yloc.get("file")
+                    line = yloc.get("line")
+                    col = yloc.get("column")
+                    default_loc = f"steps[{idx}].input"
                     if isinstance(templ, str) and ("{{" in templ and "}}" in templ):
                         import re as _re
 
@@ -352,7 +359,10 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                     suggestion=(
                                         "Prefer using steps.<previous_step_name>.output | tojson, or use previous_step | tojson for raw value."
                                     ),
-                                    location_path="steps[].input",
+                                    location_path=loc_path or default_loc,
+                                    file=fpath,
+                                    line=line,
+                                    column=col,
                                 )
                             )
                         # V-T2: 'this' misuse outside map bodies (heuristic)
@@ -368,7 +378,10 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                     suggestion=(
                                         "Use 'this' only inside map bodies, or bind a variable explicitly."
                                     ),
-                                    location_path="steps[].input",
+                                    location_path=loc_path or default_loc,
+                                    file=fpath,
+                                    line=line,
+                                    column=col,
                                 )
                             )
                         # V-T3: Unknown/disabled filters
@@ -391,7 +404,10 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                         suggestion=(
                                             "Add to [settings.enabled_template_filters] in flujo.toml or remove/misspelling fix."
                                         ),
-                                        location_path="steps[].input",
+                                        location_path=loc_path or default_loc,
+                                        file=fpath,
+                                        line=line,
+                                        column=col,
                                     )
                                 )
                         # V-T4: Unknown step proxy name in steps.<name>
@@ -408,7 +424,10 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                         suggestion=(
                                             "Correct the step name or ensure the reference points to a prior step."
                                         ),
-                                        location_path="steps[].input",
+                                        location_path=loc_path or default_loc,
+                                        file=fpath,
+                                        line=line,
+                                        column=col,
                                     )
                                 )
                 except Exception as lint_err:
@@ -540,53 +559,57 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                     _visited_pipelines=_visited_pipelines,
                                 )
                                 # Aggregate child findings with step context
-                                # Prefer import alias stored in step.meta, fallback to step.name
-                                alias = None
-                                try:
-                                    meta = getattr(step, "meta", None)
-                                    if isinstance(meta, dict):
-                                        alias = meta.get("import_alias")
-                                except Exception:
-                                    alias = None
+                                meta = getattr(step, "meta", None)
+                                alias = meta.get("import_alias") if isinstance(meta, dict) else None
                                 import_tag = alias or getattr(step, "name", "")
                                 for f in child_report.errors:
+                                    loc = f.location_path
+                                    if import_tag:
+                                        loc = (
+                                            f"imports.{import_tag}::{loc}"
+                                            if loc
+                                            else f"imports.{import_tag}"
+                                        )
                                     report.errors.append(
                                         ValidationFinding(
                                             rule_id=f.rule_id,
                                             severity=f.severity,
                                             message=f"[import:{import_tag}] {f.message}",
-                                            step_name=getattr(step, "name", None),
+                                            step_name=f.step_name or getattr(step, "name", None),
                                             suggestion=f.suggestion,
-                                            location_path=(
-                                                f"imports.{import_tag}::{f.location_path}"
-                                                if f.location_path
-                                                else f.location_path
-                                            ),
+                                            location_path=loc,
                                             file=f.file,
                                             line=f.line,
                                             column=f.column,
                                         )
                                     )
                                 for w in child_report.warnings:
+                                    loc = w.location_path
+                                    if import_tag:
+                                        loc = (
+                                            f"imports.{import_tag}::{loc}"
+                                            if loc
+                                            else f"imports.{import_tag}"
+                                        )
                                     report.warnings.append(
                                         ValidationFinding(
                                             rule_id=w.rule_id,
                                             severity=w.severity,
                                             message=f"[import:{import_tag}] {w.message}",
-                                            step_name=getattr(step, "name", None),
+                                            step_name=w.step_name or getattr(step, "name", None),
                                             suggestion=w.suggestion,
-                                            location_path=(
-                                                f"imports.{import_tag}::{w.location_path}"
-                                                if w.location_path
-                                                else w.location_path
-                                            ),
+                                            location_path=loc,
                                             file=w.file,
                                             line=w.line,
                                             column=w.column,
                                         )
                                     )
                     except Exception as import_err:
-                        logging.debug("Import validation aggregation failed: %s", import_err)
+                        logging.debug(
+                            "Import validation aggregation failed for %r: %s",
+                            getattr(step, "name", None),
+                            import_err,
+                        )
                         continue
 
         return report
