@@ -1400,8 +1400,13 @@ def get_pipeline_step_names(path: str) -> list[str]:
     return [step.name for step in pipeline.steps]
 
 
-def validate_pipeline_file(path: str) -> Any:
-    """Return the validation report for a pipeline file."""
+def validate_pipeline_file(path: str, *, include_imports: bool = False) -> Any:
+    """Return the validation report for a pipeline file.
+
+    Args:
+        path: Path to the pipeline YAML/Python file.
+        include_imports: When True, recursively validate imported blueprints (aggregated into report).
+    """
     if path.endswith((".yaml", ".yml")):
         # Load YAML and surface loader errors directly so CLI can show helpful messages
         with open(path, "r") as f:
@@ -1415,7 +1420,7 @@ def validate_pipeline_file(path: str) -> Any:
         pipeline, _ = load_pipeline_from_file(path)
     from typing import cast as _cast
 
-    return _cast(Any, pipeline).validate_graph()
+    return _cast(Any, pipeline).validate_graph(include_imports=include_imports)
 
 
 def validate_yaml_text(yaml_text: str, base_dir: Optional[str] = None) -> ValidationReport:

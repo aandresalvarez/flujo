@@ -123,7 +123,12 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     # Validation helpers
     # ------------------------------------------------------------------
 
-    def validate_graph(self, *, raise_on_error: bool = False) -> ValidationReport:  # noqa: D401
+    def validate_graph(
+        self,
+        *,
+        raise_on_error: bool = False,
+        include_imports: bool = False,
+    ) -> ValidationReport:  # noqa: D401
         """Validate that all steps have agents, compatible types, and static lints.
 
         Adds advanced static checks:
@@ -309,6 +314,39 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             prev_step = step
             prev_out_type = getattr(step, "__step_output_type__", Any)
 
+        # Template Lints (subset) — V-T1: previous_step.output misuse
+        try:
+            for step in self.steps:
+                try:
+                    meta = getattr(step, "meta", None)
+                    templ = None
+                    if isinstance(meta, dict):
+                        templ = meta.get("templated_input")
+                    if isinstance(templ, str) and ("{{" in templ and "}}" in templ):
+                        import re as _re
+
+                        if _re.search(r"\bprevious_step\s*\.\s*output\b", templ):
+                            report.warnings.append(
+                                ValidationFinding(
+                                    rule_id="V-T1",
+                                    severity="warning",
+                                    message=(
+                                        "Template references previous_step.output, but previous_step is the raw value and "
+                                        "has no .output attribute."
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                    suggestion=(
+                                        "Prefer using steps.<previous_step_name>.output | tojson, or use previous_step | tojson for raw value."
+                                    ),
+                                    location_path="steps[].input",
+                                )
+                            )
+                except Exception:
+                    continue
+        except Exception:
+            # Do not fail validation when linter scanning fails
+            pass
+
         # Advanced Check 3.2.1: Context Merge Conflict Detection for ParallelStep (V-P1)
         # Use runtime imports with fallbacks while keeping mypy satisfied by typing as Any
         from typing import Any as _Any
@@ -401,6 +439,53 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             raise ConfigurationError(
                 "Pipeline validation failed: " + report.model_dump_json(indent=2)
             )
+
+        # Optional: recursively validate imported child pipelines and aggregate findings
+        if include_imports:
+            try:
+                from .import_step import ImportStep as _ImportStep
+            except Exception:
+                _ImportStep = None  # type: ignore
+            if _ImportStep is not None:
+                for step in self.steps:
+                    try:
+                        if isinstance(step, _ImportStep):
+                            child = getattr(step, "pipeline", None)
+                            if child is not None and hasattr(child, "validate_graph"):
+                                child_report: ValidationReport = child.validate_graph(
+                                    include_imports=False
+                                )
+                                # Aggregate child findings with step context
+                                for f in child_report.errors:
+                                    report.errors.append(
+                                        ValidationFinding(
+                                            rule_id=f.rule_id,
+                                            severity=f.severity,
+                                            message=f"[import:{getattr(step, 'name', '')}] {f.message}",
+                                            step_name=getattr(step, "name", None),
+                                            suggestion=f.suggestion,
+                                            location_path=f.location_path,
+                                            file=f.file,
+                                            line=f.line,
+                                            column=f.column,
+                                        )
+                                    )
+                                for w in child_report.warnings:
+                                    report.warnings.append(
+                                        ValidationFinding(
+                                            rule_id=w.rule_id,
+                                            severity=w.severity,
+                                            message=f"[import:{getattr(step, 'name', '')}] {w.message}",
+                                            step_name=getattr(step, "name", None),
+                                            suggestion=w.suggestion,
+                                            location_path=w.location_path,
+                                            file=w.file,
+                                            line=w.line,
+                                            column=w.column,
+                                        )
+                                    )
+                    except Exception:
+                        continue
 
         return report
 

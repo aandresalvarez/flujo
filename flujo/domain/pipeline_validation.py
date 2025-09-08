@@ -13,6 +13,11 @@ class ValidationFinding(BaseModel):
     message: str
     step_name: Optional[str] = None
     suggestion: Optional[str] = None
+    # Optional extended fields for richer diagnostics
+    location_path: Optional[str] = None  # e.g., steps[3].input
+    file: Optional[str] = None
+    line: Optional[int] = None
+    column: Optional[int] = None
 
 
 class ValidationReport(BaseModel):

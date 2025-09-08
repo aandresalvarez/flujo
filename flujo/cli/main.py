@@ -1774,7 +1774,9 @@ def explain(path: str) -> None:
         raise typer.Exit(1)
 
 
-def _validate_impl(path: Optional[str], strict: bool, output_format: str) -> None:
+def _validate_impl(
+    path: Optional[str], strict: bool, output_format: str, *, include_imports: bool = True
+) -> None:
     from .exit_codes import EX_VALIDATION_FAILED, EX_IMPORT_ERROR, EX_RUNTIME_ERROR
     import traceback as _tb
     import os as _os
@@ -1783,7 +1785,7 @@ def _validate_impl(path: Optional[str], strict: bool, output_format: str) -> Non
         if path is None:
             root = find_project_root()
             path = str((Path(root) / "pipeline.yaml").resolve())
-        report = validate_pipeline_file(path)
+        report = validate_pipeline_file(path, include_imports=include_imports)
 
         if output_format == "json":
             # Emit machine-friendly JSON (errors, warnings, is_valid)
@@ -1870,9 +1872,16 @@ def validate_dev(
             click_type=click.Choice(["text", "json"]),
         ),
     ] = "text",
+    imports: Annotated[
+        bool,
+        typer.Option(
+            "--imports/--no-imports",
+            help="Recursively validate imported blueprints",
+        ),
+    ] = True,
 ) -> None:
     """Validate a pipeline defined in a file (developer namespace)."""
-    _validate_impl(path, strict, output_format)
+    _validate_impl(path, strict, output_format, include_imports=imports)
 
 
 @app.command(name="validate")
@@ -1897,9 +1906,16 @@ def validate(
             click_type=click.Choice(["text", "json"]),
         ),
     ] = "text",
+    imports: Annotated[
+        bool,
+        typer.Option(
+            "--imports/--no-imports",
+            help="Recursively validate imported blueprints",
+        ),
+    ] = True,
 ) -> None:
     """Validate a pipeline (top-level alias)."""
-    _validate_impl(path, strict, output_format)
+    _validate_impl(path, strict, output_format, include_imports=imports)
 
 
 @app.command(
