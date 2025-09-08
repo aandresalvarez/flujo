@@ -15,7 +15,6 @@ import flujo.builtins as _flujo_builtins  # noqa: F401  # Register builtin skill
 from typing_extensions import Annotated
 from rich.console import Console
 import os as _os
-import sys as _sys
 from ..utils.serialization import safe_serialize, safe_deserialize as _safe_deserialize
 from .lens import lens_app
 from .helpers import (
@@ -54,30 +53,6 @@ from .exit_codes import (
 )
 import click.testing
 import os
-
-# Backward-compatibility shim: map --format -> --output-format for validate commands
-try:
-    _argv = list(_sys.argv)
-    if any(tok == "--format" or tok.startswith("--format=") for tok in _argv):
-        # Only rewrite for validate/dev validate commands to avoid conflicts elsewhere.
-        # Allow global options before subcommands (e.g., flujo --project . validate ...).
-        is_validate_cmd = False
-        try:
-            # Exact token presence is good enough here
-            if "validate" in _argv:
-                # If 'dev' is used, Typer subcommand form is: dev validate ...
-                is_validate_cmd = True
-        except Exception:
-            is_validate_cmd = False
-        if is_validate_cmd:
-            for i, tok in enumerate(_argv):
-                if tok == "--format":
-                    _argv[i] = "--output-format"
-                elif tok.startswith("--format="):
-                    _argv[i] = tok.replace("--format=", "--output-format=", 1)
-            _sys.argv[:] = _argv
-except Exception:
-    pass
 
 # Expose Flujo class for tests that monkeypatch flujo.cli.main.Flujo.run
 from flujo.application.runner import Flujo as _Flujo  # re-export for test monkeypatch compatibility
@@ -310,23 +285,39 @@ if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
                     default=0,
                 )
                 default_commands = panel_to_commands.get(_tru.COMMANDS_PANEL_TITLE, [])
-                _tru._print_commands_panel(
-                    name=_tru.COMMANDS_PANEL_TITLE,
-                    commands=default_commands,
-                    markup_mode=markup_mode,
-                    console=console,
-                    cmd_len=max_cmd_len,
-                )
-                for panel_name, commands in panel_to_commands.items():
-                    if panel_name == _tru.COMMANDS_PANEL_TITLE:
-                        continue
+                try:
                     _tru._print_commands_panel(
-                        name=panel_name,
-                        commands=commands,
+                        name=_tru.COMMANDS_PANEL_TITLE,
+                        commands=default_commands,
                         markup_mode=markup_mode,
                         console=console,
                         cmd_len=max_cmd_len,
                     )
+                except TypeError:
+                    _tru._print_commands_panel(
+                        name=_tru.COMMANDS_PANEL_TITLE,
+                        commands=default_commands,
+                        markup_mode=markup_mode,
+                        console=console,
+                    )
+                for panel_name, commands in panel_to_commands.items():
+                    if panel_name == _tru.COMMANDS_PANEL_TITLE:
+                        continue
+                    try:
+                        _tru._print_commands_panel(
+                            name=panel_name,
+                            commands=commands,
+                            markup_mode=markup_mode,
+                            console=console,
+                            cmd_len=max_cmd_len,
+                        )
+                    except TypeError:
+                        _tru._print_commands_panel(
+                            name=panel_name,
+                            commands=commands,
+                            markup_mode=markup_mode,
+                            console=console,
+                        )
 
         setattr(_tru, "rich_format_help", _flujo_rich_format_help)
         try:
@@ -1144,10 +1135,9 @@ Keep this module focused on argument parsing and command wiring.
 
 @app.command(name="status", help="Show provider readiness and SQLite state configuration.")
 def status(
-    fmt: Annotated[
+    format: Annotated[
         str,
         typer.Option(
-            "--format",
             help="Output format",
             show_default=True,
             click_type=click.Choice(["text", "json"], case_sensitive=False),
@@ -1390,7 +1380,7 @@ def status(
         raise typer.Exit(EX_RUNTIME_ERROR)
 
     # Emit output
-    if (fmt or "text").lower() == "json":
+    if (format or "text").lower() == "json":
         typer.echo(json.dumps(safe_serialize(payload)))
     else:
         # Minimal human output
@@ -2134,21 +2124,12 @@ def validate_dev(
         typer.Option(
             None,
             "--output-format",
+            "--format",
             help="Output format for CI parsers",
             case_sensitive=False,
             click_type=click.Choice(["text", "json", "sarif"]),
         ),
     ] = "text",
-    format_alias: Annotated[
-        Optional[str],
-        typer.Option(
-            None,
-            "--format",
-            help="Alias for --output-format (deprecated)",
-            case_sensitive=False,
-            click_type=click.Choice(["text", "json", "sarif"]),
-        ),
-    ] = None,
     imports: Annotated[
         bool,
         typer.Option(
@@ -2175,7 +2156,7 @@ def validate_dev(
     _validate_impl(
         path,
         strict,
-        format_alias or output_format,
+        output_format,
         include_imports=imports,
         fail_on_warn=fail_on_warn,
         rules=rules,
@@ -2201,21 +2182,12 @@ def validate(
         typer.Option(
             None,
             "--output-format",
+            "--format",
             help="Output format for CI parsers",
             case_sensitive=False,
             click_type=click.Choice(["text", "json", "sarif"]),
         ),
     ] = "text",
-    format_alias: Annotated[
-        Optional[str],
-        typer.Option(
-            None,
-            "--format",
-            help="Alias for --output-format (deprecated)",
-            case_sensitive=False,
-            click_type=click.Choice(["text", "json", "sarif"]),
-        ),
-    ] = None,
     imports: Annotated[
         bool,
         typer.Option(
@@ -2242,7 +2214,7 @@ def validate(
     _validate_impl(
         path,
         strict,
-        format_alias or output_format,
+        output_format,
         include_imports=imports,
         fail_on_warn=fail_on_warn,
         rules=rules,
@@ -4479,6 +4451,26 @@ except Exception:
 
 if __name__ == "__main__":
     try:
+        # Local alias shim: support legacy `--format` for validate commands when executed directly
+        try:
+            argv = list(_sys.argv)
+            if any(
+                tok == "--format" or (isinstance(tok, str) and tok.startswith("--format="))
+                for tok in argv
+            ):
+                # Map for validate
+                if "validate" in argv or (
+                    len(argv) >= 3 and argv[1] == "dev" and argv[2] == "validate"
+                ):
+                    for i, tok in enumerate(argv):
+                        if tok == "--format":
+                            argv[i] = "--output-format"
+                        elif isinstance(tok, str) and tok.startswith("--format="):
+                            argv[i] = tok.replace("--format=", "--output-format=", 1)
+                    _sys.argv[:] = argv
+                # No special mapping for other commands
+        except Exception:
+            pass
         app()
     except (SettingsError, ConfigurationError) as e:
         typer.echo(f"[red]Settings error: {e}[/red]", err=True)
