@@ -1416,7 +1416,7 @@ def validate_pipeline_file(path: str, *, include_imports: bool = True) -> Valida
         # Ensure relative imports resolve from the YAML file directory
         base_dir = os.path.dirname(os.path.abspath(path))
         pipeline: Pipeline[Any, Any] = load_pipeline_blueprint_from_yaml(
-            yaml_text, base_dir=base_dir
+            yaml_text, base_dir=base_dir, source_file=path
         )
     else:
         pipeline, _ = load_pipeline_from_file(path)

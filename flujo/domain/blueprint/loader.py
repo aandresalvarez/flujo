@@ -2192,7 +2192,7 @@ def _current_skills_base_dir() -> Optional[str]:
 
 
 def load_pipeline_blueprint_from_yaml(
-    yaml_text: str, base_dir: Optional[str] = None
+    yaml_text: str, base_dir: Optional[str] = None, source_file: Optional[str] = None
 ) -> Pipeline[Any, Any]:
     """Load a Pipeline from YAML with correct relative-import semantics.
 
@@ -2219,16 +2219,54 @@ def load_pipeline_blueprint_from_yaml(
     # Proactively auto-load skills to honor docs: load skills.yaml before parsing.
     # This ensures CLI and any programmatic use benefit from the same behavior.
     try:
-        # Build a best-effort YAML location index (path -> (line, col)) using ruamel.yaml when available.
+        # Build a best-effort YAML location index (path -> (line, col)) and comment-based suppressions
+        # using ruamel.yaml when available.
         loc_index: Dict[str, Tuple[int, int]] = {}
+        sup_index: Dict[str, List[str]] = {}
         try:
             from ruamel.yaml import YAML as _RYAML
             from ruamel.yaml.comments import CommentedMap as _CMap, CommentedSeq as _CSeq
 
-            def _build_index(txt: str) -> Dict[str, Tuple[int, int]]:
+            def _build_index(txt: str) -> Tuple[Dict[str, Tuple[int, int]], Dict[str, List[str]]]:
                 yaml_rt = _RYAML(typ="rt")
                 root = yaml_rt.load(txt)
                 idx: Dict[str, Tuple[int, int]] = {}
+                sup: Dict[str, List[str]] = {}
+
+                def _extract_ignores(comment_obj: Any) -> List[str]:
+                    pats: List[str] = []
+                    try:
+                        import re as _re
+
+                        texts: List[str] = []
+                        if comment_obj is None:
+                            return pats
+                        # comment_obj may be a list/tuple of tokens or strings
+                        if isinstance(comment_obj, (list, tuple)):
+                            for c in comment_obj:
+                                try:
+                                    val = getattr(c, "value", None)
+                                    texts.append(str(val if val is not None else c))
+                                except Exception:
+                                    continue
+                        else:
+                            val = getattr(comment_obj, "value", None)
+                            texts.append(str(val if val is not None else comment_obj))
+                        for t in texts:
+                            m = _re.search(r"flujo:\s*ignore\s+([^\n#]+)", t, _re.IGNORECASE)
+                            if m:
+                                body = m.group(1)
+                                # Split on comma/space
+                                for part in body.replace("\t", " ").split(","):
+                                    tok = part.strip()
+                                    if tok:
+                                        # Also split on whitespace to handle multi-space lists
+                                        for sub in tok.split():
+                                            if sub and sub not in pats:
+                                                pats.append(sub)
+                    except Exception:
+                        return pats
+                    return pats
 
                 def _recurse(node: Any, path: str) -> None:
                     try:
@@ -2241,6 +2279,28 @@ def load_pipeline_blueprint_from_yaml(
                                         pos = node.lc.key(k)
                                         if isinstance(pos, tuple) and len(pos) >= 2:
                                             idx[key_path] = (int(pos[0]) + 1, int(pos[1]) + 1)
+                                    # Comments attached to mapping keys
+                                    if hasattr(node, "ca") and hasattr(node.ca, "items"):
+                                        ent = node.ca.items.get(k)
+                                        if ent:
+                                            pats = _extract_ignores(ent)
+                                            if pats:
+                                                sup.setdefault(key_path, []).extend(pats)
+                                                # If this mapping is within a step item, also attach to the step path
+                                                try:
+                                                    import re as _re
+
+                                                    m = _re.search(r"^(.*)\[(\d+)\]$", path)
+                                                    if m:
+                                                        base = m.group(1)
+                                                        idx_s = m.group(2)
+                                                        if base.endswith("steps"):
+                                                            step_key = f"{base}[{idx_s}]"
+                                                        else:
+                                                            step_key = f"{base}.steps[{idx_s}]"
+                                                        sup.setdefault(step_key, []).extend(pats)
+                                                except Exception:
+                                                    pass
                                 except Exception:
                                     pass
                                 # Special-case: steps list — record each item's position
@@ -2265,6 +2325,19 @@ def load_pipeline_blueprint_from_yaml(
                                         idx[f"{path}[{i}]"] = line_col
                                         # Also index a synthetic '.steps[i]' path to align with loader yaml_path convention
                                         idx[f"{path}.steps[{i}]"] = line_col
+                                    # Extract suppressions from sequence item comments
+                                    pats_item = []
+                                    try:
+                                        if hasattr(node, "ca") and hasattr(node.ca, "items"):
+                                            ent = node.ca.items.get(i)
+                                            if ent:
+                                                pats_item.extend(_extract_ignores(ent))
+                                        if hasattr(item, "ca") and hasattr(item.ca, "comment"):
+                                            pats_item.extend(_extract_ignores(item.ca.comment))
+                                    except Exception:
+                                        pass
+                                    if pats_item:
+                                        sup.setdefault(f"{path}.steps[{i}]", []).extend(pats_item)
                                 except Exception:
                                     pass
                                 _recurse(item, f"{path}[{i}]")
@@ -2272,11 +2345,12 @@ def load_pipeline_blueprint_from_yaml(
                         pass
 
                 _recurse(root, "")
-                return idx
+                return idx, sup
 
-            loc_index = _build_index(yaml_text)
+            loc_index, sup_index = _build_index(yaml_text)
         except Exception:
             loc_index = {}
+            sup_index = {}
         if base_dir:
             from ...infra.skills_catalog import (
                 load_skills_catalog as _load_skills_catalog,
@@ -2325,7 +2399,19 @@ def load_pipeline_blueprint_from_yaml(
                             if ypath in loc_index:
                                 ln, col = loc_index[ypath]
                                 info = {"path": ypath, "line": int(ln), "column": int(col)}
+                                if source_file:
+                                    info["file"] = str(source_file)
                                 st.meta["_yaml_loc"] = info
+                            # Attach comment-based suppressions when present
+                            pats = sup_index.get(ypath) or []
+                            if pats:
+                                try:
+                                    lst = st.meta.setdefault("suppress_rules", [])
+                                    for ptn in pats:
+                                        if ptn not in lst:
+                                            lst.append(ptn)
+                                except Exception:
+                                    pass
                     except Exception:
                         pass
                     # Recurse into nested constructs: fallback, branches, default branch, loop/map bodies, wrapped
