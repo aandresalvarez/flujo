@@ -36,9 +36,7 @@ class SignatureAnalysis(NamedTuple):
 _analysis_cache_weak: "weakref.WeakKeyDictionary[Callable[..., Any], SignatureAnalysis]" = (
     weakref.WeakKeyDictionary()
 )
-_analysis_cache_id: weakref.WeakValueDictionary[int, SignatureAnalysis] = (
-    weakref.WeakValueDictionary()
-)
+_analysis_cache_id: dict[int, SignatureAnalysis] = {}
 
 
 def _cache_get(func: Callable[..., Any]) -> SignatureAnalysis | None:
@@ -56,6 +54,8 @@ def _cache_set(func: Callable[..., Any], spec: SignatureAnalysis) -> None:
     try:
         _analysis_cache_weak[func] = spec
     except TypeError:
+        # Some callables (e.g., instances with __slots__) are not weakref-able.
+        # Fallback to id-based cache using a strong reference to the analysis.
         _analysis_cache_id[id(func)] = spec
 
 
