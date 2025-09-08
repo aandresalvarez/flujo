@@ -455,6 +455,58 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         if ParallelStep is not None and MergeStrategy is not None:
             for st in self.steps:
                 if isinstance(st, ParallelStep):
+                    # V-P3: Parallel branch input uniformity – warn if first-step input types differ across branches
+                    try:
+                        branch_input_types: set[str] = set()
+                        for bname, bp in getattr(st, "branches", {}).items():
+                            try:
+                                if getattr(bp, "steps", None):
+                                    first = bp.steps[0]
+                                    # Prefer literal templated_input type category when present and non-template
+                                    category = None
+                                    try:
+                                        meta = getattr(first, "meta", None)
+                                        if isinstance(meta, dict) and "templated_input" in meta:
+                                            tv = meta.get("templated_input")
+                                            # Skip if it looks like a template
+                                            if isinstance(tv, str) and ("{{" in tv and "}}" in tv):
+                                                category = None
+                                            else:
+                                                if isinstance(tv, bool):
+                                                    category = "bool"
+                                                elif isinstance(tv, (int, float)):
+                                                    category = "number"
+                                                elif isinstance(tv, str):
+                                                    category = "string"
+                                                elif isinstance(tv, dict):
+                                                    category = "object"
+                                                elif isinstance(tv, list):
+                                                    category = "array"
+                                    except Exception:
+                                        category = None
+                                    if category is None:
+                                        itype = getattr(first, "__step_input_type__", object)
+                                        category = str(itype)
+                                    branch_input_types.add(category)
+                            except Exception:
+                                continue
+                        if len(branch_input_types) > 1:
+                            report.warnings.append(
+                                ValidationFinding(
+                                    rule_id="V-P3",
+                                    severity="warning",
+                                    message=(
+                                        f"ParallelStep '{st.name}' branches expect heterogeneous input types; "
+                                        "the same input is passed to all branches."
+                                    ),
+                                    step_name=getattr(st, "name", None),
+                                    suggestion=(
+                                        "Ensure branches handle the same input type or insert adapter steps per branch."
+                                    ),
+                                )
+                            )
+                    except Exception:
+                        logging.debug("V-P3 branch input uniformity check failed; skipping")
                     # Only analyze when using default CONTEXT_UPDATE
                     if st.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
                         # Gather per-branch candidate context fields that could be updated
@@ -539,6 +591,47 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 for step in self.steps:
                     try:
                         if isinstance(step, _ImportStep):
+                            # V-I2: Outputs mapping sanity – warn on obviously invalid parent roots
+                            try:
+                                outputs_map = getattr(step, "outputs", None)
+                                if isinstance(outputs_map, list):
+                                    allowed_parent_roots = {
+                                        "scratchpad",
+                                        "command_log",
+                                        "hitl_history",
+                                        "conversation_history",
+                                        "yaml_text",
+                                        "generated_yaml",
+                                        "run_id",
+                                    }
+                                    for om in outputs_map:
+                                        try:
+                                            parent_path = getattr(om, "parent", "")
+                                            if not isinstance(parent_path, str) or not parent_path:
+                                                continue
+                                            root = parent_path.split(".", 1)[0]
+                                            if root not in allowed_parent_roots:
+                                                report.warnings.append(
+                                                    ValidationFinding(
+                                                        rule_id="V-I2",
+                                                        severity="warning",
+                                                        message=(
+                                                            f"Import outputs mapping parent path '{parent_path}' has an unknown root; "
+                                                            "consider mapping under 'scratchpad' or a known context field."
+                                                        ),
+                                                        step_name=getattr(step, "name", None),
+                                                        suggestion=(
+                                                            "Use scratchpad.<key> for transient fields or ensure the root is a valid context field."
+                                                        ),
+                                                        location_path="steps[].config.outputs",
+                                                    )
+                                                )
+                                        except Exception as _:
+                                            logging.debug(
+                                                "V-I2 check skipped for one mapping entry"
+                                            )
+                            except Exception as _:
+                                logging.debug("V-I2 mapping sanity check skipped due to error")
                             child = getattr(step, "pipeline", None)
                             if child is not None and hasattr(child, "validate_graph"):
                                 # Cycle detection (V-I3): detect already visited child
