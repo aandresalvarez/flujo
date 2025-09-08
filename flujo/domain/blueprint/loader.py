@@ -2421,7 +2421,7 @@ def _import_object(path: str) -> Any:
                 if root_pkg not in _sys.modules:
                     root_mod = _types.ModuleType(root_pkg)
                     # __path__ marks as package; empty list is acceptable for a synthetic root
-                    root_mod.__path__ = []  # noqa: B950
+                    root_mod.__path__ = []
                     root_mod.__package__ = root_pkg
                     _sys.modules[root_pkg] = root_mod
                 if skills_pkg not in _sys.modules:
