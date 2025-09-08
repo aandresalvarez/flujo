@@ -681,7 +681,9 @@ def _make_step_from_blueprint(
         branches_map2: Dict[Any, Pipeline[Any, Any]] = {}
         for key, branch_spec in model.branches.items():
             branches_map2[key] = _build_pipeline_from_branch(
-                branch_spec, compiled_agents=compiled_agents
+                branch_spec,
+                base_path=f"{yaml_path}.branches.{key}" if yaml_path else None,
+                compiled_agents=compiled_agents,
             )
         # Resolve condition callable explicitly to avoid scope issues
         if model.condition:

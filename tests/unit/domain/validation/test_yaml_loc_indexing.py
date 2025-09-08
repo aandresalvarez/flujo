@@ -97,3 +97,29 @@ def test_nested_yaml_loc_indexing_state_parallel_map_loop_fallback() -> None:
     # Fallback step: yaml_path ends with .fallback
     fback = getattr(fm, "fallback_step", None)
     assert fback is not None and _get_yaml_loc(fback) is not None
+
+
+def test_yaml_loc_indexing_conditional_default_branch() -> None:
+    yaml_text = textwrap.dedent(
+        """
+        version: "0.1"
+        steps:
+          - kind: conditional
+            name: C
+            branches:
+              ok:
+                - name: COK
+                  agent: { id: "flujo.builtins.stringify" }
+            default_branch:
+              - name: CDEF
+                agent: { id: "flujo.builtins.stringify" }
+        """
+    )
+    pipeline = load_pipeline_blueprint_from_yaml(yaml_text)
+    cond = pipeline.steps[0]
+    # ok branch step
+    bpipe = cond.branches.get("ok")
+    assert bpipe is not None and _get_yaml_loc(bpipe.steps[0]) is not None
+    # default branch step
+    dpipe = cond.default_branch_pipeline
+    assert dpipe is not None and _get_yaml_loc(dpipe.steps[0]) is not None
