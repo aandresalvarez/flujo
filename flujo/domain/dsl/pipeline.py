@@ -128,7 +128,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         *,
         raise_on_error: bool = False,
         include_imports: bool = False,
-    ) -> ValidationReport:  # noqa: D401
+    ) -> ValidationReport:
         """Validate that all steps have agents, compatible types, and static lints.
 
         Adds advanced static checks:
@@ -139,7 +139,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         from typing import Any, get_origin, get_args, Union as TypingUnion
         import types as _types
 
-        def _compatible(a: Any, b: Any) -> bool:  # noqa: D401
+        def _compatible(a: Any, b: Any) -> bool:
             if a is Any or b is Any:
                 return True
 
@@ -341,11 +341,11 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                     location_path="steps[].input",
                                 )
                             )
-                except Exception:
+                except Exception as lint_err:
+                    logging.debug("Template linter (V-T1) skipped due to error: %s", lint_err)
                     continue
-        except Exception:
-            # Do not fail validation when linter scanning fails
-            pass
+        except Exception as top_lint_err:
+            logging.debug("Template linter (V-T1) scanning failed: %s", top_lint_err)
 
         # Advanced Check 3.2.1: Context Merge Conflict Detection for ParallelStep (V-P1)
         # Use runtime imports with fallbacks while keeping mypy satisfied by typing as Any
@@ -456,15 +456,28 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                     include_imports=False
                                 )
                                 # Aggregate child findings with step context
+                                # Prefer import alias stored in step.meta, fallback to step.name
+                                alias = None
+                                try:
+                                    meta = getattr(step, "meta", None)
+                                    if isinstance(meta, dict):
+                                        alias = meta.get("import_alias")
+                                except Exception:
+                                    alias = None
+                                import_tag = alias or getattr(step, "name", "")
                                 for f in child_report.errors:
                                     report.errors.append(
                                         ValidationFinding(
                                             rule_id=f.rule_id,
                                             severity=f.severity,
-                                            message=f"[import:{getattr(step, 'name', '')}] {f.message}",
+                                            message=f"[import:{import_tag}] {f.message}",
                                             step_name=getattr(step, "name", None),
                                             suggestion=f.suggestion,
-                                            location_path=f.location_path,
+                                            location_path=(
+                                                f"imports.{import_tag}::{f.location_path}"
+                                                if f.location_path
+                                                else f.location_path
+                                            ),
                                             file=f.file,
                                             line=f.line,
                                             column=f.column,
@@ -475,16 +488,21 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                         ValidationFinding(
                                             rule_id=w.rule_id,
                                             severity=w.severity,
-                                            message=f"[import:{getattr(step, 'name', '')}] {w.message}",
+                                            message=f"[import:{import_tag}] {w.message}",
                                             step_name=getattr(step, "name", None),
                                             suggestion=w.suggestion,
-                                            location_path=w.location_path,
+                                            location_path=(
+                                                f"imports.{import_tag}::{w.location_path}"
+                                                if w.location_path
+                                                else w.location_path
+                                            ),
                                             file=w.file,
                                             line=w.line,
                                             column=w.column,
                                         )
                                     )
-                    except Exception:
+                    except Exception as import_err:
+                        logging.debug("Import validation aggregation failed: %s", import_err)
                         continue
 
         return report

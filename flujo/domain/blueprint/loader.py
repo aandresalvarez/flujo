@@ -1728,6 +1728,12 @@ def _make_step_from_blueprint(
                         # Pass through generic step config for consistency
                         config=step_config,
                     )
+                    # Record the import alias for validation/reporting purposes
+                    try:
+                        if hasattr(st, "meta") and isinstance(st.meta, dict):
+                            st.meta["import_alias"] = alias
+                    except Exception:
+                        pass
                 except Exception as e:
                     raise BlueprintError(
                         f"Failed to wrap imported pipeline '{alias}' as ImportStep: {e}"
