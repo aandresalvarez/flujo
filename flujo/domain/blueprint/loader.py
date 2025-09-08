@@ -2235,6 +2235,14 @@ def load_pipeline_blueprint_from_yaml(
                         if isinstance(node, _CMap):
                             for k, v in node.items():
                                 key_path = f"{path}.{k}" if path else str(k)
+                                # Record key position for mapping entries (e.g., fallback, wrapped_step, branches)
+                                try:
+                                    if hasattr(node, "lc") and hasattr(node.lc, "key"):
+                                        pos = node.lc.key(k)
+                                        if isinstance(pos, tuple) and len(pos) >= 2:
+                                            idx[key_path] = (int(pos[0]) + 1, int(pos[1]) + 1)
+                                except Exception:
+                                    pass
                                 # Special-case: steps list — record each item's position
                                 if k == "steps" and isinstance(v, _CSeq):
                                     try:
@@ -2250,6 +2258,15 @@ def load_pipeline_blueprint_from_yaml(
                                 _recurse(v, key_path)
                         elif isinstance(node, _CSeq):
                             for i, item in enumerate(node):
+                                try:
+                                    lc = getattr(node.lc, "data", {}).get(i)
+                                    if lc and len(lc) >= 2:
+                                        line_col = (int(lc[0]) + 1, int(lc[1]) + 1)
+                                        idx[f"{path}[{i}]"] = line_col
+                                        # Also index a synthetic '.steps[i]' path to align with loader yaml_path convention
+                                        idx[f"{path}.steps[{i}]"] = line_col
+                                except Exception:
+                                    pass
                                 _recurse(item, f"{path}[{i}]")
                     except Exception:
                         pass
@@ -2298,7 +2315,9 @@ def load_pipeline_blueprint_from_yaml(
             p = build_pipeline_from_blueprint(bp)
             # Attach ruamel-derived line/column to steps when yaml_path is present
             try:
-                for st in getattr(p, "steps", []) or []:
+                from ..dsl import Pipeline as _DPipe, Step as _DStep
+
+                def _attach_step_loc(st: Any) -> None:
                     try:
                         meta = getattr(st, "meta", None)
                         if isinstance(meta, dict) and "yaml_path" in meta:
@@ -2308,7 +2327,58 @@ def load_pipeline_blueprint_from_yaml(
                                 info = {"path": ypath, "line": int(ln), "column": int(col)}
                                 st.meta["_yaml_loc"] = info
                     except Exception:
-                        continue
+                        pass
+                    # Recurse into nested constructs: fallback, branches, default branch, loop/map bodies, wrapped
+                    try:
+                        fb = getattr(st, "fallback_step", None)
+                        if isinstance(fb, _DStep):
+                            _attach_step_loc(fb)
+                    except Exception:
+                        pass
+                    try:
+                        branches = getattr(st, "branches", None)
+                        if isinstance(branches, dict):
+                            for _bn, _bp in branches.items():
+                                if isinstance(_bp, _DPipe):
+                                    _attach_pipe_loc(_bp)
+                    except Exception:
+                        pass
+                    # State machine states
+                    try:
+                        states = getattr(st, "states", None)
+                        if isinstance(states, dict):
+                            for _sn, _sp in states.items():
+                                if isinstance(_sp, _DPipe):
+                                    _attach_pipe_loc(_sp)
+                    except Exception:
+                        pass
+                    for attr in (
+                        "default_branch_pipeline",
+                        "loop_body_pipeline",
+                        "original_body_pipeline",
+                        "pipeline_to_run",
+                    ):
+                        try:
+                            bpv = getattr(st, attr, None)
+                            if isinstance(bpv, _DPipe):
+                                _attach_pipe_loc(bpv)
+                        except Exception:
+                            continue
+                    try:
+                        ws = getattr(st, "wrapped_step", None)
+                        if isinstance(ws, _DStep):
+                            _attach_step_loc(ws)
+                    except Exception:
+                        pass
+
+                def _attach_pipe_loc(pipe: Any) -> None:
+                    try:
+                        for _st in getattr(pipe, "steps", []) or []:
+                            _attach_step_loc(_st)
+                    except Exception:
+                        pass
+
+                _attach_pipe_loc(p)
             except Exception:
                 pass
             return p
