@@ -1400,7 +1400,7 @@ def get_pipeline_step_names(path: str) -> list[str]:
     return [step.name for step in pipeline.steps]
 
 
-def validate_pipeline_file(path: str, *, include_imports: bool = True) -> Any:
+def validate_pipeline_file(path: str, *, include_imports: bool = True) -> ValidationReport:
     """Return the validation report for a pipeline file.
 
     Args:
@@ -1415,20 +1415,24 @@ def validate_pipeline_file(path: str, *, include_imports: bool = True) -> Any:
 
         # Ensure relative imports resolve from the YAML file directory
         base_dir = os.path.dirname(os.path.abspath(path))
-        pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
+        pipeline: Pipeline[Any, Any] = load_pipeline_blueprint_from_yaml(
+            yaml_text, base_dir=base_dir
+        )
     else:
         pipeline, _ = load_pipeline_from_file(path)
-    from typing import cast as _cast
 
-    return _cast(Any, pipeline).validate_graph(include_imports=include_imports)
+    return pipeline.validate_graph(include_imports=include_imports)
 
 
-def validate_yaml_text(yaml_text: str, base_dir: Optional[str] = None) -> ValidationReport:
+def validate_yaml_text(
+    yaml_text: str, base_dir: Optional[str] = None, *, include_imports: bool = False
+) -> ValidationReport:
     """Validate a YAML blueprint string and return its ValidationReport.
 
     Args:
         yaml_text: The YAML blueprint content.
         base_dir: Optional base directory to resolve relative imports within YAML.
+        include_imports: When True, recursively validate imported blueprints (aggregated into report).
 
     Returns:
         ValidationReport: The validation report from pipeline.validate_graph().
@@ -1437,10 +1441,9 @@ def validate_yaml_text(yaml_text: str, base_dir: Optional[str] = None) -> Valida
         Exit: If loading the YAML fails.
     """
     from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
-    from typing import cast as _cast
 
     pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
-    return _cast(Any, pipeline).validate_graph()
+    return pipeline.validate_graph(include_imports=include_imports)
 
 
 def sanitize_blueprint_yaml(yaml_text: str) -> str:
