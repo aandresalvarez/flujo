@@ -726,7 +726,29 @@ steps:
 **Template Variables:**
 - `context`: The current pipeline context.
 - `previous_step`: The output from the immediately preceding step.
+- `steps`: Map of prior steps by name (values are proxies exposing `.output/.result/.value`).
 - `this`: (Inside a `map` step) The current item from the iterable.
+
+### Previous Step vs Steps Map
+
+Flujo exposes the last step’s value directly as `previous_step` and also exposes a map of prior steps under `steps.<name>`.
+
+- `previous_step` is the raw output value of the last step. It does not have `.output`/`.result`/`.value` attributes.
+- `steps.<name>` entries are proxies that do expose `.output`/`.result`/`.value` for convenience.
+- Use the `tojson` filter when you want a JSON string for a structured value.
+
+Examples:
+
+```yaml
+# ✅ Correct: serialize the raw previous value
+input: "{{ previous_step | tojson }}"
+
+# ✅ Correct: access a named prior step via proxy
+input: "{{ steps.generate_greeting.output | tojson }}"
+
+# ❌ Incorrect: previous_step is a raw value (no .output); this becomes null
+input: "{{ previous_step.output | tojson }}"
+```
 
 ### Context Management
 

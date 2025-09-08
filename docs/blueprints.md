@@ -18,6 +18,12 @@ Friendly presets for non-technical users:
 - `map.init`: pre-run ops applied once before mapping begins.
 - `map.finalize`: post-aggregation mapping; sees the aggregated results as `previous_step`.
 
+Tip on templating prior outputs:
+
+- `previous_step` is the raw output of the immediately preceding step; use filters like `tojson` directly on it: `"{{ previous_step | tojson }}"`.
+- For a specific earlier step by name, use the `steps` map proxy: `"{{ steps.my_step.output | tojson }}"`.
+- Avoid `"{{ previous_step.output }}"` — `previous_step` is not a proxy and has no `.output` attribute.
+
 ## Parallel Reduction
 - `reduce: keys|values|union|concat|first|last` applied after branches complete:
   - `keys`: returns branch names in declared order.
