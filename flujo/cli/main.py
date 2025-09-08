@@ -1775,7 +1775,13 @@ def explain(path: str) -> None:
 
 
 def _validate_impl(
-    path: Optional[str], strict: bool, output_format: str, *, include_imports: bool = True
+    path: Optional[str],
+    strict: bool,
+    output_format: str,
+    *,
+    include_imports: bool = True,
+    fail_on_warn: bool = False,
+    rules: Optional[str] = None,
 ) -> None:
     from .exit_codes import EX_VALIDATION_FAILED, EX_IMPORT_ERROR, EX_RUNTIME_ERROR
     import traceback as _tb
@@ -1787,6 +1793,140 @@ def _validate_impl(
             path = str((Path(root) / "pipeline.yaml").resolve())
         report = validate_pipeline_file(path, include_imports=include_imports)
 
+        # Optional: apply severity overrides from a rules file (JSON/TOML)
+        def _apply_rules(_report: Any, rules_path: Optional[str]) -> Any:
+            if not rules_path:
+                return _report
+            import os as _os
+
+            try:
+                if not _os.path.exists(rules_path):
+                    return _report
+                # Try JSON, then TOML
+                mapping: dict[str, str] = {}
+                try:
+                    with open(rules_path, "r", encoding="utf-8") as f:
+                        mapping = json.load(f)
+                except Exception:
+                    try:
+                        import tomllib as _tomllib
+                    except Exception:  # pragma: no cover
+                        import tomli as _tomllib  # type: ignore
+                    with open(rules_path, "rb") as f:
+                        data = _tomllib.load(f)
+                    if isinstance(data, dict):
+                        if (
+                            "validation" in data
+                            and isinstance(data["validation"], dict)
+                            and "rules" in data["validation"]
+                        ):
+                            mapping = data["validation"]["rules"] or {}
+                        else:
+                            mapping = data  # type: ignore
+                if not isinstance(mapping, dict):
+                    return _report
+                sev_map = {str(k).upper(): str(v).lower() for k, v in mapping.items()}
+                import fnmatch as _fnm
+
+                def _resolve(rule_id: str) -> Optional[str]:
+                    rid = rule_id.upper()
+                    if rid in sev_map:
+                        return sev_map[rid]
+                    # wildcard/glob support (e.g., V-T*)
+                    for pat, sev in sev_map.items():
+                        if "*" in pat or "?" in pat or ("[" in pat and "]" in pat):
+                            try:
+                                if _fnm.fnmatch(rid, pat):
+                                    return sev
+                            except Exception:
+                                continue
+                    return None
+
+                from flujo.domain.pipeline_validation import ValidationFinding, ValidationReport
+
+                new_errors: list[ValidationFinding] = []
+                new_warnings: list[ValidationFinding] = []
+                for e in _report.errors:
+                    sev = _resolve(e.rule_id)
+                    if sev == "off":
+                        continue
+                    elif sev == "warning":
+                        new_warnings.append(e)
+                    else:
+                        new_errors.append(e)
+                for w in _report.warnings:
+                    sev = _resolve(w.rule_id)
+                    if sev == "off":
+                        continue
+                    elif sev == "error":
+                        new_errors.append(w)
+                    else:
+                        new_warnings.append(w)
+                return ValidationReport(errors=new_errors, warnings=new_warnings)
+            except Exception:
+                return _report
+
+        # Apply rules severity overrides from file or profile name
+        profile_mapping: Optional[dict[str, str]] = None
+        if rules and not os.path.exists(rules):
+            try:
+                from ..infra.config_manager import get_config_manager as _cfg
+
+                cfg = _cfg().load_config()
+                val = getattr(cfg, "validation", None)
+                profiles = getattr(val, "profiles", None) if val is not None else None
+                if isinstance(profiles, dict) and rules in profiles:
+                    raw = profiles[rules]
+                    if isinstance(raw, dict):
+                        profile_mapping = {str(k): str(v) for k, v in raw.items()}
+            except Exception:
+                profile_mapping = None
+
+        if profile_mapping:
+            # Write a temporary in-memory style mapping into JSON apply path
+            def _apply_mapping(_report: Any, mapping: dict[str, str]) -> Any:
+                sev_map = {str(k).upper(): str(v).lower() for k, v in mapping.items()}
+                import fnmatch as _fnm
+
+                def _resolve(rule_id: str) -> Optional[str]:
+                    rid = rule_id.upper()
+                    if rid in sev_map:
+                        return sev_map[rid]
+                    for pat, sev in sev_map.items():
+                        if "*" in pat or "?" in pat or ("[" in pat and "]" in pat):
+                            try:
+                                if _fnm.fnmatch(rid, pat):
+                                    return sev
+                            except Exception:
+                                continue
+                    return None
+
+                from flujo.domain.pipeline_validation import ValidationFinding, ValidationReport
+
+                new_errors: list[ValidationFinding] = []
+                new_warnings: list[ValidationFinding] = []
+                for e in _report.errors:
+                    sev = _resolve(e.rule_id)
+                    if sev == "off":
+                        continue
+                    elif sev == "warning":
+                        new_warnings.append(e)
+                    else:
+                        new_errors.append(e)
+                for w in _report.warnings:
+                    sev = _resolve(w.rule_id)
+                    if sev == "off":
+                        continue
+                    elif sev == "error":
+                        new_errors.append(w)
+                    else:
+                        new_warnings.append(w)
+                return ValidationReport(errors=new_errors, warnings=new_warnings)
+
+            report = _apply_mapping(report, profile_mapping)
+        else:
+            report = _apply_rules(report, rules)
+
         if output_format == "json":
             # Emit machine-friendly JSON (errors, warnings, is_valid)
             payload = {
@@ -1796,6 +1936,70 @@ def _validate_impl(
                 "path": path,
             }
             typer.echo(json.dumps(payload))
+        elif output_format == "sarif":
+            # Minimal SARIF 2.1.0 conversion
+            def _level(sev: str) -> str:
+                return "error" if sev == "error" else "warning"
+
+            rules_index: dict[str, int] = {}
+            sarif_rules: list[dict[str, Any]] = []
+            sarif_results: list[dict[str, Any]] = []
+
+            def _rule_ref(rule_id: str) -> dict[str, Any]:
+                rid = rule_id.upper()
+                if rid not in rules_index:
+                    rules_index[rid] = len(sarif_rules)
+                    sarif_rules.append(
+                        {
+                            "id": rid,
+                            "name": rid,
+                            "shortDescription": {"text": rid},
+                            "helpUri": f"https://aandresalvarez.github.io/flujo/reference/validation_rules/#{rid.lower()}",
+                        }
+                    )
+                return {"ruleId": rid}
+
+            def _location(f: Any) -> dict[str, Any]:
+                region: dict[str, Any] = {}
+                if getattr(f, "line", None):
+                    region["startLine"] = int(getattr(f, "line"))
+                if getattr(f, "column", None):
+                    region["startColumn"] = int(getattr(f, "column"))
+                phys = {}
+                if getattr(f, "file", None):
+                    phys["uri"] = str(getattr(f, "file"))
+                loc = {"physicalLocation": {"artifactLocation": phys}}
+                if region:
+                    loc["physicalLocation"]["region"] = region
+                return loc
+
+            for f in report.errors + report.warnings:
+                sarif_results.append(
+                    {
+                        **_rule_ref(f.rule_id),
+                        "level": _level(f.severity),
+                        "message": {
+                            "text": f"{f.step_name + ': ' if f.step_name else ''}{f.message}"
+                        },
+                        "locations": [_location(f)],
+                        "properties": {
+                            "suggestion": getattr(f, "suggestion", None),
+                            "location_path": getattr(f, "location_path", None),
+                        },
+                    }
+                )
+
+            sarif = {
+                "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+                "version": "2.1.0",
+                "runs": [
+                    {
+                        "tool": {"driver": {"name": "flujo-validate", "rules": sarif_rules}},
+                        "results": sarif_results,
+                    }
+                ],
+            }
+            typer.echo(json.dumps(sarif))
         else:
             if report.errors:
                 typer.echo("[red]Validation errors detected:")
@@ -1804,12 +2008,13 @@ def _validate_impl(
                 )
                 for f in report.errors:
                     loc = f"{f.step_name}: " if f.step_name else ""
+                    link = f" (details: https://aandresalvarez.github.io/flujo/reference/validation_rules/#{str(f.rule_id).lower()})"
                     if f.suggestion:
                         typer.echo(
-                            f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}"
+                            f"- [{f.rule_id}] {loc}{f.message}{link} -> Suggestion: {f.suggestion}"
                         )
                     else:
-                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}")
             if report.warnings:
                 typer.echo("[yellow]Warnings:")
                 typer.echo(
@@ -1817,16 +2022,19 @@ def _validate_impl(
                 )
                 for f in report.warnings:
                     loc = f"{f.step_name}: " if f.step_name else ""
+                    link = f" (details: https://aandresalvarez.github.io/flujo/reference/validation_rules/#{str(f.rule_id).lower()})"
                     if f.suggestion:
                         typer.echo(
-                            f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}"
+                            f"- [{f.rule_id}] {loc}{f.message}{link} -> Suggestion: {f.suggestion}"
                         )
                     else:
-                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}")
             if report.is_valid:
                 typer.echo("[green]Pipeline is valid")
 
         if strict and not report.is_valid:
+            raise typer.Exit(EX_VALIDATION_FAILED)
+        if fail_on_warn and report.warnings:
             raise typer.Exit(EX_VALIDATION_FAILED)
     except ModuleNotFoundError as e:
         # Improve import error messaging with hint on project root
@@ -1869,7 +2077,7 @@ def validate_dev(
             "--format",
             help="Output format for CI parsers",
             case_sensitive=False,
-            click_type=click.Choice(["text", "json"]),
+            click_type=click.Choice(["text", "json", "sarif"]),
         ),
     ] = "text",
     imports: Annotated[
@@ -1879,9 +2087,21 @@ def validate_dev(
             help="Recursively validate imported blueprints",
         ),
     ] = True,
+    fail_on_warn: Annotated[
+        bool,
+        typer.Option("--fail-on-warn", help="Treat warnings as errors (non-zero exit)"),
+    ] = False,
+    rules: Annotated[
+        Optional[str],
+        typer.Option(
+            "--rules", help="Path to rules JSON/TOML that overrides severities (off/warning/error)"
+        ),
+    ] = None,
 ) -> None:
     """Validate a pipeline defined in a file (developer namespace)."""
-    _validate_impl(path, strict, output_format, include_imports=imports)
+    _validate_impl(
+        path, strict, output_format, include_imports=imports, fail_on_warn=fail_on_warn, rules=rules
+    )
 
 
 @app.command(name="validate")
@@ -1903,7 +2123,7 @@ def validate(
             "--format",
             help="Output format for CI parsers",
             case_sensitive=False,
-            click_type=click.Choice(["text", "json"]),
+            click_type=click.Choice(["text", "json", "sarif"]),
         ),
     ] = "text",
     imports: Annotated[
@@ -1913,9 +2133,21 @@ def validate(
             help="Recursively validate imported blueprints",
         ),
     ] = True,
+    fail_on_warn: Annotated[
+        bool,
+        typer.Option("--fail-on-warn", help="Treat warnings as errors (non-zero exit)"),
+    ] = False,
+    rules: Annotated[
+        Optional[str],
+        typer.Option(
+            "--rules", help="Path to rules JSON/TOML that overrides severities (off/warning/error)"
+        ),
+    ] = None,
 ) -> None:
     """Validate a pipeline (top-level alias)."""
-    _validate_impl(path, strict, output_format, include_imports=imports)
+    _validate_impl(
+        path, strict, output_format, include_imports=imports, fail_on_warn=fail_on_warn, rules=rules
+    )
 
 
 @app.command(
