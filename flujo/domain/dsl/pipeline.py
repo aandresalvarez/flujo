@@ -209,6 +209,12 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 )
             else:
                 seen_steps.add(id(step))
+            try:
+                # Track step names for template lints that reference prior steps
+                if isinstance(getattr(step, "name", None), str):
+                    pass
+            except Exception:
+                pass
 
             # Only simple steps (non-complex) require an agent
             if (not getattr(step, "is_complex", False)) and step.agent is None:
@@ -324,7 +330,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
         # Template Lints (subset) — V-T1: previous_step.output misuse
         try:
-            for step in self.steps:
+            for idx, step in enumerate(self.steps):
                 try:
                     meta = getattr(step, "meta", None)
                     templ = None
@@ -349,6 +355,62 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                     location_path="steps[].input",
                                 )
                             )
+                        # V-T2: 'this' misuse outside map bodies (heuristic)
+                        if _re.search(r"\bthis\b", templ):
+                            report.warnings.append(
+                                ValidationFinding(
+                                    rule_id="V-T2",
+                                    severity="warning",
+                                    message=(
+                                        "Template references 'this' outside a known map body context."
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                    suggestion=(
+                                        "Use 'this' only inside map bodies, or bind a variable explicitly."
+                                    ),
+                                    location_path="steps[].input",
+                                )
+                            )
+                        # V-T3: Unknown/disabled filters
+                        try:
+                            from ...utils.prompting import _get_enabled_filters as _filters
+
+                            enabled = {s.lower() for s in _filters()}
+                        except Exception:
+                            enabled = {"join", "upper", "lower", "length", "tojson"}
+                        # Find all pipe filters in a simplistic but robust way
+                        for m in _re.finditer(r"\|\s*([a-zA-Z_][a-zA-Z0-9_]*)", templ):
+                            fname = m.group(1).lower()
+                            if fname not in enabled:
+                                report.warnings.append(
+                                    ValidationFinding(
+                                        rule_id="V-T3",
+                                        severity="warning",
+                                        message=f"Unknown or disabled template filter: {fname}",
+                                        step_name=getattr(step, "name", None),
+                                        suggestion=(
+                                            "Add to [settings.enabled_template_filters] in flujo.toml or remove/misspelling fix."
+                                        ),
+                                        location_path="steps[].input",
+                                    )
+                                )
+                        # V-T4: Unknown step proxy name in steps.<name>
+                        prior_names = {getattr(s, "name", "") for s in self.steps[:idx]}
+                        for sm in _re.finditer(r"steps\.([A-Za-z0-9_]+)\b", templ):
+                            ref = sm.group(1)
+                            if ref and ref not in prior_names:
+                                report.warnings.append(
+                                    ValidationFinding(
+                                        rule_id="V-T4",
+                                        severity="warning",
+                                        message=f"Template references steps.{ref} which is not a prior step.",
+                                        step_name=getattr(step, "name", None),
+                                        suggestion=(
+                                            "Correct the step name or ensure the reference points to a prior step."
+                                        ),
+                                        location_path="steps[].input",
+                                    )
+                                )
                 except Exception as lint_err:
                     logging.debug("Template linter (V-T1) skipped due to error: %s", lint_err)
                     continue
@@ -460,6 +522,19 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                         if isinstance(step, _ImportStep):
                             child = getattr(step, "pipeline", None)
                             if child is not None and hasattr(child, "validate_graph"):
+                                # Cycle detection (V-I3): detect already visited child
+                                if id(child) in _visited_pipelines:
+                                    report.errors.append(
+                                        ValidationFinding(
+                                            rule_id="V-I3",
+                                            severity="error",
+                                            message=(
+                                                "Cyclic import detected while validating imports; import graph contains a cycle."
+                                            ),
+                                            step_name=getattr(step, "name", None),
+                                        )
+                                    )
+                                    continue
                                 child_report: ValidationReport = child.validate_graph(
                                     include_imports=True,
                                     _visited_pipelines=_visited_pipelines,

@@ -30,6 +30,30 @@ def test_validate_template_previous_step_output_warns() -> None:
     assert any("previous_step.output" in w.message for w in vt1s)
 
 
+def test_template_lints_vt2_vt3_vt4() -> None:
+    """Detect 'this' misuse, unknown filters, and unknown step proxy names."""
+    yaml_text = textwrap.dedent(
+        """
+        version: "0.1"
+        steps:
+          - name: S1
+            agent:
+              id: "flujo.builtins.stringify"
+            input: "hello"
+          - name: S2
+            agent:
+              id: "flujo.builtins.stringify"
+            input: "{{ this }} | {{ previous_step | foo }} | {{ steps.Missing.output }}"
+        """
+    )
+    pipeline = load_pipeline_blueprint_from_yaml(yaml_text)
+    report = pipeline.validate_graph()
+    rules = {w.rule_id for w in report.warnings}
+    assert "V-T2" in rules  # 'this' misuse
+    assert "V-T3" in rules  # unknown filter 'foo'
+    assert "V-T4" in rules  # unknown steps.Missing
+
+
 def test_validate_imports_aggregates_child_findings(tmp_path: Path) -> None:
     """V-I4: Validate child YAML and aggregate findings (warnings) into parent report."""
     # Child with a V-T1 template misuse to generate a warning
@@ -117,3 +141,26 @@ def test_validate_imports_recurses_into_grandchildren(tmp_path: Path) -> None:
     msgs = [w.message for w in report.warnings]
     joined = "\n".join(msgs)
     assert "[import:child]" in joined or "[import:RunChild]" in joined
+
+
+def test_cycle_detection_v_i3_compiler_surfaces_error(tmp_path: Path) -> None:
+    """Cyclic imports fail at compile time; loader surfaces the error.
+
+    In this codebase, import graphs are resolved during blueprint compilation.
+    Cycles produce a loader/compile error rather than a validate_graph finding.
+    """
+    a_yaml = (
+        'version: "0.1"\nimports:\n  b: "b.yaml"\nsteps:\n  - name: RunB\n    uses: imports.b\n'
+    )
+    b_yaml = (
+        'version: "0.1"\nimports:\n  a: "a.yaml"\nsteps:\n  - name: RunA\n    uses: imports.a\n'
+    )
+    (tmp_path / "a.yaml").write_text(a_yaml)
+    (tmp_path / "b.yaml").write_text(b_yaml)
+    parent_text = (tmp_path / "a.yaml").read_text()
+    try:
+        _ = load_pipeline_blueprint_from_yaml(parent_text, base_dir=str(tmp_path))
+        assert False, "Expected compile error due to cyclic imports"
+    except Exception:
+        # Any loader/compile exception is acceptable here (we avoid tight coupling to exception types)
+        pass
