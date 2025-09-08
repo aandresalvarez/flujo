@@ -6,28 +6,73 @@ Suppression:
 - Inline comments in YAML: `# flujo: ignore <RULES...>` at the step mapping or list item.
 - Per-step metadata: `meta.suppress_rules: ["V-T*", "V-*" ]` when constructing steps programmatically.
 
-Template Rules:
-- V-T1: previous_step.output misuse — use `previous_step | tojson` or `steps.<name>.output | tojson`.
-- V-T2: `this` misuse outside map bodies — use only inside map.
-- V-T3: Unknown/disabled filter — add to allow-list in flujo.toml or fix misspelling.
-- V-T4: Unknown `steps.<name>` reference — ensure the named step is prior.
+Template Rules
 
-Import & Composition:
-- V-I1: Import existence — imported YAML path not found.
-- V-I2: Import outputs mapping sanity — unknown parent root; prefer `scratchpad.<key>`.
-- V-I3: Cyclic imports — typically raised by loader at compile time; validation guards against recursion.
+- V‑T1: previous_step.output misuse
+  - Why: `previous_step` is a raw value and does not have an `.output` attribute; templating will render `null`.
+  - Fix: use `{{ previous_step | tojson }}` or `{{ steps.<name>.output | tojson }}`.
+  - Example:
+    ```yaml
+    # ❌
+    input: "{{ previous_step.output }}"
+    # ✅
+    input: "{{ previous_step | tojson }}"
+    ```
 
-Parallel & Orchestration:
-- V-P1: Parallel context merge conflict risk — CONTEXT_UPDATE without field_mapping.
-- V-P3: Parallel branch input uniformity — branches expect heterogeneous input types.
-- V-SM1: StateMachine transitions validity — unknown states or unreachable paths.
+- V‑T2: `this` misuse outside map bodies
+  - Why: `this` is only defined inside a map body.
+  - Fix: restrict to map body or bind to a named variable available in scope.
 
-Context & Persistence:
-- V-C1: updates_context without mergeable output — scalar outputs aren’t merged; may be dropped.
+- V‑T3: Unknown/disabled filter
+  - Why: filter not present in the allowed set or configured allow-list.
+  - Fix: edit `flujo.toml` `[settings].enabled_template_filters` or correct typos.
 
-Agents & Providers:
-- V-A1: Missing agent on step.
-- V-A5: Unused output — produced output is not consumed by the next step and not merged.
+- V‑T4: Unknown `steps.<name>` reference
+  - Why: invalid step name or referenced before it exists.
+  - Fix: correct the step name or move the reference to a later step.
+
+Import & Composition
+
+- V‑I1: Import existence
+  - Why: imported YAML path cannot be resolved.
+  - Fix: correct the path relative to the parent YAML or ensure the file exists.
+
+- V‑I2: Import outputs mapping sanity
+  - Why: parent mapping uses an unknown root (e.g., `badroot.value`).
+  - Fix: map under `scratchpad.<key>` or a known context field.
+
+- V‑I3: Cyclic imports
+  - Why: import graphs must be acyclic. Loader typically raises at compile time; validation guards recursion.
+  - Fix: remove the cycle or redesign import structure.
+
+Parallel & Orchestration
+
+- V‑P1: Parallel context merge conflict risk
+  - Why: default `CONTEXT_UPDATE` without `field_mapping` may merge conflicting keys.
+  - Fix: add `field_mapping` or choose an explicit merge strategy.
+
+- V‑P3: Parallel branch input uniformity
+  - Why: branches expect heterogeneous input types but receive the same input.
+  - Fix: add adapter steps per branch or unify input types.
+
+- V‑SM1: StateMachine transitions validity
+  - Why: invalid states or no path to an end state.
+  - Fix: correct state names and transition rules.
+
+Context & Persistence
+
+- V‑C1: updates_context without mergeable output
+  - Why: non-dict outputs cannot be merged into context; they may be dropped.
+  - Fix: switch to an object output or provide an `outputs` mapping.
+
+Agents & Providers
+
+- V‑A1: Missing agent on step
+  - Why: simple steps require an agent.
+  - Fix: configure an `agent` or use `Step.from_callable()`.
+
+- V‑A5: Unused output
+  - Why: the step’s output is not consumed or merged; likely a logic bug.
+  - Fix: set `updates_context: true` or insert an adapter to consume the value.
 
 For a full list and examples, see the CLI docs and inline suggestions printed by `flujo validate`.
-

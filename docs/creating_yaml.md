@@ -750,6 +750,14 @@ input: "{{ steps.generate_greeting.output | tojson }}"
 input: "{{ previous_step.output | tojson }}"
 ```
 
+Validation Tips
+
+- Prefer `tojson` when interpolating structured values; avoid `previous_step.output`.
+- Use `steps.<name>.output` to reference a prior step’s output through the proxy.
+- Suppressing specific rules:
+  - Inline comment on a step or list item: `# flujo: ignore V-T1 V-P3` (supports globs, e.g., `V-*`).
+  - Programmatic (Python): `step.meta['suppress_rules'] = ["V-T*"]`.
+
 ### Context Management
 
 Control how step results and feedback are stored in the context.
