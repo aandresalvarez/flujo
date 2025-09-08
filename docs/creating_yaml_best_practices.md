@@ -741,6 +741,7 @@ steps:
 **Guidelines:**
 - **Use HITL steps strategically**: Combine `ask_user` with AI agents for intelligent interactions
 - **Stringify complex outputs**: Use `flujo.builtins.stringify` to handle type conversions
+- **Template clarity**: Use `{{ previous_step | tojson }}` for the last step’s structured output, or `{{ steps.<name>.output | tojson }}` for a named step. Avoid `{{ previous_step.output }}` since `previous_step` is the raw value, not a proxy.
 - **Build incrementally**: Add complexity one step at a time
 - **Test each addition**: Ensure the pipeline works before adding more steps
 

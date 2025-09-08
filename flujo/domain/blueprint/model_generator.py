@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Type
 from typing import Literal as _Literal
 
 from pydantic import BaseModel, Field, create_model
+from flujo.domain.base_model import BaseModel as FlujoBaseModel
 
 
 JsonSchema = Dict[str, Any]
@@ -92,7 +93,10 @@ def generate_model_from_schema(name: str, schema: JsonSchema) -> Type[BaseModel]
             primitive_fields["value"] = (annotation, Field(..., description=str(desc)))
         from typing import cast as _cast
 
-        return _cast(Type[BaseModel], create_model(model_name, **primitive_fields))
+        return _cast(
+            Type[BaseModel],
+            create_model(model_name, __base__=FlujoBaseModel, **primitive_fields),
+        )
 
     # Object handling
     properties: Dict[str, Any] = schema.get("properties") or {}
@@ -145,7 +149,10 @@ def generate_model_from_schema(name: str, schema: JsonSchema) -> Type[BaseModel]
 
     from typing import cast as _cast
 
-    return _cast(Type[BaseModel], create_model(model_name, **fields))
+    return _cast(
+        Type[BaseModel],
+        create_model(model_name, __base__=FlujoBaseModel, **fields),
+    )
 
 
 __all__ = ["generate_model_from_schema"]
