@@ -138,6 +138,7 @@ Imports & composition rules:
 
 - V-I3: Cyclic imports
   - Detect simple cycles among imported YAMLs and error.
+  - Note: In current architecture, YAML imports are compiled by the loader; hard cycles typically raise at compile time before validation. A lightweight guard in validate_graph prevents infinite recursion during aggregation. Full linter‑level reporting for V‑I3 is enabled per rollout plan.
 
 - V-I4: Child blueprint validation aggregation
   - When `--imports` is enabled, load each imported YAML and run full validation on the child pipeline (without agent execution). Aggregate child findings into the parent report, annotating `file`, `alias`, and `location_path` (e.g., `imports.clarification::steps[0].agent`).
@@ -312,7 +313,7 @@ Rule configuration:
 - ImportLinter
   - V-I1: Missing import file path → error with `file` resolution.
   - V-I2: Outputs mapping to invalid root (e.g., `parent: badroot.value`) → warning.
-  - V-I3: Cycle in imported YAMLs → error.
+  - V-I3: Cycle in imported YAMLs → error (when rule is enabled); loader may already surface the cycle at compile time.
   - V-I4: Aggregated child findings: child pipeline missing agent/error surfaces under parent with alias and file.
   - V-I5: Input projection coherence heuristics → warnings with suggestions.
   - V-I6: Inherit context inconsistency → warning.
@@ -350,6 +351,7 @@ Rule configuration:
 - `--fail-on-warn`: warnings cause exit 2.
 - `--format json/sarif`: output parses and contains expected rule IDs and locations.
 - Baseline: with `--baseline` and `--update-baseline`, compare previous vs current; print added/removed findings.
+ - Exit codes with baselines: By default, exit status reflects the report after applying the baseline (i.e., only new errors/warnings count toward failure). `--fail-on-warn` applies to post‑baseline warnings. A separate `--strict-all` could be introduced later to consider total findings irrespective of baseline.
 - `--fix` (interactive): in TTY, shows summary and prompts; with `--yes`, applies changes non‑interactively; verify only fixable rules are modified (e.g., V‑T1).
  - Imports: with `--imports` (default), validation of a parent with `imports:` includes child errors; with `--no-imports`, only parent is validated.
 
@@ -365,7 +367,7 @@ Rule configuration:
 
 - Phase 1 (MVP): Implement TemplateLinter V‑T1..T4, SchemaLinter V‑S1, ImportLinter V‑I1, OrchestrationLinter V‑SM1, JSON/SARIF formatters, `--explain`.
 - Phase 1.5: Add clickable rule URLs, suppression globs, V‑P3, refined V‑T1/V‑C1, profiles support via `--rules` and `flujo.toml`.
-- Phase 2: Add V‑T5..T6, V‑I2..I3, V‑P2, context/agent rules, baseline/suppression with deltas, `--fix` for V‑T1.
+- Phase 2: Add V‑T5..T6, V‑I2..I3 (formal linter reporting for cycles beyond loader errors), V‑P2, context/agent rules, baseline/suppression with deltas, `--fix` for V‑T1.
 - Phase 3: Optional `ruamel.yaml` source mapping with line/column, telemetry, expand safe fixers beyond V‑T1.
 
 ---
