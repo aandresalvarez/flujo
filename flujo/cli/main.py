@@ -59,11 +59,17 @@ import os
 try:
     _argv = list(_sys.argv)
     if any(tok == "--format" or tok.startswith("--format=") for tok in _argv):
-        # Only rewrite for validate/dev validate commands to avoid conflicts elsewhere
-        # Patterns: flujo validate ...  OR  flujo dev validate ...
-        if (len(_argv) >= 2 and _argv[1] == "validate") or (
-            len(_argv) >= 3 and _argv[1] == "dev" and _argv[2] == "validate"
-        ):
+        # Only rewrite for validate/dev validate commands to avoid conflicts elsewhere.
+        # Allow global options before subcommands (e.g., flujo --project . validate ...).
+        is_validate_cmd = False
+        try:
+            # Exact token presence is good enough here
+            if "validate" in _argv:
+                # If 'dev' is used, Typer subcommand form is: dev validate ...
+                is_validate_cmd = True
+        except Exception:
+            is_validate_cmd = False
+        if is_validate_cmd:
             for i, tok in enumerate(_argv):
                 if tok == "--format":
                     _argv[i] = "--output-format"
