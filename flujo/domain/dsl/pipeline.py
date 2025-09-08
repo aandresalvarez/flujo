@@ -328,20 +328,199 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             prev_step = step
             prev_out_type = getattr(step, "__step_output_type__", Any)
 
+        # Orchestration Lints — V-SM1: StateMachine transitions validity and reachability
+        try:
+            from .state_machine import StateMachineStep as _SM
+        except Exception:
+            _SM = None  # type: ignore
+        if _SM is not None:
+            for idx, step in enumerate(self.steps):
+                try:
+                    if not isinstance(step, _SM):
+                        continue
+                    # YAML location for better diagnostics
+                    meta = getattr(step, "meta", None)
+                    _yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+                    loc_path = (_yloc or {}).get("path") or f"steps[{idx}]"
+                    fpath = (_yloc or {}).get("file")
+                    line = (_yloc or {}).get("line")
+                    col = (_yloc or {}).get("column")
+
+                    states: set[str] = set(getattr(step, "states", {}) or {})
+                    start: str = str(getattr(step, "start_state", ""))
+                    ends: set[str] = set(getattr(step, "end_states", []) or [])
+                    transitions = list(getattr(step, "transitions", []) or [])
+
+                    # Validate start exists
+                    if start and start not in states:
+                        report.warnings.append(
+                            ValidationFinding(
+                                rule_id="V-SM1",
+                                severity="warning",
+                                message=(
+                                    f"StateMachine '{getattr(step, 'name', None)}' start_state '{start}' is not a defined state."
+                                ),
+                                step_name=getattr(step, "name", None),
+                                location_path=loc_path,
+                                file=fpath,
+                                line=line,
+                                column=col,
+                                suggestion=("Ensure start_state matches a key in 'states'."),
+                            )
+                        )
+
+                    # Build adjacency ignoring 'when' (conservative reachability)
+                    adj: dict[str, set[str]] = {s: set() for s in states}
+                    reachable_end = False
+                    for tr in transitions:
+                        try:
+                            frm = str(getattr(tr, "from_state", ""))
+                            to = str(getattr(tr, "to", ""))
+                            from_candidates: set[str]
+                            if frm == "*":
+                                from_candidates = set(states)
+                            else:
+                                from_candidates = {frm} if frm in states else set()
+                            for s in from_candidates:
+                                if to in states:
+                                    adj.setdefault(s, set()).add(to)
+                                elif to in ends:
+                                    # Edge to terminal sink
+                                    adj.setdefault(s, set())
+                                    reachable_end = reachable_end or (s == start)
+                        except Exception:
+                            continue
+
+                    # BFS from start
+                    visited: set[str] = set()
+                    if start in states:
+                        q: list[str] = [start]
+                        while q:
+                            cur = q.pop(0)
+                            if cur in visited:
+                                continue
+                            visited.add(cur)
+                            for nxt in adj.get(cur, set()):
+                                if nxt not in visited:
+                                    q.append(nxt)
+
+                    unreachable = sorted(states - visited) if start in states else []
+                    if unreachable:
+                        report.warnings.append(
+                            ValidationFinding(
+                                rule_id="V-SM1",
+                                severity="warning",
+                                message=(
+                                    f"StateMachine '{getattr(step, 'name', None)}' has unreachable states: {unreachable}"
+                                ),
+                                step_name=getattr(step, "name", None),
+                                location_path=loc_path,
+                                file=fpath,
+                                line=line,
+                                column=col,
+                                suggestion=("Review transitions or remove unused states."),
+                            )
+                        )
+
+                    # Check existence of a path from start to any end
+                    if ends:
+                        # A path exists if any transition points to an end from a reachable state
+                        path_to_end = False
+                        if start in states:
+                            for s in visited or []:
+                                # If there is a transition from s to an end
+                                for tr in transitions:
+                                    try:
+                                        frm2 = str(getattr(tr, "from_state", ""))
+                                        to2 = str(getattr(tr, "to", ""))
+                                        if (frm2 == s or frm2 == "*") and (to2 in ends):
+                                            path_to_end = True
+                                            break
+                                    except Exception:
+                                        continue
+                                if path_to_end:
+                                    break
+                        path_to_end = path_to_end or reachable_end
+                        if not path_to_end and start in states:
+                            report.warnings.append(
+                                ValidationFinding(
+                                    rule_id="V-SM1",
+                                    severity="warning",
+                                    message=(
+                                        f"StateMachine '{getattr(step, 'name', None)}' has no transition path from start_state '{start}' to any end state {sorted(ends)}"
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                    location_path=loc_path,
+                                    file=fpath,
+                                    line=line,
+                                    column=col,
+                                    suggestion=(
+                                        "Add a transition to an end state or adjust end_states."
+                                    ),
+                                )
+                            )
+                except Exception:
+                    # Never break overall validation due to SM analysis
+                    continue
+
+        # Schema Lints — V-S1: basic JSON schema structure warnings for agent output_schema
+        try:
+            for idx, step in enumerate(self.steps):
+                try:
+                    ag = getattr(step, "agent", None)
+                    if ag is None:
+                        continue
+                    warns = getattr(ag, "_schema_warnings", None)
+                    if not warns:
+                        continue
+                    meta = getattr(step, "meta", None)
+                    _yloc2 = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+                    loc_path = (_yloc2 or {}).get("path") or f"steps[{idx}].agent.output_schema"
+                    fpath = (_yloc2 or {}).get("file")
+                    line = (_yloc2 or {}).get("line")
+                    col = (_yloc2 or {}).get("column")
+                    for wmsg in warns:
+                        report.warnings.append(
+                            ValidationFinding(
+                                rule_id="V-S1",
+                                severity="warning",
+                                message=wmsg,
+                                step_name=getattr(step, "name", None),
+                                location_path=loc_path,
+                                file=fpath,
+                                line=line,
+                                column=col,
+                                suggestion=(
+                                    "Adjust the agent's output_schema to follow JSON Schema basics (properties/required/items)."
+                                ),
+                            )
+                        )
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
         # Template Lints (subset) — V-T1: previous_step.output misuse
         try:
             for idx, step in enumerate(self.steps):
                 try:
                     meta = getattr(step, "meta", None)
                     templ = None
-                    yloc: dict[str, Any] = {}
+                    yloc_info: dict[str, Any] = {}
                     if isinstance(meta, dict):
                         templ = meta.get("templated_input")
-                        yloc = meta.get("_yaml_loc") or {}
-                    loc_path = yloc.get("path")
-                    fpath = yloc.get("file")
-                    line = yloc.get("line")
-                    col = yloc.get("column")
+                        try:
+                            raw_loc = meta.get("_yaml_loc")
+                            if isinstance(raw_loc, dict):
+                                yloc_info = raw_loc
+                            else:
+                                yloc_info = {}
+                        except Exception:
+                            yloc_info = {}
+                    loc_path = yloc_info.get("path")
+                    fpath = yloc_info.get("file")
+                    line = yloc_info.get("line")
+                    col = yloc_info.get("column")
                     default_loc = f"steps[{idx}].input"
                     if isinstance(templ, str) and ("{{" in templ and "}}" in templ):
                         import re as _re

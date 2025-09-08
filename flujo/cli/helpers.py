@@ -1412,12 +1412,39 @@ def validate_pipeline_file(path: str, *, include_imports: bool = True) -> Valida
         with open(path, "r") as f:
             yaml_text = f.read()
         from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
+        from flujo.domain.pipeline_validation import ValidationFinding, ValidationReport
 
         # Ensure relative imports resolve from the YAML file directory
         base_dir = os.path.dirname(os.path.abspath(path))
-        pipeline: Pipeline[Any, Any] = load_pipeline_blueprint_from_yaml(
-            yaml_text, base_dir=base_dir, source_file=path
-        )
+        try:
+            pipeline: Pipeline[Any, Any] = load_pipeline_blueprint_from_yaml(
+                yaml_text, base_dir=base_dir, source_file=path
+            )
+        except Exception as e:
+            # Map import compilation failures to V-I1 instead of a runtime error
+            msg = str(e)
+            import re as _re
+
+            m = _re.search(r"Failed to compile import '([^']+)' from '([^']+)': (.+)", msg)
+            if m:
+                alias, rel_path, reason = m.group(1), m.group(2), m.group(3)
+                return ValidationReport(
+                    errors=[
+                        ValidationFinding(
+                            rule_id="V-I1",
+                            severity="error",
+                            message=(
+                                f"Imported blueprint '{alias}' could not be loaded from '{rel_path}': {reason}"
+                            ),
+                            step_name=f"imports.{alias}",
+                            location_path=f"imports.{alias}",
+                            file=path,
+                        )
+                    ],
+                    warnings=[],
+                )
+            # For other errors, re-raise to preserve existing behavior
+            raise
     else:
         pipeline, _ = load_pipeline_from_file(path)
 

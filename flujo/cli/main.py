@@ -15,6 +15,7 @@ import flujo.builtins as _flujo_builtins  # noqa: F401  # Register builtin skill
 from typing_extensions import Annotated
 from rich.console import Console
 import os as _os
+import sys as _sys
 from ..utils.serialization import safe_serialize, safe_deserialize as _safe_deserialize
 from .lens import lens_app
 from .helpers import (
@@ -53,6 +54,24 @@ from .exit_codes import (
 )
 import click.testing
 import os
+
+# Backward-compatibility shim: map --format -> --output-format for validate commands
+try:
+    _argv = list(_sys.argv)
+    if any(tok == "--format" or tok.startswith("--format=") for tok in _argv):
+        # Only rewrite for validate/dev validate commands to avoid conflicts elsewhere
+        # Patterns: flujo validate ...  OR  flujo dev validate ...
+        if (len(_argv) >= 2 and _argv[1] == "validate") or (
+            len(_argv) >= 3 and _argv[1] == "dev" and _argv[2] == "validate"
+        ):
+            for i, tok in enumerate(_argv):
+                if tok == "--format":
+                    _argv[i] = "--output-format"
+                elif tok.startswith("--format="):
+                    _argv[i] = tok.replace("--format=", "--output-format=", 1)
+            _sys.argv[:] = _argv
+except Exception:
+    pass
 
 # Expose Flujo class for tests that monkeypatch flujo.cli.main.Flujo.run
 from flujo.application.runner import Flujo as _Flujo  # re-export for test monkeypatch compatibility
@@ -1782,6 +1801,7 @@ def _validate_impl(
     include_imports: bool = True,
     fail_on_warn: bool = False,
     rules: Optional[str] = None,
+    explain: bool = False,
 ) -> None:
     from .exit_codes import EX_VALIDATION_FAILED, EX_IMPORT_ERROR, EX_RUNTIME_ERROR
     import traceback as _tb
@@ -1927,12 +1947,40 @@ def _validate_impl(
         else:
             report = _apply_rules(report, rules)
 
+        # Optional explanation catalog for rules
+        def _explain(rule_id: str) -> str | None:
+            rid = (rule_id or "").upper()
+            why: dict[str, str] = {
+                "V-T1": "previous_step is a raw value; .output will be null at runtime.",
+                "V-T2": "'this' is only defined inside map bodies; using it elsewhere yields empty output.",
+                "V-T3": "Unknown or disabled filters will cause templating errors or ignored transforms.",
+                "V-T4": "Referencing a future or misspelled step name will resolve to None at render time.",
+                "V-S1": "Schemas with misplaced 'required', missing 'items', or unknown types are brittle and may mis-validate.",
+                "V-I1": "Imported blueprint cannot be found; validation cannot include the intended child pipeline.",
+                "V-SM1": "Unreachable states or no path to an end state can dead-end the state machine.",
+                "V-P1": "Parallel branches may write conflicting keys into context, leading to nondeterminism.",
+                "V-P3": "Parallel branches receive the same input; heterogeneous expectations can fail at runtime.",
+                "V-A1": "Simple steps without agents cannot execute.",
+                "V-A2": "Static type mismatch between steps will likely fail at runtime.",
+                "V-A5": "Outputs not consumed or merged are effectively dropped and indicate logic gaps.",
+                "V-F1": "Fallback step must accept the same input shape as the primary to be callable on failure.",
+                "V-I2": "Mapping to unknown parent roots will not populate context as intended.",
+                "V-I3": "Cyclic imports create infinite recursion in composition.",
+            }
+            return why.get(rid)
+
         if output_format == "json":
             # Emit machine-friendly JSON (errors, warnings, is_valid)
             payload = {
                 "is_valid": bool(report.is_valid),
-                "errors": [e.model_dump() for e in report.errors],
-                "warnings": [w.model_dump() for w in report.warnings],
+                "errors": [
+                    ({**e.model_dump(), **({"explain": _explain(e.rule_id)} if explain else {})})
+                    for e in report.errors
+                ],
+                "warnings": [
+                    ({**w.model_dump(), **({"explain": _explain(w.rule_id)} if explain else {})})
+                    for w in report.warnings
+                ],
                 "path": path,
             }
             typer.echo(json.dumps(payload))
@@ -2009,12 +2057,14 @@ def _validate_impl(
                 for f in report.errors:
                     loc = f"{f.step_name}: " if f.step_name else ""
                     link = f" (details: https://aandresalvarez.github.io/flujo/reference/validation_rules/#{str(f.rule_id).lower()})"
+                    why = _explain(f.rule_id) if explain else None
+                    suffix = f" | Why: {why}" if why else ""
                     if f.suggestion:
                         typer.echo(
-                            f"- [{f.rule_id}] {loc}{f.message}{link} -> Suggestion: {f.suggestion}"
+                            f"- [{f.rule_id}] {loc}{f.message}{link}{suffix} -> Suggestion: {f.suggestion}"
                         )
                     else:
-                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}")
+                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}{suffix}")
             if report.warnings:
                 typer.echo("[yellow]Warnings:")
                 typer.echo(
@@ -2023,12 +2073,14 @@ def _validate_impl(
                 for f in report.warnings:
                     loc = f"{f.step_name}: " if f.step_name else ""
                     link = f" (details: https://aandresalvarez.github.io/flujo/reference/validation_rules/#{str(f.rule_id).lower()})"
+                    why = _explain(f.rule_id) if explain else None
+                    suffix = f" | Why: {why}" if why else ""
                     if f.suggestion:
                         typer.echo(
-                            f"- [{f.rule_id}] {loc}{f.message}{link} -> Suggestion: {f.suggestion}"
+                            f"- [{f.rule_id}] {loc}{f.message}{link}{suffix} -> Suggestion: {f.suggestion}"
                         )
                     else:
-                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}")
+                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}{suffix}")
             if report.is_valid:
                 typer.echo("[green]Pipeline is valid")
 
@@ -2074,12 +2126,23 @@ def validate_dev(
     output_format: Annotated[
         str,
         typer.Option(
-            "--format",
+            None,
+            "--output-format",
             help="Output format for CI parsers",
             case_sensitive=False,
             click_type=click.Choice(["text", "json", "sarif"]),
         ),
     ] = "text",
+    format_alias: Annotated[
+        Optional[str],
+        typer.Option(
+            None,
+            "--format",
+            help="Alias for --output-format (deprecated)",
+            case_sensitive=False,
+            click_type=click.Choice(["text", "json", "sarif"]),
+        ),
+    ] = None,
     imports: Annotated[
         bool,
         typer.Option(
@@ -2097,10 +2160,20 @@ def validate_dev(
             "--rules", help="Path to rules JSON/TOML that overrides severities (off/warning/error)"
         ),
     ] = None,
+    explain: Annotated[
+        bool,
+        typer.Option("--explain", help="Include brief 'why this matters' guidance in output"),
+    ] = False,
 ) -> None:
     """Validate a pipeline defined in a file (developer namespace)."""
     _validate_impl(
-        path, strict, output_format, include_imports=imports, fail_on_warn=fail_on_warn, rules=rules
+        path,
+        strict,
+        format_alias or output_format,
+        include_imports=imports,
+        fail_on_warn=fail_on_warn,
+        rules=rules,
+        explain=explain,
     )
 
 
@@ -2120,12 +2193,23 @@ def validate(
     output_format: Annotated[
         str,
         typer.Option(
-            "--format",
+            None,
+            "--output-format",
             help="Output format for CI parsers",
             case_sensitive=False,
             click_type=click.Choice(["text", "json", "sarif"]),
         ),
     ] = "text",
+    format_alias: Annotated[
+        Optional[str],
+        typer.Option(
+            None,
+            "--format",
+            help="Alias for --output-format (deprecated)",
+            case_sensitive=False,
+            click_type=click.Choice(["text", "json", "sarif"]),
+        ),
+    ] = None,
     imports: Annotated[
         bool,
         typer.Option(
@@ -2143,10 +2227,20 @@ def validate(
             "--rules", help="Path to rules JSON/TOML that overrides severities (off/warning/error)"
         ),
     ] = None,
+    explain: Annotated[
+        bool,
+        typer.Option("--explain", help="Include brief 'why this matters' guidance in output"),
+    ] = False,
 ) -> None:
     """Validate a pipeline (top-level alias)."""
     _validate_impl(
-        path, strict, output_format, include_imports=imports, fail_on_warn=fail_on_warn, rules=rules
+        path,
+        strict,
+        format_alias or output_format,
+        include_imports=imports,
+        fail_on_warn=fail_on_warn,
+        rules=rules,
+        explain=explain,
     )
 
 
