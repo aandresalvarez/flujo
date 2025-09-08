@@ -233,6 +233,21 @@ class StateMachinePolicyExecutor:
         if not isinstance(current_state, str):
             current_state = getattr(step, "start_state", None)
 
+        # Defensive: immediately persist the starting state to the caller-visible context.
+        # Some CI paths observed missing 'current_state' when orchestration short‑circuits
+        # (e.g., pause/empty-state pipelines). Setting it up‑front prevents loss during
+        # later merges and ensures tests can assert on it even if a pause occurs early.
+        try:
+            if (
+                context is not None
+                and hasattr(context, "scratchpad")
+                and isinstance(getattr(context, "scratchpad"), dict)
+                and isinstance(current_state, str)
+            ):
+                context.scratchpad["current_state"] = current_state
+        except Exception:
+            pass
+
         total_cost = 0.0
         total_tokens = 0
         total_latency = 0.0
@@ -369,9 +384,29 @@ class StateMachinePolicyExecutor:
                                     scd["pause_message"] = msg if isinstance(msg, str) else str(e)
                                 except Exception:
                                     pass
-                                telemetry.logfire.info(
-                                    f"[StateMachinePolicy] pause in state={current_state!r}; transitioning to={target!r}"
-                                )
+                        # Best‑effort: reflect pause metadata on the outer context as well so
+                        # finalization code that uses the original reference also sees it.
+                        try:
+                            if (
+                                context is not None
+                                and hasattr(context, "scratchpad")
+                                and isinstance(getattr(context, "scratchpad"), dict)
+                            ):
+                                if isinstance(target, str):
+                                    context.scratchpad["current_state"] = target
+                                    context.scratchpad["next_state"] = target
+                                context.scratchpad.setdefault("status", "paused")
+                                if not context.scratchpad.get("pause_message"):
+                                    context.scratchpad["pause_message"] = (
+                                        getattr(e, "message", None)
+                                        if isinstance(getattr(e, "message", None), str)
+                                        else str(e)
+                                    )
+                        except Exception:
+                            pass
+                        telemetry.logfire.info(
+                            f"[StateMachinePolicy] pause in state={current_state!r}; transitioning to={target!r}"
+                        )
                     except Exception:
                         pass
                     raise e
@@ -604,6 +639,20 @@ class StateMachinePolicyExecutor:
                 if isinstance(end_states, list) and current_state in end_states:
                     break
                 break
+
+        # Final safeguard: ensure the final state is visible on the caller context
+        try:
+            if isinstance(current_state, str):
+                for ctx_obj in (last_context, context):
+                    if ctx_obj is not None and hasattr(ctx_obj, "scratchpad"):
+                        spf = getattr(ctx_obj, "scratchpad")
+                        if isinstance(spf, dict):
+                            spf.setdefault("current_state", current_state)
+                            # If a hop was decided, mirror it to next_state for clarity
+                            if isinstance(spf.get("next_state"), str) is False:
+                                spf["next_state"] = current_state
+        except Exception:
+            pass
 
         # Ensure visibility of key states in CI/test runs: if the PlanApproval
         # state was logically traversed (by design) but did not materialize a

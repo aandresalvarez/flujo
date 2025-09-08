@@ -367,6 +367,26 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # Defensive: do not fail core init due to extension policy issues
             pass
 
+        # Ensure critical primitives are registered even if framework init was skipped
+        # (e.g., import-order differences in some environments/CI). This preserves
+        # the architectural rule that complex step logic lives in policy classes,
+        # while the core only wires dispatch.
+        try:
+            from ...domain.dsl.state_machine import StateMachineStep as _SM
+            from .step_policies import StateMachinePolicyExecutor as _SMPolicy
+
+            _sm_policy = _SMPolicy()
+
+            async def _sm_bound(frame: ExecutionFrame[_Any]) -> StepOutcome[StepResult]:
+                return await _sm_policy.execute(self, frame)
+
+            # Only register if not already present from framework registry
+            if self.policy_registry.get(_SM) is None:
+                self.policy_registry.register(_SM, _sm_bound)
+        except Exception:
+            # Defensive: never break core init due to optional policy wiring
+            pass
+
     @property
     def cache(self) -> _LRUCache:
         if not hasattr(self, "_cache"):
