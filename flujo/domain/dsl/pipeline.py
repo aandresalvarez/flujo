@@ -705,6 +705,44 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                         )
                         continue
 
+        # Apply per-step suppression (meta-based): meta['suppress_rules'] supports glob patterns (e.g., 'V-T*')
+        try:
+            import fnmatch as _fnm
+
+            # Build step_name -> patterns map from top-level steps
+            suppress_map: dict[str, list[str]] = {}
+            for st in self.steps:
+                try:
+                    meta = getattr(st, "meta", None)
+                    if isinstance(meta, dict):
+                        pats = meta.get("suppress_rules")
+                        if isinstance(pats, (list, tuple)):
+                            suppress_map[getattr(st, "name", "")] = [str(p) for p in pats]
+                except Exception:
+                    continue
+
+            def _is_suppressed(f: ValidationFinding) -> bool:
+                try:
+                    pats = suppress_map.get(getattr(f, "step_name", "")) or []
+                    rid = str(getattr(f, "rule_id", "")).upper()
+                    for pat in pats:
+                        p = str(pat).upper()
+                        try:
+                            if _fnm.fnmatch(rid, p):
+                                return True
+                        except Exception:
+                            continue
+                    return False
+                except Exception:
+                    return False
+
+            if suppress_map:
+                report.errors = [e for e in report.errors if not _is_suppressed(e)]
+                report.warnings = [w for w in report.warnings if not _is_suppressed(w)]
+        except Exception:
+            # Suppression is best-effort; never fail validation due to suppression parsing
+            pass
+
         return report
 
     # ------------------------------------------------------------------
