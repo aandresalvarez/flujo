@@ -70,10 +70,13 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
-      - name: Run fast tests with coverage (limited xdist)
+      - name: Set dummy OpenAI API key for tests
+        run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
+
+      - name: Run fast tests with coverage (deterministic order)
         run: |
-          # Run fast tests with limited parallelism to speed up CI without instability
-          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n 3
+          # Disable pytest-randomly to avoid order-dependent flakes; keep limited parallelism
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n 3 -p no:randomly
 
       - name: Store coverage file
         uses: actions/upload-artifact@v4
