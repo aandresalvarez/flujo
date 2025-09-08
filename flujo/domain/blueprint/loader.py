@@ -2219,6 +2219,47 @@ def load_pipeline_blueprint_from_yaml(
     # Proactively auto-load skills to honor docs: load skills.yaml before parsing.
     # This ensures CLI and any programmatic use benefit from the same behavior.
     try:
+        # Build a best-effort YAML location index (path -> (line, col)) using ruamel.yaml when available.
+        loc_index: Dict[str, Tuple[int, int]] = {}
+        try:
+            from ruamel.yaml import YAML as _RYAML
+            from ruamel.yaml.comments import CommentedMap as _CMap, CommentedSeq as _CSeq
+
+            def _build_index(txt: str) -> Dict[str, Tuple[int, int]]:
+                yaml_rt = _RYAML(typ="rt")
+                root = yaml_rt.load(txt)
+                idx: Dict[str, Tuple[int, int]] = {}
+
+                def _recurse(node: Any, path: str) -> None:
+                    try:
+                        if isinstance(node, _CMap):
+                            for k, v in node.items():
+                                key_path = f"{path}.{k}" if path else str(k)
+                                # Special-case: steps list — record each item's position
+                                if k == "steps" and isinstance(v, _CSeq):
+                                    try:
+                                        for i in range(len(v)):
+                                            lc = v.lc.data.get(i)
+                                            if lc and len(lc) >= 2:
+                                                idx[f"{key_path}[{i}]"] = (
+                                                    int(lc[0]) + 1,
+                                                    int(lc[1]) + 1,
+                                                )
+                                    except Exception:
+                                        pass
+                                _recurse(v, key_path)
+                        elif isinstance(node, _CSeq):
+                            for i, item in enumerate(node):
+                                _recurse(item, f"{path}[{i}]")
+                    except Exception:
+                        pass
+
+                _recurse(root, "")
+                return idx
+
+            loc_index = _build_index(yaml_text)
+        except Exception:
+            loc_index = {}
         if base_dir:
             from ...infra.skills_catalog import (
                 load_skills_catalog as _load_skills_catalog,
@@ -2254,7 +2295,23 @@ def load_pipeline_blueprint_from_yaml(
                     raise BlueprintError(
                         f"Failed to compile declarative blueprint (agents/imports): {e}"
                     ) from e
-            return build_pipeline_from_blueprint(bp)
+            p = build_pipeline_from_blueprint(bp)
+            # Attach ruamel-derived line/column to steps when yaml_path is present
+            try:
+                for st in getattr(p, "steps", []) or []:
+                    try:
+                        meta = getattr(st, "meta", None)
+                        if isinstance(meta, dict) and "yaml_path" in meta:
+                            ypath = str(meta.get("yaml_path"))
+                            if ypath in loc_index:
+                                ln, col = loc_index[ypath]
+                                info = {"path": ypath, "line": int(ln), "column": int(col)}
+                                st.meta["_yaml_loc"] = info
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            return p
         except ValidationError as ve:
             # Construct readable error with locations
             try:
