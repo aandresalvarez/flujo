@@ -223,7 +223,9 @@ class DeclarativeBlueprintCompiler:
                 # Recursively compile with a new compiler instance; pass directory of the imported file
                 sub_base_dir = os.path.dirname(path)
                 # Use loader entrypoint to ensure same validation and compilation path
-                sub_pipeline = load_pipeline_blueprint_from_yaml(text, base_dir=sub_base_dir)
+                sub_pipeline = load_pipeline_blueprint_from_yaml(
+                    text, base_dir=sub_base_dir, source_file=path
+                )
                 self._compiled_imports[alias] = sub_pipeline
             except Exception as e:
                 # Fail fast with descriptive message
