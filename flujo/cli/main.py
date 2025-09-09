@@ -3579,6 +3579,110 @@ state_uri = "sqlite:///flujo_ops.db"
             json_output=json_output,
         )
 
+        # If execution yielded failures, print a concise credentials hint when likely.
+        try:
+
+            def _collect_failed_feedback(res: Any) -> list[str]:
+                vals: list[str] = []
+                try:
+                    for sr in getattr(res, "step_history", []) or []:
+                        if not getattr(sr, "success", True):
+                            fb = getattr(sr, "feedback", None)
+                            if isinstance(fb, str) and fb:
+                                vals.append(fb)
+                        # Inspect nested histories if present
+                        nested = getattr(sr, "step_history", None)
+                        if isinstance(nested, list) and nested:
+                            vals.extend(
+                                [
+                                    str(getattr(ns, "feedback", ""))
+                                    for ns in nested
+                                    if not getattr(ns, "success", True)
+                                    and isinstance(getattr(ns, "feedback", None), str)
+                                ]
+                            )
+                except Exception:
+                    pass
+                return vals
+
+            def _likely_missing_credentials(text: str) -> bool:
+                t = text.lower()
+                # Broad auth/credentials patterns commonly seen across SDKs and HTTP layers
+                tokens = [
+                    "api key",
+                    "no api key",
+                    "missing api key",
+                    "authenticationerror",
+                    "unauthorized",
+                    "forbidden",
+                    "invalid api key",
+                    "missing required",
+                    "credentials",
+                    "bearer token",
+                    "401",
+                    "403",
+                ]
+                return any(tok in t for tok in tokens)
+
+            def _print_credentials_hint(providers: set[str]) -> None:
+                import os as _os3
+
+                missing: list[str] = []
+                # Only suggest envs that are actually unset to avoid noise
+                if (not providers or "openai" in providers) and not _os3.getenv("OPENAI_API_KEY"):
+                    missing.append("OPENAI_API_KEY")
+                if (not providers or "anthropic" in providers) and not _os3.getenv(
+                    "ANTHROPIC_API_KEY"
+                ):
+                    missing.append("ANTHROPIC_API_KEY")
+                if (not providers or "google" in providers) and not _os3.getenv("GOOGLE_API_KEY"):
+                    missing.append("GOOGLE_API_KEY")
+                if (not providers or "cohere" in providers) and not _os3.getenv("COHERE_API_KEY"):
+                    missing.append("COHERE_API_KEY")
+                if missing and not json_output:
+                    try:
+                        from typer import secho as _se
+
+                        _se(
+                            "Credentials hint: set "
+                            + ", ".join(missing)
+                            + " or add an env_file in flujo.toml.",
+                            fg="yellow",
+                        )
+                    except Exception:
+                        pass
+
+            # Build provider hints from the pipeline’s declared agents
+            providers_hint: set[str] = set()
+            try:
+                from ..utils.model_utils import extract_model_id, extract_provider_and_model
+                from ..domain.dsl.step import Step as _Step
+
+                for st in getattr(pipeline_obj, "steps", []) or []:
+                    if not isinstance(st, _Step):
+                        continue
+                    agent = getattr(st, "agent", None)
+                    mid = (
+                        extract_model_id(agent, step_name=getattr(st, "name", "step"))
+                        if agent
+                        else None
+                    )
+                    if mid:
+                        prov, _ = extract_provider_and_model(mid)
+                        if prov:
+                            providers_hint.add(prov)
+            except Exception:
+                providers_hint = set()
+
+            # Check any failed step feedbacks
+            for fb in _collect_failed_feedback(result):
+                if _likely_missing_credentials(fb):
+                    _print_credentials_hint(providers_hint)
+                    break
+        except Exception:
+            # Never block execution due to hinting
+            pass
+
         # Interactive HITL resume loop: if paused and in TTY, prompt and resume
         if not json_output:
             try:
@@ -3892,6 +3996,80 @@ state_uri = "sqlite:///flujo_ops.db"
         import traceback as _tb
 
         typer.echo(f"[red]Error running pipeline: {type(e).__name__}: {e}", err=True)
+        # If exception looks like missing credentials, print one-line hint
+        try:
+            msg = str(e)
+
+            def _looks_like_creds_err(t: str) -> bool:
+                t = t.lower()
+                return any(
+                    s in t
+                    for s in [
+                        "api key",
+                        "unauthorized",
+                        "authentication",
+                        "invalid key",
+                        "401",
+                        "403",
+                    ]
+                )
+
+            if _looks_like_creds_err(msg) and not json_output:
+                # Reuse providers hint from pipeline where available
+                providers_hint: set[str] = set()
+                try:
+                    from ..utils.model_utils import extract_model_id, extract_provider_and_model
+                    from ..domain.dsl.step import Step as _Step
+
+                    for st in getattr(pipeline_obj, "steps", []) or []:
+                        if not isinstance(st, _Step):
+                            continue
+                        agent = getattr(st, "agent", None)
+                        mid = (
+                            extract_model_id(agent, step_name=getattr(st, "name", "step"))
+                            if agent
+                            else None
+                        )
+                        if mid:
+                            prov, _ = extract_provider_and_model(mid)
+                            if prov:
+                                providers_hint.add(prov)
+                except Exception:
+                    providers_hint = set()
+                # Print concise hint with specific envs when possible
+                import os as _os4
+
+                missing_envs = []
+                if (not providers_hint or "openai" in providers_hint) and not _os4.getenv(
+                    "OPENAI_API_KEY"
+                ):
+                    missing_envs.append("OPENAI_API_KEY")
+                if (not providers_hint or "anthropic" in providers_hint) and not _os4.getenv(
+                    "ANTHROPIC_API_KEY"
+                ):
+                    missing_envs.append("ANTHROPIC_API_KEY")
+                if (not providers_hint or "google" in providers_hint) and not _os4.getenv(
+                    "GOOGLE_API_KEY"
+                ):
+                    missing_envs.append("GOOGLE_API_KEY")
+                if (not providers_hint or "cohere" in providers_hint) and not _os4.getenv(
+                    "COHERE_API_KEY"
+                ):
+                    missing_envs.append("COHERE_API_KEY")
+                if missing_envs:
+                    try:
+                        from typer import secho as _se
+
+                        _se(
+                            "Credentials hint: set "
+                            + ", ".join(missing_envs)
+                            + " or add an env_file in flujo.toml.",
+                            fg="yellow",
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         if _os.getenv("FLUJO_CLI_VERBOSE") == "1" or _os.getenv("FLUJO_CLI_TRACE") == "1":
             typer.echo("\nTraceback:", err=True)
             typer.echo("".join(_tb.format_exception(e)), err=True)
