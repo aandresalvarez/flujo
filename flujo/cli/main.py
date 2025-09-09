@@ -3393,7 +3393,7 @@ def run(
         try:
             import sys as _sys
             from ..infra.config_manager import ConfigManager as _CfgMgr
-            from ..utils.config import get_settings as _get_settings
+            from ..infra.settings import get_settings as _get_settings
 
             _cfg = _CfgMgr()
             _has_config = _cfg.config_path is not None
@@ -3416,7 +3416,8 @@ def run(
 
 state_uri = "sqlite:///flujo_ops.db"
 # env_file = ".env"
-                                """.strip()
+                                """.strip(),
+                                encoding="utf-8",
                             )
                             _se("Created flujo.toml (sqlite:///flujo_ops.db)", fg="green")
                 except Exception:
@@ -3471,7 +3472,7 @@ state_uri = "sqlite:///flujo_ops.db"
         try:
             import sys as _sys
             from ..infra.config_manager import ConfigManager as _CfgMgr
-            from ..utils.config import get_settings as _get_settings
+            from ..infra.settings import get_settings as _get_settings
             from ..utils.model_utils import extract_model_id, extract_provider_and_model
             from ..domain.dsl.step import Step as _Step
             from ..domain.dsl.step import HumanInTheLoopStep as _Hitl
@@ -3486,8 +3487,11 @@ state_uri = "sqlite:///flujo_ops.db"
                     from typer import secho as _se
 
                     _se(msg, fg=fg)
-                except Exception:
-                    pass
+                except Exception as e:  # noqa: BLE001, S110
+                    try:
+                        logfire.debug(f"secho failed: {type(e).__name__}: {e}")
+                    except Exception:
+                        pass
 
             if not _has_config:
                 # One-time prominent warning in interactive mode; telemetry will also capture.
@@ -3503,13 +3507,23 @@ state_uri = "sqlite:///flujo_ops.db"
                         )
                     except Exception:
                         has_hitl = False
-                    if (
-                        has_hitl
-                        and getattr(_state_backend, "__class__", object).__name__
+                    # Consider both backend type and configured state URI for durability
+                    try:
+                        from ..infra.config_manager import get_state_uri as _get_state_uri
+
+                        _uri = _get_state_uri(force_reload=True)
+                    except Exception:  # noqa: BLE001
+                        _uri = None
+                    _ephemeral = (
+                        not _uri
+                        or str(_uri).strip().lower()
+                        in {"memory", "memory://", "mem://", "inmemory://"}
+                        or getattr(_state_backend, "__class__", object).__name__
                         == "InMemoryBackend"
-                    ):
+                    )
+                    if has_hitl and _ephemeral:
                         _secho(
-                            "HITL detected and using in-memory state; pauses won’t survive restarts.",
+                            "HITL detected and using in-memory state; pauses won't survive restarts.",
                             fg="yellow",
                         )
                         _secho(
@@ -3575,7 +3589,8 @@ state_uri = "sqlite:///flujo_ops.db"
 [budgets]
 # default.total_cost_usd_limit = 10.0
 # default.total_tokens_limit = 100000
-                                    """.strip()
+                                    """.strip(),
+                                    encoding="utf-8",
                                 )
                                 _secho("Created flujo.toml (sqlite:///flujo_ops.db)", fg="green")
                             else:
@@ -3590,9 +3605,12 @@ state_uri = "sqlite:///flujo_ops.db"
                         _tele.logfire.warning("No flujo.toml found; zero-config defaults in effect")
                     except Exception:
                         pass
-        except Exception:
-            # Never block execution due to UX helpers
-            pass
+        except Exception as e:  # noqa: BLE001, S110
+            # Never block execution due to UX helpers; keep it observable under --debug
+            try:
+                logfire.debug(f"zero-config UX guard suppressed: {type(e).__name__}: {e}")
+            except Exception:
+                pass
 
         runner = create_flujo_runner(
             pipeline=pipeline_obj,
