@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union, Literal, Tuple, cast
+from typing import Any, Dict, List, Optional, Union, Literal, Tuple
 from pydantic import (
     BaseModel,
     Field,
@@ -2394,9 +2394,12 @@ def load_pipeline_blueprint_from_yaml(
             # Propagate top-level blueprint name onto the Pipeline object so downstream
             # components (CLI runner, tracing) can display and persist a meaningful name.
             try:
-                if isinstance(getattr(bp, "name", None), str) and getattr(bp, "name"):  # type: ignore[truthy-bool]
-                    # Attach as a dynamic attribute; Pipeline does not model `name` as a field.
-                    setattr(p, "name", cast(str, bp.name))
+                name_val = getattr(bp, "name", None)
+                if isinstance(name_val, str):
+                    name_val_stripped = name_val.strip()
+                    if name_val_stripped:
+                        # Attach as a dynamic attribute; Pipeline does not model `name` as a field.
+                        setattr(p, "name", name_val_stripped)
             except Exception:
                 pass
             # Attach ruamel-derived line/column to steps when yaml_path is present
