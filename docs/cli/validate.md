@@ -9,7 +9,7 @@ Overview
 Usage:
 
 ```
-uv run flujo validate [PATH] [--strict/--no-strict] [--format text|json|sarif] [--imports/--no-imports] [--fail-on-warn] [--rules FILE|PROFILE]
+uv run flujo validate [PATH] [--strict/--no-strict] [--format text|json|sarif] [--imports/--no-imports] [--fail-on-warn] [--rules FILE|PROFILE] [--baseline FILE] [--update-baseline]
 ```
 
 Options:
@@ -18,6 +18,8 @@ Options:
 - `--imports/--no-imports` (default: imports): recursively validate imported blueprints.
 - `--fail-on-warn`: treat warnings as errors (non-zero exit).
 - `--rules`: either a path to a JSON/TOML mapping of rule severities (off|warning|error) with glob support (e.g., `{"V-T*":"off"}`), or a named profile from `flujo.toml` under `[validation.profiles.<name>]`.
+- `--baseline FILE`: compare the current report to a previous JSON report; output reflects only added findings; prints a delta summary.
+- `--update-baseline`: write the current (post-baseline) view back to `--baseline`.
 
 Features:
 - Comment-based suppressions: add `# flujo: ignore <RULES...>` to a step mapping or list item to suppress findings for that step. Supports multiple rules and globs, e.g., `# flujo: ignore V-T1 V-P3` or `# flujo: ignore V-*`.
@@ -62,6 +64,7 @@ Exit Codes
 
 - `--strict` (default): non-zero exit when errors are present.
 - `--fail-on-warn`: non-zero exit when warnings are present (after applying rule overrides/profiles).
+- When `--baseline` is provided, exit codes reflect the post‑baseline view (i.e., only newly added findings count).
 
 See Also
 

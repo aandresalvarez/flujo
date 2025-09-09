@@ -1798,6 +1798,8 @@ def _validate_impl(
     fail_on_warn: bool = False,
     rules: Optional[str] = None,
     explain: bool = False,
+    baseline: Optional[str] = None,
+    update_baseline: bool = False,
 ) -> None:
     from .exit_codes import EX_VALIDATION_FAILED, EX_IMPORT_ERROR, EX_RUNTIME_ERROR
     import traceback as _tb
@@ -1943,6 +1945,64 @@ def _validate_impl(
         else:
             report = _apply_rules(report, rules)
 
+        # Optional baseline delta handling (compare post-rules report to previous)
+        baseline_info: dict[str, Any] | None = None
+        if baseline:
+            try:
+                import os as _os
+
+                if _os.path.exists(baseline):
+                    with open(baseline, "r", encoding="utf-8") as bf:
+                        prev_raw = json.load(bf)
+                else:
+                    prev_raw = None
+
+                def _key_of(d: dict[str, Any]) -> tuple[str, str]:
+                    return (str(d.get("rule_id", "")).upper(), str(d.get("step_name", "")))
+
+                cur_err = [e.model_dump() for e in report.errors]
+                cur_warn = [w.model_dump() for w in report.warnings]
+                if isinstance(prev_raw, dict):
+                    prev_err = [x for x in (prev_raw.get("errors") or []) if isinstance(x, dict)]
+                    prev_warn = [x for x in (prev_raw.get("warnings") or []) if isinstance(x, dict)]
+                else:
+                    prev_err, prev_warn = [], []
+
+                prev_err_keys = {_key_of(x) for x in prev_err}
+                prev_warn_keys = {_key_of(x) for x in prev_warn}
+                cur_err_keys = {_key_of(x) for x in cur_err}
+                cur_warn_keys = {_key_of(x) for x in cur_warn}
+
+                added_errors = [x for x in cur_err if _key_of(x) not in prev_err_keys]
+                added_warnings = [x for x in cur_warn if _key_of(x) not in prev_warn_keys]
+                removed_errors = [x for x in prev_err if _key_of(x) not in cur_err_keys]
+                removed_warnings = [x for x in prev_warn if _key_of(x) not in cur_warn_keys]
+
+                # Replace the visible report (and therefore exit-code semantics) with post-baseline view
+                from flujo.domain.pipeline_validation import (
+                    ValidationReport as _VR,
+                    ValidationFinding as _VF,
+                )
+
+                def _vf_list(arr: list[dict[str, Any]]) -> list[_VF]:
+                    out: list[_VF] = []
+                    for it in arr:
+                        try:
+                            out.append(_VF(**it))
+                        except Exception:
+                            continue
+                    return out
+
+                report = _VR(errors=_vf_list(added_errors), warnings=_vf_list(added_warnings))
+                baseline_info = {
+                    "applied": True,
+                    "file": baseline,
+                    "added": {"errors": added_errors, "warnings": added_warnings},
+                    "removed": {"errors": removed_errors, "warnings": removed_warnings},
+                }
+            except Exception:
+                baseline_info = {"applied": False, "file": baseline}
+
         # Optional explanation catalog for rules
         def _explain(rule_id: str) -> str | None:
             rid = (rule_id or "").upper()
@@ -1978,6 +2038,7 @@ def _validate_impl(
                     for w in report.warnings
                 ],
                 "path": path,
+                **({"baseline": baseline_info} if baseline_info else {}),
             }
             typer.echo(json.dumps(payload))
         elif output_format == "sarif":
@@ -1990,15 +2051,33 @@ def _validate_impl(
             sarif_results: list[dict[str, Any]] = []
 
             def _rule_ref(rule_id: str) -> dict[str, Any]:
-                rid = rule_id.upper()
+                rid = (rule_id or "").upper()
                 if rid not in rules_index:
                     rules_index[rid] = len(sarif_rules)
+                    try:
+                        from ..validation.rules_catalog import get_rule
+
+                        info = get_rule(rid)
+                    except Exception:
+                        info = None
                     sarif_rules.append(
                         {
                             "id": rid,
-                            "name": rid,
-                            "shortDescription": {"text": rid},
-                            "helpUri": f"https://aandresalvarez.github.io/flujo/reference/validation_rules/#{rid.lower()}",
+                            "name": (info.title if info else rid)
+                            if hasattr(info, "title")
+                            else rid,  # type: ignore[attr-defined]
+                            "shortDescription": {
+                                "text": (info.title if info else rid)
+                                if hasattr(info, "title")
+                                else rid  # type: ignore[attr-defined]
+                            },
+                            **(
+                                {"helpUri": info.help_uri}
+                                if (hasattr(info, "help_uri") and getattr(info, "help_uri"))
+                                else {
+                                    "helpUri": f"https://aandresalvarez.github.io/flujo/reference/validation_rules/#{rid.lower()}"
+                                }
+                            ),
                         }
                     )
                 return {"ruleId": rid}
@@ -2079,6 +2158,31 @@ def _validate_impl(
                         typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}{suffix}")
             if report.is_valid:
                 typer.echo("[green]Pipeline is valid")
+            if baseline_info and baseline_info.get("applied"):
+                try:
+                    ae = len(baseline_info["added"]["errors"])  # type: ignore[index]
+                    aw = len(baseline_info["added"]["warnings"])  # type: ignore[index]
+                    re_ = len(baseline_info["removed"]["errors"])  # type: ignore[index]
+                    rw = len(baseline_info["removed"]["warnings"])  # type: ignore[index]
+                    typer.echo(
+                        f"[cyan]Baseline applied: +{ae} errors, +{aw} warnings; removed: -{re_} errors, -{rw} warnings"
+                    )
+                except Exception:
+                    pass
+
+        # Optionally write/update the baseline file with the current (post-baseline) view
+        if baseline and update_baseline:
+            try:
+                with open(baseline, "w", encoding="utf-8") as bf:
+                    json.dump(
+                        {
+                            "errors": [e.model_dump() for e in report.errors],
+                            "warnings": [w.model_dump() for w in report.warnings],
+                        },
+                        bf,
+                    )
+            except Exception:
+                pass
 
         if strict and not report.is_valid:
             raise typer.Exit(EX_VALIDATION_FAILED)
@@ -2150,6 +2254,17 @@ def validate_dev(
         bool,
         typer.Option("--explain", help="Include brief 'why this matters' guidance in output"),
     ] = False,
+    baseline: Annotated[
+        Optional[str],
+        typer.Option("--baseline", help="Path to a previous JSON report to compute deltas against"),
+    ] = None,
+    update_baseline: Annotated[
+        bool,
+        typer.Option(
+            "--update-baseline",
+            help="Write the current report (post-baseline view) to --baseline path",
+        ),
+    ] = False,
 ) -> None:
     """Validate a pipeline defined in a file (developer namespace)."""
     _validate_impl(
@@ -2160,6 +2275,8 @@ def validate_dev(
         fail_on_warn=fail_on_warn,
         rules=rules,
         explain=explain,
+        baseline=baseline,
+        update_baseline=update_baseline,
     )
 
 
@@ -2207,6 +2324,17 @@ def validate(
         bool,
         typer.Option("--explain", help="Include brief 'why this matters' guidance in output"),
     ] = False,
+    baseline: Annotated[
+        Optional[str],
+        typer.Option("--baseline", help="Path to a previous JSON report to compute deltas against"),
+    ] = None,
+    update_baseline: Annotated[
+        bool,
+        typer.Option(
+            "--update-baseline",
+            help="Write the current report (post-baseline view) to --baseline path",
+        ),
+    ] = False,
 ) -> None:
     """Validate a pipeline (top-level alias)."""
     _validate_impl(
@@ -2217,6 +2345,8 @@ def validate(
         fail_on_warn=fail_on_warn,
         rules=rules,
         explain=explain,
+        baseline=baseline,
+        update_baseline=update_baseline,
     )
 
 
