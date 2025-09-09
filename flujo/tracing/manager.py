@@ -118,11 +118,30 @@ class TraceManager:
         self._span_stack = [self._root_span]
 
     async def _handle_post_run(self, payload: PostRunPayload) -> None:
-        """Handle post-run event - finalize root span and attach to result."""
+        """Finalize root span on post-run and attach it to the result.
+
+        Status resolution:
+        - paused when context.scratchpad.status == 'paused'
+        - completed when pipeline_result.success is truthy
+        - failed otherwise
+        """
         if self._root_span and self._span_stack:
             # Finalize the root span
             self._root_span.end_time = time.monotonic()  # Use monotonic time
-            self._root_span.status = "completed"
+            # Determine final status without broad exception handling
+            ctx = payload.context or getattr(
+                payload.pipeline_result, "final_pipeline_context", None
+            )
+            scratch = getattr(ctx, "scratchpad", None) if ctx is not None else None
+            paused = isinstance(scratch, dict) and scratch.get("status") == "paused"
+            is_success = bool(getattr(payload.pipeline_result, "success", False))
+
+            if paused:
+                self._root_span.status = "paused"
+            elif is_success:
+                self._root_span.status = "completed"
+            else:
+                self._root_span.status = "failed"
 
             # Attach the trace tree to the pipeline result
             payload.pipeline_result.trace_tree = self._root_span
