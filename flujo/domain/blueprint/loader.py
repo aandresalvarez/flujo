@@ -2399,7 +2399,14 @@ def load_pipeline_blueprint_from_yaml(
                     name_val_stripped = name_val.strip()
                     if name_val_stripped:
                         # Attach as a dynamic attribute; Pipeline does not model `name` as a field.
-                        setattr(p, "name", name_val_stripped)
+                        try:
+                            setattr(p, "name", name_val_stripped)
+                        except Exception:
+                            # Bypass pydantic attribute guard if necessary
+                            try:
+                                object.__setattr__(p, "name", name_val_stripped)
+                            except Exception:
+                                pass
             except Exception:
                 pass
             # Attach ruamel-derived line/column to steps when yaml_path is present
