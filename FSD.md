@@ -365,6 +365,27 @@ Rule configuration:
 
 ---
 
+## 15. Implementation Status (Sep 9, 2025)
+
+This section tracks current implementation status relative to this specification.
+
+- Implemented (Phase 1 scope)
+  - Rules: V-T1..V-T4 (templating), V-S1 (schema), V-SM1 (state machine), V-I1..V-I3 (imports), V-P3 (parallel input uniformity).
+  - Recursive imports: findings from imported blueprints are aggregated into the parent with `imports.<alias>::…` location prefix; child `step_name` is preserved. Extended finding fields include `file`, `line`, `column`, `import_alias`, and `import_stack`.
+  - CLI flags: `--format {text,json,sarif}`, `--explain`, `--imports/--no-imports`, `--rules FILE|PROFILE`, `--fail-on-warn`.
+  - Baseline/deltas: `--baseline` and `--update-baseline` implemented. Exit status reflects the post‑baseline (added‑only) view; JSON includes a `baseline` summary; text prints a concise delta.
+  - SARIF: minimal 2.1.0 implemented; rules metadata (title/helpUri) sourced from a centralized rules catalog.
+  - Suppressions: comment‑based (`# flujo: ignore ...`) and `meta['suppress_rules']` globs honored.
+
+- Pending / Planned
+  - V‑CF1: Unconditional infinite loop heuristic — not yet implemented.
+  - Centralized rule catalog usage in text output: unify `_explain()` with the catalog for consistency.
+  - Optional telemetry: aggregated counts per rule/severity when `FLUJO_CLI_TELEMETRY=1` — not implemented.
+  - Distinct V‑I4 for “aggregated child findings”: behavior present (aggregation/prefixing), but no additional parent meta‑finding emitted; decide whether to introduce V‑I4 or keep current approach.
+  - `--fix` / `--yes`: planned for Phase 2 (hidden/disabled in MVP).
+
+---
+
 ## 11. Rollout Plan
 
 - Phase 1 (MVP): Implement TemplateLinter V‑T1..T4, SchemaLinter V‑S1, ImportLinter V‑I1, OrchestrationLinter V‑SM1, JSON/SARIF formatters, `--explain`.
