@@ -305,6 +305,63 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                         )
                     )
 
+            # Control-Flow Safety — V-CF1: Unconditional infinite loop heuristic
+            try:
+                from .loop import LoopStep as _LoopStep  # lazy import to avoid cycles
+
+                if isinstance(step, _LoopStep):
+                    # Heuristic 1: excessively large max_loops
+                    ml = 0
+                    try:
+                        ml = int(getattr(step, "max_loops", getattr(step, "max_retries", 0)) or 0)
+                    except Exception:
+                        ml = 0
+                    if ml >= 1000:
+                        report.errors.append(
+                            ValidationFinding(
+                                rule_id="V-CF1",
+                                severity="error",
+                                message=(
+                                    f"LoopStep '{getattr(step, 'name', None)}' declares max_loops={ml}, which may create a non-terminating loop."
+                                ),
+                                step_name=getattr(step, "name", None),
+                                suggestion=(
+                                    "Provide a stricter exit_condition or reduce max_loops to a reasonable bound."
+                                ),
+                            )
+                        )
+                    else:
+                        # Heuristic 2: exit condition appears to be a constant false function
+                        try:
+                            fn = getattr(step, "exit_condition_callable", None)
+
+                            flag_const_false = False
+                            if hasattr(fn, "__code__") and callable(fn):
+                                co = getattr(fn, "__code__")
+                                consts = tuple(getattr(co, "co_consts", ()) or ())
+                                names = tuple(getattr(co, "co_names", ()) or ())
+                                if (False in consts) and (True not in consts) and (len(names) == 0):
+                                    flag_const_false = True
+                            if flag_const_false:
+                                report.errors.append(
+                                    ValidationFinding(
+                                        rule_id="V-CF1",
+                                        severity="error",
+                                        message=(
+                                            f"LoopStep '{getattr(step, 'name', None)}' exit condition appears to be constant false (non-terminating)."
+                                        ),
+                                        step_name=getattr(step, "name", None),
+                                        suggestion=(
+                                            "Ensure exit_condition depends on loop results or context and eventually returns True."
+                                        ),
+                                    )
+                                )
+                        except Exception:
+                            pass
+            except Exception:
+                # Never fail validation due to heuristic
+                pass
+
             # Advanced Check 3.2.3: Incompatible fallback signature (V-F1)
             fb = getattr(step, "fallback_step", None)
             if fb is not None:

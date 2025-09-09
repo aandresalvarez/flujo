@@ -2003,27 +2003,30 @@ def _validate_impl(
             except Exception:
                 baseline_info = {"applied": False, "file": baseline}
 
-        # Optional explanation catalog for rules
+        # Optional explanation catalog for rules (centralized)
         def _explain(rule_id: str) -> str | None:
-            rid = (rule_id or "").upper()
-            why: dict[str, str] = {
-                "V-T1": "previous_step is a raw value; .output will be null at runtime.",
-                "V-T2": "'this' is only defined inside map bodies; using it elsewhere yields empty output.",
-                "V-T3": "Unknown or disabled filters will cause templating errors or ignored transforms.",
-                "V-T4": "Referencing a future or misspelled step name will resolve to None at render time.",
-                "V-S1": "Schemas with misplaced 'required', missing 'items', or unknown types are brittle and may mis-validate.",
-                "V-I1": "Imported blueprint cannot be found; validation cannot include the intended child pipeline.",
-                "V-SM1": "Unreachable states or no path to an end state can dead-end the state machine.",
-                "V-P1": "Parallel branches may write conflicting keys into context, leading to nondeterminism.",
-                "V-P3": "Parallel branches receive the same input; heterogeneous expectations can fail at runtime.",
-                "V-A1": "Simple steps without agents cannot execute.",
-                "V-A2": "Static type mismatch between steps will likely fail at runtime.",
-                "V-A5": "Outputs not consumed or merged are effectively dropped and indicate logic gaps.",
-                "V-F1": "Fallback step must accept the same input shape as the primary to be callable on failure.",
-                "V-I2": "Mapping to unknown parent roots will not populate context as intended.",
-                "V-I3": "Cyclic imports create infinite recursion in composition.",
-            }
-            return why.get(rid)
+            try:
+                from ..validation.rules_catalog import get_rule
+
+                info = get_rule(rule_id)
+                return info.description if info else None
+            except Exception:
+                return None
+
+        # Optional telemetry: counts per severity/rule when enabled
+        telemetry_counts: dict[str, dict[str, int]] | None = None
+        try:
+            if os.getenv("FLUJO_CLI_TELEMETRY") == "1":
+                from collections import Counter
+
+                err = Counter([e.rule_id for e in report.errors])
+                warn = Counter([w.rule_id for w in report.warnings])
+                telemetry_counts = {
+                    "error": dict(err),
+                    "warning": dict(warn),
+                }
+        except Exception:
+            telemetry_counts = None
 
         if output_format == "json":
             # Emit machine-friendly JSON (errors, warnings, is_valid)
@@ -2039,6 +2042,7 @@ def _validate_impl(
                 ],
                 "path": path,
                 **({"baseline": baseline_info} if baseline_info else {}),
+                **({"counts": telemetry_counts} if telemetry_counts else {}),
             }
             typer.echo(json.dumps(payload))
         elif output_format == "sarif":
@@ -2158,6 +2162,13 @@ def _validate_impl(
                         typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}{suffix}")
             if report.is_valid:
                 typer.echo("[green]Pipeline is valid")
+            if telemetry_counts:
+                try:
+                    total_e = sum(telemetry_counts.get("error", {}).values())
+                    total_w = sum(telemetry_counts.get("warning", {}).values())
+                    typer.echo(f"[cyan]Counts: errors={total_e}, warnings={total_w}")
+                except Exception:
+                    pass
             if baseline_info and baseline_info.get("applied"):
                 try:
                     ae = len(baseline_info["added"]["errors"])  # type: ignore[index]
