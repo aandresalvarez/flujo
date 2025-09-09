@@ -1319,6 +1319,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 pass
 
         execution_manager.set_final_context(paused_result, cast(Optional[ContextT], ctx))
+        # Emit a post_run event to allow tracers (e.g., ConsoleTracer) to render the final
+        # completion panel after a resume completes. The initial run already emitted a
+        # post_run reflecting the paused state; this second event represents the true end.
+        try:
+            await self._dispatch_hook(
+                "post_run",
+                pipeline_result=paused_result,
+                context=ctx,
+            )
+        except Exception:
+            # Never let tracing/hooks break control flow
+            pass
         return paused_result
 
     async def replay_from_trace(self, run_id: str) -> PipelineResult[ContextT]:

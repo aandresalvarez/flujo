@@ -67,12 +67,46 @@ class ConsoleTracer:
         self._depth = 0
 
     def _handle_post_run(self, payload: PostRunPayload) -> None:
-        """Handle the ``post_run`` event."""
+        """Handle the ``post_run`` event.
+
+        Correctly reflect paused/failed/completed final state. Previously this handler
+        inferred success solely from ``step_history`` which reports ``all([]) == True``
+        in paused-early cases, causing a misleading "COMPLETED" panel. We now:
+        - Prefer ``pipeline_result.success`` when available (runner sets this).
+        - Detect a paused state from ``payload.context.scratchpad['status']`` (or
+          ``pipeline_result.final_pipeline_context`` as a fallback).
+        - Adjust the title and styling accordingly.
+        """
         pipeline_result = payload.pipeline_result
-        title = "Pipeline End"
-        is_success = all(s.success for s in pipeline_result.step_history)
-        status_text = "✅ COMPLETED" if is_success else "❌ FAILED"
-        status_style = "bold green" if is_success else "bold red"
+
+        # Determine final status
+        paused = False
+        try:
+            ctx = payload.context or getattr(pipeline_result, "final_pipeline_context", None)
+            scratch = getattr(ctx, "scratchpad", None) if ctx is not None else None
+            paused = isinstance(scratch, dict) and scratch.get("status") == "paused"
+        except Exception:
+            paused = False
+
+        # Prefer the explicit success flag set by the runner; fall back to step_history
+        try:
+            is_success = bool(getattr(pipeline_result, "success", False))
+        except Exception:
+            is_success = all(getattr(s, "success", False) for s in pipeline_result.step_history)
+
+        if paused:
+            title = "Pipeline Paused"
+            status_text = "⏸ PAUSED"
+            status_style = "bold yellow"
+        elif is_success:
+            title = "Pipeline End"
+            status_text = "✅ COMPLETED"
+            status_style = "bold green"
+        else:
+            title = "Pipeline End"
+            status_text = "❌ FAILED"
+            status_style = "bold red"
+
         details = Text()
         details.append(f"Final Status: {status_text}\n", style=status_style)
         details.append(f"Total Steps Executed: {len(pipeline_result.step_history)}\n")
