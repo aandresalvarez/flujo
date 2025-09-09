@@ -2122,7 +2122,6 @@ def validate_dev(
     output_format: Annotated[
         str,
         typer.Option(
-            None,
             "--output-format",
             "--format",
             help="Output format for CI parsers",
@@ -2180,7 +2179,6 @@ def validate(
     output_format: Annotated[
         str,
         typer.Option(
-            None,
             "--output-format",
             "--format",
             help="Output format for CI parsers",
