@@ -29,5 +29,5 @@ def test_trace_manager_post_run_marks_paused() -> None:
     post = PostRunPayload(event_name="post_run", pipeline_result=res, context=ctx)
     asyncio.run(tm._handle_post_run(post))
 
-    assert tm._root_span is not None
-    assert tm._root_span.status == "paused"
+    assert tm._root_span is not None  # noqa: S101
+    assert tm._root_span.status == "paused"  # noqa: S101

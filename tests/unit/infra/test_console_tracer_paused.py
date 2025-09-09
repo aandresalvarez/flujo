@@ -27,6 +27,6 @@ def test_console_tracer_post_run_paused_displays_paused() -> None:
 
     text = recorder.export_text()
     # Ensure we reflect PAUSED rather than COMPLETED
-    assert "Pipeline Paused" in text
-    assert "PAUSED" in text
-    assert "COMPLETED" not in text
+    assert "Pipeline Paused" in text  # noqa: S101
+    assert "PAUSED" in text  # noqa: S101
+    assert "COMPLETED" not in text  # noqa: S101

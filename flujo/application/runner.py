@@ -1328,9 +1328,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 pipeline_result=paused_result,
                 context=ctx,
             )
-        except Exception:
-            # Never let tracing/hooks break control flow
-            pass
+        except Exception as e:  # noqa: BLE001
+            # Never let tracing/hooks break control flow; record for diagnostics
+            try:
+                from ..infra import telemetry as _telemetry
+
+                _telemetry.logfire.debug(f"post_run hook after resume failed: {e}")
+            except Exception:
+                pass
         return paused_result
 
     async def replay_from_trace(self, run_id: str) -> PipelineResult[ContextT]:

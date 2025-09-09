@@ -80,19 +80,12 @@ class ConsoleTracer:
         pipeline_result = payload.pipeline_result
 
         # Determine final status
-        paused = False
-        try:
-            ctx = payload.context or getattr(pipeline_result, "final_pipeline_context", None)
-            scratch = getattr(ctx, "scratchpad", None) if ctx is not None else None
-            paused = isinstance(scratch, dict) and scratch.get("status") == "paused"
-        except Exception:
-            paused = False
+        ctx = payload.context or getattr(pipeline_result, "final_pipeline_context", None)
+        scratch = getattr(ctx, "scratchpad", None) if ctx is not None else None
+        paused = isinstance(scratch, dict) and scratch.get("status") == "paused"
 
         # Prefer the explicit success flag set by the runner; fall back to step_history
-        try:
-            is_success = bool(getattr(pipeline_result, "success", False))
-        except Exception:
-            is_success = all(getattr(s, "success", False) for s in pipeline_result.step_history)
+        is_success = bool(getattr(pipeline_result, "success", False))
 
         if paused:
             title = "Pipeline Paused"
