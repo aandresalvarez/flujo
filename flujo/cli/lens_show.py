@@ -32,6 +32,10 @@ def show_run(
     except Exception:
         _fast_mode = False
 
+    # If detailed output was requested, disable fast mode to fetch full payloads
+    if verbose or show_input or show_output or show_error:
+        _fast_mode = False
+
     details = None
     steps = None
     if _fast_mode:

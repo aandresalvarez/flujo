@@ -1473,6 +1473,17 @@ class SQLiteBackend(StateBackend):
                     created_at = run_data.get("created_at") or datetime.utcnow().isoformat()
                     updated_at = run_data.get("updated_at") or created_at
                     with _sqlite.connect(self.db_path) as _db:
+                        # Fast pragmas to reduce fsync/IO cost on first write
+                        try:
+                            _db.execute("PRAGMA journal_mode = WAL")
+                            _db.execute("PRAGMA synchronous = NORMAL")
+                            _db.execute("PRAGMA temp_store = MEMORY")
+                            _db.execute("PRAGMA cache_size = 10000")
+                            _db.execute("PRAGMA mmap_size = 268435456")
+                            _db.execute("PRAGMA page_size = 4096")
+                            _db.execute("PRAGMA busy_timeout = 1000")
+                        except Exception:
+                            pass
                         _db.execute(
                             """
                             CREATE TABLE IF NOT EXISTS runs (
