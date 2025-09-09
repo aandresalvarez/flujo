@@ -38,8 +38,8 @@ Command: `flujo validate [PATH]`
   - `--format {text,json,sarif}` (default `text`): output formatter.
   - `--explain`: include brief “why it matters” guidance per finding (text/json). In `text` format, rule IDs may include clickable URLs to docs.
   - `--fail-on-warn`: treat warnings as errors (non‑zero exit code).
-  - `--fix`: apply safe auto‑fixes (e.g., V‑T1). Never modifies files in CI unless `--yes` is also provided.
-  - `--yes`: non‑interactive confirm for `--fix` (intended for CI). Without `--yes` and running in a TTY, an interactive prompt summarizes fixable items and asks for confirmation.
+  - `--fix` (planned; Phase 2): apply safe auto‑fixes (initially V‑T1). In MVP this flag is hidden/disabled.
+  - `--yes` (planned; Phase 2): non‑interactive confirm for `--fix`. In MVP, fixer is not available.
   - `--baseline FILE`: path to previous validation report to compare; prints deltas.
   - `--update-baseline`: write current report to `--baseline` path.
   - `--rules PROFILE|FILE`: named profile from `flujo.toml` (e.g., `strict`, `ci`) or path to YAML/TOML rules. Profiles are configured under `[validation.profiles]`.
@@ -63,9 +63,11 @@ Core model (existing):
   - `step_name: Optional[str]`
   - `suggestion: Optional[str]`
   - Extended fields (new):
-    - `location_path: Optional[str]` (e.g., `steps[3].input`)
-    - `file: Optional[str]`
-    - `line: Optional[int]`, `column: Optional[int]` (if YAML parser provides)
+  - `location_path: Optional[str]` (e.g., `steps[3].input`)
+  - `file: Optional[str]`
+  - `line: Optional[int]`, `column: Optional[int]` (if YAML parser provides)
+  - `import_alias: Optional[str]` (alias used under `imports:` in the parent)
+  - `import_stack: Optional[list[str]]` (outermost→innermost aliases for grandchildren; e.g., `["clarification","extract"]`)
 
 - `ValidationReport`:
   - `errors: list[ValidationFinding]`
@@ -278,7 +280,7 @@ Rule configuration:
 ## 9. Telemetry (Optional)
 
 - Emit aggregated counts per rule and per severity when `FLUJO_CLI_TELEMETRY=1`.
- - Optionally record which fixes were applied with `--fix` (counts only; no PII/code).
+- Optionally record which fixes were applied with `--fix` (Phase 2; counts only; no PII/code).
 
 ---
 
@@ -340,8 +342,8 @@ Rule configuration:
 - Aggregation behavior: multiple linters contribute findings; report combines, preserves ordering by step order, then rule id.
 - Config controls: disable a rule → it doesn’t appear; severity overrides applied.
 - Inline suppression: `# flujo: ignore V-T1` removes that finding for the specific location.
- - Suppression globs: `# flujo: ignore V-T*` suppresses all template rules.
- - Profiles: `--rules=strict` applies severities defined in `flujo.toml` under `[validation.profiles.strict]`.
+- Suppression globs: `# flujo: ignore V-T*` suppresses all template rules.
+- Profiles: `--rules=strict` applies severities defined in `flujo.toml` under `[validation.profiles.strict]`.
 
 ### 10.4 Integration Tests — CLI
 
@@ -351,9 +353,9 @@ Rule configuration:
 - `--fail-on-warn`: warnings cause exit 2.
 - `--format json/sarif`: output parses and contains expected rule IDs and locations.
 - Baseline: with `--baseline` and `--update-baseline`, compare previous vs current; print added/removed findings.
- - Exit codes with baselines: By default, exit status reflects the report after applying the baseline (i.e., only new errors/warnings count toward failure). `--fail-on-warn` applies to post‑baseline warnings. A separate `--strict-all` could be introduced later to consider total findings irrespective of baseline.
-- `--fix` (interactive): in TTY, shows summary and prompts; with `--yes`, applies changes non‑interactively; verify only fixable rules are modified (e.g., V‑T1).
- - Imports: with `--imports` (default), validation of a parent with `imports:` includes child errors; with `--no-imports`, only parent is validated.
+- Exit codes with baselines: By default, exit status reflects the report after applying the baseline (i.e., only new errors/warnings count toward failure). `--fail-on-warn` applies to post‑baseline warnings. A separate `--strict-all` could be introduced later to consider total findings irrespective of baseline.
+- `--fix` (Phase 2): in TTY, shows summary and prompts; with `--yes`, applies changes non‑interactively; verify only fixable rules are modified (e.g., V‑T1).
+- Imports: with `--imports` (default), validation of a parent with `imports:` includes child errors; with `--no-imports`, only parent is validated.
 
 ### 10.5 Regression Tests
 
@@ -376,7 +378,7 @@ Rule configuration:
 
 - Existing `validate_graph()` rules remain unchanged; new rules default to `warning` except safety‑critical ones (import existence, missing agent, type mismatch) which remain `error`.
 - CLI maintains existing options; new options are additive.
- - Team Guide alignment: Validation uses `ConfigManager` (no direct file/env reads in domain logic), performs no agent execution, and maintains clear separation from runtime policy execution.
+- Team Guide alignment: Validation uses `ConfigManager` (no direct file/env reads in domain logic), performs no agent execution, and maintains clear separation from runtime policy execution.
 
 ---
 
@@ -392,7 +394,7 @@ Rule configuration:
 This section defines acceptance criteria and explicit tests for each feature/rule. All tests must pass under `make test-fast` and `make test` and adhere to team testing standards (markers, serial/slow as needed).
 
 CLI & Framework Features
-- --fix/--yes
+- --fix/--yes (Phase 2)
   - Acceptance: Applies only safe fixes (initially V‑T1) with file backups; interactive prompt in TTY; `--yes` applies without prompt. No changes in `--no-strict` dry validations.
   - Unit: Fixer registry selects correct fixer; V‑T1 rewrite correct and idempotent; backup written then cleaned.
   - Integration: Run `flujo validate --fix` on sample YAML; confirm rewrite diff; with `--yes`, no prompt; with CI env, no write unless `--yes`.

@@ -853,6 +853,13 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                             file=f.file,
                                             line=f.line,
                                             column=f.column,
+                                            import_alias=import_tag or None,
+                                            import_stack=(
+                                                (f.import_stack or [])
+                                                if hasattr(f, "import_stack")
+                                                else []
+                                            )
+                                            + ([import_tag] if import_tag else []),
                                         )
                                     )
                                 for w in child_report.warnings:
@@ -874,6 +881,13 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                             file=w.file,
                                             line=w.line,
                                             column=w.column,
+                                            import_alias=import_tag or None,
+                                            import_stack=(
+                                                (w.import_stack or [])
+                                                if hasattr(w, "import_stack")
+                                                else []
+                                            )
+                                            + ([import_tag] if import_tag else []),
                                         )
                                     )
                     except Exception as import_err:
