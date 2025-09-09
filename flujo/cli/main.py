@@ -285,23 +285,39 @@ if _os.environ.get("PYTEST_CURRENT_TEST") or _os.environ.get("CI"):
                     default=0,
                 )
                 default_commands = panel_to_commands.get(_tru.COMMANDS_PANEL_TITLE, [])
-                _tru._print_commands_panel(
-                    name=_tru.COMMANDS_PANEL_TITLE,
-                    commands=default_commands,
-                    markup_mode=markup_mode,
-                    console=console,
-                    cmd_len=max_cmd_len,
-                )
-                for panel_name, commands in panel_to_commands.items():
-                    if panel_name == _tru.COMMANDS_PANEL_TITLE:
-                        continue
+                try:
                     _tru._print_commands_panel(
-                        name=panel_name,
-                        commands=commands,
+                        name=_tru.COMMANDS_PANEL_TITLE,
+                        commands=default_commands,
                         markup_mode=markup_mode,
                         console=console,
                         cmd_len=max_cmd_len,
                     )
+                except TypeError:
+                    _tru._print_commands_panel(
+                        name=_tru.COMMANDS_PANEL_TITLE,
+                        commands=default_commands,
+                        markup_mode=markup_mode,
+                        console=console,
+                    )
+                for panel_name, commands in panel_to_commands.items():
+                    if panel_name == _tru.COMMANDS_PANEL_TITLE:
+                        continue
+                    try:
+                        _tru._print_commands_panel(
+                            name=panel_name,
+                            commands=commands,
+                            markup_mode=markup_mode,
+                            console=console,
+                            cmd_len=max_cmd_len,
+                        )
+                    except TypeError:
+                        _tru._print_commands_panel(
+                            name=panel_name,
+                            commands=commands,
+                            markup_mode=markup_mode,
+                            console=console,
+                        )
 
         setattr(_tru, "rich_format_help", _flujo_rich_format_help)
         try:
@@ -1119,10 +1135,9 @@ Keep this module focused on argument parsing and command wiring.
 
 @app.command(name="status", help="Show provider readiness and SQLite state configuration.")
 def status(
-    fmt: Annotated[
+    format: Annotated[
         str,
         typer.Option(
-            "--format",
             help="Output format",
             show_default=True,
             click_type=click.Choice(["text", "json"], case_sensitive=False),
@@ -1365,7 +1380,7 @@ def status(
         raise typer.Exit(EX_RUNTIME_ERROR)
 
     # Emit output
-    if (fmt or "text").lower() == "json":
+    if (format or "text").lower() == "json":
         typer.echo(json.dumps(safe_serialize(payload)))
     else:
         # Minimal human output
@@ -1774,7 +1789,18 @@ def explain(path: str) -> None:
         raise typer.Exit(1)
 
 
-def _validate_impl(path: Optional[str], strict: bool, output_format: str) -> None:
+def _validate_impl(
+    path: Optional[str],
+    strict: bool,
+    output_format: str,
+    *,
+    include_imports: bool = True,
+    fail_on_warn: bool = False,
+    rules: Optional[str] = None,
+    explain: bool = False,
+    baseline: Optional[str] = None,
+    update_baseline: bool = False,
+) -> None:
     from .exit_codes import EX_VALIDATION_FAILED, EX_IMPORT_ERROR, EX_RUNTIME_ERROR
     import traceback as _tb
     import os as _os
@@ -1783,17 +1809,324 @@ def _validate_impl(path: Optional[str], strict: bool, output_format: str) -> Non
         if path is None:
             root = find_project_root()
             path = str((Path(root) / "pipeline.yaml").resolve())
-        report = validate_pipeline_file(path)
+        report = validate_pipeline_file(path, include_imports=include_imports)
+
+        # Optional: apply severity overrides from a rules file (JSON/TOML)
+        def _apply_rules(_report: Any, rules_path: Optional[str]) -> Any:
+            if not rules_path:
+                return _report
+            import os as _os
+
+            try:
+                if not _os.path.exists(rules_path):
+                    return _report
+                # Try JSON, then TOML
+                mapping: dict[str, str] = {}
+                try:
+                    with open(rules_path, "r", encoding="utf-8") as f:
+                        mapping = json.load(f)
+                except Exception:
+                    try:
+                        import tomllib as _tomllib
+                    except Exception:  # pragma: no cover
+                        import tomli as _tomllib  # type: ignore
+                    with open(rules_path, "rb") as f:
+                        data = _tomllib.load(f)
+                    if isinstance(data, dict):
+                        if (
+                            "validation" in data
+                            and isinstance(data["validation"], dict)
+                            and "rules" in data["validation"]
+                        ):
+                            mapping = data["validation"]["rules"] or {}
+                        else:
+                            mapping = data  # type: ignore
+                if not isinstance(mapping, dict):
+                    return _report
+                sev_map = {str(k).upper(): str(v).lower() for k, v in mapping.items()}
+                import fnmatch as _fnm
+
+                def _resolve(rule_id: str) -> Optional[str]:
+                    rid = rule_id.upper()
+                    if rid in sev_map:
+                        return sev_map[rid]
+                    # wildcard/glob support (e.g., V-T*)
+                    for pat, sev in sev_map.items():
+                        if "*" in pat or "?" in pat or ("[" in pat and "]" in pat):
+                            try:
+                                if _fnm.fnmatch(rid, pat):
+                                    return sev
+                            except Exception:
+                                continue
+                    return None
+
+                from flujo.domain.pipeline_validation import ValidationFinding, ValidationReport
+
+                new_errors: list[ValidationFinding] = []
+                new_warnings: list[ValidationFinding] = []
+                for e in _report.errors:
+                    sev = _resolve(e.rule_id)
+                    if sev == "off":
+                        continue
+                    elif sev == "warning":
+                        new_warnings.append(e)
+                    else:
+                        new_errors.append(e)
+                for w in _report.warnings:
+                    sev = _resolve(w.rule_id)
+                    if sev == "off":
+                        continue
+                    elif sev == "error":
+                        new_errors.append(w)
+                    else:
+                        new_warnings.append(w)
+                return ValidationReport(errors=new_errors, warnings=new_warnings)
+            except Exception:
+                return _report
+
+        # Apply rules severity overrides from file or profile name
+        profile_mapping: Optional[dict[str, str]] = None
+        if rules and not os.path.exists(rules):
+            try:
+                from ..infra.config_manager import get_config_manager as _cfg
+
+                cfg = _cfg().load_config()
+                val = getattr(cfg, "validation", None)
+                profiles = getattr(val, "profiles", None) if val is not None else None
+                if isinstance(profiles, dict) and rules in profiles:
+                    raw = profiles[rules]
+                    if isinstance(raw, dict):
+                        profile_mapping = {str(k): str(v) for k, v in raw.items()}
+            except Exception:
+                profile_mapping = None
+
+        if profile_mapping:
+            # Write a temporary in-memory style mapping into JSON apply path
+            def _apply_mapping(_report: Any, mapping: dict[str, str]) -> Any:
+                sev_map = {str(k).upper(): str(v).lower() for k, v in mapping.items()}
+                import fnmatch as _fnm
+
+                def _resolve(rule_id: str) -> Optional[str]:
+                    rid = rule_id.upper()
+                    if rid in sev_map:
+                        return sev_map[rid]
+                    for pat, sev in sev_map.items():
+                        if "*" in pat or "?" in pat or ("[" in pat and "]" in pat):
+                            try:
+                                if _fnm.fnmatch(rid, pat):
+                                    return sev
+                            except Exception:
+                                continue
+                    return None
+
+                from flujo.domain.pipeline_validation import ValidationFinding, ValidationReport
+
+                new_errors: list[ValidationFinding] = []
+                new_warnings: list[ValidationFinding] = []
+                for e in _report.errors:
+                    sev = _resolve(e.rule_id)
+                    if sev == "off":
+                        continue
+                    elif sev == "warning":
+                        new_warnings.append(e)
+                    else:
+                        new_errors.append(e)
+                for w in _report.warnings:
+                    sev = _resolve(w.rule_id)
+                    if sev == "off":
+                        continue
+                    elif sev == "error":
+                        new_errors.append(w)
+                    else:
+                        new_warnings.append(w)
+                return ValidationReport(errors=new_errors, warnings=new_warnings)
+
+            report = _apply_mapping(report, profile_mapping)
+        else:
+            report = _apply_rules(report, rules)
+
+        # Optional baseline delta handling (compare post-rules report to previous)
+        baseline_info: dict[str, Any] | None = None
+        if baseline:
+            try:
+                import os as _os
+
+                if _os.path.exists(baseline):
+                    with open(baseline, "r", encoding="utf-8") as bf:
+                        prev_raw = json.load(bf)
+                else:
+                    prev_raw = None
+
+                def _key_of(d: dict[str, Any]) -> tuple[str, str]:
+                    return (str(d.get("rule_id", "")).upper(), str(d.get("step_name", "")))
+
+                cur_err = [e.model_dump() for e in report.errors]
+                cur_warn = [w.model_dump() for w in report.warnings]
+                if isinstance(prev_raw, dict):
+                    prev_err = [x for x in (prev_raw.get("errors") or []) if isinstance(x, dict)]
+                    prev_warn = [x for x in (prev_raw.get("warnings") or []) if isinstance(x, dict)]
+                else:
+                    prev_err, prev_warn = [], []
+
+                prev_err_keys = {_key_of(x) for x in prev_err}
+                prev_warn_keys = {_key_of(x) for x in prev_warn}
+                cur_err_keys = {_key_of(x) for x in cur_err}
+                cur_warn_keys = {_key_of(x) for x in cur_warn}
+
+                added_errors = [x for x in cur_err if _key_of(x) not in prev_err_keys]
+                added_warnings = [x for x in cur_warn if _key_of(x) not in prev_warn_keys]
+                removed_errors = [x for x in prev_err if _key_of(x) not in cur_err_keys]
+                removed_warnings = [x for x in prev_warn if _key_of(x) not in cur_warn_keys]
+
+                # Replace the visible report (and therefore exit-code semantics) with post-baseline view
+                from flujo.domain.pipeline_validation import (
+                    ValidationReport as _VR,
+                    ValidationFinding as _VF,
+                )
+
+                def _vf_list(arr: list[dict[str, Any]]) -> list[_VF]:
+                    out: list[_VF] = []
+                    for it in arr:
+                        try:
+                            out.append(_VF(**it))
+                        except Exception:
+                            continue
+                    return out
+
+                report = _VR(errors=_vf_list(added_errors), warnings=_vf_list(added_warnings))
+                baseline_info = {
+                    "applied": True,
+                    "file": baseline,
+                    "added": {"errors": added_errors, "warnings": added_warnings},
+                    "removed": {"errors": removed_errors, "warnings": removed_warnings},
+                }
+            except Exception:
+                baseline_info = {"applied": False, "file": baseline}
+
+        # Optional explanation catalog for rules (centralized)
+        def _explain(rule_id: str) -> str | None:
+            try:
+                from ..validation.rules_catalog import get_rule
+
+                info = get_rule(rule_id)
+                return info.description if info else None
+            except Exception:
+                return None
+
+        # Optional telemetry: counts per severity/rule when enabled
+        telemetry_counts: dict[str, dict[str, int]] | None = None
+        try:
+            if os.getenv("FLUJO_CLI_TELEMETRY") == "1":
+                from collections import Counter
+
+                err = Counter([e.rule_id for e in report.errors])
+                warn = Counter([w.rule_id for w in report.warnings])
+                telemetry_counts = {
+                    "error": dict(err),
+                    "warning": dict(warn),
+                }
+        except Exception:
+            telemetry_counts = None
 
         if output_format == "json":
             # Emit machine-friendly JSON (errors, warnings, is_valid)
             payload = {
                 "is_valid": bool(report.is_valid),
-                "errors": [e.model_dump() for e in report.errors],
-                "warnings": [w.model_dump() for w in report.warnings],
+                "errors": [
+                    ({**e.model_dump(), **({"explain": _explain(e.rule_id)} if explain else {})})
+                    for e in report.errors
+                ],
+                "warnings": [
+                    ({**w.model_dump(), **({"explain": _explain(w.rule_id)} if explain else {})})
+                    for w in report.warnings
+                ],
                 "path": path,
+                **({"baseline": baseline_info} if baseline_info else {}),
+                **({"counts": telemetry_counts} if telemetry_counts else {}),
             }
             typer.echo(json.dumps(payload))
+        elif output_format == "sarif":
+            # Minimal SARIF 2.1.0 conversion
+            def _level(sev: str) -> str:
+                return "error" if sev == "error" else "warning"
+
+            rules_index: dict[str, int] = {}
+            sarif_rules: list[dict[str, Any]] = []
+            sarif_results: list[dict[str, Any]] = []
+
+            def _rule_ref(rule_id: str) -> dict[str, Any]:
+                rid = (rule_id or "").upper()
+                if rid not in rules_index:
+                    rules_index[rid] = len(sarif_rules)
+                    try:
+                        from ..validation.rules_catalog import get_rule
+
+                        info = get_rule(rid)
+                    except Exception:
+                        info = None
+                    sarif_rules.append(
+                        {
+                            "id": rid,
+                            "name": (info.title if info else rid)
+                            if hasattr(info, "title")
+                            else rid,  # type: ignore[attr-defined]
+                            "shortDescription": {
+                                "text": (info.title if info else rid)
+                                if hasattr(info, "title")
+                                else rid  # type: ignore[attr-defined]
+                            },
+                            **(
+                                {"helpUri": info.help_uri}
+                                if (hasattr(info, "help_uri") and getattr(info, "help_uri"))
+                                else {
+                                    "helpUri": f"https://aandresalvarez.github.io/flujo/reference/validation_rules/#{rid.lower()}"
+                                }
+                            ),
+                        }
+                    )
+                return {"ruleId": rid}
+
+            def _location(f: Any) -> dict[str, Any]:
+                region: dict[str, Any] = {}
+                if getattr(f, "line", None):
+                    region["startLine"] = int(getattr(f, "line"))
+                if getattr(f, "column", None):
+                    region["startColumn"] = int(getattr(f, "column"))
+                phys = {}
+                if getattr(f, "file", None):
+                    phys["uri"] = str(getattr(f, "file"))
+                loc = {"physicalLocation": {"artifactLocation": phys}}
+                if region:
+                    loc["physicalLocation"]["region"] = region
+                return loc
+
+            for f in report.errors + report.warnings:
+                sarif_results.append(
+                    {
+                        **_rule_ref(f.rule_id),
+                        "level": _level(f.severity),
+                        "message": {
+                            "text": f"{f.step_name + ': ' if f.step_name else ''}{f.message}"
+                        },
+                        "locations": [_location(f)],
+                        "properties": {
+                            "suggestion": getattr(f, "suggestion", None),
+                            "location_path": getattr(f, "location_path", None),
+                        },
+                    }
+                )
+
+            sarif = {
+                "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+                "version": "2.1.0",
+                "runs": [
+                    {
+                        "tool": {"driver": {"name": "flujo-validate", "rules": sarif_rules}},
+                        "results": sarif_results,
+                    }
+                ],
+            }
+            typer.echo(json.dumps(sarif))
         else:
             if report.errors:
                 typer.echo("[red]Validation errors detected:")
@@ -1802,12 +2135,15 @@ def _validate_impl(path: Optional[str], strict: bool, output_format: str) -> Non
                 )
                 for f in report.errors:
                     loc = f"{f.step_name}: " if f.step_name else ""
+                    link = f" (details: https://aandresalvarez.github.io/flujo/reference/validation_rules/#{str(f.rule_id).lower()})"
+                    why = _explain(f.rule_id) if explain else None
+                    suffix = f" | Why: {why}" if why else ""
                     if f.suggestion:
                         typer.echo(
-                            f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}"
+                            f"- [{f.rule_id}] {loc}{f.message}{link}{suffix} -> Suggestion: {f.suggestion}"
                         )
                     else:
-                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}{suffix}")
             if report.warnings:
                 typer.echo("[yellow]Warnings:")
                 typer.echo(
@@ -1815,16 +2151,53 @@ def _validate_impl(path: Optional[str], strict: bool, output_format: str) -> Non
                 )
                 for f in report.warnings:
                     loc = f"{f.step_name}: " if f.step_name else ""
+                    link = f" (details: https://aandresalvarez.github.io/flujo/reference/validation_rules/#{str(f.rule_id).lower()})"
+                    why = _explain(f.rule_id) if explain else None
+                    suffix = f" | Why: {why}" if why else ""
                     if f.suggestion:
                         typer.echo(
-                            f"- [{f.rule_id}] {loc}{f.message} -> Suggestion: {f.suggestion}"
+                            f"- [{f.rule_id}] {loc}{f.message}{link}{suffix} -> Suggestion: {f.suggestion}"
                         )
                     else:
-                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}")
+                        typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}{suffix}")
             if report.is_valid:
                 typer.echo("[green]Pipeline is valid")
+            if telemetry_counts:
+                try:
+                    total_e = sum(telemetry_counts.get("error", {}).values())
+                    total_w = sum(telemetry_counts.get("warning", {}).values())
+                    typer.echo(f"[cyan]Counts: errors={total_e}, warnings={total_w}")
+                except Exception:
+                    pass
+            if baseline_info and baseline_info.get("applied"):
+                try:
+                    ae = len(baseline_info["added"]["errors"])  # type: ignore[index]
+                    aw = len(baseline_info["added"]["warnings"])  # type: ignore[index]
+                    re_ = len(baseline_info["removed"]["errors"])  # type: ignore[index]
+                    rw = len(baseline_info["removed"]["warnings"])  # type: ignore[index]
+                    typer.echo(
+                        f"[cyan]Baseline applied: +{ae} errors, +{aw} warnings; removed: -{re_} errors, -{rw} warnings"
+                    )
+                except Exception:
+                    pass
+
+        # Optionally write/update the baseline file with the current (post-baseline) view
+        if baseline and update_baseline:
+            try:
+                with open(baseline, "w", encoding="utf-8") as bf:
+                    json.dump(
+                        {
+                            "errors": [e.model_dump() for e in report.errors],
+                            "warnings": [w.model_dump() for w in report.warnings],
+                        },
+                        bf,
+                    )
+            except Exception:
+                pass
 
         if strict and not report.is_valid:
+            raise typer.Exit(EX_VALIDATION_FAILED)
+        if fail_on_warn and report.warnings:
             raise typer.Exit(EX_VALIDATION_FAILED)
     except ModuleNotFoundError as e:
         # Improve import error messaging with hint on project root
@@ -1864,15 +2237,58 @@ def validate_dev(
     output_format: Annotated[
         str,
         typer.Option(
+            "--output-format",
             "--format",
             help="Output format for CI parsers",
             case_sensitive=False,
-            click_type=click.Choice(["text", "json"]),
+            click_type=click.Choice(["text", "json", "sarif"]),
         ),
     ] = "text",
+    imports: Annotated[
+        bool,
+        typer.Option(
+            "--imports/--no-imports",
+            help="Recursively validate imported blueprints",
+        ),
+    ] = True,
+    fail_on_warn: Annotated[
+        bool,
+        typer.Option("--fail-on-warn", help="Treat warnings as errors (non-zero exit)"),
+    ] = False,
+    rules: Annotated[
+        Optional[str],
+        typer.Option(
+            "--rules", help="Path to rules JSON/TOML that overrides severities (off/warning/error)"
+        ),
+    ] = None,
+    explain: Annotated[
+        bool,
+        typer.Option("--explain", help="Include brief 'why this matters' guidance in output"),
+    ] = False,
+    baseline: Annotated[
+        Optional[str],
+        typer.Option("--baseline", help="Path to a previous JSON report to compute deltas against"),
+    ] = None,
+    update_baseline: Annotated[
+        bool,
+        typer.Option(
+            "--update-baseline",
+            help="Write the current report (post-baseline view) to --baseline path",
+        ),
+    ] = False,
 ) -> None:
     """Validate a pipeline defined in a file (developer namespace)."""
-    _validate_impl(path, strict, output_format)
+    _validate_impl(
+        path,
+        strict,
+        output_format,
+        include_imports=imports,
+        fail_on_warn=fail_on_warn,
+        rules=rules,
+        explain=explain,
+        baseline=baseline,
+        update_baseline=update_baseline,
+    )
 
 
 @app.command(name="validate")
@@ -1891,15 +2307,58 @@ def validate(
     output_format: Annotated[
         str,
         typer.Option(
+            "--output-format",
             "--format",
             help="Output format for CI parsers",
             case_sensitive=False,
-            click_type=click.Choice(["text", "json"]),
+            click_type=click.Choice(["text", "json", "sarif"]),
         ),
     ] = "text",
+    imports: Annotated[
+        bool,
+        typer.Option(
+            "--imports/--no-imports",
+            help="Recursively validate imported blueprints",
+        ),
+    ] = True,
+    fail_on_warn: Annotated[
+        bool,
+        typer.Option("--fail-on-warn", help="Treat warnings as errors (non-zero exit)"),
+    ] = False,
+    rules: Annotated[
+        Optional[str],
+        typer.Option(
+            "--rules", help="Path to rules JSON/TOML that overrides severities (off/warning/error)"
+        ),
+    ] = None,
+    explain: Annotated[
+        bool,
+        typer.Option("--explain", help="Include brief 'why this matters' guidance in output"),
+    ] = False,
+    baseline: Annotated[
+        Optional[str],
+        typer.Option("--baseline", help="Path to a previous JSON report to compute deltas against"),
+    ] = None,
+    update_baseline: Annotated[
+        bool,
+        typer.Option(
+            "--update-baseline",
+            help="Write the current report (post-baseline view) to --baseline path",
+        ),
+    ] = False,
 ) -> None:
     """Validate a pipeline (top-level alias)."""
-    _validate_impl(path, strict, output_format)
+    _validate_impl(
+        path,
+        strict,
+        output_format,
+        include_imports=imports,
+        fail_on_warn=fail_on_warn,
+        rules=rules,
+        explain=explain,
+        baseline=baseline,
+        update_baseline=update_baseline,
+    )
 
 
 @app.command(
@@ -4131,6 +4590,26 @@ except Exception:
 
 if __name__ == "__main__":
     try:
+        # Local alias shim: support legacy `--format` for validate commands when executed directly
+        try:
+            argv = list(_sys.argv)
+            if any(
+                tok == "--format" or (isinstance(tok, str) and tok.startswith("--format="))
+                for tok in argv
+            ):
+                # Map for validate
+                if "validate" in argv or (
+                    len(argv) >= 3 and argv[1] == "dev" and argv[2] == "validate"
+                ):
+                    for i, tok in enumerate(argv):
+                        if tok == "--format":
+                            argv[i] = "--output-format"
+                        elif isinstance(tok, str) and tok.startswith("--format="):
+                            argv[i] = tok.replace("--format=", "--output-format=", 1)
+                    _sys.argv[:] = argv
+                # No special mapping for other commands
+        except Exception:
+            pass
         app()
     except (SettingsError, ConfigurationError) as e:
         typer.echo(f"[red]Settings error: {e}[/red]", err=True)

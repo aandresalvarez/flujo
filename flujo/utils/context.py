@@ -60,6 +60,12 @@ def get_excluded_fields() -> set[str]:
         _ENV_EXCLUDED_FIELDS_CACHE = os.getenv("EXCLUDED_FIELDS", "")
 
     excluded_fields = _ENV_EXCLUDED_FIELDS_CACHE
+    # Defensive: ensure excluded_fields is a string-like value
+    if not isinstance(excluded_fields, str):  # pragma: no cover - CI hardening
+        try:
+            excluded_fields = str(excluded_fields) if excluded_fields is not None else ""
+        except Exception:
+            excluded_fields = ""
 
     # Whitelist of allowed field names for security
     ALLOWED_EXCLUDED_FIELDS = {
@@ -84,7 +90,11 @@ def get_excluded_fields() -> set[str]:
         # Validate and sanitize the field names against whitelist
         sanitized_fields = set()
         for field in excluded_fields.split(","):
-            field = field.strip()
+            # Normalize and guard against non-string types
+            try:
+                field = field.strip() if isinstance(field, str) else str(field).strip()
+            except Exception:
+                continue
 
             # Skip empty entries
             if not field:
@@ -98,7 +108,11 @@ def get_excluded_fields() -> set[str]:
                 continue
 
             # Ensure field is a valid Python identifier (alphanumeric + underscores, no leading digits)
-            if not field.isidentifier():
+            try:
+                is_ident = field.isidentifier()
+            except Exception:
+                is_ident = False
+            if not is_ident:
                 logger.warning(f"Field '{field}' contains invalid characters. Skipping.")
                 continue
 

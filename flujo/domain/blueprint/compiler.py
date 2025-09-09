@@ -132,6 +132,34 @@ class DeclarativeBlueprintCompiler:
                 except Exception:
                     max_retries_opt = None
 
+            # Lint JSON schema (V-S1) for basic structural issues
+            def _lint_schema(sc: Dict[str, Any]) -> list[str]:
+                warnings: list[str] = []
+                try:
+                    st = sc.get("type")
+                    if st is not None and st not in {
+                        "string",
+                        "number",
+                        "integer",
+                        "boolean",
+                        "object",
+                        "array",
+                    }:
+                        warnings.append(f"Unknown schema type: {st}")
+                    # required outside properties
+                    req = sc.get("required")
+                    props = sc.get("properties")
+                    if isinstance(req, list) and not isinstance(props, dict):
+                        warnings.append(
+                            "'required' present but 'properties' is missing or not an object"
+                        )
+                    # array missing items
+                    if st == "array" and not isinstance(sc.get("items"), dict):
+                        warnings.append("array type without an 'items' schema")
+                except Exception:
+                    pass
+                return warnings
+
             output_type = generate_model_from_schema(name, output_schema)
 
             # If from_file is present, always use templated wrapper (variables are optional)
@@ -196,6 +224,12 @@ class DeclarativeBlueprintCompiler:
                 )
             self._compiled_agents[name] = agent_wrapper
 
+            # Attach schema warnings for later surfacing during pipeline validation (V-S1)
+            try:
+                setattr(agent_wrapper, "_schema_warnings", _lint_schema(output_schema))
+            except Exception:
+                pass
+
     def _resolve_base_dir(self) -> str:
         import os
 
@@ -223,7 +257,9 @@ class DeclarativeBlueprintCompiler:
                 # Recursively compile with a new compiler instance; pass directory of the imported file
                 sub_base_dir = os.path.dirname(path)
                 # Use loader entrypoint to ensure same validation and compilation path
-                sub_pipeline = load_pipeline_blueprint_from_yaml(text, base_dir=sub_base_dir)
+                sub_pipeline = load_pipeline_blueprint_from_yaml(
+                    text, base_dir=sub_base_dir, source_file=path
+                )
                 self._compiled_imports[alias] = sub_pipeline
             except Exception as e:
                 # Fail fast with descriptive message

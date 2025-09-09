@@ -62,6 +62,20 @@ class FlujoConfig(BaseModel):
 
     # AROS defaults
     aros: Optional[ArosConfig] = None
+    # Validation configuration
+    validation: Optional["ValidationConfig"] = None
+
+
+class ValidationConfig(BaseModel):
+    """Validation settings including named rule profiles.
+
+    Example TOML:
+    [validation.profiles.strict]
+    V-T* = "error"
+    V-A5 = "warning"
+    """
+
+    profiles: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 class SolveConfig(BaseModel):
@@ -284,6 +298,10 @@ class ConfigManager:
             # Architect configuration
             if "architect" in data:
                 config_data["architect"] = data["architect"]
+
+            # Validation configuration
+            if "validation" in data:
+                config_data["validation"] = data["validation"]
 
             # Environment override for template filters (env > file)
             try:

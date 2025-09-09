@@ -24,6 +24,23 @@ Tip on templating prior outputs:
 - For a specific earlier step by name, use the `steps` map proxy: `"{{ steps.my_step.output | tojson }}"`.
 - Avoid `"{{ previous_step.output }}"` — `previous_step` is not a proxy and has no `.output` attribute.
 
+Validation & Imports
+
+- Recursive validation: `flujo validate --imports` validates imported blueprints and aggregates findings at the import step.
+- Location mapping: YAML steps are indexed to provide `file`, `line`, and `column` for findings. Nested constructs (state machine states, parallel branches, map/loop bodies, conditional default branch, fallbacks) are mapped to paths like:
+  - `steps[0]`
+  - `states.<name>.steps[0]`
+  - `branches.<name>.steps[0]`
+  - `map.body.steps[0]`, `loop.body.steps[0]`
+  - `default_branch.steps[0]`, `fallback`
+
+Suppressions
+
+- Inline comment suppressions:
+  - Add `# flujo: ignore <RULES...>` to a step mapping or list item to suppress matching rules for that step.
+  - Supports globs: `# flujo: ignore V-T*`.
+- Programmatic suppressions: attach `step.meta['suppress_rules'] = ["V-T*", "V-*"]`.
+
 ## Parallel Reduction
 - `reduce: keys|values|union|concat|first|last` applied after branches complete:
   - `keys`: returns branch names in declared order.

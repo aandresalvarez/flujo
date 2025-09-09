@@ -411,17 +411,60 @@ async def run_default_pipeline(
 
     # Extract solution from context and checklist from the validator step output
     context = result.final_pipeline_context
-    solution = context.scratchpad.get("solution")
+    solution = None
+    checklist: Checklist | None = None
 
-    # Find the last Checklist output in the step history (validator output)
-    checklist = None
-    for step in reversed(result.step_history):
-        if isinstance(step.output, Checklist):
-            checklist = step.output
-            break
+    try:
+        # Primary sources filled by step callables
+        if context is not None and hasattr(context, "scratchpad"):
+            solution = context.scratchpad.get("solution")
+            # Do not take checklist from scratchpad yet; prefer validator output below
+    except Exception:
+        # Best-effort: proceed to fallbacks below
+        pass
+
+    # Robust fallbacks sourced from recorded step history to avoid CI-only edge cases
+    # 1) Prefer the validator step's output for the checklist
     if checklist is None:
-        checklist = context.scratchpad.get("checklist")
+        for step in reversed(result.step_history):
+            try:
+                if isinstance(step.output, Checklist):
+                    checklist = step.output
+                    break
+            except Exception:
+                continue
 
+    # 2) If still missing, try to locate the explicit validate step by name
+    if checklist is None:
+        for step in result.step_history:
+            try:
+                if getattr(step, "name", "") == "validate_step" and isinstance(
+                    step.output, Checklist
+                ):
+                    checklist = step.output
+                    break
+            except Exception:
+                continue
+
+    # 3) If still missing, fallback to the review scratchpad checklist
+    if checklist is None:
+        try:
+            if context is not None and hasattr(context, "scratchpad"):
+                checklist = context.scratchpad.get("checklist")
+        except Exception:
+            pass
+
+    # 4) Derive solution from the named solution step when scratchpad is empty
+    if solution is None:
+        for step in result.step_history:
+            try:
+                if getattr(step, "name", "") == "solution_step" and isinstance(step.output, str):
+                    solution = step.output
+                    break
+            except Exception:
+                continue
+
+    # Do not silently coerce failures: preserve existing failure semantics
     if solution is None or checklist is None:
         return None
 
