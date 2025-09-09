@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union, Literal, Tuple
+from typing import Any, Dict, List, Optional, Union, Literal, Tuple, cast
 from pydantic import (
     BaseModel,
     Field,
@@ -231,6 +231,8 @@ class BlueprintStepModel(BaseModel):
 
 class BlueprintPipelineModel(BaseModel):
     version: str = Field(default="0.1")
+    # Optional human-friendly pipeline name (top-level YAML: `name:`)
+    name: Optional[str] = None
     # Allow arbitrary step dicts so custom primitives with extra fields are preserved
     steps: List[Dict[str, Any]]
     # New: top-level declarative agents section
@@ -2389,6 +2391,14 @@ def load_pipeline_blueprint_from_yaml(
                         f"Failed to compile declarative blueprint (agents/imports): {e}"
                     ) from e
             p = build_pipeline_from_blueprint(bp)
+            # Propagate top-level blueprint name onto the Pipeline object so downstream
+            # components (CLI runner, tracing) can display and persist a meaningful name.
+            try:
+                if isinstance(getattr(bp, "name", None), str) and getattr(bp, "name"):  # type: ignore[truthy-bool]
+                    # Attach as a dynamic attribute; Pipeline does not model `name` as a field.
+                    setattr(p, "name", cast(str, bp.name))
+            except Exception:
+                pass
             # Attach ruamel-derived line/column to steps when yaml_path is present
             try:
                 from ..dsl import Pipeline as _DPipe, Step as _DStep

@@ -1221,6 +1221,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     )
                 except Exception:
                     pass
+            # Finalize the lingering HITL step span so subsequent steps are siblings, not children.
+            # This mirrors normal success flow and ensures TraceManager pops the pre_step span.
+            try:
+                await self._dispatch_hook(
+                    "post_step",
+                    step_result=paused_step_result,
+                    context=ctx,
+                    resources=self.resources,
+                )
+            except Exception:
+                # Never let tracing break resume semantics
+                pass
             data = human_input
             resume_start_idx = start_idx + 1
         else:
