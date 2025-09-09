@@ -418,7 +418,7 @@ async def run_default_pipeline(
         # Primary sources filled by step callables
         if context is not None and hasattr(context, "scratchpad"):
             solution = context.scratchpad.get("solution")
-            checklist = context.scratchpad.get("checklist")
+            # Do not take checklist from scratchpad yet; prefer validator output below
     except Exception:
         # Best-effort: proceed to fallbacks below
         pass
@@ -446,7 +446,15 @@ async def run_default_pipeline(
             except Exception:
                 continue
 
-    # 3) Derive solution from the named solution step when scratchpad is empty
+    # 3) If still missing, fallback to the review scratchpad checklist
+    if checklist is None:
+        try:
+            if context is not None and hasattr(context, "scratchpad"):
+                checklist = context.scratchpad.get("checklist")
+        except Exception:
+            pass
+
+    # 4) Derive solution from the named solution step when scratchpad is empty
     if solution is None:
         for step in result.step_history:
             try:
