@@ -115,7 +115,11 @@ def show_run(
     else:
         table = Table("index", "step", "status")
         for s in steps:
-            table.add_row(str(s.get("step_index")), s.get("step_name", "-"), s.get("status", "-"))
+            table.add_row(
+                str(s.get("step_index")),
+                str(s.get("step_name", "-")),
+                str(s.get("status", "-")),
+            )
 
         Console().print(f"Run {run_id} - {details['status']}")
         Console().print(table)
