@@ -2117,8 +2117,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         ):
             retries_config = 2
         total_attempts = max(1, retries_config + 1)
-        if stream:
-            total_attempts = 1
         # Allow retries even when plugins are present (tests expect agent retry before fallback)
         telemetry.logfire.debug(f"[Core] SimpleStep max_retries (total attempts): {total_attempts}")
 
@@ -2610,6 +2608,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         try:
                             fb_tokens = int(getattr(fb_res, "token_counts", 0) or 0)
                             if fb_tokens == 0:
+                                # Try nested token_counts on output wrapper
                                 fb_tokens = int(
                                     getattr(getattr(fb_res, "output", None), "token_counts", 0) or 0
                                 )
@@ -2688,9 +2687,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             step_result=failure_sr,
                         )
                 # No fallback
+                # Include any prior plugin failure in feedback for richer diagnostics
+                try:
+                    tail = (
+                        f"; Previous plugin failure: {last_plugin_failure_feedback}"
+                        if last_plugin_failure_feedback
+                        else ""
+                    )
+                except Exception:
+                    tail = ""
                 return Failure(
                     error=agent_error,
-                    feedback=primary_fb,
+                    feedback=f"{primary_fb}{tail}",
                     step_result=StepResult(
                         name=self._safe_step_name(step),
                         output=None,
@@ -2699,7 +2707,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
                         token_counts=result.token_counts,
                         cost_usd=result.cost_usd,
-                        feedback=primary_fb,
+                        feedback=f"{primary_fb}{tail}",
                         branch_context=None,
                         metadata_=result.metadata_,
                         step_history=[],
@@ -3013,11 +3021,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         pass
                     if isinstance(e, asyncio.TimeoutError):
                         raise
-                    # Conditional retry semantics: when a fallback is configured, allow one more
-                    # agent attempt on plugin failure before falling back. If no fallback exists,
-                    # proceed to final handling without retrying.
-                    fb_present = getattr(step, "fallback_step", None) is not None
-                    if attempt < total_attempts and fb_present:
+                    # Retry plugin failures only at top-level (no nested fallback)
+                    if attempt < total_attempts and int(_fallback_depth) == 0:
                         telemetry.logfire.warning(
                             f"Step '{getattr(step, 'name', '<unnamed>')}' plugin attempt {attempt}/{total_attempts} failed: {e}"
                         )
@@ -3117,12 +3122,17 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 exhausted = True
                         except Exception:
                             exhausted = False
-                        if prev_orig:
+                        # Prefer the most accurate root-cause message:
+                        # 1) StubAgent exhaustion when outputs < intended attempts
+                        # 2) Previously recorded original_error from earlier phases
+                        # 3) Plugin failure feedback (redirector message)
+                        # 4) Exception text as a last resort
+                        if exhausted:
+                            orig_text = "No more outputs available"
+                        elif prev_orig:
                             orig_text = prev_orig
                         elif last_plugin_failure_feedback:
                             orig_text = last_plugin_failure_feedback
-                        elif exhausted:
-                            orig_text = "No more outputs available"
                         else:
                             orig_text = str(e)
                         fallback_result_sr.metadata_["original_error"] = orig_text
@@ -3158,6 +3168,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         try:
                             fb_tokens = int(getattr(fallback_result_sr, "token_counts", 0) or 0)
                             if fb_tokens == 0:
+                                # Try nested token_counts on output wrapper
                                 fb_tokens = int(
                                     getattr(
                                         getattr(fallback_result_sr, "output", None),
@@ -3194,6 +3205,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             if isinstance(md, dict):
                                 orig_err = md.get("original_error")
                             fb_text = fallback_result_sr.feedback or "step failed"
+                            # Enrich original error with any prior plugin failure feedback for context/length
+                            if orig_err:
+                                try:
+                                    if last_plugin_failure_feedback and (
+                                        last_plugin_failure_feedback not in str(orig_err)
+                                    ):
+                                        orig_err = f"{orig_err}; Previous plugin failure: {last_plugin_failure_feedback}"
+                                except Exception:
+                                    pass
                             combo = (
                                 f"Original error: {orig_err}; Fallback error: {fb_text}"
                                 if orig_err
