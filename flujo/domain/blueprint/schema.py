@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Union
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, Field
 
 
 class AgentModel(BaseModel):
@@ -19,8 +19,17 @@ class AgentModel(BaseModel):
     # Optional provider-specific controls (e.g., GPT-5: reasoning, text verbosity)
     model_settings: Optional[Dict[str, Any]] = None
     # Optional execution controls
-    timeout: Optional[Union[int, str]] = None
-    max_retries: Optional[Union[int, str]] = None
+    timeout: Optional[Union[int, str]] = Field(
+        default=None,
+        description=(
+            "Agent call timeout in seconds. Accepts integer (e.g., 30) or a numeric string"
+            " (e.g., '30')."
+        ),
+    )
+    max_retries: Optional[Union[int, str]] = Field(
+        default=None,
+        description=("Maximum retry attempts. Accepts integer or numeric string (e.g., '2')."),
+    )
 
     # Validate 'system_prompt' dict form contains only 'from_file'
     @model_validator(mode="before")

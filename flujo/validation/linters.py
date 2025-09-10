@@ -6,71 +6,90 @@ from typing import Any, Iterable
 import fnmatch
 import json
 from ..domain.pipeline_validation import ValidationFinding, ValidationReport
+from ..infra.telemetry import logfire
+from threading import RLock
 
 # --- Rule overrides (profile/file/env) for early skip and severity adjustment ---
 _OVERRIDE_CACHE: dict[str, Any] | None = None
+_OVERRIDE_CACHE_LOCK = RLock()
 
 
 def _load_rule_overrides() -> dict[str, str]:
+    """Load rule-id severity overrides from env/config in a thread-safe way.
+
+    Logging is kept at debug level to avoid noise in CI. Any parsing errors are
+    non-fatal and are recorded for troubleshooting.
+    """
     global _OVERRIDE_CACHE
     if _OVERRIDE_CACHE is not None:
         return _OVERRIDE_CACHE
-    mapping: dict[str, str] = {}
-    # 1) Env JSON mapping (highest precedence for early-skip)
-    try:
-        env_json = os.getenv("FLUJO_RULES_JSON")
-        if env_json:
-            data = json.loads(env_json)
-            if isinstance(data, dict):
-                mapping.update({str(k).upper(): str(v).lower() for k, v in data.items()})
-    except Exception:
-        pass
-    # 2) Env file path mapping
-    try:
-        rules_file = os.getenv("FLUJO_RULES_FILE")
-        if rules_file and os.path.exists(rules_file):
-            try:
-                if rules_file.endswith((".json", ".JSON")):
-                    with open(rules_file, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    if isinstance(data, dict):
-                        mapping.update({str(k).upper(): str(v).lower() for k, v in data.items()})
-                elif rules_file.endswith((".toml", ".TOML")):
-                    try:
-                        import tomllib as _toml  # py311+
-                    except Exception:
-                        import tomli as _toml  # type: ignore
-                    with open(rules_file, "rb") as f:
-                        data = _toml.load(f)
-                    # Expect { validation = { rules = {"V-T*"="off", ...} } }
-                    try:
-                        vm = data.get("validation", {}).get("rules", {})
-                        if isinstance(vm, dict):
-                            mapping.update({str(k).upper(): str(v).lower() for k, v in vm.items()})
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-    except Exception:
-        pass
-    # 3) flujo.toml profile selected via FLUJO_RULES_PROFILE
-    try:
-        profile = os.getenv("FLUJO_RULES_PROFILE")
-        if profile:
-            from ..infra.config_manager import ConfigManager
+    with _OVERRIDE_CACHE_LOCK:
+        if _OVERRIDE_CACHE is not None:
+            return _OVERRIDE_CACHE
+        mapping: dict[str, str] = {}
+        # 1) Env JSON mapping (highest precedence for early-skip)
+        try:
+            env_json = os.getenv("FLUJO_RULES_JSON")
+            if env_json:
+                data = json.loads(env_json)
+                if isinstance(data, dict):
+                    mapping.update({str(k).upper(): str(v).lower() for k, v in data.items()})
+        except Exception as e:
+            logfire.debug(f"[validate] Invalid FLUJO_RULES_JSON: {e!r}")
+        # 2) Env file path mapping
+        try:
+            rules_file = os.getenv("FLUJO_RULES_FILE")
+            if rules_file and os.path.exists(rules_file):
+                try:
+                    if rules_file.endswith((".json", ".JSON")):
+                        with open(rules_file, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        if isinstance(data, dict):
+                            mapping.update(
+                                {str(k).upper(): str(v).lower() for k, v in data.items()}
+                            )
+                    elif rules_file.endswith((".toml", ".TOML")):
+                        try:
+                            import tomllib as _toml  # py311+
+                        except Exception:
+                            import tomli as _toml  # type: ignore
+                        with open(rules_file, "rb") as f:
+                            data = _toml.load(f)
+                        # Expect { validation = { rules = {"V-T*"="off", ...} } }
+                        try:
+                            vm = data.get("validation", {}).get("rules", {})
+                            if isinstance(vm, dict):
+                                mapping.update(
+                                    {str(k).upper(): str(v).lower() for k, v in vm.items()}
+                                )
+                        except Exception as e:
+                            logfire.debug(
+                                f"[validate] TOML rules parse (validation.rules) failed: {e!r}"
+                            )
+                except Exception as e:
+                    logfire.debug(
+                        f"[validate] Failed reading FLUJO_RULES_FILE '{rules_file}': {e!r}"
+                    )
+        except Exception as e:
+            logfire.debug(f"[validate] Error handling FLUJO_RULES_FILE: {e!r}")
+        # 3) flujo.toml profile selected via FLUJO_RULES_PROFILE
+        try:
+            profile = os.getenv("FLUJO_RULES_PROFILE")
+            if profile:
+                from ..infra.config_manager import ConfigManager
 
-            cm = ConfigManager()
-            cfg = cm.load_config()
-            profiles = getattr(cfg, "validation", None)
-            if profiles and getattr(profiles, "profiles", None):
-                raw = profiles.profiles.get(profile)
-                if isinstance(raw, dict):
-                    mapping.update({str(k).upper(): str(v).lower() for k, v in raw.items()})
-    except Exception:
-        pass
+                cm = ConfigManager()
+                cfg = cm.load_config()
+                profiles = getattr(cfg, "validation", None)
+                if profiles and getattr(profiles, "profiles", None):
+                    raw = profiles.profiles.get(profile)
+                    if isinstance(raw, dict):
+                        mapping.update({str(k).upper(): str(v).lower() for k, v in raw.items()})
+        except Exception as e:
+            logfire.debug(f"[validate] Failed loading profile overrides: {e!r}")
 
-    _OVERRIDE_CACHE = mapping
-    return mapping
+        _OVERRIDE_CACHE = mapping
+        return mapping
 
 
 def _override_severity(rule_id: str, default: str) -> str | None:

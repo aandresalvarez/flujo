@@ -2180,46 +2180,8 @@ def _validate_impl(
         except Exception:
             telemetry_counts = None
 
-        if fix:
-            try:
-                # Only support YAML files for now
-                if path and (str(path).endswith(".yaml") or str(path).endswith(".yml")):
-                    from ..validation import fixers as _fixers
-
-                    # Apply safe, opt-in fixes based on the report
-                    applied, backup_path = _fixers.apply_fixes_to_file(
-                        str(path), report, assume_yes=yes
-                    )
-                    if applied:
-                        try:
-                            import typer as _ty
-
-                            _ty.echo(
-                                f"[green]Applied {_fixers.count_findings(report, 'V-T1')} V-T1 fix(es). Backup: {backup_path}"
-                            )
-                        except Exception:
-                            pass
-                        # Re-validate after fix to reflect current state
-                        try:
-                            report = validate_pipeline_file(
-                                str(path), include_imports=include_imports
-                            )
-                        except Exception:
-                            # If re-validate fails, keep original report
-                            pass
-                else:
-                    try:
-                        import typer as _ty
-
-                        _ty.echo(
-                            "[yellow]--fix currently supports only YAML files; skipping.",
-                            err=False,
-                        )
-                    except Exception:
-                        pass
-            except Exception:
-                # Never break validation due to fixer path
-                pass
+        # Duplicate fixer block removed; the unified fixer flow above handles preview,
+        # dry-run, apply, and metrics consistently.
 
         if output_format == "json":
             # Emit machine-friendly JSON (errors, warnings, is_valid)

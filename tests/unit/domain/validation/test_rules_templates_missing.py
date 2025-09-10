@@ -21,7 +21,6 @@ def test_v_t5_prior_model_field_existence() -> None:
 
     s2 = Step.from_callable(echo, name="second")
     s2.meta["templated_input"] = "{{ previous_step.bar }}"  # missing field
-    print("DEBUG meta:", s2.meta)
     report = (Pipeline.from_step(s1) >> s2).validate_graph()
     report = (Pipeline.from_step(s1) >> s2).validate_graph()
     warns = [w for w in report.warnings if w.rule_id == "V-T5" and w.step_name == "second"]

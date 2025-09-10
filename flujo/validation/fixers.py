@@ -1,13 +1,30 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Tuple, Callable, Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Tuple, Callable, Any, Dict, List, Optional, Union
 
 
 # --- Fixer registry primitives ---
 
 FixPreviewFn = Callable[[str, Any], int]
-FixApplyFn = Callable[[str, Any, bool], Tuple[bool, Optional[str], int]]
+
+
+@dataclass(frozen=True)
+class FixResult:
+    """Result of applying a fixer to a single file.
+
+    - ``applied``: whether any change was written
+    - ``backup_path``: path to the backup file saved before modifications (if any)
+    - ``changed``: number of discrete edits performed
+    """
+
+    applied: bool
+    backup_path: Optional[str]
+    changed: int
+
+
+FixApplyFn = Callable[[str, Any, bool], FixResult]
 
 
 class Fixer:
@@ -74,15 +91,15 @@ def _vt1_preview(file_path: str, report: Any) -> int:
     return in_text or in_report
 
 
-def _vt1_apply(file_path: str, report: Any, assume_yes: bool) -> Tuple[bool, Optional[str], int]:
+def _vt1_apply(file_path: str, report: Any, assume_yes: bool) -> FixResult:
     p = Path(file_path)
     try:
         original = p.read_text(encoding="utf-8")
     except Exception:
-        return False, None, 0
+        return FixResult(False, None, 0)
     new_text, replaced = _fix_vt1_in_text(original)
     if replaced <= 0 or new_text == original:
-        return False, None, 0
+        return FixResult(False, None, 0)
 
     # Confirm if interactive and not assume_yes
     try:
@@ -91,18 +108,18 @@ def _vt1_apply(file_path: str, report: Any, assume_yes: bool) -> Tuple[bool, Opt
 
         if not assume_yes and hasattr(sys.stdin, "isatty") and sys.stdin.isatty():
             if not _confirm(f"Apply {replaced} V-T1 fix(es) to {p.name}?", default=True):
-                return False, None, 0
+                return FixResult(False, None, 0)
     except Exception:
         if not assume_yes:
-            return False, None, 0
+            return FixResult(False, None, 0)
 
     backup_path = str(p) + ".bak"
     try:
         Path(backup_path).write_text(original, encoding="utf-8")
         p.write_text(new_text, encoding="utf-8")
     except Exception:
-        return False, None, 0
-    return True, backup_path, replaced
+        return FixResult(False, None, 0)
+    return FixResult(True, backup_path, replaced)
 
 
 # Register V-T1
@@ -155,15 +172,15 @@ def _apply_vt3_text(text: str) -> Tuple[str, int]:
     return new_text, changed
 
 
-def _vt3_apply(file_path: str, report: Any, assume_yes: bool) -> Tuple[bool, Optional[str], int]:
+def _vt3_apply(file_path: str, report: Any, assume_yes: bool) -> FixResult:
     p = Path(file_path)
     try:
         original = p.read_text(encoding="utf-8")
     except Exception:
-        return False, None, 0
+        return FixResult(False, None, 0)
     new_text, changed = _apply_vt3_text(original)
     if changed <= 0 or new_text == original:
-        return False, None, 0
+        return FixResult(False, None, 0)
 
     # Confirm prompt if interactive
     try:
@@ -172,18 +189,18 @@ def _vt3_apply(file_path: str, report: Any, assume_yes: bool) -> Tuple[bool, Opt
 
         if not assume_yes and hasattr(sys.stdin, "isatty") and sys.stdin.isatty():
             if not _confirm(f"Apply {changed} V-T3 filter fix(es) to {p.name}?", default=True):
-                return False, None, 0
+                return FixResult(False, None, 0)
     except Exception:
         if not assume_yes:
-            return False, None, 0
+            return FixResult(False, None, 0)
 
     backup_path = str(p) + ".bak"
     try:
         Path(backup_path).write_text(original, encoding="utf-8")
         p.write_text(new_text, encoding="utf-8")
     except Exception:
-        return False, None, 0
-    return True, backup_path, changed
+        return FixResult(False, None, 0)
+    return FixResult(True, backup_path, changed)
 
 
 register_fixer(Fixer("V-T3", _vt3_preview, _vt3_apply, title="Fix common template filter typos"))
@@ -231,15 +248,15 @@ def _apply_vc2_text(text: str) -> Tuple[str, int]:
     return new_text, changed
 
 
-def _vc2_apply(file_path: str, report: Any, assume_yes: bool) -> Tuple[bool, Optional[str], int]:
+def _vc2_apply(file_path: str, report: Any, assume_yes: bool) -> FixResult:
     p = Path(file_path)
     try:
         original = p.read_text(encoding="utf-8")
     except Exception:
-        return False, None, 0
+        return FixResult(False, None, 0)
     new_text, changed = _apply_vc2_text(original)
     if changed <= 0 or new_text == original:
-        return False, None, 0
+        return FixResult(False, None, 0)
 
     # Confirm prompt if interactive
     try:
@@ -250,18 +267,18 @@ def _vc2_apply(file_path: str, report: Any, assume_yes: bool) -> Tuple[bool, Opt
             if not _confirm(
                 f"Apply {changed} V-C2 parent mapping fix(es) to {p.name}?", default=True
             ):
-                return False, None, 0
+                return FixResult(False, None, 0)
     except Exception:
         if not assume_yes:
-            return False, None, 0
+            return FixResult(False, None, 0)
 
     backup_path = str(p) + ".bak"
     try:
         Path(backup_path).write_text(original, encoding="utf-8")
         p.write_text(new_text, encoding="utf-8")
     except Exception:
-        return False, None, 0
-    return True, backup_path, changed
+        return FixResult(False, None, 0)
+    return FixResult(True, backup_path, changed)
 
 
 register_fixer(
@@ -388,9 +405,16 @@ def apply_fixes_to_file(
         if not fx:
             continue
         try:
-            ok, backup, changed = fx.apply(path, report, assume_yes)
+            res: Union[FixResult, Tuple[bool, Optional[str], int]] = fx.apply(
+                path, report, assume_yes
+            )
         except Exception:
-            ok, backup, changed = (False, None, 0)
+            res = FixResult(False, None, 0)
+
+        if isinstance(res, tuple):
+            ok, backup, changed = res
+        else:
+            ok, backup, changed = res.applied, res.backup_path, res.changed
         if ok and backup and not backup_first:
             backup_first = backup
         if changed > 0:
