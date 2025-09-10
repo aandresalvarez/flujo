@@ -215,8 +215,16 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     try:
                         if tm is not None:
                             sys_txt_raw = getattr(self._agent, "system_prompt", None)
+                            try:
+                                # Handle callable/system_prompt methods returning text
+                                if callable(sys_txt_raw):
+                                    sys_val = sys_txt_raw()
+                                else:
+                                    sys_val = sys_txt_raw
+                            except Exception:
+                                sys_val = sys_txt_raw
                             sys_preview = summarize_and_redact_prompt(
-                                sys_txt_raw if isinstance(sys_txt_raw, str) else str(sys_txt_raw),
+                                sys_val if isinstance(sys_val, str) else str(sys_val),
                                 max_length=preview_len_env,
                             )
                             attrs_sys = {

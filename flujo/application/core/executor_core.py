@@ -2764,8 +2764,28 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 primary_tokens_known = True
                 had_primary_output = True
 
-            # Output processors
+            # Output processors / AROS Phase 2: structured finalize path
             processed_output = agent_output
+            try:
+                # Best-effort: if step declares structured_output (auto/openai_json) and
+                # output is a string, attempt normalization→parse before processors.
+                pmeta = getattr(step, "meta", {}) or {}
+                proc = pmeta.get("processing") if isinstance(pmeta, dict) else None
+                if (
+                    isinstance(proc, dict)
+                    and str(proc.get("structured_output", "")).strip().lower()
+                    in {"auto", "openai_json"}
+                    and isinstance(processed_output, str)
+                ):
+                    from flujo.utils.json_normalizer import normalize_to_json_obj as _norm
+
+                    maybe_obj = _norm(processed_output)
+                    # Only adopt when parsing succeeded into a JSON type
+                    if isinstance(maybe_obj, (dict, list)):
+                        processed_output = maybe_obj
+            except Exception:
+                # Never block success path due to normalization errors
+                pass
             if hasattr(step, "processors") and step.processors:
                 try:
                     processed_output = await self._processor_pipeline.apply_output(

@@ -249,3 +249,51 @@ FSD-AROS-001: Robust Structured Output (AROS v2)
     schema is present; integrated with --fix/--fix-dry-run patch preview.
   - Tests: unit coverage for wrapper catch+repair, new built-ins, and V-A8 fixer.
   - Docs: this FSD section documents Phase 1 changes; CHANGELOG to be updated on merge.
+
+**Issues Discovered (2025-09-10)**
+- AROS-1: Missing terminalization of agent steps
+  - Symptom: Agent step shows status=running with no end_time; pipeline renders "completed" and StepResults omit the agent step.
+  - Evidence: generate_summary span has end_time=null; StepResults show only two steps; Final output is previous step’s dict.
+  - Likely cause: Runner computes completion from step_history only and ignores an active step; policy path does not force a terminal StepResult when JSON-mode/streaming is in play.
+  - Impact: Wrong final output, lost step history, brittle user experience.
+- AROS-2: Partial JSON-mode enforcement and repair
+  - Symptom: grammar.applied recorded, but no validated JSON reaches step_history; no agent.response event.
+  - Cause: No guaranteed post-call normalization→parse→validate pipeline; repair invoked only in some exception flows; provider deviations not always caught.
+  - Impact: Steps “hang” in running state; downstream printing fails.
+- AROS-3: Streaming aggregation missing for structured steps
+  - Symptom: agent.input/system events emitted; no final response; step never finalizes.
+  - Cause: Aggregation of streamed chunks into a final string and late JSON normalization not wired for structured steps.
+  - Impact: Same as AROS-1/2; intermittent non-determinism.
+- AROS-4: Usage/cost propagation gap
+  - Symptom: Total cost=$0.0000, tokens=0 across agent runs.
+  - Cause: ProcessedOutputWithUsage not plumbed through policy→runner totals consistently.
+  - Impact: Quotas/backoffs/retries lack real signals; recovery strategies weakened.
+- AROS-5: Diagnostic noise/misleading signals
+  - Symptom: "Could not determine model" warnings for pure callables; agent.system logs a bound method instead of the actual prompt.
+  - Impact: Obscures real issues; reduces observability.
+- AROS-6: Runner completion gating absent
+  - Symptom: Pipeline marked completed while a step span is still running.
+  - Cause: Completion uses all(s.success for step_history) without checking active spans.
+  - Impact: Corrupt end-state; enables silent data loss of last step.
+- AROS-7: Linter advisory mismatch (contextual)
+  - Symptom: V-A5 signals unused output even when next step consumes previous_step directly.
+  - Cause: Heuristic cannot see templated previous_step consumption in some shapes.
+  - Impact: Cosmetic (does not break runs); track to refine linters.
+- AROS-8: Provider JSON-mode error integration incomplete
+  - Symptom: Some provider errors surface without flowing through deterministic repair path if streaming; wrapper fix in Phase 1 needs policy/runner alignment.
+  - Impact: Residual flakiness in JSON-mode.
+
+**Fix Mapping (Phase 2)**
+- AROS-1/6: Add active-step completion gate in runner; only emit "completed" when all started steps have terminal StepResult; persist agent step in step_history.
+- AROS-2/3: Add streaming aggregator for structured steps and a guaranteed finalize path: buffer → normalize (fence/commas/unescape) → parse → validate → deterministic repair → LLM repair → StepResult.
+- AROS-4: Extract usage from wrapper results in policy and accumulate in runner totals; assert non-zero tokens for successful agent responses in tests.
+- AROS-5: Suppress model-id warning for non-LLM agents; log actual system prompt text for agent.system.
+- AROS-7: Refine linter V-A5 to recognize previous_step and steps.<name>.output consumption patterns.
+- AROS-8: Ensure provider-level JSON-mode errors (UnexpectedModelBehavior, etc.) are routed through the same finalize/repair pipeline for both non-streaming and streaming.
+
+**Acceptance Criteria (Phase 2)**
+- Completion correctness: With structured agent step, StepResults contains the agent step as the last element; pipeline status is completed only after its terminalization.
+- Robust JSON handling: For near‑JSON and fenced payloads, final output validates against schema ≥99% in stubbed CI; repair stages recorded in telemetry.
+- Streaming consistency: Chunked responses aggregate and validate at end-of-stream; agent.response and StepResult present.
+- Usage accuracy: Non-zero tokens/cost on agent steps; totals reconcile; quotas enforce correctly in tests.
+- Noise reduction: No model-id warnings for pure callables; agent.system contains resolved prompt text.

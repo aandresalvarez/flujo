@@ -813,11 +813,22 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 ):
                     final_status = "paused"
                 elif pipeline_result_obj.step_history:
-                    final_status = (
-                        "completed"
-                        if all(s.success for s in pipeline_result_obj.step_history)
-                        else "failed"
-                    )
+                    # Phase 2: Active-step completion gate
+                    # Only mark completed when we have one StepResult per pipeline step and all succeeded.
+                    try:
+                        expected = len(self.pipeline.steps) if self.pipeline is not None else None
+                    except Exception:
+                        expected = None
+                    if (
+                        expected is not None
+                        and len(pipeline_result_obj.step_history) == expected
+                        and all(s.success for s in pipeline_result_obj.step_history)
+                    ):
+                        final_status = "completed"
+                    else:
+                        # If we don't have a full set of results, treat as failed to avoid
+                        # falsely reporting success with missing steps.
+                        final_status = "failed"
                 await exec_manager.persist_final_state(
                     run_id=run_id_for_state,
                     context=current_context_instance,
