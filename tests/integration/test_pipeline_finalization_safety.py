@@ -61,7 +61,11 @@ async def test_missing_terminal_outcome_synthesizes_failure(
 
     try:
         runner: Flujo[Any, Any, Any] = Flujo(pipeline=p)
-        result = runner.run("")
+        # Consume async runner to get final PipelineResult
+        result = None
+        async for item in runner.run_async(""):
+            result = item
+        assert result is not None
     finally:
         # Restore (pytest monkeypatch will also undo, but keep explicit for clarity)
         monkeypatch.setattr(sc_mod.StepCoordinator, "execute_step", original_execute_step)
@@ -135,7 +139,10 @@ async def test_completion_gate_requires_all_steps(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(LocalBackend, "execute_step", _backend_none)
 
     runner: Flujo[Any, Any, Any] = Flujo(pipeline=p)
-    result = runner.run("")
+    result = None
+    async for item in runner.run_async(""):
+        result = item
+    assert result is not None
 
     # We should have exactly 2 steps in the history (first success, second synthesized failure)
     assert len(result.step_history) == 2

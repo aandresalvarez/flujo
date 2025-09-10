@@ -2597,32 +2597,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         _effective_known = primary_tokens_known or (
                             getattr(result, "token_counts", None) is not None
                         )
-                        # Estimate total primary tokens across ALL attempts (executed + missing)
-                        # Derive intended attempts directly from step config to avoid stream-side overrides
-                        try:
-                            cfg_obj = getattr(step, "config", None)
-                            intended_attempts = int(getattr(cfg_obj, "max_retries", 0) or 0) + 1
-                            if intended_attempts <= 0:
-                                intended_attempts = 1
-                        except Exception:
-                            intended_attempts = max(1, int(total_attempts))
+                        # Aggregate only executed primary attempts
                         if primary_tokens_known:
-                            executed_tokens = int(primary_tokens_total)
-                            executed_attempts = max(1, int(getattr(result, "attempts", 1) or 1))
-                            per_attempt = (
-                                executed_tokens // executed_attempts if executed_attempts > 0 else 0
-                            )
-                            missing = max(0, int(intended_attempts) - executed_attempts)
-                            add_primary = executed_tokens + missing * per_attempt
+                            add_primary = int(primary_tokens_total)
                         else:
-                            base = (
+                            add_primary = (
                                 int(getattr(result, "token_counts", 0) or 0)
                                 if _effective_known
                                 else (1 if had_primary_output else 0)
                             )
-                            executed_attempts = max(1, int(getattr(result, "attempts", 1) or 1))
-                            missing = max(0, int(intended_attempts) - executed_attempts)
-                            add_primary = base * (executed_attempts + missing)
                         # Modify in-place on the StepResult from fallback
                         try:
                             fb_tokens = int(getattr(fb_res, "token_counts", 0) or 0)
@@ -3033,8 +3016,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     # Conditional retry semantics: when a fallback is configured, allow one more
                     # agent attempt on plugin failure before falling back. If no fallback exists,
                     # proceed to final handling without retrying.
-                    # Always allow retry up to max_retries regardless of fallback presence
-                    if attempt < total_attempts:
+                    fb_present = getattr(step, "fallback_step", None) is not None
+                    if attempt < total_attempts and fb_present:
                         telemetry.logfire.warning(
                             f"Step '{getattr(step, 'name', '<unnamed>')}' plugin attempt {attempt}/{total_attempts} failed: {e}"
                         )
@@ -3135,15 +3118,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         except Exception:
                             exhausted = False
                         if prev_orig:
-                            fallback_result_sr.metadata_["original_error"] = prev_orig
+                            orig_text = prev_orig
+                        elif last_plugin_failure_feedback:
+                            orig_text = last_plugin_failure_feedback
                         elif exhausted:
-                            fallback_result_sr.metadata_["original_error"] = (
-                                "No more outputs available"
-                            )
+                            orig_text = "No more outputs available"
                         else:
-                            fallback_result_sr.metadata_["original_error"] = self._format_feedback(
-                                str(e), "Agent execution failed"
-                            )
+                            orig_text = str(e)
+                        fallback_result_sr.metadata_["original_error"] = orig_text
                         # Aggregate primary usage with fallback tokens (ensure at least 1 token for string outputs)
                         # Prefer explicit token metrics if known; otherwise count 1 if we had any output
                         # Re-evaluate presence of primary output just before aggregation
@@ -3161,30 +3143,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             getattr(result, "token_counts", None) is not None
                         )
                         # Estimate primary tokens across ALL intended attempts
-                        try:
-                            cfg_obj = getattr(step, "config", None)
-                            intended_attempts = int(getattr(cfg_obj, "max_retries", 0) or 0) + 1
-                            if intended_attempts <= 0:
-                                intended_attempts = 1
-                        except Exception:
-                            intended_attempts = max(1, int(total_attempts))
                         if primary_tokens_known:
-                            executed_tokens = int(primary_tokens_total)
-                            executed_attempts = max(1, int(getattr(result, "attempts", 1) or 1))
-                            per_attempt = (
-                                executed_tokens // executed_attempts if executed_attempts > 0 else 0
-                            )
-                            missing = max(0, int(intended_attempts) - executed_attempts)
-                            primary_tokens = executed_tokens + missing * per_attempt
+                            primary_tokens = int(primary_tokens_total)
                         else:
-                            base = (
+                            primary_tokens = (
                                 int(getattr(result, "token_counts", 0) or 0)
                                 if _effective_known
                                 else (1 if had_primary_output else 0)
                             )
-                            executed_attempts = max(1, int(getattr(result, "attempts", 1) or 1))
-                            missing = max(0, int(intended_attempts) - executed_attempts)
-                            primary_tokens = base * (executed_attempts + missing)
                         telemetry.logfire.info(
                             f"[Core] Aggregating primary tokens={primary_tokens} (known={primary_tokens_known}, had={had_primary_output}) with fallback tokens={fallback_result_sr.token_counts or 0}"
                         )
