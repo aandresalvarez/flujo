@@ -1,0 +1,9 @@
+version: "0.1"
+# TODO: V-A8 — Structured output with non-JSON response mode mismatch (placeholder)
+steps:
+  - name: s
+    agent:
+      id: "flujo.builtins.stringify"
+      # placeholder for structured output + non-JSON config once supported by agent spec
+    input: "{}"
+

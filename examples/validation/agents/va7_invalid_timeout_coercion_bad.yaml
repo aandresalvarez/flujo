@@ -1,0 +1,11 @@
+version: "0.1"
+# TODO: V-A7 — Invalid type coercions for max_retries/timeout
+steps:
+  - name: s
+    agent:
+      id: "flujo.builtins.stringify"
+      params:
+        max_retries: "three"
+        timeout: "ten seconds"
+    input: "hi"
+

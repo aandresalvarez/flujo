@@ -1,0 +1,15 @@
+version: "0.1"
+agents:
+  struct:
+    model: "openai:gpt-4o"
+    system_prompt: "emit object"
+    output_schema:
+      type: object
+      properties:
+        ok: { type: boolean }
+steps:
+  - name: S
+    uses: agents.struct
+    processing:
+      structured_output: "off"
+

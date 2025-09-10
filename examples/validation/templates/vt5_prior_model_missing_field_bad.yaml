@@ -1,0 +1,18 @@
+version: "0.1"
+# TODO: V-T5 bad case — prior step returns a model; template references a missing field
+agents:
+  struct:
+    model: "openai:gpt-4o"
+    system_prompt: "return an object"
+    output_schema:
+      type: object
+      properties:
+        ok:
+          type: boolean
+steps:
+  - name: produce_model
+    uses: agents.struct
+  - name: consume_missing_field
+    agent:
+      id: "flujo.builtins.stringify"
+    input: "{{ previous_step.missing_field }}"

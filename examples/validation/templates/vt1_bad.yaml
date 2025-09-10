@@ -1,0 +1,9 @@
+version: "0.1"
+steps:
+  - name: A
+    agent: { id: "flujo.builtins.stringify" }
+    input: "hello"
+  - name: B
+    agent: { id: "flujo.builtins.stringify" }
+    input: "{{ previous_step.output }}"
+

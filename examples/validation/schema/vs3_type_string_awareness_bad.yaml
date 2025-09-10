@@ -1,0 +1,12 @@
+version: "0.1"
+# TODO: V-S3 — output_schema declares type: string; add awareness warning
+agents:
+  a:
+    model: "openai:gpt-4o"
+    system_prompt: "x"
+    output_schema:
+      type: string
+steps:
+  - name: s1
+    agent: { id: "agents.a" }
+

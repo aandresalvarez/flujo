@@ -1,0 +1,12 @@
+version: "0.1"
+steps:
+  - kind: loop
+    name: LoopWithUpdates
+    loop:
+      # Exit deterministically after one iteration to demonstrate a valid loop
+      max_iterations: 1
+      body:
+        steps:
+          - name: Do
+            agent: { id: "flujo.builtins.stringify" }
+            input: "ping"

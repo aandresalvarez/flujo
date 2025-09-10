@@ -2409,6 +2409,15 @@ def load_pipeline_blueprint_from_yaml(
                                 pass
             except Exception:
                 pass
+            # Attach source_file on the Pipeline for import validation caching/cycle detection
+            try:
+                if source_file:
+                    try:
+                        setattr(p, "_source_file", str(source_file))
+                    except Exception:
+                        object.__setattr__(p, "_source_file", str(source_file))
+            except Exception:
+                pass
             # Attach ruamel-derived line/column to steps when yaml_path is present
             try:
                 from ..dsl import Pipeline as _DPipe, Step as _DStep

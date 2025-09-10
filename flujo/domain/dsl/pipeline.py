@@ -129,6 +129,8 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         raise_on_error: bool = False,
         include_imports: bool = False,
         _visited_pipelines: Optional[set[int]] = None,
+        _visited_paths: Optional[set[str]] = None,
+        _report_cache: Optional[dict[str, "ValidationReport"]] = None,
     ) -> ValidationReport:
         """Validate that all steps have agents, compatible types, and static lints.
 
@@ -182,13 +184,28 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 return False
 
         report = ValidationReport()
-        # Initialize visited set to guard recursion/cycles
+        # Initialize visited sets/caches to guard recursion/cycles and enable caching
         if _visited_pipelines is None:
             _visited_pipelines = set()
+        if _visited_paths is None:
+            _visited_paths = set()
+        if _report_cache is None:
+            _report_cache = {}
         cur_id = id(self)
         if cur_id in _visited_pipelines:
             return report
         _visited_pipelines.add(cur_id)
+        try:
+            import os as _os_path
+
+            cur_path = getattr(self, "_source_file", None)
+            if isinstance(cur_path, str):
+                cur_path = _os_path.path.realpath(cur_path)
+                if cur_path in _visited_paths:
+                    return report
+                _visited_paths.add(cur_path)
+        except Exception:
+            pass
 
         seen_steps: set[int] = set()
         prev_step: Step[Any, Any] | None = None
@@ -232,6 +249,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             else:
                 target = getattr(step.agent, "_agent", step.agent)
                 func = getattr(target, "_step_callable", getattr(target, "run", None))
+                # Agent path resolution moved to AgentLinter (V-A6)
                 if func is not None:
                     try:
                         from ...signature_tools import (
@@ -305,62 +323,9 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                         )
                     )
 
-            # Control-Flow Safety — V-CF1: Unconditional infinite loop heuristic
-            try:
-                from .loop import LoopStep as _LoopStep  # lazy import to avoid cycles
+            # Context lint V-C1 moved to ContextLinter
 
-                if isinstance(step, _LoopStep):
-                    # Heuristic 1: excessively large max_loops
-                    ml = 0
-                    try:
-                        ml = int(getattr(step, "max_loops", getattr(step, "max_retries", 0)) or 0)
-                    except Exception:
-                        ml = 0
-                    if ml >= 1000:
-                        report.errors.append(
-                            ValidationFinding(
-                                rule_id="V-CF1",
-                                severity="error",
-                                message=(
-                                    f"LoopStep '{getattr(step, 'name', None)}' declares max_loops={ml}, which may create a non-terminating loop."
-                                ),
-                                step_name=getattr(step, "name", None),
-                                suggestion=(
-                                    "Provide a stricter exit_condition or reduce max_loops to a reasonable bound."
-                                ),
-                            )
-                        )
-                    else:
-                        # Heuristic 2: exit condition appears to be a constant false function
-                        try:
-                            fn = getattr(step, "exit_condition_callable", None)
-
-                            flag_const_false = False
-                            if hasattr(fn, "__code__") and callable(fn):
-                                co = getattr(fn, "__code__")
-                                consts = tuple(getattr(co, "co_consts", ()) or ())
-                                names = tuple(getattr(co, "co_names", ()) or ())
-                                if (False in consts) and (True not in consts) and (len(names) == 0):
-                                    flag_const_false = True
-                            if flag_const_false:
-                                report.errors.append(
-                                    ValidationFinding(
-                                        rule_id="V-CF1",
-                                        severity="error",
-                                        message=(
-                                            f"LoopStep '{getattr(step, 'name', None)}' exit condition appears to be constant false (non-terminating)."
-                                        ),
-                                        step_name=getattr(step, "name", None),
-                                        suggestion=(
-                                            "Ensure exit_condition depends on loop results or context and eventually returns True."
-                                        ),
-                                    )
-                                )
-                        except Exception:
-                            pass
-            except Exception:
-                # Never fail validation due to heuristic
-                pass
+            # Control-Flow Safety — moved to OrchestrationLinter (pluggable)
 
             # Advanced Check 3.2.3: Incompatible fallback signature (V-F1)
             fb = getattr(step, "fallback_step", None)
@@ -382,6 +347,8 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                             ),
                         )
                     )
+            # Context lint V-C2 moved to ContextLinter
+            # Schema V-S2 moved to SchemaLinter
             prev_step = step
             prev_out_type = getattr(step, "__step_output_type__", Any)
 
@@ -520,157 +487,9 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                     # Never break overall validation due to SM analysis
                     continue
 
-        # Schema Lints — V-S1: basic JSON schema structure warnings for agent output_schema
-        try:
-            for idx, step in enumerate(self.steps):
-                try:
-                    ag = getattr(step, "agent", None)
-                    if ag is None:
-                        continue
-                    warns = getattr(ag, "_schema_warnings", None)
-                    if not warns:
-                        continue
-                    meta = getattr(step, "meta", None)
-                    _yloc2 = meta.get("_yaml_loc") if isinstance(meta, dict) else None
-                    loc_path = (_yloc2 or {}).get("path") or f"steps[{idx}].agent.output_schema"
-                    fpath = (_yloc2 or {}).get("file")
-                    line = (_yloc2 or {}).get("line")
-                    col = (_yloc2 or {}).get("column")
-                    for wmsg in warns:
-                        report.warnings.append(
-                            ValidationFinding(
-                                rule_id="V-S1",
-                                severity="warning",
-                                message=wmsg,
-                                step_name=getattr(step, "name", None),
-                                location_path=loc_path,
-                                file=fpath,
-                                line=line,
-                                column=col,
-                                suggestion=(
-                                    "Adjust the agent's output_schema to follow JSON Schema basics (properties/required/items)."
-                                ),
-                            )
-                        )
-                except Exception:
-                    continue
-        except Exception:
-            pass
+        # Agent coercion lints moved to AgentLinter (V-A7)
 
-        # Template Lints (subset) — V-T1: previous_step.output misuse
-        try:
-            for idx, step in enumerate(self.steps):
-                try:
-                    meta = getattr(step, "meta", None)
-                    templ = None
-                    yloc_info: dict[str, Any] = {}
-                    if isinstance(meta, dict):
-                        templ = meta.get("templated_input")
-                        try:
-                            raw_loc = meta.get("_yaml_loc")
-                            if isinstance(raw_loc, dict):
-                                yloc_info = raw_loc
-                            else:
-                                yloc_info = {}
-                        except Exception:
-                            yloc_info = {}
-                    loc_path = yloc_info.get("path")
-                    fpath = yloc_info.get("file")
-                    line = yloc_info.get("line")
-                    col = yloc_info.get("column")
-                    default_loc = f"steps[{idx}].input"
-                    if isinstance(templ, str) and ("{{" in templ and "}}" in templ):
-                        import re as _re
-
-                        if _re.search(r"\bprevious_step\s*\.\s*output\b", templ):
-                            report.warnings.append(
-                                ValidationFinding(
-                                    rule_id="V-T1",
-                                    severity="warning",
-                                    message=(
-                                        "Template references previous_step.output, but previous_step is the raw value and "
-                                        "has no .output attribute."
-                                    ),
-                                    step_name=getattr(step, "name", None),
-                                    suggestion=(
-                                        "Prefer using steps.<previous_step_name>.output | tojson, or use previous_step | tojson for raw value."
-                                    ),
-                                    location_path=loc_path or default_loc,
-                                    file=fpath,
-                                    line=line,
-                                    column=col,
-                                )
-                            )
-                        # V-T2: 'this' misuse outside map bodies (heuristic)
-                        if _re.search(r"\bthis\b", templ):
-                            report.warnings.append(
-                                ValidationFinding(
-                                    rule_id="V-T2",
-                                    severity="warning",
-                                    message=(
-                                        "Template references 'this' outside a known map body context."
-                                    ),
-                                    step_name=getattr(step, "name", None),
-                                    suggestion=(
-                                        "Use 'this' only inside map bodies, or bind a variable explicitly."
-                                    ),
-                                    location_path=loc_path or default_loc,
-                                    file=fpath,
-                                    line=line,
-                                    column=col,
-                                )
-                            )
-                        # V-T3: Unknown/disabled filters
-                        try:
-                            from ...utils.prompting import _get_enabled_filters as _filters
-
-                            enabled = {s.lower() for s in _filters()}
-                        except Exception:
-                            enabled = {"join", "upper", "lower", "length", "tojson"}
-                        # Find all pipe filters in a simplistic but robust way
-                        for m in _re.finditer(r"\|\s*([a-zA-Z_][a-zA-Z0-9_]*)", templ):
-                            fname = m.group(1).lower()
-                            if fname not in enabled:
-                                report.warnings.append(
-                                    ValidationFinding(
-                                        rule_id="V-T3",
-                                        severity="warning",
-                                        message=f"Unknown or disabled template filter: {fname}",
-                                        step_name=getattr(step, "name", None),
-                                        suggestion=(
-                                            "Add to [settings.enabled_template_filters] in flujo.toml or remove/misspelling fix."
-                                        ),
-                                        location_path=loc_path or default_loc,
-                                        file=fpath,
-                                        line=line,
-                                        column=col,
-                                    )
-                                )
-                        # V-T4: Unknown step proxy name in steps.<name>
-                        prior_names = {getattr(s, "name", "") for s in self.steps[:idx]}
-                        for sm in _re.finditer(r"steps\.([A-Za-z0-9_]+)\b", templ):
-                            ref = sm.group(1)
-                            if ref and ref not in prior_names:
-                                report.warnings.append(
-                                    ValidationFinding(
-                                        rule_id="V-T4",
-                                        severity="warning",
-                                        message=f"Template references steps.{ref} which is not a prior step.",
-                                        step_name=getattr(step, "name", None),
-                                        suggestion=(
-                                            "Correct the step name or ensure the reference points to a prior step."
-                                        ),
-                                        location_path=loc_path or default_loc,
-                                        file=fpath,
-                                        line=line,
-                                        column=col,
-                                    )
-                                )
-                except Exception as lint_err:
-                    logging.debug("Template linter (V-T1) skipped due to error: %s", lint_err)
-                    continue
-        except Exception as top_lint_err:
-            logging.debug("Template linter (V-T1) scanning failed: %s", top_lint_err)
+        # Template lints moved to TemplateLinter (V-T1..V-T6)
 
         # Advanced Check 3.2.1: Context Merge Conflict Detection for ParallelStep (V-P1)
         # Use runtime imports with fallbacks while keeping mypy satisfied by typing as Any
@@ -691,126 +510,8 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         if ParallelStep is not None and MergeStrategy is not None:
             for st in self.steps:
                 if isinstance(st, ParallelStep):
-                    # V-P3: Parallel branch input uniformity – warn if first-step input types differ across branches
-                    try:
-                        branch_input_types: set[str] = set()
-                        for bname, bp in getattr(st, "branches", {}).items():
-                            try:
-                                if getattr(bp, "steps", None):
-                                    first = bp.steps[0]
-                                    # Prefer literal templated_input type category when present and non-template
-                                    category = None
-                                    try:
-                                        meta = getattr(first, "meta", None)
-                                        if isinstance(meta, dict) and "templated_input" in meta:
-                                            tv = meta.get("templated_input")
-                                            # Skip if it looks like a template
-                                            if isinstance(tv, str) and ("{{" in tv and "}}" in tv):
-                                                category = None
-                                            else:
-                                                if isinstance(tv, bool):
-                                                    category = "bool"
-                                                elif isinstance(tv, (int, float)):
-                                                    category = "number"
-                                                elif isinstance(tv, str):
-                                                    category = "string"
-                                                elif isinstance(tv, dict):
-                                                    category = "object"
-                                                elif isinstance(tv, list):
-                                                    category = "array"
-                                    except Exception:
-                                        category = None
-                                    if category is None:
-                                        itype = getattr(first, "__step_input_type__", object)
-                                        category = str(itype)
-                                    branch_input_types.add(category)
-                            except Exception:
-                                continue
-                        if len(branch_input_types) > 1:
-                            report.warnings.append(
-                                ValidationFinding(
-                                    rule_id="V-P3",
-                                    severity="warning",
-                                    message=(
-                                        f"ParallelStep '{st.name}' branches expect heterogeneous input types; "
-                                        "the same input is passed to all branches."
-                                    ),
-                                    step_name=getattr(st, "name", None),
-                                    suggestion=(
-                                        "Ensure branches handle the same input type or insert adapter steps per branch."
-                                    ),
-                                )
-                            )
-                    except Exception:
-                        logging.debug("V-P3 branch input uniformity check failed; skipping")
-                    # Only analyze when using default CONTEXT_UPDATE
-                    if st.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
-                        # Gather per-branch candidate context fields that could be updated
-                        # Heuristic: collect union of declared context include keys if present
-                        candidate_fields: set[str] = set()
-                        if st.context_include_keys is not None:
-                            candidate_fields.update(st.context_include_keys)
-
-                        # If no hints from include keys, we cannot know exact fields statically.
-                        # Still add a warning only when multiple branches exist and no field_mapping provided for any branch.
-                        if not candidate_fields and st.field_mapping is None:
-                            if len(st.branches) > 1:
-                                report.warnings.append(
-                                    ValidationFinding(
-                                        rule_id="V-P1-W",
-                                        severity="warning",
-                                        message=(
-                                            f"ParallelStep '{st.name}' uses CONTEXT_UPDATE without field_mapping; potential merge conflicts may occur."
-                                        ),
-                                        step_name=st.name,
-                                        suggestion=(
-                                            "Provide a field_mapping per-branch or pick an explicit merge strategy like OVERWRITE or ERROR_ON_CONFLICT."
-                                        ),
-                                    )
-                                )
-                            continue
-
-                        # If field_mapping exists, check for keys updated by 2+ branches without explicit mapping
-                        if st.field_mapping is not None:
-                            # Build reverse map: field -> branches declaring it
-                            field_to_branches: dict[str, list[str]] = {}
-                            for bname, fields in st.field_mapping.items():
-                                for f in fields:
-                                    field_to_branches.setdefault(f, []).append(bname)
-
-                            for f, bnames in field_to_branches.items():
-                                if len(bnames) > 1 and not st.ignore_branch_names:
-                                    report.errors.append(
-                                        ValidationFinding(
-                                            rule_id="V-P1",
-                                            severity="error",
-                                            message=(
-                                                f"Context merge conflict risk for key '{f}' in ParallelStep '{st.name}': "
-                                                f"declared by branches {bnames}."
-                                            ),
-                                            step_name=st.name,
-                                            suggestion=(
-                                                "Set an explicit MergeStrategy (e.g., OVERWRITE) or ensure only one branch writes each field via field_mapping."
-                                            ),
-                                        )
-                                    )
-                        else:
-                            # No explicit field_mapping but candidate fields exist; assume conflict if >1 branch exists
-                            if len(st.branches) > 1 and candidate_fields:
-                                report.errors.append(
-                                    ValidationFinding(
-                                        rule_id="V-P1",
-                                        severity="error",
-                                        message=(
-                                            f"ParallelStep '{st.name}' may merge conflicting context fields {sorted(candidate_fields)} "
-                                            "using CONTEXT_UPDATE without field_mapping."
-                                        ),
-                                        step_name=st.name,
-                                        suggestion=(
-                                            "Provide field_mapping for conflicting keys or choose OVERWRITE/ERROR_ON_CONFLICT explicitly."
-                                        ),
-                                    )
-                                )
+                    # Parallel merge conflict checks moved to OrchestrationLinter (V-P1/V-P1-W)
+                    pass
 
         if raise_on_error and report.errors:
             raise ConfigurationError(
@@ -827,51 +528,21 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 for step in self.steps:
                     try:
                         if isinstance(step, _ImportStep):
-                            # V-I2: Outputs mapping sanity – warn on obviously invalid parent roots
-                            try:
-                                outputs_map = getattr(step, "outputs", None)
-                                if isinstance(outputs_map, list):
-                                    allowed_parent_roots = {
-                                        "scratchpad",
-                                        "command_log",
-                                        "hitl_history",
-                                        "conversation_history",
-                                        "yaml_text",
-                                        "generated_yaml",
-                                        "run_id",
-                                    }
-                                    for om in outputs_map:
-                                        try:
-                                            parent_path = getattr(om, "parent", "")
-                                            if not isinstance(parent_path, str) or not parent_path:
-                                                continue
-                                            root = parent_path.split(".", 1)[0]
-                                            if root not in allowed_parent_roots:
-                                                report.warnings.append(
-                                                    ValidationFinding(
-                                                        rule_id="V-I2",
-                                                        severity="warning",
-                                                        message=(
-                                                            f"Import outputs mapping parent path '{parent_path}' has an unknown root; "
-                                                            "consider mapping under 'scratchpad' or a known context field."
-                                                        ),
-                                                        step_name=getattr(step, "name", None),
-                                                        suggestion=(
-                                                            "Use scratchpad.<key> for transient fields or ensure the root is a valid context field."
-                                                        ),
-                                                        location_path="steps[].config.outputs",
-                                                    )
-                                                )
-                                        except Exception as _:
-                                            logging.debug(
-                                                "V-I2 check skipped for one mapping entry"
-                                            )
-                            except Exception as _:
-                                logging.debug("V-I2 mapping sanity check skipped due to error")
+                            # Import mapping sanity moved to ImportLinter (V-I2)
                             child = getattr(step, "pipeline", None)
                             if child is not None and hasattr(child, "validate_graph"):
-                                # Cycle detection (V-I3): detect already visited child
-                                if id(child) in _visited_pipelines:
+                                import os as _os
+
+                                ch_path = getattr(child, "_source_file", None)
+                                if isinstance(ch_path, str):
+                                    ch_path = _os.path.realpath(ch_path)
+                                # Cycle detection (V-I3): path-based preferred; fallback to id
+                                is_cycle = False
+                                if isinstance(ch_path, str) and ch_path in _visited_paths:
+                                    is_cycle = True
+                                elif id(child) in _visited_pipelines:
+                                    is_cycle = True
+                                if is_cycle:
                                     report.errors.append(
                                         ValidationFinding(
                                             rule_id="V-I3",
@@ -883,10 +554,19 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                         )
                                     )
                                     continue
-                                child_report: ValidationReport = child.validate_graph(
-                                    include_imports=True,
-                                    _visited_pipelines=_visited_pipelines,
-                                )
+                                # Cache lookup by path
+                                use_cache = isinstance(ch_path, str) and bool(ch_path)
+                                if use_cache and ch_path in _report_cache:
+                                    child_report = _report_cache.get(ch_path) or ValidationReport()
+                                else:
+                                    child_report = child.validate_graph(
+                                        include_imports=True,
+                                        _visited_pipelines=_visited_pipelines,
+                                        _visited_paths=_visited_paths,
+                                        _report_cache=_report_cache,
+                                    )
+                                    if use_cache and ch_path:
+                                        _report_cache[ch_path] = child_report
                                 # Aggregate child findings with step context
                                 meta = getattr(step, "meta", None)
                                 alias = meta.get("import_alias") if isinstance(meta, dict) else None
@@ -912,11 +592,13 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                             column=f.column,
                                             import_alias=import_tag or None,
                                             import_stack=(
-                                                (f.import_stack or [])
-                                                if hasattr(f, "import_stack")
-                                                else []
-                                            )
-                                            + ([import_tag] if import_tag else []),
+                                                ([import_tag] if import_tag else [])
+                                                + (
+                                                    (f.import_stack or [])
+                                                    if hasattr(f, "import_stack")
+                                                    else []
+                                                )
+                                            ),
                                         )
                                     )
                                 for w in child_report.warnings:
@@ -940,13 +622,151 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                             column=w.column,
                                             import_alias=import_tag or None,
                                             import_stack=(
-                                                (w.import_stack or [])
-                                                if hasattr(w, "import_stack")
-                                                else []
-                                            )
-                                            + ([import_tag] if import_tag else []),
+                                                ([import_tag] if import_tag else [])
+                                                + (
+                                                    (w.import_stack or [])
+                                                    if hasattr(w, "import_stack")
+                                                    else []
+                                                )
+                                            ),
                                         )
                                     )
+                                # V-I5: Input projection coherence heuristics
+                                try:
+                                    child_steps = list(getattr(child, "steps", []) or [])
+                                    if child_steps:
+                                        first = child_steps[0]
+                                        child_in = getattr(first, "__step_input_type__", object)
+                                        input_to = (
+                                            str(getattr(step, "input_to", "initial_prompt"))
+                                            .strip()
+                                            .lower()
+                                        )
+
+                                        def _is_objectish(t: Any) -> bool:
+                                            try:
+                                                from typing import get_origin as _go
+
+                                                org = _go(t)
+                                            except Exception:
+                                                org = None
+                                            if t is dict or org is dict:
+                                                return True
+                                            try:
+                                                from pydantic import BaseModel as _PM
+
+                                                return isinstance(t, type) and issubclass(t, _PM)
+                                            except Exception:
+                                                return False
+
+                                        if input_to == "initial_prompt" and _is_objectish(child_in):
+                                            report.warnings.append(
+                                                ValidationFinding(
+                                                    rule_id="V-I5",
+                                                    severity="warning",
+                                                    message=(
+                                                        f"Import '{import_tag}' projects input to initial_prompt, but child first step expects an object."
+                                                    ),
+                                                    step_name=getattr(step, "name", None),
+                                                    suggestion=(
+                                                        "Use input_to=scratchpad or input_to=both (with input_scratchpad_key) to pass structured input."
+                                                    ),
+                                                )
+                                            )
+                                        if input_to == "scratchpad" and child_in is str:
+                                            report.warnings.append(
+                                                ValidationFinding(
+                                                    rule_id="V-I5",
+                                                    severity="warning",
+                                                    message=(
+                                                        f"Import '{import_tag}' projects input to scratchpad only, but child first step expects a string input."
+                                                    ),
+                                                    step_name=getattr(step, "name", None),
+                                                    suggestion=(
+                                                        "Use input_to=both or input_to=initial_prompt to ensure the string input is provided."
+                                                    ),
+                                                )
+                                            )
+                                except Exception:
+                                    pass
+                                # V-I6: Inherit conversation/context consistency
+                                try:
+                                    inherit_conversation = bool(
+                                        getattr(step, "inherit_conversation", True)
+                                    )
+                                    outs2 = getattr(step, "outputs", None)
+                                    if isinstance(outs2, list) and not inherit_conversation:
+                                        for om in outs2:
+                                            try:
+                                                ch = str(getattr(om, "child", ""))
+                                                pr = str(getattr(om, "parent", ""))
+                                            except Exception:
+                                                ch = pr = ""
+                                            for path in (ch, pr):
+                                                root = path.split(".", 1)[0]
+                                                if root in {"conversation_history", "hitl_history"}:
+                                                    report.warnings.append(
+                                                        ValidationFinding(
+                                                            rule_id="V-I6",
+                                                            severity="warning",
+                                                            message=(
+                                                                f"Import '{import_tag}' maps conversation-related fields but inherit_conversation=False; continuity may be lost."
+                                                            ),
+                                                            step_name=getattr(step, "name", None),
+                                                            suggestion=(
+                                                                "Set inherit_conversation=True or avoid mapping conversation history across the boundary."
+                                                            ),
+                                                        )
+                                                    )
+                                                    # one warning per step is enough
+                                                    raise StopIteration
+                                except StopIteration:
+                                    pass
+                                except Exception:
+                                    pass
+                                # Additional V-I5 heuristic based on parent-provided input shape
+                                try:
+                                    input_to2 = (
+                                        str(getattr(step, "input_to", "initial_prompt"))
+                                        .strip()
+                                        .lower()
+                                    )
+                                    meta_step = getattr(step, "meta", {}) or {}
+                                    t_in = meta_step.get("templated_input")
+                                    if input_to2 == "initial_prompt" and isinstance(t_in, dict):
+                                        report.warnings.append(
+                                            ValidationFinding(
+                                                rule_id="V-I5",
+                                                severity="warning",
+                                                message=(
+                                                    "Import projects an object literal to initial_prompt; consider projecting to scratchpad or both."
+                                                ),
+                                                step_name=getattr(step, "name", None),
+                                                suggestion=(
+                                                    "Use input_to=scratchpad or both with input_scratchpad_key to pass structured input."
+                                                ),
+                                            )
+                                        )
+                                except Exception:
+                                    pass
+                                # Emit a summary V-I4 on the parent step to signal aggregation
+                                try:
+                                    ce = len(child_report.errors)
+                                    cw = len(child_report.warnings)
+                                    if ce or cw:
+                                        report.warnings.append(
+                                            ValidationFinding(
+                                                rule_id="V-I4",
+                                                severity="warning",
+                                                message=(
+                                                    f"Aggregated child findings from import '{import_tag}': {ce} errors, {cw} warnings."
+                                                ),
+                                                step_name=getattr(step, "name", None),
+                                                location_path=f"imports.{import_tag}",
+                                            )
+                                        )
+                                except Exception:
+                                    pass
                     except Exception as import_err:
                         logging.debug(
                             "Import validation aggregation failed for %r: %s",
@@ -955,11 +775,39 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                         )
                         continue
 
-        # Apply per-step suppression (meta-based): meta['suppress_rules'] supports glob patterns (e.g., 'V-T*')
+        # Optional: run pluggable linters and merge (deduplicated)
+        try:
+            from ...validation.linters import run_linters as _run_linters
+
+            lr = _run_linters(self)
+            if lr and (lr.errors or lr.warnings):
+                merged_errs = report.errors + lr.errors
+                merged_warns = report.warnings + lr.warnings
+
+                def _dedupe(arr: list[ValidationFinding]) -> list[ValidationFinding]:
+                    seen: set[tuple[str, str | None, str]] = set()
+                    out: list[ValidationFinding] = []
+                    for it in arr:
+                        key = (
+                            str(getattr(it, "rule_id", "")),
+                            getattr(it, "step_name", None),
+                            str(getattr(it, "message", "")),
+                        )
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        out.append(it)
+                    return out
+
+                report.errors = _dedupe(merged_errs)
+                report.warnings = _dedupe(merged_warns)
+        except Exception:
+            pass
+
+        # Apply per-step suppression (meta-based) after merging linter results
         try:
             import fnmatch as _fnm
 
-            # Build step_name -> patterns map from top-level steps
             suppress_map: dict[str, list[str]] = {}
             for st in self.steps:
                 try:
@@ -990,7 +838,6 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 report.errors = [e for e in report.errors if not _is_suppressed(e)]
                 report.warnings = [w for w in report.warnings if not _is_suppressed(w)]
         except Exception:
-            # Suppression is best-effort; never fail validation due to suppression parsing
             pass
 
         return report

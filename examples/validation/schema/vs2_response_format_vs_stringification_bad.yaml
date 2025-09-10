@@ -1,0 +1,14 @@
+version: "0.1"
+# TODO: V-S2 — response_format=json_object but downstream stringification suggests mismatch
+agents:
+  a:
+    model: "openai:gpt-4o"
+    system_prompt: "x"
+    output_schema:
+      type: object
+steps:
+  - name: s1
+    uses: agents.a
+  - name: stringify
+    agent: { id: "flujo.builtins.stringify" }
+    input: "{{ steps.s1.output }}"  # Mismatch heuristic

@@ -1,0 +1,9 @@
+version: "0.1"
+# TODO: V-I4 — Parent aggregates child findings; ensure alias/file context
+imports:
+  child: "vi4_child_bad.yaml"
+steps:
+  - name: run_child
+    uses: imports.child
+    updates_context: true
+

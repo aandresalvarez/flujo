@@ -1,0 +1,10 @@
+version: "0.1"
+# TODO: V-I5 — Incoherent input projection from parent to child
+imports:
+  child: "vi4_child_bad.yaml"
+steps:
+  - name: run_child
+    uses: imports.child
+    input_to: scratchpad  # placeholder for incoherent projection case
+    updates_context: true
+

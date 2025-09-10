@@ -51,6 +51,13 @@ _CATALOG: Dict[str, RuleInfo] = {
         default_severity="error",
         help_uri=_BASE_URI + "v-p1",
     ),
+    "V-P2": RuleInfo(
+        id="V-P2",
+        title="Parallel explicit outputs conflict",
+        description="Multiple branches map outputs to the same parent keys without coordination.",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-p2",
+    ),
     "V-P3": RuleInfo(
         id="V-P3",
         title="Parallel branch input heterogeneity",
@@ -65,12 +72,60 @@ _CATALOG: Dict[str, RuleInfo] = {
         default_severity="warning",
         help_uri=_BASE_URI + "v-s1",
     ),
+    "V-S2": RuleInfo(
+        id="V-S2",
+        title="Structured output stringified downstream",
+        description="Agent declares structured output but the next step appears to stringify it.",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-s2",
+    ),
+    "V-S3": RuleInfo(
+        id="V-S3",
+        title="Schema uses type=string",
+        description="Awareness: pure string schema may limit downstream structure.",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-s3",
+    ),
+    "V-L1": RuleInfo(
+        id="V-L1",
+        title="Loop exit coverage",
+        description="Loop body/mappers may not allow exit condition to be satisfied.",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-l1",
+    ),
     "V-SM1": RuleInfo(
         id="V-SM1",
         title="State machine unreachable end",
         description="No path from start_state to any end state.",
         default_severity="warning",
         help_uri=_BASE_URI + "v-sm1",
+    ),
+    "V-C1": RuleInfo(
+        id="V-C1",
+        title="updates_context without mergeable output",
+        description=(
+            "Step sets updates_context but returns a non-mergeable value (not a dict or PipelineResult)."
+        ),
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-c1",
+    ),
+    "V-C2": RuleInfo(
+        id="V-C2",
+        title="Scratchpad shape conflict",
+        description=(
+            "Mapping a value into the scratchpad root may overwrite expected object shape."
+        ),
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-c2",
+    ),
+    "V-C3": RuleInfo(
+        id="V-C3",
+        title="Large literal in template",
+        description=(
+            "Template embeds an extremely large constant; consider referencing by key or file."
+        ),
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-c3",
     ),
     "V-I1": RuleInfo(
         id="V-I1",
@@ -92,6 +147,20 @@ _CATALOG: Dict[str, RuleInfo] = {
         description="Detected a cycle in the import graph.",
         default_severity="error",
         help_uri=_BASE_URI + "v-i3",
+    ),
+    "V-I4": RuleInfo(
+        id="V-I4",
+        title="Aggregated child findings",
+        description="Parent import step aggregates errors/warnings from the child blueprint.",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-i4",
+    ),
+    "V-I5": RuleInfo(
+        id="V-I5",
+        title="Input projection coherence",
+        description="Parent→child input projection may not match child's expected input shape.",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-i5",
     ),
     "V-T1": RuleInfo(
         id="V-T1",
@@ -120,6 +189,43 @@ _CATALOG: Dict[str, RuleInfo] = {
         description="Template references steps.<name> that is not a prior step.",
         default_severity="warning",
         help_uri=_BASE_URI + "v-t4",
+    ),
+    "V-T5": RuleInfo(
+        id="V-T5",
+        title="Missing prior model field",
+        description="Template references previous_step.<field> not present on the prior step's model.",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-t5",
+    ),
+    "V-T6": RuleInfo(
+        id="V-T6",
+        title="Non-JSON where JSON expected",
+        description="Templated input looks like JSON but is not valid JSON while the consumer expects JSON.",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-t6",
+    ),
+    "V-A6": RuleInfo(
+        id="V-A6",
+        title="Unknown agent id/import path",
+        description="Unresolvable agent id or Python import path in step.agent.",
+        default_severity="error",
+        help_uri=_BASE_URI + "v-a6",
+    ),
+    "V-A7": RuleInfo(
+        id="V-A7",
+        title="Invalid max_retries/timeout coercion",
+        description="Agent controls could not be coerced to integers; using defaults.",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-a7",
+    ),
+    "V-A8": RuleInfo(
+        id="V-A8",
+        title="Structured output with non-JSON response mode",
+        description=(
+            "Agent declares structured output but step/provider is configured for a non-JSON response mode."
+        ),
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-a8",
     ),
 }
 

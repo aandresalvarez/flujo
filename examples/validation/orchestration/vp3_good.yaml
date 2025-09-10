@@ -1,0 +1,16 @@
+version: "0.1"
+steps:
+  - kind: parallel
+    name: P_InputUniform
+    branches:
+      A:
+        steps:
+          - name: A1
+            agent: { id: "flujo.builtins.stringify" }
+            input: "abc"
+      B:
+        steps:
+          - name: B1
+            agent: { id: "flujo.builtins.stringify" }
+            input: "def"
+

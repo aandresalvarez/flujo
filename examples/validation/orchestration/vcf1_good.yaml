@@ -1,0 +1,13 @@
+version: "0.1"
+steps:
+  - kind: loop
+    name: SafeLoop
+    loop:
+      max_loops: 1
+      exit_expression: "true"
+      body:
+        steps:
+          - name: Do
+            agent: { id: "flujo.builtins.stringify" }
+            input: "ping"
+

@@ -1,0 +1,16 @@
+version: "0.1"
+agents:
+  struct:
+    model: "openai:gpt-4o"
+    system_prompt: "return an object"
+    output_schema:
+      type: object
+      properties:
+        ok: { type: boolean }
+steps:
+  - name: ProduceStructured
+    uses: agents.struct
+  - name: ConsumeField
+    agent: { id: "flujo.builtins.stringify" }
+    input: "{{ steps.ProduceStructured.output.ok | tojson }}"
+

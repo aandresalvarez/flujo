@@ -1,0 +1,11 @@
+version: "0.1"
+imports:
+  child: child.yaml
+steps:
+  - name: RunChild
+    uses: imports.child
+    updates_context: true
+    config:
+      outputs:
+        - { child: "scratchpad.value", parent: "scratchpad" }
+

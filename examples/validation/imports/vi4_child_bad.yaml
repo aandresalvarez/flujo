@@ -1,0 +1,10 @@
+version: "0.1"
+# Child blueprint with a simple template misuse to generate a finding
+steps:
+  - name: c1
+    agent: { id: "flujo.builtins.stringify" }
+    input: "hi"
+  - name: c2
+    agent: { id: "flujo.builtins.stringify" }
+    input: "{{ previous_step.output }}"  # should trigger template rule later
+

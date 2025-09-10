@@ -1,0 +1,10 @@
+version: "0.1"
+# TODO: V-C2 — Assign non-dict to scratchpad
+steps:
+  - name: s
+    agent: { id: "flujo.builtins.stringify" }
+    input: "hello"
+    config:
+      outputs:
+        - { child: "steps.s.output", parent: "scratchpad" }
+

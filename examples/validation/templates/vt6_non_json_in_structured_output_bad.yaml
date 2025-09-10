@@ -1,0 +1,13 @@
+version: "0.1"
+# TODO: V-T6 bad case — template produces non-JSON where JSON is expected
+steps:
+  - name: s1
+    agent:
+      id: "flujo.builtins.stringify"
+    input: "hello"
+  - name: s2
+    agent:
+      id: "flujo.builtins.stringify"
+    # Expect V-T6 once implemented
+    input: "{ not_json: yes }"
+
