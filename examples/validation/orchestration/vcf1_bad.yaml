@@ -1,0 +1,12 @@
+version: "0.1"
+steps:
+  - kind: loop
+    name: InfiniteLoop
+    loop:
+      exit_expression: "false"  # constant false
+      body:
+        steps:
+          - name: Do
+            agent: { id: "flujo.builtins.stringify" }
+            input: "ping"
+

@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Validate: Pluggable linter architecture (always‑on) covering Templates (V‑T1..T6), Schema (V‑S1..S3), Context (V‑C1..C3), Agents (V‑A6..A8), Orchestration (V‑P1..P3, V‑L1, V‑CF1, V‑SM1), and Imports (V‑I1..I6). Inline duplicates removed from Pipeline.
+- Validate: Import validation performance — path‑keyed caching and realpath cycle detection for `--imports` recursion.
+- Validate: New fixers and UX
+  - Registry with preview/prompt flow and metrics.
+  - `--fix`, `--yes`, `--fix-rules` (per‑rule/glob), `--fix-dry-run` (patch preview).
+  - V‑T1 (rewrite `previous_step.output` → `previous_step | tojson`).
+  - V‑T3 (correct common filter typos like `to_json`→`tojson`, `lowercase`→`lower`).
+  - V‑C2 (map `parent: scratchpad` to `parent: scratchpad.<key>`).
+- Validate: JSON output includes `counts` (when `FLUJO_CLI_TELEMETRY=1`), `baseline` deltas, and `fixes` metrics. Adds `fixes_dry_run` when using `--fix-dry-run`.
+- SARIF: Enriched rule metadata with stable `helpUri` and rule names from the catalog.
+- Docs: `docs/cli/validate.md` updated with fixer options; added `docs/reference/validation_rules.md`.
 - Conversational Loops (FSD-033):
   - `conversation: true` loop mode with automatic conversation_history capture and prompt injection via processors
   - History management strategies: `truncate_tokens`, `truncate_turns`, `summarize` with centralized defaults and loop-level overrides

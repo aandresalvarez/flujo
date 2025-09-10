@@ -20,6 +20,10 @@ Options:
 - `--rules`: either a path to a JSON/TOML mapping of rule severities (off|warning|error) with glob support (e.g., `{"V-T*":"off"}`), or a named profile from `flujo.toml` under `[validation.profiles.<name>]`.
 - `--baseline FILE`: compare the current report to a previous JSON report; output reflects only added findings; prints a delta summary.
 - `--update-baseline`: write the current (post-baseline) view back to `--baseline`.
+- `--fix`: preview and apply safe, opt‑in auto‑fixes (see Fixers below).
+- `--yes`: assume yes to prompts when using `--fix`.
+- `--fix-rules`: comma‑separated list of fixer rules/globs to apply (e.g., `V-T1,V-C2*`).
+- `--fix-dry-run`: print a unified diff patch without writing any changes (still shows metrics in JSON).
 
 Features:
 - Comment-based suppressions: add `# flujo: ignore <RULES...>` to a step mapping or list item to suppress findings for that step. Supports multiple rules and globs, e.g., `# flujo: ignore V-T1 V-P3` or `# flujo: ignore V-*`.
@@ -58,6 +62,8 @@ uv run flujo validate pipeline.yaml --format json
 uv run flujo validate pipeline.yaml --rules rules.json
 uv run flujo validate pipeline.yaml --rules strict --fail-on-warn
 uv run flujo validate pipeline.yaml --format sarif > findings.sarif
+uv run flujo validate pipeline.yaml --fix --yes --fix-rules V-T1,V-T3
+uv run flujo validate pipeline.yaml --fix --fix-dry-run --fix-rules V-C2 --format json
 ```
 
 Exit Codes
@@ -68,5 +74,23 @@ Exit Codes
 
 See Also
 
-- Rule catalog: `docs/validation_rules.md`
+- Rule catalog: `reference/validation_rules.md`
 - SARIF in CI: `docs/ci/sarif.md`
+
+JSON fields
+
+- `errors`, `warnings`, `is_valid`, `path` as expected.
+- `counts` (when `FLUJO_CLI_TELEMETRY=1`): `{ "error": {"V-A1": 2}, "warning": {"V-T1": 1} }`.
+- `baseline`: included when `--baseline` is used, with added/removed findings.
+- `fixes`: present when `--fix` is used, e.g. `{ "applied": {"V-T1": 2}, "total_applied": 2 }`.
+- `fixes_dry_run`: boolean present when `--fix-dry-run` is used.
+
+Fixers
+
+Safe, opt‑in fixers are applied only to YAML files and prompt for confirmation (unless `--yes` or CI JSON mode). Current fixers:
+
+- V‑T1: Rewrite `previous_step.output` → `previous_step | tojson`.
+- V‑T3: Correct common filter typos (e.g., `to_json`→`tojson`, `lowercase`→`lower`).
+- V‑C2: Replace `parent: scratchpad` with `parent: scratchpad.<key>` (uses `scratchpad.value` as a conservative default key).
+
+Use `--fix-rules` to restrict which fixers run, and `--fix-dry-run` to preview the patch without writing.

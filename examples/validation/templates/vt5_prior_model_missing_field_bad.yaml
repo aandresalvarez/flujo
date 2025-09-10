@@ -1,0 +1,13 @@
+version: "0.1"
+# TODO: V-T5 bad case — prior step output is a Pydantic model; template references missing field
+steps:
+  - name: produce_model
+    agent:
+      id: "flujo.builtins.stringify"  # placeholder
+    input: "{}"
+  - name: consume_missing_field
+    agent:
+      id: "flujo.builtins.stringify"
+    # Expect V-T5 once implemented
+    input: "{{ previous_step.missing_field }}"
+

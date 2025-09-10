@@ -1800,6 +1800,10 @@ def _validate_impl(
     explain: bool = False,
     baseline: Optional[str] = None,
     update_baseline: bool = False,
+    fix: bool = False,
+    yes: bool = False,
+    fix_rules: Optional[str] = None,
+    fix_dry_run: bool = False,
 ) -> None:
     from .exit_codes import EX_VALIDATION_FAILED, EX_IMPORT_ERROR, EX_RUNTIME_ERROR
     import traceback as _tb
@@ -1809,6 +1813,57 @@ def _validate_impl(
         if path is None:
             root = find_project_root()
             path = str((Path(root) / "pipeline.yaml").resolve())
+        # Preload linter rule overrides so early-skips match CLI --rules
+        _preloaded_mapping: dict[str, str] | None = None
+
+        def _load_rules_mapping_from_file(rules_path: str) -> dict[str, str] | None:
+            import os as _os
+            import json as _json
+
+            try:
+                if not _os.path.exists(rules_path):
+                    return None
+                try:
+                    with open(rules_path, "r", encoding="utf-8") as f:
+                        data = _json.load(f)
+                    return (
+                        {str(k).upper(): str(v).lower() for k, v in data.items()}
+                        if isinstance(data, dict)
+                        else None
+                    )
+                except Exception:
+                    try:
+                        import tomllib as _tomllib
+                    except Exception:  # pragma: no cover
+                        import tomli as _tomllib  # type: ignore
+                    with open(rules_path, "rb") as f:
+                        data = _tomllib.load(f)
+                    if isinstance(data, dict):
+                        vm = (
+                            data.get("validation", {}).get("rules")
+                            if isinstance(data.get("validation"), dict)
+                            else data
+                        )
+                        if isinstance(vm, dict):
+                            return {str(k).upper(): str(v).lower() for k, v in vm.items()}
+            except Exception:
+                return None
+            return None
+
+        # If rules provided, preload into linters
+        if rules:
+            # Load rule overrides for linters through env; avoid direct imports
+            mapping = None
+            if not os.path.exists(rules):
+                # Profile name will be handled by linters via FLUJO_RULES_PROFILE
+                os.environ["FLUJO_RULES_PROFILE"] = rules
+            else:
+                mapping = _load_rules_mapping_from_file(rules)
+                if mapping:
+                    # Prefer setting env JSON for child processes/linters
+                    os.environ["FLUJO_RULES_JSON"] = json.dumps(mapping)
+            _preloaded_mapping = mapping
+
         report = validate_pipeline_file(path, include_imports=include_imports)
 
         # Optional: apply severity overrides from a rules file (JSON/TOML)
@@ -1945,6 +2000,103 @@ def _validate_impl(
         else:
             report = _apply_rules(report, rules)
 
+        # Optional: apply safe auto-fixes before printing results
+        if fix:
+            try:
+                from ..validation.fixers import plan_fixes, apply_fixes_to_file, build_fix_patch
+
+                # Parse per-rule filter from env (comma-separated globs), e.g., "V-T1,V-C2*"
+                rule_filter = None
+                try:
+                    if fix_rules:
+                        rule_filter = [x.strip() for x in fix_rules.split(",") if x.strip()]
+                    else:
+                        rf = _os.getenv("FLUJO_FIX_RULES")
+                        if rf:
+                            rule_filter = [x.strip() for x in rf.split(",") if x.strip()]
+                except Exception:
+                    rule_filter = None
+
+                plan = plan_fixes(path, report, rules=rule_filter)
+                if plan:
+                    # Preview
+                    try:
+                        from rich.console import Console
+
+                        con = Console(stderr=True, highlight=False)
+                        con.print("[cyan]Auto-fix preview:[/cyan]")
+                        for item in plan:
+                            con.print(
+                                f"  - {item['rule_id']}: {item['count']} change(s) — {item['title']}"
+                            )
+                        if fix_dry_run:
+                            patch, metrics = build_fix_patch(path, report, rules=rule_filter)
+                            if patch:
+                                con.print("[cyan]Patch (dry-run):[/cyan]")
+                                con.print(patch)
+                            applied_fixes_metrics = metrics
+                            # Do not apply when dry-run
+                            do_apply = False
+                    except Exception:
+                        pass
+                    # Confirm
+                    if not fix_dry_run:
+                        do_apply = yes
+                        try:
+                            # In JSON output mode, avoid interactive prompt unless --yes
+                            if output_format == "json" and not yes:
+                                do_apply = False
+                            elif not yes:
+                                from typer import confirm as _confirm
+
+                                do_apply = _confirm("Apply these changes?", default=True)
+                        except Exception:
+                            do_apply = yes
+
+                    if do_apply:
+                        applied, backup, metrics = apply_fixes_to_file(
+                            path, report, assume_yes=yes, rules=rule_filter
+                        )
+                        # Re-validate to show updated report
+                        if applied:
+                            try:
+                                report = validate_pipeline_file(
+                                    path, include_imports=include_imports
+                                )
+                                # Re-apply rules/profile mapping to new report
+                                if profile_mapping:
+                                    report = _apply_mapping(report, profile_mapping)
+                                else:
+                                    report = _apply_rules(report, rules)
+                            except Exception:
+                                pass
+                        # Emit brief metrics to stderr
+                        try:
+                            from rich.console import Console as _C
+
+                            _C(stderr=True).print(
+                                f"[green]Applied {metrics.get('total_applied', 0)} change(s). Backup: {backup or 'n/a'}[/green]"
+                            )
+                        except Exception:
+                            pass
+                        # Preserve metrics for JSON output
+                        applied_fixes_metrics = metrics
+                    else:
+                        applied_fixes_metrics = {"applied": {}, "total_applied": 0}
+                else:
+                    try:
+                        from rich.console import Console
+
+                        Console(stderr=True).print("[yellow]No fixable issues found.[/yellow]")
+                    except Exception:
+                        pass
+                    applied_fixes_metrics = {"applied": {}, "total_applied": 0}
+            except Exception:
+                # Fixers are best-effort; do not fail validation
+                pass
+        else:
+            applied_fixes_metrics = None
+
         # Optional baseline delta handling (compare post-rules report to previous)
         baseline_info: dict[str, Any] | None = None
         if baseline:
@@ -2028,6 +2180,47 @@ def _validate_impl(
         except Exception:
             telemetry_counts = None
 
+        if fix:
+            try:
+                # Only support YAML files for now
+                if path and (str(path).endswith(".yaml") or str(path).endswith(".yml")):
+                    from ..validation import fixers as _fixers
+
+                    # Apply safe, opt-in fixes based on the report
+                    applied, backup_path = _fixers.apply_fixes_to_file(
+                        str(path), report, assume_yes=yes
+                    )
+                    if applied:
+                        try:
+                            import typer as _ty
+
+                            _ty.echo(
+                                f"[green]Applied {_fixers.count_findings(report, 'V-T1')} V-T1 fix(es). Backup: {backup_path}"
+                            )
+                        except Exception:
+                            pass
+                        # Re-validate after fix to reflect current state
+                        try:
+                            report = validate_pipeline_file(
+                                str(path), include_imports=include_imports
+                            )
+                        except Exception:
+                            # If re-validate fails, keep original report
+                            pass
+                else:
+                    try:
+                        import typer as _ty
+
+                        _ty.echo(
+                            "[yellow]--fix currently supports only YAML files; skipping.",
+                            err=False,
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                # Never break validation due to fixer path
+                pass
+
         if output_format == "json":
             # Emit machine-friendly JSON (errors, warnings, is_valid)
             payload = {
@@ -2043,6 +2236,8 @@ def _validate_impl(
                 "path": path,
                 **({"baseline": baseline_info} if baseline_info else {}),
                 **({"counts": telemetry_counts} if telemetry_counts else {}),
+                **({"fixes": applied_fixes_metrics} if applied_fixes_metrics is not None else {}),
+                **({"fixes_dry_run": True} if fix and fix_dry_run else {}),
             }
             typer.echo(json.dumps(payload))
         elif output_format == "sarif":
@@ -2067,14 +2262,13 @@ def _validate_impl(
                     sarif_rules.append(
                         {
                             "id": rid,
-                            "name": (info.title if info else rid)
-                            if hasattr(info, "title")
-                            else rid,  # type: ignore[attr-defined]
-                            "shortDescription": {
-                                "text": (info.title if info else rid)
-                                if hasattr(info, "title")
-                                else rid  # type: ignore[attr-defined]
-                            },
+                            "name": (getattr(info, "title", None) or rid),
+                            "shortDescription": {"text": (getattr(info, "title", None) or rid)},
+                            **(
+                                {"fullDescription": {"text": getattr(info, "description")}}
+                                if (hasattr(info, "description") and getattr(info, "description"))
+                                else {}
+                            ),
                             **(
                                 {"helpUri": info.help_uri}
                                 if (hasattr(info, "help_uri") and getattr(info, "help_uri"))
@@ -2276,6 +2470,23 @@ def validate_dev(
             help="Write the current report (post-baseline view) to --baseline path",
         ),
     ] = False,
+    fix: Annotated[
+        bool, typer.Option("--fix", help="Apply safe, opt-in auto-fixes (currently V-T1)")
+    ] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", help="Assume yes to prompts when using --fix")
+    ] = False,
+    fix_rules: Annotated[
+        Optional[str],
+        typer.Option(
+            "--fix-rules",
+            help="Comma-separated list of fixer rules/globs (e.g., V-T1,V-C2*)",
+        ),
+    ] = None,
+    fix_dry_run: Annotated[
+        bool,
+        typer.Option("--fix-dry-run", help="Preview patch without writing changes"),
+    ] = False,
 ) -> None:
     """Validate a pipeline defined in a file (developer namespace)."""
     _validate_impl(
@@ -2288,6 +2499,10 @@ def validate_dev(
         explain=explain,
         baseline=baseline,
         update_baseline=update_baseline,
+        fix=fix,
+        yes=yes,
+        fix_rules=fix_rules,
+        fix_dry_run=fix_dry_run,
     )
 
 
@@ -2346,6 +2561,23 @@ def validate(
             help="Write the current report (post-baseline view) to --baseline path",
         ),
     ] = False,
+    fix: Annotated[
+        bool, typer.Option("--fix", help="Apply safe, opt-in auto-fixes (currently V-T1)")
+    ] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", help="Assume yes to prompts when using --fix")
+    ] = False,
+    fix_rules: Annotated[
+        Optional[str],
+        typer.Option(
+            "--fix-rules",
+            help="Comma-separated list of fixer rules/globs (e.g., V-T1,V-C2*)",
+        ),
+    ] = None,
+    fix_dry_run: Annotated[
+        bool,
+        typer.Option("--fix-dry-run", help="Preview patch without writing changes"),
+    ] = False,
 ) -> None:
     """Validate a pipeline (top-level alias)."""
     _validate_impl(
@@ -2358,6 +2590,10 @@ def validate(
         explain=explain,
         baseline=baseline,
         update_baseline=update_baseline,
+        fix=fix,
+        yes=yes,
+        fix_rules=fix_rules,
+        fix_dry_run=fix_dry_run,
     )
 
 

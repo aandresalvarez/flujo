@@ -1,0 +1,6 @@
+version: "0.1"
+# TODO: V-A6 — Unknown agent id/skill path
+steps:
+  - name: s
+    agent: { id: "skills.does_not_exist:fn" }
+

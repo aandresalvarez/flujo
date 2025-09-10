@@ -1,0 +1,11 @@
+version: "0.1"
+agents:
+  textonly:
+    model: "openai:gpt-4o"
+    system_prompt: "emit plain text"
+    output_schema:
+      type: string
+steps:
+  - name: S
+    uses: agents.textonly
+

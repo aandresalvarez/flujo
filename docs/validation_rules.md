@@ -65,3 +65,69 @@ Suppression:
   - Fix: set `updates_context: true` or insert an adapter to consume the value.
 
 For a full list and examples, see the CLI docs and inline suggestions printed by `flujo validate`.
+
+---
+
+## <a id="v-t5"></a>V‑T5 — Prior model field existence
+  - Why: When the previous output is a known Pydantic model, referencing a missing attribute is a likely authoring error.
+  - Fix: Reference an existing field or adapt the model/output mapping.
+
+## <a id="v-t6"></a>V‑T6 — Non‑JSON where JSON expected
+  - Why: Templated input appears to be JSON but is not valid JSON while the consumer expects JSON.
+  - Fix: Use `| tojson` or ensure the template renders valid JSON.
+
+## (TODO) V‑S2 — Response format vs stringification
+  - Why: Declared structured output (JSON object/schema) paired with immediate stringification hints a mismatch.
+  - Fix: Map/object-consume fields directly; if stringification is intended (e.g., logging), suppress.
+
+## <a id="v-s3"></a>V‑S3 — `type: string` awareness
+  - Why: Pure string schemas can limit downstream structure.
+  - Fix: Consider structured schema or document the rationale.
+
+## (TODO) V‑L1 — Loop exit coverage
+  - Why: Loop body and mappers suggest the loop may never reach its exit condition (no context updates, no iteration_input_mapper, no loop_output_mapper).
+  - Fix: Provide an `iteration_input_mapper`, update context in the loop body, or add `loop_output_mapper` so the exit condition can be satisfied.
+
+## (TODO) V‑P2 — Parallel explicit conflicts
+- Why: Explicit branch outputs map to the same parent keys without a merge strategy.
+- Fix: Add `field_mapping` or change strategy to avoid conflicts.
+
+## <a id="v-c1"></a>V‑C1 — `updates_context` without mergeable output
+  - Why: Non‑dict outputs cannot be merged into context; they may be dropped.
+  - Fix: Switch to an object output or provide an `outputs` mapping.
+
+## <a id="v-c2"></a>V‑C2 — Scratchpad shape conflicts
+  - Why: Mapping directly to the `scratchpad` root may assign a non‑object and corrupt the expected dict shape.
+  - Fix: Map to `scratchpad.<key>` or ensure the value is an object (dict-like).
+
+## (TODO) V‑C3 — Large literals in templates
+  - Why: Very large embedded constants harm performance and logs.
+  - Fix: Move large data to files/variables; reference by key. Threshold configurable via `FLUJO_VALIDATE_LARGE_LITERAL_THRESHOLD` (characters).
+
+## <a id="v-a6"></a>V‑A6 — Unknown agent id/import path
+  - Why: Unresolvable `agent` (string path) will fail at runtime.
+  - Fix: Use a valid `package.module:attr` or declare the agent under `agents:` and reference it.
+
+## <a id="v-a7"></a>V‑A7 — Invalid `max_retries`/`timeout` coercion
+  - Why: Non‑coercible values for agent retry/timeout controls lead to unexpected behavior.
+  - Fix: Provide integer values; strings must be numeric (e.g., `"3"`). Invalid values are ignored or defaulted.
+
+## (TODO) V‑A7 — Invalid `max_retries`/`timeout` coercion
+- Why: Non‑coercible values lead to unexpected behavior.
+- Fix: Provide integers/valid durations.
+
+## (TODO) V‑A8 — Structured output with non‑JSON mode
+- Why: Declared structured output but provider is not returning JSON.
+- Fix: Enable JSON mode or remove structured expectations.
+
+## (TODO) V‑I4 — Aggregated child findings
+  - Why: Parent import steps should surface child findings with alias/file context.
+  - Fix: Use `--imports` to aggregate; address errors in the child and re‑run. Summary V‑I4 indicates counts; individual findings retain their original rule IDs.
+
+## <a id="v-i5"></a>V‑I5 — Input projection coherence
+  - Why: Parent→child input projection (initial_prompt vs scratchpad) may not match the child's expected input shape.
+  - Fix: If the child expects objects, use `input_to=scratchpad` or `both` with `input_scratchpad_key`; if it expects strings, include `initial_prompt`.
+
+## (TODO) V‑I6 — Inherit context consistency
+- Why: Inconsistent `inherit_context` settings across import boundaries lead to surprises.
+- Fix: Align settings or scope mappings to avoid leaks.

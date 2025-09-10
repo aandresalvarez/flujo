@@ -1,0 +1,12 @@
+version: "0.1"
+steps:
+  - kind: loop
+    name: LoopWithUpdates
+    loop:
+      body:
+        steps:
+          - name: Do
+            agent: { id: "flujo.builtins.stringify" }
+            input: "ping"
+            updates_context: true
+

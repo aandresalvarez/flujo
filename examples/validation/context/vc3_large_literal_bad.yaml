@@ -1,0 +1,7 @@
+version: "0.1"
+# TODO: V-C3 — Extremely large literal in template (placeholder)
+steps:
+  - name: s
+    agent: { id: "flujo.builtins.stringify" }
+    input: "{{ 'x' * 100000 }}"  # large literal placeholder
+

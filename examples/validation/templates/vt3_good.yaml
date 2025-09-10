@@ -1,0 +1,6 @@
+version: "0.1"
+steps:
+  - name: A
+    agent: { id: "flujo.builtins.stringify" }
+    input: "{{ 'hi' | tojson }} {{ 'WORLD' | lower }}"
+

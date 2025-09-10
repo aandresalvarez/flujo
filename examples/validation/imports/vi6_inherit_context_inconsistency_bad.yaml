@@ -1,0 +1,10 @@
+version: "0.1"
+# TODO: V-I6 — Inherit context inconsistency example between parent and child
+imports:
+  child: "vi4_child_bad.yaml"
+steps:
+  - name: run_child
+    uses: imports.child
+    inherit_context: false  # placeholder for inconsistency case
+    updates_context: true
+

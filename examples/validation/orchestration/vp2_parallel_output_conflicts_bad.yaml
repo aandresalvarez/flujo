@@ -1,0 +1,21 @@
+version: "0.1"
+# TODO: V-P2 — Parallel branches map to same parent keys without merge strategy
+steps:
+  - kind: parallel
+    name: P
+    branches:
+      A:
+        steps:
+          - name: a1
+            agent: { id: "flujo.builtins.stringify" }
+            input: "A"
+      B:
+        steps:
+          - name: b1
+            agent: { id: "flujo.builtins.stringify" }
+            input: "B"
+    config:
+      outputs:
+        - { child: "scratchpad.value", parent: "scratchpad.k" }
+        - { child: "scratchpad.value", parent: "scratchpad.k" }
+

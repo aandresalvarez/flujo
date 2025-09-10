@@ -1,0 +1,12 @@
+version: "0.1"
+# TODO: V-L1 — Loop with missing/unsatisfiable exit condition
+steps:
+  - kind: loop
+    name: loop
+    input: 1
+    loop_body_pipeline:
+      steps:
+        - name: body
+          agent: { id: "flujo.builtins.stringify" }
+    # No exit_condition or mapping to enable exit
+

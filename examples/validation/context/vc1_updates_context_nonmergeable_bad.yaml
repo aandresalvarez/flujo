@@ -1,0 +1,11 @@
+version: "0.1"
+# TODO: V-C1 — updates_context with scalar output; next step also does not consume
+steps:
+  - name: s1
+    agent: { id: "flujo.builtins.stringify" }
+    input: "hello"
+    updates_context: true
+  - name: s2
+    agent: { id: "flujo.builtins.stringify" }
+    input: "world"
+

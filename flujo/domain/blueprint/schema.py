@@ -19,8 +19,8 @@ class AgentModel(BaseModel):
     # Optional provider-specific controls (e.g., GPT-5: reasoning, text verbosity)
     model_settings: Optional[Dict[str, Any]] = None
     # Optional execution controls
-    timeout: Optional[int] = None
-    max_retries: Optional[int] = None
+    timeout: Optional[Union[int, str]] = None
+    max_retries: Optional[Union[int, str]] = None
 
     # Validate 'system_prompt' dict form contains only 'from_file'
     @model_validator(mode="before")

@@ -1,0 +1,24 @@
+version: "0.1"
+imports:
+  child: child.yaml
+steps:
+  - kind: parallel
+    name: P
+    branches:
+      A:
+        steps:
+          - name: A1
+            uses: imports.child
+            updates_context: true
+            config:
+              outputs:
+                - { child: "scratchpad.value", parent: "scratchpad.k_a" }
+      B:
+        steps:
+          - name: B1
+            uses: imports.child
+            updates_context: true
+            config:
+              outputs:
+                - { child: "scratchpad.value", parent: "scratchpad.k_b" }
+

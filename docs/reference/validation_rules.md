@@ -1,51 +1,75 @@
-### Flujo Validation Rules Reference
+# Validation Rules
 
-This page documents the rule IDs emitted by `Pipeline.validate_graph()` and related linters.
+This page lists the rule categories enforced by `flujo validate` and how to interpret and address them. Rule IDs are stable and can be used in suppressions, profiles, and fixers.
 
-- V-A1: Missing agent on simple step
-  - Checks: Non-complex `Step` without `agent`.
-  - Why: Simple steps must have an agent to run.
-  - Suggestion: Assign an agent via `Step.from_callable(...)` or a step factory.
+Categories
 
-- V-A2: Type mismatch between steps
-  - Checks: Output type of previous step incompatible with input type of next step.
-  - Why: Prevent runtime type errors.
-  - Suggestion: Insert an adapter step or align function signatures.
+- Templates (V‑T1..V‑T6)
+  - V‑T1: `previous_step.output` misuse. Use `previous_step | tojson` or `steps.<name>.output | tojson`.
+  - V‑T2: `this` outside a map body.
+  - V‑T3: Unknown/disabled filter.
+  - V‑T4: `steps.<name>` reference to a non‑prior step.
+  - V‑T5: Missing field on prior model for `previous_step.<field>`.
+  - V‑T6: Non‑JSON where JSON is expected.
 
-- V-A3: Reused `Step` instance
-  - Checks: Same `Step` object appears multiple times in a pipeline.
-  - Why: Statefulness may cause side effects.
-  - Suggestion: Create distinct `Step` instances for reuse.
+- Schema (V‑S1..V‑S3)
+  - V‑S1: Basic JSON Schema issues (e.g., array without `items`).
+  - V‑S2: Structured output then likely stringified downstream.
+  - V‑S3: `type=string` awareness when structure is expected.
 
-- V-A4-ERR: Signature analysis failed
-  - Checks: Could not analyze agent callable signature.
-  - Why: Provides visibility into inspection issues.
-  - Suggestion: Ensure agent is a plain async callable or exposes `_step_callable`.
+- Context (V‑C1..V‑C3)
+  - V‑C1: `updates_context` without a mergeable output.
+  - V‑C2: Scratchpad root mapping risk (write to `scratchpad.<key>` instead).
+  - V‑C3: Extremely large literal in templates (performance risk).
 
-- V-A5: Unbound output warning
-  - Checks: Producer’s output is likely unused by next step and producer does not update context.
-  - Why: Surfaces likely logic errors and wasted work.
-  - Suggestion: Set `updates_context=True` or add an adapter step.
+- Agents (V‑A1..V‑A8)
+  - V‑A1: Missing agent.
+  - V‑A2: Type mismatch between steps.
+  - V‑A3: Reusing the same Step instance.
+  - V‑A4‑ERR: Signature analysis failed.
+  - V‑A5: Unused output.
+  - V‑A6: Unknown agent id/import path.
+  - V‑A7: Invalid `max_retries`/`timeout` coercion.
+  - V‑A8: Structured output requested with non‑JSON response mode.
 
-- V-F1: Incompatible fallback signature
-  - Checks: `fallback_step` input type incompatible with primary step input type.
-  - Why: Fallback must accept the same input as primary.
-  - Suggestion: Align fallback input type or add an adapter step.
+- Orchestration / Flow
+  - V‑P1: Parallel context merge conflicts.
+  - V‑P2: Explicit import outputs conflict across branches.
+  - V‑P3: Heterogeneous first‑step input types in branches.
+  - V‑L1: Loop exit coverage heuristic.
+  - V‑CF1: Unconditional infinite loop heuristic.
+  - V‑SM1: State machine unreachable start/end paths.
 
-- V-P1: Parallel context merge conflict
-  - Checks: `ParallelStep` with `CONTEXT_UPDATE` may write same keys across branches without disambiguation.
-  - Why: Prevents nondeterministic or lossy context merges.
-  - Suggestion: Provide `field_mapping`, set explicit merge strategy (e.g., `OVERWRITE`), or avoid overlapping writes.
+- Imports
+  - V‑I1: Missing import file.
+  - V‑I2: Import outputs mapping sanity (unknown parent root).
+  - V‑I3: Import cycle detected.
+  - V‑I4: Aggregated child findings.
+  - V‑I5: Input projection coherence.
+  - V‑I6: Inherit conversation consistency.
 
-- V-P1-W: Parallel merge heuristic warning
-  - Checks: `ParallelStep` using `CONTEXT_UPDATE` without `field_mapping` where conflicts are possible but not provable.
-  - Why: Early signal for potential conflicts.
-  - Suggestion: Provide `field_mapping` or pick an explicit strategy (`OVERWRITE`/`ERROR_ON_CONFLICT`).
+Suppressions
 
+- YAML comments: add `# flujo: ignore <RULE|GLOB...>` to a step entry.
+- Programmatic: set `step.meta['suppress_rules'] = ['V-T*']`.
 
-### Notes
+Profiles and Rules Files
 
-- Run `flujo validate --strict` to exit non-zero on any errors.
-- `flujo run` aborts before execution when errors are present.
-- For YAML blueprints, these checks run after compilation to the typed DSL.
+- Use `--rules rules.json` (JSON) or `--rules rules.toml` (TOML) to override severities.
+- Use `--rules strict` to pick a named profile from `flujo.toml` `[validation.profiles.strict]`.
+  - Overrides support globs, e.g., `V-T* = "off"`.
+
+Fixers
+
+Safe, opt‑in fixers can automatically fix some issues in YAML:
+
+- V‑T1: rewrite `previous_step.output` to `previous_step | tojson`.
+- V‑T3: correct common filter typos (`to_json`→`tojson`, `lowercase`→`lower`, etc.).
+- V‑C2: replace `parent: scratchpad` with `parent: scratchpad.<key>`.
+
+Run with `--fix` (preview + apply) or `--fix-dry-run` (patch only), and restrict with `--fix-rules`.
+
+SARIF
+
+- `--format sarif` emits SARIF 2.1.0 with rule IDs, names, and help URIs (catalog linked). Map rule IDs in your code scanning tool as needed.
 

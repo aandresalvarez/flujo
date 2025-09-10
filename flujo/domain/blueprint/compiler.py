@@ -32,8 +32,14 @@ class DeclarativeBlueprintCompiler:
         self._compiled_imports: Dict[str, Any] = {}
         self._base_dir: Optional[str] = base_dir
 
-    def _validate_and_coerce_max_retries(self, max_retries_opt: Any, agent_name: str) -> int:
-        """Validate and coerce max_retries value, raising ConfigurationError on failure."""
+    def _validate_and_coerce_max_retries(
+        self, max_retries_opt: Any, agent_name: str
+    ) -> tuple[int, list[str]]:
+        """Validate/coerce max_retries and collect warnings instead of raising.
+
+        Returns a tuple of (value, warnings). Defaults to 3 on invalid input.
+        """
+        warnings: list[str] = []
         max_retries = 3
         if max_retries_opt is not None:
             try:
@@ -43,11 +49,36 @@ class DeclarativeBlueprintCompiler:
                     max_retries = max_retries_opt
                 else:
                     raise ValueError(f"Cannot convert {type(max_retries_opt).__name__} to int")
-            except (ValueError, TypeError) as e:
-                raise ConfigurationError(
-                    f"Agent '{agent_name}': Invalid max_retries value '{max_retries_opt}': {e}"
+            except (ValueError, TypeError):
+                warnings.append(
+                    f"Agent '{agent_name}': Non-integer max_retries value '{max_retries_opt}' (using default 3)."
                 )
-        return max_retries
+                max_retries = 3
+        return max_retries, warnings
+
+    def _validate_and_coerce_timeout(
+        self, timeout_opt: Any, agent_name: str
+    ) -> tuple[int | None, list[str]]:
+        """Validate/coerce timeout to int seconds; collect warnings. None if invalid."""
+        warnings: list[str] = []
+        if timeout_opt is None:
+            return None, warnings
+        try:
+            if isinstance(timeout_opt, str):
+                # Accept pure integer strings
+                timeout_val = int(timeout_opt)
+            elif isinstance(timeout_opt, (int,)):
+                timeout_val = int(timeout_opt)
+            else:
+                raise ValueError(f"Cannot convert {type(timeout_opt).__name__} to int")
+            if timeout_val <= 0:
+                raise ValueError("timeout must be positive")
+            return timeout_val, warnings
+        except (ValueError, TypeError):
+            warnings.append(
+                f"Agent '{agent_name}': Invalid timeout value '{timeout_opt}' (ignoring)."
+            )
+            return None, warnings
 
     def _compile_agents(self) -> None:
         agents: Optional[Dict[str, Any]] = getattr(self.blueprint, "agents", None)
@@ -175,8 +206,10 @@ class DeclarativeBlueprintCompiler:
                             f"Agent '{name}': Failed to convert variables to dict: {prompt_spec['variables']} - {e}"
                         )
 
-                # Validate and coerce max_retries
-                max_retries = self._validate_and_coerce_max_retries(max_retries_opt, name)
+                # Validate and coerce controls
+                max_retries, warns_mr = self._validate_and_coerce_max_retries(max_retries_opt, name)
+                timeout_val, warns_to = self._validate_and_coerce_timeout(timeout_opt, name)
+                _coercion_warnings = warns_mr + warns_to
 
                 agent_wrapper = make_templated_agent_async(
                     model=model_name,
@@ -184,7 +217,7 @@ class DeclarativeBlueprintCompiler:
                     variables_spec=variables_spec,
                     output_type=output_type,
                     model_settings=model_settings,
-                    timeout=timeout_opt,
+                    timeout=timeout_val,
                     max_retries=max_retries,
                 )
             elif (
@@ -197,8 +230,10 @@ class DeclarativeBlueprintCompiler:
                         f"Agent '{name}': Failed to convert variables to dict: {getattr(prompt_spec, 'variables')} - {e}"
                     )
 
-                # Validate and coerce max_retries
-                max_retries = self._validate_and_coerce_max_retries(max_retries_opt, name)
+                # Validate and coerce controls
+                max_retries, warns_mr = self._validate_and_coerce_max_retries(max_retries_opt, name)
+                timeout_val, warns_to = self._validate_and_coerce_timeout(timeout_opt, name)
+                _coercion_warnings = warns_mr + warns_to
 
                 agent_wrapper = make_templated_agent_async(
                     model=model_name,
@@ -206,12 +241,14 @@ class DeclarativeBlueprintCompiler:
                     variables_spec=variables_spec2,
                     output_type=output_type,
                     model_settings=model_settings,
-                    timeout=timeout_opt,
+                    timeout=timeout_val,
                     max_retries=max_retries,
                 )
             else:
-                # Validate and coerce max_retries
-                max_retries = self._validate_and_coerce_max_retries(max_retries_opt, name)
+                # Validate and coerce controls
+                max_retries, warns_mr = self._validate_and_coerce_max_retries(max_retries_opt, name)
+                timeout_val, warns_to = self._validate_and_coerce_timeout(timeout_opt, name)
+                _coercion_warnings = warns_mr + warns_to
 
                 agent_wrapper = make_agent_async(
                     model=model_name,
@@ -219,7 +256,7 @@ class DeclarativeBlueprintCompiler:
                     output_type=output_type,
                     # Pass through provider-specific model settings (e.g., GPT-5 controls)
                     model_settings=model_settings,
-                    timeout=timeout_opt,
+                    timeout=timeout_val,
                     max_retries=max_retries,
                 )
             self._compiled_agents[name] = agent_wrapper
@@ -227,6 +264,18 @@ class DeclarativeBlueprintCompiler:
             # Attach schema warnings for later surfacing during pipeline validation (V-S1)
             try:
                 setattr(agent_wrapper, "_schema_warnings", _lint_schema(output_schema))
+            except Exception:
+                pass
+            # Attach declared output schema (for V-S2/V-S3 heuristics)
+            try:
+                if isinstance(output_schema, dict) and output_schema:
+                    setattr(agent_wrapper, "_declared_output_schema", output_schema)
+            except Exception:
+                pass
+            # Attach coercion warnings for validation pass (V-A7)
+            try:
+                if _coercion_warnings:
+                    setattr(agent_wrapper, "_coercion_warnings", list(_coercion_warnings))
             except Exception:
                 pass
 
