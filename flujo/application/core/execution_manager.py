@@ -175,11 +175,15 @@ class ExecutionManager(Generic[ContextT]):
                     # backend monkeypatch interference in tests that simulate missing outcomes.
                     use_stream = stream_last and idx == len(self.pipeline.steps) - 1
 
-                    async def _internal_step_executor(s, d, c, r, stream=False):  # type: ignore[override]
+                    from typing import Any
+
+                    async def _internal_step_executor(
+                        s: Any, d: Any, c: Optional[Any], r: Optional[Any], *, stream: bool = False
+                    ) -> AsyncIterator[Any]:
                         from .executor_core import ExecutorCore as _Core
                         from .types import ExecutionFrame as _Frame
 
-                        core = _Core()
+                        core: _Core = _Core()
                         frame = _Frame(
                             step=s,
                             data=d,
