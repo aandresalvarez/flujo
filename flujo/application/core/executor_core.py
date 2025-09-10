@@ -2135,8 +2135,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         # Snapshot context for retry isolation
         pre_attempt_context = None
-        if context is not None and total_attempts > 1:
+        if context is not None:
             try:
+                # Isolate once and clone per attempt to prevent leaking partial updates
                 pre_attempt_context = ContextManager.isolate(context)
             except Exception:
                 pre_attempt_context = None
@@ -2145,7 +2146,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         for attempt in range(1, total_attempts + 1):
             result.attempts = attempt
             attempt_context = context
-            if total_attempts > 1 and pre_attempt_context is not None:
+            if pre_attempt_context is not None:
                 try:
                     attempt_context = ContextManager.isolate(pre_attempt_context)
                 except Exception:

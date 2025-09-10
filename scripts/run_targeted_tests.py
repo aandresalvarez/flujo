@@ -172,6 +172,16 @@ def _env_with_options(disable_autoload: bool) -> dict:
         env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     # Enable faulthandler printing by default; pytest also enables its plugin.
     env.setdefault("PYTHONFAULTHANDLER", "1")
+    # Ensure child processes (e.g., CLI invoked via `python -m flujo.cli.main`) can import
+    # the repo package even when their cwd is a temp directory. Prepend the repo root
+    # to PYTHONPATH rather than replacing it.
+    try:
+        repo_root = str(Path(__file__).resolve().parents[1])
+        existing = env.get("PYTHONPATH", "")
+        if repo_root not in existing.split(os.pathsep):
+            env["PYTHONPATH"] = repo_root + (os.pathsep + existing if existing else "")
+    except Exception:
+        pass
     return env
 
 
