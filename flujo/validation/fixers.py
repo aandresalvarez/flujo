@@ -106,7 +106,7 @@ def _vt1_apply(file_path: str, report: Any, assume_yes: bool) -> FixResult:
 
     if not assume_yes and getattr(sys.stdin, "isatty", lambda: False)():
         try:
-            from typer import confirm as _confirm  # type: ignore
+            from typer import confirm as _confirm
         except ImportError:
             return FixResult(False, None, 0)
         if not _confirm(f"Apply {replaced} V-T1 fix(es) to {p.name}?", default=True):
@@ -186,7 +186,7 @@ def _vt3_apply(file_path: str, report: Any, assume_yes: bool) -> FixResult:
 
     if not assume_yes and getattr(sys.stdin, "isatty", lambda: False)():
         try:
-            from typer import confirm as _confirm  # type: ignore
+            from typer import confirm as _confirm
         except ImportError:
             return FixResult(False, None, 0)
         if not _confirm(f"Apply {changed} V-T3 filter fix(es) to {p.name}?", default=True):
@@ -261,7 +261,7 @@ def _vc2_apply(file_path: str, report: Any, assume_yes: bool) -> FixResult:
 
     if not assume_yes and getattr(sys.stdin, "isatty", lambda: False)():
         try:
-            from typer import confirm as _confirm  # type: ignore
+            from typer import confirm as _confirm
         except ImportError:
             return FixResult(False, None, 0)
         if not _confirm(f"Apply {changed} V-C2 parent mapping fix(es) to {p.name}?", default=True):
