@@ -240,19 +240,22 @@ class StepCoordinator(Generic[ContextT]):
                             yield Chunk(data=chunk, step_name=step.name)
                         if isinstance(step_outcome, StepOutcome):
                             try:
-                                from flujo.tracing.manager import (
-                                    get_active_trace_manager as _get_tm,
-                                )
+                                import os as _os
 
-                                tm = _get_tm()
-                                if tm is not None:
-                                    tm.add_event(
-                                        "coordinator.outcome",
-                                        {
-                                            "kind": type(step_outcome).__name__,
-                                            "step": getattr(step, "name", "<unnamed>"),
-                                        },
+                                if _os.getenv("FLUJO_TRACE_EXTRA", "") == "1":
+                                    from flujo.tracing.manager import (
+                                        get_active_trace_manager as _get_tm,
                                     )
+
+                                    tm = _get_tm()
+                                    if tm is not None:
+                                        tm.add_event(
+                                            "coordinator.outcome",
+                                            {
+                                                "kind": type(step_outcome).__name__,
+                                                "step": getattr(step, "name", "<unnamed>"),
+                                            },
+                                        )
                             except Exception:
                                 pass
                             if isinstance(step_outcome, Success):
@@ -285,19 +288,22 @@ class StepCoordinator(Generic[ContextT]):
                         step_outcome = await backend.execute_step(request)
                         if isinstance(step_outcome, StepOutcome):
                             try:
-                                from flujo.tracing.manager import (
-                                    get_active_trace_manager as _get_tm,
-                                )
+                                import os as _os
 
-                                tm = _get_tm()
-                                if tm is not None:
-                                    tm.add_event(
-                                        "coordinator.outcome",
-                                        {
-                                            "kind": type(step_outcome).__name__,
-                                            "step": getattr(step, "name", "<unnamed>"),
-                                        },
+                                if _os.getenv("FLUJO_TRACE_EXTRA", "") == "1":
+                                    from flujo.tracing.manager import (
+                                        get_active_trace_manager as _get_tm,
                                     )
+
+                                    tm = _get_tm()
+                                    if tm is not None:
+                                        tm.add_event(
+                                            "coordinator.outcome",
+                                            {
+                                                "kind": type(step_outcome).__name__,
+                                                "step": getattr(step, "name", "<unnamed>"),
+                                            },
+                                        )
                             except Exception:
                                 pass
                             if isinstance(step_outcome, Success):
@@ -471,14 +477,17 @@ class StepCoordinator(Generic[ContextT]):
                     feedback="Agent produced no terminal outcome",
                 )
                 try:
-                    from flujo.tracing.manager import get_active_trace_manager as _get_tm
+                    import os as _os
 
-                    tm = _get_tm()
-                    if tm is not None:
-                        tm.add_event(
-                            "coordinator.no_terminal",
-                            {"step": getattr(step, "name", "<unnamed>")},
-                        )
+                    if _os.getenv("FLUJO_TRACE_EXTRA", "") == "1":
+                        from flujo.tracing.manager import get_active_trace_manager as _get_tm
+
+                        tm = _get_tm()
+                        if tm is not None:
+                            tm.add_event(
+                                "coordinator.no_terminal",
+                                {"step": getattr(step, "name", "<unnamed>")},
+                            )
                 except Exception:
                     pass
                 # Do not fire step-level hooks here; ExecutionManager will treat this as a Failure
