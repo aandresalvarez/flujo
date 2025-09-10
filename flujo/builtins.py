@@ -203,6 +203,79 @@ def _register_core_skills() -> None:
             side_effects=True,
         )
 
+    # --- Phase 1: Minimal adapters to ease demos and merges ---
+
+    async def _wrap_dict(data: Any, *, key: str = "value") -> Dict[str, Any]:
+        try:
+            k = str(key) if key is not None else "value"
+        except Exception:
+            k = "value"
+        return {k: data}
+
+    if reg.get("flujo.builtins.wrap_dict") is None:
+        reg.register(
+            "flujo.builtins.wrap_dict",
+            lambda: _wrap_dict,
+            description="Wrap any input under a provided key (default 'value').",
+            input_schema={
+                "type": "object",
+                "properties": {"key": {"type": "string"}},
+            },
+            side_effects=False,
+        )
+
+    async def _ensure_object(data: Any, *, key: str = "value") -> Dict[str, Any]:
+        # If dict already, return as-is
+        try:
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+        # If Pydantic/Domain models, use model_dump
+        try:
+            if isinstance(data, (PydanticBaseModel, DomainBaseModel)):
+                # type: ignore[no-any-return]
+                return data.model_dump()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        # If JSON string that parses to object, return parsed
+        try:
+            if isinstance(data, (str, bytes)):
+                import json as _json
+
+                s = data.decode() if isinstance(data, bytes) else data
+                obj = _json.loads(s)
+                if isinstance(obj, dict):
+                    return obj
+        except Exception:
+            pass
+        # Fallback: wrap under key with safe serialization
+        try:
+            from .utils.serialization import safe_serialize as _safe
+
+            payload = _safe(data)
+        except Exception:
+            payload = data
+        try:
+            k = str(key) if key is not None else "value"
+        except Exception:
+            k = "value"
+        return {k: payload}
+
+    if reg.get("flujo.builtins.ensure_object") is None:
+        reg.register(
+            "flujo.builtins.ensure_object",
+            lambda: _ensure_object,
+            description=(
+                "Coerce input to an object: dict passthrough; Pydantic model → dict; JSON string → object; else wrap under key."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {"key": {"type": "string"}},
+            },
+            side_effects=False,
+        )
+
 
 # Ensure skills are registered when this module is imported by the CLI
 try:

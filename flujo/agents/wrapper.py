@@ -21,6 +21,15 @@ from typing import Any, Optional, Type, Generic
 
 from pydantic import ValidationError, BaseModel as PydanticBaseModel, TypeAdapter
 from pydantic_ai import Agent, ModelRetry
+
+try:  # pydantic-ai >=0.7
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+except Exception:  # pragma: no cover - fallback when package shape changes
+
+    class UnexpectedModelBehavior(Exception):  # type: ignore
+        pass
+
+
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 
 from ..domain.agent_protocol import AsyncAgentProtocol, AgentInT, AgentOutT
@@ -375,7 +384,11 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         return unpacked_output
         except RetryError as e:
             last_exc = e.last_attempt.exception()
-            if isinstance(last_exc, (ValidationError, ModelRetry)) and self.auto_repair:
+            # Phase 1 (AROS v2): catch provider JSON-mode failures (UnexpectedModelBehavior)
+            if (
+                isinstance(last_exc, (ValidationError, ModelRetry, UnexpectedModelBehavior))
+                and self.auto_repair
+            ):
                 logfire.warn(
                     f"Agent validation failed. Initiating automated repair. Error: {last_exc}"
                 )
