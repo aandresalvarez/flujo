@@ -829,6 +829,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         # If we don't have a full set of results, treat as failed to avoid
                         # falsely reporting success with missing steps.
                         final_status = "failed"
+                else:
+                    # Zero-step pipelines: treat as completed
+                    try:
+                        num_steps = len(self.pipeline.steps) if self.pipeline is not None else 0
+                    except Exception:
+                        num_steps = 0
+                    if num_steps == 0:
+                        final_status = "completed"
                 await exec_manager.persist_final_state(
                     run_id=run_id_for_state,
                     context=current_context_instance,

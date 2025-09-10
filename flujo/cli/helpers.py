@@ -1204,16 +1204,9 @@ def display_pipeline_results(
         # For paused runs, stop here to avoid confusing final report output
         return
     else:
-        # Respect runner-computed success flag and step history
+        # Trust runner-computed success flag (runner enforces completion gate)
         is_success = bool(getattr(result, "success", False))
-        all_steps_ok = False
-        try:
-            sh = getattr(result, "step_history", []) or []
-            all_steps_ok = bool(sh) and all(getattr(s, "success", False) for s in sh)
-        except Exception:
-            all_steps_ok = False
-
-        if is_success and all_steps_ok:
+        if is_success:
             console.print("[bold green]Pipeline execution completed successfully![/bold green]")
         else:
             console.print("[bold red]Pipeline execution failed.[/bold red]")
