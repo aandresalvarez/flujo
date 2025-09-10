@@ -260,7 +260,7 @@ class StepCoordinator(Generic[ContextT]):
                             input_data=data,
                             context=context,
                             resources=self.resources,
-                            stream=False,
+                            stream=stream,
                             usage_limits=usage_limits,
                             quota=quota,
                         )
