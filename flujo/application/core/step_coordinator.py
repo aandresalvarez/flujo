@@ -239,6 +239,22 @@ class StepCoordinator(Generic[ContextT]):
                             # Wrap streaming chunks into typed outcome if not already
                             yield Chunk(data=chunk, step_name=step.name)
                         if isinstance(step_outcome, StepOutcome):
+                            try:
+                                from flujo.tracing.manager import (
+                                    get_active_trace_manager as _get_tm,
+                                )
+
+                                tm = _get_tm()
+                                if tm is not None:
+                                    tm.add_event(
+                                        "coordinator.outcome",
+                                        {
+                                            "kind": type(step_outcome).__name__,
+                                            "step": getattr(step, "name", "<unnamed>"),
+                                        },
+                                    )
+                            except Exception:
+                                pass
                             if isinstance(step_outcome, Success):
                                 step_result = step_outcome.step_result
                             elif isinstance(step_outcome, Failure):
@@ -268,6 +284,22 @@ class StepCoordinator(Generic[ContextT]):
                         # Call the backend directly (typed StepOutcome)
                         step_outcome = await backend.execute_step(request)
                         if isinstance(step_outcome, StepOutcome):
+                            try:
+                                from flujo.tracing.manager import (
+                                    get_active_trace_manager as _get_tm,
+                                )
+
+                                tm = _get_tm()
+                                if tm is not None:
+                                    tm.add_event(
+                                        "coordinator.outcome",
+                                        {
+                                            "kind": type(step_outcome).__name__,
+                                            "step": getattr(step, "name", "<unnamed>"),
+                                        },
+                                    )
+                            except Exception:
+                                pass
                             if isinstance(step_outcome, Success):
                                 step_result = step_outcome.step_result
                                 # Detect direct Mock outputs and raise
@@ -429,6 +461,36 @@ class StepCoordinator(Generic[ContextT]):
                     # Yield the failed step result before aborting
                     yield step_result
                     raise
+        else:
+            # Safety net: ensure every step yields a terminal outcome
+            try:
+                synthesized = StepResult(
+                    name=getattr(step, "name", "<unnamed>"),
+                    success=False,
+                    output=None,
+                    feedback="Agent produced no terminal outcome",
+                )
+                try:
+                    from flujo.tracing.manager import get_active_trace_manager as _get_tm
+
+                    tm = _get_tm()
+                    if tm is not None:
+                        tm.add_event(
+                            "coordinator.no_terminal",
+                            {"step": getattr(step, "name", "<unnamed>")},
+                        )
+                except Exception:
+                    pass
+                # Do not fire step-level hooks here; ExecutionManager will treat this as a Failure
+                # and route through its failure path which already dispatches on_step_failure.
+                yield Failure(
+                    error=RuntimeError("Agent produced no terminal outcome"),
+                    feedback=synthesized.feedback,
+                    step_result=synthesized,
+                )
+            except Exception:
+                # As a last resort, do nothing — ExecutionManager has its own safety net.
+                pass
 
     async def _dispatch_hook(
         self,

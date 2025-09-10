@@ -6,9 +6,7 @@ from pathlib import Path
 import pytest
 
 
-def test_validate_errors_without_project(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_validate_errors_without_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     result = subprocess.run(
         [sys.executable, "-m", "flujo.cli.main", "validate", "--format=json"],

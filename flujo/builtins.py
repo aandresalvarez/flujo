@@ -234,8 +234,7 @@ def _register_core_skills() -> None:
         # If Pydantic/Domain models, use model_dump
         try:
             if isinstance(data, (PydanticBaseModel, DomainBaseModel)):
-                # type: ignore[no-any-return]
-                return data.model_dump()  # type: ignore[attr-defined]
+                return data.model_dump()
         except Exception:
             pass
         # If JSON string that parses to object, return parsed

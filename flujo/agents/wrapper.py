@@ -731,7 +731,7 @@ def make_agent_async(
     if is_image_model:
         _attach_image_cost_post_processor(agent, model)
 
-    wrapper = AsyncAgentWrapper(
+    wrapper: AsyncAgentWrapper[Any, Any] = AsyncAgentWrapper(
         agent,
         max_retries=max_retries,
         timeout=timeout,

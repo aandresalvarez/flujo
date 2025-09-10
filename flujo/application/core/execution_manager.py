@@ -358,7 +358,61 @@ class ExecutionManager(Generic[ContextT]):
 
                     # FSD-009: No reactive post-step checks; quotas enforce safety
 
-                    # SAFETY NET: if a step produced no terminal outcome, synthesize a failure
+                    # SAFETY NET (v2): if a step produced no terminal outcome, attempt a direct backend retry
+                    if step_result is None:
+                        try:
+                            from flujo.domain.backends import StepExecutionRequest as _Req
+                            from flujo.domain.models import (
+                                Success as _Success,
+                                Failure as _Failure,
+                                Paused as _Paused,
+                                StepResult as _SR,
+                            )
+
+                            # Emit a breadcrumb for deep diagnostics
+                            try:
+                                telemetry.logfire.debug(
+                                    f"[ExecutionManager] No outcome from coordinator for step='{getattr(step, 'name', '<unnamed>')}'. Retrying via backend once."
+                                )
+                            except Exception:
+                                pass
+
+                            req = _Req(
+                                step=step,
+                                input_data=data,
+                                context=context,
+                                resources=self.step_coordinator.resources,
+                                stream=False,
+                                usage_limits=self.usage_limits,
+                                quota=self.root_quota,
+                            )
+                            _out = await self.backend.execute_step(req)
+                            if isinstance(_out, _Success):
+                                step_result = _out.step_result
+                            elif isinstance(_out, _Failure):
+                                step_result = _out.step_result or _SR(
+                                    name=getattr(step, "name", "<unnamed>"),
+                                    success=False,
+                                    feedback=_out.feedback,
+                                )
+                                # Update history and stop on failure
+                                if step_result not in result.step_history:
+                                    self.step_coordinator.update_pipeline_result(
+                                        result, step_result
+                                    )
+                                self.set_final_context(result, context)
+                                yield result
+                                return
+                            elif isinstance(_out, _Paused):
+                                # Normalize to pause signal
+                                if context is not None and hasattr(context, "scratchpad"):
+                                    context.scratchpad["status"] = "paused"
+                                    context.scratchpad["pause_message"] = _out.message
+                                raise PipelineAbortSignal("Paused for HITL")
+                        except Exception:
+                            step_result = None
+
+                    # SAFETY NET (final): synthesize a Failure and halt
                     if step_result is None:
                         from flujo.domain.models import StepResult as _SR
 
@@ -648,7 +702,19 @@ class ExecutionManager(Generic[ContextT]):
                     and idx == len(self.pipeline.steps) - 1
                     and not self.inside_loop_step
                 ):
-                    final_status = "completed" if not usage_limit_exceeded else "failed"
+                    # Phase 2: Completion gate at persist-time as well
+                    # Only mark completed when we have one StepResult per pipeline step and all succeeded.
+                    try:
+                        expected = len(self.pipeline.steps)
+                        have_all = len(result.step_history) == expected
+                        all_ok = have_all and all(sr.success for sr in result.step_history)
+                    except Exception:
+                        have_all = False
+                        all_ok = False
+
+                    final_status = (
+                        "completed" if (all_ok and not usage_limit_exceeded) else "failed"
+                    )
                     await self.persist_final_state(
                         run_id=run_id,
                         context=context,
