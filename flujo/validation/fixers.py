@@ -81,7 +81,7 @@ def count_findings(report: object, rule_id: str) -> int:
 def _vt1_preview(file_path: str, report: Any) -> int:
     try:
         text = Path(file_path).read_text(encoding="utf-8")
-    except Exception:
+    except OSError:
         return 0
     # Use both report findings and text occurrences; take the min non-zero if both present
     in_text = text.count("previous_step.output")
@@ -102,22 +102,21 @@ def _vt1_apply(file_path: str, report: Any, assume_yes: bool) -> FixResult:
         return FixResult(False, None, 0)
 
     # Confirm if interactive and not assume_yes
-    try:
-        import sys
-        from typer import confirm as _confirm
+    import sys
 
-        if not assume_yes and hasattr(sys.stdin, "isatty") and sys.stdin.isatty():
-            if not _confirm(f"Apply {replaced} V-T1 fix(es) to {p.name}?", default=True):
-                return FixResult(False, None, 0)
-    except Exception:
-        if not assume_yes:
+    if not assume_yes and getattr(sys.stdin, "isatty", lambda: False)():
+        try:
+            from typer import confirm as _confirm  # type: ignore
+        except ImportError:
+            return FixResult(False, None, 0)
+        if not _confirm(f"Apply {replaced} V-T1 fix(es) to {p.name}?", default=True):
             return FixResult(False, None, 0)
 
     backup_path = str(p) + ".bak"
     try:
         Path(backup_path).write_text(original, encoding="utf-8")
         p.write_text(new_text, encoding="utf-8")
-    except Exception:
+    except OSError:
         return FixResult(False, None, 0)
     return FixResult(True, backup_path, replaced)
 
@@ -144,12 +143,12 @@ _VT3_MAP = {
 def _vt3_preview(file_path: str, report: Any) -> int:
     try:
         text = Path(file_path).read_text(encoding="utf-8")
-    except Exception:
+    except OSError:
         return 0
     import re as _re
 
     count = 0
-    for bad, good in _VT3_MAP.items():
+    for bad, _good in _VT3_MAP.items():
         pat = _re.compile(r"\|\s*" + _re.escape(bad) + r"\b")
         count += len(pat.findall(text))
     return count
@@ -163,10 +162,10 @@ def _apply_vt3_text(text: str) -> Tuple[str, int]:
     for bad, good in _VT3_MAP.items():
         pat = _re.compile(r"(\|\s*)" + _re.escape(bad) + r"\b")
 
-        def _sub(m: _re.Match[str]) -> str:
+        def _sub(m: _re.Match[str], replacement: str = good) -> str:
             nonlocal changed
             changed += 1
-            return m.group(1) + good
+            return m.group(1) + replacement
 
         new_text = pat.sub(_sub, new_text)
     return new_text, changed
@@ -176,29 +175,28 @@ def _vt3_apply(file_path: str, report: Any, assume_yes: bool) -> FixResult:
     p = Path(file_path)
     try:
         original = p.read_text(encoding="utf-8")
-    except Exception:
+    except OSError:
         return FixResult(False, None, 0)
     new_text, changed = _apply_vt3_text(original)
     if changed <= 0 or new_text == original:
         return FixResult(False, None, 0)
 
     # Confirm prompt if interactive
-    try:
-        import sys
-        from typer import confirm as _confirm
+    import sys
 
-        if not assume_yes and hasattr(sys.stdin, "isatty") and sys.stdin.isatty():
-            if not _confirm(f"Apply {changed} V-T3 filter fix(es) to {p.name}?", default=True):
-                return FixResult(False, None, 0)
-    except Exception:
-        if not assume_yes:
+    if not assume_yes and getattr(sys.stdin, "isatty", lambda: False)():
+        try:
+            from typer import confirm as _confirm  # type: ignore
+        except ImportError:
+            return FixResult(False, None, 0)
+        if not _confirm(f"Apply {changed} V-T3 filter fix(es) to {p.name}?", default=True):
             return FixResult(False, None, 0)
 
     backup_path = str(p) + ".bak"
     try:
         Path(backup_path).write_text(original, encoding="utf-8")
         p.write_text(new_text, encoding="utf-8")
-    except Exception:
+    except OSError:
         return FixResult(False, None, 0)
     return FixResult(True, backup_path, changed)
 
@@ -211,7 +209,7 @@ register_fixer(Fixer("V-T3", _vt3_preview, _vt3_apply, title="Fix common templat
 def _vc2_preview(file_path: str, report: Any) -> int:
     try:
         text = Path(file_path).read_text(encoding="utf-8")
-    except Exception:
+    except OSError:
         return 0
     import re as _re
 
@@ -252,31 +250,28 @@ def _vc2_apply(file_path: str, report: Any, assume_yes: bool) -> FixResult:
     p = Path(file_path)
     try:
         original = p.read_text(encoding="utf-8")
-    except Exception:
+    except OSError:
         return FixResult(False, None, 0)
     new_text, changed = _apply_vc2_text(original)
     if changed <= 0 or new_text == original:
         return FixResult(False, None, 0)
 
     # Confirm prompt if interactive
-    try:
-        import sys
-        from typer import confirm as _confirm
+    import sys
 
-        if not assume_yes and hasattr(sys.stdin, "isatty") and sys.stdin.isatty():
-            if not _confirm(
-                f"Apply {changed} V-C2 parent mapping fix(es) to {p.name}?", default=True
-            ):
-                return FixResult(False, None, 0)
-    except Exception:
-        if not assume_yes:
+    if not assume_yes and getattr(sys.stdin, "isatty", lambda: False)():
+        try:
+            from typer import confirm as _confirm  # type: ignore
+        except ImportError:
+            return FixResult(False, None, 0)
+        if not _confirm(f"Apply {changed} V-C2 parent mapping fix(es) to {p.name}?", default=True):
             return FixResult(False, None, 0)
 
     backup_path = str(p) + ".bak"
     try:
         Path(backup_path).write_text(original, encoding="utf-8")
         p.write_text(new_text, encoding="utf-8")
-    except Exception:
+    except OSError:
         return FixResult(False, None, 0)
     return FixResult(True, backup_path, changed)
 

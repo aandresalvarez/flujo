@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Iterable
+from typing import Any, Iterable, ClassVar
 import fnmatch
 import json
 from ..domain.pipeline_validation import ValidationFinding, ValidationReport
@@ -10,7 +10,7 @@ from ..infra.telemetry import logfire
 from threading import RLock
 
 # --- Rule overrides (profile/file/env) for early skip and severity adjustment ---
-_OVERRIDE_CACHE: dict[str, Any] | None = None
+_OVERRIDE_CACHE: dict[str, str] | None = None
 _OVERRIDE_CACHE_LOCK = RLock()
 
 
@@ -548,12 +548,12 @@ class ContextLinter(BaseLinter):
                         continue
 
                     # Escalation when next step does not consume prev output (rough heuristic)
-                    def _consumes_prev() -> bool:
+                    def _consumes_prev(_step: Any) -> bool:
                         try:
-                            in_t = getattr(step, "__step_input_type__", Any)
+                            in_t = getattr(_step, "__step_input_type__", Any)
                             return not (
                                 in_t is Any or in_t is object or in_t is None or in_t is type(None)
-                            )  # noqa: E721
+                            )
                         except Exception:
                             return False
 
@@ -568,7 +568,7 @@ class ContextLinter(BaseLinter):
                     except Exception:
                         has_explicit_outputs_map = False
 
-                    escalate = (not _consumes_prev()) and (not has_explicit_outputs_map)
+                    escalate = (not _consumes_prev(step)) and (not has_explicit_outputs_map)
                     out.append(
                         ValidationFinding(
                             rule_id="V-C1",
@@ -697,7 +697,7 @@ class ImportLinter(BaseLinter):
     - V-I6: inherit conversation consistency
     """
 
-    _ALLOWED_PARENT_ROOTS = {
+    _ALLOWED_PARENT_ROOTS: ClassVar[set[str]] = {
         "scratchpad",
         "command_log",
         "hitl_history",

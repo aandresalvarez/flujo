@@ -8,8 +8,7 @@ agents:
       type: object
 steps:
   - name: s1
-    agent: { id: "agents.a" }
+    uses: agents.a
   - name: stringify
     agent: { id: "flujo.builtins.stringify" }
     input: "{{ steps.s1.output }}"  # Mismatch heuristic
-

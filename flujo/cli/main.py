@@ -2001,6 +2001,7 @@ def _validate_impl(
             report = _apply_rules(report, rules)
 
         # Optional: apply safe auto-fixes before printing results
+        applied_fixes_metrics: dict[str, Any] | None = None
         if fix:
             try:
                 from ..validation.fixers import plan_fixes, apply_fixes_to_file, build_fix_patch
@@ -2091,9 +2092,17 @@ def _validate_impl(
                     except Exception:
                         pass
                     applied_fixes_metrics = {"applied": {}, "total_applied": 0}
-            except Exception:
-                # Fixers are best-effort; do not fail validation
-                pass
+            except Exception as e:
+                # Fixers are best-effort; capture and continue
+                try:
+                    from ..infra.telemetry import logfire as _lf
+
+                    _lf.debug(
+                        f"[validate] Auto-fix flow suppressed due to: {type(e).__name__}: {e}"
+                    )
+                except Exception:
+                    pass
+                applied_fixes_metrics = {"applied": {}, "total_applied": 0}
         else:
             applied_fixes_metrics = None
 

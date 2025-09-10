@@ -15,7 +15,7 @@ def test_json_includes_fixes_metrics_and_dry_run(tmp_path: Path) -> None:
     )
     f = tmp_path / "p.yaml"
     f.write_text(yml)
-    res = subprocess.run(
+    res = subprocess.run(  # noqa: S603
         [
             sys.executable,
             "-m",
@@ -29,11 +29,12 @@ def test_json_includes_fixes_metrics_and_dry_run(tmp_path: Path) -> None:
         ],
         capture_output=True,
         text=True,
+        check=True,
     )
     data = json.loads(res.stdout or "{}")
     assert "fixes" in data and isinstance(data["fixes"], dict)
 
-    res2 = subprocess.run(
+    res2 = subprocess.run(  # noqa: S603
         [
             sys.executable,
             "-m",
@@ -48,6 +49,7 @@ def test_json_includes_fixes_metrics_and_dry_run(tmp_path: Path) -> None:
         ],
         capture_output=True,
         text=True,
+        check=True,
     )
     d2 = json.loads(res2.stdout or "{}")
     assert d2.get("fixes_dry_run") is True
@@ -63,11 +65,12 @@ def test_json_counts_with_telemetry(tmp_path: Path) -> None:
     f.write_text(yml)
     env = os_environ_copy()
     env["FLUJO_CLI_TELEMETRY"] = "1"
-    res = subprocess.run(
+    res = subprocess.run(  # noqa: S603
         [sys.executable, "-m", "flujo.cli.main", "validate", str(f), "--format=json"],
         capture_output=True,
         text=True,
         env=env,
+        check=True,
     )
     data = json.loads(res.stdout or "{}")
     counts = data.get("counts") or {}
@@ -86,11 +89,12 @@ def test_telemetry_counts_exact_v_t1(tmp_path: Path) -> None:
     f.write_text(yml)
     env = os_environ_copy()
     env["FLUJO_CLI_TELEMETRY"] = "1"
-    res = subprocess.run(
+    res = subprocess.run(  # noqa: S603
         [sys.executable, "-m", "flujo.cli.main", "validate", str(f), "--format=json"],
         capture_output=True,
         text=True,
         env=env,
+        check=True,
     )
     data = json.loads(res.stdout or "{}")
     counts = data.get("counts") or {}

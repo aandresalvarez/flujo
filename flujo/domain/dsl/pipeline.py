@@ -592,11 +592,13 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                             column=f.column,
                                             import_alias=import_tag or None,
                                             import_stack=(
-                                                (f.import_stack or [])
-                                                if hasattr(f, "import_stack")
-                                                else []
-                                            )
-                                            + ([import_tag] if import_tag else []),
+                                                ([import_tag] if import_tag else [])
+                                                + (
+                                                    (f.import_stack or [])
+                                                    if hasattr(f, "import_stack")
+                                                    else []
+                                                )
+                                            ),
                                         )
                                     )
                                 for w in child_report.warnings:
@@ -620,11 +622,13 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                             column=w.column,
                                             import_alias=import_tag or None,
                                             import_stack=(
-                                                (w.import_stack or [])
-                                                if hasattr(w, "import_stack")
-                                                else []
-                                            )
-                                            + ([import_tag] if import_tag else []),
+                                                ([import_tag] if import_tag else [])
+                                                + (
+                                                    (w.import_stack or [])
+                                                    if hasattr(w, "import_stack")
+                                                    else []
+                                                )
+                                            ),
                                         )
                                     )
                                 # V-I5: Input projection coherence heuristics

@@ -92,10 +92,6 @@ For a full list and examples, see the CLI docs and inline suggestions printed by
 - Why: Explicit branch outputs map to the same parent keys without a merge strategy.
 - Fix: Add `field_mapping` or change strategy to avoid conflicts.
 
-## <a id="v-c1"></a>V‑C1 — `updates_context` without mergeable output
-  - Why: Non‑dict outputs cannot be merged into context; they may be dropped.
-  - Fix: Switch to an object output or provide an `outputs` mapping.
-
 ## <a id="v-c2"></a>V‑C2 — Scratchpad shape conflicts
   - Why: Mapping directly to the `scratchpad` root may assign a non‑object and corrupt the expected dict shape.
   - Fix: Map to `scratchpad.<key>` or ensure the value is an object (dict-like).
@@ -109,12 +105,8 @@ For a full list and examples, see the CLI docs and inline suggestions printed by
   - Fix: Use a valid `package.module:attr` or declare the agent under `agents:` and reference it.
 
 ## <a id="v-a7"></a>V‑A7 — Invalid `max_retries`/`timeout` coercion
-  - Why: Non‑coercible values for agent retry/timeout controls lead to unexpected behavior.
-  - Fix: Provide integer values; strings must be numeric (e.g., `"3"`). Invalid values are ignored or defaulted.
-
-## (TODO) V‑A7 — Invalid `max_retries`/`timeout` coercion
-- Why: Non‑coercible values lead to unexpected behavior.
-- Fix: Provide integers/valid durations.
+  - Why: Non‑coercible values lead to unexpected behavior.
+  - Fix: Provide integer values or valid duration strings (e.g., `"3"`).
 
 ## (TODO) V‑A8 — Structured output with non‑JSON mode
 - Why: Declared structured output but provider is not returning JSON.

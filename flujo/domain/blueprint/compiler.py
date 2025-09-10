@@ -54,6 +54,11 @@ class DeclarativeBlueprintCompiler:
                     f"Agent '{agent_name}': Non-integer max_retries value '{max_retries_opt}' (using default 3)."
                 )
                 max_retries = 3
+        if max_retries < 0:
+            warnings.append(
+                f"Agent '{agent_name}': Negative max_retries '{max_retries}' (using default 3)."
+            )
+            max_retries = 3
         return max_retries, warnings
 
     def _validate_and_coerce_timeout(
@@ -301,13 +306,14 @@ class DeclarativeBlueprintCompiler:
                 path = rel_path
                 if not os.path.isabs(path):
                     path = os.path.normpath(os.path.join(base_dir, path))
-                with open(path, "r") as f:
+                real_path = os.path.realpath(path)
+                with open(real_path, "r", encoding="utf-8") as f:
                     text = f.read()
                 # Recursively compile with a new compiler instance; pass directory of the imported file
-                sub_base_dir = os.path.dirname(path)
+                sub_base_dir = os.path.dirname(real_path)
                 # Use loader entrypoint to ensure same validation and compilation path
                 sub_pipeline = load_pipeline_blueprint_from_yaml(
-                    text, base_dir=sub_base_dir, source_file=path
+                    text, base_dir=sub_base_dir, source_file=real_path
                 )
                 self._compiled_imports[alias] = sub_pipeline
             except Exception as e:
