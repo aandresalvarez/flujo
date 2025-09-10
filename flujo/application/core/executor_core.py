@@ -2767,24 +2767,52 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # Output processors / AROS Phase 2: structured finalize path
             processed_output = agent_output
             try:
-                # Best-effort: if step declares structured_output (auto/openai_json) and
-                # output is a string, attempt normalization→parse before processors.
+                # Best-effort: if step declares structured_output (auto/openai_json),
+                # normalize/repair to JSON object before processors, then minimally validate.
                 pmeta = getattr(step, "meta", {}) or {}
                 proc = pmeta.get("processing") if isinstance(pmeta, dict) else None
-                if (
-                    isinstance(proc, dict)
-                    and str(proc.get("structured_output", "")).strip().lower()
-                    in {"auto", "openai_json"}
-                    and isinstance(processed_output, str)
-                ):
+                so_on = isinstance(proc, dict) and str(
+                    proc.get("structured_output", "")
+                ).strip().lower() in {"auto", "openai_json"}
+                if so_on:
                     from flujo.utils.json_normalizer import normalize_to_json_obj as _norm
+                    from flujo.agents.repair import DeterministicRepairProcessor as _DR
 
-                    maybe_obj = _norm(processed_output)
-                    # Only adopt when parsing succeeded into a JSON type
-                    if isinstance(maybe_obj, (dict, list)):
-                        processed_output = maybe_obj
+                    # Normalize strings into JSON when possible
+                    if isinstance(processed_output, str):
+                        maybe_obj = _norm(processed_output)
+                        if isinstance(maybe_obj, (dict, list)):
+                            processed_output = maybe_obj
+                        else:
+                            try:
+                                cleaned = await _DR().process(processed_output)
+                            except Exception:
+                                cleaned = None
+                            if isinstance(cleaned, str):
+                                import json as _json
+
+                                try:
+                                    repaired = _json.loads(cleaned)
+                                    if isinstance(repaired, (dict, list)):
+                                        processed_output = repaired
+                                except Exception:
+                                    pass
+
+                    # Minimal schema validation and auto-wrap for simple cases
+                    schema = proc.get("schema") if isinstance(proc, dict) else None
+                    if isinstance(schema, dict) and schema.get("type") == "object":
+                        required = schema.get("required") or []
+                        props = schema.get("properties") or {}
+                        # Auto-wrap string into the single required string field
+                        if isinstance(processed_output, str) and len(required) == 1:
+                            key = required[0]
+                            if (
+                                isinstance(props.get(key), dict)
+                                and props.get(key, {}).get("type") == "string"
+                            ):
+                                processed_output = {key: processed_output}
             except Exception:
-                # Never block success path due to normalization errors
+                # Never block success path due to normalization/repair advice
                 pass
             if hasattr(step, "processors") and step.processors:
                 try:
