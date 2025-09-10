@@ -223,6 +223,12 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                                     sys_val = sys_txt_raw
                             except Exception:
                                 sys_val = sys_txt_raw
+                            # Fallback to saved original system prompt when available
+                            if not isinstance(sys_val, str):
+                                try:
+                                    sys_val = getattr(self, "_original_system_prompt", None)
+                                except Exception:
+                                    pass
                             sys_preview = summarize_and_redact_prompt(
                                 sys_val if isinstance(sys_val, str) else str(sys_val),
                                 max_length=preview_len_env,
@@ -725,7 +731,7 @@ def make_agent_async(
     if is_image_model:
         _attach_image_cost_post_processor(agent, model)
 
-    return AsyncAgentWrapper(
+    wrapper = AsyncAgentWrapper(
         agent,
         max_retries=max_retries,
         timeout=timeout,
@@ -733,6 +739,12 @@ def make_agent_async(
         processors=final_processors,
         auto_repair=auto_repair,
     )
+    try:
+        # Preserve original system prompt text for telemetry when provider hides it behind a callable
+        setattr(wrapper, "_original_system_prompt", system_prompt)
+    except Exception:
+        pass
+    return wrapper
 
 
 def make_templated_agent_async(

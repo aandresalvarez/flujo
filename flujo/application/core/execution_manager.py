@@ -358,6 +358,22 @@ class ExecutionManager(Generic[ContextT]):
 
                     # FSD-009: No reactive post-step checks; quotas enforce safety
 
+                    # SAFETY NET: if a step produced no terminal outcome, synthesize a failure
+                    if step_result is None:
+                        from flujo.domain.models import StepResult as _SR
+
+                        step_result = _SR(
+                            name=getattr(step, "name", "<unnamed>"),
+                            success=False,
+                            output=None,
+                            feedback="Agent produced no terminal outcome",
+                        )
+                        # Add to history and halt the pipeline
+                        self.step_coordinator.update_pipeline_result(result, step_result)
+                        self.set_final_context(result, context)
+                        yield result
+                        return
+
                     # Validate type compatibility with next step - this may raise TypeMismatchError
                     # Only validate types if the step succeeded (to avoid TypeMismatchError for failed steps)
                     if step_result and step_result.success and idx < len(self.pipeline.steps) - 1:
