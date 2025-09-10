@@ -740,12 +740,20 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 state_created_at=state_created_at,
             ):
                 # Track if the manager yielded a PipelineResult (e.g., paused/failed early)
+                # Debug: verify isinstance behavior locally
+                # Remove or comment out in commits if noisy
+                # BEGIN DEBUG
+                # print(f"ISINSTANCE? {isinstance(chunk, PipelineResult)} class={type(chunk)}")
+                # END DEBUG
                 if isinstance(chunk, PipelineResult):
+                    # print("RUNNER saw PipelineResult from manager")
                     pipeline_result_obj = chunk
                     _yielded_pipeline_result = True
+                # print(f"RUNNER yield {type(chunk).__name__}")
                 yield chunk
             # After streaming, yield the final PipelineResult for sync runners
             if not _yielded_pipeline_result:
+                # print("RUNNER yield final PipelineResult")
                 yield pipeline_result_obj
         except asyncio.CancelledError:
             telemetry.logfire.info("Pipeline cancelled")
@@ -813,21 +821,22 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 ):
                     final_status = "paused"
                 elif pipeline_result_obj.step_history:
-                    # Phase 2: Active-step completion gate
-                    # Only mark completed when we have one StepResult per pipeline step and all succeeded.
+                    # Completion gate with resume-awareness
                     try:
                         expected = len(self.pipeline.steps) if self.pipeline is not None else None
                     except Exception:
                         expected = None
-                    if (
+                    executed_success = all(s.success for s in pipeline_result_obj.step_history)
+                    if start_idx > 0:
+                        # Resumed run: consider success of executed tail as completion
+                        final_status = "completed" if executed_success else "failed"
+                    elif (
                         expected is not None
                         and len(pipeline_result_obj.step_history) == expected
-                        and all(s.success for s in pipeline_result_obj.step_history)
+                        and executed_success
                     ):
                         final_status = "completed"
                     else:
-                        # If we don't have a full set of results, treat as failed to avoid
-                        # falsely reporting success with missing steps.
                         final_status = "failed"
                 else:
                     # Zero-step pipelines: treat as completed

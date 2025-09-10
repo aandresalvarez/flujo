@@ -2103,14 +2103,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
 
         # retries config semantics: number of retries; attempts = 1 + retries
-        retries_config = 1
+        # Default is 0 retries (single attempt) to avoid duplicate executions
+        retries_config = 0
         try:
             if hasattr(step, "config") and hasattr(step.config, "max_retries"):
                 retries_config = int(getattr(step.config, "max_retries"))
             elif hasattr(step, "max_retries"):
                 retries_config = int(getattr(step, "max_retries"))
         except Exception:
-            retries_config = 1
+            retries_config = 0
         # Guard mocked max_retries values
         if hasattr(retries_config, "_mock_name") or isinstance(
             retries_config, (Mock, MagicMock, AsyncMock)
@@ -3021,8 +3022,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         pass
                     if isinstance(e, asyncio.TimeoutError):
                         raise
-                    # Retry plugin failures only at top-level (no nested fallback)
-                    if attempt < total_attempts and int(_fallback_depth) == 0:
+                    # Retry plugin failures only when a fallback is configured and at top-level
+                    fb_present = getattr(step, "fallback_step", None) is not None
+                    if attempt < total_attempts and int(_fallback_depth) == 0 and fb_present:
                         telemetry.logfire.warning(
                             f"Step '{getattr(step, 'name', '<unnamed>')}' plugin attempt {attempt}/{total_attempts} failed: {e}"
                         )
