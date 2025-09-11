@@ -175,52 +175,13 @@ class ExecutionManager(Generic[ContextT]):
                     # step is controlled by `use_stream` below.
                     use_stream = stream_last and idx == len(self.pipeline.steps) - 1
 
-                    # Provide an internal direct executor for non-streaming steps to
-                    # keep behavior resilient when the backend is monkeypatched to
-                    # return no outcome.
-                    from typing import Any as _Any
-
-                    async def _internal_step_executor(
-                        s: _Any,
-                        d: _Any,
-                        c: Optional[_Any],
-                        r: Optional[_Any],
-                        *,
-                        stream: bool = False,
-                    ) -> AsyncIterator[_Any]:
-                        from .executor_core import ExecutorCore as _Core
-                        from .types import ExecutionFrame as _Frame
-
-                        core2: _Core = _Core()
-                        frame2 = _Frame(
-                            step=s,
-                            data=d,
-                            context=c,
-                            resources=r,
-                            limits=self.usage_limits,
-                            quota=self.root_quota,
-                            stream=False,
-                            on_chunk=None,
-                            breach_event=None,
-                            context_setter=lambda _res, _ctx: None,
-                        )
-                        out = await core2.execute(frame2)
-                        if isinstance(out, StepOutcome):
-                            yield out
-                        else:
-                            yield Success(step_result=out)
-
                     async for item in self.step_coordinator.execute_step(
                         step=step,
                         data=data,
                         context=context,
                         backend=self.backend,
                         stream=use_stream,
-                        step_executor=(
-                            step_executor
-                            if step_executor is not None
-                            else (None if use_stream else _internal_step_executor)
-                        ),
+                        step_executor=(step_executor if step_executor is not None else None),
                         usage_limits=self.usage_limits,
                         quota=self.root_quota,
                     ):
@@ -318,38 +279,6 @@ class ExecutionManager(Generic[ContextT]):
                                     self.step_coordinator.update_pipeline_result(
                                         result, step_result
                                     )
-                                # Stop pipeline on failure, but first synthesize
-                                # missing tail steps so history length matches pipeline length
-                                try:
-                                    expected = len(self.pipeline.steps)
-                                    if len(result.step_history) < expected:
-                                        from flujo.domain.models import StepResult as _SR
-
-                                        for j in range(len(result.step_history), expected):
-                                            try:
-                                                missing_name = getattr(
-                                                    self.pipeline.steps[j], "name", f"step_{j}"
-                                                )
-                                            except Exception:
-                                                missing_name = f"step_{j}"
-                                            synthesized = _SR(
-                                                name=str(missing_name),
-                                                success=False,
-                                                output=None,
-                                                attempts=0,
-                                                latency_s=0.0,
-                                                token_counts=0,
-                                                cost_usd=0.0,
-                                                feedback="Agent produced no terminal outcome",
-                                                branch_context=None,
-                                                metadata_={},
-                                                step_history=[],
-                                            )
-                                            self.step_coordinator.update_pipeline_result(
-                                                result, synthesized
-                                            )
-                                except Exception:
-                                    pass
                                 self.set_final_context(result, context)
                                 yield result
                                 return
@@ -891,35 +820,8 @@ class ExecutionManager(Generic[ContextT]):
                         final_status=final_status,
                     )
 
-        # Synthesize failures for any missing tail steps (safety net for coordinator/backends
-        # that produced no terminal outcome and could not be retried). This ensures history
-        # length equals the number of pipeline steps, which some tests assert for safety.
-        try:
-            expected = len(self.pipeline.steps)
-            if len(result.step_history) < expected:
-                from flujo.domain.models import StepResult as _SR
-
-                for j in range(len(result.step_history), expected):
-                    try:
-                        missing_name = getattr(self.pipeline.steps[j], "name", f"step_{j}")
-                    except Exception:
-                        missing_name = f"step_{j}"
-                    synthesized = _SR(
-                        name=str(missing_name),
-                        success=False,
-                        output=None,
-                        attempts=0,
-                        latency_s=0.0,
-                        token_counts=0,
-                        cost_usd=0.0,
-                        feedback="Agent produced no terminal outcome",
-                        branch_context=None,
-                        metadata_={},
-                        step_history=[],
-                    )
-                    self.step_coordinator.update_pipeline_result(result, synthesized)
-        except Exception:
-            pass
+        # Do not synthesize placeholder results for unexecuted steps.
+        # History should only include steps that actually ran.
 
         # Set final context after all steps complete
         self.set_final_context(result, context)
