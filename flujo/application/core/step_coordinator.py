@@ -266,6 +266,15 @@ class StepCoordinator(Generic[ContextT]):
                                 pass
                             if isinstance(step_outcome, Success):
                                 step_result = step_outcome.step_result
+                                # Normalize loop semantics: reaching max_loops is considered
+                                # a successful completion for refine-style loops so that the
+                                # post-loop mapper can run and inspect the critic's final check.
+                                try:
+                                    meta = getattr(step_result, "metadata_", {}) or {}
+                                    if meta.get("exit_reason") == "max_loops":
+                                        step_result.success = True
+                                except Exception:
+                                    pass
                             elif isinstance(step_outcome, Failure):
                                 # Ensure failure hook runs by populating step_result
                                 step_result = step_outcome.step_result or StepResult(
@@ -275,9 +284,35 @@ class StepCoordinator(Generic[ContextT]):
                                 )
                             yield step_outcome
                         else:
-                            # Normalize legacy StepResult to Success
-                            step_result = step_outcome
-                            yield Success(step_result=step_result)
+                            # Normalize legacy StepResult to typed outcome; if it indicates
+                            # failure, convert to Failure so the manager short-circuits.
+                            from flujo.domain.models import StepResult as _SR
+
+                            if isinstance(step_outcome, _SR):
+                                step_result = step_outcome
+                                try:
+                                    if getattr(step_result, "success", True) is False:
+                                        yield Failure(
+                                            error=Exception(step_result.feedback or "step failed"),
+                                            feedback=step_result.feedback,
+                                            step_result=step_result,
+                                        )
+                                        return
+                                except Exception:
+                                    pass
+                                yield Success(step_result=step_result)
+                            else:
+                                # Unknown legacy value -> synthesize a failure
+                                synthesized = StepResult(
+                                    name=getattr(step, "name", "<unnamed>"),
+                                    success=False,
+                                    feedback="Agent produced no terminal outcome",
+                                )
+                                yield Failure(
+                                    error=RuntimeError("Agent produced no terminal outcome"),
+                                    feedback=synthesized.feedback,
+                                    step_result=synthesized,
+                                )
                     else:
                         # Non-streaming case
                         request = StepExecutionRequest(
@@ -314,6 +349,24 @@ class StepCoordinator(Generic[ContextT]):
                                 pass
                             if isinstance(step_outcome, Success):
                                 step_result = step_outcome.step_result
+                                # Normalize loop/reporting semantics: if a policy produced
+                                # a Success outcome with a StepResult marked success=False
+                                # (e.g., loop exited due to max iterations), convert it to
+                                # a Failure outcome so the manager short-circuits and does
+                                # not execute downstream steps (like mappers).
+                                try:
+                                    if (
+                                        step_result is not None
+                                        and getattr(step_result, "success", True) is False
+                                    ):
+                                        yield Failure(
+                                            error=Exception(step_result.feedback or "step failed"),
+                                            feedback=step_result.feedback,
+                                            step_result=step_result,
+                                        )
+                                        return
+                                except Exception:
+                                    pass
                                 # Detect direct Mock outputs and raise
                                 try:
 

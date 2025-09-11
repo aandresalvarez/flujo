@@ -5376,20 +5376,19 @@ class DefaultLoopStepExecutor:
                 success_flag = exit_reason == "condition"
                 feedback_msg = None if success_flag else "reached max_loops"
             else:
-                if exit_reason == "condition" and any_failure:
-                    # Propagate the specific feedback from the first failed step in the last iteration
-                    first_failure = next(
-                        (sr for sr in reversed(iteration_results) if not sr.success), None
-                    )
-                    if first_failure and first_failure.feedback:
-                        feedback_msg = f"Loop body failed: {first_failure.feedback}"
-                    else:
-                        feedback_msg = "Loop body failed"
-                elif exit_reason != "condition":
-                    feedback_msg = "reached max_loops"
-                else:
+                # Explicit success policy:
+                # - max_loops: consider successful (used by refine_until)
+                # - condition: success only if no failures in iterations
+                # - other: failure
+                if exit_reason == "max_loops":
+                    success_flag = True
+                    feedback_msg = None
+                elif exit_reason == "condition":
+                    success_flag = not any_failure
                     feedback_msg = "loop exited by condition"
-                success_flag = (exit_reason == "condition") and not any_failure
+                else:
+                    success_flag = False
+                    feedback_msg = "reached max_loops"
         result = StepResult(
             name=loop_step.name,
             success=success_flag,
