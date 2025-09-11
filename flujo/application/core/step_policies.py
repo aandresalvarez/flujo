@@ -6995,6 +6995,30 @@ class DefaultCacheStepExecutor:
                         telemetry.logfire.error(
                             f"Cache backend SET failed for step '{cache_step.name}': {e}"
                         )
+                else:
+                    # Failure path: proactively reflect branch_context mutations onto the
+                    # live context for updates_context semantics (e.g., increment counters)
+                    try:
+                        if (
+                            getattr(cache_step.wrapped_step, "updates_context", False)
+                            and context is not None
+                            and getattr(result, "branch_context", None) is not None
+                        ):
+                            bc = result.branch_context
+                            cm = type(context)
+                            fields = getattr(cm, "model_fields", {})
+                            for fname in fields.keys():
+                                try:
+                                    bval = getattr(bc, fname, None)
+                                    if (
+                                        isinstance(bval, (int, float, str, bool))
+                                        and getattr(context, fname, None) != bval
+                                    ):
+                                        setattr(context, fname, bval)
+                                except Exception:
+                                    continue
+                    except Exception:
+                        pass
                 return to_outcome(result)
         frame = ExecutionFrame(
             step=cache_step.wrapped_step,

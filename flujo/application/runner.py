@@ -1020,6 +1020,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             # Streaming pipeline: unwrap typed Chunk outcomes into raw chunks for legacy contract
             # and suppress intermediate Success/Failure outcomes — callers expect only
             # raw chunks and the final PipelineResult.
+            seen_chunks: set[str] = set()
             async for item in self.run_async(
                 initial_input, initial_context_data=initial_context_data
             ):
@@ -1027,6 +1028,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 from ..domain.models import StepOutcome as _StepOutcome
 
                 if isinstance(item, _Chunk):
+                    # Suppress duplicate streaming chunks across layers if they repeat
+                    try:
+                        k = str(item.data)
+                        if k in seen_chunks:
+                            continue
+                        seen_chunks.add(k)
+                    except Exception:
+                        pass
                     yield item.data
                 elif isinstance(item, _StepOutcome):
                     # Drop Success/Failure/Paused outcomes from streaming surface

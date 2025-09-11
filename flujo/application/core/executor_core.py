@@ -847,7 +847,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 token_counts=0,
                 cost_usd=0.0,
                 feedback=f"{err_type}: {str(e)}",
-                branch_context=None,
+                # If the step mutates context (updates_context), preserve the per-attempt
+                # context so callers can observe pre-failure mutations (e.g., counters).
+                branch_context=(
+                    frame.context
+                    if (getattr(step, "updates_context", False) and frame is not None)
+                    else None
+                )
+                if called_with_frame
+                else None,
                 metadata_={"error_type": type(e).__name__},
                 step_history=[],
             )
@@ -2398,7 +2406,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 token_counts=result.token_counts,
                                 cost_usd=result.cost_usd,
                                 feedback=f"Fallback execution failed: {fb_exc}",
-                                branch_context=None,
+                                branch_context=(
+                                    attempt_context
+                                    if getattr(step, "updates_context", False)
+                                    else None
+                                ),
                                 metadata_={
                                     "fallback_triggered": True,
                                     "original_error": primary_fb,
@@ -2679,7 +2691,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             token_counts=int(token_counts_fb) + int(add_primary or 0),
                             cost_usd=cost_usd_fb,
                             feedback=f"Original error: {primary_fb}{tail}; Fallback error: {fb_res.feedback}",
-                            branch_context=None,
+                            branch_context=(
+                                attempt_context if getattr(step, "updates_context", False) else None
+                            ),
                             metadata_=result.metadata_,
                             step_history=[],
                         )
@@ -2710,7 +2724,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         token_counts=result.token_counts,
                         cost_usd=result.cost_usd,
                         feedback=f"{primary_fb}{tail}",
-                        branch_context=None,
+                        branch_context=(
+                            attempt_context if getattr(step, "updates_context", False) else None
+                        ),
                         metadata_=result.metadata_,
                         step_history=[],
                     ),
