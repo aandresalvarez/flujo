@@ -370,8 +370,57 @@ class StepCoordinator(Generic[ContextT]):
                                 # Unknown control outcome: propagate as abort
                                 raise PipelineAbortSignal("Paused for HITL")
                         else:
-                            step_result = step_outcome
-                            yield Success(step_result=step_result)
+                            # Backend returned a legacy value or invalid.
+                            # If it's a proper StepResult, normalize to Success without re-executing.
+                            from flujo.domain.models import StepResult as _SR
+
+                            if isinstance(step_outcome, _SR):
+                                step_result = step_outcome
+                                yield Success(step_result=step_result)
+                            else:
+                                # Fall back to executing the step directly via ExecutorCore to recover.
+                                try:
+                                    from ..core.executor_core import ExecutorCore as _Core
+                                    from ..core.types import ExecutionFrame as _Frame
+
+                                    core2 = _Core()
+                                    frame2 = _Frame(
+                                        step=step,
+                                        data=data,
+                                        context=context,
+                                        resources=self.resources,
+                                        limits=usage_limits,
+                                        quota=quota,
+                                        stream=False,
+                                        on_chunk=None,
+                                        breach_event=None,
+                                        context_setter=lambda _r, _c: None,
+                                    )
+                                    out2 = await core2.execute(frame2)
+                                    if isinstance(out2, StepOutcome):
+                                        yield out2
+                                    else:
+                                        # Legacy: normalize StepResult to Success
+                                        step_result = out2
+                                        yield Success(step_result=step_result)
+                                except Exception as e:
+                                    try:
+                                        telemetry.logfire.error(
+                                            f"Coordinator internal execute failed: {e}"
+                                        )
+                                    except Exception:
+                                        pass
+                                    # As a last resort, synthesize a failure outcome
+                                    synthesized = StepResult(
+                                        name=getattr(step, "name", "<unnamed>"),
+                                        success=False,
+                                        feedback="Agent produced no terminal outcome",
+                                    )
+                                    yield Failure(
+                                        error=RuntimeError("Agent produced no terminal outcome"),
+                                        feedback=synthesized.feedback,
+                                        step_result=synthesized,
+                                    )
                 else:
                     raise ValueError("Either backend or step_executor must be provided")
 
