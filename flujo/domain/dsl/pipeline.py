@@ -823,7 +823,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 if _t is dict or org is dict:
                     return True
                 try:
-                    from pydantic import BaseModel as _PM  # type: ignore
+                    from pydantic import BaseModel as _PM
 
                     return isinstance(_t, type) and issubclass(_t, _PM)
                 except Exception:
@@ -966,9 +966,9 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             # Deduplicate after fallback additions
             try:
 
-                def _dedupe2(arr: list[ValidationFinding]) -> list[ValidationFinding]:  # type: ignore
+                def _dedupe2(arr: list[ValidationFinding]) -> list[ValidationFinding]:
                     seen: set[tuple[str, str | None, str]] = set()
-                    out2: list[ValidationFinding] = []  # type: ignore
+                    out2: list[ValidationFinding] = []
                     for it in arr:
                         key = (
                             str(getattr(it, "rule_id", "")),
@@ -983,8 +983,8 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
             except Exception:
 
-                def _dedupe2(x):  # type: ignore
-                    return x
+                def _dedupe2(arr: list[ValidationFinding]) -> list[ValidationFinding]:
+                    return arr
 
             report.warnings = _dedupe2(report.warnings)
         except Exception:
