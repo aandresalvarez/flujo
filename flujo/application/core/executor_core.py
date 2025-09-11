@@ -2867,12 +2867,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         ):
                             raise
                         except Exception as fb_exc:
-                            # Preserve attempt_context mutations for updates_context steps
-                            if (
-                                getattr(step, "updates_context", False)
-                                and attempt_context is not None
-                            ):
-                                fb_res.branch_context = attempt_context  # type: ignore[attr-defined]
+                            # No fallback result available here; just return a Failure preserving diagnostics
                             return Failure(
                                 error=fb_exc,
                                 feedback=f"Original error: {proc_fb}; Fallback error: {str(fb_exc)}",

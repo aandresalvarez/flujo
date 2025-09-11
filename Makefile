@@ -59,6 +59,9 @@ typecheck: .uv ## Run static type checking with mypy
 	@echo "🧐 Running static type checking..."
 	@# Ensure dev extras (including types-psutil) are installed before typechecking
 	@uv sync --all-extras
+	@# Clear mypy cache to avoid cross-Python stdlib stub mismatches (e.g., urllib.parse)
+	@rm -rf .mypy_cache || true
+	@uv run mypy --clear-cache >/dev/null 2>&1 || true
 	@# Run mypy non-interactively to avoid hanging on missing stub prompts
 	@uv run mypy flujo/ --install-types --non-interactive
 
