@@ -1,4 +1,5 @@
 import os
+import importlib.util as _importlib_util
 from typing import Any, Optional, Dict
 from flujo import Flujo
 from flujo.domain.dsl.pipeline import Pipeline
@@ -11,11 +12,42 @@ import pytest
 import threading
 import os as _os
 import re
+from typing import Callable
 
 # Set test mode environment variables for deterministic, low-overhead runs
 os.environ["FLUJO_TEST_MODE"] = "1"
 # Disable background memory monitoring to cut per-test overhead and avoid linger
 os.environ.setdefault("FLUJO_DISABLE_MEMORY_MONITOR", "1")
+
+# Provide a lightweight fallback for the pytest-benchmark fixture when the
+# plugin isn't installed OR when plugin autoloading is disabled.
+# This keeps benchmark-marked tests runnable in controlled runners that set
+# PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 (our CI harness does this).
+_AUTOLOAD_OFF = os.getenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD") == "1"
+# Only consider the benchmark plugin present if autoload is enabled AND
+# the module can be found. Avoid importing to keep lint clean and startup fast.
+_HAS_PYTEST_BENCH = (not _AUTOLOAD_OFF) and (
+    _importlib_util.find_spec("pytest_benchmark") is not None
+)
+
+if _AUTOLOAD_OFF or not _HAS_PYTEST_BENCH:  # pragma: no cover - fallback path
+
+    @pytest.fixture
+    def benchmark():
+        """Minimal stand-in for pytest-benchmark's benchmark fixture.
+
+        Usage mirrors the plugin API at a basic level:
+        - benchmark(func) -> calls and returns func()
+        - benchmark(func, *args, **kwargs) -> calls and returns func(*args, **kwargs)
+
+        Tests in this repo only assert that the call succeeds and result is not None,
+        so this lightweight shim is sufficient when the plugin is unavailable.
+        """
+
+        def _bench(func: Callable, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        return _bench
 
 
 # Define mock classes that need serialization support

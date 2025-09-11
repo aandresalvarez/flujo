@@ -153,7 +153,23 @@ class ExecutionManager(Generic[ContextT]):
         Yields:
             Streaming output chunks or step results
         """
+        try:
+            from ...infra import telemetry as _tm
+
+            _tm.logfire.debug(
+                f"[ExecutionManager] Starting execute_steps: total_steps={len(self.pipeline.steps)} start_idx={start_idx}"
+            )
+        except Exception:
+            pass
         for idx, step in enumerate(self.pipeline.steps[start_idx:], start=start_idx):
+            try:
+                from ...infra import telemetry as _tm
+
+                _tm.logfire.debug(
+                    f"[ExecutionManager] Enter step idx={idx} name='{getattr(step, 'name', '<unnamed>')}'."
+                )
+            except Exception:
+                pass
             step_result = None
             usage_limit_exceeded = False  # Track if a usage limit exception was raised
 
@@ -604,6 +620,15 @@ class ExecutionManager(Generic[ContextT]):
                     if step_result is None:
                         from flujo.domain.models import StepResult as _SR
 
+                        try:
+                            from ...infra import telemetry as _tm
+
+                            _tm.logfire.debug(
+                                f"[ExecutionManager] Synthesizing failure for missing outcome on step='{getattr(step, 'name', '<unnamed>')}'."
+                            )
+                        except Exception:
+                            pass
+
                         step_result = _SR(
                             name=getattr(step, "name", "<unnamed>"),
                             success=False,
@@ -771,6 +796,15 @@ class ExecutionManager(Generic[ContextT]):
                                     pass
                         # --- END PATCH ---
                         data = step_result.output
+
+                        try:
+                            from ...infra import telemetry as _tm
+
+                            _tm.logfire.debug(
+                                f"[ExecutionManager] Exit step idx={idx} name='{getattr(step, 'name', '<unnamed>')}'."
+                            )
+                        except Exception:
+                            pass
 
                     # Update the state (moved from the old usage check location)
                     if step_result:
@@ -1026,21 +1060,27 @@ class ExecutionManager(Generic[ContextT]):
 
         # Finalization safety: if fewer results were recorded than pipeline steps,
         # synthesize placeholder failures for the remaining tail steps so the
-        # history length matches the pipeline length. This covers cases where a
-        # step produced no terminal outcome and the safety net did not fire
-        # earlier (e.g., custom coordinators/backends yielding nothing).
+        # history length matches the pipeline length — but only when we detected a
+        # missing-outcome scenario. This avoids padding when steps were legitimately
+        # skipped (e.g., conditional branches).
         try:
             expected = len(self.pipeline.steps)
             have = len(result.step_history)
-            if have < expected:
-                # Only synthesize placeholders on fresh runs (not resume) AND when a
-                # prior missing-outcome failure was recorded.
+            if start_idx == 0 and have < expected:
                 missing_outcome_detected = any(
                     isinstance(getattr(sr, "feedback", None), str)
                     and "no terminal outcome" in sr.feedback.lower()
                     for sr in result.step_history
                 )
-                if start_idx == 0 and missing_outcome_detected:
+                if missing_outcome_detected:
+                    try:
+                        from ...infra import telemetry as _tm
+
+                        _tm.logfire.debug(
+                            f"[ExecutionManager] Finalization padding: have={have} expected={expected}."
+                        )
+                    except Exception:
+                        pass
                     from flujo.domain.models import StepResult as _SR
 
                     for j in range(have, expected):

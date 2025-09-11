@@ -99,7 +99,7 @@ test: .uv ## Run all tests via enhanced runner (robust, two-phase)
 .PHONY: test-fast
 test-fast: .uv ## Run fast tests in parallel with hang guards (excludes slow, veryslow, serial, and benchmark tests)
 	@echo "⚡ Running fast tests (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers auto --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
 
 .PHONY: test-fast-verbose
 test-fast-verbose: .uv ## Run fast tests with verbose output for debugging
