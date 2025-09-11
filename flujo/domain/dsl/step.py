@@ -27,6 +27,7 @@ from typing import (
 # contextvars import removed; using context-scoped storage for refine_until
 import inspect
 from enum import Enum
+import contextvars
 
 from flujo.domain.base_model import BaseModel
 from flujo.domain.models import RefinementCheck, UsageLimits  # noqa: F401
@@ -640,12 +641,20 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         """Build a refinement loop pipeline: generator >> capture >> critic >> post-mapper."""
         from .loop import LoopStep  # local import
 
-        # Use context-scoped storage for the last artifact to avoid any cross-task
-        # ContextVar quirks under concurrent runs sharing the same pipeline object.
+        # Task-local storage for the last artifact; safe under concurrency
+        last_artifact_var: contextvars.ContextVar[Any | None] = contextvars.ContextVar(
+            f"{name}_last_artifact", default=None
+        )
+
+        # Use context-scoped storage too when available to aid inspection
         async def _capture_artifact(artifact: Any, *, context: BaseModel | None = None) -> Any:
             try:
                 if context is not None:
                     object.__setattr__(context, "_last_refine_artifact", artifact)
+            except Exception:
+                pass
+            try:
+                last_artifact_var.set(artifact)
             except Exception:
                 pass
             return artifact
@@ -706,20 +715,22 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             if isinstance(out, RefinementCheck) and out.is_complete:
                 try:
                     if context is not None:
-                        # Deterministic reconstruction from context when available
-                        oi = getattr(context, "original_input", None)
-                        fb = getattr(context, "feedback", None)
-                        if isinstance(oi, str) and (fb is None or isinstance(fb, str)):
-                            return f"{oi}-{fb or 'none'}"
-                        # Prefer direct attribute when present
-                        if hasattr(context, "_last_refine_artifact"):
-                            return getattr(context, "_last_refine_artifact")
-                        # Fallback: inspect scratchpad steps for the capture output
+                        # 0) Prefer the task-local capture when present
+                        try:
+                            la = last_artifact_var.get()
+                        except Exception:
+                            la = None
+                        if la is not None:
+                            return la
+                        # 1) Prefer the exact captured artifact recorded during the last iteration
                         sp = getattr(context, "scratchpad", None)
                         if isinstance(sp, dict):
                             steps = sp.get("steps") or {}
                             if isinstance(steps, dict) and "_capture_artifact" in steps:
                                 return steps.get("_capture_artifact")
+                        # 2) Fallback to any context-scoped attribute set by the capture step
+                        if hasattr(context, "_last_refine_artifact"):
+                            return getattr(context, "_last_refine_artifact")
                 except Exception:
                     pass
             return out
