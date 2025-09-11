@@ -251,7 +251,15 @@ def run_one(
     # Only force-load timeout/asyncio plugins when plugin autoload is disabled.
     # Otherwise, autoload will bring them in and double-registration would error.
     if disable_autoload:
-        cmd += ["-p", "pytest_timeout", "-p", "pytest_asyncio.plugin"]
+        cmd += [
+            "-p",
+            "pytest_timeout",
+            "-p",
+            "pytest_asyncio.plugin",
+            # Override ini to avoid required_plugins check complaining when autoload is off
+            "--override-ini",
+            "required_plugins=",
+        ]
 
     if not show_tb:
         cmd.append("--tb=no")
@@ -313,8 +321,13 @@ def discover_tests(
     """Return all collected nodeids honoring -m and -k filters."""
     cmd = [sys.executable, "-m", "pytest", "--collect-only", "-q"]
     if disable_autoload:
-        # Ensure required plugins are available during collection
-        cmd += ["-p", "pytest_asyncio.plugin"]
+        # Ensure required plugins are available during collection and relax required_plugins
+        cmd += [
+            "-p",
+            "pytest_asyncio.plugin",
+            "--override-ini",
+            "required_plugins=",
+        ]
     if markers:
         cmd += ["-m", markers]
     if kexpr:

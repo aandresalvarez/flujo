@@ -335,6 +335,20 @@ class ExecutionManager(Generic[ContextT]):
                     if step_result and step_result not in result.step_history:
                         # print(f"EM add step_result {getattr(step_result,'name',None)} success={getattr(step_result,'success',None)}")
                         self.step_coordinator.update_pipeline_result(result, step_result)
+                        # If the step provided a branch_context (e.g., updates_context or complex
+                        # policies), merge it into the live context so callers and finalization
+                        # see the up-to-date state even on failures.
+                        try:
+                            if (
+                                context is not None
+                                and getattr(step_result, "branch_context", None) is not None
+                                and step_result.branch_context is not context
+                            ):
+                                from .context_manager import ContextManager as _CM
+
+                                _CM.merge(context, step_result.branch_context)
+                        except Exception:
+                            pass
                         # FSD-009: Enforce usage limits deterministically when no proactive reservation occurred
                         if self.usage_limits is not None:
                             try:
