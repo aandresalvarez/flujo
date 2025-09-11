@@ -5366,6 +5366,17 @@ class DefaultLoopStepExecutor:
         # - MapStep: success if exited by condition regardless of per-item failures (we continued mapping)
         # - Generic LoopStep: success only if exited by condition and no failures
         is_map_step = hasattr(loop_step, "iterable_input")
+        # Compute last failure feedback for richer diagnostics when condition exits after failures
+        last_failure_fb: str | None = None
+        if any_failure:
+            try:
+                for _sr in reversed(iteration_results):
+                    if not getattr(_sr, "success", True):
+                        fb_val = getattr(_sr, "feedback", None)
+                        last_failure_fb = str(fb_val) if fb_val is not None else None
+                        break
+            except Exception:
+                last_failure_fb = None
         if is_map_step:
             success_flag = exit_reason == "condition"
             feedback_msg = None if success_flag else "reached max_loops"
@@ -5385,7 +5396,11 @@ class DefaultLoopStepExecutor:
                     feedback_msg = None
                 elif exit_reason == "condition":
                     success_flag = not any_failure
-                    feedback_msg = "loop exited by condition"
+                    # Preserve body failure details when exit condition is met after a failed iteration
+                    if any_failure and last_failure_fb:
+                        feedback_msg = f"Loop body failed: {last_failure_fb}"
+                    else:
+                        feedback_msg = "loop exited by condition"
                 else:
                     success_flag = False
                     feedback_msg = "reached max_loops"

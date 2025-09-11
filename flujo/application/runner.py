@@ -846,6 +846,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         num_steps = 0
                     if num_steps == 0:
                         final_status = "completed"
+                # Do not synthesize placeholders at the runner level; ExecutionManager
+                # already pads histories for missing-outcome scenarios. Runner padding
+                # breaks pause/resume and early-abort semantics.
+
                 await exec_manager.persist_final_state(
                     run_id=run_id_for_state,
                     context=current_context_instance,

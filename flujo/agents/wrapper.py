@@ -84,9 +84,27 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         self._max_retries = max_retries
         from flujo.infra.settings import settings as current_settings
 
-        self._timeout_seconds: int | None = (
+        # Respect provided timeout or fall back to global setting. In test mode,
+        # clamp overly large timeouts to keep CI runs fast and avoid global
+        # pytest-timeout failures when providers are unreachable.
+        base_timeout: int | None = (
             timeout if timeout is not None else current_settings.agent_timeout
         )
+        try:
+            from flujo.infra.settings import get_settings as _get_settings
+
+            # Clamp only when caller did not supply an explicit timeout
+            if (
+                _get_settings().test_mode
+                and timeout is None
+                and isinstance(base_timeout, int)
+                and base_timeout > 5
+            ):
+                self._timeout_seconds = 5
+            else:
+                self._timeout_seconds = base_timeout
+        except Exception:
+            self._timeout_seconds = base_timeout
         self._model_name: str | None = model_name or getattr(agent, "model", "unknown_model")
         # Use centralized model ID extraction for consistency
         from ..utils.model_utils import extract_model_id

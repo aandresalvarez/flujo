@@ -418,6 +418,15 @@ class ExecutionManager(Generic[ContextT]):
                     if step_result and step_result not in result.step_history:
                         # print(f"EM add step_result {getattr(step_result,'name',None)} success={getattr(step_result,'success',None)}")
                         self.step_coordinator.update_pipeline_result(result, step_result)
+                        # Persist the step result when a run_id is provided (covers both
+                        # success and failure, including custom executors used in unit tests)
+                        try:
+                            if run_id is not None:
+                                await self.state_manager.record_step_result(
+                                    run_id, step_result, idx
+                                )
+                        except Exception:
+                            pass
                         # If the step provided a branch_context (e.g., updates_context or complex
                         # policies), merge it into the live context so callers and finalization
                         # see the up-to-date state even on failures.
@@ -570,6 +579,13 @@ class ExecutionManager(Generic[ContextT]):
                                     self.step_coordinator.update_pipeline_result(
                                         result, step_result
                                     )
+                                    try:
+                                        if run_id is not None:
+                                            await self.state_manager.record_step_result(
+                                                run_id, step_result, idx
+                                            )
+                                    except Exception:
+                                        pass
                                 self.set_final_context(result, context)
                                 yield result
                                 return
@@ -881,13 +897,18 @@ class ExecutionManager(Generic[ContextT]):
                     # Ensure the step result is added to history before re-raising the exception
                     if step_result is not None and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
+                        try:
+                            if run_id is not None:
+                                await self.state_manager.record_step_result(
+                                    run_id, step_result, idx
+                                )
+                        except Exception:
+                            pass
                     usage_limit_exceeded = True
                     raise  # Re-raise the correctly populated exception.
                 except PipelineAbortSignal:
-                    # Update pipeline result before aborting
-                    # Add current step result to pipeline result before yielding
-                    if step_result is not None and step_result not in result.step_history:
-                        self.step_coordinator.update_pipeline_result(result, step_result)
+                    # Early abort (pause or hook): do not append the in-flight step_result.
+                    # Tests expect that only previously completed steps are present.
                     # Ensure paused state is reflected in context for HITL scenarios
                     try:
                         if context is not None and hasattr(context, "scratchpad"):
@@ -927,9 +948,8 @@ class ExecutionManager(Generic[ContextT]):
                         if hasattr(context, "scratchpad"):
                             context.scratchpad["status"] = "paused"
                             context.scratchpad["pause_message"] = str(e)
-                    # Add current step result to pipeline result before yielding
-                    if step_result is not None and step_result not in result.step_history:
-                        self.step_coordinator.update_pipeline_result(result, step_result)
+                    # Do not append the in‑flight step_result for pauses to keep
+                    # history aligned with completed steps only.
                     # Best-effort: record latest step result for pause diagnostics
                     try:
                         if run_id is not None and step_result is not None:
@@ -1004,19 +1024,23 @@ class ExecutionManager(Generic[ContextT]):
         # Do not synthesize placeholder results for unexecuted steps.
         # History should only include steps that actually ran.
 
-        # Finalization safety: if any step failed due to missing terminal outcome
-        # and fewer results were recorded than pipeline steps, synthesize placeholders
-        # for the remaining tail steps so history length matches the pipeline length.
+        # Finalization safety: if fewer results were recorded than pipeline steps,
+        # synthesize placeholder failures for the remaining tail steps so the
+        # history length matches the pipeline length. This covers cases where a
+        # step produced no terminal outcome and the safety net did not fire
+        # earlier (e.g., custom coordinators/backends yielding nothing).
         try:
             expected = len(self.pipeline.steps)
             have = len(result.step_history)
             if have < expected:
+                # Only synthesize placeholders on fresh runs (not resume) AND when a
+                # prior missing-outcome failure was recorded.
                 missing_outcome_detected = any(
                     isinstance(getattr(sr, "feedback", None), str)
                     and "no terminal outcome" in sr.feedback.lower()
                     for sr in result.step_history
                 )
-                if missing_outcome_detected:
+                if start_idx == 0 and missing_outcome_detected:
                     from flujo.domain.models import StepResult as _SR
 
                     for j in range(have, expected):
