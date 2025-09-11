@@ -3375,6 +3375,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             except Exception:
                 pass
 
+            # For context-updating steps, also carry the mutated attempt_context forward
+            try:
+                if getattr(step, "updates_context", False) and attempt_context is not None:
+                    result.branch_context = attempt_context
+            except Exception:
+                pass
+
             # Detect mock objects in final output and raise
             def _is_mock(obj: Any) -> bool:
                 try:

@@ -6042,9 +6042,12 @@ class DefaultParallelStepExecutor:
                             if context is not None and hasattr(context, "branch_results"):
                                 # Get the branch_results from the last successful branch context
                                 last_branch_ctx = branch_ctxs.get(last_successful_branch)
-                                if last_branch_ctx is not None and hasattr(
-                                    last_branch_ctx, "branch_results"
+                                if (
+                                    last_branch_ctx is not None
+                                    and hasattr(last_branch_ctx, "branch_results")
+                                    and getattr(last_branch_ctx, "branch_results", None)
                                 ):
+                                    # Use branch context's results when available and non-empty
                                     context.branch_results = getattr(
                                         last_branch_ctx, "branch_results"
                                     ).copy()
