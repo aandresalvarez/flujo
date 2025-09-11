@@ -152,10 +152,16 @@ class StepCoordinator(Generic[ContextT]):
                     effective_stream = bool(stream and has_agent_stream)
                     if effective_stream:
                         # For streaming, we need to collect chunks and yield them
-                        chunks = []
+                        chunks: list[Any] = []
+                        _last_chunk: Any = object()
 
                         async def on_chunk(chunk: Any) -> None:
+                            nonlocal _last_chunk
+                            # Deduplicate consecutive identical chunks to avoid double-emission
+                            if chunk == _last_chunk:
+                                return
                             chunks.append(chunk)
+                            _last_chunk = chunk
 
                         request = StepExecutionRequest(
                             step=step,

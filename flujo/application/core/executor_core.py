@@ -3420,6 +3420,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 from ...exceptions import MockDetectionError as _MDE
 
                 raise _MDE(f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object")
+            # Apply updates_context semantics for simple steps with validation
+            try:
+                if getattr(step, "updates_context", False) and context is not None:
+                    update_data = _build_context_update(processed_output)
+                    if update_data:
+                        validation_error = _inject_context_with_deep_merge(
+                            context, update_data, type(context)
+                        )
+                        if validation_error:
+                            result.success = False
+                            result.feedback = f"Context validation failed: {validation_error}"
+            except Exception:
+                # Never crash pipeline on context update failure; treat as best-effort
+                pass
             result.output = processed_output
             result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
 

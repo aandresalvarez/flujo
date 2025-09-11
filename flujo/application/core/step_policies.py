@@ -6977,6 +6977,17 @@ class DefaultCacheStepExecutor:
                             success=False,
                             feedback="Unsupported outcome",
                         )
+                # Preserve per-attempt context mutations for updates_context even on failure
+                try:
+                    if (
+                        not result.success
+                        and getattr(cache_step.wrapped_step, "updates_context", False)
+                        and context is not None
+                        and result.branch_context is None
+                    ):
+                        result.branch_context = context
+                except Exception:
+                    pass
                 if result.success:
                     try:
                         await cache_step.cache_backend.set(cache_key, result)
