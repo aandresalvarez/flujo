@@ -804,6 +804,192 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         except Exception:
             pass
 
+        # Fallback: minimal in-process template lints for core V-T rules when external
+        # linters are unavailable or suppressed by environment. This guarantees that
+        # critical warnings like V-T1/V-T3/V-T5/V-T6 are surfaced for CLI validation
+        # and unit tests, even if plugin loading fails.
+        try:
+            from ..pipeline_validation import ValidationFinding as _VF
+            import re as _re
+            import json as _json
+
+            def _expects_json(_t: Any) -> bool:
+                try:
+                    from typing import get_origin as _go
+
+                    org = _go(_t)
+                except Exception:
+                    org = None
+                if _t is dict or org is dict:
+                    return True
+                try:
+                    from pydantic import BaseModel as _PM  # type: ignore
+
+                    return isinstance(_t, type) and issubclass(_t, _PM)
+                except Exception:
+                    return False
+
+            for _idx, _st in enumerate(self.steps):
+                try:
+                    _meta = getattr(_st, "meta", None)
+                    _templ = _meta.get("templated_input") if isinstance(_meta, dict) else None
+                    if not isinstance(_templ, str):
+                        continue
+                    _loc = (_meta.get("_yaml_loc") or {}) if isinstance(_meta, dict) else {}
+                    _fpath = _loc.get("file")
+                    _line = _loc.get("line")
+                    _col = _loc.get("column")
+                    _loc_path = (
+                        (_meta.get("_yaml_loc") or {}).get("path")
+                        if isinstance(_meta, dict)
+                        else None
+                    )
+                    _has_tokens = bool(_re.search(r"\{\{.*\}\}", _templ))
+
+                    # V-T1: previous_step.output misuse
+                    if (
+                        _has_tokens
+                        and _re.search(r"previous_step\s*\.\s*output\b", _templ)
+                        and _idx > 0
+                    ):
+                        report.warnings.append(
+                            _VF(
+                                rule_id="V-T1",
+                                severity="warning",
+                                message=(
+                                    "Template references previous_step.output, but previous_step is the raw value and has no .output attribute."
+                                ),
+                                step_name=getattr(_st, "name", None),
+                                location_path=_loc_path or f"steps[{_idx}].input",
+                                file=_fpath,
+                                line=_line,
+                                column=_col,
+                            )
+                        )
+
+                    # V-T3: unknown/disabled filters
+                    if _has_tokens:
+                        try:
+                            from ...utils.prompting import _get_enabled_filters as _filters
+
+                            _enabled = {s.lower() for s in _filters()}
+                        except Exception:
+                            _enabled = {"join", "upper", "lower", "length", "tojson"}
+                        for _m in _re.finditer(r"\|\s*([a-zA-Z_][a-zA-Z0-9_]*)", _templ):
+                            _fname = (_m.group(1) or "").lower()
+                            if _fname and _fname not in _enabled:
+                                report.warnings.append(
+                                    _VF(
+                                        rule_id="V-T3",
+                                        severity="warning",
+                                        message=f"Unknown or disabled template filter: {_fname}",
+                                        step_name=getattr(_st, "name", None),
+                                        location_path=_loc_path or f"steps[{_idx}].input",
+                                        file=_fpath,
+                                        line=_line,
+                                        column=_col,
+                                    )
+                                )
+
+                    # V-T5: missing prior model field in previous_step.<field>
+                    if _has_tokens and _idx > 0:
+                        try:
+                            _prev_t = getattr(self.steps[_idx - 1], "__step_output_type__", Any)
+                            _fields: set[str] = set()
+                            if hasattr(_prev_t, "model_fields"):
+                                _fields = set(getattr(_prev_t, "model_fields", {}).keys())
+                            elif hasattr(_prev_t, "__fields__"):
+                                _fields = set(getattr(_prev_t, "__fields__", {}).keys())
+                            _comp = "".join(
+                                ch for ch in _templ if ch not in (" ", "\t", "\n", "\r")
+                            )
+                            _key = "previous_step."
+                            _start = 0
+                            _missing: set[str] = set()
+                            while True:
+                                _i = _comp.find(_key, _start)
+                                if _i == -1:
+                                    break
+                                _j = _i + len(_key)
+                                _buf: list[str] = []
+                                while _j < len(_comp) and (_comp[_j].isalnum() or _comp[_j] == "_"):
+                                    _buf.append(_comp[_j])
+                                    _j += 1
+                                _fld = "".join(_buf)
+                                if _fld and _fld != "output" and _fld not in _fields:
+                                    _missing.add(_fld)
+                                _start = _j
+                            for _fld in sorted(_missing):
+                                report.warnings.append(
+                                    _VF(
+                                        rule_id="V-T5",
+                                        severity="warning",
+                                        message=(
+                                            f"Template references previous_step.{_fld} but field is not present on prior model {getattr(_prev_t, '__name__', _prev_t)}."
+                                        ),
+                                        step_name=getattr(_st, "name", None),
+                                        location_path=_loc_path or f"steps[{_idx}].input",
+                                        file=_fpath,
+                                        line=_line,
+                                        column=_col,
+                                    )
+                                )
+                        except Exception:
+                            pass
+
+                    # V-T6: looks like JSON but fails to parse while input expects JSON
+                    _in_t = getattr(_st, "__step_input_type__", Any)
+                    if _expects_json(_in_t) and _has_tokens:
+                        _clean = _re.sub(r"\{\{.*?\}\}", "null", _templ).strip()
+                        if (_clean.startswith("{") and _clean.endswith("}")) or (
+                            _clean.startswith("[") and _clean.endswith("]")
+                        ):
+                            try:
+                                _json.loads(_clean)
+                            except Exception:
+                                report.warnings.append(
+                                    _VF(
+                                        rule_id="V-T6",
+                                        severity="warning",
+                                        message=(
+                                            "Templated input resembles JSON but is not valid JSON for a JSON-typed step input."
+                                        ),
+                                        step_name=getattr(_st, "name", None),
+                                        location_path=_loc_path or f"steps[{_idx}].input",
+                                        file=_fpath,
+                                        line=_line,
+                                        column=_col,
+                                    )
+                                )
+                except Exception:
+                    continue
+            # Deduplicate after fallback additions
+            try:
+
+                def _dedupe2(arr: list[ValidationFinding]) -> list[ValidationFinding]:  # type: ignore
+                    seen: set[tuple[str, str | None, str]] = set()
+                    out2: list[ValidationFinding] = []  # type: ignore
+                    for it in arr:
+                        key = (
+                            str(getattr(it, "rule_id", "")),
+                            getattr(it, "step_name", None),
+                            str(getattr(it, "message", "")),
+                        )
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        out2.append(it)
+                    return out2
+
+            except Exception:
+
+                def _dedupe2(x):  # type: ignore
+                    return x
+
+            report.warnings = _dedupe2(report.warnings)
+        except Exception:
+            pass
+
         # Apply per-step suppression (meta-based) after merging linter results
         try:
             import fnmatch as _fnm
