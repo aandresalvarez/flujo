@@ -1018,13 +1018,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 yield final_result
         else:
             # Streaming pipeline: unwrap typed Chunk outcomes into raw chunks for legacy contract
+            # and suppress intermediate Success/Failure outcomes — callers expect only
+            # raw chunks and the final PipelineResult.
             async for item in self.run_async(
                 initial_input, initial_context_data=initial_context_data
             ):
                 from ..domain.models import Chunk as _Chunk
+                from ..domain.models import StepOutcome as _StepOutcome
 
                 if isinstance(item, _Chunk):
                     yield item.data
+                elif isinstance(item, _StepOutcome):
+                    # Drop Success/Failure/Paused outcomes from streaming surface
+                    continue
                 else:
                     yield item
 

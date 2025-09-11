@@ -2867,6 +2867,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         ):
                             raise
                         except Exception as fb_exc:
+                            # Preserve attempt_context mutations for updates_context steps
+                            if (
+                                getattr(step, "updates_context", False)
+                                and attempt_context is not None
+                            ):
+                                fb_res.branch_context = attempt_context  # type: ignore[attr-defined]
                             return Failure(
                                 error=fb_exc,
                                 feedback=f"Original error: {proc_fb}; Fallback error: {str(fb_exc)}",
@@ -3080,6 +3086,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 metadata_=result.metadata_,
                                 step_history=[],
                             )
+                            if (
+                                getattr(step, "updates_context", False)
+                                and attempt_context is not None
+                            ):
+                                sr_fb.branch_context = attempt_context
                             return Failure(
                                 error=InfiniteFallbackError(fb_txt),
                                 feedback=fb_txt,
@@ -3241,6 +3252,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 step_history=[],
                             ),
                         )
+                    if getattr(step, "updates_context", False) and attempt_context is not None:
+                        result.branch_context = attempt_context
                     return Failure(
                         error=Exception(result.feedback or "step failed"),
                         feedback=result.feedback,
