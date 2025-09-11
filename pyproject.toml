@@ -358,6 +358,7 @@ markers = [
   "e2e: marks tests as end-to-end (requires network access or VCR cassettes)",
   "benchmark: marks tests as benchmarks (requires pytest-benchmark)",
   "asyncio: marks tests as async (handled by pytest-asyncio)",
+  "anyio: marks tests that use anyio's event loop and concurrency primitives",
   "serial: marks tests that must run serially to avoid concurrency issues",
   "slow: marks tests that are slow and should be run separately",
   "veryslow: marks extremely slow tests that must never run in fast suites",
@@ -390,6 +391,7 @@ addopts = [
 # addopts = ["--no-cov", "--tb=short"]  # Uncomment for maximum speed
 
 # Force pytest-asyncio plugin loading for all test runs
+# Only enforce pytest-asyncio; pytest-anyio is optional in CI images.
 required_plugins = ["pytest-asyncio"]
 
 # --------------------------------------------------------------------------- #
