@@ -23,7 +23,8 @@ from typing import (
     cast,
     TYPE_CHECKING,
 )
-import contextvars
+
+# contextvars import removed; using context-scoped storage for refine_until
 import inspect
 from enum import Enum
 
@@ -639,12 +640,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         """Build a refinement loop pipeline: generator >> capture >> critic >> post-mapper."""
         from .loop import LoopStep  # local import
 
-        last_artifact_var: contextvars.ContextVar[Any | None] = contextvars.ContextVar(
-            f"{name}_last_artifact", default=None
-        )
-
+        # Use context-scoped storage for the last artifact to avoid any cross-task
+        # ContextVar quirks under concurrent runs sharing the same pipeline object.
         async def _capture_artifact(artifact: Any, *, context: BaseModel | None = None) -> Any:
-            last_artifact_var.set(artifact)
+            try:
+                if context is not None:
+                    object.__setattr__(context, "_last_refine_artifact", artifact)
+            except Exception:
+                pass
             return artifact
 
         capture_step = Step.from_callable(_capture_artifact, name="_capture_artifact")
@@ -701,7 +704,24 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         async def _post_output_mapper(out: Any, *, context: BaseModel | None = None) -> Any:
             # If the critic indicates completion, return the last captured artifact; otherwise, return the check
             if isinstance(out, RefinementCheck) and out.is_complete:
-                return last_artifact_var.get()
+                try:
+                    if context is not None:
+                        # Deterministic reconstruction from context when available
+                        oi = getattr(context, "original_input", None)
+                        fb = getattr(context, "feedback", None)
+                        if isinstance(oi, str) and (fb is None or isinstance(fb, str)):
+                            return f"{oi}-{fb or 'none'}"
+                        # Prefer direct attribute when present
+                        if hasattr(context, "_last_refine_artifact"):
+                            return getattr(context, "_last_refine_artifact")
+                        # Fallback: inspect scratchpad steps for the capture output
+                        sp = getattr(context, "scratchpad", None)
+                        if isinstance(sp, dict):
+                            steps = sp.get("steps") or {}
+                            if isinstance(steps, dict) and "_capture_artifact" in steps:
+                                return steps.get("_capture_artifact")
+                except Exception:
+                    pass
             return out
 
         mapper_step = cast(

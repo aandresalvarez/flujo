@@ -178,50 +178,8 @@ class ExecutionManager(Generic[ContextT]):
                     # Track if coordinator reported Success with a None step_result
                     need_internal_direct_exec = False
 
-                    # Prefer internal executor for non-streaming steps when using the default
-                    # in-process LocalBackend to reduce overhead and improve resiliency
-                    # (keeps custom backends fully honored).
+                    # Execute steps via the configured backend (default path).
                     chosen_step_executor = step_executor
-                    if chosen_step_executor is None and not use_stream:
-                        try:
-                            from flujo.infra.backends import LocalBackend as _LB
-
-                            if isinstance(self.backend, _LB):
-                                from typing import Any as _Any
-
-                                async def _internal_step_executor(
-                                    s: _Any,
-                                    d: _Any,
-                                    c: Optional[_Any],
-                                    r: Optional[_Any],
-                                    *,
-                                    stream: bool = False,
-                                ) -> AsyncIterator[_Any]:
-                                    from .executor_core import ExecutorCore as _Core
-                                    from .types import ExecutionFrame as _Frame
-
-                                    core2: _Core = _Core()
-                                    frame2 = _Frame(
-                                        step=s,
-                                        data=d,
-                                        context=c,
-                                        resources=r,
-                                        limits=self.usage_limits,
-                                        quota=self.root_quota,
-                                        stream=False,
-                                        on_chunk=None,
-                                        breach_event=None,
-                                        context_setter=lambda _res, _ctx: None,
-                                    )
-                                    out = await core2.execute(frame2)
-                                    if isinstance(out, StepOutcome):
-                                        yield out
-                                    else:
-                                        yield Success(step_result=out)
-
-                                chosen_step_executor = _internal_step_executor
-                        except Exception:
-                            chosen_step_executor = step_executor
 
                     async for item in self.step_coordinator.execute_step(
                         step=step,
