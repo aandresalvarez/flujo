@@ -53,12 +53,29 @@ lint: .uv ## Lint the code for issues
 	@echo "🔎 Linting code..."
 	@uv run ruff check flujo/ tests/ scripts/
 
+
 .PHONY: typecheck
 typecheck: .uv ## Run static type checking with mypy
 	@echo "🧐 Running static type checking..."
 	@# Ensure dev extras (including types-psutil) are installed before typechecking
 	@uv sync --all-extras
-	@uv run mypy flujo/
+	@# Run mypy non-interactively to avoid hanging on missing stub prompts
+	@uv run mypy flujo/ --install-types --non-interactive
+
+.PHONY: typecheck-fast
+typecheck-fast: .uv ## Typecheck without syncing deps (faster local loop)
+	@echo "🧐 Running static type checking (no sync)..."
+	@uv run mypy flujo/ --install-types --non-interactive
+
+.PHONY: typecheck-verbose
+typecheck-verbose: .uv ## Typecheck with verbose output to trace slow modules
+	@echo "🧐 Running mypy in verbose mode..."
+	@uv run mypy flujo/ --install-types --non-interactive -v
+
+.PHONY: typecheck-profile
+typecheck-profile: .uv ## Profile mypy to locate hotspots (writes .mypy.cprof)
+	@echo "🧐 Profiling mypy..."
+	@uv run mypy flujo/ --install-types --non-interactive --cprofile .mypy.cprof
 
 
 # ------------------------------------------------------------------------------

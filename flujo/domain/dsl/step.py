@@ -104,8 +104,8 @@ class StepConfig(BaseModel):
         When False, successful fallbacks clear feedback for backward compatibility.
     """
 
-    # Default to zero retries; a single attempt unless configured otherwise
-    max_retries: int = 0
+    # Default to one retry (two attempts total) to match legacy/test semantics
+    max_retries: int = 1
     timeout_s: float | None = None
     temperature: float | None = None
     top_k: int | None = None

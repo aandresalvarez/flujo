@@ -2103,8 +2103,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
 
         # retries config semantics: number of retries; attempts = 1 + retries
-        # Default is 0 retries (single attempt) to avoid duplicate executions
-        retries_config = 0
+        # Default to 1 retry to match legacy/test semantics (2 attempts total)
+        retries_config = 1
         try:
             if hasattr(step, "config") and hasattr(step.config, "max_retries"):
                 retries_config = int(getattr(step.config, "max_retries"))
@@ -3375,10 +3375,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             except Exception:
                 pass
 
-            # For context-updating steps, also carry the mutated attempt_context forward
+            # Merge any per-attempt context mutations back into the main context
+            # even when there was only a single attempt. This ensures context
+            # mutations made by the agent (e.g., signature injection) are
+            # visible to subsequent steps and in the final context.
             try:
-                if getattr(step, "updates_context", False) and attempt_context is not None:
-                    result.branch_context = attempt_context
+                if (
+                    context is not None
+                    and attempt_context is not None
+                    and attempt_context is not context
+                ):
+                    from .context_manager import ContextManager as _CM
+
+                    _CM.merge(context, attempt_context)
             except Exception:
                 pass
 
@@ -3406,17 +3415,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             result.output = processed_output
             result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
 
-            # Post-success context merge for retries and record step output for templating
+            # Post-success bookkeeping: record step output for templating and finalize branch_context
             try:
-                if (
-                    total_attempts > 1
-                    and context is not None
-                    and attempt_context is not None
-                    and attempt_context is not context
-                ):
-                    from .context_manager import ContextManager as _CM
-
-                    _CM.merge(context, attempt_context)
                 # Record successful step output into context.scratchpad['steps'] for {{ steps.<name> }} templating
                 if context is not None:
                     sp = getattr(context, "scratchpad", None)
@@ -3456,6 +3456,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 pass
                 except Exception:
                     pass
+                # Ensure the branch_context reflects the up-to-date main context
                 result.branch_context = context
             except Exception:
                 # Do not fail success path due to scratchpad/merge issues

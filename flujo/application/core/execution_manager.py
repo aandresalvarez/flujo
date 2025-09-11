@@ -170,37 +170,10 @@ class ExecutionManager(Generic[ContextT]):
 
             try:
                 try:
-                    # ✅ UPDATE: The coordinator now orchestrates hooks around a direct backend call.
-                    # Provide a direct ExecutorCore-based step_executor for non-streaming to avoid
-                    # backend monkeypatch interference in tests that simulate missing outcomes.
+                    # Respect caller-provided step_executor when given; otherwise
+                    # delegate to the configured backend. Streaming for the last
+                    # step is controlled by `use_stream` below.
                     use_stream = stream_last and idx == len(self.pipeline.steps) - 1
-
-                    from typing import Any
-
-                    async def _internal_step_executor(
-                        s: Any, d: Any, c: Optional[Any], r: Optional[Any], *, stream: bool = False
-                    ) -> AsyncIterator[Any]:
-                        from .executor_core import ExecutorCore as _Core
-                        from .types import ExecutionFrame as _Frame
-
-                        core: _Core = _Core()
-                        frame = _Frame(
-                            step=s,
-                            data=d,
-                            context=c,
-                            resources=r,
-                            limits=self.usage_limits,
-                            quota=self.root_quota,
-                            stream=False,
-                            on_chunk=None,
-                            breach_event=None,
-                            context_setter=lambda _res, _ctx: None,
-                        )
-                        outcome = await core.execute(frame)
-                        if isinstance(outcome, StepOutcome):
-                            yield outcome
-                        else:
-                            yield Success(step_result=outcome)
 
                     async for item in self.step_coordinator.execute_step(
                         step=step,
@@ -208,7 +181,7 @@ class ExecutionManager(Generic[ContextT]):
                         context=context,
                         backend=self.backend,
                         stream=use_stream,
-                        step_executor=(None if use_stream else _internal_step_executor),
+                        step_executor=(step_executor if step_executor is not None else None),
                         usage_limits=self.usage_limits,
                         quota=self.root_quota,
                     ):
