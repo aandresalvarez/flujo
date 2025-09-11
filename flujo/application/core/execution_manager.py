@@ -171,6 +171,7 @@ class ExecutionManager(Generic[ContextT]):
             except Exception:
                 pass
             step_result = None
+            step_result_recorded: bool = False
             usage_limit_exceeded = False  # Track if a usage limit exception was raised
 
             # ✅ CRITICAL FIX: Persist state AFTER step execution for crash recovery
@@ -437,10 +438,11 @@ class ExecutionManager(Generic[ContextT]):
                         # Persist the step result when a run_id is provided (covers both
                         # success and failure, including custom executors used in unit tests)
                         try:
-                            if run_id is not None:
+                            if run_id is not None and not step_result_recorded:
                                 await self.state_manager.record_step_result(
                                     run_id, step_result, idx
                                 )
+                                step_result_recorded = True
                         except Exception:
                             pass
                         # If the step provided a branch_context (e.g., updates_context or complex
@@ -596,10 +598,11 @@ class ExecutionManager(Generic[ContextT]):
                                         result, step_result
                                     )
                                     try:
-                                        if run_id is not None:
+                                        if run_id is not None and not step_result_recorded:
                                             await self.state_manager.record_step_result(
                                                 run_id, step_result, idx
                                             )
+                                            step_result_recorded = True
                                     except Exception:
                                         pass
                                 self.set_final_context(result, context)
@@ -810,8 +813,9 @@ class ExecutionManager(Generic[ContextT]):
                     if step_result:
                         # Record step result (only once). Success cases are recorded here;
                         # failure/paused cases are recorded in their respective branches.
-                        if run_id is not None and step_result.success:
+                        if run_id is not None and step_result.success and not step_result_recorded:
                             await self.state_manager.record_step_result(run_id, step_result, idx)
+                            step_result_recorded = True
 
                         # ✅ CRITICAL FIX: Persist state AFTER successful step execution for crash recovery
                         # This ensures the current_step_index reflects the next step to be executed
@@ -884,10 +888,15 @@ class ExecutionManager(Generic[ContextT]):
 
                         # Record failed step for diagnostics/persistence
                         try:
-                            if run_id is not None and step_result is not None:
+                            if (
+                                run_id is not None
+                                and step_result is not None
+                                and not step_result_recorded
+                            ):
                                 await self.state_manager.record_step_result(
                                     run_id, step_result, idx
                                 )
+                                step_result_recorded = True
                         except Exception:
                             pass
                         # Persist final state when pipeline halts due to step failure
@@ -932,10 +941,11 @@ class ExecutionManager(Generic[ContextT]):
                     if step_result is not None and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
                         try:
-                            if run_id is not None:
+                            if run_id is not None and not step_result_recorded:
                                 await self.state_manager.record_step_result(
                                     run_id, step_result, idx
                                 )
+                                step_result_recorded = True
                         except Exception:
                             pass
                     usage_limit_exceeded = True
@@ -956,8 +966,13 @@ class ExecutionManager(Generic[ContextT]):
                         pass
                     # Best-effort: record latest step result for pause diagnostics
                     try:
-                        if run_id is not None and step_result is not None:
+                        if (
+                            run_id is not None
+                            and step_result is not None
+                            and not step_result_recorded
+                        ):
                             await self.state_manager.record_step_result(run_id, step_result, idx)
+                            step_result_recorded = True
                     except Exception:
                         pass
                     # Persist paused state for stateful HITL
@@ -986,8 +1001,13 @@ class ExecutionManager(Generic[ContextT]):
                     # history aligned with completed steps only.
                     # Best-effort: record latest step result for pause diagnostics
                     try:
-                        if run_id is not None and step_result is not None:
+                        if (
+                            run_id is not None
+                            and step_result is not None
+                            and not step_result_recorded
+                        ):
                             await self.state_manager.record_step_result(run_id, step_result, idx)
+                            step_result_recorded = True
                     except Exception:
                         pass
                     # Persist paused state for stateful HITL
