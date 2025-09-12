@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Optional, Type, Generic
+from typing import Any, Optional, Type, Generic, cast
 
 from pydantic import ValidationError, BaseModel as PydanticBaseModel, TypeAdapter
 from pydantic_ai import Agent, ModelRetry
+
+
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 
 from ..domain.agent_protocol import AsyncAgentProtocol, AgentInT, AgentOutT
@@ -43,6 +45,23 @@ from ..utils import format_prompt
 # Import from utils to avoid circular imports
 # Import the module (not the symbol) so tests can monkeypatch it
 from . import utils as agents_utils
+
+
+# pydantic-ai UnexpectedModelBehavior import with safe fallback, mypy-friendly
+def _resolve_unexpected_model_behavior() -> type[Exception]:  # pragma: no cover - import shim
+    try:  # pydantic-ai >=0.7
+        from pydantic_ai.exceptions import UnexpectedModelBehavior as umb_imported
+
+        return cast(type[Exception], umb_imported)
+    except ImportError:
+
+        class FallbackUnexpectedModelBehavior(Exception):
+            pass
+
+        return FallbackUnexpectedModelBehavior
+
+
+UnexpectedModelBehavior: type[Exception] = _resolve_unexpected_model_behavior()
 
 
 class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentInT, AgentOutT]):
@@ -75,9 +94,10 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         self._max_retries = max_retries
         from flujo.infra.settings import settings as current_settings
 
-        self._timeout_seconds: int | None = (
-            timeout if timeout is not None else current_settings.agent_timeout
-        )
+        # Respect provided timeout or fall back to global agent_timeout.
+        # Do not clamp in test mode — tests expect parity with settings.
+        base_timeout: int = timeout if timeout is not None else current_settings.agent_timeout
+        self._timeout_seconds = base_timeout
         self._model_name: str | None = model_name or getattr(agent, "model", "unknown_model")
         # Use centralized model ID extraction for consistency
         from ..utils.model_utils import extract_model_id
@@ -206,8 +226,22 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     try:
                         if tm is not None:
                             sys_txt_raw = getattr(self._agent, "system_prompt", None)
+                            try:
+                                # Handle callable/system_prompt methods returning text
+                                if callable(sys_txt_raw):
+                                    sys_val = sys_txt_raw()
+                                else:
+                                    sys_val = sys_txt_raw
+                            except Exception:
+                                sys_val = sys_txt_raw
+                            # Fallback to saved original system prompt when available
+                            if not isinstance(sys_val, str):
+                                try:
+                                    sys_val = getattr(self, "_original_system_prompt", None)
+                                except Exception:
+                                    pass
                             sys_preview = summarize_and_redact_prompt(
-                                sys_txt_raw if isinstance(sys_txt_raw, str) else str(sys_txt_raw),
+                                sys_val if isinstance(sys_val, str) else str(sys_val),
                                 max_length=preview_len_env,
                             )
                             attrs_sys = {
@@ -375,7 +409,11 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         return unpacked_output
         except RetryError as e:
             last_exc = e.last_attempt.exception()
-            if isinstance(last_exc, (ValidationError, ModelRetry)) and self.auto_repair:
+            # Phase 1 (AROS v2): catch provider JSON-mode failures (UnexpectedModelBehavior)
+            if (
+                isinstance(last_exc, (ValidationError, ModelRetry, UnexpectedModelBehavior))
+                and self.auto_repair
+            ):
                 logfire.warn(
                     f"Agent validation failed. Initiating automated repair. Error: {last_exc}"
                 )
@@ -704,7 +742,7 @@ def make_agent_async(
     if is_image_model:
         _attach_image_cost_post_processor(agent, model)
 
-    return AsyncAgentWrapper(
+    wrapper: AsyncAgentWrapper[Any, Any] = AsyncAgentWrapper(
         agent,
         max_retries=max_retries,
         timeout=timeout,
@@ -712,6 +750,12 @@ def make_agent_async(
         processors=final_processors,
         auto_repair=auto_repair,
     )
+    try:
+        # Preserve original system prompt text for telemetry when provider hides it behind a callable
+        setattr(wrapper, "_original_system_prompt", system_prompt)
+    except Exception:
+        pass
+    return wrapper
 
 
 def make_templated_agent_async(

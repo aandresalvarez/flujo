@@ -172,6 +172,16 @@ def _env_with_options(disable_autoload: bool) -> dict:
         env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     # Enable faulthandler printing by default; pytest also enables its plugin.
     env.setdefault("PYTHONFAULTHANDLER", "1")
+    # Ensure child processes (e.g., CLI invoked via `python -m flujo.cli.main`) can import
+    # the repo package even when their cwd is a temp directory. Prepend the repo root
+    # to PYTHONPATH rather than replacing it.
+    try:
+        repo_root = str(Path(__file__).resolve().parents[1])
+        existing = env.get("PYTHONPATH", "")
+        if repo_root not in existing.split(os.pathsep):
+            env["PYTHONPATH"] = repo_root + (os.pathsep + existing if existing else "")
+    except Exception:
+        pass
     return env
 
 
@@ -241,7 +251,15 @@ def run_one(
     # Only force-load timeout/asyncio plugins when plugin autoload is disabled.
     # Otherwise, autoload will bring them in and double-registration would error.
     if disable_autoload:
-        cmd += ["-p", "pytest_timeout", "-p", "pytest_asyncio.plugin"]
+        cmd += [
+            "-p",
+            "pytest_timeout",
+            "-p",
+            "pytest_asyncio.plugin",
+            # Override ini to avoid required_plugins check complaining when autoload is off
+            "--override-ini",
+            "required_plugins=",
+        ]
 
     if not show_tb:
         cmd.append("--tb=no")
@@ -262,7 +280,12 @@ def run_one(
         stdout, stderr = proc.communicate(timeout=outer_timeout)
         rc = proc.returncode
         out = (stdout or "") + (stderr or "")
-        status = "PASS" if rc == 0 else "FAIL"
+        # Treat 'no tests collected' (pytest exit code 5) as a non-failure. This
+        # happens frequently when filtering by markers/-k at file granularity.
+        if rc == 0 or rc == 5:
+            status = "PASS"
+        else:
+            status = "FAIL"
         err = _extract_error_details(out) if status == "FAIL" else None
     except sp.TimeoutExpired:
         # Try to trigger faulthandler dump before killing (UNIX).
@@ -293,6 +316,42 @@ def run_one(
     return TestResult(nodeid=nodeid, status=status, duration_s=dur, output=out, error_details=err)
 
 
+def _fallback_discover_by_files(test_roots: Sequence[str] = ("tests",)) -> List[str]:
+    """Filesystem-based fallback discovery when pytest collection is too slow.
+
+    Returns a list of test file paths under the provided roots. Marker/K-expr
+    filtering is intentionally deferred to pytest at execution time.
+    """
+    paths: List[str] = []
+    try:
+        for root in test_roots:
+            p = Path(root)
+            if not p.exists():
+                continue
+            for f in p.rglob("test_*.py"):
+                # Skip typical noise dirs; mirror norecursedirs best-effort
+                parts = set(str(f).split("/"))
+                if parts & {
+                    ".hypothesis",
+                    "bug_reports",
+                    "manual_testing",
+                    "scripts",
+                    "dist",
+                    "build",
+                    "output",
+                    ".venv",
+                    "venv",
+                    ".git",
+                    "benchmarks",
+                }:
+                    continue
+                paths.append(str(f))
+    except Exception:
+        # Best-effort; if filesystem walk fails, return empty and let caller decide
+        return []
+    return paths
+
+
 def discover_tests(
     markers: Optional[str],
     kexpr: Optional[str],
@@ -303,8 +362,13 @@ def discover_tests(
     """Return all collected nodeids honoring -m and -k filters."""
     cmd = [sys.executable, "-m", "pytest", "--collect-only", "-q"]
     if disable_autoload:
-        # Ensure required plugins are available during collection
-        cmd += ["-p", "pytest_asyncio.plugin"]
+        # Ensure required plugins are available during collection and relax required_plugins
+        cmd += [
+            "-p",
+            "pytest_asyncio.plugin",
+            "--override-ini",
+            "required_plugins=",
+        ]
     if markers:
         cmd += ["-m", markers]
     if kexpr:
@@ -316,13 +380,13 @@ def discover_tests(
     try:
         res = sp.run(cmd, capture_output=True, text=True, timeout=collect_timeout, env=env)
     except sp.TimeoutExpired:
-        print("❌ Test discovery timed out.")
-        return []
+        print("❌ Test discovery timed out. Falling back to filesystem-based discovery…")
+        return _fallback_discover_by_files()
 
     if res.returncode != 0:
         # Some plugins print to stderr on collect; show a hint
         print("⚠️  Test discovery returned non-zero. Output may include plugin chatter.")
-        # Still try to parse stdout
+        # Still try to parse stdout; if parsing yields nothing, fallback to files
 
     nodeids: List[str] = []
     for raw in (res.stdout or "").splitlines():
@@ -343,7 +407,9 @@ def discover_tests(
         # Keep only items under a tests/ directory
         if "/tests/" in nid or nid.startswith("tests/") or nid.startswith("flujo/tests/"):
             filtered.append(nid)
-    # Do NOT fallback to unfiltered paths; if nothing matches, return empty to avoid stray files
+    if not filtered:
+        # As a safety net, return file-level discovery when parsing yields nothing
+        return _fallback_discover_by_files()
     return filtered
 
 

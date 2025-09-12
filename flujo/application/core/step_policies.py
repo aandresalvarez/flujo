@@ -5366,6 +5366,17 @@ class DefaultLoopStepExecutor:
         # - MapStep: success if exited by condition regardless of per-item failures (we continued mapping)
         # - Generic LoopStep: success only if exited by condition and no failures
         is_map_step = hasattr(loop_step, "iterable_input")
+        # Compute last failure feedback for richer diagnostics when condition exits after failures
+        last_failure_fb: str | None = None
+        if any_failure:
+            try:
+                for _sr in reversed(iteration_results):
+                    if not getattr(_sr, "success", True):
+                        fb_val = getattr(_sr, "feedback", None)
+                        last_failure_fb = str(fb_val) if fb_val is not None else None
+                        break
+            except Exception:
+                last_failure_fb = None
         if is_map_step:
             success_flag = exit_reason == "condition"
             feedback_msg = None if success_flag else "reached max_loops"
@@ -5376,20 +5387,23 @@ class DefaultLoopStepExecutor:
                 success_flag = exit_reason == "condition"
                 feedback_msg = None if success_flag else "reached max_loops"
             else:
-                if exit_reason == "condition" and any_failure:
-                    # Propagate the specific feedback from the first failed step in the last iteration
-                    first_failure = next(
-                        (sr for sr in reversed(iteration_results) if not sr.success), None
-                    )
-                    if first_failure and first_failure.feedback:
-                        feedback_msg = f"Loop body failed: {first_failure.feedback}"
+                # Explicit success policy:
+                # - max_loops: consider successful (used by refine_until)
+                # - condition: success only if no failures in iterations
+                # - other: failure
+                if exit_reason == "max_loops":
+                    success_flag = True
+                    feedback_msg = None
+                elif exit_reason == "condition":
+                    success_flag = not any_failure
+                    # Preserve body failure details when exit condition is met after a failed iteration
+                    if any_failure and last_failure_fb:
+                        feedback_msg = f"Loop body failed: {last_failure_fb}"
                     else:
-                        feedback_msg = "Loop body failed"
-                elif exit_reason != "condition":
-                    feedback_msg = "reached max_loops"
+                        feedback_msg = "loop exited by condition"
                 else:
-                    feedback_msg = "loop exited by condition"
-                success_flag = (exit_reason == "condition") and not any_failure
+                    success_flag = False
+                    feedback_msg = "reached max_loops"
         result = StepResult(
             name=loop_step.name,
             success=success_flag,
@@ -6042,9 +6056,12 @@ class DefaultParallelStepExecutor:
                             if context is not None and hasattr(context, "branch_results"):
                                 # Get the branch_results from the last successful branch context
                                 last_branch_ctx = branch_ctxs.get(last_successful_branch)
-                                if last_branch_ctx is not None and hasattr(
-                                    last_branch_ctx, "branch_results"
+                                if (
+                                    last_branch_ctx is not None
+                                    and hasattr(last_branch_ctx, "branch_results")
+                                    and getattr(last_branch_ctx, "branch_results", None)
                                 ):
+                                    # Use branch context's results when available and non-empty
                                     context.branch_results = getattr(
                                         last_branch_ctx, "branch_results"
                                     ).copy()
@@ -6974,6 +6991,17 @@ class DefaultCacheStepExecutor:
                             success=False,
                             feedback="Unsupported outcome",
                         )
+                # Preserve per-attempt context mutations for updates_context even on failure
+                try:
+                    if (
+                        not result.success
+                        and getattr(cache_step.wrapped_step, "updates_context", False)
+                        and context is not None
+                        and result.branch_context is None
+                    ):
+                        result.branch_context = context
+                except Exception:
+                    pass
                 if result.success:
                     try:
                         await cache_step.cache_backend.set(cache_key, result)
@@ -6981,6 +7009,30 @@ class DefaultCacheStepExecutor:
                         telemetry.logfire.error(
                             f"Cache backend SET failed for step '{cache_step.name}': {e}"
                         )
+                else:
+                    # Failure path: proactively reflect branch_context mutations onto the
+                    # live context for updates_context semantics (e.g., increment counters)
+                    try:
+                        if (
+                            getattr(cache_step.wrapped_step, "updates_context", False)
+                            and context is not None
+                            and getattr(result, "branch_context", None) is not None
+                        ):
+                            bc = result.branch_context
+                            cm = type(context)
+                            fields = getattr(cm, "model_fields", {})
+                            for fname in fields.keys():
+                                try:
+                                    bval = getattr(bc, fname, None)
+                                    if (
+                                        isinstance(bval, (int, float, str, bool))
+                                        and getattr(context, fname, None) != bval
+                                    ):
+                                        setattr(context, fname, bval)
+                                except Exception:
+                                    continue
+                    except Exception:
+                        pass
                 return to_outcome(result)
         frame = ExecutionFrame(
             step=cache_step.wrapped_step,

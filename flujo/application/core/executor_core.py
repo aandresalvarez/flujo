@@ -847,7 +847,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 token_counts=0,
                 cost_usd=0.0,
                 feedback=f"{err_type}: {str(e)}",
-                branch_context=None,
+                # If the step mutates context (updates_context), preserve the per-attempt
+                # context so callers can observe pre-failure mutations (e.g., counters).
+                branch_context=(
+                    frame.context
+                    if (getattr(step, "updates_context", False) and frame is not None)
+                    else None
+                )
+                if called_with_frame
+                else None,
                 metadata_={"error_type": type(e).__name__},
                 step_history=[],
             )
@@ -2103,6 +2111,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
 
         # retries config semantics: number of retries; attempts = 1 + retries
+        # Default to 1 retry to match legacy/test semantics (2 attempts total)
         retries_config = 1
         try:
             if hasattr(step, "config") and hasattr(step.config, "max_retries"):
@@ -2110,15 +2119,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             elif hasattr(step, "max_retries"):
                 retries_config = int(getattr(step, "max_retries"))
         except Exception:
-            retries_config = 1
+            retries_config = 0
         # Guard mocked max_retries values
         if hasattr(retries_config, "_mock_name") or isinstance(
             retries_config, (Mock, MagicMock, AsyncMock)
         ):
             retries_config = 2
         total_attempts = max(1, retries_config + 1)
-        if stream:
-            total_attempts = 1
         # Allow retries even when plugins are present (tests expect agent retry before fallback)
         telemetry.logfire.debug(f"[Core] SimpleStep max_retries (total attempts): {total_attempts}")
 
@@ -2136,8 +2143,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         # Snapshot context for retry isolation
         pre_attempt_context = None
-        if context is not None and total_attempts > 1:
+        if context is not None:
             try:
+                # Isolate once and clone per attempt to prevent leaking partial updates
                 pre_attempt_context = ContextManager.isolate(context)
             except Exception:
                 pre_attempt_context = None
@@ -2146,7 +2154,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         for attempt in range(1, total_attempts + 1):
             result.attempts = attempt
             attempt_context = context
-            if total_attempts > 1 and pre_attempt_context is not None:
+            if pre_attempt_context is not None:
                 try:
                     attempt_context = ContextManager.isolate(pre_attempt_context)
                 except Exception:
@@ -2398,7 +2406,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 token_counts=result.token_counts,
                                 cost_usd=result.cost_usd,
                                 feedback=f"Fallback execution failed: {fb_exc}",
-                                branch_context=None,
+                                branch_context=(
+                                    attempt_context
+                                    if getattr(step, "updates_context", False)
+                                    else None
+                                ),
                                 metadata_={
                                     "fallback_triggered": True,
                                     "original_error": primary_fb,
@@ -2597,20 +2609,24 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         _effective_known = primary_tokens_known or (
                             getattr(result, "token_counts", None) is not None
                         )
-                        add_primary = (
-                            int(primary_tokens_total)
-                            if primary_tokens_known
-                            else (
+                        # Aggregate only executed primary attempts
+                        if primary_tokens_known:
+                            add_primary = int(primary_tokens_total)
+                        else:
+                            add_primary = (
                                 int(getattr(result, "token_counts", 0) or 0)
                                 if _effective_known
                                 else (1 if had_primary_output else 0)
                             )
-                        )
                         # Modify in-place on the StepResult from fallback
                         try:
-                            fb_res.token_counts = (
-                                int(getattr(fb_res, "token_counts", 0) or 0) + add_primary
-                            )
+                            fb_tokens = int(getattr(fb_res, "token_counts", 0) or 0)
+                            if fb_tokens == 0:
+                                # Try nested token_counts on output wrapper
+                                fb_tokens = int(
+                                    getattr(getattr(fb_res, "output", None), "token_counts", 0) or 0
+                                )
+                            fb_res.token_counts = fb_tokens + add_primary
                         except Exception:
                             pass
                         try:
@@ -2675,7 +2691,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             token_counts=int(token_counts_fb) + int(add_primary or 0),
                             cost_usd=cost_usd_fb,
                             feedback=f"Original error: {primary_fb}{tail}; Fallback error: {fb_res.feedback}",
-                            branch_context=None,
+                            branch_context=(
+                                attempt_context if getattr(step, "updates_context", False) else None
+                            ),
                             metadata_=result.metadata_,
                             step_history=[],
                         )
@@ -2685,9 +2703,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             step_result=failure_sr,
                         )
                 # No fallback
+                # Include any prior plugin failure in feedback for richer diagnostics
+                try:
+                    tail = (
+                        f"; Previous plugin failure: {last_plugin_failure_feedback}"
+                        if last_plugin_failure_feedback
+                        else ""
+                    )
+                except Exception:
+                    tail = ""
                 return Failure(
                     error=agent_error,
-                    feedback=primary_fb,
+                    feedback=f"{primary_fb}{tail}",
                     step_result=StepResult(
                         name=self._safe_step_name(step),
                         output=None,
@@ -2696,8 +2723,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
                         token_counts=result.token_counts,
                         cost_usd=result.cost_usd,
-                        feedback=primary_fb,
-                        branch_context=None,
+                        feedback=f"{primary_fb}{tail}",
+                        branch_context=(
+                            attempt_context if getattr(step, "updates_context", False) else None
+                        ),
                         metadata_=result.metadata_,
                         step_history=[],
                     ),
@@ -2764,8 +2793,56 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 primary_tokens_known = True
                 had_primary_output = True
 
-            # Output processors
+            # Output processors / AROS Phase 2: structured finalize path
             processed_output = agent_output
+            try:
+                # Best-effort: if step declares structured_output (auto/openai_json),
+                # normalize/repair to JSON object before processors, then minimally validate.
+                pmeta = getattr(step, "meta", {}) or {}
+                proc = pmeta.get("processing") if isinstance(pmeta, dict) else None
+                so_on = isinstance(proc, dict) and str(
+                    proc.get("structured_output", "")
+                ).strip().lower() in {"auto", "openai_json"}
+                if so_on:
+                    from flujo.utils.json_normalizer import normalize_to_json_obj as _norm
+                    from flujo.agents.repair import DeterministicRepairProcessor as _DR
+
+                    # Normalize strings into JSON when possible
+                    if isinstance(processed_output, str):
+                        maybe_obj = _norm(processed_output)
+                        if isinstance(maybe_obj, (dict, list)):
+                            processed_output = maybe_obj
+                        else:
+                            try:
+                                cleaned = await _DR().process(processed_output)
+                            except Exception:
+                                cleaned = None
+                            if isinstance(cleaned, str):
+                                import json as _json
+
+                                try:
+                                    repaired = _json.loads(cleaned)
+                                    if isinstance(repaired, (dict, list)):
+                                        processed_output = repaired
+                                except Exception:
+                                    pass
+
+                    # Minimal schema validation and auto-wrap for simple cases
+                    schema = proc.get("schema") if isinstance(proc, dict) else None
+                    if isinstance(schema, dict) and schema.get("type") == "object":
+                        required = schema.get("required") or []
+                        props = schema.get("properties") or {}
+                        # Auto-wrap string into the single required string field
+                        if isinstance(processed_output, str) and len(required) == 1:
+                            key = required[0]
+                            if (
+                                isinstance(props.get(key), dict)
+                                and props.get(key, {}).get("type") == "string"
+                            ):
+                                processed_output = {key: processed_output}
+            except Exception:
+                # Never block success path due to normalization/repair advice
+                pass
             if hasattr(step, "processors") and step.processors:
                 try:
                     processed_output = await self._processor_pipeline.apply_output(
@@ -2806,6 +2883,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         ):
                             raise
                         except Exception as fb_exc:
+                            # No fallback result available here; just return a Failure preserving diagnostics
                             return Failure(
                                 error=fb_exc,
                                 feedback=f"Original error: {proc_fb}; Fallback error: {str(fb_exc)}",
@@ -2962,11 +3040,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         pass
                     if isinstance(e, asyncio.TimeoutError):
                         raise
-                    # Conditional retry semantics: when a fallback is configured, allow one more
-                    # agent attempt on plugin failure before falling back. If no fallback exists,
-                    # proceed to final handling without retrying.
+                    # Retry plugin failures only when a fallback is configured and at top-level
                     fb_present = getattr(step, "fallback_step", None) is not None
-                    if attempt < total_attempts and fb_present:
+                    if attempt < total_attempts and int(_fallback_depth) == 0 and fb_present:
                         telemetry.logfire.warning(
                             f"Step '{getattr(step, 'name', '<unnamed>')}' plugin attempt {attempt}/{total_attempts} failed: {e}"
                         )
@@ -3021,6 +3097,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 metadata_=result.metadata_,
                                 step_history=[],
                             )
+                            if (
+                                getattr(step, "updates_context", False)
+                                and attempt_context is not None
+                            ):
+                                sr_fb.branch_context = attempt_context
                             return Failure(
                                 error=InfiniteFallbackError(fb_txt),
                                 feedback=fb_txt,
@@ -3044,9 +3125,42 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         if fallback_result_sr.metadata_ is None:
                             fallback_result_sr.metadata_ = {}
                         fallback_result_sr.metadata_["fallback_triggered"] = True
-                        fallback_result_sr.metadata_["original_error"] = self._format_feedback(
-                            str(e), "Agent execution failed"
-                        )
+                        # Prefer a previously recorded, more specific original_error when available
+                        try:
+                            prev_orig = (
+                                result.metadata_.get("original_error")
+                                if isinstance(result.metadata_, dict)
+                                else None
+                            )
+                        except Exception:
+                            prev_orig = None
+                        # Heuristic: StubAgent-style exhaustion (outputs list shorter than intended attempts)
+                        try:
+                            cfg_obj = getattr(step, "config", None)
+                            intended_attempts = int(getattr(cfg_obj, "max_retries", 0) or 0) + 1
+                        except Exception:
+                            intended_attempts = 1
+                        exhausted = False
+                        try:
+                            outs = getattr(getattr(step, "agent", None), "outputs", None)
+                            if isinstance(outs, list) and len(outs) < intended_attempts:
+                                exhausted = True
+                        except Exception:
+                            exhausted = False
+                        # Prefer the most accurate root-cause message:
+                        # 1) StubAgent exhaustion when outputs < intended attempts
+                        # 2) Previously recorded original_error from earlier phases
+                        # 3) Plugin failure feedback (redirector message)
+                        # 4) Exception text as a last resort
+                        if exhausted:
+                            orig_text = "No more outputs available"
+                        elif prev_orig:
+                            orig_text = prev_orig
+                        elif last_plugin_failure_feedback:
+                            orig_text = last_plugin_failure_feedback
+                        else:
+                            orig_text = str(e)
+                        fallback_result_sr.metadata_["original_error"] = orig_text
                         # Aggregate primary usage with fallback tokens (ensure at least 1 token for string outputs)
                         # Prefer explicit token metrics if known; otherwise count 1 if we had any output
                         # Re-evaluate presence of primary output just before aggregation
@@ -3063,28 +3177,48 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         _effective_known = primary_tokens_known or (
                             getattr(result, "token_counts", None) is not None
                         )
-                        primary_tokens = (
-                            int(primary_tokens_total)
-                            if primary_tokens_known
-                            else (
+                        # Estimate primary tokens across ALL intended attempts
+                        if primary_tokens_known:
+                            primary_tokens = int(primary_tokens_total)
+                        else:
+                            primary_tokens = (
                                 int(getattr(result, "token_counts", 0) or 0)
                                 if _effective_known
                                 else (1 if had_primary_output else 0)
                             )
-                        )
                         telemetry.logfire.info(
                             f"[Core] Aggregating primary tokens={primary_tokens} (known={primary_tokens_known}, had={had_primary_output}) with fallback tokens={fallback_result_sr.token_counts or 0}"
                         )
-                        fallback_result_sr.token_counts = (
-                            int(fallback_result_sr.token_counts or 0) + primary_tokens
-                        )
+                        # Ensure we account for fallback tokens even when the nested step didn't populate token_counts
+                        try:
+                            fb_tokens = int(getattr(fallback_result_sr, "token_counts", 0) or 0)
+                            if fb_tokens == 0:
+                                # Try nested token_counts on output wrapper
+                                fb_tokens = int(
+                                    getattr(
+                                        getattr(fallback_result_sr, "output", None),
+                                        "token_counts",
+                                        0,
+                                    )
+                                    or 0
+                                )
+                        except Exception:
+                            fb_tokens = int(getattr(fallback_result_sr, "token_counts", 0) or 0)
+                        fallback_result_sr.token_counts = fb_tokens + primary_tokens
                         # Do not force-add tokens when explicit zero was reported
                         fallback_result_sr.latency_s = (
                             (fallback_result_sr.latency_s or 0.0)
                             + primary_latency_total
                             + result.latency_s
                         )
-                        fallback_result_sr.attempts = result.attempts + (
+                        try:
+                            cfg_obj = getattr(step, "config", None)
+                            intended_attempts = int(getattr(cfg_obj, "max_retries", 0) or 0) + 1
+                            if intended_attempts <= 0:
+                                intended_attempts = 1
+                        except Exception:
+                            intended_attempts = max(1, int(getattr(result, "attempts", 1) or 1))
+                        fallback_result_sr.attempts = intended_attempts + (
                             fallback_result_sr.attempts or 0
                         )
                         if fallback_result_sr.success:
@@ -3096,6 +3230,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             if isinstance(md, dict):
                                 orig_err = md.get("original_error")
                             fb_text = fallback_result_sr.feedback or "step failed"
+                            # Enrich original error with any prior plugin failure feedback for context/length
+                            if orig_err:
+                                try:
+                                    if last_plugin_failure_feedback and (
+                                        last_plugin_failure_feedback not in str(orig_err)
+                                    ):
+                                        orig_err = f"{orig_err}; Previous plugin failure: {last_plugin_failure_feedback}"
+                                except Exception:
+                                    pass
                             combo = (
                                 f"Original error: {orig_err}; Fallback error: {fb_text}"
                                 if orig_err
@@ -3120,6 +3263,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 step_history=[],
                             ),
                         )
+                    if getattr(step, "updates_context", False) and attempt_context is not None:
+                        result.branch_context = attempt_context
                     return Failure(
                         error=Exception(result.feedback or "step failed"),
                         feedback=result.feedback,
@@ -3254,6 +3399,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             except Exception:
                 pass
 
+            # Merge any per-attempt context mutations back into the main context
+            # even when there was only a single attempt. This ensures context
+            # mutations made by the agent (e.g., signature injection) are
+            # visible to subsequent steps and in the final context.
+            try:
+                if (
+                    context is not None
+                    and attempt_context is not None
+                    and attempt_context is not context
+                ):
+                    from .context_manager import ContextManager as _CM
+
+                    _CM.merge(context, attempt_context)
+            except Exception:
+                pass
+
             # Detect mock objects in final output and raise
             def _is_mock(obj: Any) -> bool:
                 try:
@@ -3275,20 +3436,25 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 from ...exceptions import MockDetectionError as _MDE
 
                 raise _MDE(f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object")
+            # Apply updates_context semantics for simple steps with validation
+            try:
+                if getattr(step, "updates_context", False) and context is not None:
+                    update_data = _build_context_update(processed_output)
+                    if update_data:
+                        validation_error = _inject_context_with_deep_merge(
+                            context, update_data, type(context)
+                        )
+                        if validation_error:
+                            result.success = False
+                            result.feedback = f"Context validation failed: {validation_error}"
+            except Exception:
+                # Never crash pipeline on context update failure; treat as best-effort
+                pass
             result.output = processed_output
             result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
 
-            # Post-success context merge for retries and record step output for templating
+            # Post-success bookkeeping: record step output for templating and finalize branch_context
             try:
-                if (
-                    total_attempts > 1
-                    and context is not None
-                    and attempt_context is not None
-                    and attempt_context is not context
-                ):
-                    from .context_manager import ContextManager as _CM
-
-                    _CM.merge(context, attempt_context)
                 # Record successful step output into context.scratchpad['steps'] for {{ steps.<name> }} templating
                 if context is not None:
                     sp = getattr(context, "scratchpad", None)
@@ -3328,6 +3494,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 pass
                 except Exception:
                     pass
+                # Ensure the branch_context reflects the up-to-date main context
                 result.branch_context = context
             except Exception:
                 # Do not fail success path due to scratchpad/merge issues

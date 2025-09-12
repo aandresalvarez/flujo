@@ -740,12 +740,99 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 state_created_at=state_created_at,
             ):
                 # Track if the manager yielded a PipelineResult (e.g., paused/failed early)
+                # Debug: verify isinstance behavior locally
+                # Remove or comment out in commits if noisy
+                # BEGIN DEBUG
+                # print(f"ISINSTANCE? {isinstance(chunk, PipelineResult)} class={type(chunk)}")
+                # END DEBUG
                 if isinstance(chunk, PipelineResult):
+                    # print("RUNNER saw PipelineResult from manager")
+                    # Finalization safety: only pad when a missing-outcome was detected.
+                    # This avoids padding when steps were legitimately skipped (e.g., conditionals).
+                    try:
+                        expected = len(self.pipeline.steps) if self.pipeline is not None else 0
+                    except Exception:
+                        expected = 0
+                    have = len(chunk.step_history)
+                    if expected > 0 and have < expected and start_idx == 0:
+                        # Pad only when we suspect a missing-outcome scenario:
+                        # - explicit 'no terminal outcome' feedback, OR
+                        # - no recorded failures so far (all successes) but history is short
+                        missing_outcome_detected = any(
+                            isinstance(getattr(sr, "feedback", None), str)
+                            and "no terminal outcome" in sr.feedback.lower()
+                            for sr in chunk.step_history
+                        ) or all(getattr(sr, "success", True) for sr in chunk.step_history)
+                        if missing_outcome_detected:
+                            from flujo.domain.models import StepResult as _SR
+
+                            for j in range(have, expected):
+                                try:
+                                    missing_name = getattr(
+                                        self.pipeline.steps[j], "name", f"step_{j}"
+                                    )
+                                except Exception:
+                                    missing_name = f"step_{j}"
+                                synthesized = _SR(
+                                    name=str(missing_name),
+                                    success=False,
+                                    output=None,
+                                    attempts=0,
+                                    latency_s=0.0,
+                                    token_counts=0,
+                                    cost_usd=0.0,
+                                    feedback="Agent produced no terminal outcome",
+                                    branch_context=None,
+                                    metadata_={},
+                                    step_history=[],
+                                )
+                                StepCoordinator().update_pipeline_result(chunk, synthesized)
                     pipeline_result_obj = chunk
                     _yielded_pipeline_result = True
+                # print(f"RUNNER yield {type(chunk).__name__}")
                 yield chunk
             # After streaming, yield the final PipelineResult for sync runners
             if not _yielded_pipeline_result:
+                # Finalization safety fallback: only pad when a missing-outcome was
+                # detected in the current history to avoid padding legitimate skips.
+                try:
+                    expected = len(self.pipeline.steps) if self.pipeline is not None else 0
+                except Exception:
+                    expected = 0
+                have = len(pipeline_result_obj.step_history)
+                if expected > 0 and have < expected and start_idx == 0:
+                    missing_outcome_detected = any(
+                        isinstance(getattr(sr, "feedback", None), str)
+                        and "no terminal outcome" in sr.feedback.lower()
+                        for sr in pipeline_result_obj.step_history
+                    ) or all(
+                        getattr(sr, "success", True) for sr in pipeline_result_obj.step_history
+                    )
+                    if missing_outcome_detected:
+                        from flujo.domain.models import StepResult as _SR
+
+                        for j in range(have, expected):
+                            try:
+                                missing_name = getattr(self.pipeline.steps[j], "name", f"step_{j}")
+                            except Exception:
+                                missing_name = f"step_{j}"
+                            synthesized = _SR(
+                                name=str(missing_name),
+                                success=False,
+                                output=None,
+                                attempts=0,
+                                latency_s=0.0,
+                                token_counts=0,
+                                cost_usd=0.0,
+                                feedback="Agent produced no terminal outcome",
+                                branch_context=None,
+                                metadata_={},
+                                step_history=[],
+                            )
+                            StepCoordinator().update_pipeline_result(
+                                pipeline_result_obj, synthesized
+                            )
+                # print("RUNNER yield final PipelineResult")
                 yield pipeline_result_obj
         except asyncio.CancelledError:
             telemetry.logfire.info("Pipeline cancelled")
@@ -813,11 +900,35 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 ):
                     final_status = "paused"
                 elif pipeline_result_obj.step_history:
-                    final_status = (
-                        "completed"
-                        if all(s.success for s in pipeline_result_obj.step_history)
-                        else "failed"
-                    )
+                    # Completion gate with resume-awareness
+                    try:
+                        expected = len(self.pipeline.steps) if self.pipeline is not None else None
+                    except Exception:
+                        expected = None
+                    executed_success = all(s.success for s in pipeline_result_obj.step_history)
+                    if start_idx > 0:
+                        # Resumed run: consider success of executed tail as completion
+                        final_status = "completed" if executed_success else "failed"
+                    elif (
+                        expected is not None
+                        and len(pipeline_result_obj.step_history) == expected
+                        and executed_success
+                    ):
+                        final_status = "completed"
+                    else:
+                        final_status = "failed"
+                else:
+                    # Zero-step pipelines: treat as completed
+                    try:
+                        num_steps = len(self.pipeline.steps) if self.pipeline is not None else 0
+                    except Exception:
+                        num_steps = 0
+                    if num_steps == 0:
+                        final_status = "completed"
+                # Do not synthesize placeholders at the runner level; ExecutionManager
+                # already pads histories for missing-outcome scenarios. Runner padding
+                # breaks pause/resume and early-abort semantics.
+
                 await exec_manager.persist_final_state(
                     run_id=run_id_for_state,
                     context=current_context_instance,
@@ -990,13 +1101,28 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 yield final_result
         else:
             # Streaming pipeline: unwrap typed Chunk outcomes into raw chunks for legacy contract
+            # and suppress intermediate Success/Failure outcomes — callers expect only
+            # raw chunks and the final PipelineResult.
+            seen_chunks: set[str] = set()
             async for item in self.run_async(
                 initial_input, initial_context_data=initial_context_data
             ):
                 from ..domain.models import Chunk as _Chunk
+                from ..domain.models import StepOutcome as _StepOutcome
 
                 if isinstance(item, _Chunk):
+                    # Suppress duplicate streaming chunks across layers if they repeat
+                    try:
+                        k = str(item.data)
+                        if k in seen_chunks:
+                            continue
+                        seen_chunks.add(k)
+                    except Exception:
+                        pass
                     yield item.data
+                elif isinstance(item, _StepOutcome):
+                    # Drop Success/Failure/Paused outcomes from streaming surface
+                    continue
                 else:
                     yield item
 

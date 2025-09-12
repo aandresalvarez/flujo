@@ -152,10 +152,16 @@ class StepCoordinator(Generic[ContextT]):
                     effective_stream = bool(stream and has_agent_stream)
                     if effective_stream:
                         # For streaming, we need to collect chunks and yield them
-                        chunks = []
+                        chunks: list[Any] = []
+                        _last_chunk: Any = object()
 
                         async def on_chunk(chunk: Any) -> None:
+                            nonlocal _last_chunk
+                            # Deduplicate consecutive identical chunks to avoid double-emission
+                            if chunk == _last_chunk:
+                                return
                             chunks.append(chunk)
+                            _last_chunk = chunk
 
                         request = StepExecutionRequest(
                             step=step,
@@ -239,8 +245,36 @@ class StepCoordinator(Generic[ContextT]):
                             # Wrap streaming chunks into typed outcome if not already
                             yield Chunk(data=chunk, step_name=step.name)
                         if isinstance(step_outcome, StepOutcome):
+                            try:
+                                import os as _os
+
+                                if _os.getenv("FLUJO_TRACE_EXTRA", "") == "1":
+                                    from flujo.tracing.manager import (
+                                        get_active_trace_manager as _get_tm,
+                                    )
+
+                                    tm = _get_tm()
+                                    if tm is not None:
+                                        tm.add_event(
+                                            "coordinator.outcome",
+                                            {
+                                                "kind": type(step_outcome).__name__,
+                                                "step": getattr(step, "name", "<unnamed>"),
+                                            },
+                                        )
+                            except Exception:
+                                pass
                             if isinstance(step_outcome, Success):
                                 step_result = step_outcome.step_result
+                                # Normalize loop semantics: reaching max_loops is considered
+                                # a successful completion for refine-style loops so that the
+                                # post-loop mapper can run and inspect the critic's final check.
+                                try:
+                                    meta = getattr(step_result, "metadata_", {}) or {}
+                                    if meta.get("exit_reason") == "max_loops":
+                                        step_result.success = True
+                                except Exception:
+                                    pass
                             elif isinstance(step_outcome, Failure):
                                 # Ensure failure hook runs by populating step_result
                                 step_result = step_outcome.step_result or StepResult(
@@ -250,9 +284,35 @@ class StepCoordinator(Generic[ContextT]):
                                 )
                             yield step_outcome
                         else:
-                            # Normalize legacy StepResult to Success
-                            step_result = step_outcome
-                            yield Success(step_result=step_result)
+                            # Normalize legacy StepResult to typed outcome; if it indicates
+                            # failure, convert to Failure so the manager short-circuits.
+                            from flujo.domain.models import StepResult as _SR
+
+                            if isinstance(step_outcome, _SR):
+                                step_result = step_outcome
+                                try:
+                                    if getattr(step_result, "success", True) is False:
+                                        yield Failure(
+                                            error=Exception(step_result.feedback or "step failed"),
+                                            feedback=step_result.feedback,
+                                            step_result=step_result,
+                                        )
+                                        return
+                                except Exception:
+                                    pass
+                                yield Success(step_result=step_result)
+                            else:
+                                # Unknown legacy value -> synthesize a failure
+                                synthesized = StepResult(
+                                    name=getattr(step, "name", "<unnamed>"),
+                                    success=False,
+                                    feedback="Agent produced no terminal outcome",
+                                )
+                                yield Failure(
+                                    error=RuntimeError("Agent produced no terminal outcome"),
+                                    feedback=synthesized.feedback,
+                                    step_result=synthesized,
+                                )
                     else:
                         # Non-streaming case
                         request = StepExecutionRequest(
@@ -260,7 +320,7 @@ class StepCoordinator(Generic[ContextT]):
                             input_data=data,
                             context=context,
                             resources=self.resources,
-                            stream=False,
+                            stream=stream,
                             usage_limits=usage_limits,
                             quota=quota,
                         )
@@ -268,8 +328,45 @@ class StepCoordinator(Generic[ContextT]):
                         # Call the backend directly (typed StepOutcome)
                         step_outcome = await backend.execute_step(request)
                         if isinstance(step_outcome, StepOutcome):
+                            try:
+                                import os as _os
+
+                                if _os.getenv("FLUJO_TRACE_EXTRA", "") == "1":
+                                    from flujo.tracing.manager import (
+                                        get_active_trace_manager as _get_tm,
+                                    )
+
+                                    tm = _get_tm()
+                                    if tm is not None:
+                                        tm.add_event(
+                                            "coordinator.outcome",
+                                            {
+                                                "kind": type(step_outcome).__name__,
+                                                "step": getattr(step, "name", "<unnamed>"),
+                                            },
+                                        )
+                            except Exception:
+                                pass
                             if isinstance(step_outcome, Success):
                                 step_result = step_outcome.step_result
+                                # Normalize loop/reporting semantics: if a policy produced
+                                # a Success outcome with a StepResult marked success=False
+                                # (e.g., loop exited due to max iterations), convert it to
+                                # a Failure outcome so the manager short-circuits and does
+                                # not execute downstream steps (like mappers).
+                                try:
+                                    if (
+                                        step_result is not None
+                                        and getattr(step_result, "success", True) is False
+                                    ):
+                                        yield Failure(
+                                            error=Exception(step_result.feedback or "step failed"),
+                                            feedback=step_result.feedback,
+                                            step_result=step_result,
+                                        )
+                                        return
+                                except Exception:
+                                    pass
                                 # Detect direct Mock outputs and raise
                                 try:
 
@@ -326,8 +423,57 @@ class StepCoordinator(Generic[ContextT]):
                                 # Unknown control outcome: propagate as abort
                                 raise PipelineAbortSignal("Paused for HITL")
                         else:
-                            step_result = step_outcome
-                            yield Success(step_result=step_result)
+                            # Backend returned a legacy value or invalid.
+                            # If it's a proper StepResult, normalize to Success without re-executing.
+                            from flujo.domain.models import StepResult as _SR
+
+                            if isinstance(step_outcome, _SR):
+                                step_result = step_outcome
+                                yield Success(step_result=step_result)
+                            else:
+                                # Fall back to executing the step directly via ExecutorCore to recover.
+                                try:
+                                    from ..core.executor_core import ExecutorCore as _Core
+                                    from ..core.types import ExecutionFrame as _Frame
+
+                                    core2 = _Core()
+                                    frame2 = _Frame(
+                                        step=step,
+                                        data=data,
+                                        context=context,
+                                        resources=self.resources,
+                                        limits=usage_limits,
+                                        quota=quota,
+                                        stream=False,
+                                        on_chunk=None,
+                                        breach_event=None,
+                                        context_setter=lambda _r, _c: None,
+                                    )
+                                    out2 = await core2.execute(frame2)
+                                    if isinstance(out2, StepOutcome):
+                                        yield out2
+                                    else:
+                                        # Legacy: normalize StepResult to Success
+                                        step_result = out2
+                                        yield Success(step_result=step_result)
+                                except Exception as e:
+                                    try:
+                                        telemetry.logfire.error(
+                                            f"Coordinator internal execute failed: {e}"
+                                        )
+                                    except Exception:
+                                        pass
+                                    # As a last resort, synthesize a failure outcome
+                                    synthesized = StepResult(
+                                        name=getattr(step, "name", "<unnamed>"),
+                                        success=False,
+                                        feedback="Agent produced no terminal outcome",
+                                    )
+                                    yield Failure(
+                                        error=RuntimeError("Agent produced no terminal outcome"),
+                                        feedback=synthesized.feedback,
+                                        step_result=synthesized,
+                                    )
                 else:
                     raise ValueError("Either backend or step_executor must be provided")
 
@@ -429,6 +575,39 @@ class StepCoordinator(Generic[ContextT]):
                     # Yield the failed step result before aborting
                     yield step_result
                     raise
+        else:
+            # Safety net: ensure every step yields a terminal outcome
+            try:
+                synthesized = StepResult(
+                    name=getattr(step, "name", "<unnamed>"),
+                    success=False,
+                    output=None,
+                    feedback="Agent produced no terminal outcome",
+                )
+                try:
+                    import os as _os
+
+                    if _os.getenv("FLUJO_TRACE_EXTRA", "") == "1":
+                        from flujo.tracing.manager import get_active_trace_manager as _get_tm
+
+                        tm = _get_tm()
+                        if tm is not None:
+                            tm.add_event(
+                                "coordinator.no_terminal",
+                                {"step": getattr(step, "name", "<unnamed>")},
+                            )
+                except Exception:
+                    pass
+                # Do not fire step-level hooks here; ExecutionManager will treat this as a Failure
+                # and route through its failure path which already dispatches on_step_failure.
+                yield Failure(
+                    error=RuntimeError("Agent produced no terminal outcome"),
+                    feedback=synthesized.feedback,
+                    step_result=synthesized,
+                )
+            except Exception:
+                # As a last resort, do nothing — ExecutionManager has its own safety net.
+                pass
 
     async def _dispatch_hook(
         self,

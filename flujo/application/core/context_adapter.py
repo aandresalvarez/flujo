@@ -451,6 +451,68 @@ def _inject_context_with_deep_merge(
 
     Returns an error message if validation fails, otherwise ``None``.
     """
+    # Micro-optimization fast path for hot paths:
+    # If the update only contains a few scalar fields that exist on the model and
+    # types match exactly, assign them directly without performing a full
+    # model_dump/validation/deep-merge cycle. This preserves type safety while
+    # reducing overhead in performance tests.
+    try:
+        if update_data and len(update_data) <= 4:
+            simple_update = True
+            for key, value in update_data.items():
+                if key not in context_model.model_fields:
+                    simple_update = False
+                    break
+                field_info = context_model.model_fields[key]
+                field_type = field_info.annotation
+                try:
+                    resolved = _resolve_actual_type(field_type)
+                    if resolved is not None:
+                        field_type = resolved
+                except Exception:
+                    pass
+                # Disallow containers/complex types for the fast path
+                try:
+                    has_origin = hasattr(field_type, "__origin__")
+                    if has_origin and getattr(field_type, "__origin__") in (list, dict):
+                        simple_update = False
+                        break
+                except Exception:
+                    simple_update = False
+                    break
+                if field_type not in (int, float, str, bool):
+                    simple_update = False
+                    break
+                try:
+                    # Guard against non-type annotations that make isinstance unreliable
+                    if isinstance(field_type, type):
+                        if not isinstance(value, field_type):
+                            simple_update = False
+                            break
+                    else:
+                        simple_update = False
+                        break
+                except Exception:
+                    simple_update = False
+                    break
+            if simple_update:
+                # Capture original state for safe rollback on validation failure
+                _original_fast = context.model_dump()
+                for key, value in update_data.items():
+                    setattr(context, key, value)
+                # Final validation to enforce model-level invariants
+                try:
+                    validated = context_model.model_validate(context.model_dump())
+                    context.__dict__.update(validated.__dict__)
+                    return None
+                except ValidationError as e:
+                    for k, v in _original_fast.items():
+                        setattr(context, k, v)
+                    return str(e)
+    except Exception:
+        # Fall through to the general path on any error
+        pass
+
     original = context.model_dump()
 
     # Lenient fast-path for PipelineContext-style updates coming from as_step

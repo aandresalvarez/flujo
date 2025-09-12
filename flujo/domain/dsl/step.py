@@ -23,9 +23,11 @@ from typing import (
     cast,
     TYPE_CHECKING,
 )
-import contextvars
+
+# contextvars import removed; using context-scoped storage for refine_until
 import inspect
 from enum import Enum
+import contextvars
 
 from flujo.domain.base_model import BaseModel
 from flujo.domain.models import RefinementCheck, UsageLimits  # noqa: F401
@@ -104,6 +106,7 @@ class StepConfig(BaseModel):
         When False, successful fallbacks clear feedback for backward compatibility.
     """
 
+    # Default to one retry (two attempts total) to match legacy/test semantics
     max_retries: int = 1
     timeout_s: float | None = None
     temperature: float | None = None
@@ -638,12 +641,22 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         """Build a refinement loop pipeline: generator >> capture >> critic >> post-mapper."""
         from .loop import LoopStep  # local import
 
+        # Task-local storage for the last artifact; safe under concurrency
         last_artifact_var: contextvars.ContextVar[Any | None] = contextvars.ContextVar(
             f"{name}_last_artifact", default=None
         )
 
+        # Use context-scoped storage too when available to aid inspection
         async def _capture_artifact(artifact: Any, *, context: BaseModel | None = None) -> Any:
-            last_artifact_var.set(artifact)
+            try:
+                if context is not None:
+                    object.__setattr__(context, "_last_refine_artifact", artifact)
+            except Exception:
+                pass
+            try:
+                last_artifact_var.set(artifact)
+            except Exception:
+                pass
             return artifact
 
         capture_step = Step.from_callable(_capture_artifact, name="_capture_artifact")
@@ -700,7 +713,26 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         async def _post_output_mapper(out: Any, *, context: BaseModel | None = None) -> Any:
             # If the critic indicates completion, return the last captured artifact; otherwise, return the check
             if isinstance(out, RefinementCheck) and out.is_complete:
-                return last_artifact_var.get()
+                try:
+                    if context is not None:
+                        # 0) Prefer the task-local capture when present
+                        try:
+                            la = last_artifact_var.get()
+                        except Exception:
+                            la = None
+                        if la is not None:
+                            return la
+                        # 1) Prefer the exact captured artifact recorded during the last iteration
+                        sp = getattr(context, "scratchpad", None)
+                        if isinstance(sp, dict):
+                            steps = sp.get("steps") or {}
+                            if isinstance(steps, dict) and "_capture_artifact" in steps:
+                                return steps.get("_capture_artifact")
+                        # 2) Fallback to any context-scoped attribute set by the capture step
+                        if hasattr(context, "_last_refine_artifact"):
+                            return getattr(context, "_last_refine_artifact")
+                except Exception:
+                    pass
             return out
 
         mapper_step = cast(

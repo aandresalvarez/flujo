@@ -244,8 +244,18 @@ def _get_enabled_filters() -> set[str]:
     Falls back to the default allow-list when not configured.
     """
     global _CACHED_FILTERS
-    if _CACHED_FILTERS is not None:
-        return _CACHED_FILTERS
+    # In test/CI contexts, avoid cross-test stale cache that may hide unknown-filter warnings
+    try:
+        import os as _os
+
+        if _os.getenv("PYTEST_CURRENT_TEST"):
+            _cached_ok = False
+        else:
+            _cached_ok = _CACHED_FILTERS is not None
+    except Exception:
+        _cached_ok = _CACHED_FILTERS is not None
+    if _cached_ok:
+        return _CACHED_FILTERS  # type: ignore[return-value]
 
     default = {"join", "upper", "lower", "length", "tojson"}
     try:

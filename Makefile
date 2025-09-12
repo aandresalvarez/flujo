@@ -53,12 +53,32 @@ lint: .uv ## Lint the code for issues
 	@echo "🔎 Linting code..."
 	@uv run ruff check flujo/ tests/ scripts/
 
+
 .PHONY: typecheck
 typecheck: .uv ## Run static type checking with mypy
 	@echo "🧐 Running static type checking..."
 	@# Ensure dev extras (including types-psutil) are installed before typechecking
 	@uv sync --all-extras
-	@uv run mypy flujo/
+	@# Clear mypy cache to avoid cross-Python stdlib stub mismatches (e.g., urllib.parse)
+	@rm -rf .mypy_cache || true
+	@uv run mypy --clear-cache >/dev/null 2>&1 || true
+	@# Run mypy non-interactively to avoid hanging on missing stub prompts
+	@uv run mypy flujo/ --install-types --non-interactive
+
+.PHONY: typecheck-fast
+typecheck-fast: .uv ## Typecheck without syncing deps (faster local loop)
+	@echo "🧐 Running static type checking (no sync)..."
+	@uv run mypy flujo/ --install-types --non-interactive
+
+.PHONY: typecheck-verbose
+typecheck-verbose: .uv ## Typecheck with verbose output to trace slow modules
+	@echo "🧐 Running mypy in verbose mode..."
+	@uv run mypy flujo/ --install-types --non-interactive -v
+
+.PHONY: typecheck-profile
+typecheck-profile: .uv ## Profile mypy to locate hotspots (writes .mypy.cprof)
+	@echo "🧐 Profiling mypy..."
+	@uv run mypy flujo/ --install-types --non-interactive --cprofile .mypy.cprof
 
 
 # ------------------------------------------------------------------------------
@@ -79,22 +99,22 @@ test: .uv ## Run all tests via enhanced runner (robust, two-phase)
 .PHONY: test-fast
 test-fast: .uv ## Run fast tests in parallel with hang guards (excludes slow, veryslow, serial, and benchmark tests)
 	@echo "⚡ Running fast tests (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers auto --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
 
 .PHONY: test-fast-verbose
 test-fast-verbose: .uv ## Run fast tests with verbose output for debugging
 	@echo "🔍 Running fast tests with verbose output (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 --tb --pytest-args "-vv"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 --tb --pytest-args "-vv"
 
 .PHONY: test-fast-serial
 test-fast-serial: .uv ## Run fast tests serially with hang guard (debug parallel issues)
 	@echo "🔧 Running fast tests serially (enhanced runner)..."
-	CI=1 FLUJO_TEST_FORCE_EXIT=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 1 --timeout 90 --faulthandler-timeout 60
+	CI=1 FLUJO_TEST_FORCE_EXIT=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 1 --timeout 90 --faulthandler-timeout 60
 
 .PHONY: test-fast-conservative
 test-fast-conservative: .uv ## Run fast tests with conservative parallelism (2 workers + hang guard)
 	@echo "🐌 Running fast tests with conservative parallelism (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 2 --timeout 90 --faulthandler-timeout 60
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 2 --timeout 90 --faulthandler-timeout 60
 
 .PHONY: test-robust
 test-robust: .uv ## Run tests with enhanced robustness and monitoring

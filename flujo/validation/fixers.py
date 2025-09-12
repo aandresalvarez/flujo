@@ -281,6 +281,113 @@ register_fixer(
 )
 
 
+# --- V-A8 Fixer: structured intent without JSON response mode ---
+
+
+def _va8_preview(file_path: str, report: Any) -> int:
+    # Prefer report counts when available
+    n = count_findings(report, "V-A8")
+    if n > 0:
+        return n
+    # Fallback: try lightweight YAML inspection
+    try:
+        import yaml as _yaml
+
+        data = _yaml.safe_load(Path(file_path).read_text(encoding="utf-8"))
+        steps = (data or {}).get("steps") or []
+        cnt = 0
+        for st in steps:
+            try:
+                proc = (st or {}).get("processing") or {}
+                has_schema = bool(proc.get("schema")) or bool(
+                    (st or {}).get("agent", {}).get("output_schema")
+                )
+                mode = (proc.get("structured_output") or "off").strip().lower()
+                if has_schema and mode not in {"openai_json", "auto"}:
+                    cnt += 1
+            except Exception:
+                continue
+        return cnt
+    except Exception:
+        return 0
+
+
+def _apply_va8_text(text: str) -> Tuple[str, int]:
+    try:
+        import yaml as _yaml
+    except Exception:
+        return text, 0
+    try:
+        data = _yaml.safe_load(text)
+        changed = 0
+        if not isinstance(data, dict):
+            return text, 0
+        steps = data.get("steps")
+        if not isinstance(steps, list):
+            return text, 0
+        for st in steps:
+            if not isinstance(st, dict):
+                continue
+            proc = st.get("processing")
+            if not isinstance(proc, dict):
+                # Only add when schema intent exists under processing or agent; create block if needed
+                agent = st.get("agent") if isinstance(st.get("agent"), dict) else {}
+                if isinstance(agent, dict) and agent.get("output_schema"):
+                    st["processing"] = {"structured_output": "openai_json"}
+                    changed += 1
+                continue
+            has_schema = bool(proc.get("schema"))
+            mode = str(proc.get("structured_output", "")).strip().lower()
+            if has_schema and mode not in {"openai_json", "auto"}:
+                proc["structured_output"] = "openai_json"
+                changed += 1
+        if changed <= 0:
+            return text, 0
+        new_text = _yaml.safe_dump(data, sort_keys=False)
+        return new_text, changed
+    except Exception:
+        return text, 0
+
+
+def _va8_apply(file_path: str, _report: Any, assume_yes: bool) -> FixResult:
+    p = Path(file_path)
+    try:
+        original = p.read_text(encoding="utf-8")
+    except OSError:
+        return FixResult(False, None, 0)
+    new_text, changed = _apply_va8_text(original)
+    if changed <= 0 or new_text == original:
+        return FixResult(False, None, 0)
+
+    import sys
+
+    if not assume_yes and getattr(sys.stdin, "isatty", lambda: False)():
+        try:
+            from typer import confirm as _confirm
+        except ImportError:
+            return FixResult(False, None, 0)
+        if not _confirm(f"Apply {changed} V-A8 structured_output fixes to {p.name}?", default=True):
+            return FixResult(False, None, 0)
+
+    backup_path = str(p) + ".bak"
+    try:
+        Path(backup_path).write_text(original, encoding="utf-8")
+        p.write_text(new_text, encoding="utf-8")
+    except OSError:
+        return FixResult(False, None, 0)
+    return FixResult(True, backup_path, changed)
+
+
+register_fixer(
+    Fixer(
+        "V-A8",
+        _va8_preview,
+        _va8_apply,
+        title="Enable processing.structured_output: openai_json when a schema is present",
+    )
+)
+
+
 # --- Dry-run / patch preview ---
 def build_fix_patch(
     path: str, report: Any, rules: Optional[List[str]] = None
@@ -330,6 +437,12 @@ def build_fix_patch(
         text2, c = _apply_vc2_text(text)
         if c:
             per_rule["V-C2"] = per_rule.get("V-C2", 0) + c
+            total += c
+            text = text2
+    if _allowed("V-A8"):
+        text2, c = _apply_va8_text(text)
+        if c:
+            per_rule["V-A8"] = per_rule.get("V-A8", 0) + c
             total += c
             text = text2
 

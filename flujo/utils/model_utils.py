@@ -95,6 +95,20 @@ def extract_model_id(agent: Any, step_name: str = "unknown") -> Optional[str]:
     except Exception:
         test_mode = False
 
+    # Suppress warnings for non-LLM/pure-callable agents and core builtins
+    try:
+        # Heuristic: builtins register as callables or wrappers without model fields
+        aid = getattr(agent, "id", None) or getattr(getattr(agent, "agent", None), "id", None)
+        if isinstance(aid, str) and aid.startswith("flujo.builtins."):
+            return None
+        # If the object only exposes a 'run' attribute and no model-ish attributes, treat as non-LLM
+        attrs = set(dir(agent))
+        modelish = {"model_id", "model", "_model_name", "usage"}
+        if (attrs & modelish) == set() and ("run" in attrs or callable(agent)):
+            return None
+    except Exception:
+        pass
+
     if test_mode:
         telemetry.logfire.warning(
             f"CRITICAL: Could not determine model for step '{step_name}'. "

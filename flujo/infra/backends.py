@@ -55,6 +55,14 @@ class LocalBackend(Generic[TContext]):
         )
 
         outcome = await self._executor.execute(frame)
+        try:
+            import flujo.infra.telemetry as telemetry
+
+            telemetry.logfire.debug(
+                f"[LocalBackend] outcome for step '{getattr(step, 'name', '<unnamed>')}' -> {type(outcome).__name__}"
+            )
+        except Exception:
+            pass
         # Always return a typed outcome
         assert not isinstance(outcome, StepResult)
         return outcome
