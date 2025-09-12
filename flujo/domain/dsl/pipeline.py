@@ -868,8 +868,13 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                         )
 
                     # V-T2: 'this' outside map body (heuristic)
-                    if _has_tokens and _re.search(r"\bthis\b", _templ):
-                        try:
+                    if _has_tokens:
+                        _token_has_this = False
+                        for _tm in _re.finditer(r"\{\{(.*?)\}\}", _templ, _re.DOTALL):
+                            if _re.search(r"\bthis\b", _tm.group(1)):
+                                _token_has_this = True
+                                break
+                        if _token_has_this:
                             report.warnings.append(
                                 _VF(
                                     rule_id="V-T2",
@@ -884,8 +889,6 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                                     column=_col,
                                 )
                             )
-                        except Exception:
-                            pass
 
                     # V-T3: unknown/disabled filters
                     if _has_tokens:

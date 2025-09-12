@@ -2260,7 +2260,12 @@ state_machine_default = true
         try:
             fd = _os.open(db_path, _os.O_CREAT | _os.O_WRONLY, 0o600)
             _os.close(fd)
-        except Exception:
+            # Enforce 0600 even if the file already existed
+            try:
+                _os.chmod(db_path, 0o600)
+            except OSError:
+                pass
+        except OSError:
             # Best-effort: DB file will be created on first use if this fails
             pass
     except Exception:
