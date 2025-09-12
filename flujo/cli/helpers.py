@@ -2253,18 +2253,33 @@ state_machine_default = true
     try:
         (hidden_dir / "logs").mkdir(exist_ok=True)
         (hidden_dir / "cache").mkdir(exist_ok=True)
+        # Best-effort: restrict hidden dir perms to 0700
+        try:
+            hidden_dir.chmod(0o700)
+        except OSError:
+            pass
+
         # Ensure the SQLite DB file exists with secure permissions
         import os as _os
 
         db_path = hidden_dir / "state.db"
         try:
-            fd = _os.open(db_path, _os.O_CREAT | _os.O_WRONLY, 0o600)
-            _os.close(fd)
-            # Enforce 0600 even if the file already existed
+            flags = _os.O_CREAT | _os.O_WRONLY
+            # Best-effort hardening flags (may be 0 on some platforms)
+            flags |= getattr(_os, "O_CLOEXEC", 0)
+            flags |= getattr(_os, "O_NOFOLLOW", 0)
+            fd = _os.open(db_path, flags, 0o600)
             try:
-                _os.chmod(db_path, 0o600)
-            except OSError:
-                pass
+                # Enforce 0600 on the actual inode; fallback to chmod by path if needed
+                try:
+                    _os.fchmod(fd, 0o600)
+                except (AttributeError, OSError):
+                    try:
+                        _os.chmod(db_path, 0o600)
+                    except OSError:
+                        pass
+            finally:
+                _os.close(fd)
         except OSError:
             # Best-effort: DB file will be created on first use if this fails
             pass
