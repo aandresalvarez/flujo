@@ -327,11 +327,32 @@ class DeclarativeBlueprintCompiler:
         self._compile_agents()
         self._compile_imports()
         # Delegate pipeline construction, providing compiled agent and import mapping
-        return build_pipeline_from_blueprint(
+        pipeline = build_pipeline_from_blueprint(
             self.blueprint,
             compiled_agents=self._compiled_agents,
             compiled_imports=self._compiled_imports,
         )
+
+        # Propagate top-level blueprint name onto the Pipeline object so downstream
+        # components (CLI runner, tracing) can display and persist a meaningful name.
+        try:
+            name_val = getattr(self.blueprint, "name", None)
+            if isinstance(name_val, str):
+                name_stripped = name_val.strip()
+                if name_stripped:
+                    try:
+                        setattr(pipeline, "name", name_stripped)
+                    except Exception:
+                        # Bypass potential attribute guards
+                        try:
+                            object.__setattr__(pipeline, "name", name_stripped)
+                        except Exception:
+                            pass
+        except Exception:
+            # Non-fatal; name propagation is best-effort
+            pass
+
+        return pipeline
 
 
 __all__ = ["DeclarativeBlueprintCompiler", "DeclarativeAgentModel"]

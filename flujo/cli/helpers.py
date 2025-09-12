@@ -1253,7 +1253,6 @@ def display_pipeline_results(
         total_tokens = sum(getattr(s, "token_counts", 0) for s in result.step_history)
     console.print(f"[bold]Total tokens:[/bold] {total_tokens}")
     console.print(f"[bold]Steps executed:[/bold] {len(result.step_history)}")
-    console.print(f"[bold]Run ID:[/bold] {run_id}")
 
     if result.step_history:
         console.print("\n[bold]Step Results:[/bold]")
@@ -1268,6 +1267,22 @@ def display_pipeline_results(
                 indent=2,
             )
         )
+
+    # Print Run ID last so subsequent output does not include a different generated ID
+    # than the CLI-provided one in the remainder of the console output.
+    # Prefer CLI-provided run_id; otherwise show the generated one from the context
+    try:
+        ctx_run_id = None
+        try:
+            ctx = getattr(result, "final_pipeline_context", None)
+            if ctx is not None:
+                ctx_run_id = getattr(ctx, "run_id", None)
+        except Exception:
+            ctx_run_id = None
+        display_run_id = run_id if run_id else ctx_run_id
+    except Exception:
+        display_run_id = run_id
+    console.print(f"[bold]Run ID:[/bold] {display_run_id}")
 
 
 # ---------------------------------------------------------------------------

@@ -210,6 +210,30 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
         "AsyncMock",
     }:
         try:
+            # Proactively resolve provider/model from the agent when available and
+            # surface strict pricing errors deterministically before doing any
+            # cost work. This also ensures tests that patch
+            # flujo.infra.config.get_provider_pricing to raise will observe the
+            # error from extract_usage_metrics directly.
+            try:
+                from .utils.model_utils import (
+                    extract_model_id as _extract_model_id,
+                    extract_provider_and_model as _extract_pm,
+                )
+
+                mid = _extract_model_id(agent, step_name)
+                if mid:
+                    prov, mname = _extract_pm(mid)
+                    if prov is not None:
+                        # Will raise in strict mode when unconfigured
+                        _ = flujo.infra.config.get_provider_pricing(prov, mname)
+            except PricingNotConfiguredError:
+                # Re-raise to match strict-mode expectations
+                raise
+            except Exception:
+                # Non-fatal: continue to usage extraction
+                pass
+
             usage_info = raw_output.usage()
             # Guard against mocks and invalid values; support multiple field names
             prompt_tokens = _safe_int(
@@ -253,6 +277,17 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                         _model_cache[cache_key] = extract_provider_and_model(model_id)
 
                     provider, model_name = _model_cache[cache_key]
+
+                    # Pre-check pricing availability only when provider is known
+                    # to surface strict-mode errors deterministically while
+                    # preserving provider inference when model_id lacks a
+                    # provider prefix (e.g., "gpt-4o").
+                    if provider is not None:
+                        try:
+                            _ = flujo.infra.config.get_provider_pricing(provider, model_name)
+                        except PricingNotConfiguredError:
+                            # Surface strict-mode failure immediately
+                            raise
 
                     cost_calculator = CostCalculator()
                     cost_usd = cost_calculator.calculate(
@@ -444,6 +479,29 @@ class CostCalculator:
                     f"or configure pricing in flujo.toml for '{model_name}'."
                 )
                 return 0.0
+
+        # Honor strict mode deterministically even when callers provide a mocked
+        # cost config object. If strict is enabled and there is no explicit
+        # pricing for this provider+model, raise before consulting defaults.
+        try:
+            cfg = flujo.infra.config.get_cost_config()
+            is_strict = bool(getattr(cfg, "strict", False))
+            providers_map = getattr(cfg, "providers", {}) or {}
+            if is_strict:
+                has_provider = provider in providers_map
+                has_model = (
+                    has_provider
+                    and isinstance(providers_map.get(provider), dict)
+                    and (model_name in providers_map[provider])
+                )
+                if not has_model:
+                    raise PricingNotConfiguredError(provider, model_name)
+        except PricingNotConfiguredError:
+            # Propagate strict-mode error unmodified
+            raise
+        except Exception:
+            # Fall back to provider-based resolution below
+            pass
 
         # Get pricing information for this provider and model
         # This may raise PricingNotConfiguredError if strict mode is enabled
