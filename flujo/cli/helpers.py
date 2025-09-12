@@ -2097,8 +2097,8 @@ def find_project_root(start: Optional[Path] = None) -> Path:
 def scaffold_project(directory: Path, *, overwrite_existing: bool = False) -> None:
     """Create a new Flujo project scaffold in the given directory.
 
-    Creates `flujo.toml`, `pipeline.yaml`, `skills/`, `.flujo/`, and initializes
-    the SQLite state backend at `.flujo/state.db`.
+    Creates `flujo.toml`, `pipeline.yaml`, `skills/`, `.flujo/`, and prepares
+    a local SQLite state database at `.flujo/state.db`.
 
     Raises Exit if the directory already contains a Flujo project.
     """
@@ -2164,8 +2164,17 @@ def scaffold_project(directory: Path, *, overwrite_existing: bool = False) -> No
             """
 # Flujo project configuration
 
-# Use an in-memory state backend by default
-state_uri = "memory://"
+# State backend (choose one):
+# - SQLite (recommended for local durability):
+#     sqlite:///.flujo/state.db        # relative to project root
+#     sqlite:////abs/path/to/ops.db    # absolute path
+# - In-memory (ephemeral; no persistence across restarts):
+#     memory://
+# - Env var override (takes precedence over this file):
+#     export FLUJO_STATE_URI="sqlite:///.flujo/state.db"
+
+# Default to a local SQLite database for reliable pause/resume and history
+state_uri = "sqlite:///.flujo/state.db"
 
 # Load environment variables (API keys, etc.) from this file.
 # Copy `.env.example` to `.env`, fill your keys, or change this path.
@@ -2240,10 +2249,20 @@ state_machine_default = true
         )
         # Note: Agentic architect defaults are controlled via flujo.toml ([architect])
 
-    # Create basic .flujo structure (no DB for memory backend)
+    # Create basic .flujo structure and precreate the SQLite DB file
     try:
         (hidden_dir / "logs").mkdir(exist_ok=True)
         (hidden_dir / "cache").mkdir(exist_ok=True)
+        # Ensure the SQLite DB file exists with secure permissions
+        import os as _os
+
+        db_path = hidden_dir / "state.db"
+        try:
+            fd = _os.open(db_path, _os.O_CREAT | _os.O_WRONLY, 0o600)
+            _os.close(fd)
+        except Exception:
+            # Best-effort: DB file will be created on first use if this fails
+            pass
     except Exception:
         # Best-effort init; ignore if environment lacks file system support
         pass
@@ -2261,6 +2280,11 @@ state_machine_default = true
             secho("Created: " + ", ".join(sorted(created)), fg="cyan")
     else:
         secho("✅ Your new Flujo project has been initialized in this directory!", fg="green")
+        try:
+            if (hidden_dir / "state.db").exists():
+                secho("SQLite DB initialized at .flujo/state.db", fg="cyan")
+        except Exception:
+            pass
 
 
 def scaffold_demo_project(directory: Path, *, overwrite_existing: bool = False) -> None:

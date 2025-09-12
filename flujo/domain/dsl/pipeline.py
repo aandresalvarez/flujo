@@ -867,6 +867,26 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                             )
                         )
 
+                    # V-T2: 'this' outside map body (heuristic)
+                    if _has_tokens and _re.search(r"\bthis\b", _templ):
+                        try:
+                            report.warnings.append(
+                                _VF(
+                                    rule_id="V-T2",
+                                    severity="warning",
+                                    message=(
+                                        "Template references 'this' outside a known map body context."
+                                    ),
+                                    step_name=getattr(_st, "name", None),
+                                    location_path=_loc_path or f"steps[{_idx}].input",
+                                    file=_fpath,
+                                    line=_line,
+                                    column=_col,
+                                )
+                            )
+                        except Exception:
+                            pass
+
                     # V-T3: unknown/disabled filters
                     if _has_tokens:
                         try:
