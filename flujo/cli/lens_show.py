@@ -7,7 +7,6 @@ from rich.panel import Panel
 import json
 from .config import load_backend_from_config
 import os as __os
-from flujo.utils.config import get_settings as __get_settings
 
 
 def show_run(
@@ -21,16 +20,12 @@ def show_run(
     backend = load_backend_from_config()
 
     # Fast path in CI/tests for SQLite: avoid event loop and rich rendering
-    _fast_mode = False
-    try:
-        _settings = __get_settings()
-        _fast_mode = (
-            bool(__os.getenv("PYTEST_CURRENT_TEST"))
-            or _settings.test_mode
-            or (__os.getenv("CI", "").lower() in ("true", "1"))
-        )
-    except Exception:
-        _fast_mode = False
+    # Fast-mode heuristics rely only on env to avoid expensive settings init
+    _fast_mode = (
+        bool(__os.getenv("PYTEST_CURRENT_TEST"))
+        or (__os.getenv("CI", "").lower() in ("true", "1"))
+        or (__os.getenv("FLUJO_TEST_MODE", "").strip() in ("1", "true", "True"))
+    )
 
     # If detailed output was requested, disable fast mode to fetch full payloads
     if verbose or show_input or show_output or show_error:
