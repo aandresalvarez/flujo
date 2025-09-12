@@ -939,28 +939,51 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
                     # V-T6: looks like JSON but fails to parse while input expects JSON
                     _in_t = getattr(_st, "__step_input_type__", Any)
-                    if _expects_json(_in_t) and _has_tokens:
-                        _clean = _re.sub(r"\{\{.*?\}\}", "null", _templ).strip()
-                        if (_clean.startswith("{") and _clean.endswith("}")) or (
-                            _clean.startswith("[") and _clean.endswith("]")
-                        ):
-                            try:
-                                _json.loads(_clean)
-                            except Exception:
-                                report.warnings.append(
-                                    _VF(
-                                        rule_id="V-T6",
-                                        severity="warning",
-                                        message=(
-                                            "Templated input resembles JSON but is not valid JSON for a JSON-typed step input."
-                                        ),
-                                        step_name=getattr(_st, "name", None),
-                                        location_path=_loc_path or f"steps[{_idx}].input",
-                                        file=_fpath,
-                                        line=_line,
-                                        column=_col,
+                    if _expects_json(_in_t):
+                        if _has_tokens:
+                            _clean = _re.sub(r"\{\{.*?\}\}", "null", _templ).strip()
+                            if (_clean.startswith("{") and _clean.endswith("}")) or (
+                                _clean.startswith("[") and _clean.endswith("]")
+                            ):
+                                try:
+                                    _json.loads(_clean)
+                                except Exception:
+                                    report.warnings.append(
+                                        _VF(
+                                            rule_id="V-T6",
+                                            severity="warning",
+                                            message=(
+                                                "Templated input resembles JSON but is not valid JSON for a JSON-typed step input."
+                                            ),
+                                            step_name=getattr(_st, "name", None),
+                                            location_path=_loc_path or f"steps[{_idx}].input",
+                                            file=_fpath,
+                                            line=_line,
+                                            column=_col,
+                                        )
                                     )
-                                )
+                        else:
+                            _s = _templ.strip()
+                            if (_s.startswith("{") and _s.endswith("}")) or (
+                                _s.startswith("[") and _s.endswith("]")
+                            ):
+                                try:
+                                    _json.loads(_s)
+                                except Exception:
+                                    report.warnings.append(
+                                        _VF(
+                                            rule_id="V-T6",
+                                            severity="warning",
+                                            message=(
+                                                "Input appears to be JSON but is not valid JSON; consumer expects JSON."
+                                            ),
+                                            step_name=getattr(_st, "name", None),
+                                            location_path=_loc_path or f"steps[{_idx}].input",
+                                            file=_fpath,
+                                            line=_line,
+                                            column=_col,
+                                        )
+                                    )
                 except Exception:
                     continue
             # Deduplicate after fallback additions

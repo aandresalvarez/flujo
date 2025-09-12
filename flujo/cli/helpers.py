@@ -1253,7 +1253,6 @@ def display_pipeline_results(
         total_tokens = sum(getattr(s, "token_counts", 0) for s in result.step_history)
     console.print(f"[bold]Total tokens:[/bold] {total_tokens}")
     console.print(f"[bold]Steps executed:[/bold] {len(result.step_history)}")
-    console.print(f"[bold]Run ID:[/bold] {run_id}")
 
     if result.step_history:
         console.print("\n[bold]Step Results:[/bold]")
@@ -1268,6 +1267,12 @@ def display_pipeline_results(
                 indent=2,
             )
         )
+
+    # Print Run ID last; prefer CLI run_id, else the generated one, else "N/A".
+    ctx = getattr(result, "final_pipeline_context", None)
+    ctx_run_id = getattr(ctx, "run_id", None) if ctx is not None else None
+    display_run_id = run_id or ctx_run_id or "N/A"
+    console.print(f"[bold]Run ID:[/bold] {display_run_id}")
 
 
 # ---------------------------------------------------------------------------

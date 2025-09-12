@@ -103,6 +103,51 @@ def load_backend_from_config() -> StateBackend:
     # Get state URI from ConfigManager (handles env vars + TOML with proper precedence)
     uri = get_state_uri(force_reload=True)
 
+    # In test environments, prefer an isolated temp SQLite DB when no explicit
+    # FLUJO_STATE_URI env override is provided — even if flujo.toml specifies
+    # a state_uri. This keeps tests hermetic and avoids writing to the repo db.
+    try:
+        settings = get_settings()
+        is_test_env = bool(os.getenv("PYTEST_CURRENT_TEST")) or settings.test_mode
+        env_uri_set = bool(os.getenv("FLUJO_STATE_URI", "").strip())
+    except Exception:
+        is_test_env = False
+        env_uri_set = False
+    if is_test_env and not env_uri_set:
+        # Respect ephemeral overrides in tests
+        try:
+            mode = os.getenv("FLUJO_STATE_MODE", "").strip().lower()
+            ephemeral = os.getenv("FLUJO_EPHEMERAL_STATE", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        except Exception:
+            mode, ephemeral = "", False
+        if mode in {"memory", "ephemeral"} or ephemeral:
+            return InMemoryBackend()
+
+        override_dir = os.getenv("FLUJO_TEST_STATE_DIR")
+        if override_dir and override_dir.strip():
+            temp_dir = Path(override_dir.strip()).resolve()
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            return SQLiteBackend(temp_dir / "flujo_ops.db")
+        else:
+            base_dir = Path(os.getenv("PYTEST_TMPDIR", tempfile.gettempdir())) / "flujo-test-db"
+            try:
+                worker_id = os.getenv("PYTEST_XDIST_WORKER", "")
+            except Exception:
+                worker_id = ""
+            try:
+                pid = os.getpid()
+            except Exception:
+                pid = 0
+            subdir = f"worker-{worker_id or 'single'}-pid-{pid}"
+            temp_dir = base_dir / subdir
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            return SQLiteBackend(temp_dir / "flujo_ops.db")
+
     # Ephemeral override: allow config/env to force an in-memory backend
     # Accepted forms:
     #   - FLUJO_STATE_URI=memory:// (or mem://, inmemory://, memory)
