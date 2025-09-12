@@ -6,7 +6,6 @@ import runpy
 from rich.table import Table
 from rich.console import Console
 import os as __os
-from flujo.utils.config import get_settings as __get_settings
 from .config import load_backend_from_config
 from .helpers import find_project_root, load_pipeline_from_yaml_file
 from .lens_show import show_run
@@ -91,15 +90,12 @@ def list_runs(
             raise typer.Exit(1)
 
     # Minimal, fast output for CI/test environments to reduce rendering overhead
-    try:
-        _settings = __get_settings()
-        _fast_mode = (
-            bool(__os.getenv("PYTEST_CURRENT_TEST"))
-            or _settings.test_mode
-            or (__os.getenv("CI", "").lower() in ("true", "1"))
-        )
-    except Exception:
-        _fast_mode = False
+    # Fast-mode heuristics rely only on env to avoid expensive settings init
+    _fast_mode = (
+        bool(__os.getenv("PYTEST_CURRENT_TEST"))
+        or (__os.getenv("CI", "").lower() in ("true", "1"))
+        or (__os.getenv("FLUJO_TEST_MODE", "").strip() in ("1", "true", "True"))
+    )
 
     if _fast_mode:
         out_lines = []
