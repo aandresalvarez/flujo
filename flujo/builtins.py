@@ -206,10 +206,7 @@ def _register_core_skills() -> None:
     # --- Phase 1: Minimal adapters to ease demos and merges ---
 
     async def _wrap_dict(data: Any, *, key: str = "value") -> Dict[str, Any]:
-        try:
-            k = str(key) if key is not None else "value"
-        except Exception:
-            k = "value"
+        k = str(key) if key is not None else "value"
         return {k: data}
 
     if reg.get("flujo.builtins.wrap_dict") is None:

@@ -60,15 +60,18 @@ FSD-AROS-001: Robust Structured Output (AROS v2)
       - aros.repair.enable_llm (default true)
       - aros.degrade_on_unexpected_behavior (default true) → defers to fallback policy (see 4).
 
-  Pseudocode (wrapper):
+### Pseudocode (wrapper)
 
-  - result = call_provider()
-  - if provider_error_is_json_mode:
-        try deterministic_repair(result.raw_text)
-        or try llm_repair
-        revalidate
-  -
-  else return processed_output
+```text
+result = call_provider()
+if provider_error_is_json_mode:
+  try deterministic_repair(result.raw_text)
+  or try llm_repair
+  revalidate
+  return processed_output_after_repair
+else:
+  return processed_output
+```
   -
       2. Step-Level Enforcement Parity
       - Files: flujo/domain/blueprint/compiler.py, flujo/domain/blueprint/loader.py

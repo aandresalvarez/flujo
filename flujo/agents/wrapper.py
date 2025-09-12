@@ -24,9 +24,9 @@ from pydantic_ai import Agent, ModelRetry
 
 try:  # pydantic-ai >=0.7
     from pydantic_ai.exceptions import UnexpectedModelBehavior
-except Exception:  # pragma: no cover - fallback when package shape changes
+except ImportError:  # pragma: no cover - fallback when package shape changes
 
-    class UnexpectedModelBehavior(Exception):  # type: ignore
+    class UnexpectedModelBehavior(Exception):
         pass
 
 

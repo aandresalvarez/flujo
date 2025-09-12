@@ -349,7 +349,7 @@ def _apply_va8_text(text: str) -> Tuple[str, int]:
         return text, 0
 
 
-def _va8_apply(file_path: str, report: Any, assume_yes: bool) -> FixResult:
+def _va8_apply(file_path: str, _report: Any, assume_yes: bool) -> FixResult:
     p = Path(file_path)
     try:
         original = p.read_text(encoding="utf-8")

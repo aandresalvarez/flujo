@@ -30,7 +30,7 @@ async def test_wrapper_repairs_unexpected_model_behavior(monkeypatch: pytest.Mon
     monkeypatch.setattr(
         agents_utils,
         "get_raw_output_from_exception",
-        lambda exc: '{"value": 7} trailing text',
+        lambda _exc: '{"value": 7} trailing text',
     )
 
     # Avoid invoking real LLM repair agent

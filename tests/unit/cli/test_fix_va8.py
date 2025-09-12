@@ -10,12 +10,11 @@ def _write(tmp_path: Path, name: str, text: str) -> str:
 
 
 def _count_rule(report, rid: str) -> int:
-    try:
-        return sum(1 for e in report.errors if getattr(e, "rule_id", "") == rid) + sum(
-            1 for w in report.warnings if getattr(w, "rule_id", "") == rid
-        )
-    except Exception:
-        return 0
+    errs = getattr(report, "errors", []) or []
+    wrns = getattr(report, "warnings", []) or []
+    return sum(1 for e in errs if getattr(e, "rule_id", "") == rid) + sum(
+        1 for w in wrns if getattr(w, "rule_id", "") == rid
+    )
 
 
 def test_fix_va8_adds_structured_output(tmp_path: Path) -> None:
