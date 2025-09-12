@@ -1,11 +1,14 @@
 ## Flujo project configuration
 
 # Durable state backend for pause/resume
-state_uri = "sqlite:///flujo_ops.db"
+# Prefer a hidden project-local directory to reduce repo root clutter
+state_uri = "sqlite:///.flujo/flujo_ops.db"
 
 # Explicit model pricing to avoid hardcoded default price warnings.
 [cost]
 strict = false
+## In CI or production, enable strict pricing via environment to prevent silent drift:
+##   export FLUJO_COST_STRICT=1
 
 # OpenAI pricing for models used in this repo
 [cost.providers.openai.gpt-4o-mini]
@@ -22,4 +25,3 @@ completion_tokens_per_1k = 0.0006
 # [budgets.default]
 # total_cost_usd_limit = 10.0
 # total_tokens_limit = 100000
-

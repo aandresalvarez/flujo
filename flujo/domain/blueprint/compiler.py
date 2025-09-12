@@ -13,6 +13,7 @@ from ...agents import make_agent_async, make_templated_agent_async
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ...agents import AsyncAgentWrapper
+    from ..dsl import Pipeline as _Pipeline
 import os
 from ...exceptions import ConfigurationError
 
@@ -322,7 +323,7 @@ class DeclarativeBlueprintCompiler:
                     f"Failed to compile import '{alias}' from '{rel_path}': {e}"
                 ) from e
 
-    def compile_to_pipeline(self) -> Any:
+    def compile_to_pipeline(self) -> "_Pipeline[Any, Any]":
         # Compile agents and imports first
         self._compile_agents()
         self._compile_imports()
@@ -335,22 +336,20 @@ class DeclarativeBlueprintCompiler:
 
         # Propagate top-level blueprint name onto the Pipeline object so downstream
         # components (CLI runner, tracing) can display and persist a meaningful name.
-        try:
-            name_val = getattr(self.blueprint, "name", None)
-            if isinstance(name_val, str):
-                name_stripped = name_val.strip()
-                if name_stripped:
+        name_val = getattr(self.blueprint, "name", None)
+        if isinstance(name_val, str):
+            name_stripped = name_val.strip()
+            if name_stripped:
+                try:
+                    # Prefer direct attribute set; tolerate missing attribute in strict mypy
+                    pipeline.name = name_stripped  # type: ignore[attr-defined]
+                except (AttributeError, TypeError, ValueError):
+                    # Bypass potential attribute guards/frozen models
                     try:
-                        setattr(pipeline, "name", name_stripped)
-                    except Exception:
-                        # Bypass potential attribute guards
-                        try:
-                            object.__setattr__(pipeline, "name", name_stripped)
-                        except Exception:
-                            pass
-        except Exception:
-            # Non-fatal; name propagation is best-effort
-            pass
+                        object.__setattr__(pipeline, "name", name_stripped)
+                    except (AttributeError, TypeError, ValueError):
+                        # best-effort only
+                        pass
 
         return pipeline
 

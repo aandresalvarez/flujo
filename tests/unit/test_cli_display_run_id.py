@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 
 import builtins
 
@@ -12,12 +12,12 @@ class FakeConsole:
     so tests patch rich.console.Console to this class.
     """
 
-    captured: list[str] = []
+    captured: ClassVar[list[str]] = []
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: D401 - test stub
+    def __init__(self, *args: Any, **_kwargs: Any) -> None:
         pass
 
-    def print(self, *args: Any, **kwargs: Any) -> None:  # noqa: D401 - test stub
+    def print(self, *args: Any, **kwargs: Any) -> None:
         # Coerce to strings; rich objects can remain as their reprs
         text = " ".join([builtins.str(a) for a in args])
         FakeConsole.captured.append(text)

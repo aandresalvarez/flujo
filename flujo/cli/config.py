@@ -114,9 +114,23 @@ def load_backend_from_config() -> StateBackend:
         is_test_env = False
         env_uri_set = False
     if is_test_env and not env_uri_set:
+        # Respect ephemeral overrides in tests
+        try:
+            mode = os.getenv("FLUJO_STATE_MODE", "").strip().lower()
+            ephemeral = os.getenv("FLUJO_EPHEMERAL_STATE", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
+        except Exception:
+            mode, ephemeral = "", False
+        if mode in {"memory", "ephemeral"} or ephemeral:
+            return InMemoryBackend()
+
         override_dir = os.getenv("FLUJO_TEST_STATE_DIR")
         if override_dir and override_dir.strip():
-            temp_dir = Path(override_dir.strip())
+            temp_dir = Path(override_dir.strip()).resolve()
             temp_dir.mkdir(parents=True, exist_ok=True)
             return SQLiteBackend(temp_dir / "flujo_ops.db")
         else:

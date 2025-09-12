@@ -230,9 +230,11 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
             except PricingNotConfiguredError:
                 # Re-raise to match strict-mode expectations
                 raise
-            except Exception:
-                # Non-fatal: continue to usage extraction
-                pass
+            except Exception as e:
+                # Non-fatal: continue to usage extraction, but record why
+                telemetry.logfire.debug(
+                    f"Pricing pre-check skipped for step '{step_name}': {type(e).__name__}: {e}"
+                )
 
             usage_info = raw_output.usage()
             # Guard against mocks and invalid values; support multiple field names
@@ -499,9 +501,12 @@ class CostCalculator:
         except PricingNotConfiguredError:
             # Propagate strict-mode error unmodified
             raise
-        except Exception:
-            # Fall back to provider-based resolution below
-            pass
+        except Exception as e:
+            from .infra import telemetry
+
+            telemetry.logfire.debug(
+                f"Strict-mode pre-check skipped for {provider}:{model_name}: {type(e).__name__}: {e}"
+            )
 
         # Get pricing information for this provider and model
         # This may raise PricingNotConfiguredError if strict mode is enabled
