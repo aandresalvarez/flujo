@@ -22,13 +22,6 @@ from typing import Any, Optional, Type, Generic
 from pydantic import ValidationError, BaseModel as PydanticBaseModel, TypeAdapter
 from pydantic_ai import Agent, ModelRetry
 
-try:  # pydantic-ai >=0.7
-    from pydantic_ai.exceptions import UnexpectedModelBehavior
-except ImportError:  # pragma: no cover - fallback when package shape changes
-
-    class UnexpectedModelBehavior(Exception):
-        pass
-
 
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
 
@@ -52,6 +45,19 @@ from ..utils import format_prompt
 # Import from utils to avoid circular imports
 # Import the module (not the symbol) so tests can monkeypatch it
 from . import utils as agents_utils
+
+# pydantic-ai UnexpectedModelBehavior import with safe fallback
+try:  # pydantic-ai >=0.7
+    from pydantic_ai.exceptions import (
+        UnexpectedModelBehavior as _UnexpectedModelBehavior,
+    )
+except ImportError:  # pragma: no cover - fallback when package shape changes
+
+    class _UnexpectedModelBehavior(Exception):
+        pass
+
+
+UnexpectedModelBehavior = _UnexpectedModelBehavior
 
 
 class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentInT, AgentOutT]):
