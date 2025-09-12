@@ -159,6 +159,8 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
 
     from .infra import telemetry
 
+    missing_model_warned = False
+
     # 0. GUARD: When a Mock output reaches cost extraction directly, treat as zero usage.
     # Integration paths detect and raise earlier; unit cost tests expect graceful zeros here.
     if _is_mock_object(raw_output) or type(raw_output).__name__ in {
@@ -313,6 +315,7 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                         f"or use make_agent_async() with explicit model parameter."
                     )
                     telemetry.logfire.warning(msg)
+                    missing_model_warned = True
                     # Also emit via standard logging to ensure capture in parallel/CI environments
                     try:
                         import logging as _logging
@@ -333,6 +336,27 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                     f"Failed to extract usage metrics for step '{step_name}': {e}"
                 )
                 cost_usd = 0.0
+
+    # Final safety net: if we had meaningful tokens but could not compute cost and
+    # no earlier missing-model warning was emitted, check model_id and emit a
+    # critical warning to satisfy strict test expectations and aid diagnostics.
+    try:
+        if (
+            (prompt_tokens > 0 or completion_tokens > 0)
+            and cost_usd == 0.0
+            and not missing_model_warned
+        ):
+            from .utils.model_utils import extract_model_id as _extract_model_id
+
+            _mid = _extract_model_id(agent, step_name)
+            if not _mid:
+                telemetry.logfire.warning(
+                    f"CRITICAL: Could not determine model for step '{step_name}'. Cost will be reported as 0.0. "
+                    f"To fix: ensure your agent has a 'model_id' attribute (e.g., 'openai:gpt-4o') or use make_agent_async() with explicit model parameter."
+                )
+    except Exception:
+        # Never fail extraction due to diagnostics
+        pass
 
     return prompt_tokens, completion_tokens, cost_usd
 

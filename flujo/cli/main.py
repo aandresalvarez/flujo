@@ -1414,8 +1414,8 @@ def status(
     help=(
         "✨ Initialize a new Flujo workflow project in this directory.\n\n"
         "Use --force to re-initialize templates in an existing project, and --yes to skip confirmation.\n\n"
-        "Tip: New projects default to an in-memory state backend (state_uri = 'memory://').\n"
-        "      To persist runs, set state_uri = 'sqlite:///.flujo/state.db' in flujo.toml or set FLUJO_STATE_URI."
+        "Tip: New projects default to a local SQLite backend for durability (state_uri = 'sqlite:///.flujo/state.db').\n"
+        "      You can switch to an in-memory backend by setting state_uri = 'memory://' in flujo.toml or via FLUJO_STATE_URI."
     )
 )
 def init(

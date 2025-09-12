@@ -94,7 +94,7 @@ def test_scaffold_project_fallback_writes_minimal_files(
 
     flujo_toml = (tmp_path / "flujo.toml").read_text()
     pipeline_yaml = (tmp_path / "pipeline.yaml").read_text()
-    assert 'state_uri = "memory://"' in flujo_toml
+    assert 'state_uri = "sqlite:///.flujo/state.db"' in flujo_toml
     assert 'version: "0.1"' in pipeline_yaml
     assert (tmp_path / "skills" / "__init__.py").exists()
     assert (tmp_path / "skills" / "custom_tools.py").exists()
