@@ -296,6 +296,10 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             # If previous step produced a meaningful output and the next step does not declare
             # a specific input type (i.e., uses object/None), and previous step does not update context,
             # warn that the output may be unused.
+            #
+            # Robustness improvement: if the next step's templated input clearly references
+            # the previous step's output (e.g., "{{ previous_step ... }}" or
+            # "{{ steps.<prev_step>.output ... }}"), treat it as consumed and suppress V-A5.
             if prev_step is not None:
                 prev_updates_context = bool(getattr(prev_step, "updates_context", False))
                 curr_accepts_input = getattr(step, "__step_input_type__", Any)
@@ -304,24 +308,56 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
                 def _is_none_or_object(t: Any) -> bool:
                     return t is None or t is type(None) or t is object  # noqa: E721
 
+                def _templated_input_consumes_prev(_step: Any, prev_name: str) -> bool:
+                    try:
+                        meta = getattr(_step, "meta", None)
+                        templ = meta.get("templated_input") if isinstance(meta, dict) else None
+                        if not isinstance(templ, str):
+                            return False
+                        # Quick check: only relevant if Jinja-style template markers appear
+                        if "{{" not in templ or "}}" not in templ:
+                            return False
+                        import re as _re
+
+                        prev_esc = _re.escape(str(prev_name)) if prev_name else ""
+                        # Extract all template expressions conservatively (no full Jinja parse)
+                        for m in _re.finditer(r"\{\{(.*?)\}\}", templ, flags=_re.DOTALL):
+                            expr = m.group(1)
+                            if not isinstance(expr, str):
+                                continue
+                            # Heuristics: reference via previous_step or steps.<name>
+                            if _re.search(r"\bprevious_step\b", expr):
+                                return True
+                            if prev_esc:
+                                # steps.<name>(.output)? ...  OR  steps['<name>'] / steps["<name>"]
+                                pat1 = rf"\bsteps\s*\.\s*{prev_esc}\b"
+                                pat2 = rf"\bsteps\s*\[\s*['\"]{prev_esc}['\"]\s*\]"
+                                if _re.search(pat1, expr) or _re.search(pat2, expr):
+                                    return True
+                        return False
+                    except Exception:
+                        return False
+
                 if (
                     (not prev_updates_context)
                     and (not _is_none_or_object(prev_produces_output))
                     and (_is_none_or_object(curr_accepts_input) or curr_accepts_input is Any)
                 ):
-                    report.warnings.append(
-                        ValidationFinding(
-                            rule_id="V-A5",
-                            severity="warning",
-                            message=(
-                                f"The output of step '{prev_step.name}' is not used by the next step '{step.name}'."
-                            ),
-                            step_name=prev_step.name,
-                            suggestion=(
-                                "Set updates_context=True on the producing step or insert an adapter step to consume its output."
-                            ),
+                    # Suppress V-A5 if templated input obviously consumes the previous output
+                    if not _templated_input_consumes_prev(step, getattr(prev_step, "name", "")):
+                        report.warnings.append(
+                            ValidationFinding(
+                                rule_id="V-A5",
+                                severity="warning",
+                                message=(
+                                    f"The output of step '{prev_step.name}' is not used by the next step '{step.name}'."
+                                ),
+                                step_name=prev_step.name,
+                                suggestion=(
+                                    "Set updates_context=True on the producing step or insert an adapter step to consume its output."
+                                ),
+                            )
                         )
-                    )
 
             # Context lint V-C1 moved to ContextLinter
 

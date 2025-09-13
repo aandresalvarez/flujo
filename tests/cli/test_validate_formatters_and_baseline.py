@@ -193,7 +193,8 @@ def test_validate_baseline_deltas_and_update(tmp_path: Path) -> None:
     )
     payload4 = json.loads(res4.stdout or "{}")
     w4 = payload4.get("warnings") or []
-    assert any(w.get("step_name") == "A" and w.get("rule_id") == "V-A5" for w in w4)
+    # With improved V-A5 logic, A's output is considered consumed via templating,
+    # so only B's template warning remains new relative to the trimmed baseline.
     assert any(w.get("step_name") == "B" and w.get("rule_id") == "V-T1" for w in w4)
 
 
