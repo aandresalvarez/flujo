@@ -6,9 +6,20 @@ This page summarizes the new CLI behavior added to improve CI and developer ergo
 
 - `--project PATH`: Forces the project root. The directory is added to `PYTHONPATH` so imports like `skills.helpers` resolve when running from subdirectories or CI workspaces.
 - `-v/--verbose`, `--trace`: Print full Python tracebacks for easier troubleshooting. Useful in CI logs.
+- Global flags go before the subcommand: for example, `flujo --verbose validate` (not `flujo validate --verbose`).
 
 Environment file path:
 - Declare `env_file = ".env"` in `flujo.toml` to load API keys (e.g., `OPENAI_API_KEY`) from a specific file relative to the project root. The project scaffold provides `.env.example`; copy it to `.env` and fill your secrets. You can change the path to any file (e.g., `env_file = ".secrets"`).
+
+API key precedence:
+- Environment variables override everything (recommended for CI): `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`.
+- Then values from the `env_file` are considered (if configured).
+- Finally, TOML `[settings]` values apply only when no env var is set.
+
+Models and access:
+- The example pipelines may reference future models (e.g., `openai:gpt-5`). Ensure your account has access, or switch to a widely available model like `openai:gpt-4o-mini`.
+- If a model call is attempted without a real key, providers may fail after a few retries, making the run appear slow before failing with 401.
+  - Use `flujo run --dry-run` to validate quickly without making provider calls.
 
 Project root resolution order used by all commands:
 1) `--project PATH`
@@ -39,6 +50,17 @@ Examples:
 - `flujo --project . validate --no-strict`
 
 Exit code in strict mode when invalid: `4` (see Exit Codes).
+
+## Paging and Colors
+
+Some environments set `PAGER=less` and `LESS=-R`, which can cause Click/Typer to page output through `less`. If a command “hangs”, you might be in the pager.
+
+Disable paging and/or color when needed:
+- One-off: `CLICK_DISABLE_PAGER=1 flujo --help`
+- Permanent (shell): `export CLICK_DISABLE_PAGER=1`
+- No colors (also avoids pager triggers in some setups): `NO_COLOR=1 flujo validate`
+
+The Flujo CLI aims to avoid paging for common commands; however, the above knobs ensure predictable behavior across shells and CI systems.
 
 ## Run
 
