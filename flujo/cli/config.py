@@ -238,16 +238,30 @@ def load_backend_from_config() -> StateBackend:
 
         # Do NOT auto-create parent directories; fail if missing
         if not parent_dir.exists():
-            typer.echo(
-                f"[red]Error: Database directory '{parent_dir}' does not exist[/red]",
-                err=True,
-            )
+            try:
+                from rich.console import Console as _Console
+
+                _Console(stderr=True).print(
+                    f"[red]Error: Database directory '{parent_dir}' does not exist[/red]"
+                )
+            except Exception:
+                typer.echo(
+                    f"Error: Database directory '{parent_dir}' does not exist",
+                    err=True,
+                )
             raise typer.Exit(1)
         if not os.access(parent_dir, os.W_OK):
-            typer.echo(
-                f"[red]Error: Database directory '{parent_dir}' is not writable[/red]",
-                err=True,
-            )
+            try:
+                from rich.console import Console as _Console
+
+                _Console(stderr=True).print(
+                    f"[red]Error: Database directory '{parent_dir}' is not writable[/red]"
+                )
+            except Exception:
+                typer.echo(
+                    f"Error: Database directory '{parent_dir}' is not writable",
+                    err=True,
+                )
             raise typer.Exit(1)
         # Ensure the database file exists with secure permissions (read/write for owner only)
         # This avoids issues with default umask or inherited permissions from 'open' in append mode.
@@ -261,28 +275,57 @@ def load_backend_from_config() -> StateBackend:
             finally:
                 os.close(fd)
         except Exception as e:
-            typer.echo(
-                f"[red]Error: Cannot create/open database file '{db_path}' with secure permissions due to {type(e).__name__}: {e}[/red]",
-                err=True,
-            )
+            try:
+                from rich.console import Console as _Console
+
+                _Console(stderr=True).print(
+                    f"[red]Error: Cannot create/open database file '{db_path}' with secure permissions due to {type(e).__name__}: {e}[/red]"
+                )
+            except Exception:
+                typer.echo(
+                    f"Error: Cannot create/open database file '{db_path}' with secure permissions due to {type(e).__name__}: {e}",
+                    err=True,
+                )
             raise typer.Exit(1)
         if not os.access(db_path, os.W_OK):
-            typer.echo(f"[red]Error: Database file '{db_path}' is not writable[/red]", err=True)
+            try:
+                from rich.console import Console as _Console
+
+                _Console(stderr=True).print(
+                    f"[red]Error: Database file '{db_path}' is not writable[/red]"
+                )
+            except Exception:
+                typer.echo(
+                    f"Error: Database file '{db_path}' is not writable",
+                    err=True,
+                )
             raise typer.Exit(1)
         # Try to open the file for writing (touch)
         try:
             with open(db_path, "a"):
                 pass
         except Exception as e:
-            typer.echo(
-                f"[red]Error: Cannot write to database file '{db_path}' due to {type(e).__name__}: {e}[/red]",
-                err=True,
-            )
+            try:
+                from rich.console import Console as _Console
+
+                _Console(stderr=True).print(
+                    f"[red]Error: Cannot write to database file '{db_path}' due to {type(e).__name__}: {e}[/red]"
+                )
+            except Exception:
+                typer.echo(
+                    f"Error: Cannot write to database file '{db_path}' due to {type(e).__name__}: {e}",
+                    err=True,
+                )
             raise typer.Exit(1)
         return SQLiteBackend(db_path)
     else:
         # Support memory-like URIs when scheme was present but not sqlite
         if (uri or "").strip().lower() in {"memory", "memory://", "mem://", "inmemory://"}:
             return InMemoryBackend()
-        typer.echo(f"[red]Unsupported backend URI: {uri}[/red]", err=True)
+        try:
+            from rich.console import Console as _Console
+
+            _Console(stderr=True).print(f"[red]Unsupported backend URI: {uri}[/red]")
+        except Exception:
+            typer.echo(f"Unsupported backend URI: {uri}", err=True)
         raise typer.Exit(1)

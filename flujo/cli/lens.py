@@ -207,11 +207,21 @@ def replay_command(
                     pipeline_obj, _ = load_pipeline_from_file(file, object_name)
             except SystemExit:
                 # Enhance error message with guidance
-                typer.echo(
-                    f"[red]Could not load pipeline object '{object_name}' from file '{file}'.\n"
-                    "Ensure the file exists and exports the pipeline variable (or pass --object).[/red]",
-                    err=True,
-                )
+                try:
+                    from rich.console import Console as _Console
+
+                    _Console(stderr=True).print(
+                        f"[red]Could not load pipeline object '{object_name}' from file '{file}'.\n"
+                        "Ensure the file exists and exports the pipeline variable (or pass --object).[/red]"
+                    )
+                except Exception:
+                    typer.echo(
+                        (
+                            f"Could not load pipeline object '{object_name}' from file '{file}'.\n"
+                            "Ensure the file exists and exports the pipeline variable (or pass --object)."
+                        ),
+                        err=True,
+                    )
                 raise
             runner = create_flujo_runner(
                 pipeline=pipeline_obj,
@@ -235,19 +245,33 @@ def replay_command(
                 # Fallback: infer from run metadata and optional local registry
                 details = asyncio.run(backend.get_run_details(run_id))
                 if not details:
-                    typer.echo(
-                        f"[red]Run not found: {run_id}. Cannot infer pipeline without --file.[/red]",
-                        err=True,
-                    )
+                    try:
+                        from rich.console import Console as _Console
+
+                        _Console(stderr=True).print(
+                            f"[red]Run not found: {run_id}. Cannot infer pipeline without --file.[/red]"
+                        )
+                    except Exception:
+                        typer.echo(
+                            f"Run not found: {run_id}. Cannot infer pipeline without --file.",
+                            err=True,
+                        )
                     raise typer.Exit(1)
 
                 pipeline_name = details.get("pipeline_name")
                 pipeline_version = details.get("pipeline_version") or "latest"
                 if not pipeline_name:
-                    typer.echo(
-                        "[red]Pipeline name unavailable in run metadata. Provide --file to load the pipeline.[/red]",
-                        err=True,
-                    )
+                    try:
+                        from rich.console import Console as _Console
+
+                        _Console(stderr=True).print(
+                            "[red]Pipeline name unavailable in run metadata. Provide --file to load the pipeline.[/red]"
+                        )
+                    except Exception:
+                        typer.echo(
+                            "Pipeline name unavailable in run metadata. Provide --file to load the pipeline.",
+                            err=True,
+                        )
                     raise typer.Exit(1)
 
                 # Discover a local registry
@@ -262,14 +286,25 @@ def replay_command(
                     registry = None
 
                 if registry is None:
-                    typer.echo(
-                        (
-                            "[red]No --file provided and no local registry found (expected 'registry.py' with a 'registry' object).\n"
-                            f"Run metadata indicates pipeline '{pipeline_name}' (version '{pipeline_version}').\n"
-                            "Please provide --file pointing to the pipeline definition or add a registry for inference.[/red]"
-                        ),
-                        err=True,
-                    )
+                    try:
+                        from rich.console import Console as _Console
+
+                        _Console(stderr=True).print(
+                            (
+                                "[red]No --file provided and no local registry found (expected 'registry.py' with a 'registry' object).\n"
+                                f"Run metadata indicates pipeline '{pipeline_name}' (version '{pipeline_version}').\n"
+                                "Please provide --file pointing to the pipeline definition or add a registry for inference.[/red]"
+                            )
+                        )
+                    except Exception:
+                        typer.echo(
+                            (
+                                "No --file provided and no local registry found (expected 'registry.py' with a 'registry' object).\n"
+                                f"Run metadata indicates pipeline '{pipeline_name}' (version '{pipeline_version}').\n"
+                                "Please provide --file pointing to the pipeline definition or add a registry for inference."
+                            ),
+                            err=True,
+                        )
                     raise typer.Exit(1)
 
                 runner = Flujo(
@@ -305,7 +340,12 @@ def replay_command(
                 f.write(repr(e))
         except Exception:
             pass
-        typer.echo(f"[red]Replay failed: {e}", err=True)
+        try:
+            from rich.console import Console as _Console
+
+            _Console(stderr=True).print(f"[red]Replay failed: {e}")
+        except Exception:
+            typer.echo(f"Replay failed: {e}", err=True)
         raise typer.Exit(1)
 
 

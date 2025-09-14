@@ -626,7 +626,13 @@ def format_improvement_suggestion(suggestion: Any) -> str:
     return f"{suggestion.suggestion_type.name}: {detail}"
 
 
-def create_pipeline_results_table(step_history: List[Any]) -> Table:
+def create_pipeline_results_table(
+    step_history: List[Any],
+    *,
+    show_output_column: bool = True,
+    output_preview_len: Optional[int] = None,
+    include_steps: Optional[List[str]] = None,
+) -> Table:
     """Create a table displaying pipeline execution results.
 
     Args:
@@ -638,7 +644,8 @@ def create_pipeline_results_table(step_history: List[Any]) -> Table:
     table = Table(title="Pipeline Execution Results")
     table.add_column("Step", style="cyan", no_wrap=True)
     table.add_column("Status", style="green")
-    table.add_column("Output", style="white")
+    if show_output_column:
+        table.add_column("Output", style="white")
     table.add_column("Cost", style="yellow")
     table.add_column("Tokens", style="blue")
 
@@ -646,17 +653,33 @@ def create_pipeline_results_table(step_history: List[Any]) -> Table:
         name_attr = getattr(step_res, "step_name", None)
         if name_attr is None:
             name_attr = getattr(step_res, "name", "<unknown>")
-        step_name = f"{prefix}{name_attr}" if prefix else name_attr
+        raw_name = name_attr
+        step_name = f"{prefix}{raw_name}" if prefix else raw_name
         status = "✅" if step_res.success else "❌"
-        output = (
-            str(step_res.output)[:100] + "..."
-            if len(str(step_res.output)) > 100
-            else str(step_res.output)
-        )
+        # Determine preview length with a safe default (100) if not provided
+        preview_len = 100 if output_preview_len is None else max(-1, int(output_preview_len))
+        out_str = str(getattr(step_res, "output", ""))
+        if preview_len >= 0 and len(out_str) > preview_len:
+            output = out_str[:preview_len] + "..."
+        else:
+            output = out_str
         cost = f"${step_res.cost_usd:.4f}" if hasattr(step_res, "cost_usd") else "N/A"
         tokens = str(step_res.token_counts) if hasattr(step_res, "token_counts") else "N/A"
 
-        table.add_row(step_name, status, output, cost, tokens)
+        # Optional inclusion filter: when provided, only include rows whose step name matches,
+        # but still traverse children to allow nested matches.
+        include = True
+        if include_steps:
+            try:
+                include = str(raw_name) in set(include_steps)
+            except Exception:
+                include = True
+
+        if include:
+            if show_output_column:
+                table.add_row(step_name, status, output, cost, tokens)
+            else:
+                table.add_row(step_name, status, cost, tokens)
 
         # Recursively render nested step histories, if present
         try:
@@ -885,6 +908,7 @@ def create_flujo_runner(
     state_backend: Optional[Any] = None,
     *,
     debug: bool = False,
+    live: bool = False,
 ) -> Any:
     """Create a Flujo runner instance with the given configuration.
 
@@ -923,8 +947,19 @@ def create_flujo_runner(
     except Exception:
         usage_limits_arg = None
 
-    # Select local tracer when debug is enabled
-    local_tracer_arg: Any = "default" if debug else None
+    # Select local tracer when debug or live is enabled
+    local_tracer_arg: Any
+    if debug:
+        local_tracer_arg = "default"
+    elif live:
+        try:
+            from flujo.infra.console_tracer import ConsoleTracer as _ConsoleTracer
+
+            local_tracer_arg = _ConsoleTracer(level="info", log_inputs=False, log_outputs=False)
+        except Exception:
+            local_tracer_arg = "default"
+    else:
+        local_tracer_arg = None
 
     # Disable tracing in test mode to reduce overhead for performance suites
     enable_tracing_arg = True
@@ -1169,6 +1204,14 @@ def display_pipeline_results(
     result: Any,
     run_id: Optional[str],
     json_output: bool,
+    *,
+    show_steps: bool = True,
+    show_context: bool = True,
+    show_output_column: bool = True,
+    output_preview_len: Optional[int] = None,
+    final_output_format: str = "auto",
+    pager: bool = False,
+    only_steps: Optional[List[str]] = None,
 ) -> None:
     """Display pipeline execution results in the appropriate format.
 
@@ -1197,82 +1240,130 @@ def display_pipeline_results(
     except Exception:
         paused = False
 
-    if paused:
-        console.print("[bold yellow]Pipeline execution paused.[/bold yellow]")
-        if hitl_message:
-            console.print(hitl_message)
-        # For paused runs, stop here to avoid confusing final report output
-        return
-    else:
-        # Trust runner-computed success flag (runner enforces completion gate)
-        is_success = bool(getattr(result, "success", False))
-        if is_success:
-            console.print("[bold green]Pipeline execution completed successfully![/bold green]")
+    def _render_body() -> None:
+        if paused:
+            console.print("[bold yellow]Pipeline execution paused.[/bold yellow]")
+            if hitl_message:
+                console.print(hitl_message)
+            # For paused runs, stop here to avoid confusing final report output
+            return
         else:
-            console.print("[bold red]Pipeline execution failed.[/bold red]")
+            # Trust runner-computed success flag (runner enforces completion gate)
+            is_success = bool(getattr(result, "success", False))
+            if is_success:
+                console.print("[bold green]Pipeline execution completed successfully![/bold green]")
+            else:
+                console.print("[bold red]Pipeline execution failed.[/bold red]")
 
-    # Nicely render the final output: unwrap common wrappers and render Markdown when possible
-    final_output = result.step_history[-1].output if result.step_history else None
-    try:
-        # Unwrap RootModel-like objects or simple containers
-        if hasattr(final_output, "value") and not isinstance(final_output, (str, bytes)):
-            final_output = getattr(final_output, "value")
-        elif isinstance(final_output, dict) and "value" in final_output and len(final_output) == 1:
-            final_output = final_output.get("value")
-        # Render Markdown when a string looks like MD (headings, lists, links, bold)
-        if isinstance(final_output, str):
-            from rich.markdown import Markdown as _Markdown
+        # Nicely render the final output: unwrap common wrappers and render with the requested format
+        final_output = result.step_history[-1].output if result.step_history else None
+        try:
+            # Unwrap RootModel-like objects or simple containers
+            if hasattr(final_output, "value") and not isinstance(final_output, (str, bytes)):
+                final_output = getattr(final_output, "value")
+            elif (
+                isinstance(final_output, dict)
+                and "value" in final_output
+                and len(final_output) == 1
+            ):
+                final_output = final_output.get("value")
 
             console.print("[bold]Final output:[/bold]")
-            console.print(_Markdown(final_output))
-        elif isinstance(final_output, bytes):
-            # Handle bytes safely by decoding to string
-            try:
-                decoded_output = final_output.decode("utf-8")
-                console.print(f"[bold]Final output:[/bold] {decoded_output}")
-            except UnicodeDecodeError:
-                console.print(f"[bold]Final output:[/bold] {final_output!r}")
-        else:
-            console.print(f"[bold]Final output:[/bold] {final_output}")
-    except Exception:
-        # Handle bytes safely in exception case too
-        if isinstance(final_output, bytes):
-            try:
-                decoded_output = final_output.decode("utf-8")
-                console.print(f"[bold]Final output:[/bold] {decoded_output}")
-            except UnicodeDecodeError:
-                console.print(f"[bold]Final output:[/bold] {final_output!r}")
-        else:
-            console.print(f"[bold]Final output:[/bold] {final_output}")
-    console.print(f"[bold]Total cost:[/bold] ${result.total_cost_usd:.4f}")
+            fmt = (final_output_format or "auto").lower()
+            if fmt == "raw":
+                console.print(str(final_output))
+            elif fmt == "json":
+                try:
+                    to_dump: Any
+                    if isinstance(final_output, str):
+                        to_dump = json.loads(final_output)
+                    else:
+                        to_dump = safe_serialize(final_output)
+                    console.print(json.dumps(to_dump, indent=2, ensure_ascii=False))
+                except Exception:
+                    console.print(str(final_output))
+            elif fmt == "yaml":
+                try:
+                    import yaml as _yaml
 
-    # Prefer pipeline's aggregated tokens which include nested results
-    try:
-        total_tokens = int(getattr(result, "total_tokens", 0))
-    except Exception:
-        total_tokens = sum(getattr(s, "token_counts", 0) for s in result.step_history)
-    console.print(f"[bold]Total tokens:[/bold] {total_tokens}")
-    console.print(f"[bold]Steps executed:[/bold] {len(result.step_history)}")
+                    to_dump = safe_serialize(final_output)
+                    console.print(
+                        _yaml.safe_dump(
+                            to_dump, sort_keys=False, allow_unicode=True, default_flow_style=False
+                        )
+                    )
+                except Exception:
+                    console.print(str(final_output))
+            elif fmt == "md":
+                from rich.markdown import Markdown as _Markdown
 
-    if result.step_history:
-        console.print("\n[bold]Step Results:[/bold]")
-        table = create_pipeline_results_table(result.step_history)
-        console.print(table)
+                console.print(_Markdown(str(final_output)))
+            else:  # auto
+                # Render Markdown when a string looks like MD
+                if isinstance(final_output, str):
+                    from rich.markdown import Markdown as _Markdown
 
-    if result.final_pipeline_context:
-        console.print("\n[bold]Final Context:[/bold]")
-        console.print(
-            json.dumps(
-                safe_serialize(result.final_pipeline_context.model_dump()),
-                indent=2,
+                    console.print(_Markdown(final_output))
+                elif isinstance(final_output, bytes):
+                    # Handle bytes safely by decoding to string
+                    try:
+                        decoded_output = final_output.decode("utf-8")
+                        console.print(decoded_output)
+                    except UnicodeDecodeError:
+                        console.print(repr(final_output))
+                else:
+                    console.print(str(final_output))
+        except Exception:
+            # Handle bytes safely in exception case too
+            if isinstance(final_output, bytes):
+                try:
+                    decoded_output = final_output.decode("utf-8")
+                    console.print(f"[bold]Final output:[/bold] {decoded_output}")
+                except UnicodeDecodeError:
+                    console.print(f"[bold]Final output:[/bold] {final_output!r}")
+            else:
+                console.print(f"[bold]Final output:[/bold] {final_output}")
+
+        console.print(f"[bold]Total cost:[/bold] ${result.total_cost_usd:.4f}")
+
+        # Prefer pipeline's aggregated tokens which include nested results
+        try:
+            total_tokens = int(getattr(result, "total_tokens", 0))
+        except Exception:
+            total_tokens = sum(getattr(s, "token_counts", 0) for s in result.step_history)
+        console.print(f"[bold]Total tokens:[/bold] {total_tokens}")
+        console.print(f"[bold]Steps executed:[/bold] {len(result.step_history)}")
+
+        if show_steps and result.step_history:
+            console.print("\n[bold]Step Results:[/bold]")
+            table = create_pipeline_results_table(
+                result.step_history,
+                show_output_column=show_output_column,
+                output_preview_len=output_preview_len,
+                include_steps=only_steps,
             )
-        )
+            console.print(table)
 
-    # Print Run ID last; prefer CLI run_id, else the generated one, else "N/A".
-    ctx = getattr(result, "final_pipeline_context", None)
-    ctx_run_id = getattr(ctx, "run_id", None) if ctx is not None else None
-    display_run_id = run_id or ctx_run_id or "N/A"
-    console.print(f"[bold]Run ID:[/bold] {display_run_id}")
+        if show_context and result.final_pipeline_context:
+            console.print("\n[bold]Final Context:[/bold]")
+            console.print(
+                json.dumps(
+                    safe_serialize(result.final_pipeline_context.model_dump()),
+                    indent=2,
+                )
+            )
+
+        # Print Run ID last; prefer CLI run_id, else the generated one, else "N/A".
+        ctx = getattr(result, "final_pipeline_context", None)
+        ctx_run_id = getattr(ctx, "run_id", None) if ctx is not None else None
+        display_run_id = run_id or ctx_run_id or "N/A"
+        console.print(f"[bold]Run ID:[/bold] {display_run_id}")
+
+    if pager:
+        with console.pager(styles=True):
+            _render_body()
+    else:
+        _render_body()
 
 
 # ---------------------------------------------------------------------------
