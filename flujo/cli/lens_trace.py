@@ -158,13 +158,10 @@ def trace_from_file(file_path: str, *, prompt_preview_len: int = 200) -> None:
         with open(file_path, "r", encoding="utf-8") as fh:
             payload = _json.load(fh)
     except Exception as e:
-        try:
-            from rich.console import Console as _Console
+        from .helpers import print_rich_or_typer
 
-            _Console(stderr=True).print(f"[red]Failed to read file:[/red] {e}")
-        except Exception:
-            typer.echo(f"Failed to read file: {e}", err=True)
-        raise typer.Exit(1)
+        print_rich_or_typer(f"[red]Failed to read file:[/red] {e}", stderr=True)
+        raise typer.Exit(1) from e
 
     # Detect shape
     if isinstance(payload, dict) and "trace_tree" in payload:
@@ -182,12 +179,9 @@ def trace_from_file(file_path: str, *, prompt_preview_len: int = 200) -> None:
         run_details = None
 
     if not isinstance(trace, dict):
-        try:
-            from rich.console import Console as _Console
+        from .helpers import print_rich_or_typer
 
-            _Console(stderr=True).print("[red]Invalid trace payload: expected a JSON object[/red]")
-        except Exception:
-            typer.echo("Invalid trace payload: expected a JSON object", err=True)
+        print_rich_or_typer("[red]Invalid trace payload: expected a JSON object[/red]", stderr=True)
         raise typer.Exit(1)
 
     # Print a lightweight summary when available
@@ -206,10 +200,7 @@ def trace_from_file(file_path: str, *, prompt_preview_len: int = 200) -> None:
         tree = _render_trace_tree(trace, preview_len=prompt_preview_len)
         console.print(tree)
     except Exception as e:
-        try:
-            from rich.console import Console as _Console
+        from .helpers import print_rich_or_typer
 
-            _Console(stderr=True).print(f"[red]Failed to render trace:[/red] {e}")
-        except Exception:
-            typer.echo(f"Failed to render trace: {e}", err=True)
-        raise typer.Exit(1)
+        print_rich_or_typer(f"[red]Failed to render trace:[/red] {e}", stderr=True)
+        raise typer.Exit(1) from e

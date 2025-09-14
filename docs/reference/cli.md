@@ -99,6 +99,22 @@ Examples:
   - `flujo run --debug --debug-export-path output/last_run_debug.json --input 'hello'`
   - or rely on auto-export to `./debug/...` by running: `flujo run --debug --debug-export --input 'hello'`
 
+### Visualization and Output Controls
+
+- `--live` / `--progress`: Lightweight live progress view (ConsoleTracer). Falls back gracefully if unavailable.
+- `--summary`: Print a compact run summary (final output, totals, run ID).
+- `--show-steps` / `--no-steps`: Toggle the Step Results table (default: show).
+- `--show-context` / `--no-context`: Toggle final context printing (default: show).
+- `--show-output-column` / `--no-output-column`: Show/hide the Output column in the Step Results table.
+- `--output-preview-len N`: Trim long outputs in the table to N characters (default: 100).
+- `--final-output-format {auto|raw|json|yaml|md}`: Control final output rendering (default: auto).
+- `--pager`: Page the final rendering (useful for long outputs).
+- `--only-steps name[,name...]`: Filter Step Results to selected step names.
+
+Examples:
+- `flujo run --live --summary --output-preview-len 200 --input 'hello'`
+- `flujo run --final-output-format json --only-steps plan,execute --no-context`
+
 ## Lens
 
 - `flujo lens list`: List stored runs.

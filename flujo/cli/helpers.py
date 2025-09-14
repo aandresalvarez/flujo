@@ -35,6 +35,25 @@ import re
 import sys
 
 
+def print_rich_or_typer(msg: str, *, style: Optional[str] = None, stderr: bool = False) -> None:
+    """Print a message using Rich when available, else fall back to typer.echo.
+
+    - Catches only ModuleNotFoundError for the Rich import to avoid masking bugs.
+    - Does not swallow other exceptions from Console.print, preserving error context.
+    """
+    try:
+        from rich.console import Console as _C
+
+        _C(stderr=stderr).print(msg, style=style)
+        return
+    except ModuleNotFoundError:
+        pass
+
+    import typer as _ty
+
+    _ty.echo(msg, err=stderr)
+
+
 def load_pipeline_from_file(
     pipeline_file: str, pipeline_name: str = "pipeline"
 ) -> tuple["Pipeline[Any, Any]", str]:

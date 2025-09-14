@@ -44,6 +44,7 @@ from .helpers import (
     ensure_project_root_on_sys_path,
     generate_demo_yaml,
     validate_yaml_text,
+    print_rich_or_typer,
 )
 from .config import load_backend_from_config  # re-export for tests
 from .exit_codes import (
@@ -1770,13 +1771,8 @@ def improve(
             typer.echo(output)
 
     except Exception as e:
-        try:
-            from rich.console import Console as _Console
-
-            _Console(stderr=True).print(f"[red]Error running improvement: {e}")
-        except Exception:
-            typer.echo(f"Error running improvement: {e}", err=True)
-        raise typer.Exit(1)
+        print_rich_or_typer(f"[red]Error running improvement: {e}", stderr=True)
+        raise typer.Exit(1) from e
 
 
 @dev_app.command(name="show-steps")
@@ -1797,13 +1793,8 @@ def explain(path: str) -> None:
         for name in get_pipeline_step_names(path):
             typer.echo(name)
     except Exception as e:
-        try:
-            from rich.console import Console as _Console
-
-            _Console(stderr=True).print(f"[red]Failed to load pipeline file: {e}")
-        except Exception:
-            typer.echo(f"Failed to load pipeline file: {e}", err=True)
-        raise typer.Exit(1)
+        print_rich_or_typer(f"[red]Failed to load pipeline file: {e}", stderr=True)
+        raise typer.Exit(1) from e
 
 
 def _validate_impl(
@@ -2311,23 +2302,11 @@ def _validate_impl(
             typer.echo(json.dumps(sarif))
         else:
             if report.errors:
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print("[red]Validation errors detected[/red]:")
-                except Exception:
-                    typer.echo("Validation errors detected:")
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print(
-                        "See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/",
-                        style="red",
-                    )
-                except Exception:
-                    typer.echo(
-                        "See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/"
-                    )
+                print_rich_or_typer("[red]Validation errors detected[/red]:")
+                print_rich_or_typer(
+                    "See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/",
+                    style="red",
+                )
                 for f in report.errors:
                     loc = f"{f.step_name}: " if f.step_name else ""
                     link = f" (details: https://aandresalvarez.github.io/flujo/reference/validation_rules/#{str(f.rule_id).lower()})"
@@ -2340,23 +2319,11 @@ def _validate_impl(
                     else:
                         typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}{suffix}")
             if report.warnings:
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print("[yellow]Warnings[/yellow]:")
-                except Exception:
-                    typer.echo("Warnings:")
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print(
-                        "See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/",
-                        style="yellow",
-                    )
-                except Exception:
-                    typer.echo(
-                        "See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/"
-                    )
+                print_rich_or_typer("[yellow]Warnings[/yellow]:")
+                print_rich_or_typer(
+                    "See docs: https://aandresalvarez.github.io/flujo/reference/validation_rules/",
+                    style="yellow",
+                )
                 for f in report.warnings:
                     loc = f"{f.step_name}: " if f.step_name else ""
                     link = f" (details: https://aandresalvarez.github.io/flujo/reference/validation_rules/#{str(f.rule_id).lower()})"
@@ -2369,25 +2336,14 @@ def _validate_impl(
                     else:
                         typer.echo(f"- [{f.rule_id}] {loc}{f.message}{link}{suffix}")
             if report.is_valid:
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print("[green]Pipeline is valid[/green]")
-                except Exception:
-                    # Fallback to plain text if Rich is unavailable
-                    typer.echo("Pipeline is valid")
+                print_rich_or_typer("[green]Pipeline is valid[/green]")
             if telemetry_counts:
                 try:
                     total_e = sum(telemetry_counts.get("error", {}).values())
                     total_w = sum(telemetry_counts.get("warning", {}).values())
-                    try:
-                        from rich.console import Console as _Console
-
-                        _Console().print(
-                            f"[cyan]Counts[/cyan]: errors={total_e}, warnings={total_w}"
-                        )
-                    except Exception:
-                        typer.echo(f"Counts: errors={total_e}, warnings={total_w}")
+                    print_rich_or_typer(
+                        f"[cyan]Counts[/cyan]: errors={total_e}, warnings={total_w}"
+                    )
                 except Exception:
                     pass
             if baseline_info and baseline_info.get("applied"):
@@ -2397,12 +2353,7 @@ def _validate_impl(
                     re_ = len(baseline_info["removed"]["errors"])  # type: ignore[index]
                     rw = len(baseline_info["removed"]["warnings"])  # type: ignore[index]
                     msg = f"Baseline applied: +{ae} errors, +{aw} warnings; removed: -{re_} errors, -{rw} warnings"
-                    try:
-                        from rich.console import Console as _Console
-
-                        _Console().print(f"[cyan]{msg}[/cyan]")
-                    except Exception:
-                        typer.echo(msg)
+                    print_rich_or_typer(f"[cyan]{msg}[/cyan]")
                 except Exception:
                     pass
 
@@ -2427,35 +2378,23 @@ def _validate_impl(
     except ModuleNotFoundError as e:
         # Improve import error messaging with hint on project root
         mod = getattr(e, "name", None) or str(e)
-        try:
-            from rich.console import Console as _Console
-
-            _Console(stderr=True).print(
-                f"[red]Import error: module '{mod}' not found. Try PYTHONPATH=. or use --project/FLUJO_PROJECT_ROOT[/red]"
-            )
-        except Exception:
-            typer.echo(
-                f"Import error: module '{mod}' not found. Try PYTHONPATH=. or use --project/FLUJO_PROJECT_ROOT",
-                err=True,
-            )
+        print_rich_or_typer(
+            f"[red]Import error: module '{mod}' not found. Try PYTHONPATH=. or use --project/FLUJO_PROJECT_ROOT[/red]",
+            stderr=True,
+        )
         if _os.getenv("FLUJO_CLI_VERBOSE") == "1" or _os.getenv("FLUJO_CLI_TRACE") == "1":
             typer.echo("\nTraceback:", err=True)
             typer.echo("".join(_tb.format_exception(e)), err=True)
-        raise typer.Exit(EX_IMPORT_ERROR)
+        raise typer.Exit(EX_IMPORT_ERROR) from e
     except typer.Exit:
         # Preserve intended exit status (e.g., EX_VALIDATION_FAILED)
         raise
     except Exception as e:
-        try:
-            from rich.console import Console as _Console
-
-            _Console(stderr=True).print(f"[red]Validation failed: {type(e).__name__}: {e}[/red]")
-        except Exception:
-            typer.echo(f"Validation failed: {type(e).__name__}: {e}", err=True)
+        print_rich_or_typer(f"[red]Validation failed: {type(e).__name__}: {e}[/red]", stderr=True)
         if _os.getenv("FLUJO_CLI_VERBOSE") == "1" or _os.getenv("FLUJO_CLI_TRACE") == "1":
             typer.echo("\nTraceback:", err=True)
             typer.echo("".join(_tb.format_exception(e)), err=True)
-        raise typer.Exit(EX_RUNTIME_ERROR)
+        raise typer.Exit(EX_RUNTIME_ERROR) from e
 
 
 @dev_app.command(name="validate")
@@ -2898,17 +2837,10 @@ def create(  # <--- REVERT BACK TO SYNC
         try:
             # Enforce explicit output directory in non-interactive mode to avoid accidental writes
             if non_interactive and not output_dir:
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console(stderr=True).print(
-                        "[red]--output-dir is required when running --non-interactive to specify where to write pipeline.yaml[/red]"
-                    )
-                except Exception:
-                    typer.echo(
-                        "--output-dir is required when running --non-interactive to specify where to write pipeline.yaml",
-                        err=True,
-                    )
+                print_rich_or_typer(
+                    "[red]--output-dir is required when running --non-interactive to specify where to write pipeline.yaml[/red]",
+                    stderr=True,
+                )
                 raise typer.Exit(2)
 
             # Track whether user supplied --goal flag explicitly (HITL skip rule)
@@ -2918,12 +2850,7 @@ def create(  # <--- REVERT BACK TO SYNC
             if goal is None and not non_interactive:
                 goal = typer.prompt("What is your goal for this pipeline?")
             if goal is None:
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print("[red]--goal is required in --non-interactive mode[/red]")
-                except Exception:
-                    typer.echo("--goal is required in --non-interactive mode")
+                print_rich_or_typer("[red]--goal is required in --non-interactive mode[/red]")
                 raise typer.Exit(2)
             # Prepare initial context data
             from .helpers import parse_context_data
@@ -3234,41 +3161,24 @@ def create(  # <--- REVERT BACK TO SYNC
                 try:
                     # Minimal diagnostics to aid failing test visibility
                     sh = getattr(result, "step_history", []) or []
-                    try:
-                        from rich.console import Console as _Console
-
-                        _Console().print(
-                            f"[grey58]No YAML found. step_history_len={len(sh)}[/grey58]"
-                        )
-                    except Exception:
-                        typer.echo(f"No YAML found. step_history_len={len(sh)}")
+                    print_rich_or_typer(
+                        f"[grey58]No YAML found. step_history_len={len(sh)}[/grey58]"
+                    )
                     try:
                         ctx = getattr(result, "final_pipeline_context", None)
                         if ctx is not None:
                             g = getattr(ctx, "generated_yaml", None)
                             y = getattr(ctx, "yaml_text", None)
-                            try:
-                                from rich.console import Console as _Console
-
-                                _Console().print(
-                                    f"[grey58]final_ctx has generated_yaml={bool(g)} yaml_text={bool(y)}[/grey58]"
-                                )
-                            except Exception:
-                                typer.echo(
-                                    f"final_ctx has generated_yaml={bool(g)} yaml_text={bool(y)}"
-                                )
+                            print_rich_or_typer(
+                                f"[grey58]final_ctx has generated_yaml={bool(g)} yaml_text={bool(y)}[/grey58]"
+                            )
                     except Exception:
                         pass
                 except Exception:
                     pass
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print(
-                        "[red]Architect did not produce YAML (context.generated_yaml missing)"
-                    )
-                except Exception:
-                    typer.echo("Architect did not produce YAML (context.generated_yaml missing)")
+                print_rich_or_typer(
+                    "[red]Architect did not produce YAML (context.generated_yaml missing)"
+                )
                 raise typer.Exit(1)
 
             # Security gating: detect side-effect tools and require confirmation unless explicitly allowed
@@ -3278,29 +3188,15 @@ def create(  # <--- REVERT BACK TO SYNC
                 yaml_text, base_dir=output_dir or os.getcwd()
             )
             if side_effect_skills and not allow_side_effects:
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print(
-                        "[red]This blueprint references side-effect skills that may perform external actions:"
-                    )
-                except Exception:
-                    typer.echo(
-                        "This blueprint references side-effect skills that may perform external actions:"
-                    )
+                print_rich_or_typer(
+                    "[red]This blueprint references side-effect skills that may perform external actions:"
+                )
                 for sid in side_effect_skills:
                     typer.echo(f"  - {sid}")
                 if non_interactive:
-                    try:
-                        from rich.console import Console as _Console
-
-                        _Console().print(
-                            "[red]Non-interactive mode: re-run with --allow-side-effects to proceed."
-                        )
-                    except Exception:
-                        typer.echo(
-                            "Non-interactive mode: re-run with --allow-side-effects to proceed."
-                        )
+                    print_rich_or_typer(
+                        "[red]Non-interactive mode: re-run with --allow-side-effects to proceed."
+                    )
                     raise typer.Exit(1)
                 confirm = typer.confirm(
                     "Proceed anyway? This may perform external actions (e.g., Slack posts).",
@@ -3357,28 +3253,16 @@ def create(  # <--- REVERT BACK TO SYNC
                 or not looks_like_yaml
                 or _any_denied_branch(getattr(result, "step_history", []) or [])
             ):
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console(stderr=True).print(
-                        "[red]No YAML was generated from the architect pipeline (plan rejected or writer failed). Aborting."
-                    )
-                except Exception:
-                    typer.echo(
-                        "No YAML was generated from the architect pipeline (plan rejected or writer failed). Aborting.",
-                        err=True,
-                    )
+                print_rich_or_typer(
+                    "[red]No YAML was generated from the architect pipeline (plan rejected or writer failed). Aborting.",
+                    stderr=True,
+                )
                 raise typer.Exit(1)
 
             # Validate in-memory before writing
             report = validate_yaml_text(yaml_text, base_dir=output_dir or os.getcwd())
             if not report.is_valid and strict:
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print("[red]Generated YAML is invalid under --strict")
-                except Exception:
-                    typer.echo("Generated YAML is invalid under --strict")
+                print_rich_or_typer("[red]Generated YAML is invalid under --strict")
                 raise typer.Exit(1)
 
             # Interactive HITL: show plan and ask for approval when --goal flag was not provided
@@ -3388,12 +3272,7 @@ def create(  # <--- REVERT BACK TO SYNC
                     # Trim extremely long previews
                     if len(preview) > 2000:
                         preview = preview[:2000] + "\n... (truncated)"
-                    try:
-                        from rich.console import Console as _Console
-
-                        _Console().print("\n[bold]Proposed pipeline plan (YAML preview):[/bold]")
-                    except Exception:
-                        typer.echo("\nProposed pipeline plan (YAML preview):")
+                    print_rich_or_typer("\n[bold]Proposed pipeline plan (YAML preview):[/bold]")
                     typer.echo(preview)
                 except Exception:
                     pass
@@ -3401,12 +3280,7 @@ def create(  # <--- REVERT BACK TO SYNC
                     "Proceed to generate pipeline from this plan?", default=True
                 )
                 if not approved:
-                    try:
-                        from rich.console import Console as _Console
-
-                        _Console().print("[red]Creation aborted by user at plan approval stage.")
-                    except Exception:
-                        typer.echo("Creation aborted by user at plan approval stage.")
+                    print_rich_or_typer("[red]Creation aborted by user at plan approval stage.")
                     raise typer.Exit(1)
 
             # Write outputs
@@ -3425,16 +3299,9 @@ def create(  # <--- REVERT BACK TO SYNC
                 os.path.abspath(out_dir) == os.path.abspath(project_root)
             )
             if os.path.exists(out_yaml) and not (force or allow_overwrite):
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print(
-                        f"[red]Refusing to overwrite existing file: {out_yaml}. Use --force to overwrite."
-                    )
-                except Exception:
-                    typer.echo(
-                        f"Refusing to overwrite existing file: {out_yaml}. Use --force to overwrite."
-                    )
+                print_rich_or_typer(
+                    f"[red]Refusing to overwrite existing file: {out_yaml}. Use --force to overwrite."
+                )
                 raise typer.Exit(1)
             # Prompt for name if interactive and not provided
             if not name and not non_interactive:
@@ -3461,12 +3328,7 @@ def create(  # <--- REVERT BACK TO SYNC
 
             with open(out_yaml, "w") as f:
                 f.write(yaml_text)
-            try:
-                from rich.console import Console as _Console
-
-                _Console().print(f"[green]Wrote: {out_yaml}")
-            except Exception:
-                typer.echo(f"Wrote: {out_yaml}")
+            print_rich_or_typer(f"[green]Wrote: {out_yaml}")
 
             # Budget confirmation (interactive only). If a budget was provided via flag, respect it.
             budget_val: float | None = None
@@ -3480,16 +3342,9 @@ def create(  # <--- REVERT BACK TO SYNC
                         try:
                             budget_val = float(resp)
                         except Exception:
-                            try:
-                                from rich.console import Console as _Console
-
-                                _Console().print(
-                                    "[red]Invalid budget value. Please enter a number (e.g., 2.50)."
-                                )
-                            except Exception:
-                                typer.echo(
-                                    "Invalid budget value. Please enter a number (e.g., 2.50)."
-                                )
+                            print_rich_or_typer(
+                                "[red]Invalid budget value. Please enter a number (e.g., 2.50)."
+                            )
                             raise typer.Exit(2)
                     else:
                         budget_val = float(budget)
@@ -3502,14 +3357,9 @@ def create(  # <--- REVERT BACK TO SYNC
                         if not typer.confirm(
                             f"Confirm budget limit ${budget_val:.2f} per run?", default=True
                         ):
-                            try:
-                                from rich.console import Console as _Console
-
-                                _Console().print(
-                                    "[red]Creation aborted by user at budget confirmation stage."
-                                )
-                            except Exception:
-                                typer.echo("Creation aborted by user at budget confirmation stage.")
+                            print_rich_or_typer(
+                                "[red]Creation aborted by user at budget confirmation stage."
+                            )
                             raise typer.Exit(1)
                 except Exception:
                     # Fall back to skipping budget confirmation on unexpected prompt failures
@@ -3528,16 +3378,9 @@ def create(  # <--- REVERT BACK TO SYNC
                     flujo_toml_path = Path(out_dir) / "flujo.toml"
                     if flujo_toml_path.exists() and budget_val is not None:
                         update_project_budget(flujo_toml_path, pipeline_name, float(budget_val))
-                        try:
-                            from rich.console import Console as _Console
-
-                            _Console().print(
-                                f"[green]Updated budget for pipeline '{pipeline_name}' in flujo.toml"
-                            )
-                        except Exception:
-                            typer.echo(
-                                f"Updated budget for pipeline '{pipeline_name}' in flujo.toml"
-                            )
+                        print_rich_or_typer(
+                            f"[green]Updated budget for pipeline '{pipeline_name}' in flujo.toml"
+                        )
             except Exception:
                 # Do not fail create on budget write issues
                 pass
@@ -3615,13 +3458,8 @@ def create(  # <--- REVERT BACK TO SYNC
         # Preserve explicit exit codes for wizard/architect flows without wrapping
         raise
     except Exception as e:
-        try:
-            from rich.console import Console as _Console
-
-            _Console(stderr=True).print(f"[red]Failed to create pipeline: {e}")
-        except Exception:
-            typer.echo(f"Failed to create pipeline: {e}", err=True)
-        raise typer.Exit(1)
+        print_rich_or_typer(f"[red]Failed to create pipeline: {e}", stderr=True)
+        raise typer.Exit(1) from e
 
 
 @app.command(help="🚀 Run the workflow in the current project.")
@@ -3798,21 +3636,11 @@ def run(
             try:
                 validation_report: ValidationReport = pipeline_obj.validate_graph()
             except Exception as ve:  # pragma: no cover - defensive
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console(stderr=True).print(f"[red]Validation crashed: {ve}")
-                except Exception:
-                    typer.echo(f"Validation crashed: {ve}", err=True)
-                raise typer.Exit(1)
+                print_rich_or_typer(f"[red]Validation crashed: {ve}", stderr=True)
+                raise typer.Exit(1) from ve
 
             if not validation_report.is_valid:
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print("[red]Pipeline validation failed before run:[/red]")
-                except Exception:
-                    typer.echo("Pipeline validation failed before run:")
+                print_rich_or_typer("[red]Pipeline validation failed before run:[/red]")
                 for f in validation_report.errors:
                     loc = f"{f.step_name}: " if f.step_name else ""
                     if f.suggestion:
@@ -3868,12 +3696,7 @@ state_uri = "sqlite:///flujo_ops.db"
             if json_output:
                 typer.echo(json.dumps({"validated": True, "steps": names}))
             else:
-                try:
-                    from rich.console import Console as _Console
-
-                    _Console().print("[green]Pipeline parsed and validated (dry run)")
-                except Exception:
-                    typer.echo("Pipeline parsed and validated (dry run)")
+                print_rich_or_typer("[green]Pipeline parsed and validated (dry run)")
                 if names:
                     typer.echo("Steps:")
                     for n in names:
@@ -4472,22 +4295,10 @@ state_uri = "sqlite:///flujo_ops.db"
                 with open(export_path_obj, "w", encoding="utf-8") as fh:
                     _json.dump(payload, fh, indent=2, ensure_ascii=False)
                 if not json_output:
-                    try:
-                        from rich.console import Console as _Console
-
-                        _Console().print(
-                            f"[green]Wrote full debug log to[/green] {export_path_obj}"
-                        )
-                    except Exception:
-                        typer.echo(f"Wrote full debug log to {export_path_obj}")
+                    print_rich_or_typer(f"[green]Wrote full debug log to[/green] {export_path_obj}")
             except Exception as e:
                 if not json_output:
-                    try:
-                        from rich.console import Console as _Console
-
-                        _Console(stderr=True).print(f"[red]Failed to export debug log:[/red] {e}")
-                    except Exception:
-                        typer.echo(f"Failed to export debug log: {e}", err=True)
+                    print_rich_or_typer(f"[red]Failed to export debug log:[/red] {e}", stderr=True)
 
     except UsageLimitExceededError as e:
         # Friendly budget exceeded messaging with partial results if available
@@ -4507,12 +4318,7 @@ state_uri = "sqlite:///flujo_ops.db"
                 except Exception:
                     pass
         except Exception:
-            try:
-                from rich.console import Console as _Console
-
-                _Console(stderr=True).print(f"[red]Budget exceeded: {e}[/red]")
-            except Exception:
-                typer.echo(f"Budget exceeded: {e}", err=True)
+            print_rich_or_typer(f"[red]Budget exceeded: {e}[/red]", stderr=True)
         raise typer.Exit(1)
     except typer.Exit:
         # Preserve specific exit codes raised by helpers
@@ -4529,12 +4335,7 @@ state_uri = "sqlite:///flujo_ops.db"
         import os as _os
         import traceback as _tb
 
-        try:
-            from rich.console import Console as _Console
-
-            _Console(stderr=True).print(f"[red]Error running pipeline: {type(e).__name__}: {e}")
-        except Exception:
-            typer.echo(f"Error running pipeline: {type(e).__name__}: {e}", err=True)
+        print_rich_or_typer(f"[red]Error running pipeline: {type(e).__name__}: {e}", stderr=True)
         # If exception looks like missing credentials, print one-line hint
         try:
             msg = str(e)
@@ -4750,22 +4551,12 @@ def compile(
         if out:
             with open(out, "w") as f:
                 f.write(yaml_text)
-            try:
-                from rich.console import Console as _Console
-
-                _Console().print(f"[green]Wrote: {out}")
-            except Exception:
-                typer.echo(f"Wrote: {out}")
+            print_rich_or_typer(f"[green]Wrote: {out}")
         else:
             typer.echo(yaml_text)
     except Exception as e:
-        try:
-            from rich.console import Console as _Console
-
-            _Console(stderr=True).print(f"[red]Failed to compile: {e}")
-        except Exception:
-            typer.echo(f"Failed to compile: {e}", err=True)
-        raise typer.Exit(1)
+        print_rich_or_typer(f"[red]Failed to compile: {e}", stderr=True)
+        raise typer.Exit(1) from e
 
 
 @budgets_app.command("show")
@@ -4801,13 +4592,8 @@ def budgets_show(pipeline_name: str) -> None:
         typer.echo(f"  - total_tokens_limit: {tokens}")
         typer.echo(f"Resolved from {origin} in flujo.toml")
     except Exception as e:
-        try:
-            from rich.console import Console as _Console
-
-            _Console(stderr=True).print(f"[red]Failed to resolve budgets: {e}")
-        except Exception:
-            typer.echo(f"Failed to resolve budgets: {e}", err=True)
-        raise typer.Exit(1)
+        print_rich_or_typer(f"[red]Failed to resolve budgets: {e}", stderr=True)
+        raise typer.Exit(1) from e
 
 
 @dev_app.command(name="visualize")
@@ -4844,24 +4630,14 @@ def pipeline_mermaid_cmd(
                 f.write("```mermaid\n")
                 f.write(mermaid_code)
                 f.write("\n```")
-            try:
-                from rich.console import Console as _Console
-
-                _Console().print(f"[green]Mermaid diagram written to {output}")
-            except Exception:
-                typer.echo(f"Mermaid diagram written to {output}")
+            print_rich_or_typer(f"[green]Mermaid diagram written to {output}")
         else:
             typer.echo("```mermaid")
             typer.echo(mermaid_code)
             typer.echo("```")
     except Exception as e:
-        try:
-            from rich.console import Console as _Console
-
-            _Console(stderr=True).print(f"[red]Failed to load file: {e}")
-        except Exception:
-            typer.echo(f"Failed to load file: {e}", err=True)
-        raise typer.Exit(1)
+        print_rich_or_typer(f"[red]Failed to load file: {e}", stderr=True)
+        raise typer.Exit(1) from e
 
 
 @app.callback()
@@ -5481,13 +5257,8 @@ if __name__ == "__main__":
             pass
         app()
     except (SettingsError, ConfigurationError) as e:
-        try:
-            from rich.console import Console as _Console
-
-            _Console(stderr=True).print(f"[red]Settings error: {e}[/red]")
-        except Exception:
-            typer.echo(f"Settings error: {e}", err=True)
-        raise typer.Exit(2)
+        print_rich_or_typer(f"[red]Settings error: {e}[/red]", stderr=True)
+        raise typer.Exit(2) from e
 
 
 def get_cli_defaults(command: str) -> Dict[str, Any]:
