@@ -7,6 +7,7 @@ This page summarizes the new CLI behavior added to improve CI and developer ergo
 - `--project PATH`: Forces the project root. The directory is added to `PYTHONPATH` so imports like `skills.helpers` resolve when running from subdirectories or CI workspaces.
 - `-v/--verbose`, `--trace`: Print full Python tracebacks for easier troubleshooting. Useful in CI logs.
 - Global flags go before the subcommand: for example, `flujo --verbose validate` (not `flujo validate --verbose`).
+- Another example: `flujo --trace run --dry-run` (not `flujo run --trace --dry-run`).
 
 Environment file path:
 - Declare `env_file = ".env"` in `flujo.toml` to load API keys (e.g., `OPENAI_API_KEY`) from a specific file relative to the project root. The project scaffold provides `.env.example`; copy it to `.env` and fill your secrets. You can change the path to any file (e.g., `env_file = ".secrets"`).
@@ -15,6 +16,7 @@ API key precedence:
 - Environment variables override everything (recommended for CI): `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`.
 - Then values from the `env_file` are considered (if configured).
 - Finally, TOML `[settings]` values apply only when no env var is set.
+  Tip: when running with `--debug`, consider printing which provider keys are present (never values) so you can confirm the effective source without leaking secrets.
 
 Models and access:
 - The example pipelines may reference future models (e.g., `openai:gpt-5`). Ensure your account has access, or switch to a widely available model like `openai:gpt-4o-mini`.
@@ -54,6 +56,8 @@ Exit code in strict mode when invalid: `4` (see Exit Codes).
 ## Paging and Colors
 
 Some environments set `PAGER=less` and `LESS=-R`, which can cause Click/Typer to page output through `less`. If a command “hangs”, you might be in the pager.
+
+To explicitly enable paging for long outputs, use: `flujo run --pager`.
 
 Disable paging and/or color when needed:
 - One-off: `CLICK_DISABLE_PAGER=1 flujo --help`
