@@ -1,10 +1,6 @@
 from __future__ import annotations
 import typer
 import asyncio
-from rich.console import Console
-from rich.tree import Tree
-from rich.panel import Panel
-from rich.text import Text
 from typing import Dict, Any, Optional
 import datetime
 import json as _json
@@ -35,26 +31,38 @@ def _format_node_label(node: Dict[str, Any]) -> str:
 
 
 def _render_trace_tree(
-    node: Dict[str, Any], parent: Optional[Tree] = None, *, preview_len: int = 200
-) -> Tree:
-    label = _format_node_label(node)
-    tree = Tree(label) if parent is None else parent.add(label)
-    # Render notable events (e.g., agent.prompt) under the span
-    events = node.get("events") or []
+    node: Dict[str, Any], parent: Optional[Any] = None, *, preview_len: int = 200
+) -> Any:
     try:
-        for ev in events:
-            name = str(ev.get("name"))
-            if name == "agent.prompt":
-                attrs = ev.get("attributes", {}) or {}
-                preview = str(attrs.get("rendered_history", ""))
-                if preview_len is not None and preview_len >= 0 and len(preview) > preview_len:
-                    preview = preview[:200] + "..."
-                tree.add(f"[dim]event[/dim] [cyan]{name}[/cyan]: {preview}")
-    except Exception:
-        pass
-    for child in node.get("children", []):
-        _render_trace_tree(child, tree, preview_len=preview_len)
-    return tree
+        from rich.tree import Tree
+
+        label = _format_node_label(node)
+        tree = Tree(label) if parent is None else parent.add(label)
+        # Render notable events (e.g., agent.prompt) under the span
+        events = node.get("events") or []
+        try:
+            for ev in events:
+                name = str(ev.get("name"))
+                if name == "agent.prompt":
+                    attrs = ev.get("attributes", {}) or {}
+                    preview = str(attrs.get("rendered_history", ""))
+                    if preview_len is not None and preview_len >= 0 and len(preview) > preview_len:
+                        preview = preview[:200] + "..."
+                    tree.add(f"[dim]event[/dim] [cyan]{name}[/cyan]: {preview}")
+        except Exception:
+            pass
+        for child in node.get("children", []):
+            _render_trace_tree(child, tree, preview_len=preview_len)
+        return tree
+    except ModuleNotFoundError:
+        # Fallback: compose a plain text tree
+        label = _format_node_label(node)
+        lines = [label]
+        for child in node.get("children", []):
+            child_repr = _render_trace_tree(child, None, preview_len=preview_len)
+            for ln in str(child_repr).splitlines():
+                lines.append("  " + ln)
+        return "\n".join(lines)
 
 
 def _convert_to_timestamp(val: Any) -> Optional[float]:
@@ -99,7 +107,17 @@ def trace_command(run_id: str, *, prompt_preview_len: int = 200) -> None:
     def _print_trace_summary(
         trace: Dict[str, Any], run_details: Optional[Dict[str, Any]] = None
     ) -> None:
-        console = Console()
+        try:
+            from rich.console import Console
+            from rich.panel import Panel
+            from rich.text import Text
+
+            console = Console()
+        except ModuleNotFoundError:
+            Console = None  # type: ignore
+            Panel = None  # type: ignore
+            Text = None  # type: ignore
+            console = None
         run_id = run_details.get("run_id") if run_details else trace.get("run_id")
         pipeline = run_details.get("pipeline_name") if run_details else trace.get("name")
         status = run_details.get("status") if run_details else trace.get("status")
@@ -127,25 +145,44 @@ def trace_command(run_id: str, *, prompt_preview_len: int = 200) -> None:
         status_color = {"completed": "green", "failed": "red", "running": "yellow"}.get(
             str(status).lower(), "white"
         )
-        summary = Text()
-        summary.append(f"Run ID: {run_id}\n", style="bold")
-        if pipeline:
-            summary.append(f"Pipeline: {pipeline}\n")
-        summary.append("Status: ", style="bold")
-        summary.append(f"{status}\n", style=status_color)
-        if start:
-            summary.append(f"Start: {fmt_time(start)}\n")
-        if end:
-            summary.append(f"End: {fmt_time(end)}\n")
-        if duration:
-            summary.append(f"Duration: {duration}\n")
-        if steps:
-            summary.append(f"Steps: {steps}\n")
-        console.print(Panel(summary, title="[bold cyan]Run Summary[/bold cyan]", expand=False))
+        if console is not None and Panel is not None and Text is not None:
+            summary = Text()
+            summary.append(f"Run ID: {run_id}\n", style="bold")
+            if pipeline:
+                summary.append(f"Pipeline: {pipeline}\n")
+            summary.append("Status: ", style="bold")
+            summary.append(f"{status}\n", style=status_color)
+            if start:
+                summary.append(f"Start: {fmt_time(start)}\n")
+            if end:
+                summary.append(f"End: {fmt_time(end)}\n")
+            if duration:
+                summary.append(f"Duration: {duration}\n")
+            if steps:
+                summary.append(f"Steps: {steps}\n")
+            console.print(Panel(summary, title="[bold cyan]Run Summary[/bold cyan]", expand=False))
+        else:
+            typer.echo(f"Run ID: {run_id}")
+            if pipeline:
+                typer.echo(f"Pipeline: {pipeline}")
+            typer.echo(f"Status: {status}")
+            if start:
+                typer.echo(f"Start: {fmt_time(start)}")
+            if end:
+                typer.echo(f"End: {fmt_time(end)}")
+            if duration:
+                typer.echo(f"Duration: {duration}")
+            if steps:
+                typer.echo(f"Steps: {steps}")
 
     _print_trace_summary(trace, run_details)
     tree = _render_trace_tree(trace, preview_len=prompt_preview_len)
-    Console().print(tree)
+    try:
+        from rich.console import Console
+
+        Console().print(tree)
+    except ModuleNotFoundError:
+        typer.echo(str(tree))
 
 
 def trace_from_file(file_path: str, *, prompt_preview_len: int = 200) -> None:
@@ -186,19 +223,35 @@ def trace_from_file(file_path: str, *, prompt_preview_len: int = 200) -> None:
 
     # Print a lightweight summary when available
     try:
-        console = Console()
-        console.rule("Trace (from file)")
-        if run_details is not None:
-            rid = run_details.get("run_id") or "-"
-            pipe = run_details.get("pipeline_name") or "-"
-            created = run_details.get("created_at") or "-"
-            summary = Text()
-            summary.append(f"Run ID: {rid}\n")
-            summary.append(f"Pipeline: {pipe}\n")
-            summary.append(f"Exported At: {created}\n")
-            console.print(Panel(summary, title="Summary", expand=False))
-        tree = _render_trace_tree(trace, preview_len=prompt_preview_len)
-        console.print(tree)
+        try:
+            from rich.console import Console
+            from rich.panel import Panel
+            from rich.text import Text
+
+            console = Console()
+            console.rule("Trace (from file)")
+            if run_details is not None:
+                rid = run_details.get("run_id") or "-"
+                pipe = run_details.get("pipeline_name") or "-"
+                created = run_details.get("created_at") or "-"
+                summary = Text()
+                summary.append(f"Run ID: {rid}\n")
+                summary.append(f"Pipeline: {pipe}\n")
+                summary.append(f"Exported At: {created}\n")
+                console.print(Panel(summary, title="Summary", expand=False))
+            tree = _render_trace_tree(trace, preview_len=prompt_preview_len)
+            console.print(tree)
+        except ModuleNotFoundError:
+            # Fallback to plain text
+            if run_details is not None:
+                rid = run_details.get("run_id") or "-"
+                pipe = run_details.get("pipeline_name") or "-"
+                created = run_details.get("created_at") or "-"
+                typer.echo(f"Run ID: {rid}")
+                typer.echo(f"Pipeline: {pipe}")
+                typer.echo(f"Exported At: {created}")
+            tree = _render_trace_tree(trace, preview_len=prompt_preview_len)
+            typer.echo(str(tree))
     except Exception as e:
         from .helpers import print_rich_or_typer
 

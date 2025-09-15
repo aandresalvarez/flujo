@@ -13,7 +13,6 @@ from flujo.exceptions import UsageLimitExceededError
 from flujo.infra import telemetry
 import flujo.builtins as _flujo_builtins  # noqa: F401  # Register builtin skills on CLI import
 from typing_extensions import Annotated
-from rich.console import Console
 import os as _os
 from ..utils.serialization import safe_serialize, safe_deserialize as _safe_deserialize
 from .lens import lens_app
@@ -425,7 +424,12 @@ def dev_health_check(
     ] = None,
 ) -> None:
     """Aggregate AROS summaries from span attributes and print hotspots."""
-    console = Console()
+    try:
+        from rich.console import Console as _Console
+
+        console = _Console()
+    except ModuleNotFoundError:
+        console = None
     if project:
         try:
             ensure_project_root_on_sys_path(Path(project))
@@ -434,7 +438,15 @@ def dev_health_check(
     try:
         backend = load_backend_from_config()
     except Exception as e:
-        console.print(f"[red]Failed to initialize state backend: {type(e).__name__}: {e}[/red]")
+        from .helpers import print_rich_or_typer
+
+        if console is not None:
+            console.print(f"[red]Failed to initialize state backend: {type(e).__name__}: {e}[/red]")
+        else:
+            print_rich_or_typer(
+                f"[red]Failed to initialize state backend: {type(e).__name__}: {e}[/red]",
+                stderr=True,
+            )
         raise typer.Exit(code=1)
 
     import anyio
@@ -480,7 +492,12 @@ def dev_health_check(
                     filtered.append(r)
             runs = filtered
         if not runs:
-            console.print("No runs found.")
+            if console is not None:
+                console.print("No runs found.")
+            else:
+                from .helpers import print_rich_or_typer
+
+                print_rich_or_typer("No runs found.")
             return
         totals = {
             "runs": 0,
@@ -744,7 +761,12 @@ def dev_health_check(
                     console.print(f"- {name}: {parts}")
 
         # Simple recommendations
-        console.print("\n[bold]Recommendations[/bold]")
+        if console is not None:
+            console.print("\n[bold]Recommendations[/bold]")
+        else:
+            from .helpers import print_rich_or_typer
+
+            print_rich_or_typer("\n[bold]Recommendations[/bold]")
         recs: list[str] = []
         if totals["coercion_total"] >= 10 and totals["soe_applied"] == 0:
             recs.append(
@@ -1392,19 +1414,39 @@ def status(
         typer.echo(json.dumps(safe_serialize(payload)))
     else:
         # Minimal human output
-        console = Console()
+        try:
+            from rich.console import Console as _Console
+
+            console = _Console()
+        except ModuleNotFoundError:
+            console = None
         # Providers line
         pv_summ = ", ".join(
             f"{p['name']}: {'ENABLED' if p.get('enabled') else 'disabled'}"
             for p in payload["providers"]
         )
-        console.print(f"Providers: {pv_summ}")
+        if console is not None:
+            console.print(f"Providers: {pv_summ}")
+        else:
+            from .helpers import print_rich_or_typer
+
+            print_rich_or_typer(f"Providers: {pv_summ}")
         # SQLite line
         sqlite_info = payload.get("sqlite", {})
         if sqlite_info.get("configured"):
-            console.print(f"SQLite: configured ({sqlite_info.get('path')})")
+            if console is not None:
+                console.print(f"SQLite: configured ({sqlite_info.get('path')})")
+            else:
+                from .helpers import print_rich_or_typer
+
+                print_rich_or_typer(f"SQLite: configured ({sqlite_info.get('path')})")
         else:
-            console.print("SQLite: not configured (memory or absent)")
+            if console is not None:
+                console.print("SQLite: not configured (memory or absent)")
+            else:
+                from .helpers import print_rich_or_typer
+
+                print_rich_or_typer("SQLite: not configured (memory or absent)")
 
         # History preview
         hist = payload.get("history", {})
@@ -1413,7 +1455,12 @@ def status(
             preview = "; ".join(
                 f"{it.get('started_at', '?')} {it.get('status', '?')}" for it in items
             )
-            console.print(f"History: {len(items)} runs: {preview}")
+            if console is not None:
+                console.print(f"History: {len(items)} runs: {preview}")
+            else:
+                from .helpers import print_rich_or_typer
+
+                print_rich_or_typer(f"History: {len(items)} runs: {preview}")
 
     raise typer.Exit(EX_OK)
 
@@ -1657,8 +1704,14 @@ def bench(
 
         # Create and display results table using helper function
         table = create_benchmark_table(times, scores)
-        console: Console = Console()
-        console.print(table)
+        try:
+            from rich.console import Console as _Console
+
+            _Console().print(table)
+        except ModuleNotFoundError:
+            from .helpers import print_rich_or_typer
+
+            print_rich_or_typer(str(table))
     except KeyboardInterrupt:
         logfire.info("Aborted by user (KeyboardInterrupt). Closing spans and exiting.")
         raise typer.Exit(130)
