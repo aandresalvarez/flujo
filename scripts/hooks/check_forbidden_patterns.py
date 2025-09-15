@@ -11,6 +11,7 @@ Excludes intentional test cases that demonstrate security patterns.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import sys
@@ -23,11 +24,25 @@ FORBIDDEN_PATTERNS: Final[dict[str, re.Pattern[str]]] = {
 }
 
 # Exclude only build/venv directories, but include tests for security
-EXCLUDE_DIRS: Final[set[str]] = {".venv", "site-packages", "scripts"}
+EXCLUDE_DIRS: Final[set[str]] = {".venv", "site-packages", "scripts", ".git"}
 
 
 def iter_python_files() -> list[pathlib.Path]:
-    return [p for p in REPO_ROOT.rglob("*.py") if not any(part in EXCLUDE_DIRS for part in p.parts)]
+    """Yield python files while pruning excluded directories during traversal.
+
+    Using rglob() can still descend into excluded directories before filtering,
+    which is expensive and may time out on large virtualenvs. We prune in-place
+    via os.walk to avoid recursing into directories like .venv or site-packages.
+    """
+    results: list[pathlib.Path] = []
+    for root, dirs, files in os.walk(REPO_ROOT):
+        # Prune excluded directories in-place to prevent os.walk from descending
+        dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+        for fname in files:
+            if not fname.endswith(".py"):
+                continue
+            results.append(pathlib.Path(root, fname))
+    return results
 
 
 def main() -> int:

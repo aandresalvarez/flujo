@@ -207,10 +207,14 @@ def replay_command(
                     pipeline_obj, _ = load_pipeline_from_file(file, object_name)
             except SystemExit:
                 # Enhance error message with guidance
-                typer.echo(
-                    f"[red]Could not load pipeline object '{object_name}' from file '{file}'.\n"
-                    "Ensure the file exists and exports the pipeline variable (or pass --object).[/red]",
-                    err=True,
+                from .helpers import print_rich_or_typer
+
+                print_rich_or_typer(
+                    (
+                        f"[red]Could not load pipeline object '{object_name}' from file '{file}'.\n"
+                        "Ensure the file exists and exports the pipeline variable (or pass --object).[/red]"
+                    ),
+                    stderr=True,
                 )
                 raise
             runner = create_flujo_runner(
@@ -235,18 +239,22 @@ def replay_command(
                 # Fallback: infer from run metadata and optional local registry
                 details = asyncio.run(backend.get_run_details(run_id))
                 if not details:
-                    typer.echo(
+                    from .helpers import print_rich_or_typer
+
+                    print_rich_or_typer(
                         f"[red]Run not found: {run_id}. Cannot infer pipeline without --file.[/red]",
-                        err=True,
+                        stderr=True,
                     )
                     raise typer.Exit(1)
 
                 pipeline_name = details.get("pipeline_name")
                 pipeline_version = details.get("pipeline_version") or "latest"
                 if not pipeline_name:
-                    typer.echo(
+                    from .helpers import print_rich_or_typer
+
+                    print_rich_or_typer(
                         "[red]Pipeline name unavailable in run metadata. Provide --file to load the pipeline.[/red]",
-                        err=True,
+                        stderr=True,
                     )
                     raise typer.Exit(1)
 
@@ -262,13 +270,15 @@ def replay_command(
                     registry = None
 
                 if registry is None:
-                    typer.echo(
+                    from .helpers import print_rich_or_typer
+
+                    print_rich_or_typer(
                         (
                             "[red]No --file provided and no local registry found (expected 'registry.py' with a 'registry' object).\n"
                             f"Run metadata indicates pipeline '{pipeline_name}' (version '{pipeline_version}').\n"
                             "Please provide --file pointing to the pipeline definition or add a registry for inference.[/red]"
                         ),
-                        err=True,
+                        stderr=True,
                     )
                     raise typer.Exit(1)
 
@@ -305,8 +315,10 @@ def replay_command(
                 f.write(repr(e))
         except Exception:
             pass
-        typer.echo(f"[red]Replay failed: {e}", err=True)
-        raise typer.Exit(1)
+        from .helpers import print_rich_or_typer
+
+        print_rich_or_typer(f"[red]Replay failed: {e}", stderr=True)
+        raise typer.Exit(1) from e
 
 
 @lens_app.command("spans")

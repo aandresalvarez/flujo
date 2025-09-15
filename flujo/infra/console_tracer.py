@@ -11,9 +11,7 @@ from ..domain.events import (
     OnStepFailurePayload,
 )
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
+from typing import Any as _Any
 
 __all__ = ["ConsoleTracer"]
 
@@ -46,9 +44,37 @@ class ConsoleTracer:
         self.level = level
         self.log_inputs = log_inputs
         self.log_outputs = log_outputs
-        self.console = (
-            Console(highlight=False) if colorized else Console(no_color=True, highlight=False)
-        )
+        # Lazy-import Rich to avoid hard dependency at import time
+        try:
+            from rich.console import Console as _RConsole
+
+            self.console: _Any = (
+                _RConsole(highlight=False)
+                if colorized
+                else _RConsole(no_color=True, highlight=False)
+            )
+            # Keep Panel/Text types for later use
+            from rich.panel import Panel as _RPanel
+            from rich.text import Text as _RText
+
+            self._RPanel: _Any = _RPanel
+            self._RText: _Any = _RText
+            self._rich_available = True
+        except ModuleNotFoundError:
+            # Minimal stub with .print compatible with Console
+            class _Stub:
+                def print(self, msg: _Any, *args: _Any, **kwargs: _Any) -> None:  # noqa: D401
+                    try:
+                        import typer as _ty
+
+                        _ty.echo(str(msg))
+                    except Exception:
+                        print(str(msg))
+
+            self.console = _Stub()
+            self._RPanel = None
+            self._RText = None
+            self._rich_available = False
         self._depth = 0
         self.event_handlers: Dict[str, Callable[[HookPayload], Any]] = {
             "pre_run": cast(Callable[[HookPayload], Any], self._handle_pre_run),
@@ -62,8 +88,11 @@ class ConsoleTracer:
         """Handle the ``pre_run`` event."""
         initial_input = payload.initial_input
         title = "Pipeline Start"
-        details = Text(f"Input: {initial_input!r}")
-        self.console.print(Panel(details, title=title, border_style="bold blue"))
+        if self._rich_available and self._RPanel is not None and self._RText is not None:
+            details = self._RText(f"Input: {initial_input!r}")
+            self.console.print(self._RPanel(details, title=title, border_style="bold blue"))
+        else:
+            self.console.print(f"{title} :: Input: {initial_input!r}")
         self._depth = 0
 
     def _handle_post_run(self, payload: PostRunPayload) -> None:
@@ -100,11 +129,16 @@ class ConsoleTracer:
             status_text = "❌ FAILED"
             status_style = "bold red"
 
-        details = Text()
-        details.append(f"Final Status: {status_text}\n", style=status_style)
-        details.append(f"Total Steps Executed: {len(pipeline_result.step_history)}\n")
-        details.append(f"Total Cost: ${pipeline_result.total_cost_usd:.6f}")
-        self.console.print(Panel(details, title=title, border_style="bold blue"))
+        if self._rich_available and self._RPanel is not None and self._RText is not None:
+            details = self._RText()
+            details.append(f"Final Status: {status_text}\n", style=status_style)
+            details.append(f"Total Steps Executed: {len(pipeline_result.step_history)}\n")
+            details.append(f"Total Cost: ${pipeline_result.total_cost_usd:.6f}")
+            self.console.print(self._RPanel(details, title=title, border_style="bold blue"))
+        else:
+            self.console.print(
+                f"{title} :: {status_text} :: Steps={len(pipeline_result.step_history)} :: Cost=${pipeline_result.total_cost_usd:.6f}"
+            )
 
     def _handle_pre_step(self, payload: PreStepPayload) -> None:
         """Handle the ``pre_step`` event."""
@@ -112,11 +146,14 @@ class ConsoleTracer:
         step_input = payload.step_input
         indent = "  " * self._depth
         title = f"{indent}Step Start: {step.name if step else ''}"
-        if self.level == "debug" and self.log_inputs:
-            body = Text(repr(step_input))
+        if self._rich_available and self._RPanel is not None and self._RText is not None:
+            if self.level == "debug" and self.log_inputs:
+                body = self._RText(repr(step_input))
+            else:
+                body = self._RText("running")
+            self.console.print(self._RPanel(body, title=title))
         else:
-            body = Text("running")
-        self.console.print(Panel(body, title=title))
+            self.console.print(f"{title} :: running")
         self._depth += 1
 
     def _handle_post_step(self, payload: PostStepPayload) -> None:
@@ -127,10 +164,16 @@ class ConsoleTracer:
         title = f"{indent}Step End: {step_result.name}"
         status = "SUCCESS" if step_result.success else "FAILED"
         color = "green" if step_result.success else "red"
-        body_text = Text(f"Status: {status}", style=f"bold {color}")
-        if self.level == "debug" and self.log_outputs:
-            body_text.append(f"\nOutput: {repr(step_result.output)}")
-        self.console.print(Panel(body_text, title=title))
+        if self._rich_available and self._RPanel is not None and self._RText is not None:
+            body_text = self._RText(f"Status: {status}", style=f"bold {color}")
+            if self.level == "debug" and self.log_outputs:
+                body_text.append(f"\nOutput: {repr(step_result.output)}")
+            self.console.print(self._RPanel(body_text, title=title))
+        else:
+            if self.level == "debug" and self.log_outputs:
+                self.console.print(f"{title} :: {status} :: Output: {repr(step_result.output)}")
+            else:
+                self.console.print(f"{title} :: {status}")
 
     def _handle_on_step_failure(self, payload: OnStepFailurePayload) -> None:
         """Handle the ``on_step_failure`` event."""
@@ -138,11 +181,14 @@ class ConsoleTracer:
         self._depth = max(0, self._depth - 1)
         indent = "  " * self._depth
         title = f"{indent}Step Failure: {step_result.name}"
-        details = Text(
-            f"Status: FAILED\nFeedback: {step_result.feedback}",
-            style="red",
-        )
-        self.console.print(Panel(details, title=title, border_style="bold red"))
+        if self._rich_available and self._RPanel is not None and self._RText is not None:
+            details = self._RText(
+                f"Status: FAILED\nFeedback: {step_result.feedback}",
+                style="red",
+            )
+            self.console.print(self._RPanel(details, title=title, border_style="bold red"))
+        else:
+            self.console.print(f"{title} :: FAILED :: Feedback: {step_result.feedback}")
 
     async def hook(self, payload: HookPayload) -> None:
         """Dispatch hook payloads to the appropriate handler."""
@@ -155,4 +201,9 @@ class ConsoleTracer:
             else:
                 handler(payload)
         else:
-            self.console.print(Panel(Text(str(payload.event_name)), title="Unknown tracer event"))
+            if self._rich_available and self._RPanel is not None and self._RText is not None:
+                self.console.print(
+                    self._RPanel(self._RText(str(payload.event_name)), title="Unknown tracer event")
+                )
+            else:
+                self.console.print(f"Unknown tracer event: {payload.event_name}")
