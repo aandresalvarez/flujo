@@ -430,6 +430,16 @@ def dev_health_check(
         console = _Console()
     except ModuleNotFoundError:
         console = None
+    # Ensure console.print works even without Rich
+    if console is None:
+
+        class _PlainConsole:
+            def print(self, msg: object, *args: object, **kwargs: object) -> None:
+                from .helpers import print_rich_or_typer as _prt
+
+                _prt(str(msg))
+
+        console = _PlainConsole()  # type: ignore[assignment]
     if project:
         try:
             ensure_project_root_on_sys_path(Path(project))
@@ -1420,6 +1430,15 @@ def status(
             console = _Console()
         except ModuleNotFoundError:
             console = None
+        if console is None:
+
+            class _PlainConsole:
+                def print(self, msg: object, *args: object, **kwargs: object) -> None:
+                    from .helpers import print_rich_or_typer as _prt
+
+                    _prt(str(msg))
+
+            console = _PlainConsole()  # type: ignore[assignment]
         # Providers line
         pv_summ = ", ".join(
             f"{p['name']}: {'ENABLED' if p.get('enabled') else 'disabled'}"
