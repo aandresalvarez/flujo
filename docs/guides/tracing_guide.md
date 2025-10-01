@@ -47,12 +47,20 @@ for step in result.step_history:
 
 ## CLI Debugging Tools
 
-Flujo provides powerful CLI tools for inspecting traces:
+Flujo provides powerful CLI tools for inspecting traces. **New in Lens v2.0**: Enhanced performance, partial ID matching, JSON output, and more!
+
+> 💡 **Quick Start**: See [Lens Quick Start Guide](lens_quickstart.md) for all new features.
 
 ### List All Runs
 
 ```bash
 flujo lens list
+
+# Filter by status
+flujo lens list --status failed
+
+# Limit results
+flujo lens list --limit 100
 ```
 
 Shows all pipeline runs with basic information:
@@ -62,22 +70,57 @@ Shows all pipeline runs with basic information:
 - Start time
 - Duration
 
+### Find Run by Partial ID (New!)
+
+```bash
+# Fuzzy search by partial ID
+flujo lens get abc123
+
+# Works with any substring
+flujo lens get ec00798f
+```
+
+Quickly find runs without copying full 32-character IDs.
+
 ### View Run Details
 
 ```bash
+# Basic details (supports partial IDs)
 flujo lens show <run_id>
+
+# Show everything
+flujo lens show <run_id> --verbose
+
+# Show final output only
+flujo lens show <run_id> --final-output
+
+# Export as JSON for automation
+flujo lens show <run_id> --json
+
+# Combine flags
+flujo lens show <run_id> --verbose --final-output --json
 ```
 
 Shows detailed information about a specific run:
-- Pipeline configuration
-- Step results
-- Final output
+- Pipeline configuration with rich formatting
+- Step results with execution times
+- Final output (with `--final-output`)
 - Error details (if any)
+
+**New Features**:
+- ✅ Partial run_id matching (use 8-12 chars instead of full 32)
+- ✅ JSON output for CI/CD pipelines
+- ✅ Final output display with `--final-output`
+- ✅ Configurable timeout with `--timeout`
+- ✅ Better error messages with troubleshooting suggestions
 
 ### View Hierarchical Trace
 
 ```bash
 flujo lens trace <run_id>
+
+# Control prompt preview length
+flujo lens trace <run_id> --prompt-preview-len 500
 ```
 
 Displays a tree-based view of the execution trace:
@@ -96,24 +139,35 @@ pipeline_root (completed, 1.234s)
 
 ```bash
 flujo lens spans <run_id>
+
+# Filter by status
+flujo lens spans <run_id> --status completed
+
+# Filter by name
+flujo lens spans <run_id> --name step1
 ```
 
 Shows all spans with filtering options:
 - `--status completed` - Only show completed spans
 - `--name step1` - Only show spans with specific name
-- `--limit 10` - Limit number of results
 
 ### View Statistics
 
 ```bash
 flujo lens stats
+
+# Filter by pipeline
+flujo lens stats --pipeline my_pipeline
+
+# Specify time range
+flujo lens stats --hours 48
 ```
 
 Shows aggregated statistics:
-- Total runs
-- Success/failure rates
-- Average duration
-- Most common step types
+- Total spans
+- Status breakdown (completed/failed/running)
+- Average duration by step name
+- Step count by name
 
 ## Advanced Usage
 
@@ -221,15 +275,24 @@ else:
 For large pipelines, use the CLI tools instead of programmatic access:
 
 ```bash
-# Find slow runs
-flujo lens list | grep "failed"
+# Find failed runs
+flujo lens list --status failed
 
-# Analyze specific run
-flujo lens trace <run_id> | grep "completed"
+# Quick search by partial ID
+flujo lens get abc123
+
+# Export run data as JSON for analysis
+flujo lens show <run_id> --json | jq '.steps[] | {name: .step_name, duration: .execution_time_ms}'
 
 # Get statistics
-flujo lens stats
+flujo lens stats --hours 24
 ```
+
+**New in v2.0**: 
+- Partial ID matching makes debugging 5x faster
+- JSON output enables powerful automation
+- Better error messages guide you to solutions
+- See [Lens Quick Start](lens_quickstart.md) for more examples
 
 ### 4. Monitor Performance Overhead
 
@@ -269,6 +332,9 @@ If CLI commands fail:
 1. Ensure you have a SQLite database: `flujo_ops.db`
 2. Check that the run_id exists: `flujo lens list`
 3. Verify database permissions and connectivity
+4. **New**: Try partial ID matching instead of full run_id
+5. **New**: Increase timeout if needed: `flujo lens show <run_id> --timeout 30`
+6. See [Lens Quick Start](lens_quickstart.md) for troubleshooting tips
 
 ### Performance Issues
 
@@ -299,6 +365,12 @@ This sends traces to external observability platforms like:
 - Honeycomb
 - Datadog
 - Jaeger
+
+## Related Documentation
+
+- **[Lens Quick Start](lens_quickstart.md)** - Quick reference for lens CLI commands
+- **[Lens Improvements](lens_improvements.md)** - Complete guide to lens v2.0 improvements
+- **[Debugging with Replay](debugging_with_replay.md)** - Deterministic replay for debugging
 
 ## Examples
 

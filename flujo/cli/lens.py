@@ -17,8 +17,11 @@ lens_app = typer.Typer(
         "🔍 Inspect, debug, and trace past workflow runs.\n\n"
         "Commands:\n"
         "- `list`: show recent runs\n"
-        "- `show <run_id>`: step-by-step details\n"
+        "- `get <partial_run_id>`: find and show run by partial ID\n"
+        "- `show <run_id>`: step-by-step details (supports partial IDs)\n"
         "- `trace <run_id>`: rich hierarchical trace tree\n"
+        "- `spans <run_id>`: list individual spans with filtering\n"
+        "- `stats`: aggregated span statistics\n"
         "- `from-file <path>`: render a saved debug export (from `--debug-export`)\n"
         "- `replay <run_id>`: re-run deterministically using recorded responses (when available)\n"
     ),
@@ -119,6 +122,105 @@ def list_runs(
         Console().print(table)
 
 
+@lens_app.command("get")
+def get_by_partial_id(
+    partial_id: str,
+    show_output: bool = typer.Option(False, "--show-output", help="Show step outputs."),
+    show_input: bool = typer.Option(False, "--show-input", help="Show step inputs."),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show input, output, and error for each step."
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+    show_final_output: bool = typer.Option(
+        False, "--final-output", help="Show the final pipeline output."
+    ),
+) -> None:
+    """
+    Find and display runs by fuzzy search on partial run_id.
+
+    This command enables quick lookup of runs using partial IDs (substring matching).
+    If multiple matches are found, displays a disambiguation table. If a unique match
+    is found, automatically shows the run details.
+
+    Args:
+        partial_id: Partial run_id to search for (matches anywhere in run_id)
+        show_output: Include step outputs in the display
+        show_input: Include step inputs in the display
+        verbose: Show all step details (input, output, error)
+        json_output: Output as structured JSON for automation
+        show_final_output: Display only the final pipeline output
+
+    Examples:
+        flujo lens get abc123      # Match runs containing "abc123"
+        flujo lens get run_       # Match all runs starting with "run_"
+        flujo lens get abc --json  # JSON output for matched run
+
+    Notes:
+        - Uses substring matching (not just prefix)
+        - Shows disambiguation table if multiple matches found
+        - Automatically displays full run details for unique matches
+    """
+    backend = load_backend_from_config()
+
+    # Async function to search for runs (no nested event loop)
+    async def _search_runs() -> list[dict[str, Any]]:
+        if hasattr(backend, "list_runs"):
+            result = await backend.list_runs(limit=100)
+        else:
+            result = await backend.list_workflows(limit=100)
+        return list(result) if result else []
+
+    # Run async search first, then handle results synchronously
+    try:
+        runs = asyncio.run(_search_runs())
+    except Exception as e:
+        typer.echo(f"Error searching for runs: {e}", err=True)
+        raise typer.Exit(1)
+
+    # Find matches (synchronous)
+    matches = [r["run_id"] for r in runs if partial_id in r["run_id"]]
+
+    if len(matches) == 0:
+        typer.echo(
+            f"No runs found matching: {partial_id}\n"
+            "Suggestions:\n"
+            "  • Use 'flujo lens list' to see all runs\n"
+            "  • Try a different substring\n"
+            "  • Check if the run exists in the configured state backend",
+            err=True,
+        )
+        raise typer.Exit(1)
+    elif len(matches) > 1:
+        console = Console()
+        console.print(f"[yellow]Multiple matches found for '{partial_id}':[/yellow]")
+        table = Table("Index", "Run ID", "Pipeline", "Status")
+        for idx, match_id in enumerate(matches[:10], 1):
+            run_info: dict[str, Any] = next((r for r in runs if r["run_id"] == match_id), {})
+            table.add_row(
+                str(idx),
+                match_id[:16] + "..." if len(match_id) > 16 else match_id,
+                run_info.get("pipeline_name", "-"),
+                run_info.get("status", "-"),
+            )
+        console.print(table)
+        if len(matches) > 10:
+            console.print(f"[dim]... and {len(matches) - 10} more matches[/dim]")
+        console.print("\n[yellow]Please provide a more specific run_id.[/yellow]")
+        raise typer.Exit(1)
+    else:
+        # Exact match - show details (now safe to call show_run)
+        full_run_id = matches[0]
+        Console().print(f"[dim]Found: {full_run_id}[/dim]\n")
+        show_run(
+            full_run_id,
+            show_output=show_output,
+            show_input=show_input,
+            verbose=verbose,
+            json_output=json_output,
+            show_final_output=show_final_output,
+        )
+
+
 @lens_app.command("show")
 def show_command(
     run_id: str,
@@ -128,13 +230,63 @@ def show_command(
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show input, output, and error for each step."
     ),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+    show_final_output: bool = typer.Option(
+        False, "--final-output", help="Show the final pipeline output."
+    ),
+    timeout: float = typer.Option(10.0, "--timeout", help="Timeout in seconds for fetching data."),
 ) -> None:
+    """
+    Display comprehensive details for a specific workflow run.
+
+    This command fetches and displays run metadata, step-by-step execution details,
+    and optional I/O information. Supports both full and partial run_id matching
+    with automatic prefix resolution for convenience.
+
+    Args:
+        run_id: Full or partial run_id (minimum 8 characters for partial matching)
+        show_output: Include step outputs in the display
+        show_input: Include step inputs in the display
+        show_error: Include step errors in the display
+        verbose: Show all step details (equivalent to all show_* flags enabled)
+        json_output: Output as structured JSON for CI/CD automation
+        show_final_output: Display only the final pipeline output
+        timeout: Maximum wait time for backend queries (overridable via FLUJO_LENS_TIMEOUT env)
+
+    Examples:
+        flujo lens show run_abc123          # Show basic run info
+        flujo lens show abc123 --verbose    # Use partial ID with full details
+        flujo lens show abc123 --json       # JSON output for scripting
+        flujo lens show abc123 --final-output  # Quick result check
+        FLUJO_LENS_TIMEOUT=30 flujo lens show abc123  # Custom timeout
+
+    Environment Variables:
+        FLUJO_LENS_TIMEOUT: Override default timeout (seconds)
+
+    Notes:
+        - Partial IDs auto-resolve if unique (minimum 8 chars recommended)
+        - Fast mode enabled automatically in CI/test environments
+        - JSON mode ideal for automation and monitoring dashboards
+    """
+    # Allow timeout override via env var
+    import os
+
+    timeout_env = os.getenv("FLUJO_LENS_TIMEOUT")
+    if timeout_env:
+        try:
+            timeout = float(timeout_env)
+        except ValueError:
+            pass
+
     show_run(
         run_id,
         show_output=show_output,
         show_input=show_input,
         show_error=show_error,
         verbose=verbose,
+        json_output=json_output,
+        show_final_output=show_final_output,
+        timeout=timeout,
     )
 
 
