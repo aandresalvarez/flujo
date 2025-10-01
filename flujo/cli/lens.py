@@ -17,8 +17,11 @@ lens_app = typer.Typer(
         "🔍 Inspect, debug, and trace past workflow runs.\n\n"
         "Commands:\n"
         "- `list`: show recent runs\n"
-        "- `show <run_id>`: step-by-step details\n"
+        "- `get <partial_run_id>`: find and show run by partial ID\n"
+        "- `show <run_id>`: step-by-step details (supports partial IDs)\n"
         "- `trace <run_id>`: rich hierarchical trace tree\n"
+        "- `spans <run_id>`: list individual spans with filtering\n"
+        "- `stats`: aggregated span statistics\n"
         "- `from-file <path>`: render a saved debug export (from `--debug-export`)\n"
         "- `replay <run_id>`: re-run deterministically using recorded responses (when available)\n"
     ),
@@ -119,6 +122,86 @@ def list_runs(
         Console().print(table)
 
 
+@lens_app.command("get")
+def get_by_partial_id(
+    partial_id: str,
+    show_output: bool = typer.Option(False, "--show-output", help="Show step outputs."),
+    show_input: bool = typer.Option(False, "--show-input", help="Show step inputs."),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show input, output, and error for each step."
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+    show_final_output: bool = typer.Option(
+        False, "--final-output", help="Show the final pipeline output."
+    ),
+) -> None:
+    """Find a run by partial run_id and show details.
+
+    Examples:
+      flujo lens get run_abc123  # Match by prefix
+      flujo lens get abc123      # Match by any part
+    """
+    backend = load_backend_from_config()
+
+    async def _find_and_show() -> None:
+        try:
+            # Search for matching runs
+            if hasattr(backend, "list_runs"):
+                runs = await backend.list_runs(limit=100)
+            else:
+                runs = await backend.list_workflows(limit=100)
+
+            # Find matches
+            matches = [r["run_id"] for r in runs if partial_id in r["run_id"]]
+
+            if len(matches) == 0:
+                typer.echo(
+                    f"No runs found matching: {partial_id}\n"
+                    "Suggestions:\n"
+                    "  • Use 'flujo lens list' to see all runs\n"
+                    "  • Try a different substring\n"
+                    "  • Check if the run exists in the configured state backend",
+                    err=True,
+                )
+                raise typer.Exit(1)
+            elif len(matches) > 1:
+                console = Console()
+                console.print(f"[yellow]Multiple matches found for '{partial_id}':[/yellow]")
+                table = Table("Index", "Run ID", "Pipeline", "Status")
+                for idx, match_id in enumerate(matches[:10], 1):
+                    run_info: dict[str, Any] = next((r for r in runs if r["run_id"] == match_id), {})
+                    table.add_row(
+                        str(idx),
+                        match_id[:16] + "..." if len(match_id) > 16 else match_id,
+                        run_info.get("pipeline_name", "-"),
+                        run_info.get("status", "-"),
+                    )
+                console.print(table)
+                if len(matches) > 10:
+                    console.print(f"[dim]... and {len(matches) - 10} more matches[/dim]")
+                console.print("\n[yellow]Please provide a more specific run_id.[/yellow]")
+                raise typer.Exit(1)
+            else:
+                # Exact match - show details
+                full_run_id = matches[0]
+                Console().print(f"[dim]Found: {full_run_id}[/dim]\n")
+                show_run(
+                    full_run_id,
+                    show_output=show_output,
+                    show_input=show_input,
+                    verbose=verbose,
+                    json_output=json_output,
+                    show_final_output=show_final_output,
+                )
+        except typer.Exit:
+            raise
+        except Exception as e:
+            typer.echo(f"Error searching for runs: {e}", err=True)
+            raise typer.Exit(1)
+
+    asyncio.run(_find_and_show())
+
+
 @lens_app.command("show")
 def show_command(
     run_id: str,
@@ -128,13 +211,32 @@ def show_command(
     verbose: bool = typer.Option(
         False, "--verbose", "-v", help="Show input, output, and error for each step."
     ),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON."),
+    show_final_output: bool = typer.Option(
+        False, "--final-output", help="Show the final pipeline output."
+    ),
+    timeout: float = typer.Option(10.0, "--timeout", help="Timeout in seconds for fetching data."),
 ) -> None:
+    """Show detailed information about a run. Supports partial run_id matching."""
+    # Allow timeout override via env var
+    import os
+
+    timeout_env = os.getenv("FLUJO_LENS_TIMEOUT")
+    if timeout_env:
+        try:
+            timeout = float(timeout_env)
+        except ValueError:
+            pass
+
     show_run(
         run_id,
         show_output=show_output,
         show_input=show_input,
         show_error=show_error,
         verbose=verbose,
+        json_output=json_output,
+        show_final_output=show_final_output,
+        timeout=timeout,
     )
 
 
