@@ -162,65 +162,63 @@ def get_by_partial_id(
     """
     backend = load_backend_from_config()
 
-    async def _find_and_show() -> None:
-        try:
-            # Search for matching runs
-            if hasattr(backend, "list_runs"):
-                runs = await backend.list_runs(limit=100)
-            else:
-                runs = await backend.list_workflows(limit=100)
+    # Async function to search for runs (no nested event loop)
+    async def _search_runs() -> list[dict[str, Any]]:
+        if hasattr(backend, "list_runs"):
+            result = await backend.list_runs(limit=100)
+        else:
+            result = await backend.list_workflows(limit=100)
+        return list(result) if result else []
 
-            # Find matches
-            matches = [r["run_id"] for r in runs if partial_id in r["run_id"]]
+    # Run async search first, then handle results synchronously
+    try:
+        runs = asyncio.run(_search_runs())
+    except Exception as e:
+        typer.echo(f"Error searching for runs: {e}", err=True)
+        raise typer.Exit(1)
 
-            if len(matches) == 0:
-                typer.echo(
-                    f"No runs found matching: {partial_id}\n"
-                    "Suggestions:\n"
-                    "  • Use 'flujo lens list' to see all runs\n"
-                    "  • Try a different substring\n"
-                    "  • Check if the run exists in the configured state backend",
-                    err=True,
-                )
-                raise typer.Exit(1)
-            elif len(matches) > 1:
-                console = Console()
-                console.print(f"[yellow]Multiple matches found for '{partial_id}':[/yellow]")
-                table = Table("Index", "Run ID", "Pipeline", "Status")
-                for idx, match_id in enumerate(matches[:10], 1):
-                    run_info: dict[str, Any] = next(
-                        (r for r in runs if r["run_id"] == match_id), {}
-                    )
-                    table.add_row(
-                        str(idx),
-                        match_id[:16] + "..." if len(match_id) > 16 else match_id,
-                        run_info.get("pipeline_name", "-"),
-                        run_info.get("status", "-"),
-                    )
-                console.print(table)
-                if len(matches) > 10:
-                    console.print(f"[dim]... and {len(matches) - 10} more matches[/dim]")
-                console.print("\n[yellow]Please provide a more specific run_id.[/yellow]")
-                raise typer.Exit(1)
-            else:
-                # Exact match - show details
-                full_run_id = matches[0]
-                Console().print(f"[dim]Found: {full_run_id}[/dim]\n")
-                show_run(
-                    full_run_id,
-                    show_output=show_output,
-                    show_input=show_input,
-                    verbose=verbose,
-                    json_output=json_output,
-                    show_final_output=show_final_output,
-                )
-        except typer.Exit:
-            raise
-        except Exception as e:
-            typer.echo(f"Error searching for runs: {e}", err=True)
-            raise typer.Exit(1)
+    # Find matches (synchronous)
+    matches = [r["run_id"] for r in runs if partial_id in r["run_id"]]
 
-    asyncio.run(_find_and_show())
+    if len(matches) == 0:
+        typer.echo(
+            f"No runs found matching: {partial_id}\n"
+            "Suggestions:\n"
+            "  • Use 'flujo lens list' to see all runs\n"
+            "  • Try a different substring\n"
+            "  • Check if the run exists in the configured state backend",
+            err=True,
+        )
+        raise typer.Exit(1)
+    elif len(matches) > 1:
+        console = Console()
+        console.print(f"[yellow]Multiple matches found for '{partial_id}':[/yellow]")
+        table = Table("Index", "Run ID", "Pipeline", "Status")
+        for idx, match_id in enumerate(matches[:10], 1):
+            run_info: dict[str, Any] = next((r for r in runs if r["run_id"] == match_id), {})
+            table.add_row(
+                str(idx),
+                match_id[:16] + "..." if len(match_id) > 16 else match_id,
+                run_info.get("pipeline_name", "-"),
+                run_info.get("status", "-"),
+            )
+        console.print(table)
+        if len(matches) > 10:
+            console.print(f"[dim]... and {len(matches) - 10} more matches[/dim]")
+        console.print("\n[yellow]Please provide a more specific run_id.[/yellow]")
+        raise typer.Exit(1)
+    else:
+        # Exact match - show details (now safe to call show_run)
+        full_run_id = matches[0]
+        Console().print(f"[dim]Found: {full_run_id}[/dim]\n")
+        show_run(
+            full_run_id,
+            show_output=show_output,
+            show_input=show_input,
+            verbose=verbose,
+            json_output=json_output,
+            show_final_output=show_final_output,
+        )
 
 
 @lens_app.command("show")
