@@ -80,7 +80,7 @@ flujo lens show ec00798f
 4. Shows disambiguation table if multiple matches
 
 **Example Output**:
-```
+```text
 Matched partial ID to: run_ec00798feed049fb8b1e1c8bcb97eb17
 
 ╭─────────────────── Run Summary ───────────────────╮
@@ -189,7 +189,7 @@ flujo lens show <run_id> --verbose --final-output
 ```
 
 **Example Output**:
-```
+```text
 ╭─────────────────── Final Output ───────────────────╮
 │ {                                                   │
 │   "cohort_definition": {                           │
@@ -206,7 +206,7 @@ flujo lens show <run_id> --verbose --final-output
 ### 5. **Enhanced Run Summary**
 
 **Before** (minimal table):
-```
+```text
 Run run_ec00798f - completed
 ┌───────┬──────────┬───────────┐
 │ index │ step     │ status    │
@@ -216,7 +216,7 @@ Run run_ec00798f - completed
 ```
 
 **After** (rich summary panel):
-```
+```text
 ╭─────────────────── Run Summary ───────────────────╮
 │ Run ID: run_ec00798feed049fb8b1e1c8bcb97eb17     │
 │ Pipeline: concept_discovery                       │
@@ -243,12 +243,12 @@ Run run_ec00798f - completed
 ### 6. **Improved Error Messages**
 
 **Before**:
-```
+```text
 Error accessing backend: NoneType object has no attribute 'get'
 ```
 
 **After**:
-```
+```text
 Error accessing backend: NoneType object has no attribute 'get'
 Run ID: run_ec00798f
 Suggestions:

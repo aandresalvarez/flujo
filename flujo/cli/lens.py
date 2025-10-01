@@ -135,11 +135,30 @@ def get_by_partial_id(
         False, "--final-output", help="Show the final pipeline output."
     ),
 ) -> None:
-    """Find a run by partial run_id and show details.
+    """
+    Find and display runs by fuzzy search on partial run_id.
+
+    This command enables quick lookup of runs using partial IDs (substring matching).
+    If multiple matches are found, displays a disambiguation table. If a unique match
+    is found, automatically shows the run details.
+
+    Args:
+        partial_id: Partial run_id to search for (matches anywhere in run_id)
+        show_output: Include step outputs in the display
+        show_input: Include step inputs in the display
+        verbose: Show all step details (input, output, error)
+        json_output: Output as structured JSON for automation
+        show_final_output: Display only the final pipeline output
 
     Examples:
-      flujo lens get run_abc123  # Match by prefix
-      flujo lens get abc123      # Match by any part
+        flujo lens get abc123      # Match runs containing "abc123"
+        flujo lens get run_       # Match all runs starting with "run_"
+        flujo lens get abc --json  # JSON output for matched run
+
+    Notes:
+        - Uses substring matching (not just prefix)
+        - Shows disambiguation table if multiple matches found
+        - Automatically displays full run details for unique matches
     """
     backend = load_backend_from_config()
 
@@ -169,7 +188,9 @@ def get_by_partial_id(
                 console.print(f"[yellow]Multiple matches found for '{partial_id}':[/yellow]")
                 table = Table("Index", "Run ID", "Pipeline", "Status")
                 for idx, match_id in enumerate(matches[:10], 1):
-                    run_info: dict[str, Any] = next((r for r in runs if r["run_id"] == match_id), {})
+                    run_info: dict[str, Any] = next(
+                        (r for r in runs if r["run_id"] == match_id), {}
+                    )
                     table.add_row(
                         str(idx),
                         match_id[:16] + "..." if len(match_id) > 16 else match_id,
@@ -217,7 +238,38 @@ def show_command(
     ),
     timeout: float = typer.Option(10.0, "--timeout", help="Timeout in seconds for fetching data."),
 ) -> None:
-    """Show detailed information about a run. Supports partial run_id matching."""
+    """
+    Display comprehensive details for a specific workflow run.
+
+    This command fetches and displays run metadata, step-by-step execution details,
+    and optional I/O information. Supports both full and partial run_id matching
+    with automatic prefix resolution for convenience.
+
+    Args:
+        run_id: Full or partial run_id (minimum 8 characters for partial matching)
+        show_output: Include step outputs in the display
+        show_input: Include step inputs in the display
+        show_error: Include step errors in the display
+        verbose: Show all step details (equivalent to all show_* flags enabled)
+        json_output: Output as structured JSON for CI/CD automation
+        show_final_output: Display only the final pipeline output
+        timeout: Maximum wait time for backend queries (overridable via FLUJO_LENS_TIMEOUT env)
+
+    Examples:
+        flujo lens show run_abc123          # Show basic run info
+        flujo lens show abc123 --verbose    # Use partial ID with full details
+        flujo lens show abc123 --json       # JSON output for scripting
+        flujo lens show abc123 --final-output  # Quick result check
+        FLUJO_LENS_TIMEOUT=30 flujo lens show abc123  # Custom timeout
+
+    Environment Variables:
+        FLUJO_LENS_TIMEOUT: Override default timeout (seconds)
+
+    Notes:
+        - Partial IDs auto-resolve if unique (minimum 8 chars recommended)
+        - Fast mode enabled automatically in CI/test environments
+        - JSON mode ideal for automation and monitoring dashboards
+    """
     # Allow timeout override via env var
     import os
 

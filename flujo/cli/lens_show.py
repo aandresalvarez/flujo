@@ -12,7 +12,30 @@ from typing import Optional, Any
 
 
 def _find_run_by_partial_id(backend: Any, partial_id: str, timeout: float = 5.0) -> Optional[str]:
-    """Find a run by partial run_id match. Returns full run_id or None."""
+    """
+    Find a run by partial run_id match with fuzzy search support.
+
+    This function enables users to specify only the first 8-12 characters of a run_id
+    instead of the full 32+ character ID. It first attempts an exact match, then falls
+    back to prefix matching across recent runs.
+
+    Args:
+        backend: The state backend instance (SQLite, memory, etc.)
+        partial_id: Partial or complete run_id to search for
+        timeout: Maximum time in seconds to wait for search (default: 5.0s)
+
+    Returns:
+        The full run_id if a unique match is found, None otherwise
+
+    Raises:
+        ValueError: If multiple runs match the partial_id (ambiguous)
+        asyncio.TimeoutError: If the search exceeds the timeout (caught internally)
+
+    Examples:
+        >>> backend = load_backend_from_config()
+        >>> full_id = _find_run_by_partial_id(backend, "abc123")
+        >>> # Returns "abc123def456..." if unique match found
+    """
     try:
 
         async def _search() -> Optional[str]:
@@ -55,7 +78,39 @@ def show_run(
     show_final_output: bool = False,
     timeout: float = 10.0,
 ) -> None:
-    """Show detailed information about a run, with optional step input/output/error."""
+    """
+    Display detailed information about a workflow run with rich formatting.
+
+    This function fetches run details and steps from the configured state backend,
+    supporting both full and partial run_id matches. It provides multiple output
+    modes (human-readable tables, JSON) and detailed step-by-step inspection.
+
+    Args:
+        run_id: Full or partial run_id to display (supports 8+ char prefix matching)
+        show_output: Include step outputs in the display (default: False)
+        show_input: Include step inputs in the display (default: False)
+        show_error: Include step errors in the display (default: False)
+        verbose: Show all step details (input, output, error) (default: False)
+        json_output: Output as structured JSON instead of rich formatting (default: False)
+        show_final_output: Display only the final pipeline output (default: False)
+        timeout: Maximum time in seconds to wait for backend queries (default: 10.0s)
+
+    Raises:
+        typer.Exit(1): If run not found, timeout occurs, or backend errors
+
+    Examples:
+        >>> show_run("abc123def456", verbose=True)
+        # Displays full run details with all step I/O
+
+        >>> show_run("abc123", json_output=True)
+        # Outputs JSON for the run matching partial ID "abc123"
+
+    Notes:
+        - Supports partial run_id matching (minimum 8 characters recommended)
+        - Fast mode automatically enabled in CI/test environments
+        - Use FLUJO_LENS_TIMEOUT env var to override default timeout
+        - JSON mode is ideal for CI/CD automation and scripting
+    """
     backend = load_backend_from_config()
 
     # Try partial run_id matching
@@ -218,7 +273,7 @@ def show_run(
 
         if details.get("execution_time_ms"):
             summary.append("Duration: ", style="bold")
-            exec_time_ms = details['execution_time_ms']
+            exec_time_ms = details["execution_time_ms"]
             if isinstance(exec_time_ms, (int, float)):
                 summary.append(f"{exec_time_ms / 1000:.2f}s\n")
             else:
@@ -231,7 +286,7 @@ def show_run(
             summary.append(f"{details['created_at']}\n")
 
         console.print(Panel(summary, title="[bold cyan]Run Summary[/bold cyan]", expand=False))
-        
+
         # Show steps table
         if steps:
             table = Table("Index", "Step Name", "Status", "Time (ms)", title="Steps")
