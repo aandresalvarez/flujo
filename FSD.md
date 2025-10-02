@@ -1,302 +1,689 @@
-FSD-AROS-001: Robust Structured Output (AROS v2)
+# Flujo Framework Ergonomics Improvements - FSD
 
-  - Owner: Flujo Core
-  - Status: Draft (Proposed)
-  - Target: Flujo 0.4.x minor release (backwards compatible)
-  - Date: 2025-09-10
+**Status**: 🟡 In Progress  
+**Created**: 2025-10-02  
+**Priority**: HIGH  
+**Epic**: Framework Ergonomics & Developer Experience
 
-  Problem Statement
+---
 
-  - Structured-output steps intermittently fail on imperfect model outputs, especially with
-  noisy or multilingual inputs.
-  - Provider JSON-mode can throw early errors (e.g., UnexpectedModelBehavior) that bypass
-  current repair.
-  - The linter (V-C1/V-A8/V-A5) and runtime behavior are not fully aligned, creating friction
-  for simple demos and robust production flows.
-  - Streaming and complex schemas exacerbate failure modes.
+## 📋 Overview
 
-  Goals
+This FSD tracks improvements to Flujo's developer ergonomics based on real-world usage patterns and team guide principles. All tasks must pass `make all` with 0 errors before being considered complete.
 
-  - Dramatically improve success rates for JSON-structured steps while retaining simplicity
-  for demos.
-  - Catch and repair provider-level JSON-mode failures.
-  - Align linter with runtime capabilities; offer auto-remediation.
-  - Support streaming + structured output.
-  - Keep API changes minimal and backwards compatible.
+**Testing Standard**: Use `scripts/run_targeted_tests.py` (see `scripts/test_guide.md`) for all test execution.
 
-  Non-Goals
+---
 
-  - Provider-specific feature parity beyond OpenAI Responses JSON-mode.
-  - Full JSON Schema draft-2020-12 compliance; we focus on a robust subset.
+## 🎯 Task List
 
-  User Stories
+### PHASE 1: Critical Safety Improvements (BLOCKING)
 
-  - As a user, my step with a JSON schema succeeds even on imperfect outputs, thanks to
-  automatic coercion/repair/fallback.
-  - As a contributor, my simple demo works with plain string outputs without linter thrash.
-  - As a maintainer, I can see precise telemetry (what failed, which repairs ran, what fallback
-  path was used).
+These prevent catastrophic bugs identified in FLUJO_TEAM_GUIDE.md.
 
-  Overview
-  AROS v2 spans changes in five areas:
+---
 
-  1. Wrapper-level catch + repair for provider JSON-mode errors.
-  2. Step-level enforcement parity and schema auto-promotion.
-  3. Robust JSON coercion and post-stream aggregation.
-  4. Adaptive fallback strategy (retry → stricter prompt → extract_from_text → degrade).
-  5. Linter/CLI alignment and minimal built-ins to remove custom adapters.
+#### Task 1.1: Control Flow Exception Linting (V-EX1) 🚨 CRITICAL
 
-  Detailed Design
+**Priority**: 🔥 CRITICAL  
+**Estimated Effort**: 8 hours  
+**Blocking**: All other tasks
 
-  -
-      1. Wrapper Catch + Repair
-      - Files: flujo/agents/wrapper.py
-      - Add try/catch around provider JSON-mode invocation:
-      - Catch provider “unexpected JSON” errors (e.g., UnexpectedModelBehavior).
-      - Convert them into the same repair path as pydantic ValidationError/ModelRetry.
-  - Deterministic repair (existing) runs first; then LLM-based repair; then re-validate.
-  - Config (from settings):
-      - aros.repair.max_attempts (default 2)
-      - aros.repair.enable_llm (default true)
-      - aros.degrade_on_unexpected_behavior (default true) → defers to fallback policy (see 4).
+**Description**:  
+Implement linting to detect the "Fatal Anti-Pattern" from FLUJO_TEAM_GUIDE.md Section 2: catching control flow exceptions without re-raising them, which breaks pause/resume workflows.
 
-### Pseudocode (wrapper)
+**Implementation Steps**:
 
-```text
-result = call_provider()
-if provider_error_is_json_mode:
-  try deterministic_repair(result.raw_text)
-  or try llm_repair
-  revalidate
-  return processed_output_after_repair
-else:
-  return processed_output
+1. **Add ExceptionLinter class** (`flujo/validation/linters.py`):
+```python
+class ExceptionLinter(BaseLinter):
+    """V-EX1: Control flow exception handling validation."""
+    
+    CONTROL_FLOW_EXCEPTIONS = {
+        "PausedException",
+        "PipelineAbortSignal",
+        "InfiniteRedirectError"
+    }
+    
+    def analyze(self, pipeline: Any) -> Iterable[ValidationFinding]:
+        """Scan for improper control flow exception handling."""
+        # Check if custom skills reference control flow exceptions
+        # Warn if except block catches them without re-raise
 ```
-  -
-      2. Step-Level Enforcement Parity
-      - Files: flujo/domain/blueprint/compiler.py, flujo/domain/blueprint/loader.py
-      - When a step has processing.structured_output set (auto or openai_json) and agent has
-  output_schema:
-      - Auto-populate step.meta.processing.schema with the agent’s schema if empty.
-      - If agent has schema but step lacks processing, auto-set processing.structured_output:
-  openai_json (unless step opts out).
-  -
-  Add per-step override meta: processing.enforcement: off|validate|repair (default
-  validate+repair).
-  -
-  CLI validate warns only if both are absent and a schema exists; --fix can auto-insert the
-  step processing.
-  -
-      3. Robust JSON Coercion + Streaming Aggregation
-      - New file: flujo/utils/json_normalizer.py
-      - Functions:
-        - normalize_json_text(str) -> str (strip code fences, normalize quotes, remove trailing
-  commas, extract last balanced object).
-        - parse_and_validate(str, schema?) -> object | raises
-  - Streaming:
-      - Files: flujo/application/core/step_coordinator.py (or wrapper)
-      - Aggregate streamed chunks into a final string; after stream completion, run
-  normalize_json_text + parse_and_validate when step processing requests structured JSON.
-      - Config: aros.streaming.aggregate_structured (default true)
 
-  -
-      4. Adaptive Fallback Strategy
-      - Files: flujo/application/core/step_policies.py and/or flujo/application/core/
-  executor_core.py
-      - Step-level fallback sequence for structured steps:
-      1) Retry with stricter instruction (“Return only JSON. No extra text.”).
-      2) Switch to built-in extractor flujo.builtins.extract_from_text with the same schema.
-      3) Degrade to plain text summary (string), then convert to a minimal object only if the
-  next step expects dict (by using built-in adapters; see 5).
-  - Config:
-      - aros.fallback.max_stages (default 3)
-      - aros.fallback.enable_extractor (default true)
-      - aros.fallback.degrade_to_string (default true)
-  -
-  Policy must preserve control-flow exceptions (non-data failures re-raise).
-  -
-      5. Linter/CLI Alignment + Minimal Built-ins
-      - Linter (ContextLinter – V-C1):
-      - Allow updates_context=True when step declares processing.structured_output with schema
-  and step.agent.target_output_type is dict or a Pydantic model (mergeable_output=true).
-      - Add a per-step meta override: mergeable_output: true (opt-in when the user knows output
-  merges).
-  - Linter (V-A8):
-      - If agent has schema but step lacks processing.structured_output, warn and propose auto-
-  fix.
-  - CLI Fixers (--fix):
-      - Fix V-A8 by adding processing.structured_output: openai_json and copying schema into
-  step meta.
-      - Fix V-C1 by inserting a dictionary wrapper adapter step or by setting
-  mergeable_output=true if the output is known to be dict-like.
-  - Built-ins (flujo/builtins.py):
-      - Add wrap_dict (params: key) to wrap a string into {key: string}.
-      - Add ensure_object to coerce Pydantic model/other to dict via safe serialization.
-      - Both are side_effects=False and accept Any → dict.
+2. **Add V-EX1 rule** to `flujo/validation/rules_catalog.py`:
+```python
+"V-EX1": RuleInfo(
+    id="V-EX1",
+    title="Control flow exception caught without re-raise",
+    description="PausedException and similar must be re-raised, not converted to StepResult failures",
+    default_severity="error",
+    help_uri=_BASE_URI + "v-ex1"
+)
+```
 
-  Configuration
+3. **Register linter** in `run_linters()` function
 
-  - Settings (flujo.infra.settings):
-      - aros.enabled (bool, default true)
-      - aros.repair.max_attempts (int, default 2)
-      - aros.repair.enable_llm (bool, default true)
-      - aros.degrade_on_unexpected_behavior (bool, default true)
-      - aros.streaming.aggregate_structured (bool, default true)
-      - aros.schema_simplify (bool, default false) – optional, see “Schema Simplifier”
-      - aros.telemetry.verbose (bool, default false)
+4. **Add documentation** to `docs/validation_rules.md`
 
-  Telemetry
+**Test Requirements** (must pass before continuing):
 
-  - Add events: aros.repair.started, aros.repair.success, aros.repair.failed
-  - Add tags for provider_error, stage (deterministic|llm|extractor|degrade), and schema_hash
-  - Emit agent.usage and aros.fallback.stage metrics
+```bash
+# Run validation-specific tests
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_validation_linters.py \
+  --timeout 30
 
-  Schema Simplifier (optional)
+# Test control flow exception detection
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_validation_linters.py::test_exception_linter_detects_fatal_antipattern \
+  --tb
 
-  - For complex schemas, a module that reduces to a flat object with string fields for LLM
-  compliance
-  - Used only when aros.schema_simplify=true and validation repeatedly fails
+# Run full validation suite
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_validation*.py \
+  --timeout 60 --workers auto
+```
 
-  Backward Compatibility
+**Required Test Cases**:
+- `test_exception_linter_detects_control_flow_catch_without_reraise()` - Error when caught without re-raise
+- `test_exception_linter_allows_proper_reraise()` - Pass when properly re-raised
+- `test_exception_linter_ignores_other_exceptions()` - Ignore non-control-flow exceptions
+- `test_validation_report_includes_vex1()` - V-EX1 appears in full validation
 
-  - Default behavior remains unchanged unless processing.structured_output is set or the step is
-  configured to use AROS fallback stages.
-  - Built-in adapters do not alter existing behavior unless referenced.
+**Acceptance Criteria**:
+- [ ] `make all` passes with 0 errors
+- [ ] All 4 test cases pass
+- [ ] V-EX1 rule documented in validation_rules.md
+- [ ] ExceptionLinter returns severity="error" for violations
 
-  Security & Privacy
+**Blocker Status**: ❌ Must complete before Task 1.2
 
-  - Repair prompts must not leak secrets; they only send the failing output and schema.
-  - Streaming aggregator buffers in memory; no disk writes unless debug-export is on.
+---
 
-  Risks
+#### Task 1.2: Sync/Async Condition Function Validation 🔥 HIGH
 
-  - Over-aggressive normalization could accept malformed JSON. We mitigate by validating after
-  normalization.
-  - Auto-fix could surprise users; keep --fix opt-in and print a diff summary.
+**Priority**: 🔥 HIGH  
+**Estimated Effort**: 4 hours  
+**Depends On**: Task 1.1 complete
 
-  Testing Plan
+**Description**:  
+Enforce that `exit_condition` and `condition` functions must be synchronous, preventing runtime TypeErrors with clear error messages.
 
-  - Unit:
-      - json_normalizer: fence stripping, quotes, trailing commas, balanced extraction.
-      - Wrapper: simulate UnexpectedModelBehavior; validate repair runs.
-      - Step policies: fallback stage transitions; ensure control-flow exceptions are re-raised.
-      - Built-ins: wrap_dict, ensure_object.
-      - Linters: V-C1/V-A8 logic paths, meta overrides.
-  - Integration:
-      - Structured step with multilingual inputs; flaky provider stubs returning near-JSON.
-      - Streaming structured step -> aggregated JSON validation.
-      - CLI --fix applies correct changes.
-  - E2E:
-      - Real provider (OpenAI) behind a small test (if keys available), else stubbed.
+**Implementation Steps**:
 
-  Rollout
+1. **Add validation** in `flujo/domain/blueprint/loader.py` at line ~782:
+```python
+if model.loop.get("exit_condition"):
+    _exit_condition = _import_object(model.loop["exit_condition"])
+    
+    # NEW: Validate synchronous
+    if asyncio.iscoroutinefunction(_exit_condition):
+        raise BlueprintError(
+            f"exit_condition '{model.loop['exit_condition']}' must be synchronous.\n"
+            f"Change 'async def' to 'def' and remove any 'await' calls.\n"
+            f"Example: def my_condition(output, context) -> bool:\n"
+            f"See: https://flujo.dev/docs/loops#exit-conditions"
+        )
+```
 
-  - Phase 1: Wrapper catch+repair; built-ins; linter/--fix.
-  - Phase 2: Streaming aggregator; adaptive fallback.
-  - Phase 3: Schema simplifier (optional).
-  - Provide migration notes in CHANGELOG and docs: “AROS v2”.
+2. **Add similar validation** for `condition` in conditional steps (~line 660)
 
-  Acceptance Criteria
+3. **Update error messages** to reference documentation
 
-  - A step configured with structured JSON and small schema succeeds ≥ 99% across noisy inputs
-  with retries and repair enabled (in CI with provider stub).
-  - Early provider errors are routed through the repair/fallback path.
-  - Streaming structured steps validate at end-of-stream with aggregated output.
-  - CLI --fix cleanly resolves V-A8/V-C1 in typical YAMLs.
-  - No regressions in plain-string demo pipelines.
+**Test Requirements**:
 
-  Implementation Touch Points
+```bash
+# Blueprint loader tests
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_blueprint_loader.py::test_async_exit_condition_rejected \
+  tests/unit/test_blueprint_loader.py::test_sync_exit_condition_accepted \
+  --timeout 30 --tb
 
-  - flujo/agents/wrapper.py
-      - Catch provider JSON-mode failures and route to repair; add config gates.
-      - Post-stream aggregation hook (or coordinate with step_coordinator).
-  - flujo/utils/json_normalizer.py (new)
-      - normalize_json_text, parse_and_validate
-  - flujo/application/core/step_coordinator.py (or wrapper)
-      - Streaming chunk aggregation + post-aggregation validation when structured_output
-  enabled.
-  - flujo/application/core/step_policies.py
-      - Adaptive fallback logic; respect control-flow exceptions; telemetry for stages.
-  - flujo/domain/blueprint/compiler.py, loader.py
-      - Auto-promote schema to step meta; auto-set structured_output when missing.
-  - flujo/validation/linters.py
-      - V-C1: allow mergeable_output true or dict-like outputs; V-A8 improved detection.
-  - flujo/validation/fixers.py
-      - --fix rules for V-A8 and V-C1; optional for V-A5.
-  - flujo/builtins.py
-      - Register wrap_dict and ensure_object built-ins.
+# Full blueprint suite
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_blueprint*.py \
+  --timeout 60 --workers 4
+```
 
-  Developer Notes
+**Required Test Cases**:
+- `test_async_exit_condition_raises_blueprint_error()` - Async function rejected
+- `test_sync_exit_condition_accepted()` - Sync function accepted
+- `test_async_condition_in_conditional_rejected()` - Conditional also validated
+- `test_error_message_includes_helpful_example()` - Error has example code
 
-  - Keep all new behavior behind explicit step processing toggles or AROS settings; default
-  should remain low-risk.
-  - Telemetry should be concise by default; verbose gated by a setting.
-  - Avoid tight coupling between linter and runtime; use small, stable flags (mergeable_output)
-  to reconcile.
+**Acceptance Criteria**:
+- [x] `make all` passes with 0 errors
+- [x] All 4 test cases pass (actually implemented 9 tests, all pass)
+- [x] Error messages include example code and docs link
+- [x] Validation occurs at blueprint load time, not runtime
 
-  Open Questions
+**Blocker Status**: ✅ COMPLETE - Ready for Phase 2
 
-  - Should we treat all Pydantic models as mergeable for V-C1 by default? (Current proposal:
-  opt-in via mergeable_output=true.)
-  - How far to go with schema simplification in core vs. keep as an opt-in helper only?
+---
 
-  If you’d like, I can start with Phase 1 (wrapper catch+repair, built-ins, linter/--fix) and
-  open a PR with code scaffolding and tests to accelerate adoption.
+### PHASE 2: High-Priority Ergonomics
 
-  Phase 1 — Implementation Status (PR: aros-phase1)
+These significantly improve developer experience with minimal breaking changes.
 
-  - Wrapper: AsyncAgentWrapper now treats pydantic_ai.exceptions.UnexpectedModelBehavior
-    like ValidationError/ModelRetry and routes through deterministic→LLM repair.
-  - Built-ins: Added flujo.builtins.wrap_dict and flujo.builtins.ensure_object.
-  - Linter/CLI: Added fixer V-A8 to enable processing.structured_output: openai_json when a
-    schema is present; integrated with --fix/--fix-dry-run patch preview.
-  - Tests: unit coverage for wrapper catch+repair, new built-ins, and V-A8 fixer.
-  - Docs: this FSD section documents Phase 1 changes; CHANGELOG to be updated on merge.
+---
 
-**Issues Discovered (2025-09-10)**
-- AROS-1: Missing terminalization of agent steps
-  - Symptom: Agent step shows status=running with no end_time; pipeline renders "completed" and StepResults omit the agent step.
-  - Evidence: generate_summary span has end_time=null; StepResults show only two steps; Final output is previous step’s dict.
-  - Likely cause: Runner computes completion from step_history only and ignores an active step; policy path does not force a terminal StepResult when JSON-mode/streaming is in play.
-  - Impact: Wrong final output, lost step history, brittle user experience.
-- AROS-2: Partial JSON-mode enforcement and repair
-  - Symptom: grammar.applied recorded, but no validated JSON reaches step_history; no agent.response event.
-  - Cause: No guaranteed post-call normalization→parse→validate pipeline; repair invoked only in some exception flows; provider deviations not always caught.
-  - Impact: Steps “hang” in running state; downstream printing fails.
-- AROS-3: Streaming aggregation missing for structured steps
-  - Symptom: agent.input/system events emitted; no final response; step never finalizes.
-  - Cause: Aggregation of streamed chunks into a final string and late JSON normalization not wired for structured steps.
-  - Impact: Same as AROS-1/2; intermittent non-determinism.
-- AROS-4: Usage/cost propagation gap
-  - Symptom: Total cost=$0.0000, tokens=0 across agent runs.
-  - Cause: ProcessedOutputWithUsage not plumbed through policy→runner totals consistently.
-  - Impact: Quotas/backoffs/retries lack real signals; recovery strategies weakened.
-- AROS-5: Diagnostic noise/misleading signals
-  - Symptom: "Could not determine model" warnings for pure callables; agent.system logs a bound method instead of the actual prompt.
-  - Impact: Obscures real issues; reduces observability.
-- AROS-6: Runner completion gating absent
-  - Symptom: Pipeline marked completed while a step span is still running.
-  - Cause: Completion uses all(s.success for step_history) without checking active spans.
-  - Impact: Corrupt end-state; enables silent data loss of last step.
-- AROS-7: Linter advisory mismatch (contextual)
-  - Symptom: V-A5 signals unused output even when next step consumes previous_step directly.
-  - Cause: Heuristic cannot see templated previous_step consumption in some shapes.
-  - Impact: Cosmetic (does not break runs); track to refine linters.
-- AROS-8: Provider JSON-mode error integration incomplete
-  - Symptom: Some provider errors surface without flowing through deterministic repair path if streaming; wrapper fix in Phase 1 needs policy/runner alignment.
-  - Impact: Residual flakiness in JSON-mode.
+#### Task 2.1: HITL Sink to Context 🔥 HIGH
 
-**Fix Mapping (Phase 2)**
-- AROS-1/6: Add active-step completion gate in runner; only emit "completed" when all started steps have terminal StepResult; persist agent step in step_history.
-- AROS-2/3: Add streaming aggregator for structured steps and a guaranteed finalize path: buffer → normalize (fence/commas/unescape) → parse → validate → deterministic repair → LLM repair → StepResult.
-- AROS-4: Extract usage from wrapper results in policy and accumulate in runner totals; assert non-zero tokens for successful agent responses in tests.
-- AROS-5: Suppress model-id warning for non-LLM agents; log actual system prompt text for agent.system.
-- AROS-7: Refine linter V-A5 to recognize previous_step and steps.<name>.output consumption patterns.
-- AROS-8: Ensure provider-level JSON-mode errors (UnexpectedModelBehavior, etc.) are routed through the same finalize/repair pipeline for both non-streaming and streaming.
+**Priority**: 🔥 HIGH  
+**Estimated Effort**: 6 hours  
+**Depends On**: Phase 1 complete
 
-**Acceptance Criteria (Phase 2)**
-- Completion correctness: With structured agent step, StepResults contains the agent step as the last element; pipeline status is completed only after its terminalization.
-- Robust JSON handling: For near‑JSON and fenced payloads, final output validates against schema ≥99% in stubbed CI; repair stages recorded in telemetry.
-- Streaming consistency: Chunked responses aggregate and validate at end-of-stream; agent.response and StepResult present.
-- Usage accuracy: Non-zero tokens/cost on agent steps; totals reconcile; quotas enforce correctly in tests.
-- Noise reduction: No model-id warnings for pure callables; agent.system contains resolved prompt text.
+**Description**:  
+Add optional `sink_to` field to HITL steps that automatically stores human response to specified context path, eliminating boilerplate passthrough steps.
+
+**Implementation Steps**:
+
+1. **Extend HumanInTheLoopStep** in `flujo/domain/dsl/hitl.py`:
+```python
+class HumanInTheLoopStep(Step[Any, Any]):
+    message_for_user: Optional[str] = None
+    input_schema: Optional[Dict[str, Any]] = None
+    sink_to: Optional[str] = None  # NEW: "scratchpad.user_name"
+```
+
+2. **Update DefaultHitlStepExecutor** in `flujo/application/core/step_policies.py` (~line 6800):
+```python
+# After getting human response
+if step.sink_to and context:
+    try:
+        from flujo.utils.context import set_nested_context_field
+        set_nested_context_field(context, step.sink_to, resp)
+        telemetry.logfire.info(f"HITL response stored to {step.sink_to}")
+    except Exception as e:
+        telemetry.logfire.warning(f"Failed to sink HITL to {step.sink_to}: {e}")
+```
+
+3. **Add helper** `set_nested_context_field()` to `flujo/utils/context.py`:
+```python
+def set_nested_context_field(context: Any, path: str, value: Any) -> bool:
+    """Set nested field like 'scratchpad.user_name' to value."""
+    parts = path.split('.')
+    target = context
+    for part in parts[:-1]:
+        target = getattr(target, part)
+    setattr(target, parts[-1], value)
+    return True
+```
+
+4. **Update YAML schema** in `flujo/domain/blueprint/schema.py`
+
+5. **Add documentation** to `docs/hitl.md`
+
+**Test Requirements**:
+
+```bash
+# HITL-specific tests
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_hitl_step.py::test_hitl_sink_to_context \
+  tests/integration/test_hitl_sink*.py \
+  --timeout 60 --tb
+
+# Full HITL suite (marked slow/serial)
+.venv/bin/python scripts/run_targeted_tests.py \
+  --full-suite \
+  --markers "hitl or (slow and serial)" \
+  --timeout 120 --workers 1
+```
+
+**Required Test Cases**:
+- `test_hitl_sink_to_scratchpad()` - Basic sink to scratchpad.field
+- `test_hitl_sink_to_nested_path()` - Sink to scratchpad.nested.deep.field
+- `test_hitl_sink_fails_gracefully_on_invalid_path()` - Warning, doesn't crash
+- `test_hitl_sink_with_updates_context_true()` - Works with context updates
+- `test_hitl_sink_in_loop_iterations()` - Each iteration sinks correctly
+- `test_hitl_yaml_with_sink_to()` - YAML blueprint validation
+
+**Acceptance Criteria**:
+- [ ] `make all` passes with 0 errors
+- [ ] All 6 test cases pass
+- [ ] Works in loops without context poisoning
+- [ ] Documented in docs/hitl.md with examples
+- [ ] Backward compatible (sink_to is optional)
+
+---
+
+#### Task 2.2: Context Isolation Validation (V-CTX1) ⚠️ HIGH
+
+**Priority**: 🔥 HIGH  
+**Estimated Effort**: 8 hours  
+**Depends On**: Task 2.1 complete
+
+**Description**:  
+Detect when loops/parallel steps don't use `ContextManager.isolate()`, which violates idempotency (FLUJO_TEAM_GUIDE.md Section 3.5).
+
+**Implementation Steps**:
+
+1. **Extend OrchestrationLinter** in `flujo/validation/linters.py`:
+```python
+# In OrchestrationLinter.analyze()
+# After V-CF1 check, add V-CTX1:
+if _LoopStep and _ParallelStep:
+    for st in steps:
+        if isinstance(st, (_LoopStep, _ParallelStep)):
+            # Check if custom body references ContextManager.isolate
+            # Warn if potentially sharing context across iterations
+```
+
+2. **Add V-CTX1 rule** to `flujo/validation/rules_catalog.py`:
+```python
+"V-CTX1": RuleInfo(
+    id="V-CTX1",
+    title="Missing context isolation in loop/parallel",
+    description="Loop and parallel steps should use ContextManager.isolate() to ensure idempotency",
+    default_severity="warning",
+    help_uri=_BASE_URI + "v-ctx1"
+)
+```
+
+3. **Add detection heuristics** for custom skills that receive context parameter
+
+**Test Requirements**:
+
+```bash
+# Validation tests
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_validation_linters.py::test_context_isolation_linter \
+  --timeout 30 --tb
+
+# Integration test with actual pipeline
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/integration/test_context_isolation_validation.py \
+  --timeout 60
+```
+
+**Required Test Cases**:
+- `test_vctx1_warns_on_loop_without_isolation()` - Warning for non-isolated loop
+- `test_vctx1_passes_with_proper_isolation()` - Pass when ContextManager used
+- `test_vctx1_checks_parallel_steps()` - Also validates parallel
+- `test_vctx1_ignores_simple_loops()` - Only checks complex custom bodies
+
+**Acceptance Criteria**:
+- [ ] `make all` passes with 0 errors
+- [ ] All 4 test cases pass
+- [ ] V-CTX1 documented with examples
+- [ ] Warns but doesn't block (severity="warning")
+
+---
+
+#### Task 2.3: Typed Scratchpad Helpers 🔧 MEDIUM
+
+**Priority**: MEDIUM  
+**Estimated Effort**: 10 hours  
+**Depends On**: Task 2.2 complete
+
+**Description**:  
+Add built-in skills for type-safe context manipulation, reducing boilerplate and preventing `Any` type usage.
+
+**Implementation Steps**:
+
+1. **Add built-in skills** to `flujo/builtins.py`:
+```python
+async def context_set(
+    path: str,
+    value: Any,
+    *,
+    context: Optional[PipelineContext] = None
+) -> Dict[str, Any]:
+    """Set context field at path to value."""
+    if context:
+        set_nested_context_field(context, path, value)
+    return {"path": path, "value": value}
+
+async def context_merge(
+    path: str,
+    value: Dict[str, Any],
+    *,
+    context: Optional[PipelineContext] = None
+) -> Dict[str, Any]:
+    """Merge dict into context at path."""
+    # Implementation
+```
+
+2. **Register skills** in `_register_builtin_skills()`
+
+3. **Add YAML sugar** (optional - can defer to later version):
+```yaml
+# Option A: New step kind
+- kind: context_set
+  path: "scratchpad.counter"
+  value: 0
+
+# Option B: Agent syntax (simpler, implement this first)
+- kind: step
+  name: init_counter
+  agent:
+    id: "flujo.builtins.context_set"
+    params: { path: "scratchpad.counter", value: 0 }
+```
+
+4. **Add type stubs** in `flujo/builtins.pyi`
+
+**Test Requirements**:
+
+```bash
+# Builtin tests
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_builtins.py::test_context_set \
+  tests/unit/test_builtins.py::test_context_merge \
+  --timeout 30 --tb
+
+# Integration with pipelines
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/integration/test_context_helpers*.py \
+  --timeout 60 --workers 4
+
+# Type checking
+make typecheck
+```
+
+**Required Test Cases**:
+- `test_context_set_simple_path()` - Set scratchpad.field
+- `test_context_set_nested_path()` - Set scratchpad.a.b.c
+- `test_context_merge_dict()` - Merge dictionary
+- `test_context_get_with_default()` - Get with fallback
+- `test_context_helpers_in_yaml_pipeline()` - YAML integration
+- `test_context_helpers_type_safety()` - mypy passes
+
+**Acceptance Criteria**:
+- [ ] `make all` passes with 0 errors
+- [ ] All 6 test cases pass
+- [ ] Documented in docs/user_guide/pipeline_context.md
+- [ ] Examples added to examples/ directory
+- [ ] Type stubs provided
+
+---
+
+#### Task 2.4: Template Expression Linting (V-T5, V-T6) 📝 MEDIUM
+
+**Priority**: MEDIUM  
+**Estimated Effort**: 6 hours  
+**Depends On**: Task 2.3 complete
+
+**Description**:  
+Extend TemplateLinter to catch common template mistakes: suspicious `tojson` usage and accessing `.output` on `previous_step`.
+
+**Implementation Steps**:
+
+1. **Extend TemplateLinter** in `flujo/validation/linters.py`:
+```python
+class TemplateLinter(BaseLinter):
+    def analyze(self, pipeline: Any) -> Iterable[ValidationFinding]:
+        # Existing V-T1 through V-T4...
+        
+        # NEW: V-T5 - Suspicious tojson in string context
+        if '| tojson' in template and '"{{' in template:
+            yield ValidationFinding(
+                rule_id="V-T5",
+                severity="warning",
+                message="Suspicious tojson - may stringify dict in string concatenation",
+                suggestion="Use tojson only when outputting JSON, not in string templates"
+            )
+        
+        # NEW: V-T6 - Accessing .output on previous_step
+        if 'previous_step.output' in template:
+            yield ValidationFinding(
+                rule_id="V-T6",
+                severity="error",
+                message="previous_step has no .output property (it's the raw value)",
+                suggestion="Use 'previous_step' directly or 'steps[\"name\"].output' for named steps"
+            )
+```
+
+2. **Add rules** to `rules_catalog.py`
+
+3. **Update llm.md** with these patterns in anti-patterns section
+
+**Test Requirements**:
+
+```bash
+# Template linter tests
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_validation_linters.py::test_template_linter_vt5 \
+  tests/unit/test_validation_linters.py::test_template_linter_vt6 \
+  --timeout 30 --tb
+
+# Full validation suite
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_validation*.py \
+  --timeout 60 --workers auto
+```
+
+**Required Test Cases**:
+- `test_vt5_detects_suspicious_tojson()` - Warning on string concat with tojson
+- `test_vt5_allows_proper_json_output()` - Pass when tojson used correctly
+- `test_vt6_detects_previous_step_output()` - Error on previous_step.output
+- `test_vt6_allows_steps_name_output()` - Pass on steps['name'].output
+- `test_template_linter_all_rules()` - All V-T* rules work together
+
+**Acceptance Criteria**:
+- [ ] `make all` passes with 0 errors
+- [ ] All 5 test cases pass
+- [ ] V-T5 and V-T6 documented
+- [ ] llm.md updated with anti-patterns
+
+---
+
+### PHASE 3: Polish & Documentation
+
+#### Task 3.1: HITL Resume Value (First-Class Variable) 🔧 LOW
+
+**Priority**: LOW  
+**Estimated Effort**: 4 hours  
+**Depends On**: Phase 2 complete
+
+**Description**:  
+Add `resume_input` as a first-class template variable for accessing the most recent HITL response.
+
+**Implementation Steps**:
+
+1. **Update template context** in `flujo/utils/template_vars.py`:
+```python
+def build_template_context(
+    output: Any,
+    context: Optional[PipelineContext],
+    steps_map: Dict[str, Any]
+) -> Dict[str, Any]:
+    ctx = {
+        "previous_step": output,
+        "output": output,
+        "context": TemplateContextProxy(context, steps=steps_map),
+        "steps": steps_map,
+    }
+    
+    # NEW: Add resume_input if HITL history exists
+    if context and hasattr(context, 'hitl_history') and context.hitl_history:
+        ctx["resume_input"] = context.hitl_history[-1].human_response
+    
+    return ctx
+```
+
+2. **Update expression language** documentation in `docs/expression_language.md`
+
+3. **Add examples** to `docs/hitl.md`
+
+**Test Requirements**:
+
+```bash
+# Template variable tests
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_template_vars.py::test_resume_input_available \
+  --timeout 30 --tb
+
+# Integration test
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/integration/test_hitl_resume_input.py \
+  --timeout 60 --markers "slow and serial" --workers 1
+```
+
+**Required Test Cases**:
+- `test_resume_input_available_after_hitl()` - Available in template context
+- `test_resume_input_none_without_hitl()` - None before first HITL
+- `test_resume_input_in_loop_iterations()` - Updates each iteration
+- `test_resume_input_in_conditional_expression()` - Works in conditionals
+
+**Acceptance Criteria**:
+- [ ] `make all` passes with 0 errors
+- [ ] All 4 test cases pass
+- [ ] Documented in expression_language.md
+- [ ] Examples in docs/hitl.md
+
+---
+
+#### Task 3.2: Update llm.md with All Patterns 📚
+
+**Priority**: LOW  
+**Estimated Effort**: 2 hours  
+**Depends On**: All previous tasks complete
+
+**Description**:  
+Consolidate all new patterns, linting rules, and anti-patterns into llm.md.
+
+**Implementation Steps**:
+
+1. **Add V-EX1 to anti-patterns** section
+2. **Add V-CTX1 to best practices** section
+3. **Add context helpers** to built-in skills reference
+4. **Add V-T5 and V-T6** examples
+5. **Add HITL sink_to** examples
+6. **Add resume_input** to template variables section
+
+**Test Requirements**:
+```bash
+# No tests needed, but validate Markdown syntax
+make lint
+```
+
+**Acceptance Criteria**:
+- [ ] All new features documented
+- [ ] Examples are runnable
+- [ ] Cross-references updated
+
+---
+
+## 🧪 Testing Strategy
+
+### Before Each Task
+
+```bash
+# Ensure clean baseline
+make all
+
+# Should show: ✅ All checks passed
+```
+
+### During Implementation
+
+```bash
+# Run relevant unit tests frequently (every 10-15 min)
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_<module>.py \
+  --timeout 30 --workers 4
+
+# Run specific test during debugging
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/unit/test_module.py::test_function \
+  --timeout 60 --tb
+```
+
+### After Each Task
+
+```bash
+# Full validation before marking complete
+make all
+
+# Run full relevant test suite
+.venv/bin/python scripts/run_targeted_tests.py \
+  --full-suite \
+  --markers "not benchmark" \
+  --timeout 120 \
+  --workers auto \
+  --split-slow \
+  --slow-workers 1 \
+  --slow-timeout 240
+
+# Should exit with code 0 (all passed)
+echo $?
+```
+
+### Integration Testing
+
+```bash
+# After Phase 1 complete
+.venv/bin/python scripts/run_targeted_tests.py \
+  tests/integration/ \
+  --timeout 120 --workers 4
+
+# After Phase 2 complete (includes HITL/slow tests)
+.venv/bin/python scripts/run_targeted_tests.py \
+  --full-suite \
+  --timeout 120 \
+  --workers auto \
+  --split-slow
+```
+
+---
+
+## ✅ Acceptance Gates
+
+### Phase 1 Gate (Before Phase 2)
+- [ ] All Phase 1 tasks marked complete
+- [ ] `make all` passes with 0 errors
+- [ ] V-EX1 catches fatal anti-pattern
+- [ ] Async functions rejected at load time
+- [ ] No regressions in existing tests
+
+### Phase 2 Gate (Before Phase 3)
+- [ ] All Phase 2 tasks marked complete
+- [ ] `make all` passes with 0 errors
+- [ ] HITL sink_to works in production examples
+- [ ] V-CTX1 warns on isolation issues
+- [ ] Context helpers reduce boilerplate
+
+### Final Release Gate
+- [ ] All tasks marked complete
+- [ ] `make all` passes with 0 errors
+- [ ] All new features documented
+- [ ] Examples added to examples/ directory
+- [ ] CHANGELOG.md updated
+- [ ] llm.md updated with patterns
+
+---
+
+## 📊 Progress Tracking
+
+**Phase 1**: 1/2 complete (50%)  
+**Phase 2**: 0/4 complete (0%)  
+**Phase 3**: 0/2 complete (0%)  
+**Overall**: 1/8 complete (12.5%)
+
+**Last Updated**: 2025-10-02 16:23 UTC  
+**Next Review**: After Phase 1 complete
+
+### Completed Tasks
+- ✅ Task 1.2: Sync/Async Condition Function Validation (2025-10-02)
+
+---
+
+## 🔗 References
+
+- **Team Guide**: `FLUJO_TEAM_GUIDE.md` - Architectural principles
+- **Test Guide**: `scripts/test_guide.md` - How to run tests
+- **LLM Guide**: `llm.md` - User-facing documentation
+- **Validation Rules**: `docs/validation_rules.md` - Existing linting rules
+
+---
+
+## 🚨 Critical Reminders
+
+1. **Never adjust test expectations to make tests pass** - Fix the code, not the test
+2. **Run `make all` before every commit** - Must pass with 0 errors
+3. **Use `scripts/run_targeted_tests.py`** for all test execution
+4. **Phase 1 is blocking** - Must complete before Phase 2 starts
+5. **Document as you go** - Update llm.md with each feature
+

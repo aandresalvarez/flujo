@@ -691,6 +691,26 @@ def _make_step_from_blueprint(
         if model.condition:
             try:
                 _cond_callable = _import_object(model.condition)
+
+                # Validate that condition is synchronous (not async)
+                import asyncio
+
+                if asyncio.iscoroutinefunction(_cond_callable):
+                    raise BlueprintError(
+                        f"condition '{model.condition}' must be synchronous.\n"
+                        f"Conditional step conditions are called synchronously and cannot be async functions.\n"
+                        f"\n"
+                        f"Change your function from:\n"
+                        f"  async def my_condition(data, context) -> Any:\n"
+                        f"      ...\n"
+                        f"\n"
+                        f"To:\n"
+                        f"  def my_condition(data, context) -> Any:\n"
+                        f"      ...\n"
+                        f"\n"
+                        f"Remove 'async' and any 'await' calls in your condition function.\n"
+                        f"See: https://flujo.dev/docs/user_guide/pipeline_branching#conditional-steps"
+                    )
             except Exception as exc:
                 # Improve ergonomics: common mistake is providing an inline Python lambda
                 # which is intentionally not supported in YAML for security reasons.
@@ -780,6 +800,26 @@ def _make_step_from_blueprint(
         # Optional callable overrides
         if model.loop.get("exit_condition"):
             _exit_condition = _import_object(model.loop["exit_condition"])  # runtime import
+
+            # Validate that exit_condition is synchronous (not async)
+            import asyncio
+
+            if asyncio.iscoroutinefunction(_exit_condition):
+                raise BlueprintError(
+                    f"exit_condition '{model.loop['exit_condition']}' must be synchronous.\n"
+                    f"Loop exit conditions are called synchronously and cannot be async functions.\n"
+                    f"\n"
+                    f"Change your function from:\n"
+                    f"  async def my_condition(output, context) -> bool:\n"
+                    f"      ...\n"
+                    f"\n"
+                    f"To:\n"
+                    f"  def my_condition(output, context) -> bool:\n"
+                    f"      ...\n"
+                    f"\n"
+                    f"Remove 'async' and any 'await' calls in your exit_condition function.\n"
+                    f"See: https://flujo.dev/docs/loops#exit-conditions"
+                )
         elif model.loop.get("exit_expression"):
             try:
                 from ...utils.expressions import compile_expression_to_callable as _compile_expr
