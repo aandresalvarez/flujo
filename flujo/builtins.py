@@ -1350,9 +1350,12 @@ async def context_set(
     """
     from flujo.utils.context import set_nested_context_field
 
+    success = False
+
     if context is not None:
         try:
             set_nested_context_field(context, path, value)
+            success = True
         except Exception as e:
             # Log warning but don't fail the step
             import logging
@@ -1360,7 +1363,7 @@ async def context_set(
             logger = logging.getLogger(__name__)
             logger.warning(f"Failed to set context path '{path}': {e}")
 
-    return {"path": path, "value": value, "success": context is not None}
+    return {"path": path, "value": value, "success": success}
 
 
 async def context_merge(

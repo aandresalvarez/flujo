@@ -106,11 +106,7 @@ async def test_resume_input_none_without_hitl():
     pipeline = Pipeline.from_step(step)
     runner = Flujo(pipeline, context_model=PipelineContext)
 
-    results = []
-    async for result in runner.run_async("test"):
-        results.append(result)
-
-    final_result = gather_result(results)
+    final_result = await gather_result(runner, "test")
     assert final_result.success
     # resume_input should show as not_set before HITL
     assert "not_set" in final_result.output

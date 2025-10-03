@@ -93,10 +93,7 @@ class TestCLIPerformanceEdgeCases:
             return db_path
         finally:
             # Cleanup backend connection
-            try:
-                await backend.close()
-            except Exception:
-                pass
+            await backend.close()
 
     def test_lens_list_with_large_mixed_database(
         self, large_database_with_mixed_data: Path

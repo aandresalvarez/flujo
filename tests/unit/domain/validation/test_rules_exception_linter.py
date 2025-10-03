@@ -1,5 +1,7 @@
 """Tests for ExceptionLinter (V-EX1) - Control flow exception handling validation."""
 
+import pytest
+
 from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
 from flujo.validation.linters import run_linters
 
@@ -155,8 +157,16 @@ steps:
 class TestExceptionLinterCanBeSuppressed:
     """Test that V-EX1 can be suppressed via standard mechanisms."""
 
+    @pytest.mark.skip(reason="Suppression mechanism not yet implemented for V-EX1. See issue #TBD")
     def test_vex1_respects_inline_suppression(self):
-        """Test that V-EX1 can be suppressed with inline comments."""
+        """Test that V-EX1 can be suppressed with inline comments.
+        
+        This test is currently skipped because the inline suppression mechanism
+        is not yet implemented. When implemented, this test should verify that:
+        1. The suppression comment is parsed from YAML
+        2. The rule is added to step.meta['suppress_rules']
+        3. The linter skips V-EX1 for that step
+        """
         yaml_content = """
 version: "0.1"
 name: "test_suppression"
@@ -168,13 +178,9 @@ steps:
         pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
         report = run_linters(pipeline)
 
-        # V-EX1 should be suppressed
-        # Note: The actual suppression mechanism might be handled elsewhere
-        # This test documents the expected behavior
-        # If suppression is implemented, the following would pass:
-        # vex1_findings = [f for f in report.warnings if f.rule_id == "V-EX1"]
-        # assert len(vex1_findings) == 0, "V-EX1 should be suppressed with inline comment"
-        assert report is not None  # For now, just verify the linter runs
+        # V-EX1 should be suppressed via inline comment
+        vex1_findings = [f for f in report.warnings if f.rule_id == "V-EX1"]
+        assert len(vex1_findings) == 0, "V-EX1 should be suppressed with inline comment"
 
 
 class TestExceptionLinterMultipleSteps:

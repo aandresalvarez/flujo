@@ -6813,7 +6813,7 @@ class DefaultHitlStepExecutor:
                             from flujo.utils.context import set_nested_context_field
 
                             telemetry.logfire.debug(
-                                f"HITL sink_to: storing '{resp}' to '{step.sink_to}'"
+                                f"HITL sink_to: storing response to '{step.sink_to}'"
                             )
                             set_nested_context_field(context, step.sink_to, resp)
                             telemetry.logfire.info(f"HITL response stored to {step.sink_to}")

@@ -1542,7 +1542,7 @@ class OrchestrationLinter(BaseLinter):
                     if body_pipeline:
                         body_steps = getattr(body_pipeline, "steps", []) or []
                         for body_step in body_steps:
-                            skill_ref = self._get_custom_skill_ref(body_step, meta)
+                            skill_ref = self._get_custom_skill_ref(body_step)
                             if skill_ref:
                                 has_custom_skills = True
                                 custom_skill_refs.append(skill_ref)
@@ -1554,7 +1554,7 @@ class OrchestrationLinter(BaseLinter):
                         if branch_pipeline:
                             branch_steps = getattr(branch_pipeline, "steps", []) or []
                             for branch_step in branch_steps:
-                                skill_ref = self._get_custom_skill_ref(branch_step, meta)
+                                skill_ref = self._get_custom_skill_ref(branch_step)
                                 if skill_ref:
                                     has_custom_skills = True
                                     custom_skill_refs.append(f"{branch_name}:{skill_ref}")
@@ -1592,7 +1592,7 @@ class OrchestrationLinter(BaseLinter):
                         )
                     )
 
-    def _get_custom_skill_ref(self, step: Any, parent_meta: Any) -> str | None:
+    def _get_custom_skill_ref(self, step: Any) -> str | None:
         """Extract custom skill reference from a step, similar to V-EX1 logic."""
         try:
             # Check if 'uses' was specified in meta (preserved from YAML)
@@ -1651,7 +1651,7 @@ class ExceptionLinter(BaseLinter):
     StepResult(success=False) breaks pause/resume and other critical flows.
     """
 
-    CONTROL_FLOW_EXCEPTIONS = {
+    CONTROL_FLOW_EXCEPTIONS: ClassVar[set[str]] = {
         "PausedException",
         "PipelineAbortSignal",
         "InfiniteRedirectError",
