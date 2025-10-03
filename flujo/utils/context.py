@@ -741,6 +741,67 @@ def predicate_is_valid_report(report: Any, context: Any) -> str:
         return "invalid"
 
 
+def set_nested_context_field(context: Any, path: str, value: Any) -> bool:
+    """
+    Set a nested field in a context object using dot notation.
+
+    Supports both attribute-based and dict-based access.
+
+    Args:
+        context: The context object (typically PipelineContext)
+        path: Dot-separated path to the field (e.g., "scratchpad.user_name" or "scratchpad.nested.field")
+        value: The value to set
+
+    Returns:
+        bool: True if successful, False otherwise
+
+    Raises:
+        AttributeError: If any intermediate path doesn't exist or isn't accessible
+
+    Example:
+        >>> context = PipelineContext()
+        >>> set_nested_context_field(context, "scratchpad.user_name", "Alice")
+        True
+        >>> context.scratchpad["user_name"]  # or context.scratchpad.user_name
+        'Alice'
+    """
+    if not path:
+        return False
+
+    parts = path.split(".")
+    target = context
+
+    # Navigate to the parent of the final field
+    for part in parts[:-1]:
+        try:
+            # Try attribute access first
+            target = getattr(target, part)
+        except AttributeError:
+            # Try dict access
+            if isinstance(target, dict) and part in target:
+                target = target[part]
+            else:
+                raise AttributeError(
+                    f"Cannot set '{path}': intermediate field '{part}' does not exist on {type(target).__name__}"
+                )
+
+    # Set the final field
+    final_field = parts[-1]
+    try:
+        # Try dict assignment first (more common for scratchpad)
+        if isinstance(target, dict):
+            target[final_field] = value
+            return True
+        else:
+            # Fall back to attribute assignment
+            setattr(target, final_field, value)
+            return True
+    except (AttributeError, TypeError) as e:
+        raise AttributeError(
+            f"Cannot set '{path}': failed to set field '{final_field}' on {type(target).__name__}: {e}"
+        )
+
+
 """
 Note: architect_mode_branch has been removed as the project uses a single Architect path.
 """

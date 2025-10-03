@@ -25,6 +25,56 @@ This page explains how to declare Human-in-the-Loop steps in YAML, how pause/res
 - `message`: Short, actionable instruction shown to the human.
 - `input_schema`: JSON Schema that Flujo compiles to a Pydantic model for validation on resume.
 
+## Automatic Context Storage (`sink_to`)
+
+The `sink_to` field automatically stores the human response to a specified context path, eliminating the need for boilerplate passthrough steps:
+
+```yaml
+- kind: hitl
+  name: get_user_name
+  message: "What is your name?"
+  sink_to: "scratchpad.user_name"
+
+- kind: hitl
+  name: get_preferences
+  message: "Select your preferences"
+  input_schema:
+    type: object
+    properties:
+      theme: { type: string, enum: ["light", "dark"] }
+      notifications: { type: boolean }
+  sink_to: "scratchpad.user_preferences"
+```
+
+**How it works:**
+- The human response is automatically stored to `context.scratchpad.user_name` or `context.scratchpad.user_preferences`
+- Works with both simple text responses and structured `input_schema` responses
+- Supports nested paths like `"scratchpad.settings.user.name"`
+- If the context path doesn't exist, a warning is logged and execution continues normally
+
+**Without `sink_to` (old pattern):**
+```yaml
+- kind: hitl
+  name: get_user_name
+  message: "What is your name?"
+
+# Manual storage step (now unnecessary)
+- kind: step
+  name: store_name
+  agent: { id: "flujo.builtins.passthrough" }
+  input: "{{ previous_step }}"
+  updates_context: true
+```
+
+**With `sink_to` (new pattern):**
+```yaml
+- kind: hitl
+  name: get_user_name
+  message: "What is your name?"
+  sink_to: "scratchpad.user_name"
+# Done! No manual storage step needed
+```
+
 ## Conditional Routing (Approval Gate)
 
 Use a synchronous helper for branch selection in YAML:
@@ -77,10 +127,11 @@ Pause once per item; resume repeatedly until done:
 
 ## Best Practices
 
-- Keep `input_schema` minimal and explicit.
-- Use the sync helper `flujo.builtins.check_user_confirmation_sync` for YAML conditionals.
-- Prefer short, directive messages.
-- Avoid relying on implicit context merges; pass needed data explicitly or use `updates_context` on a dedicated adapter step.
+- **Use `sink_to` for automatic context storage** — reduces boilerplate and keeps pipelines concise
+- Keep `input_schema` minimal and explicit
+- Use the sync helper `flujo.builtins.check_user_confirmation_sync` for YAML conditionals
+- Prefer short, directive messages
+- For nested storage, ensure intermediate context fields exist (e.g., `context.scratchpad` must exist before using `sink_to: "scratchpad.field"`)
 
 ## Troubleshooting
 

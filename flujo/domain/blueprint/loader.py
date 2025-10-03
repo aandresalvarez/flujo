@@ -179,6 +179,7 @@ class BlueprintStepModel(BaseModel):
     # HITL specific (optional)
     message: Optional[str] = None
     input_schema: Optional[Dict[str, Any]] = None
+    sink_to: Optional[str] = None  # Context path to sink HITL response
     # Cache specific (optional)
     wrapped_step: Optional[Dict[str, Any]] = None
     # Agentic loop sugar (M5)
@@ -1563,6 +1564,7 @@ def _make_step_from_blueprint(
             name=model.name,
             message_for_user=model.message,
             input_schema=schema_model,
+            sink_to=model.sink_to,
             config=step_config,
         )
     elif getattr(model, "kind", None) == "cache":
@@ -2180,6 +2182,12 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                             hitl_data["input_schema"] = schema.model_json_schema()
                         elif isinstance(schema, dict):
                             hitl_data["input_schema"] = schema
+                except Exception:
+                    pass
+                # Optional sink_to
+                try:
+                    if getattr(step, "sink_to", None):
+                        hitl_data["sink_to"] = getattr(step, "sink_to")
                 except Exception:
                     pass
                 return hitl_data

@@ -6799,6 +6799,26 @@ class DefaultHitlStepExecutor:
                             context.scratchpad.pop("hitl_data", None)
                     except Exception:
                         pass
+                    # If sink_to is specified, automatically store the response to context
+                    if step.sink_to and context is not None:
+                        try:
+                            from flujo.utils.context import set_nested_context_field
+
+                            telemetry.logfire.debug(
+                                f"HITL sink_to: storing '{resp}' to '{step.sink_to}'"
+                            )
+                            set_nested_context_field(context, step.sink_to, resp)
+                            telemetry.logfire.info(f"HITL response stored to {step.sink_to}")
+                        except Exception as e:
+                            telemetry.logfire.warning(f"Failed to sink HITL to {step.sink_to}: {e}")
+                    else:
+                        if not step.sink_to:
+                            telemetry.logfire.debug(
+                                f"HITL step has no sink_to (sink_to={step.sink_to})"
+                            )
+                        if context is None:
+                            telemetry.logfire.debug("HITL context is None")
+
                     # Produce a successful step result using the recorded response
                     return Success(
                         step_result=StepResult(

@@ -1228,6 +1228,17 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             success=True,
             attempts=1,
         )
+
+        # If HITL step has sink_to, automatically store response to context
+        if hasattr(paused_step, "sink_to") and paused_step.sink_to and ctx is not None:
+            try:
+                from flujo.utils.context import set_nested_context_field
+
+                set_nested_context_field(ctx, paused_step.sink_to, human_input)
+            except Exception:
+                # Sink failure is graceful - just skip it
+                pass
+
         # Ensure the last HITL output is accessible to subsequent steps via
         # context.scratchpad['steps'][<step_name>] so templates like
         # {{ steps.ask_user_for_clarification.output }} resolve after resume.
