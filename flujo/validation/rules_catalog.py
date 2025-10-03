@@ -248,6 +248,27 @@ _CATALOG: Dict[str, RuleInfo] = {
         default_severity="warning",
         help_uri=_BASE_URI + "v-cf1",
     ),
+    "LOOP-001": RuleInfo(
+        id="LOOP-001",
+        title="Step reference in loop body",
+        description="Step reference via steps['name'] inside loop body may not work as expected due to scoping",
+        default_severity="warning",
+        help_uri=_BASE_URI + "loop-001",
+    ),
+    "TEMPLATE-001": RuleInfo(
+        id="TEMPLATE-001",
+        title="Unsupported Jinja2 control structure",
+        description="Jinja2 control structures ({% %}) are not supported in Flujo templates. Use expressions {{ }} and filters | instead",
+        default_severity="error",
+        help_uri=_BASE_URI + "template-001",
+    ),
+    "WARN-HITL-001": RuleInfo(
+        id="WARN-HITL-001",
+        title="HITL in nested context",
+        description="HITL step found in nested context (loop/conditional) may exhibit complex pause/resume behavior",
+        default_severity="warning",
+        help_uri=_BASE_URI + "warn-hitl-001",
+    ),
 }
 
 

@@ -2003,6 +2003,155 @@ class TemplateControlStructureLinter(BaseLinter):
         return out
 
 
+class HitlNestedContextLinter(BaseLinter):
+    """HITL nested context validation: WARN-HITL-001.
+
+    Detects HITL (Human-In-The-Loop) steps inside nested contexts like loops and conditionals.
+    HITL steps in nested contexts may exhibit complex pause/resume behavior and should be used
+    with caution or restructured to top-level steps.
+    """
+
+    def analyze(self, pipeline: Any) -> Iterable[ValidationFinding]:
+        """Check for HITL steps in nested contexts (loops, conditionals)."""
+        out: list[ValidationFinding] = []
+
+        # Import step types lazily to avoid circular dependencies
+        try:
+            from ..domain.dsl.step import HumanInTheLoopStep as _HITLStep
+        except Exception:
+            _HITLStep = None  # type: ignore
+
+        if _HITLStep is None:
+            return out
+
+        def _check_for_hitl_in_steps(
+            steps: list[Any], context_chain: list[str], parent_step_name: str | None = None
+        ) -> None:
+            """Recursively check steps for HITL in nested contexts."""
+            for idx, step in enumerate(steps):
+                try:
+                    # Check if this is a HITL step
+                    is_hitl = isinstance(step, _HITLStep)
+
+                    # Also check by kind field in meta (for YAML-loaded steps)
+                    if not is_hitl:
+                        meta = getattr(step, "meta", {})
+                        if isinstance(meta, dict):
+                            kind = meta.get("kind", "")
+                            is_hitl = kind == "hitl"
+
+                    # If this is a HITL step in a nested context, warn
+                    if is_hitl and len(context_chain) > 0:
+                        meta = getattr(step, "meta", {})
+                        yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+                        loc_path = (yloc or {}).get(
+                            "path"
+                        ) or f"step '{getattr(step, 'name', 'unnamed')}'"
+                        fpath = (yloc or {}).get("file")
+                        line = (yloc or {}).get("line")
+                        col = (yloc or {}).get("column")
+
+                        context_desc = " > ".join(context_chain)
+
+                        sev = _override_severity("WARN-HITL-001", "warning")
+                        if sev is not None:
+                            out.append(
+                                ValidationFinding(
+                                    rule_id="WARN-HITL-001",
+                                    severity=sev,
+                                    message=(
+                                        f"HITL step '{getattr(step, 'name', 'unnamed')}' found in nested context: {context_desc}. "
+                                        f"HITL steps in nested contexts (loops, conditionals) may exhibit complex pause/resume behavior."
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                    location_path=loc_path,
+                                    file=fpath,
+                                    line=line,
+                                    column=col,
+                                    suggestion=(
+                                        "Consider one of these alternatives:\n"
+                                        "  1. Move HITL step to top-level (outside loop/conditional)\n"
+                                        "  2. Use flujo.builtins.ask_user skill instead\n"
+                                        "  3. Restructure pipeline to avoid nested HITL\n"
+                                        "  4. If intentional, ensure you understand pause/resume semantics\n"
+                                        "\n"
+                                        "Example restructure:\n"
+                                        "  # ❌ HITL inside loop\n"
+                                        "  - kind: loop\n"
+                                        "    body:\n"
+                                        "      - kind: hitl\n"
+                                        "        message: 'Question?'\n"
+                                        "\n"
+                                        "  # ✅ HITL at top-level\n"
+                                        "  - kind: hitl\n"
+                                        "    message: 'Question?'\n"
+                                        "  - kind: loop\n"
+                                        "    body:\n"
+                                        "      - kind: step\n"
+                                        "        input: '{{ context.answer }}'\n"
+                                        "\n"
+                                        "Documentation: https://flujo.dev/docs/hitl#nested-contexts"
+                                    ),
+                                )
+                            )
+
+                    # Recursively check nested structures
+                    # Check loop bodies
+                    if hasattr(step, "loop_body_pipeline"):
+                        loop_pipeline = getattr(step, "loop_body_pipeline", None)
+                        if loop_pipeline and hasattr(loop_pipeline, "steps"):
+                            nested_steps = getattr(loop_pipeline, "steps", [])
+                            step_name = getattr(step, "name", "loop")
+                            new_chain = context_chain + [f"loop:{step_name}"]
+                            _check_for_hitl_in_steps(nested_steps, new_chain, step_name)
+
+                    # Check map bodies (similar to loops)
+                    if hasattr(step, "pipeline_to_run"):
+                        map_pipeline = getattr(step, "pipeline_to_run", None)
+                        if map_pipeline and hasattr(map_pipeline, "steps"):
+                            nested_steps = getattr(map_pipeline, "steps", [])
+                            step_name = getattr(step, "name", "map")
+                            new_chain = context_chain + [f"map:{step_name}"]
+                            _check_for_hitl_in_steps(nested_steps, new_chain, step_name)
+
+                    # Check conditional branches
+                    if hasattr(step, "branches"):
+                        branches = getattr(step, "branches", {})
+                        if isinstance(branches, dict):
+                            step_name = getattr(step, "name", "conditional")
+                            for branch_key, branch_pipeline in branches.items():
+                                if branch_pipeline and hasattr(branch_pipeline, "steps"):
+                                    branch_steps = getattr(branch_pipeline, "steps", [])
+                                    new_chain = context_chain + [
+                                        f"conditional:{step_name}",
+                                        f"branch:{branch_key}",
+                                    ]
+                                    _check_for_hitl_in_steps(branch_steps, new_chain, step_name)
+
+                    # Check parallel branches
+                    if hasattr(step, "parallel_branches"):
+                        parallel_branches = getattr(step, "parallel_branches", {})
+                        if isinstance(parallel_branches, dict):
+                            step_name = getattr(step, "name", "parallel")
+                            for branch_name, branch_pipeline in parallel_branches.items():
+                                if branch_pipeline and hasattr(branch_pipeline, "steps"):
+                                    branch_steps = getattr(branch_pipeline, "steps", [])
+                                    new_chain = context_chain + [
+                                        f"parallel:{step_name}",
+                                        f"branch:{branch_name}",
+                                    ]
+                                    _check_for_hitl_in_steps(branch_steps, new_chain, step_name)
+
+                except Exception:
+                    continue
+
+        # Start checking from top-level steps
+        steps = getattr(pipeline, "steps", []) or []
+        _check_for_hitl_in_steps(steps, [], None)
+
+        return out
+
+
 def run_linters(pipeline: Any) -> ValidationReport:
     """Run linters and return a ValidationReport (always-on)."""
     linters: list[BaseLinter] = [
@@ -2015,6 +2164,7 @@ def run_linters(pipeline: Any) -> ValidationReport:
         ExceptionLinter(),
         LoopScopingLinter(),
         TemplateControlStructureLinter(),
+        HitlNestedContextLinter(),
     ]
     errors: list[ValidationFinding] = []
     warnings: list[ValidationFinding] = []
