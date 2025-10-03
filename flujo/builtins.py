@@ -2096,7 +2096,7 @@ def _register_builtins() -> None:
 
         reg.register(
             "flujo.builtins.stringify",
-            lambda **_params: stringify,
+            lambda **_params: stringify,  # Factory pattern: call with YAML params, returns function
             description="Convert any input value to a string via str(x).",
             side_effects=False,
         )

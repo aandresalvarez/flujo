@@ -505,7 +505,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 # Build the arguments to pass to the callable
                 call_args: list[Any] = []
                 callable_kwargs: dict[str, Any] = {}
-
+                
                 params = list(self._original_sig.parameters.values())
                 if params:
                     first_param = params[0]

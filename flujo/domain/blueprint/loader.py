@@ -1843,37 +1843,97 @@ def _make_step_from_blueprint(
                 def _with_params(func: Any) -> Any:
                     # Create an async wrapper that merges YAML params and respects step input when provided
                     import inspect as __inspect
+                    
+                    # Check if this is a builtin skill by looking at the original skill_id from YAML
+                    is_builtin = False
+                    skill_id = None
+                    try:
+                        if isinstance(model.agent, dict):
+                            skill_id = model.agent.get("id", "")
+                            is_builtin = isinstance(skill_id, str) and skill_id.startswith("flujo.builtins.")
+                    except (AttributeError, KeyError, TypeError):
+                        is_builtin = False
 
                     async def _runner(data: Any, **kwargs: Any) -> Any:
                         try:
                             call_kwargs = dict(_params_for_callable)
-                            call_kwargs.update(
-                                {
+                            # For builtin skills, handle parameter passing specially
+                            if is_builtin:
+                                # For builtin skills with explicit params, unpack them as kwargs
+                                # For builtins without params, pass data positionally
+                                # Always try to inject context from runtime if available (for skills like context_merge)
+                                non_context_params = {k: v for k, v in call_kwargs.items() if k != 'context'}
+                                
+                                if non_context_params:
+                                    # Has explicit params from agent.params in YAML
+                                    # Add runtime context if available (builtins like context_merge need it)
+                                    if 'context' in kwargs and 'context' not in call_kwargs:
+                                        call_kwargs['context'] = kwargs['context']
+                                    result = func(**call_kwargs)
+                                else:
+                                    # No explicit params - pass data positionally only
+                                    # Don't inject context (stringify doesn't accept it)
+                                    result = func(data)
+                            else:
+                                # For non-builtin, allow all kwargs except pipeline_context
+                                context_kwargs = {
                                     k: v
                                     for k, v in kwargs.items()
                                     if k not in ("context", "pipeline_context")
                                 }
-                            )
-                            if model.input is not None:
-                                result = func(data, **call_kwargs)
-                            else:
-                                result = func(**call_kwargs)
+                                call_kwargs.update(context_kwargs)
+                                if model.input is not None:
+                                    result = func(data, **call_kwargs)
+                                else:
+                                    result = func(**call_kwargs)
                             if __inspect.isawaitable(result):
                                 return await result
                             return result
-                        except TypeError:
-                            # Fallback: try passing data as first arg
+                        except TypeError as e:
+                            # Fallback: try passing data as first arg (but not for builtins)
+                            if is_builtin:
+                                raise BlueprintError(
+                                    f"Builtin skill {getattr(func, '__name__', 'unknown')} failed: {e}"
+                                ) from e
                             result = func(data, **dict(_params_for_callable))
                             if __inspect.isawaitable(result):
                                 return await result
                             return result
 
+                    # Preserve original function identity for validators
+                    # Copy __name__ from original function or use skill_id
+                    try:
+                        if skill_id:
+                            _runner.__name__ = skill_id
+                        elif hasattr(func, '__name__'):
+                            _runner.__name__ = func.__name__
+                    except (AttributeError, TypeError):
+                        pass  # Fine if we can't set __name__
+
                     return _runner
 
                 callable_obj: Any = agent_obj
                 try:
-                    if callable(agent_obj) and _params_for_callable:
+                    # Apply wrapper if there are params OR if this is a builtin (needs param normalization)
+                    # Re-check builtin status here since is_builtin was defined in _with_params scope
+                    is_builtin_check = False
+                    skill_id_for_attr = None
+                    try:
+                        if isinstance(model.agent, dict):
+                            skill_id_for_attr = model.agent.get("id", "")
+                            is_builtin_check = isinstance(skill_id_for_attr, str) and skill_id_for_attr.startswith("flujo.builtins.")
+                    except (AttributeError, KeyError, TypeError):
+                        is_builtin_check = False
+                    
+                    should_wrap = callable(agent_obj) and (_params_for_callable or is_builtin_check)
+                    if should_wrap:
                         callable_obj = _with_params(agent_obj)
+                        # Preserve skill_id as __name__ for validators (e.g., V-S2 stringify detection)
+                        if skill_id_for_attr and not hasattr(callable_obj, '__name__'):
+                            try:
+                                callable_obj.__name__ = skill_id_for_attr
+                            except (AttributeError, TypeError):
+                                pass
                 except Exception:
                     callable_obj = agent_obj
 
@@ -1885,6 +1945,12 @@ def _make_step_from_blueprint(
                         validate_fields=model.validate_fields,
                         **(step_config.model_dump() if hasattr(step_config, "model_dump") else {}),
                     )
+                    # Preserve skill_id on agent for validators (e.g., V-S2 stringify detection)
+                    if skill_id_for_attr and st is not None and st.agent is not None:
+                        try:
+                            st.agent.__name__ = skill_id_for_attr
+                        except (AttributeError, TypeError):
+                            pass
         # If still no callable-based step, create a plain Step with the agent_obj
         if st is None:
             st = Step[Any, Any](
