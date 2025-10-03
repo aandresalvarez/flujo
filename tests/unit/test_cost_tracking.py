@@ -291,6 +291,7 @@ class TestExtractUsageMetrics:
         assert completion_tokens == 50
         assert cost_usd > 0.0
 
+    @pytest.mark.serial  # Monkey-patches telemetry.logfire.warning - must run serially
     def test_extract_usage_metrics_warning_for_missing_model(self):
         """Test that a strong warning is logged when model_id is not found."""
 
