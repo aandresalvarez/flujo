@@ -702,8 +702,9 @@ class DefaultAgentRunner:
                 and executable_func.__module__ == "flujo.builtins"
             ):
                 should_unpack_payload = True
-        except Exception:
-            pass
+        except (AttributeError, TypeError):
+            # Attribute access or type checking may fail; default to not unpacking
+            should_unpack_payload = False
         
         try:
             if stream:

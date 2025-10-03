@@ -14,7 +14,7 @@ class TestBuiltinSkillConsistency:
     """Test that builtin skills work consistently across step types."""
     
     @pytest.mark.fast
-    async def test_context_merge_in_statemachine_with_params(self, tmp_path):
+    async def test_context_merge_in_statemachine_with_params(self) -> None:
         """Test context_merge with agent.params in StateMachine."""
         yaml_content = """
 version: "0.1"
@@ -51,11 +51,11 @@ steps:
         result = await gather_result(runner, "test")
         
         assert result.success
-        assert result.context.scratchpad.get("test_key") == "params_value"
+        assert result.final_pipeline_context.scratchpad.get("test_key") == "params_value"
         assert result.context.scratchpad.get("current_state") == "complete"
     
     @pytest.mark.fast
-    async def test_context_merge_in_statemachine_with_input(self, tmp_path):
+    async def test_context_merge_in_statemachine_with_input(self) -> None:
         """Test context_merge with input in StateMachine."""
         yaml_content = """
 version: "0.1"
@@ -92,11 +92,11 @@ steps:
         result = await gather_result(runner, "test")
         
         assert result.success
-        assert result.context.scratchpad.get("test_key") == "input_value"
+        assert result.final_pipeline_context.scratchpad.get("test_key") == "input_value"
         assert result.context.scratchpad.get("current_state") == "complete"
     
     @pytest.mark.fast
-    async def test_context_merge_in_toplevel_with_params(self, tmp_path):
+    async def test_context_merge_in_toplevel_with_params(self) -> None:
         """Test context_merge with agent.params in top-level steps."""
         yaml_content = """
 version: "0.1"
@@ -120,10 +120,10 @@ steps:
         # Check that context_merge succeeded
         assert result.step_history[0].success
         # Check that context was updated
-        assert result.context.scratchpad.get("test_key") == "toplevel_params"
+        assert result.final_pipeline_context.scratchpad.get("test_key") == "toplevel_params"
     
     @pytest.mark.fast
-    async def test_context_merge_in_toplevel_with_input(self, tmp_path):
+    async def test_context_merge_in_toplevel_with_input(self) -> None:
         """Test context_merge with input in top-level steps."""
         yaml_content = """
 version: "0.1"
@@ -147,10 +147,10 @@ steps:
         # Check that context_merge succeeded
         assert result.step_history[0].success
         # Check that context was updated
-        assert result.context.scratchpad.get("test_key") == "toplevel_input"
+        assert result.final_pipeline_context.scratchpad.get("test_key") == "toplevel_input"
     
     @pytest.mark.fast
-    async def test_context_merge_in_conditional_branch(self, tmp_path):
+    async def test_context_merge_in_conditional_branch(self) -> None:
         """Test context_merge in conditional branch."""
         yaml_content = """
 version: "0.1"
@@ -177,10 +177,10 @@ steps:
         
         assert result.success
         # Check that context was updated in the branch
-        assert result.context.scratchpad.get("branch_key") == "yes_branch"
+        assert result.final_pipeline_context.scratchpad.get("branch_key") == "yes_branch"
     
     @pytest.mark.fast
-    async def test_context_set_with_params(self, tmp_path):
+    async def test_context_set_with_params(self) -> None:
         """Test context_set builtin with params."""
         yaml_content = """
 version: "0.1"
@@ -202,10 +202,10 @@ steps:
         
         assert result.success
         assert result.step_history[0].success
-        assert result.context.scratchpad.get("counter") == 42
+        assert result.final_pipeline_context.scratchpad.get("counter") == 42
     
     @pytest.mark.fast
-    async def test_context_set_with_input(self, tmp_path):
+    async def test_context_set_with_input(self) -> None:
         """Test context_set builtin with input."""
         yaml_content = """
 version: "0.1"
@@ -227,10 +227,10 @@ steps:
         
         assert result.success
         assert result.step_history[0].success
-        assert result.context.scratchpad.get("counter") == 99
+        assert result.final_pipeline_context.scratchpad.get("counter") == 99
     
     @pytest.mark.fast
-    async def test_statemachine_dynamic_transitions(self, tmp_path):
+    async def test_statemachine_dynamic_transitions(self) -> None:
         """Test StateMachine with dynamic next_state transitions."""
         yaml_content = """
 version: "0.1"
@@ -278,7 +278,7 @@ steps:
         result = await gather_result(runner, "test")
         
         assert result.success
-        assert result.context.scratchpad.get("current_state") == "final"
+        assert result.final_pipeline_context.scratchpad.get("current_state") == "final"
         assert result.context.scratchpad.get("step_count") == 1
         assert result.step_history[-1].name == "test_sm"
 

@@ -1850,33 +1850,39 @@ def _make_step_from_blueprint(
                         if isinstance(model.agent, dict):
                             skill_id = model.agent.get("id", "")
                             is_builtin = isinstance(skill_id, str) and skill_id.startswith("flujo.builtins.")
-                    except Exception:
+                    except (AttributeError, KeyError, TypeError):
                         is_builtin = False
 
                     async def _runner(data: Any, **kwargs: Any) -> Any:
                         try:
                             call_kwargs = dict(_params_for_callable)
-                            # For builtin skills, we need to pass context (don't filter it out)
-                            context_kwargs = {
-                                k: v
-                                for k, v in kwargs.items()
-                                if k not in ("pipeline_context",)  # Allow 'context' and other kwargs through
-                            }
-                            call_kwargs.update(context_kwargs)
-                            # For builtin skills, ALWAYS use kwargs, never positional data
+                            # For builtin skills, only pass context (other kwargs may not match signature)
                             if is_builtin:
+                                # Only add context if provided
+                                if 'context' in kwargs:
+                                    call_kwargs['context'] = kwargs['context']
                                 result = func(**call_kwargs)
-                            elif model.input is not None:
-                                result = func(data, **call_kwargs)
                             else:
-                                result = func(**call_kwargs)
+                                # For non-builtin, allow all kwargs except pipeline_context
+                                context_kwargs = {
+                                    k: v
+                                    for k, v in kwargs.items()
+                                    if k not in ("context", "pipeline_context")
+                                }
+                                call_kwargs.update(context_kwargs)
+                                if model.input is not None:
+                                    result = func(data, **call_kwargs)
+                                else:
+                                    result = func(**call_kwargs)
                             if __inspect.isawaitable(result):
                                 return await result
                             return result
                         except TypeError as e:
                             # Fallback: try passing data as first arg (but not for builtins)
                             if is_builtin:
-                                raise BlueprintError(f"Builtin skill {getattr(func, '__name__', 'unknown')} failed: {e}")
+                                raise BlueprintError(
+                                    f"Builtin skill {getattr(func, '__name__', 'unknown')} failed: {e}"
+                                ) from e
                             result = func(data, **dict(_params_for_callable))
                             if __inspect.isawaitable(result):
                                 return await result
