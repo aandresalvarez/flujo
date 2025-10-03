@@ -157,7 +157,7 @@ steps:
 class TestExceptionLinterCanBeSuppressed:
     """Test that V-EX1 can be suppressed via standard mechanisms."""
 
-    @pytest.mark.skip(reason="Suppression mechanism not yet implemented for V-EX1. See issue #TBD")
+    @pytest.mark.skip(reason="Suppression mechanism not yet implemented for V-EX1")
     def test_vex1_respects_inline_suppression(self):
         """Test that V-EX1 can be suppressed with inline comments.
         
