@@ -1846,6 +1846,7 @@ def _make_step_from_blueprint(
                     
                     # Check if this is a builtin skill by looking at the original skill_id from YAML
                     is_builtin = False
+                    skill_id = None
                     try:
                         if isinstance(model.agent, dict):
                             skill_id = model.agent.get("id", "")
@@ -1899,6 +1900,16 @@ def _make_step_from_blueprint(
                                 return await result
                             return result
 
+                    # Preserve original function identity for validators
+                    # Copy __name__ from original function or use skill_id
+                    try:
+                        if skill_id:
+                            _runner.__name__ = skill_id
+                        elif hasattr(func, '__name__'):
+                            _runner.__name__ = func.__name__
+                    except (AttributeError, TypeError):
+                        pass  # Fine if we can't set __name__
+
                     return _runner
 
                 callable_obj: Any = agent_obj
@@ -1906,16 +1917,23 @@ def _make_step_from_blueprint(
                     # Apply wrapper if there are params OR if this is a builtin (needs param normalization)
                     # Re-check builtin status here since is_builtin was defined in _with_params scope
                     is_builtin_check = False
+                    skill_id_for_attr = None
                     try:
                         if isinstance(model.agent, dict):
-                            skill_id = model.agent.get("id", "")
-                            is_builtin_check = isinstance(skill_id, str) and skill_id.startswith("flujo.builtins.")
+                            skill_id_for_attr = model.agent.get("id", "")
+                            is_builtin_check = isinstance(skill_id_for_attr, str) and skill_id_for_attr.startswith("flujo.builtins.")
                     except (AttributeError, KeyError, TypeError):
                         is_builtin_check = False
                     
                     should_wrap = callable(agent_obj) and (_params_for_callable or is_builtin_check)
                     if should_wrap:
                         callable_obj = _with_params(agent_obj)
+                        # Preserve skill_id as __name__ for validators (e.g., V-S2 stringify detection)
+                        if skill_id_for_attr and not hasattr(callable_obj, '__name__'):
+                            try:
+                                callable_obj.__name__ = skill_id_for_attr
+                            except (AttributeError, TypeError):
+                                pass
                 except Exception:
                     callable_obj = agent_obj
 
@@ -1927,6 +1945,12 @@ def _make_step_from_blueprint(
                         validate_fields=model.validate_fields,
                         **(step_config.model_dump() if hasattr(step_config, "model_dump") else {}),
                     )
+                    # Preserve skill_id on agent for validators (e.g., V-S2 stringify detection)
+                    if skill_id_for_attr and st is not None:
+                        try:
+                            st.agent.__name__ = skill_id_for_attr
+                        except (AttributeError, TypeError):
+                            pass
         # If still no callable-based step, create a plain Step with the agent_obj
         if st is None:
             st = Step[Any, Any](
