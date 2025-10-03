@@ -1856,12 +1856,23 @@ def _make_step_from_blueprint(
                     async def _runner(data: Any, **kwargs: Any) -> Any:
                         try:
                             call_kwargs = dict(_params_for_callable)
-                            # For builtin skills, only pass context (other kwargs may not match signature)
+                            # For builtin skills, handle parameter passing specially
                             if is_builtin:
-                                # Only add context if provided
-                                if 'context' in kwargs:
-                                    call_kwargs['context'] = kwargs['context']
-                                result = func(**call_kwargs)
+                                # For builtin skills with explicit params, unpack them as kwargs
+                                # For builtins without params, pass data positionally
+                                # Always try to inject context from runtime if available (for skills like context_merge)
+                                non_context_params = {k: v for k, v in call_kwargs.items() if k != 'context'}
+                                
+                                if non_context_params:
+                                    # Has explicit params from agent.params in YAML
+                                    # Add runtime context if available (builtins like context_merge need it)
+                                    if 'context' in kwargs and 'context' not in call_kwargs:
+                                        call_kwargs['context'] = kwargs['context']
+                                    result = func(**call_kwargs)
+                                else:
+                                    # No explicit params - pass data positionally only
+                                    # Don't inject context (stringify doesn't accept it)
+                                    result = func(data)
                             else:
                                 # For non-builtin, allow all kwargs except pipeline_context
                                 context_kwargs = {
@@ -1892,7 +1903,18 @@ def _make_step_from_blueprint(
 
                 callable_obj: Any = agent_obj
                 try:
-                    if callable(agent_obj) and _params_for_callable:
+                    # Apply wrapper if there are params OR if this is a builtin (needs param normalization)
+                    # Re-check builtin status here since is_builtin was defined in _with_params scope
+                    is_builtin_check = False
+                    try:
+                        if isinstance(model.agent, dict):
+                            skill_id = model.agent.get("id", "")
+                            is_builtin_check = isinstance(skill_id, str) and skill_id.startswith("flujo.builtins.")
+                    except (AttributeError, KeyError, TypeError):
+                        is_builtin_check = False
+                    
+                    should_wrap = callable(agent_obj) and (_params_for_callable or is_builtin_check)
+                    if should_wrap:
                         callable_obj = _with_params(agent_obj)
                 except Exception:
                     callable_obj = agent_obj

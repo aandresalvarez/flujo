@@ -690,30 +690,11 @@ class DefaultAgentRunner:
                 if breach_event is not None:
                     filtered_kwargs["breach_event"] = breach_event
 
-        # Check if this is a builtin skill that needs dict unpacking
-        should_unpack_payload = False
-        try:
-            # Builtin skills are plain async functions (not wrapped in agents)
-            # and expect their parameters as kwargs, not as a single positional dict
-            if (
-                inspect.iscoroutinefunction(executable_func)
-                and isinstance(payload, dict)
-                and hasattr(executable_func, "__module__")
-                and executable_func.__module__ == "flujo.builtins"
-            ):
-                should_unpack_payload = True
-        except (AttributeError, TypeError):
-            # Attribute access or type checking may fail; default to not unpacking
-            should_unpack_payload = False
-        
         try:
             if stream:
                 # Case 1: async generator function
                 if inspect.isasyncgenfunction(executable_func):
-                    if should_unpack_payload:
-                        async_generator = executable_func(**payload, **filtered_kwargs)
-                    else:
-                        async_generator = executable_func(payload, **filtered_kwargs)
+                    async_generator = executable_func(payload, **filtered_kwargs)
                     chunks = []
                     async for chunk in async_generator:
                         chunks.append(chunk)
@@ -729,10 +710,7 @@ class DefaultAgentRunner:
 
                 # Case 2: coroutine function that returns an async iterator
                 if inspect.iscoroutinefunction(executable_func):
-                    if should_unpack_payload:
-                        result = await executable_func(**payload, **filtered_kwargs)
-                    else:
-                        result = await executable_func(payload, **filtered_kwargs)
+                    result = await executable_func(payload, **filtered_kwargs)
                     if hasattr(result, "__aiter__"):
                         chunks = []
                         async for chunk in result:
@@ -752,10 +730,7 @@ class DefaultAgentRunner:
                     return result
 
                 # Case 3: regular callable returning an async iterator/generator
-                if should_unpack_payload:
-                    result = executable_func(**payload, **filtered_kwargs)
-                else:
-                    result = executable_func(payload, **filtered_kwargs)
+                result = executable_func(payload, **filtered_kwargs)
                 if hasattr(result, "__aiter__"):
                     chunks = []
                     async for chunk in result:
@@ -776,15 +751,9 @@ class DefaultAgentRunner:
 
             # Non-streaming execution
             if inspect.iscoroutinefunction(executable_func):
-                if should_unpack_payload:
-                    _res = await executable_func(**payload, **filtered_kwargs)
-                else:
-                    _res = await executable_func(payload, **filtered_kwargs)
+                _res = await executable_func(payload, **filtered_kwargs)
             else:
-                if should_unpack_payload:
-                    _res = executable_func(**payload, **filtered_kwargs)
-                else:
-                    _res = executable_func(payload, **filtered_kwargs)
+                _res = executable_func(payload, **filtered_kwargs)
                 if inspect.iscoroutine(_res):
                     _res = await _res
 
