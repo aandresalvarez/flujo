@@ -23,7 +23,7 @@ class TestTraceCompleteFlow:
     """Test the complete trace flow from execution to persistence."""
 
     @pytest.fixture
-    def temp_db(self):
+    async def temp_db(self):
         """Create a temporary SQLite database for testing."""
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
