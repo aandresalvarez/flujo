@@ -1946,7 +1946,7 @@ def _make_step_from_blueprint(
                         **(step_config.model_dump() if hasattr(step_config, "model_dump") else {}),
                     )
                     # Preserve skill_id on agent for validators (e.g., V-S2 stringify detection)
-                    if skill_id_for_attr and st is not None:
+                    if skill_id_for_attr and st is not None and st.agent is not None:
                         try:
                             st.agent.__name__ = skill_id_for_attr
                         except (AttributeError, TypeError):
