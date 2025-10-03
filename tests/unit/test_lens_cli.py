@@ -19,7 +19,7 @@ def cleanup_sqlite_backends_sync(monkeypatch):
     """Autouse fixture to ensure all SQLiteBackend instances are properly closed.
 
     This prevents resource leaks that cause 361-second timeouts.
-    Note: Uses asyncio.run for cleanup since tests are sync.
+    Uses SQLiteBackend.close_sync() which properly handles event loop contexts.
     """
     backends = []
     original_init = SQLiteBackend.__init__
@@ -33,7 +33,7 @@ def cleanup_sqlite_backends_sync(monkeypatch):
     # Clean up all backends created during the test
     for backend in backends:
         try:
-            asyncio.run(backend.close())
+            backend.close_sync()
         except Exception:
             pass
 

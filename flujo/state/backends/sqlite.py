@@ -897,6 +897,17 @@ class SQLiteBackend(StateBackend):
 
         # No global locks to clean up
 
+    def close_sync(self) -> None:
+        """Synchronous version of close() that works from sync contexts.
+        
+        This method properly handles event loop contexts and prevents pytest teardown
+        hangs when closing backends from synchronous test code. It uses the
+        _run_coro_sync helper to run the async close() in the correct context.
+        
+        Use this method instead of asyncio.run(backend.close()) in sync tests.
+        """
+        _run_coro_sync(self.close())
+
     async def __aenter__(self) -> "SQLiteBackend":
         """Async context manager entry."""
         return self
