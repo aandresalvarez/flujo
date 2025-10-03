@@ -1192,6 +1192,9 @@ async def _execute_simple_step_policy_impl(
                 processed_data = await core._processor_pipeline.apply_prompt(
                     step.processors, data, context=attempt_context
                 )
+            
+            # Normalize builtin skill parameters to support both 'params' and 'input'
+            processed_data = _normalize_builtin_params(step, processed_data)
 
             # agent options
             options: Dict[str, Any] = {}
@@ -2542,6 +2545,64 @@ class AgentStepExecutor(Protocol):
         breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]: ...
+
+
+def _normalize_builtin_params(step: Any, data: Any) -> Any:
+    """
+    Normalize builtin skill parameters to support both 'params' and 'input'.
+    
+    For builtin skills (agent.id starts with 'flujo.builtins.'), accept parameters
+    from either agent.params or step.input for consistency across step types.
+    
+    Precedence: agent.params > step.input > original data
+    
+    Args:
+        step: The step being executed
+        data: The original input data
+    
+    Returns:
+        Normalized parameters dict for builtin skills, or original data otherwise
+    """
+    # Check if this is a builtin skill
+    agent_spec = getattr(step, 'agent', None)
+    if agent_spec is None:
+        return data
+    
+    agent_id = None
+    if isinstance(agent_spec, str):
+        agent_id = agent_spec
+    elif isinstance(agent_spec, dict):
+        agent_id = agent_spec.get('id')
+    elif hasattr(agent_spec, 'id'):
+        agent_id = getattr(agent_spec, 'id', None)
+    
+    # Only process flujo.builtins.* skills
+    if not isinstance(agent_id, str) or not agent_id.startswith('flujo.builtins.'):
+        return data
+    
+    params: Dict[str, Any] = {}
+    
+    # Priority 1: Get params from agent.params (documented way)
+    if isinstance(agent_spec, dict) and 'params' in agent_spec:
+        agent_params = agent_spec['params']
+        if isinstance(agent_params, dict):
+            params.update(agent_params)
+    elif hasattr(agent_spec, 'params'):
+        agent_params = getattr(agent_spec, 'params', None)
+        if isinstance(agent_params, dict):
+            params.update(agent_params)
+    
+    # Priority 2: Fallback to step.input if no params found (for consistency)
+    if not params:
+        step_input = getattr(step, 'input', None)
+        if isinstance(step_input, dict):
+            params.update(step_input)
+    
+    # Priority 3: Use original data if nothing else
+    if not params:
+        return data
+    
+    return params
 
 
 class DefaultAgentStepExecutor:
