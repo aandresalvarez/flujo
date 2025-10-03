@@ -20,6 +20,28 @@ from tests.conftest import create_test_flujo
 # Mark as very slow to exclude from fast suites
 pytestmark = pytest.mark.veryslow
 
+
+@pytest.fixture(autouse=True)
+async def cleanup_sqlite_backends(monkeypatch):
+    """Auto-cleanup all SQLiteBackend instances created in this module."""
+    backends = []
+    original_init = SQLiteBackend.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        backends.append(self)
+        return original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(SQLiteBackend, "__init__", tracking_init)
+    yield
+
+    # Cleanup all backends
+    for backend in backends:
+        try:
+            await backend.close()
+        except Exception:
+            pass  # Best effort cleanup
+
+
 # Default overhead limit for performance tests
 # ✅ REALISTIC PERFORMANCE THRESHOLD: Based on actual enhanced system behavior
 # The enhanced system provides production-grade persistence with:

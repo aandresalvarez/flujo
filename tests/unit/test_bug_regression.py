@@ -97,79 +97,80 @@ class TestFailedStepRecording:
     async def test_failed_step_recording(self, tmp_path: Path):
         """Test that failed steps are recorded to persistence."""
         db_path = tmp_path / "test.db"
-        backend = SQLiteBackend(db_path)
 
-        # Create a step that will fail
-        class FailingAgent:
-            async def run(self, *args, **kwargs) -> Any:
+        # Use async with for proper SQLite connection cleanup
+        async with SQLiteBackend(db_path) as backend:
+            # Create a step that will fail
+            class FailingAgent:
+                async def run(self, *args, **kwargs) -> Any:
+                    from flujo.domain.models import StepResult
+
+                    return StepResult(
+                        name="failing_step",
+                        output=None,
+                        success=False,
+                        attempts=1,
+                        feedback="Simulated failure",
+                    )
+
+                async def run_async(self, *args, **kwargs) -> Any:
+                    return await self.run(*args, **kwargs)
+
+            failing_agent = FailingAgent()
+            step = Step.model_validate({"name": "failing_step", "agent": failing_agent})
+
+            # Create execution manager with state manager
+            from flujo.application.core.state_manager import StateManager
+            from flujo.domain.dsl.pipeline import Pipeline
+
+            state_manager = StateManager(state_backend=backend)
+
+            # Create a proper pipeline
+            pipeline = Pipeline(steps=[step])
+
+            execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
+
+            # Run the step
+            result = PipelineResult()
+            context = None
+            run_id = "test_run"
+
+            # Use an async generator for the step executor
+            async def failing_step_executor(step, data, context, resources, stream=False):
+                # Create a failed step result
                 from flujo.domain.models import StepResult
 
-                return StepResult(
+                step_result = StepResult(
                     name="failing_step",
                     output=None,
                     success=False,
                     attempts=1,
                     feedback="Simulated failure",
                 )
+                yield step_result
 
-            async def run_async(self, *args, **kwargs) -> Any:
-                return await self.run(*args, **kwargs)
+            # Execute steps
+            async for _ in execution_manager.execute_steps(
+                start_idx=0,
+                data="test_input",
+                context=context,
+                result=result,
+                run_id=run_id,
+                step_executor=failing_step_executor,
+            ):
+                pass
 
-        failing_agent = FailingAgent()
-        step = Step.model_validate({"name": "failing_step", "agent": failing_agent})
+            # Verify failed step was recorded
+            assert len(result.step_history) == 1
+            failed_step = result.step_history[0]
+            assert failed_step.name == "failing_step"
+            assert not failed_step.success
 
-        # Create execution manager with state manager
-        from flujo.application.core.state_manager import StateManager
-        from flujo.domain.dsl.pipeline import Pipeline
-
-        state_manager = StateManager(state_backend=backend)
-
-        # Create a proper pipeline
-        pipeline = Pipeline(steps=[step])
-
-        execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
-
-        # Run the step
-        result = PipelineResult()
-        context = None
-        run_id = "test_run"
-
-        # Use an async generator for the step executor
-        async def failing_step_executor(step, data, context, resources, stream=False):
-            # Create a failed step result
-            from flujo.domain.models import StepResult
-
-            step_result = StepResult(
-                name="failing_step",
-                output=None,
-                success=False,
-                attempts=1,
-                feedback="Simulated failure",
-            )
-            yield step_result
-
-        # Execute steps
-        async for _ in execution_manager.execute_steps(
-            start_idx=0,
-            data="test_input",
-            context=context,
-            result=result,
-            run_id=run_id,
-            step_executor=failing_step_executor,
-        ):
-            pass
-
-        # Verify failed step was recorded
-        assert len(result.step_history) == 1
-        failed_step = result.step_history[0]
-        assert failed_step.name == "failing_step"
-        assert not failed_step.success
-
-        # Verify step was persisted
-        steps = await backend.list_run_steps(run_id)
-        assert len(steps) == 1
-        assert steps[0]["step_name"] == "failing_step"
-        assert steps[0]["status"] == "failed"
+            # Verify step was persisted
+            steps = await backend.list_run_steps(run_id)
+            assert len(steps) == 1
+            assert steps[0]["step_name"] == "failing_step"
+            assert steps[0]["status"] == "failed"
 
 
 class TestLambdaSerializationNullHandling:
@@ -179,36 +180,37 @@ class TestLambdaSerializationNullHandling:
     async def test_lambda_null_handling(self, tmp_path: Path):
         """Test that lambda expressions correctly handle None values."""
         db_path = tmp_path / "test.db"
-        backend = SQLiteBackend(db_path)
 
-        # Test data with None values - use current schema fields
-        from datetime import datetime
+        # Use async with for proper SQLite connection cleanup
+        async with SQLiteBackend(db_path) as backend:
+            # Test data with None values - use current schema fields
+            from datetime import datetime
 
-        step_data = {
-            "run_id": "test_run",
-            "step_name": "test_step",
-            "step_index": 0,
-            "status": "completed",
-            "output": None,  # This should be handled correctly
-            "cost_usd": None,
-            "token_counts": None,
-            "execution_time_ms": None,
-            "created_at": datetime.utcnow().isoformat(),
-        }
+            step_data = {
+                "run_id": "test_run",
+                "step_name": "test_step",
+                "step_index": 0,
+                "status": "completed",
+                "output": None,  # This should be handled correctly
+                "cost_usd": None,
+                "token_counts": None,
+                "execution_time_ms": None,
+                "created_at": datetime.utcnow().isoformat(),
+            }
 
-        # Save step result
-        await backend.save_step_result(step_data)
+            # Save step result
+            await backend.save_step_result(step_data)
 
-        # Verify the data was saved correctly (no "None" strings)
-        steps = await backend.list_run_steps("test_run")
-        assert len(steps) == 1
-        saved_step = steps[0]
+            # Verify the data was saved correctly (no "None" strings)
+            steps = await backend.list_run_steps("test_run")
+            assert len(steps) == 1
+            saved_step = steps[0]
 
-        # Check that None values are preserved as None, not converted to "None" strings
-        assert saved_step["output"] is None
-        assert saved_step["cost_usd"] is None
-        assert saved_step["token_counts"] is None
-        assert saved_step["execution_time_ms"] is None
+            # Check that None values are preserved as None, not converted to "None" strings
+            assert saved_step["output"] is None
+            assert saved_step["cost_usd"] is None
+            assert saved_step["token_counts"] is None
+            assert saved_step["execution_time_ms"] is None
 
 
 class TestSerializationEdgeCases:
@@ -309,25 +311,26 @@ class TestPerformanceRegression:
     async def test_database_operation_performance(self, tmp_path: Path):
         """Test that database operations don't have performance regressions."""
         db_path = tmp_path / "perf_test.db"
-        backend = SQLiteBackend(db_path)
 
-        # Create test data
-        run_data = {
-            "run_id": "perf_test_run",
-            "pipeline_id": "test_pipeline_id",
-            "pipeline_name": "test_pipeline",
-            "pipeline_version": "1.0",
-            "status": "running",
-            "start_time": datetime.utcnow(),
-        }
+        # Use async with for proper SQLite connection cleanup
+        async with SQLiteBackend(db_path) as backend:
+            # Create test data
+            run_data = {
+                "run_id": "perf_test_run",
+                "pipeline_id": "test_pipeline_id",
+                "pipeline_name": "test_pipeline",
+                "pipeline_version": "1.0",
+                "status": "running",
+                "start_time": datetime.utcnow(),
+            }
 
-        # Measure save time
-        start_time = time.perf_counter()
-        await backend.save_run_start(run_data)
-        save_time = time.perf_counter() - start_time
+            # Measure save time
+            start_time = time.perf_counter()
+            await backend.save_run_start(run_data)
+            save_time = time.perf_counter() - start_time
 
-        # Should complete quickly
-        assert save_time < 0.1, f"Save operation took {save_time:.3f}s"
+            # Should complete quickly
+            assert save_time < 0.1, f"Save operation took {save_time:.3f}s"
 
 
 class TestCIEnvironmentCompatibility:

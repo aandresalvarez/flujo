@@ -1,7 +1,6 @@
 """Test integration of trace saving into pipeline execution flow."""
 
 import pytest
-from pathlib import Path
 from unittest.mock import MagicMock
 from datetime import datetime
 from uuid import uuid4
@@ -11,17 +10,16 @@ from flujo.application.core.execution_manager import ExecutionManager
 from flujo.domain.models import PipelineResult, StepResult
 from flujo.domain.dsl import Step, Pipeline
 from flujo.testing.utils import StubAgent
-from flujo.state.backends.sqlite import SQLiteBackend
 
-# Mark as very slow to exclude from fast suites
-pytestmark = pytest.mark.veryslow
+# Mark as slow (uses SQLite backend with proper cleanup)
+pytestmark = pytest.mark.slow
 
 
 @pytest.mark.asyncio
-async def test_trace_saving_integration(tmp_path: Path) -> None:
+async def test_trace_saving_integration(sqlite_backend_factory) -> None:
     """Test that trace saving is integrated into the pipeline execution flow."""
     # Create a backend and state manager
-    backend = SQLiteBackend(tmp_path / "test.db")
+    backend = sqlite_backend_factory("test.db")
     state_manager = StateManager(backend)
 
     # Create a simple pipeline
@@ -104,9 +102,9 @@ async def test_trace_saving_integration(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_trace_saving_without_trace_tree(tmp_path: Path) -> None:
+async def test_trace_saving_without_trace_tree(sqlite_backend_factory) -> None:
     """Test that pipeline execution works when no trace tree is present."""
-    backend = SQLiteBackend(tmp_path / "test.db")
+    backend = sqlite_backend_factory("test.db")
     state_manager = StateManager(backend)
 
     # Create a simple pipeline
@@ -171,9 +169,9 @@ async def test_trace_saving_without_trace_tree(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_trace_saving_error_handling(tmp_path: Path) -> None:
+async def test_trace_saving_error_handling(sqlite_backend_factory) -> None:
     """Test that trace saving errors don't break pipeline execution."""
-    backend = SQLiteBackend(tmp_path / "test.db")
+    backend = sqlite_backend_factory("test.db")
     state_manager = StateManager(backend)
 
     # Create a pipeline result with a problematic trace tree

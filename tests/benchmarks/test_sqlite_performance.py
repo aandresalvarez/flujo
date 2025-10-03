@@ -2,17 +2,15 @@ import os
 import pytest
 import asyncio
 from datetime import datetime, timedelta
-from pathlib import Path
-from flujo.state.backends.sqlite import SQLiteBackend
 import time
 
 
 @pytest.mark.asyncio
 @pytest.mark.slow
 @pytest.mark.benchmark
-async def test_sqlite_backend_large_dataset_performance(tmp_path: Path):
+async def test_sqlite_backend_large_dataset_performance(sqlite_backend_factory):
     """Test that SQLiteBackend can handle a large number of workflows efficiently."""
-    backend = SQLiteBackend(tmp_path / "state.db")
+    backend = sqlite_backend_factory("state.db")
     now = datetime.utcnow().replace(microsecond=0)
     num_workflows = 5000
     # Insert many workflows
@@ -61,9 +59,9 @@ async def test_sqlite_backend_large_dataset_performance(tmp_path: Path):
 @pytest.mark.asyncio
 @pytest.mark.slow
 @pytest.mark.benchmark
-async def test_sqlite_backend_high_concurrency(tmp_path: Path):
+async def test_sqlite_backend_high_concurrency(sqlite_backend_factory):
     """Test SQLiteBackend under high concurrent load (writers and readers)."""
-    backend = SQLiteBackend(tmp_path / "state.db")
+    backend = sqlite_backend_factory("state.db")
     now = datetime.utcnow().replace(microsecond=0)
     num_workflows = 1000
     num_workers = 20
@@ -107,9 +105,9 @@ async def test_sqlite_backend_high_concurrency(tmp_path: Path):
 @pytest.mark.asyncio
 @pytest.mark.slow
 @pytest.mark.benchmark
-async def test_sqlite_backend_query_pagination_and_filtering(tmp_path: Path):
+async def test_sqlite_backend_query_pagination_and_filtering(sqlite_backend_factory):
     """Test query performance and correctness for pagination and filtering edge cases."""
-    backend = SQLiteBackend(tmp_path / "state.db")
+    backend = sqlite_backend_factory("state.db")
     now = datetime.utcnow().replace(microsecond=0)
     num_workflows = 200
     for i in range(num_workflows):

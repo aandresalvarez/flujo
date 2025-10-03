@@ -1,0 +1,57 @@
+# Demo: HITL sink_to feature - Automatic context storage
+version: "0.1"
+name: "hitl_sink_demo"
+
+pipeline_config:
+  conversation_mode: true
+
+agents:
+  greeter:
+    model: "openai:gpt-4o-mini"
+    system_prompt: |
+      You are a friendly greeter. Use the user's name from context to create a
+      personalized greeting message. Be warm and welcoming.
+    output_schema:
+      type: string
+
+steps:
+  # Step 1: Get user name (automatically stored to context via sink_to)
+  - kind: hitl
+    name: get_user_name
+    message: "👋 Welcome! What's your name?"
+    sink_to: "scratchpad.user_name"
+  
+  # Step 2: Get user preferences (structured input with sink_to)
+  - kind: hitl
+    name: get_preferences
+    message: "What are your preferences?"
+    input_schema:
+      type: object
+      properties:
+        theme:
+          type: string
+          enum: ["light", "dark", "auto"]
+        notifications:
+          type: boolean
+      required: ["theme"]
+    sink_to: "scratchpad.user_preferences"
+  
+  # Step 3: Generate personalized greeting using stored context
+  - kind: step
+    name: create_greeting
+    uses: agents.greeter
+    input: |
+      User name: {{ context.scratchpad.user_name }}
+      Theme preference: {{ context.scratchpad.user_preferences.theme }}
+      Create a personalized greeting message.
+  
+  # Step 4: Show the result
+  - kind: step
+    name: display_result
+    agent: { id: "flujo.builtins.passthrough" }
+    input: |
+      ✅ Greeting created: {{ previous_step }}
+      
+      📋 Stored context:
+      - Name: {{ context.scratchpad.user_name }}
+      - Preferences: {{ context.scratchpad.user_preferences | tojson }}

@@ -13,11 +13,23 @@ pytestmark = pytest.mark.serial
 
 
 @pytest.fixture
-def sqlite_backend(tmp_path: Path):
-    def _create_backend(db_name: str):
-        return SQLiteBackend(tmp_path / db_name)
+async def sqlite_backend(tmp_path: Path):
+    """Create backends with automatic cleanup."""
+    backends = []
 
-    return _create_backend
+    def _create_backend(db_name: str):
+        backend = SQLiteBackend(tmp_path / db_name)
+        backends.append(backend)
+        return backend
+
+    yield _create_backend
+
+    # Cleanup with timeout (retry mechanism tests may have backends in retry states)
+    for backend in backends:
+        try:
+            await asyncio.wait_for(backend.close(), timeout=2.0)
+        except (Exception, asyncio.TimeoutError):
+            pass  # Best effort cleanup
 
 
 @pytest.mark.asyncio

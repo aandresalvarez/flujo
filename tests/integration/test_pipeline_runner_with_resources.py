@@ -11,7 +11,6 @@ from flujo.domain.agent_protocol import AsyncAgentProtocol
 from tests.conftest import create_test_flujo
 
 import uuid
-import os
 from pathlib import Path
 
 
@@ -129,33 +128,32 @@ async def test_mixing_resources_and_context(tmp_path: Path, mock_resources: MyRe
     db_path = tmp_path / f"state_{run_id}.db"
     from flujo.state.backends.sqlite import SQLiteBackend
 
-    backend = SQLiteBackend(db_path)
+    # Use async with for proper SQLite connection cleanup
+    async with SQLiteBackend(db_path) as backend:
+        agent = ContextAndResourceAgent()
+        step = Step.model_validate({"name": "mixed_step", "agent": agent})
+        pipeline = step
+        runner = create_test_flujo(
+            pipeline,
+            context_model=MyContext,
+            initial_context_data={"run_id": run_id},
+            resources=mock_resources,
+            state_backend=backend,
+        )
 
-    agent = ContextAndResourceAgent()
-    step = Step.model_validate({"name": "mixed_step", "agent": agent})
-    pipeline = step
-    runner = create_test_flujo(
-        pipeline,
-        context_model=MyContext,
-        initial_context_data={"run_id": run_id},
-        resources=mock_resources,
-        state_backend=backend,
-    )
+        result = await gather_result(runner, "data")
 
-    result = await gather_result(runner, "data")
+        # Check that the context was modified (indicating the agent ran)
+        final_context = result.final_pipeline_context
+        assert isinstance(final_context, MyContext)
+        assert final_context.run_id == "modified"
 
-    # Check that the context was modified (indicating the agent ran)
-    final_context = result.final_pipeline_context
-    assert isinstance(final_context, MyContext)
-    assert final_context.run_id == "modified"
+        # Check that the resource was used
+        mock_resources.db_conn.query.assert_called_once_with("Log from modified")
 
-    # Check that the resource was used
-    mock_resources.db_conn.query.assert_called_once_with("Log from modified")
+        # If step history is populated, check the output
+        if hasattr(result, "step_history") and result.step_history:
+            assert result.step_history[0].output == "context_and_resource_used"
 
-    # If step history is populated, check the output
-    if hasattr(result, "step_history") and result.step_history:
-        assert result.step_history[0].output == "context_and_resource_used"
-
-    # Clean up the state file
-    if db_path.exists():
-        os.remove(db_path)
+    # Connection automatically closed by async with context manager
+    # Manual file cleanup no longer needed - handled by context manager

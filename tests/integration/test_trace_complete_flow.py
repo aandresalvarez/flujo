@@ -28,11 +28,16 @@ class TestTraceCompleteFlow:
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
 
+        backend = SQLiteBackend(db_path)
         try:
-            backend = SQLiteBackend(db_path)
             yield backend
         finally:
-            # Clean up
+            # Clean up backend connection first
+            try:
+                await backend.close()
+            except Exception:
+                pass
+            # Then remove the file
             if os.path.exists(db_path):
                 os.unlink(db_path)
 

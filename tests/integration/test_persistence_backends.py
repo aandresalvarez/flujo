@@ -67,101 +67,120 @@ asyncio.run(main())
 
 
 @pytest.mark.asyncio
-async def test_file_backend_resume_after_crash(tmp_path: Path) -> None:
+async def test_file_backend_resume_after_crash(tmp_path: Path, sqlite_backend_factory) -> None:
     state_dir = tmp_path / "state"
     state_dir.mkdir()
     run_id = "run_file"
     rc = _run_crashing_process("FileBackend", state_dir, run_id)
     assert rc != 0
+
+    # FileBackend doesn't require async cleanup, but use try/finally for consistency
     backend = FileBackend(state_dir)
-    pipeline = Step.from_callable(step_one, name="s1") >> Step.from_callable(step_two, name="s2")
-    runner = create_test_flujo(
-        pipeline,
-        context_model=Ctx,
-        state_backend=backend,
-        delete_on_completion=False,
-        initial_context_data={"run_id": run_id},
-    )
-    result = await gather_result(
-        runner, "x", initial_context_data={"initial_prompt": "x", "run_id": run_id}
-    )
-    assert len(result.step_history) == 2
-    assert result.step_history[0].name == "s1"
-    assert result.step_history[1].name == "s2"
-    assert result.step_history[0].output == "mid"
-    assert result.step_history[1].output == "mid done"
-    saved = await backend.load_state(run_id)
-    assert saved is not None
-    wf = WorkflowState.model_validate(saved)
-    assert wf.current_step_index == 3
-
-
-@pytest.mark.asyncio
-@pytest.mark.slow  # Uses subprocess and SQLite; can linger on some systems
-async def test_sqlite_backend_resume_after_crash(tmp_path: Path) -> None:
-    db_path = tmp_path / "state.db"
-    run_id = "run_sqlite"
-    rc = _run_crashing_process("SQLiteBackend", db_path, run_id)
-    assert rc != 0
-    backend = SQLiteBackend(db_path)
-    pipeline = Step.from_callable(step_one, name="s1") >> Step.from_callable(step_two, name="s2")
-    runner = create_test_flujo(
-        pipeline,
-        context_model=Ctx,
-        state_backend=backend,
-        delete_on_completion=False,
-        initial_context_data={"run_id": run_id},
-    )
-    result = await gather_result(
-        runner, "x", initial_context_data={"initial_prompt": "x", "run_id": run_id}
-    )
-    assert len(result.step_history) == 2
-    assert result.step_history[0].name == "s1"
-    assert result.step_history[1].name == "s2"
-    assert result.step_history[0].output == "mid"
-    assert result.step_history[1].output == "mid done"
-    saved = await backend.load_state(run_id)
-    assert saved is not None
-    wf = WorkflowState.model_validate(saved)
-    assert wf.current_step_index == 3
-
-
-@pytest.mark.asyncio
-async def test_file_backend_concurrent(tmp_path: Path) -> None:
-    backend = FileBackend(tmp_path)
-
-    async def inc(data: int) -> int:
-        await asyncio.sleep(0.05)
-        return data + 1
-
-    pipeline = Step.from_callable(inc, name="a") >> Step.from_callable(inc, name="b")
-
-    async def run_one(i: int) -> None:
-        rid = f"run{i}"
+    try:
+        pipeline = Step.from_callable(step_one, name="s1") >> Step.from_callable(
+            step_two, name="s2"
+        )
         runner = create_test_flujo(
             pipeline,
             context_model=Ctx,
             state_backend=backend,
             delete_on_completion=False,
-            initial_context_data={"run_id": rid},
+            initial_context_data={"run_id": run_id},
         )
-        await gather_result(runner, 0, initial_context_data={"initial_prompt": "x", "run_id": rid})
+        result = await gather_result(
+            runner, "x", initial_context_data={"initial_prompt": "x", "run_id": run_id}
+        )
+        assert len(result.step_history) == 2
+        assert result.step_history[0].name == "s1"
+        assert result.step_history[1].name == "s2"
+        assert result.step_history[0].output == "mid"
+        assert result.step_history[1].output == "mid done"
+        saved = await backend.load_state(run_id)
+        assert saved is not None
+        wf = WorkflowState.model_validate(saved)
+        assert wf.current_step_index == 3
+    finally:
+        # Explicit cleanup for consistency
+        pass
 
-    await asyncio.gather(*(run_one(i) for i in range(5)))
 
-    for i in range(5):
-        loaded = await backend.load_state(f"run{i}")
-        assert loaded is not None
-        wf = WorkflowState.model_validate(loaded)
-        assert wf.current_step_index == 2
-        assert wf.last_step_output == 2
+@pytest.mark.asyncio
+@pytest.mark.slow  # Uses subprocess and SQLite; can linger on some systems
+async def test_sqlite_backend_resume_after_crash(tmp_path: Path, sqlite_backend_factory) -> None:
+    db_path = tmp_path / "state.db"
+    run_id = "run_sqlite"
+    rc = _run_crashing_process("SQLiteBackend", db_path, run_id)
+    assert rc != 0
+
+    # Use async with for proper SQLite connection cleanup
+    async with SQLiteBackend(db_path) as backend:
+        pipeline = Step.from_callable(step_one, name="s1") >> Step.from_callable(
+            step_two, name="s2"
+        )
+        runner = create_test_flujo(
+            pipeline,
+            context_model=Ctx,
+            state_backend=backend,
+            delete_on_completion=False,
+            initial_context_data={"run_id": run_id},
+        )
+        result = await gather_result(
+            runner, "x", initial_context_data={"initial_prompt": "x", "run_id": run_id}
+        )
+        assert len(result.step_history) == 2
+        assert result.step_history[0].name == "s1"
+        assert result.step_history[1].name == "s2"
+        assert result.step_history[0].output == "mid"
+        assert result.step_history[1].output == "mid done"
+        saved = await backend.load_state(run_id)
+        assert saved is not None
+        wf = WorkflowState.model_validate(saved)
+        assert wf.current_step_index == 3
+
+
+@pytest.mark.asyncio
+async def test_file_backend_concurrent(tmp_path: Path, sqlite_backend_factory) -> None:
+    # FileBackend doesn't require async cleanup, but use try/finally for consistency
+    backend = FileBackend(tmp_path)
+    try:
+
+        async def inc(data: int) -> int:
+            await asyncio.sleep(0.05)
+            return data + 1
+
+        pipeline = Step.from_callable(inc, name="a") >> Step.from_callable(inc, name="b")
+
+        async def run_one(i: int) -> None:
+            rid = f"run{i}"
+            runner = create_test_flujo(
+                pipeline,
+                context_model=Ctx,
+                state_backend=backend,
+                delete_on_completion=False,
+                initial_context_data={"run_id": rid},
+            )
+            await gather_result(
+                runner, 0, initial_context_data={"initial_prompt": "x", "run_id": rid}
+            )
+
+        await asyncio.gather(*(run_one(i) for i in range(5)))
+
+        for i in range(5):
+            loaded = await backend.load_state(f"run{i}")
+            assert loaded is not None
+            wf = WorkflowState.model_validate(loaded)
+            assert wf.current_step_index == 2
+            assert wf.last_step_output == 2
+    finally:
+        # Explicit cleanup for consistency
+        pass
 
 
 @pytest.mark.asyncio
 @pytest.mark.slow  # Runs many SQLite operations; slower on CI/macOS
-async def test_sqlite_backend_admin_queries_integration(tmp_path: Path) -> None:
+async def test_sqlite_backend_admin_queries_integration(sqlite_backend_factory) -> None:
     """Integration test for admin queries on SQLiteBackend."""
-    backend = SQLiteBackend(tmp_path / "state.db")
+    backend = sqlite_backend_factory("state.db")
     now = datetime.utcnow().replace(microsecond=0)
     past = now - timedelta(days=1)
     # Insert workflows with different statuses and times
@@ -205,7 +224,7 @@ async def test_sqlite_backend_admin_queries_integration(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.slow  # SQLite concurrent ops; tends to trip linger classification
-async def test_sqlite_backend_concurrent_integration(tmp_path: Path) -> None:
+async def test_sqlite_backend_concurrent_integration(sqlite_backend_factory) -> None:
     """Integration test for concurrent save/load/delete for SQLiteBackend."""
     import asyncio
 
@@ -230,7 +249,7 @@ async def test_sqlite_backend_concurrent_integration(tmp_path: Path) -> None:
         loaded2 = await backend.load_state(run_id)
         assert loaded2 is None
 
-    backend = SQLiteBackend(tmp_path / "state.db")
+    backend = sqlite_backend_factory("state.db")
     await asyncio.gather(*(worker(backend, f"run{i}") for i in range(5)))
 
 
@@ -248,26 +267,42 @@ class CustomCtx(PipelineContext):
 
 
 @pytest.mark.asyncio
-async def test_file_backend_custom_type_serialization(tmp_path: Path) -> None:
+async def test_file_backend_custom_type_serialization(
+    tmp_path: Path, sqlite_backend_factory
+) -> None:
     state_dir = tmp_path / "state_custom"
     state_dir.mkdir()
     run_id = "run_custom"
     register_custom_serializer(CustomType, lambda x: x.to_dict())
+
+    # FileBackend doesn't require async cleanup, but use try/finally for consistency
     backend = FileBackend(state_dir)
-    pipeline = Step.from_callable(step_one, name="s1")
-    runner = create_test_flujo(
-        pipeline,
-        context_model=CustomCtx,
-        state_backend=backend,
-        delete_on_completion=False,
-        initial_context_data={"run_id": run_id, "custom": CustomType(123), "initial_prompt": "x"},
-    )
-    await gather_result(
-        runner,
-        "x",
-        initial_context_data={"run_id": run_id, "custom": CustomType(123), "initial_prompt": "x"},
-    )
-    saved = await backend.load_state(run_id)
-    assert saved is not None
-    assert "custom" in saved["pipeline_context"]
-    assert saved["pipeline_context"]["custom"] == {"value": 123}
+    try:
+        pipeline = Step.from_callable(step_one, name="s1")
+        runner = create_test_flujo(
+            pipeline,
+            context_model=CustomCtx,
+            state_backend=backend,
+            delete_on_completion=False,
+            initial_context_data={
+                "run_id": run_id,
+                "custom": CustomType(123),
+                "initial_prompt": "x",
+            },
+        )
+        await gather_result(
+            runner,
+            "x",
+            initial_context_data={
+                "run_id": run_id,
+                "custom": CustomType(123),
+                "initial_prompt": "x",
+            },
+        )
+        saved = await backend.load_state(run_id)
+        assert saved is not None
+        assert "custom" in saved["pipeline_context"]
+        assert saved["pipeline_context"]["custom"] == {"value": 123}
+    finally:
+        # Explicit cleanup for consistency
+        pass

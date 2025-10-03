@@ -37,6 +37,123 @@ runner.run("My first input")
 The runner automatically fills `initial_prompt` when you call `run()`. You only
 pass data for your custom fields.
 
+## Built-in Context Helpers
+
+Flujo provides three built-in skills for type-safe context manipulation: `context_set`, `context_merge`, and `context_get`. These eliminate boilerplate and prevent type errors.
+
+### `flujo.builtins.context_set`
+
+Sets a value at a specific context path (supports nested paths with dot notation).
+
+**Usage in YAML**:
+```yaml
+- kind: step
+  name: set_user_name
+  agent:
+    id: "flujo.builtins.context_set"
+  input:
+    path: "scratchpad.user_name"
+    value: "Alice"
+  updates_context: true
+```
+
+**Usage in Python**:
+```python
+from flujo.builtins import context_set
+
+@step
+async def initialize(data: str, *, context: PipelineContext):
+    await context_set(path="scratchpad.counter", value=0, context=context)
+    return data
+```
+
+### `flujo.builtins.context_merge`
+
+Merges a dictionary into the context at a specific path.
+
+**Usage in YAML**:
+```yaml
+- kind: step
+  name: merge_settings
+  agent:
+    id: "flujo.builtins.context_merge"
+  input:
+    path: "scratchpad.settings"
+    value:
+      theme: "dark"
+      notifications: true
+  updates_context: true
+```
+
+**Usage in Python**:
+```python
+from flujo.builtins import context_merge
+
+@step
+async def add_settings(data: str, *, context: PipelineContext):
+    settings = {"theme": "dark", "notifications": True}
+    await context_merge(path="scratchpad.settings", value=settings, context=context)
+    return data
+```
+
+### `flujo.builtins.context_get`
+
+Gets a value from the context with an optional default fallback.
+
+**Usage in YAML**:
+```yaml
+- kind: step
+  name: get_counter
+  agent:
+    id: "flujo.builtins.context_get"
+  input:
+    path: "scratchpad.counter"
+    default: 0
+```
+
+**Usage in Python**:
+```python
+from flujo.builtins import context_get
+
+@step
+async def read_counter(data: str, *, context: PipelineContext):
+    counter = await context_get(path="scratchpad.counter", default=0, context=context)
+    return f"Counter is at {counter}"
+```
+
+### Nested Path Support
+
+All helpers support dot-separated paths for nested fields:
+
+```yaml
+# Set a deeply nested value
+- kind: step
+  name: set_nested
+  agent:
+    id: "flujo.builtins.context_set"
+  input:
+    path: "scratchpad.user.preferences.theme"
+    value: "dark"
+  updates_context: true
+
+# Get a nested value with fallback
+- kind: step
+  name: get_nested
+  agent:
+    id: "flujo.builtins.context_get"
+  input:
+    path: "scratchpad.user.preferences.theme"
+    default: "light"
+```
+
+### When to Use
+
+- **Use context helpers** for simple get/set/merge operations (no custom logic needed)
+- **Use custom Python skills** when you need complex transformations or validation
+- **Use `sink_to` in HITL steps** for automatic storage of human responses
+
+**Example**: See `examples/context_helpers_demo.yaml` for a complete working example.
+
 ## Context Updates in Loops
 
 When using `@step(updates_context=True)` within loop steps (`Step.loop_until()`), context updates are now properly applied between iterations. This ensures that state changes from one iteration are available in subsequent iterations.

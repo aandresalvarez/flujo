@@ -16,10 +16,10 @@ pytestmark = pytest.mark.veryslow
 
 
 @pytest.mark.asyncio
-async def test_sqlite_backend_logs_initialization_events(tmp_path: Path) -> None:
+async def test_sqlite_backend_logs_initialization_events(sqlite_backend_factory) -> None:
     """Test that SQLiteBackend logs initialization events properly."""
     with capture_logs() as log_capture:
-        backend = SQLiteBackend(tmp_path / "init_test.db")
+        backend = sqlite_backend_factory("init_test.db")
         await backend._ensure_init()
 
         # Enhanced: Check that initialization was logged or completed successfully
@@ -29,10 +29,10 @@ async def test_sqlite_backend_logs_initialization_events(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_sqlite_backend_logs_save_operations(tmp_path: Path) -> None:
+async def test_sqlite_backend_logs_save_operations(sqlite_backend_factory) -> None:
     """Test that SQLiteBackend logs save operations with appropriate detail."""
     with capture_logs() as log_capture:
-        backend = SQLiteBackend(tmp_path / "save_test.db")
+        backend = sqlite_backend_factory("save_test.db")
         now = datetime.now(timezone.utc).replace(microsecond=0)
         state = {
             "run_id": "test_run",
@@ -59,10 +59,10 @@ async def test_sqlite_backend_logs_save_operations(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sqlite_backend_logs_error_conditions(tmp_path: Path) -> None:
+async def test_sqlite_backend_logs_error_conditions(tmp_path: Path, sqlite_backend_factory) -> None:
     """Test that SQLiteBackend logs error conditions appropriately."""
     with capture_logs(level=logging.ERROR) as log_capture:
-        backend = SQLiteBackend(tmp_path / "error_test.db")
+        backend = sqlite_backend_factory("error_test.db")
 
         # Try to load a non-existent state (should not be an error, but should be logged)
         result = await backend.load_state("non_existent_run")
@@ -75,38 +75,37 @@ async def test_sqlite_backend_logs_error_conditions(tmp_path: Path) -> None:
         with open(db_path, "w") as f:
             f.write("This is not a valid SQLite database")
 
-        corrupted_backend = SQLiteBackend(db_path)
-
-        try:
-            # Create a proper state object with all required fields
-            now = datetime.now(timezone.utc).replace(microsecond=0)
-            test_state = {
-                "run_id": "test_run",
-                "pipeline_id": "test_pipeline",
-                "pipeline_name": "Test Pipeline",
-                "pipeline_version": "1.0",
-                "current_step_index": 0,
-                "pipeline_context": {"test": "data"},
-                "last_step_output": "test_output",
-                "status": "running",
-                "created_at": now,
-                "updated_at": now,
-                "total_steps": 5,
-                "error_message": None,
-                "execution_time_ms": 1000,
-                "memory_usage_mb": 10.0,
-            }
-            await corrupted_backend.save_state("test_run", test_state)
-        except sqlite3.DatabaseError:
-            # Enhanced: Error may not log in optimized system
-            log_output = log_capture.getvalue()
-            assert len(log_output) >= 0  # Enhanced: Accept minimal logging
+        async with SQLiteBackend(db_path) as corrupted_backend:
+            try:
+                # Create a proper state object with all required fields
+                now = datetime.now(timezone.utc).replace(microsecond=0)
+                test_state = {
+                    "run_id": "test_run",
+                    "pipeline_id": "test_pipeline",
+                    "pipeline_name": "Test Pipeline",
+                    "pipeline_version": "1.0",
+                    "current_step_index": 0,
+                    "pipeline_context": {"test": "data"},
+                    "last_step_output": "test_output",
+                    "status": "running",
+                    "created_at": now,
+                    "updated_at": now,
+                    "total_steps": 5,
+                    "error_message": None,
+                    "execution_time_ms": 1000,
+                    "memory_usage_mb": 10.0,
+                }
+                await corrupted_backend.save_state("test_run", test_state)
+            except sqlite3.DatabaseError:
+                # Enhanced: Error may not log in optimized system
+                log_output = log_capture.getvalue()
+                assert len(log_output) >= 0  # Enhanced: Accept minimal logging
 
 
 @pytest.mark.asyncio
-async def test_sqlite_backend_metrics_correctness(tmp_path: Path) -> None:
+async def test_sqlite_backend_metrics_correctness(sqlite_backend_factory) -> None:
     """Test that SQLiteBackend provides correct metrics and statistics."""
-    backend = SQLiteBackend(tmp_path / "metrics_test.db")
+    backend = sqlite_backend_factory("metrics_test.db")
     now = datetime.now(timezone.utc).replace(microsecond=0)
 
     # Create workflows with different statuses
@@ -176,9 +175,9 @@ async def test_sqlite_backend_metrics_correctness(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sqlite_backend_error_reporting_detail(tmp_path: Path) -> None:
+async def test_sqlite_backend_error_reporting_detail(sqlite_backend_factory) -> None:
     """Test that SQLiteBackend provides detailed error reporting."""
-    backend = SQLiteBackend(tmp_path / "error_detail_test.db")
+    backend = sqlite_backend_factory("error_detail_test.db")
 
     # Test error reporting for invalid operations
     try:
@@ -211,9 +210,9 @@ async def test_sqlite_backend_error_reporting_detail(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sqlite_backend_performance_metrics(tmp_path: Path) -> None:
+async def test_sqlite_backend_performance_metrics(sqlite_backend_factory) -> None:
     """Test that SQLiteBackend provides performance-related metrics."""
-    backend = SQLiteBackend(tmp_path / "perf_test.db")
+    backend = sqlite_backend_factory("perf_test.db")
     now = datetime.now(timezone.utc).replace(microsecond=0)
 
     # Create workflows with different performance characteristics
@@ -256,7 +255,7 @@ async def test_sqlite_backend_performance_metrics(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sqlite_backend_logs_cleanup_operations(tmp_path: Path) -> None:
+async def test_sqlite_backend_logs_cleanup_operations(sqlite_backend_factory) -> None:
     """Test that SQLiteBackend logs cleanup operations."""
     log_capture = StringIO()
     handler = logging.StreamHandler(log_capture)
@@ -265,7 +264,7 @@ async def test_sqlite_backend_logs_cleanup_operations(tmp_path: Path) -> None:
     logger.setLevel(logging.INFO)
 
     try:
-        backend = SQLiteBackend(tmp_path / "cleanup_test.db")
+        backend = sqlite_backend_factory("cleanup_test.db")
 
         # Create some old workflows
         past = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=2)
@@ -301,9 +300,9 @@ async def test_sqlite_backend_logs_cleanup_operations(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sqlite_backend_error_context_preservation(tmp_path: Path) -> None:
+async def test_sqlite_backend_error_context_preservation(sqlite_backend_factory) -> None:
     """Test that SQLiteBackend preserves error context in error messages."""
-    backend = SQLiteBackend(tmp_path / "context_test.db")
+    backend = sqlite_backend_factory("context_test.db")
 
     # Test that errors include relevant context
     try:
@@ -317,7 +316,7 @@ async def test_sqlite_backend_error_context_preservation(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_sqlite_backend_logs_concurrent_access(tmp_path: Path) -> None:
+async def test_sqlite_backend_logs_concurrent_access(sqlite_backend_factory) -> None:
     """Test that SQLiteBackend logs concurrent access patterns."""
     log_capture = StringIO()
     handler = logging.StreamHandler(log_capture)
@@ -326,7 +325,7 @@ async def test_sqlite_backend_logs_concurrent_access(tmp_path: Path) -> None:
     logger.setLevel(logging.DEBUG)
 
     try:
-        backend = SQLiteBackend(tmp_path / "concurrent_test.db")
+        backend = sqlite_backend_factory("concurrent_test.db")
 
         # Simulate concurrent access
         async def concurrent_operation(i):

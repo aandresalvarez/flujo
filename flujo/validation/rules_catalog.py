@@ -234,6 +234,20 @@ _CATALOG: Dict[str, RuleInfo] = {
         default_severity="warning",
         help_uri=_BASE_URI + "v-a8",
     ),
+    "V-CTX1": RuleInfo(
+        id="V-CTX1",
+        title="Missing context isolation in loop/parallel",
+        description="Loop and parallel steps with custom skills should use ContextManager.isolate() to ensure idempotency",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-ctx1",
+    ),
+    "V-CF1": RuleInfo(
+        id="V-CF1",
+        title="Unconditional infinite loop",
+        description="Loop has no exit condition or max_loops, creating potential infinite loop",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-cf1",
+    ),
 }
 
 

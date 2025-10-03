@@ -125,6 +125,49 @@ Pause once per item; resume repeatedly until done:
         agent: { id: "flujo.builtins.stringify" }
 ```
 
+## Using `resume_input` Template Variable
+
+After a HITL step, the `resume_input` variable is automatically available in templates and expressions, containing the most recent human response:
+
+```yaml
+- kind: hitl
+  name: get_user_feedback
+  message: "What do you think of the analysis?"
+
+- kind: step
+  name: process_feedback
+  uses: agents.feedback_processor
+  input: |
+    User said: {{ resume_input }}
+    
+    Analysis was: {{ steps.analyze.output }}
+```
+
+**Benefits**:
+- **Clearer intent**: `resume_input` explicitly indicates you're referencing HITL data
+- **Stable reference**: Always points to the last human response, regardless of step structure
+- **Works in loops**: Each iteration has the correct `resume_input` for that HITL interaction
+
+**Example with conditional logic**:
+```yaml
+- kind: hitl
+  name: ask_continue
+  message: "Continue processing? (yes/no)"
+
+- kind: conditional
+  name: check_answer
+  condition_expression: "resume_input.lower() == 'yes'"
+  branches:
+    "true":
+      - kind: step
+        name: continue_processing
+        uses: agents.processor
+    "false":
+      - kind: step
+        name: abort
+        uses: agents.cleanup
+```
+
 ## Best Practices
 
 - **Use `sink_to` for automatic context storage** — reduces boilerplate and keeps pipelines concise

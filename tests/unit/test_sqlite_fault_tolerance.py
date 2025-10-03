@@ -14,6 +14,27 @@ from flujo.state.backends.sqlite import SQLiteBackend
 pytestmark = pytest.mark.serial
 
 
+@pytest.fixture(autouse=True)
+async def cleanup_sqlite_backends(monkeypatch):
+    """Auto-cleanup all SQLiteBackend instances created in this module."""
+    backends = []
+    original_init = SQLiteBackend.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        backends.append(self)
+        return original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(SQLiteBackend, "__init__", tracking_init)
+    yield
+
+    # Cleanup all backends with timeout (fault tolerance tests may have corrupted backends)
+    for backend in backends:
+        try:
+            await asyncio.wait_for(backend.close(), timeout=2.0)
+        except (Exception, asyncio.TimeoutError):
+            pass  # Best effort cleanup - corrupted backends may not close cleanly
+
+
 @pytest.mark.asyncio
 async def test_sqlite_backend_handles_corrupted_database(tmp_path: Path) -> None:
     """Test that SQLiteBackend can handle corrupted database files."""

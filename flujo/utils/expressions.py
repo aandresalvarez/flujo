@@ -9,7 +9,7 @@ class _SafeEvaluator(ast.NodeVisitor):
 
     Allowed constructs:
     - Literals: Constant (str, int, float, bool, None)
-    - Names: previous_step, output, context, steps
+    - Names: previous_step, output, context, steps, resume_input
     - Attribute access (e.g., obj.attr)
     - Subscript access with string key (e.g., obj['key'])
     - Bool operations: and/or
@@ -24,7 +24,7 @@ class _SafeEvaluator(ast.NodeVisitor):
         return self.visit(node.body)
 
     def visit_Name(self, node: ast.Name) -> Any:
-        if node.id not in {"previous_step", "output", "context", "steps"}:
+        if node.id not in {"previous_step", "output", "context", "steps", "resume_input"}:
             raise ValueError(f"Unknown name: {node.id}")
         return self.names.get(node.id)
 
@@ -189,6 +189,14 @@ def compile_expression_to_callable(expression: str) -> Callable[[Any, Optional[A
             "context": ctx_proxy,
             "steps": steps_map,
         }
+
+        # Add resume_input if HITL history exists
+        try:
+            if context and hasattr(context, "hitl_history") and context.hitl_history:
+                names["resume_input"] = context.hitl_history[-1].human_response
+        except Exception:
+            pass  # resume_input will be undefined if no HITL history
+
         evaluator = _SafeEvaluator(names)
         return evaluator.visit(parsed)
 

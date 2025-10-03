@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+#### Framework Ergonomics Improvements (2025-10-02)
+
+- **HITL Enhancements**:
+  - `sink_to` field for HITL steps to automatically store human responses to context paths (e.g., `sink_to: "scratchpad.user_name"`), eliminating boilerplate passthrough steps
+  - `resume_input` template variable available after HITL steps, containing the most recent human response
+  - Works in templates (`{{ resume_input }}`), expressions (`condition_expression: "resume_input.lower() == 'yes'"`), and agent prompts
+
+- **Context Helpers** - New built-in skills for type-safe context manipulation:
+  - `flujo.builtins.context_set` - Set a single context field at a dot-separated path
+  - `flujo.builtins.context_merge` - Merge a dictionary into context at a path
+  - `flujo.builtins.context_get` - Get a context field with optional default fallback
+  - Replaces error-prone passthrough patterns and eliminates `Any` type usage
+
+- **Validation Rules** - Three new linting rules to prevent common mistakes:
+  - **V-EX1**: Control Flow Exception Handling - Warns when custom skills catch `PausedException`, `PipelineAbortSignal`, or `InfiniteRedirectError` without re-raising them (prevents broken pause/resume workflows)
+  - **V-CTX1**: Context Isolation - Warns when loops or parallel steps use custom skills without `ContextManager.isolate()`, which can break idempotency
+  - **V-T5/V-T6**: Template Expression Validation - Detects missing model fields and invalid JSON in templates (already implemented, now documented)
+
+- **Blueprint Loading**:
+  - Sync/async validation for `exit_condition` and `condition` functions - Async functions now raise clear `BlueprintError` at load time instead of cryptic runtime TypeErrors
+
+- **Performance**:
+  - Fixed systematic SQLite resource leaks in 5 test files, reducing test times from 181s to ~1-5s each (18x-148x speedup, ~15 min CI time saved)
+
+- **Documentation**:
+  - Comprehensive updates to `llm.md` with all new patterns, best practices, and anti-patterns
+  - Added examples to `docs/hitl.md`, `docs/expression_language.md`, and `docs/user_guide/pipeline_context.md`
+  - All validation rules documented in `docs/validation_rules.md` with fix examples
+  - Three new example pipelines: `hitl_sink_demo.yaml`, `context_helpers_demo.yaml`, and integration tests
+
 - Validate: Pluggable linter architecture (always‑on) covering Templates (V‑T1..T6), Schema (V‑S1..S3), Context (V‑C1..C3), Agents (V‑A6..A8), Orchestration (V‑P1..P3, V‑L1, V‑CF1, V‑SM1), and Imports (V‑I1..I6). Inline duplicates removed from Pipeline.
 - Validate: Import validation performance — path‑keyed caching and realpath cycle detection for `--imports` recursion.
 - Validate: New fixers and UX

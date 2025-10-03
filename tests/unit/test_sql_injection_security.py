@@ -45,7 +45,10 @@ class TestSQLInjectionSecurity:
     @pytest.fixture
     async def backend(self, tmp_path: Path) -> SQLiteBackend:
         """Create a test SQLite backend."""
-        return SQLiteBackend(tmp_path / "test.db")
+        backend = SQLiteBackend(tmp_path / "test.db")
+        yield backend
+        # Cleanup
+        await backend.close()
 
     @pytest.fixture
     async def sample_workflows(self, backend: SQLiteBackend) -> None:

@@ -609,12 +609,28 @@ class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
                             for k, v in steps_map.items()
                         }
                         ctx_proxy = TemplateContextProxy(context, steps=steps_wrapped)
-                        resolved_vars[key] = format_prompt(
-                            value_template,
-                            context=ctx_proxy,
-                            previous_step=previous_step,
-                            steps=steps_wrapped,
-                        )
+
+                        # Prepare template kwargs
+                        template_kwargs = {
+                            "context": ctx_proxy,
+                            "previous_step": previous_step,
+                            "steps": steps_wrapped,
+                        }
+
+                        # Add resume_input if HITL history exists
+                        try:
+                            if (
+                                context
+                                and hasattr(context, "hitl_history")
+                                and context.hitl_history
+                            ):
+                                template_kwargs["resume_input"] = context.hitl_history[
+                                    -1
+                                ].human_response
+                        except Exception:
+                            pass
+
+                        resolved_vars[key] = format_prompt(value_template, **template_kwargs)
                     except Exception:
                         resolved_vars[key] = ""
                 else:
@@ -634,12 +650,25 @@ class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
                     for k, v in steps_map.items()
                 }
                 ctx_proxy = TemplateContextProxy(context, steps=steps_wrapped)
+
+                # Prepare final template kwargs
+                final_kwargs = {
+                    **resolved_vars,
+                    "context": ctx_proxy,
+                    "previous_step": previous_step,
+                    "steps": steps_wrapped,
+                }
+
+                # Add resume_input if HITL history exists
+                try:
+                    if context and hasattr(context, "hitl_history") and context.hitl_history:
+                        final_kwargs["resume_input"] = context.hitl_history[-1].human_response
+                except Exception:
+                    pass
+
                 final_system_prompt = format_prompt(
                     self.system_prompt_template,
-                    **resolved_vars,
-                    context=ctx_proxy,
-                    previous_step=previous_step,
-                    steps=steps_wrapped,
+                    **final_kwargs,
                 )
             except Exception:
                 final_system_prompt = self.system_prompt_template

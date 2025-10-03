@@ -561,9 +561,30 @@ Pause for human input or approval.
       confirmation: { type: string, enum: ["yes", "no"] }
       comments: { type: string }
     required: [confirmation]
+
+# ✨ NEW: Automatic context storage with sink_to
+- kind: hitl
+  name: get_user_name
+  message: "What's your name?"
+  sink_to: "scratchpad.user_name"  # Auto-stores response here
+
+- kind: hitl
+  name: get_preferences
+  message: "What are your preferences?"
+  input_schema:
+    type: object
+    properties:
+      theme: { type: string, enum: ["light", "dark"] }
+  sink_to: "scratchpad.preferences"  # Works with structured input too
 ```
 
 **Use Cases**: Approval workflows, manual validation, interactive decisions
+
+**New Features**:
+- **`sink_to`**: Automatically stores human response to context path (eliminates boilerplate)
+- **`resume_input`**: Template variable containing the most recent HITL response
+
+See `docs/hitl.md` for comprehensive examples.
 
 ### 8. State Machine (`kind: StateMachine`)
 
@@ -635,6 +656,7 @@ Available in `input` fields and expressions:
 | `context` | Pipeline context | `{{ context.user_id }}` |
 | `previous_step` | Last step's output (raw value) | `{{ previous_step }}` |
 | `steps` | Map of prior steps by name | `{{ steps.fetch_data.output }}` |
+| `resume_input` | Most recent HITL response | `{{ resume_input }}` |
 | `this` | Current item (in `map`) | `{{ this }}` |
 
 **Critical: `previous_step` vs `steps['name']`**
@@ -1014,6 +1036,9 @@ Common built-in skills (use via `agent.id`):
 |----------|---------|---------|
 | `flujo.builtins.ask_user` | Get user input | Interactive prompts |
 | `flujo.builtins.check_user_confirmation` | Validate approval | Approval workflows |
+| `flujo.builtins.context_set` | Set context field | Type-safe context updates |
+| `flujo.builtins.context_merge` | Merge dict into context | Batch context updates |
+| `flujo.builtins.context_get` | Get context field | Safe context access |
 | `flujo.builtins.stringify` | Convert to string | Type conversion |
 | `flujo.builtins.web_search` | Search the web | Information retrieval |
 | `flujo.builtins.http_get` | HTTP GET request | API calls |
@@ -1024,6 +1049,42 @@ Common built-in skills (use via `agent.id`):
 | `flujo.builtins.select_fields` | Project/rename fields | Data transformation |
 | `flujo.builtins.flatten` | Flatten nested lists | List processing |
 | `flujo.builtins.passthrough` | Identity function | No-op step |
+
+**Context Helper Examples**:
+
+```yaml
+# Set a single field
+- kind: step
+  name: init_counter
+  agent:
+    id: "flujo.builtins.context_set"
+  input:
+    path: "scratchpad.counter"
+    value: 0
+  updates_context: true
+
+# Merge multiple fields
+- kind: step
+  name: init_state
+  agent:
+    id: "flujo.builtins.context_merge"
+  input:
+    path: "scratchpad"
+    value:
+      status: "pending"
+      retries: 0
+      last_error: null
+  updates_context: true
+
+# Get with default fallback
+- kind: step
+  name: check_status
+  agent:
+    id: "flujo.builtins.context_get"
+  input:
+    path: "scratchpad.status"
+    default: "unknown"
+```
 
 ### 11. Agentic Tool Exploration Pattern
 
@@ -1259,6 +1320,11 @@ condition_expression: "context.count > 5 and context.ready"
 # User input
 agent: { id: "flujo.builtins.ask_user" }
 
+# Context helpers (NEW)
+agent: { id: "flujo.builtins.context_set" }  # Set single field
+agent: { id: "flujo.builtins.context_merge" }  # Merge dict
+agent: { id: "flujo.builtins.context_get" }  # Get with default
+
 # String conversion
 agent: { id: "flujo.builtins.stringify" }
 
@@ -1453,6 +1519,39 @@ async def test_my_skill_with_string():
     assert result["success"] is True
 ```
 
+### 16. **Isolate Context in Loops and Parallel Steps**
+
+When using custom skills in loops or parallel steps, use `ContextManager.isolate()` to ensure idempotency:
+
+```python
+# skills/my_custom.py
+from flujo.application.core.context_manager import ContextManager
+from flujo.domain.models import PipelineContext
+
+async def process_item(item: str, context: PipelineContext) -> str:
+    """Custom skill that safely modifies context in a loop."""
+    
+    # ✅ CORRECT - Isolate context for safe modification
+    isolated_ctx = ContextManager.isolate(context)
+    
+    # Modify isolated context safely
+    isolated_ctx.scratchpad['processed'] = f"Processed: {item}"
+    isolated_ctx.scratchpad['count'] = isolated_ctx.scratchpad.get('count', 0) + 1
+    
+    # The executor will merge context updates if needed
+    return f"Result for {item}"
+
+# ❌ WRONG - Direct context mutation without isolation
+async def process_item_unsafe(item: str, context: PipelineContext) -> str:
+    # This can cause corruption across loop iterations!
+    context.scratchpad['processed'] = f"Processed: {item}"
+    return f"Result for {item}"
+```
+
+**Why This Matters**: Without isolation, failed iterations can "poison" the context, breaking idempotency and causing non-deterministic behavior. The validator will warn you with `V-CTX1` if this pattern is detected.
+
+**See**: `docs/validation_rules.md#v-ctx1` and `FLUJO_TEAM_GUIDE.md` Section 3.5 for details.
+
 ---
 
 ## Anti-Patterns to Avoid
@@ -1575,6 +1674,37 @@ loop:
     next_input: context
   exit_expression: "context.done"
 ```
+
+### ❌ Catching Control Flow Exceptions Without Re-Raising
+
+**CRITICAL**: Never catch control flow exceptions (`PausedException`, `PipelineAbortSignal`, `InfiniteRedirectError`) without re-raising them:
+
+```python
+# ❌ FATAL - Breaks pause/resume workflows
+async def my_custom_skill(data: str, context: PipelineContext) -> dict:
+    try:
+        # ... your logic ...
+        return {"result": data}
+    except PausedException as e:
+        # 🔥 NEVER DO THIS - converts pause into failure
+        return {"success": False, "error": "paused"}
+
+# ✅ CORRECT - Always re-raise control flow exceptions
+async def my_custom_skill(data: str, context: PipelineContext) -> dict:
+    try:
+        # ... your logic ...
+        return {"result": data}
+    except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+        # CRITICAL: Must re-raise control flow exceptions!
+        raise
+    except Exception as e:
+        # Handle other exceptions normally
+        return {"success": False, "error": str(e)}
+```
+
+**Why This Matters**: Control flow exceptions orchestrate the workflow (pause, abort, loop limits). Converting them to data failures breaks HITL resume, loop termination, and abort signals. The validator will warn you with `V-EX1` if this pattern is detected.
+
+**See**: `docs/validation_rules.md#v-ex1` and `FLUJO_TEAM_GUIDE.md` Section 2 "The Fatal Anti-Pattern" for details.
 
 ---
 

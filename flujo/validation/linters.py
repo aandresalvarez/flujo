@@ -1017,6 +1017,7 @@ class OrchestrationLinter(BaseLinter):
     - V-P3: Parallel branch input heterogeneity
     - V-L1: Loop exit coverage heuristic
     - V-CF1: Unconditional infinite loop heuristic
+    - V-CTX1: Missing context isolation in loop/parallel steps with custom skills
     """
 
     def analyze(self, pipeline: Any) -> Iterable[ValidationFinding]:
@@ -1359,6 +1360,12 @@ class OrchestrationLinter(BaseLinter):
                             )
                 except Exception:
                     pass
+
+        # V-CTX1: Context isolation in loop/parallel steps with custom skills
+        # Warn when loops or parallel steps contain custom Python skills that receive context,
+        # as they might mutate shared context without isolation (FLUJO_TEAM_GUIDE.md Section 3.5)
+        self._check_context_isolation(steps, _LoopStep, _ParallelStep, out)
+
         # StateMachine checks (V-SM1)
         try:
             from ..domain.dsl.state_machine import StateMachineStep as _SM
@@ -1495,6 +1502,142 @@ class OrchestrationLinter(BaseLinter):
                     pass
 
         return out
+
+    def _check_context_isolation(
+        self, steps: list[Any], LoopStepCls: Any, ParallelStepCls: Any, out: list[ValidationFinding]
+    ) -> None:
+        """Check for potential context isolation issues in loop/parallel steps (V-CTX1)."""
+        if LoopStepCls is None and ParallelStepCls is None:
+            return
+
+        for idx, st in enumerate(steps):
+            # Check both LoopStep and ParallelStep
+            if not (
+                (LoopStepCls and isinstance(st, LoopStepCls))
+                or (ParallelStepCls and isinstance(st, ParallelStepCls))
+            ):
+                continue
+
+            step_type = (
+                "LoopStep" if (LoopStepCls and isinstance(st, LoopStepCls)) else "ParallelStep"
+            )
+            step_name = getattr(st, "name", None)
+
+            # Get location info
+            meta = getattr(st, "meta", None)
+            yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+            loc_path = (yloc or {}).get("path") or f"steps[{idx}]"
+            fpath = (yloc or {}).get("file")
+            line = (yloc or {}).get("line")
+            col = (yloc or {}).get("column")
+
+            # Check if the step body contains custom skills
+            has_custom_skills = False
+            custom_skill_refs = []
+
+            try:
+                # For LoopStep, check loop_body_pipeline.steps
+                if LoopStepCls and isinstance(st, LoopStepCls):
+                    body_pipeline = getattr(st, "loop_body_pipeline", None)
+                    if body_pipeline:
+                        body_steps = getattr(body_pipeline, "steps", []) or []
+                        for body_step in body_steps:
+                            skill_ref = self._get_custom_skill_ref(body_step, meta)
+                            if skill_ref:
+                                has_custom_skills = True
+                                custom_skill_refs.append(skill_ref)
+
+                # For ParallelStep, check branches
+                elif ParallelStepCls and isinstance(st, ParallelStepCls):
+                    branches = getattr(st, "branches", {}) or {}
+                    for branch_name, branch_pipeline in branches.items():
+                        if branch_pipeline:
+                            branch_steps = getattr(branch_pipeline, "steps", []) or []
+                            for branch_step in branch_steps:
+                                skill_ref = self._get_custom_skill_ref(branch_step, meta)
+                                if skill_ref:
+                                    has_custom_skills = True
+                                    custom_skill_refs.append(f"{branch_name}:{skill_ref}")
+
+            except Exception:
+                continue
+
+            # If custom skills found, warn about context isolation
+            if has_custom_skills:
+                sev = _override_severity("V-CTX1", "warning")
+                if sev is not None:
+                    skills_list = ", ".join(custom_skill_refs[:3])  # Show first 3
+                    if len(custom_skill_refs) > 3:
+                        skills_list += f" (and {len(custom_skill_refs) - 3} more)"
+
+                    out.append(
+                        ValidationFinding(
+                            rule_id="V-CTX1",
+                            severity=sev,
+                            message=(
+                                f"{step_type} '{step_name}' contains custom skills ({skills_list}). "
+                                f"Ensure they don't mutate shared context without using ContextManager.isolate()."
+                            ),
+                            step_name=step_name,
+                            location_path=loc_path,
+                            file=fpath,
+                            line=line,
+                            column=col,
+                            suggestion=(
+                                f"In custom skills within {step_type.lower()}s, avoid direct context mutation. "
+                                "If you need to modify context in parallel branches or loop iterations, "
+                                "use ContextManager.isolate() to create isolated copies. "
+                                "See: FLUJO_TEAM_GUIDE.md Section 3.5 'Idempotency in Step Policies'"
+                            ),
+                        )
+                    )
+
+    def _get_custom_skill_ref(self, step: Any, parent_meta: Any) -> str | None:
+        """Extract custom skill reference from a step, similar to V-EX1 logic."""
+        try:
+            # Check if 'uses' was specified in meta (preserved from YAML)
+            step_meta = getattr(step, "meta", {}) or {}
+            if "uses" in step_meta and isinstance(step_meta["uses"], str):
+                uses_val = step_meta["uses"]
+                # Custom skills are referenced with module paths (e.g., "my_module:function")
+                # Skip built-ins and declarative agents
+                if ":" in uses_val and not uses_val.startswith(
+                    ("agents.", "imports.", "flujo.builtins.")
+                ):
+                    return uses_val
+
+            # Also check the resolved agent object
+            agent_spec = getattr(step, "agent", None)
+            if agent_spec:
+                # Check if agent is a _CallableAgent wrapper
+                if hasattr(agent_spec, "_step_callable"):
+                    wrapped_func = getattr(agent_spec, "_step_callable", None)
+                    if wrapped_func:
+                        module_name = getattr(wrapped_func, "__module__", None)
+                        func_name = getattr(wrapped_func, "__name__", None)
+
+                        # Custom skills typically aren't in flujo.* modules
+                        if module_name and not module_name.startswith("flujo."):
+                            if func_name:
+                                return str(f"{module_name}:{func_name}")
+                            else:
+                                return str(module_name)
+                # Check if agent is a direct callable from a custom module
+                elif callable(agent_spec):
+                    module_name = getattr(agent_spec, "__module__", None)
+                    func_name = getattr(agent_spec, "__name__", None)
+
+                    # Custom skills typically aren't in flujo.* modules
+                    if module_name and not module_name.startswith("flujo."):
+                        if func_name:
+                            return str(f"{module_name}:{func_name}")
+                        else:
+                            return str(module_name)
+
+        except Exception:
+            pass
+
+        return None
 
 
 class ExceptionLinter(BaseLinter):

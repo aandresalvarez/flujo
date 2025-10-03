@@ -28,6 +28,30 @@ Suppression:
   - Why: invalid step name or referenced before it exists.
   - Fix: correct the step name or move the reference to a later step.
 
+## <a id="v-t5"></a>V‑T5 — Missing prior model field
+  - Why: Template references `previous_step.<field>` but the field doesn't exist on the prior step's output model.
+  - Fix: Correct the field name or ensure the prior step's output includes that field.
+  - Example:
+    ```yaml
+    # ❌ Assuming prior step outputs Out(foo=1) but no 'bar' field
+    input: "{{ previous_step.bar }}"
+    # ✅ Use actual field
+    input: "{{ previous_step.foo }}"
+    ```
+
+## <a id="v-t6"></a>V‑T6 — Non-JSON where JSON expected
+  - Why: Templated input appears to be JSON-like but contains invalid syntax (e.g., unquoted keys, identifiers instead of strings) while the consuming step expects valid JSON.
+  - Fix: Use proper JSON syntax with quoted keys and string values, or use template expressions.
+  - Example:
+    ```yaml
+    # ❌ Invalid JSON-like syntax
+    input: "{ not_json: yes }"
+    # ✅ Valid JSON
+    input: '{ "valid_json": "yes" }'
+    # ✅ Or use templates
+    input: '{ "value": "{{ previous_step }}" }'
+    ```
+
 ## <a id="v-i1"></a>V‑I1 — Import existence
   - Why: imported YAML path cannot be resolved.
   - Fix: correct the path relative to the parent YAML or ensure the file exists.
@@ -60,6 +84,26 @@ Suppression:
         # handle other exceptions
     ```
   - See: FLUJO_TEAM_GUIDE.md Section 2 "The Fatal Anti-Pattern"
+
+## <a id="v-ctx1"></a>V‑CTX1 — Missing context isolation in loop/parallel
+  - Why: Loop and parallel steps with custom Python skills should use `ContextManager.isolate()` to ensure idempotency. Direct context mutation across iterations or branches can lead to context corruption and non-deterministic behavior.
+  - When: This warning appears when a loop or parallel step contains custom skills (referenced via `module:function` syntax) that receive a context parameter. Built-in skills and declarative agents are excluded.
+  - Fix: In your custom skills that are used within loops or parallel steps, avoid direct context mutation. Instead, use context isolation:
+    ```python
+    from flujo.application.core.context_manager import ContextManager
+    
+    async def my_custom_skill(data: Any, context: PipelineContext) -> Any:
+        # ✅ Create isolated context for safe modification
+        isolated_ctx = ContextManager.isolate(context)
+        
+        # Modify isolated_ctx safely
+        isolated_ctx.scratchpad['result'] = data
+        
+        # Return result (executor will merge if needed)
+        return result
+    ```
+  - Alternative: If your skill doesn't need to modify context, you can ignore this warning (it's non-blocking).
+  - See: FLUJO_TEAM_GUIDE.md Section 3.5 "Idempotency in Step Policies"
 
 ## <a id="v-sm1"></a>V‑SM1 — StateMachine transitions validity
   - Why: invalid states or no path to an end state.

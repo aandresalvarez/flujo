@@ -403,7 +403,7 @@ def _resolve_context_target(ctx: Any, target: str) -> tuple[Any, Any]:
 def _render_template_value(prev_output: Any, ctx: Any, tpl: Any) -> Any:
     """Render a template string using context and previous output.
 
-    Exposes variables: {context, previous_step, steps}
+    Exposes variables: {context, previous_step, steps, resume_input}
     """
     try:
         from ...utils.template_vars import (
@@ -420,6 +420,14 @@ def _render_template_value(prev_output: Any, ctx: Any, tpl: Any) -> Any:
             "previous_step": prev_output,
             "steps": steps_wrapped,
         }
+
+        # Add resume_input if HITL history exists
+        try:
+            if ctx and hasattr(ctx, "hitl_history") and ctx.hitl_history:
+                fmt_ctx["resume_input"] = ctx.hitl_history[-1].human_response
+        except Exception:
+            pass  # resume_input will be undefined if no HITL history
+
         return _Fmt(str(tpl)).format(**fmt_ctx)
     except Exception:
         # Best effort: return raw string representation

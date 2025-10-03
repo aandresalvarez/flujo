@@ -1318,10 +1318,221 @@ async def welcome_agent(name: str = "Developer") -> str:
     return f"{welcome_header}\n\n{flujo_art}{welcome_body}"
 
 
+# --- Context manipulation helpers (Task 2.3) ---
+
+
+async def context_set(
+    path: str,
+    value: Any,
+    *,
+    context: Optional[DomainBaseModel] = None,
+) -> Dict[str, Any]:
+    """Set a context field at the specified dot-separated path.
+
+    This is a built-in skill that provides type-safe context manipulation,
+    reducing boilerplate and preventing `Any` type usage.
+
+    Args:
+        path: Dot-separated path to the field (e.g., "scratchpad.counter")
+        value: Value to set at the path
+        context: Pipeline context (injected automatically by Flujo)
+
+    Returns:
+        Dict with path and value for confirmation
+
+    Example:
+        ```yaml
+        - kind: step
+          name: init_counter
+          agent: { id: "flujo.builtins.context_set" }
+          input: { path: "scratchpad.counter", value: 0 }
+        ```
+    """
+    from flujo.utils.context import set_nested_context_field
+
+    if context is not None:
+        try:
+            set_nested_context_field(context, path, value)
+        except Exception as e:
+            # Log warning but don't fail the step
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to set context path '{path}': {e}")
+
+    return {"path": path, "value": value, "success": context is not None}
+
+
+async def context_merge(
+    path: str,
+    value: Dict[str, Any],
+    *,
+    context: Optional[DomainBaseModel] = None,
+) -> Dict[str, Any]:
+    """Merge a dictionary into the context at the specified path.
+
+    This is useful for updating nested context objects with multiple fields at once.
+
+    Args:
+        path: Dot-separated path to merge into (e.g., "scratchpad.settings")
+        value: Dictionary to merge at the path
+        context: Pipeline context (injected automatically by Flujo)
+
+    Returns:
+        Dict with path, merged keys, and success status
+
+    Example:
+        ```yaml
+        - kind: step
+          name: update_settings
+          agent: { id: "flujo.builtins.context_merge" }
+          input:
+            path: "scratchpad.settings"
+            value: { theme: "dark", notifications: true }
+        ```
+    """
+    from flujo.utils.context import set_nested_context_field
+
+    merged_keys: List[str] = []
+    if context is not None and isinstance(value, dict):
+        try:
+            # Get the target object at the path
+            parts = path.split(".")
+            target = context
+            for part in parts:
+                try:
+                    target = getattr(target, part)
+                except AttributeError:
+                    if isinstance(target, dict) and part in target:
+                        target = target[part]
+                    else:
+                        # Path doesn't exist, create it first
+                        set_nested_context_field(context, path, {})
+                        target = context
+                        for p in parts:
+                            if hasattr(target, p):
+                                target = getattr(target, p)
+                            elif isinstance(target, dict):
+                                target = target[p]
+                            else:
+                                # Can't traverse further
+                                break
+
+            # Merge the dictionary
+            if isinstance(target, dict):
+                target.update(value)
+                merged_keys = list(value.keys())
+            else:
+                # If target is not a dict, try to set individual attributes
+                for key, val in value.items():
+                    try:
+                        setattr(target, key, val)
+                        merged_keys.append(key)
+                    except (AttributeError, TypeError):
+                        pass
+
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to merge into context path '{path}': {e}")
+
+    return {"path": path, "merged_keys": merged_keys, "success": len(merged_keys) > 0}
+
+
+async def context_get(
+    path: str,
+    default: Any = None,
+    *,
+    context: Optional[DomainBaseModel] = None,
+) -> Any:
+    """Get a value from the context at the specified dot-separated path.
+
+    Args:
+        path: Dot-separated path to the field (e.g., "scratchpad.counter")
+        default: Default value if path doesn't exist
+        context: Pipeline context (injected automatically by Flujo)
+
+    Returns:
+        The value at the path, or default if not found
+
+    Example:
+        ```yaml
+        - kind: step
+          name: get_counter
+          agent: { id: "flujo.builtins.context_get" }
+          input: { path: "scratchpad.counter", default: 0 }
+        ```
+    """
+    if context is None:
+        return default
+
+    try:
+        parts = path.split(".")
+        target = context
+        for part in parts:
+            try:
+                # Try attribute access first
+                target = getattr(target, part)
+            except AttributeError:
+                # Try dict access
+                if isinstance(target, dict) and part in target:
+                    target = target[part]
+                else:
+                    return default
+        return target
+    except Exception:
+        return default
+
+
 def _register_builtins() -> None:
     """Register builtin skills with the global registry."""
     try:
         reg = get_skill_registry()
+
+        # --- Context manipulation helpers (Task 2.3) ---
+        reg.register(
+            "flujo.builtins.context_set",
+            lambda **_params: context_set,
+            description="Set a context field at a dot-separated path (e.g., 'scratchpad.counter')",
+            arg_schema={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "value": {},  # Any type
+                },
+                "required": ["path", "value"],
+            },
+            side_effects=True,  # Modifies context
+        )
+        reg.register(
+            "flujo.builtins.context_merge",
+            lambda **_params: context_merge,
+            description="Merge a dictionary into context at a path (e.g., 'scratchpad.settings')",
+            arg_schema={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "value": {"type": "object"},
+                },
+                "required": ["path", "value"],
+            },
+            side_effects=True,  # Modifies context
+        )
+        reg.register(
+            "flujo.builtins.context_get",
+            lambda **_params: context_get,
+            description="Get a value from context at a dot-separated path with optional default",
+            arg_schema={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "default": {},  # Any type
+                },
+                "required": ["path"],
+            },
+            side_effects=False,
+        )
 
         # Welcome experience for new users
         reg.register(
