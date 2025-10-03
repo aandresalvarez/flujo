@@ -16,7 +16,9 @@ class TestSQLiteConcurrencyEdgeCases:
     """Tests for SQLiteBackend concurrency edge cases."""
 
     @pytest.mark.asyncio
-    async def test_concurrent_backup_operations(self, tmp_path: Path) -> None:
+    async def test_concurrent_backup_operations(
+        self, tmp_path: Path, sqlite_backend_factory
+    ) -> None:
         """Test concurrent backup operations."""
 
         async def create_backup(i: int) -> None:
@@ -34,7 +36,9 @@ class TestSQLiteConcurrencyEdgeCases:
         assert len(backup_files) == 5
 
     @pytest.mark.asyncio
-    async def test_concurrent_database_initialization(self, tmp_path: Path) -> None:
+    async def test_concurrent_database_initialization(
+        self, tmp_path: Path, sqlite_backend_factory
+    ) -> None:
         """Test concurrent database initialization."""
         db_path = tmp_path / "concurrent_test.db"
 
@@ -56,9 +60,9 @@ class TestSQLiteConcurrencyEdgeCases:
         assert db_path.stat().st_size > 0
 
     @pytest.mark.asyncio
-    async def test_concurrent_save_operations(self, tmp_path: Path) -> None:
+    async def test_concurrent_save_operations(self, sqlite_backend_factory) -> None:
         """Test concurrent save operations."""
-        backend = SQLiteBackend(tmp_path / "concurrent_save.db")
+        backend = sqlite_backend_factory("concurrent_save.db")
         await backend._ensure_init()
 
         async def save_operation(i: int):
@@ -89,9 +93,9 @@ class TestSQLiteConcurrencyEdgeCases:
         assert len(workflows) == 20
 
     @pytest.mark.asyncio
-    async def test_concurrent_load_operations(self, tmp_path: Path) -> None:
+    async def test_concurrent_load_operations(self, sqlite_backend_factory) -> None:
         """Test concurrent load operations."""
-        backend = SQLiteBackend(tmp_path / "concurrent_load.db")
+        backend = sqlite_backend_factory("concurrent_load.db")
         await backend._ensure_init()
 
         # Create test data
@@ -127,9 +131,9 @@ class TestSQLiteConcurrencyEdgeCases:
             assert result["run_id"] == f"load_test_{i}"
 
     @pytest.mark.asyncio
-    async def test_concurrent_delete_operations(self, tmp_path: Path) -> None:
+    async def test_concurrent_delete_operations(self, sqlite_backend_factory) -> None:
         """Test concurrent delete operations."""
-        backend = SQLiteBackend(tmp_path / "concurrent_delete.db")
+        backend = sqlite_backend_factory("concurrent_delete.db")
         await backend._ensure_init()
 
         # Create test data
@@ -164,9 +168,9 @@ class TestSQLiteConcurrencyEdgeCases:
         assert len(workflows) == 0
 
     @pytest.mark.asyncio
-    async def test_concurrent_mixed_operations(self, tmp_path: Path) -> None:
+    async def test_concurrent_mixed_operations(self, sqlite_backend_factory) -> None:
         """Test concurrent mixed operations (save, load, delete)."""
-        backend = SQLiteBackend(tmp_path / "concurrent_mixed.db")
+        backend = sqlite_backend_factory("concurrent_mixed.db")
         await backend._ensure_init()
 
         async def mixed_operation(i: int):
@@ -206,7 +210,9 @@ class TestSQLiteConcurrencyEdgeCases:
         assert len(workflows) == 10  # Only odd indices should remain
 
     @pytest.mark.asyncio
-    async def test_concurrent_backup_with_corruption(self, tmp_path: Path) -> None:
+    async def test_concurrent_backup_with_corruption(
+        self, tmp_path: Path, sqlite_backend_factory
+    ) -> None:
         """Test concurrent backup operations with corruption scenarios."""
 
         async def create_corrupted_backup(i: int) -> None:
@@ -230,9 +236,9 @@ class TestSQLiteConcurrencyEdgeCases:
             assert db_path.stat().st_size > 0
 
     @pytest.mark.asyncio
-    async def test_concurrent_error_handling(self, tmp_path: Path) -> None:
+    async def test_concurrent_error_handling(self, sqlite_backend_factory) -> None:
         """Test concurrent error handling scenarios."""
-        backend = SQLiteBackend(tmp_path / "concurrent_error.db")
+        backend = sqlite_backend_factory("concurrent_error.db")
         await backend._ensure_init()
 
         async def error_operation(i: int):
@@ -253,9 +259,9 @@ class TestSQLiteConcurrencyEdgeCases:
         assert isinstance(workflows, list)
 
     @pytest.mark.asyncio
-    async def test_concurrent_performance_under_load(self, tmp_path: Path) -> None:
+    async def test_concurrent_performance_under_load(self, sqlite_backend_factory) -> None:
         """Test performance under concurrent load."""
-        backend = SQLiteBackend(tmp_path / "concurrent_perf.db")
+        backend = sqlite_backend_factory("concurrent_perf.db")
         await backend._ensure_init()
 
         async def performance_operation(i: int):

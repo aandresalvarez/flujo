@@ -15,6 +15,29 @@ from flujo.state.backends.sqlite import SQLiteBackend
 pytestmark = pytest.mark.veryslow
 
 
+@pytest.fixture(autouse=True)
+async def cleanup_sqlite_backends(monkeypatch):
+    """Autouse fixture to ensure all SQLiteBackend instances are properly closed.
+
+    This prevents resource leaks that cause 361-second timeouts.
+    """
+    backends = []
+    original_init = SQLiteBackend.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        backends.append(self)
+        return original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(SQLiteBackend, "__init__", tracking_init)
+    yield
+    # Clean up all backends created during the test
+    for backend in backends:
+        try:
+            await backend.close()
+        except Exception:
+            pass
+
+
 @pytest.mark.asyncio
 async def test_file_backend_roundtrip(tmp_path: Path) -> None:
     backend = FileBackend(tmp_path)

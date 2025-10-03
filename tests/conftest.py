@@ -394,6 +394,71 @@ class NoOpStateBackend(StateBackend):
         self._trace_store[run_id] = safe_serialize(trace)
 
 
+# ------------------------------------------------------------------------------
+# SQLiteBackend Fixtures with Automatic Cleanup
+# ------------------------------------------------------------------------------
+# These fixtures prevent resource leaks by ensuring proper cleanup of SQLite
+# backend connections and aiosqlite threads. Without cleanup, tests pass but
+# hang during teardown (PASS_LINGER status), causing 180s+ timeouts.
+
+
+@pytest.fixture
+async def sqlite_backend(tmp_path):
+    """Create a SQLiteBackend with automatic cleanup.
+
+    Safe for parallel test execution - each test gets an isolated tmp_path.
+    Prevents resource leaks that cause PASS_LINGER and test timeouts.
+
+    Usage:
+        async def test_something(sqlite_backend):
+            await sqlite_backend.save_state(...)
+            # Auto cleanup when test ends
+    """
+    from pathlib import Path
+    from flujo.state.backends.sqlite import SQLiteBackend
+
+    backend = SQLiteBackend(Path(tmp_path) / "test.db")
+    try:
+        yield backend
+    finally:
+        try:
+            await backend.close()
+        except Exception:
+            pass  # Best effort cleanup
+
+
+@pytest.fixture
+async def sqlite_backend_factory(tmp_path):
+    """Factory fixture for tests that need multiple SQLiteBackend instances.
+
+    Automatically cleans up all created backends when test completes.
+
+    Usage:
+        async def test_multi_backend(sqlite_backend_factory):
+            backend1 = sqlite_backend_factory("db1.db")
+            backend2 = sqlite_backend_factory("db2.db")
+            # Both auto-cleaned up
+    """
+    from pathlib import Path
+    from flujo.state.backends.sqlite import SQLiteBackend
+
+    backends = []
+
+    def _create(db_name: str = "test.db"):
+        backend = SQLiteBackend(Path(tmp_path) / db_name)
+        backends.append(backend)
+        return backend
+
+    yield _create
+
+    # Cleanup all created backends
+    for backend in backends:
+        try:
+            await backend.close()
+        except Exception:
+            pass  # Best effort cleanup
+
+
 def _diagnose_threads() -> None:
     try:
         alive = [t for t in threading.enumerate() if t.is_alive()]

@@ -5,7 +5,7 @@ Flujo supports a small, safe expression language for declarative branching and l
 
 Allowed Values and Names
 - Literals: strings, numbers, booleans, null
-- Names: `previous_step` (alias: `output`), `context`, `steps`
+- Names: `previous_step` (alias: `output`), `context`, `steps`, `resume_input`
 - Attribute access: `obj.attr`
 - Subscript with string keys: `obj['key']`
 - Bool ops: `and`, `or`; unary `not`
@@ -20,9 +20,10 @@ Allow‑listed Method Calls (Read‑Only)
 Everything else is disallowed and raises `Unsupported expression element: Call`.
 
 Variables in Scope
-- `previous_step`/`output`: the immediate prior step’s output (for the first step, this is the pipeline input)
+- `previous_step`/`output`: the immediate prior step's output (for the first step, this is the pipeline input)
 - `context`: a template-safe proxy of the pipeline context
 - `steps`: map of previous step outputs, keyed by step name
+- `resume_input`: the most recent HITL (human-in-the-loop) response (available only after a HITL step)
 
 Examples
 - Conditional by string prefix: `previous_step.lower().startswith('ok:')`

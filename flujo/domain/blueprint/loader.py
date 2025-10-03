@@ -179,6 +179,7 @@ class BlueprintStepModel(BaseModel):
     # HITL specific (optional)
     message: Optional[str] = None
     input_schema: Optional[Dict[str, Any]] = None
+    sink_to: Optional[str] = None  # Context path to sink HITL response
     # Cache specific (optional)
     wrapped_step: Optional[Dict[str, Any]] = None
     # Agentic loop sugar (M5)
@@ -402,7 +403,7 @@ def _resolve_context_target(ctx: Any, target: str) -> tuple[Any, Any]:
 def _render_template_value(prev_output: Any, ctx: Any, tpl: Any) -> Any:
     """Render a template string using context and previous output.
 
-    Exposes variables: {context, previous_step, steps}
+    Exposes variables: {context, previous_step, steps, resume_input}
     """
     try:
         from ...utils.template_vars import (
@@ -419,6 +420,14 @@ def _render_template_value(prev_output: Any, ctx: Any, tpl: Any) -> Any:
             "previous_step": prev_output,
             "steps": steps_wrapped,
         }
+
+        # Add resume_input if HITL history exists
+        try:
+            if ctx and hasattr(ctx, "hitl_history") and ctx.hitl_history:
+                fmt_ctx["resume_input"] = ctx.hitl_history[-1].human_response
+        except Exception:
+            pass  # resume_input will be undefined if no HITL history
+
         return _Fmt(str(tpl)).format(**fmt_ctx)
     except Exception:
         # Best effort: return raw string representation
@@ -691,6 +700,26 @@ def _make_step_from_blueprint(
         if model.condition:
             try:
                 _cond_callable = _import_object(model.condition)
+
+                # Validate that condition is synchronous (not async)
+                import asyncio
+
+                if asyncio.iscoroutinefunction(_cond_callable):
+                    raise BlueprintError(
+                        f"condition '{model.condition}' must be synchronous.\n"
+                        f"Conditional step conditions are called synchronously and cannot be async functions.\n"
+                        f"\n"
+                        f"Change your function from:\n"
+                        f"  async def my_condition(data, context) -> Any:\n"
+                        f"      ...\n"
+                        f"\n"
+                        f"To:\n"
+                        f"  def my_condition(data, context) -> Any:\n"
+                        f"      ...\n"
+                        f"\n"
+                        f"Remove 'async' and any 'await' calls in your condition function.\n"
+                        f"See: https://flujo.dev/docs/user_guide/pipeline_branching#conditional-steps"
+                    )
             except Exception as exc:
                 # Improve ergonomics: common mistake is providing an inline Python lambda
                 # which is intentionally not supported in YAML for security reasons.
@@ -780,6 +809,26 @@ def _make_step_from_blueprint(
         # Optional callable overrides
         if model.loop.get("exit_condition"):
             _exit_condition = _import_object(model.loop["exit_condition"])  # runtime import
+
+            # Validate that exit_condition is synchronous (not async)
+            import asyncio
+
+            if asyncio.iscoroutinefunction(_exit_condition):
+                raise BlueprintError(
+                    f"exit_condition '{model.loop['exit_condition']}' must be synchronous.\n"
+                    f"Loop exit conditions are called synchronously and cannot be async functions.\n"
+                    f"\n"
+                    f"Change your function from:\n"
+                    f"  async def my_condition(output, context) -> bool:\n"
+                    f"      ...\n"
+                    f"\n"
+                    f"To:\n"
+                    f"  def my_condition(output, context) -> bool:\n"
+                    f"      ...\n"
+                    f"\n"
+                    f"Remove 'async' and any 'await' calls in your exit_condition function.\n"
+                    f"See: https://flujo.dev/docs/loops#exit-conditions"
+                )
         elif model.loop.get("exit_expression"):
             try:
                 from ...utils.expressions import compile_expression_to_callable as _compile_expr
@@ -1523,6 +1572,7 @@ def _make_step_from_blueprint(
             name=model.name,
             message_for_user=model.message,
             input_schema=schema_model,
+            sink_to=model.sink_to,
             config=step_config,
         )
     elif getattr(model, "kind", None) == "cache":
@@ -2140,6 +2190,12 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                             hitl_data["input_schema"] = schema.model_json_schema()
                         elif isinstance(schema, dict):
                             hitl_data["input_schema"] = schema
+                except Exception:
+                    pass
+                # Optional sink_to
+                try:
+                    if getattr(step, "sink_to", None):
+                        hitl_data["sink_to"] = getattr(step, "sink_to")
                 except Exception:
                     pass
                 return hitl_data

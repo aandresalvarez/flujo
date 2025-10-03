@@ -1002,10 +1002,21 @@ def adapter_step(
 
 
 class HumanInTheLoopStep(Step[Any, Any]):
-    """A step that pauses the pipeline for human input."""
+    """A step that pauses the pipeline for human input.
+
+    Attributes:
+        message_for_user: Optional message to display to the user
+        input_schema: Optional schema for validating user input
+        sink_to: Optional context path to automatically store the human response
+                 (e.g., "scratchpad.user_answer" or "scratchpad.nested.field")
+    """
 
     message_for_user: str | None = Field(default=None)
     input_schema: Any | None = Field(default=None)
+    sink_to: str | None = Field(
+        default=None,
+        description="Context path to automatically store the human response (e.g., 'scratchpad.user_name')",
+    )
 
     model_config = {"arbitrary_types_allowed": True}
 

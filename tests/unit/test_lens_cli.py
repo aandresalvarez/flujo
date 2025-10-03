@@ -14,6 +14,30 @@ pytestmark = pytest.mark.veryslow
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def cleanup_sqlite_backends_sync(monkeypatch):
+    """Autouse fixture to ensure all SQLiteBackend instances are properly closed.
+
+    This prevents resource leaks that cause 361-second timeouts.
+    Uses SQLiteBackend.close_sync() which properly handles event loop contexts.
+    """
+    backends = []
+    original_init = SQLiteBackend.__init__
+
+    def tracking_init(self, *args, **kwargs):
+        backends.append(self)
+        return original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(SQLiteBackend, "__init__", tracking_init)
+    yield
+    # Clean up all backends created during the test
+    for backend in backends:
+        try:
+            backend.close_sync()
+        except Exception:
+            pass
+
+
 def create_run_with_steps(backend, run_id, steps=None, status="completed", final_context=None):
     if steps is None:
         steps = []
@@ -463,7 +487,11 @@ def test_lens_trace_command(tmp_path: Path) -> None:
 
 
 def test_lens_trace_command_regression_timestamps(tmp_path: Path) -> None:
-    """Regression: test lens trace command with various timestamp formats for duration parsing."""
+    """Regression: test lens trace command with various timestamp formats for duration parsing.
+    
+    Fixed: Uses autouse fixture for proper cleanup. Backend is properly tracked and closed.
+    Previous issue was complex manual cleanup causing pytest to hang.
+    """
     backend = SQLiteBackend(tmp_path / "trace_ops_regression.db")
 
     def create_run(run_id, pipeline_name="pipeline"):
@@ -540,6 +568,8 @@ def test_lens_trace_command_regression_timestamps(tmp_path: Path) -> None:
     result = runner.invoke(app, ["lens", "trace", run_id4])
     assert result.exit_code in [0, 1]
     assert "(duration:" not in result.stdout
+    
+    # Autouse fixture cleanup_sqlite_backends_sync will handle backend cleanup
 
 
 def test_lens_commands_error_handling(tmp_path: Path) -> None:

@@ -93,6 +93,13 @@ _CATALOG: Dict[str, RuleInfo] = {
         default_severity="warning",
         help_uri=_BASE_URI + "v-l1",
     ),
+    "V-EX1": RuleInfo(
+        id="V-EX1",
+        title="Control flow exception handling",
+        description="Custom skills must re-raise control flow exceptions (PausedException, PipelineAbortSignal, InfiniteRedirectError)",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-ex1",
+    ),
     "V-SM1": RuleInfo(
         id="V-SM1",
         title="State machine unreachable end",
@@ -226,6 +233,20 @@ _CATALOG: Dict[str, RuleInfo] = {
         ),
         default_severity="warning",
         help_uri=_BASE_URI + "v-a8",
+    ),
+    "V-CTX1": RuleInfo(
+        id="V-CTX1",
+        title="Missing context isolation in loop/parallel",
+        description="Loop and parallel steps with custom skills should use ContextManager.isolate() to ensure idempotency",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-ctx1",
+    ),
+    "V-CF1": RuleInfo(
+        id="V-CF1",
+        title="Unconditional infinite loop",
+        description="Loop has no exit condition or max_loops, creating potential infinite loop",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-cf1",
     ),
 }
 

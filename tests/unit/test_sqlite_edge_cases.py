@@ -20,9 +20,11 @@ class TestSQLiteBackendDeleteState:
     """Test delete_state functionality as mentioned in Copilot comments."""
 
     @pytest.mark.asyncio
-    async def test_delete_state_removes_workflow_from_database(self, tmp_path: Path) -> None:
+    async def test_delete_state_removes_workflow_from_database(
+        self, sqlite_backend_factory
+    ) -> None:
         """Test that delete_state actually removes the workflow from the database."""
-        backend = SQLiteBackend(tmp_path / "delete_test.db")
+        backend = sqlite_backend_factory("delete_test.db")
         now = datetime.utcnow().replace(microsecond=0)
 
         # Create a workflow
@@ -63,9 +65,9 @@ class TestSQLiteBackendDeleteState:
         assert not any(wf["run_id"] == "test_delete_run" for wf in all_workflows)
 
     @pytest.mark.asyncio
-    async def test_delete_state_nonexistent_workflow(self, tmp_path: Path) -> None:
+    async def test_delete_state_nonexistent_workflow(self, sqlite_backend_factory) -> None:
         """Test that delete_state handles nonexistent workflows gracefully."""
-        backend = SQLiteBackend(tmp_path / "delete_nonexistent.db")
+        backend = sqlite_backend_factory("delete_nonexistent.db")
 
         # Try to delete a workflow that doesn't exist
         await backend.delete_state("nonexistent_run")
@@ -76,9 +78,9 @@ class TestSQLiteBackendDeleteState:
         assert all_workflows == []
 
     @pytest.mark.asyncio
-    async def test_delete_state_multiple_workflows(self, tmp_path: Path) -> None:
+    async def test_delete_state_multiple_workflows(self, sqlite_backend_factory) -> None:
         """Test deleting multiple workflows and verify others remain."""
-        backend = SQLiteBackend(tmp_path / "delete_multiple.db")
+        backend = sqlite_backend_factory("delete_multiple.db")
         now = datetime.utcnow().replace(microsecond=0)
 
         # Create multiple workflows
@@ -127,7 +129,9 @@ class TestSQLiteBackendBackupEdgeCases:
     """Test edge cases for backup file handling."""
 
     @pytest.mark.asyncio
-    async def test_backup_with_special_characters_in_filename(self, tmp_path: Path) -> None:
+    async def test_backup_with_special_characters_in_filename(
+        self, tmp_path: Path, sqlite_backend_factory
+    ) -> None:
         """Test backup handling with special characters in database filename."""
         # Create a database with special characters
         special_db_path = tmp_path / "test-db_with.special@chars#.db"
@@ -150,7 +154,7 @@ class TestSQLiteBackendBackupEdgeCases:
         assert backup_file.name.startswith("test-db_with.special@chars#.db.corrupt.")
 
     @pytest.mark.asyncio
-    async def test_backup_with_long_filename(self, tmp_path: Path) -> None:
+    async def test_backup_with_long_filename(self, tmp_path: Path, sqlite_backend_factory) -> None:
         """Test backup handling with very long database filename."""
         # Create a database with a very long name
         long_name = "a" * 200  # Very long filename
@@ -172,7 +176,9 @@ class TestSQLiteBackendBackupEdgeCases:
         assert len(backup_files) == 1
 
     @pytest.mark.asyncio
-    async def test_backup_with_no_write_permissions(self, tmp_path: Path) -> None:
+    async def test_backup_with_no_write_permissions(
+        self, tmp_path: Path, sqlite_backend_factory
+    ) -> None:
         """Test backup handling when directory has no write permissions."""
         db_path = tmp_path / "test.db"
         backend = SQLiteBackend(db_path)
@@ -194,7 +200,9 @@ class TestSQLiteBackendBackupEdgeCases:
         assert not db_path.exists()
 
     @pytest.mark.asyncio
-    async def test_backup_with_disk_full_error(self, tmp_path: Path) -> None:
+    async def test_backup_with_disk_full_error(
+        self, tmp_path: Path, sqlite_backend_factory
+    ) -> None:
         """Test backup handling when disk is full."""
         db_path = tmp_path / "test.db"
         backend = SQLiteBackend(db_path)
@@ -220,9 +228,9 @@ class TestSQLiteBackendPerformanceThresholds:
     """Test performance threshold configurability."""
 
     @pytest.mark.asyncio
-    async def test_performance_threshold_environment_variable(self, tmp_path: Path) -> None:
+    async def test_performance_threshold_environment_variable(self, sqlite_backend_factory) -> None:
         """Test that performance thresholds are enforced via environment variable."""
-        backend = SQLiteBackend(tmp_path / "perf_env.db")
+        backend = sqlite_backend_factory("perf_env.db")
         now = datetime.utcnow().replace(microsecond=0)
 
         # Create a large amount of test data
@@ -267,9 +275,9 @@ class TestSQLiteBackendPerformanceThresholds:
                 os.environ.pop("SQLITE_PER_WORKFLOW_TIME_LIMIT", None)
 
     @pytest.mark.asyncio
-    async def test_performance_threshold_default_behavior(self, tmp_path: Path) -> None:
+    async def test_performance_threshold_default_behavior(self, sqlite_backend_factory) -> None:
         """Test that performance thresholds work with default values."""
-        backend = SQLiteBackend(tmp_path / "perf_default.db")
+        backend = sqlite_backend_factory("perf_default.db")
         now = datetime.utcnow().replace(microsecond=0)
 
         # Create a small amount of test data
@@ -312,7 +320,7 @@ class TestSQLiteBackendLoggerContextManagement:
     """Tests for SQLiteBackend logger context management."""
 
     @pytest.mark.asyncio
-    async def test_logger_context_manager_cleanup(self, tmp_path: Path) -> None:
+    async def test_logger_context_manager_cleanup(self, sqlite_backend_factory) -> None:
         """Test that logger context manager properly cleans up handlers."""
         import logging
 
@@ -322,14 +330,14 @@ class TestSQLiteBackendLoggerContextManagement:
 
         # Use the context manager
         with capture_logs():
-            backend = SQLiteBackend(tmp_path / "test.db")
+            backend = sqlite_backend_factory("test.db")
             await backend._ensure_init()
 
         # Verify handlers were cleaned up
         assert logger.handlers == original_handlers
 
     @pytest.mark.asyncio
-    async def test_logger_context_manager_exception_handling(self, tmp_path: Path) -> None:
+    async def test_logger_context_manager_exception_handling(self, sqlite_backend_factory) -> None:
         """Test that logger context manager cleans up even when exceptions occur."""
         import logging
 
@@ -338,7 +346,7 @@ class TestSQLiteBackendLoggerContextManagement:
 
         try:
             with capture_logs():
-                backend = SQLiteBackend(tmp_path / "test.db")
+                backend = sqlite_backend_factory("test.db")
                 await backend._ensure_init()
                 raise RuntimeError("Test exception")
         except RuntimeError:
@@ -352,9 +360,9 @@ class TestSQLiteBackendTypeSafety:
     """Test type safety in retry mechanisms and other operations."""
 
     @pytest.mark.asyncio
-    async def test_retry_mechanism_type_safety(self, tmp_path: Path) -> None:
+    async def test_retry_mechanism_type_safety(self, sqlite_backend_factory) -> None:
         """Test that retry mechanism maintains proper type safety."""
-        backend = SQLiteBackend(tmp_path / "type_safety_test.db")
+        backend = sqlite_backend_factory("type_safety_test.db")
 
         # Test that load_state returns the correct type
         result = await backend.load_state("nonexistent")
@@ -372,9 +380,9 @@ class TestSQLiteBackendTypeSafety:
         assert "status_counts" in stats
 
     @pytest.mark.asyncio
-    async def test_serialization_type_safety(self, tmp_path: Path) -> None:
+    async def test_serialization_type_safety(self, sqlite_backend_factory) -> None:
         """Test that serialization maintains type safety."""
-        backend = SQLiteBackend(tmp_path / "serialization_test.db")
+        backend = sqlite_backend_factory("serialization_test.db")
         now = datetime.utcnow().replace(microsecond=0)
 
         # Test with complex data types
@@ -420,9 +428,9 @@ class TestSQLiteBackendConcurrencyEdgeCases:
     """Test edge cases in concurrent access scenarios."""
 
     @pytest.mark.asyncio
-    async def test_concurrent_delete_and_save(self, tmp_path: Path) -> None:
+    async def test_concurrent_delete_and_save(self, sqlite_backend_factory) -> None:
         """Test concurrent delete and save operations."""
-        backend = SQLiteBackend(tmp_path / "concurrent_test.db")
+        backend = sqlite_backend_factory("concurrent_test.db")
         now = datetime.utcnow().replace(microsecond=0)
 
         # Create initial state
@@ -460,9 +468,11 @@ class TestSQLiteBackendConcurrencyEdgeCases:
         # But the database should remain consistent
 
     @pytest.mark.asyncio
-    async def test_concurrent_backup_operations(self, tmp_path: Path) -> None:
+    async def test_concurrent_backup_operations(
+        self, tmp_path: Path, sqlite_backend_factory
+    ) -> None:
         """Test concurrent backup operations during corruption recovery."""
-        backend = SQLiteBackend(tmp_path / "concurrent_backup.db")
+        backend = sqlite_backend_factory("concurrent_backup.db")
 
         # Create corrupted database
         db_path = tmp_path / "concurrent_backup.db"

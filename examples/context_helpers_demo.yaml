@@ -1,0 +1,108 @@
+version: "0.1"
+name: "context_helpers_demo"
+
+pipeline_config:
+  conversation_mode: false
+
+agents:
+  formatter:
+    model: "openai:gpt-4o-mini"
+    system_prompt: |
+      You are a helpful formatter. Create a nicely formatted summary of the data you receive.
+    output_schema:
+      type: string
+
+steps:
+  # Step 1: Set a simple value in context
+  - kind: step
+    name: set_counter
+    agent:
+      id: "flujo.builtins.context_set"
+    input:
+      path: "scratchpad.counter"
+      value: 0
+    updates_context: true
+
+  # Step 2: Set user name
+  - kind: step
+    name: set_user_name
+    agent:
+      id: "flujo.builtins.context_set"
+    input:
+      path: "scratchpad.user_name"
+      value: "Alice"
+    updates_context: true
+
+  # Step 3: Merge a settings dictionary
+  - kind: step
+    name: merge_user_settings
+    agent:
+      id: "flujo.builtins.context_merge"
+    input:
+      path: "scratchpad.settings"
+      value:
+        theme: "dark"
+        notifications: true
+        language: "en"
+    updates_context: true
+
+  # Step 4: Increment counter (get, modify, set)
+  - kind: step
+    name: get_current_counter
+    agent:
+      id: "flujo.builtins.context_get"
+    input:
+      path: "scratchpad.counter"
+      default: 0
+
+  - kind: step
+    name: increment_counter
+    agent:
+      id: "flujo.builtins.context_set"
+    input:
+      path: "scratchpad.counter"
+      value: 1  # In real use, you'd calculate this from previous_step + 1
+    updates_context: true
+
+  # Step 5: Get all stored data and format it
+  - kind: step
+    name: get_user_name
+    agent:
+      id: "flujo.builtins.context_get"
+    input:
+      path: "scratchpad.user_name"
+      default: "Unknown"
+
+  - kind: step
+    name: get_counter
+    agent:
+      id: "flujo.builtins.context_get"
+    input:
+      path: "scratchpad.counter"
+      default: 0
+
+  - kind: step
+    name: get_settings
+    agent:
+      id: "flujo.builtins.context_get"
+    input:
+      path: "scratchpad.settings"
+      default: {}
+
+  # Step 6: Format final summary
+  - kind: step
+    name: create_summary
+    uses: agents.formatter
+    input: |
+      Create a summary with this data:
+      - User: {{ steps.get_user_name.output }}
+      - Counter: {{ steps.get_counter.output }}
+      - Settings: {{ steps.get_settings.output | tojson }}
+
+  # Final output
+  - kind: step
+    name: final_output
+    agent:
+      id: "flujo.builtins.passthrough"
+    input: "{{ steps.create_summary.output }}"
+

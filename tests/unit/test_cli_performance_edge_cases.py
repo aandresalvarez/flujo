@@ -21,27 +21,27 @@ class TestCLIPerformanceEdgeCases:
     """Test CLI performance edge cases and optimizations."""
 
     @pytest.fixture(scope="module")
-    def large_database_with_mixed_data(self, tmp_path_factory) -> Path:
+    async def large_database_with_mixed_data(self, tmp_path_factory) -> Path:
         """Create a database with mixed data types for performance testing."""
         # Use a module-scoped tmp dir to reuse DB across tests in this module
         tmp_path = tmp_path_factory.mktemp("cli_perf_db")
         db_path = tmp_path / "mixed_ops.db"
         backend = SQLiteBackend(db_path)
 
-        # Create runs with different characteristics
-        import os as _os
-
-        now = datetime.utcnow()
-        # Allow scaling via env; default to a modest size for unit tests
         try:
-            total = int(_os.getenv("FLUJO_CI_DB_SIZE", "200"))
-        except Exception:
-            total = 200
-        for i in range(total):
-            # Create run start
-            dt = (now - timedelta(minutes=i)).isoformat()
-            asyncio.run(
-                backend.save_run_start(
+            # Create runs with different characteristics
+            import os as _os
+
+            now = datetime.utcnow()
+            # Allow scaling via env; default to a modest size for unit tests
+            try:
+                total = int(_os.getenv("FLUJO_CI_DB_SIZE", "200"))
+            except Exception:
+                total = 200
+            for i in range(total):
+                # Create run start
+                dt = (now - timedelta(minutes=i)).isoformat()
+                await backend.save_run_start(
                     {
                         "run_id": f"run_{i:04d}",
                         "pipeline_id": f"pid_{i:04d}",
@@ -52,28 +52,27 @@ class TestCLIPerformanceEdgeCases:
                         "updated_at": dt,
                     }
                 )
-            )
 
-            # Create run end with different statuses
-            status = "completed" if i % 3 == 0 else "failed" if i % 3 == 1 else "running"
-            if status != "running":
-                asyncio.run(
-                    backend.save_run_end(
+                # Create run end with different statuses
+                status = "completed" if i % 3 == 0 else "failed" if i % 3 == 1 else "running"
+                if status != "running":
+                    await backend.save_run_end(
                         f"run_{i:04d}",
                         {
                             "status": status,
                             "end_time": now - timedelta(minutes=i) + timedelta(seconds=30),
                             "total_cost": 0.1 + (i * 0.01),
-                            "final_context": {"result": f"output_{i}", "metadata": {"index": i}},
+                            "final_context": {
+                                "result": f"output_{i}",
+                                "metadata": {"index": i},
+                            },
                         },
                     )
-                )
 
-            # Add step data for completed runs
-            if status == "completed":
-                for step_idx in range(2):
-                    asyncio.run(
-                        backend.save_step_result(
+                # Add step data for completed runs
+                if status == "completed":
+                    for step_idx in range(2):
+                        await backend.save_step_result(
                             {
                                 "step_run_id": f"run_{i:04d}:{step_idx}",
                                 "run_id": f"run_{i:04d}",
@@ -90,9 +89,11 @@ class TestCLIPerformanceEdgeCases:
                                 "error": None,
                             }
                         )
-                    )
 
-        return db_path
+            return db_path
+        finally:
+            # Cleanup backend connection
+            await backend.close()
 
     def test_lens_list_with_large_mixed_database(
         self, large_database_with_mixed_data: Path
@@ -208,16 +209,17 @@ class TestCLIPerformanceEdgeCases:
             print(f"Nonexistent data query {test_args} performance: {execution_time:.3f}s")
             assert execution_time < 0.2, f"Nonexistent query {test_args} took {execution_time:.3f}s"
 
-    def test_database_index_optimization(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_database_index_optimization(self, tmp_path: Path) -> None:
         """Test that database indexes are working correctly for performance."""
         db_path = tmp_path / "index_test.db"
         backend = SQLiteBackend(db_path)
 
-        # Create a moderate amount of data
-        now = datetime.utcnow()
-        for i in range(100):
-            asyncio.run(
-                backend.save_run_start(
+        try:
+            # Create a moderate amount of data
+            now = datetime.utcnow()
+            for i in range(100):
+                await backend.save_run_start(
                     {
                         "run_id": f"run_{i:03d}",
                         "pipeline_id": f"pid_{i:03d}",
@@ -228,12 +230,10 @@ class TestCLIPerformanceEdgeCases:
                         "updated_at": (now - timedelta(minutes=i)).isoformat(),
                     }
                 )
-            )
 
-            # Complete some runs
-            if i % 2 == 0:
-                asyncio.run(
-                    backend.save_run_end(
+                # Complete some runs
+                if i % 2 == 0:
+                    await backend.save_run_end(
                         f"run_{i:03d}",
                         {
                             "status": "completed",
@@ -242,16 +242,17 @@ class TestCLIPerformanceEdgeCases:
                             "final_context": {"result": f"output_{i}"},
                         },
                     )
-                )
 
-        # Test that queries use indexes efficiently
-        start_time = time.perf_counter()
-        runs = asyncio.run(backend.list_runs(status="completed"))
-        query_time = time.perf_counter() - start_time
+            # Test that queries use indexes efficiently
+            start_time = time.perf_counter()
+            runs = await backend.list_runs(status="completed")
+            query_time = time.perf_counter() - start_time
 
-        print(f"Indexed query performance: {query_time:.3f}s")
-        assert query_time < 0.1, f"Indexed query took {query_time:.3f}s"
-        assert len(runs) > 0, "Should find completed runs"
+            print(f"Indexed query performance: {query_time:.3f}s")
+            assert query_time < 0.1, f"Indexed query took {query_time:.3f}s"
+            assert len(runs) > 0, "Should find completed runs"
+        finally:
+            await backend.close()
 
     @pytest.mark.asyncio
     async def test_database_concurrent_writes(self, tmp_path: Path) -> None:
@@ -296,18 +297,19 @@ class TestCLIPerformanceEdgeCases:
             run_details = await backend.get_run_details(f"concurrent_run_{i}")
             assert run_details is not None, f"Run {i} was not persisted"
 
-    def test_database_memory_usage(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_database_memory_usage(self, tmp_path: Path) -> None:
         """Test that database operations don't cause memory issues."""
         db_path = tmp_path / "memory_test.db"
         backend = SQLiteBackend(db_path)
 
-        # Create a large number of runs with substantial data
-        now = datetime.utcnow()
-        large_context = {"data": "x" * 1000}  # 1KB per context
+        try:
+            # Create a large number of runs with substantial data
+            now = datetime.utcnow()
+            large_context = {"data": "x" * 1000}  # 1KB per context
 
-        for i in range(100):
-            asyncio.run(
-                backend.save_run_start(
+            for i in range(100):
+                await backend.save_run_start(
                     {
                         "run_id": f"memory_run_{i:03d}",
                         "pipeline_id": f"pid_{i:03d}",
@@ -318,10 +320,8 @@ class TestCLIPerformanceEdgeCases:
                         "updated_at": (now - timedelta(minutes=i)).isoformat(),
                     }
                 )
-            )
 
-            asyncio.run(
-                backend.save_run_end(
+                await backend.save_run_end(
                     f"memory_run_{i:03d}",
                     {
                         "status": "completed",
@@ -330,25 +330,27 @@ class TestCLIPerformanceEdgeCases:
                         "final_context": large_context,
                     },
                 )
-            )
 
-        # Test that we can still query efficiently
-        start_time = time.perf_counter()
-        runs = asyncio.run(backend.list_runs(limit=50))
-        query_time = time.perf_counter() - start_time
+            # Test that we can still query efficiently
+            start_time = time.perf_counter()
+            runs = await backend.list_runs(limit=50)
+            query_time = time.perf_counter() - start_time
 
-        print(f"Memory test query performance: {query_time:.3f}s")
-        assert query_time < 0.5, f"Memory test query took {query_time:.3f}s"
-        assert len(runs) == 50, "Should return exactly 50 runs"
+            print(f"Memory test query performance: {query_time:.3f}s")
+            assert query_time < 0.5, f"Memory test query took {query_time:.3f}s"
+            assert len(runs) == 50, "Should return exactly 50 runs"
+        finally:
+            await backend.close()
 
-    def test_database_corruption_recovery(self, tmp_path: Path) -> None:
+    @pytest.mark.asyncio
+    async def test_database_corruption_recovery(self, tmp_path: Path) -> None:
         """Test that database corruption recovery works correctly."""
         db_path = tmp_path / "corruption_test.db"
         backend = SQLiteBackend(db_path)
 
-        # Create some initial data
-        asyncio.run(
-            backend.save_run_start(
+        try:
+            # Create some initial data
+            await backend.save_run_start(
                 {
                     "run_id": "test_run",
                     "pipeline_id": "test_pid",
@@ -359,22 +361,20 @@ class TestCLIPerformanceEdgeCases:
                     "updated_at": datetime.utcnow().isoformat(),
                 }
             )
-        )
 
-        # Verify data was saved
-        run_details = asyncio.run(backend.get_run_details("test_run"))
-        assert run_details is not None
+            # Verify data was saved
+            run_details = await backend.get_run_details("test_run")
+            assert run_details is not None
 
-        # Simulate corruption by writing invalid data directly to the file
-        # (This is a simplified test - in practice, corruption would be more complex)
-        with open(db_path, "ab") as f:
-            f.write(b"corrupted_data")
+            # Simulate corruption by writing invalid data directly to the file
+            # (This is a simplified test - in practice, corruption would be more complex)
+            with open(db_path, "ab") as f:
+                f.write(b"corrupted_data")
 
-        # The backend should handle this gracefully
-        try:
-            # Try to save more data - should trigger corruption recovery
-            asyncio.run(
-                backend.save_run_start(
+            # The backend should handle this gracefully
+            try:
+                # Try to save more data - should trigger corruption recovery
+                await backend.save_run_start(
                     {
                         "run_id": "recovery_test_run",
                         "pipeline_id": "recovery_pid",
@@ -385,18 +385,22 @@ class TestCLIPerformanceEdgeCases:
                         "updated_at": datetime.utcnow().isoformat(),
                     }
                 )
-            )
-        except Exception as e:
-            # Corruption recovery might raise an exception, which is acceptable
-            print(f"Corruption recovery exception: {e}")
+            except Exception as e:
+                # Corruption recovery might raise an exception, which is acceptable
+                print(f"Corruption recovery exception: {e}")
 
-        # The database should still be functional after recovery attempts
-        try:
-            runs = asyncio.run(backend.list_runs())
-            assert isinstance(runs, list), "Should return a list even after corruption"
-        except Exception as e:
-            print(f"Post-recovery query exception: {e}")
-            # This is acceptable if the database was corrupted beyond recovery
+            # The database should still be functional after recovery attempts
+            try:
+                runs = await backend.list_runs()
+                assert isinstance(runs, list), "Should return a list even after corruption"
+            except Exception as e:
+                print(f"Post-recovery query exception: {e}")
+                # This is acceptable if the database was corrupted beyond recovery
+        finally:
+            try:
+                await backend.close()
+            except Exception:
+                pass  # Best effort cleanup on corrupted DB
 
 
 class TestCLIErrorHandling:

@@ -3,7 +3,6 @@
 import asyncio
 
 import pytest
-from pathlib import Path
 from datetime import datetime
 
 from flujo.state.backends.sqlite import SQLiteBackend
@@ -30,8 +29,8 @@ def create_run(backend: SQLiteBackend, run_id: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_save_and_get_trace_roundtrip(tmp_path: Path) -> None:
-    backend = SQLiteBackend(tmp_path / "test.db")
+async def test_save_and_get_trace_roundtrip(sqlite_backend_factory) -> None:
+    backend = sqlite_backend_factory("test.db")
     run_id = "test_run_123"
     await backend.save_run_start(create_run(backend, run_id))
     trace_data = {
@@ -70,15 +69,15 @@ async def test_save_and_get_trace_roundtrip(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_trace_nonexistent_run(tmp_path: Path) -> None:
-    backend = SQLiteBackend(tmp_path / "test.db")
+async def test_get_trace_nonexistent_run(sqlite_backend_factory) -> None:
+    backend = sqlite_backend_factory("test.db")
     result = await backend.get_trace("nonexistent_run")
     assert result is None
 
 
 @pytest.mark.asyncio
-async def test_save_trace_overwrites_existing(tmp_path: Path) -> None:
-    backend = SQLiteBackend(tmp_path / "test.db")
+async def test_save_trace_overwrites_existing(sqlite_backend_factory) -> None:
+    backend = sqlite_backend_factory("test.db")
     run_id = "test_run"
     await backend.save_run_start(create_run(backend, run_id))
     initial_trace = {
@@ -106,8 +105,8 @@ async def test_save_trace_overwrites_existing(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_trace_complex_nested_structure(tmp_path: Path) -> None:
-    backend = SQLiteBackend(tmp_path / "test.db")
+async def test_save_trace_complex_nested_structure(sqlite_backend_factory) -> None:
+    backend = sqlite_backend_factory("test.db")
     run_id = "complex_run"
     await backend.save_run_start(create_run(backend, run_id))
     complex_trace = {
@@ -180,8 +179,8 @@ async def test_save_trace_complex_nested_structure(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_trace_with_special_json_types(tmp_path: Path) -> None:
-    backend = SQLiteBackend(tmp_path / "test.db")
+async def test_save_trace_with_special_json_types(sqlite_backend_factory) -> None:
+    backend = sqlite_backend_factory("test.db")
     run_id = "special_run"
     await backend.save_run_start(create_run(backend, run_id))
     trace_with_special_types = {
@@ -216,8 +215,8 @@ async def test_save_trace_with_special_json_types(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_trace_persistence_with_run_deletion(tmp_path: Path) -> None:
-    backend = SQLiteBackend(tmp_path / "test.db")
+async def test_trace_persistence_with_run_deletion(sqlite_backend_factory) -> None:
+    backend = sqlite_backend_factory("test.db")
     run_id = "test_run_cascade"
     await backend.save_run_start(create_run(backend, run_id))
     await backend.save_run_end(run_id, {"status": "completed"})
@@ -236,8 +235,8 @@ async def test_trace_persistence_with_run_deletion(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_concurrent_trace_operations(tmp_path: Path) -> None:
-    backend = SQLiteBackend(tmp_path / "test.db")
+async def test_concurrent_trace_operations(sqlite_backend_factory) -> None:
+    backend = sqlite_backend_factory("test.db")
 
     async def save_trace_worker(run_id: str, trace_data: dict) -> None:
         await backend.save_run_start(create_run(backend, run_id))
@@ -271,8 +270,8 @@ async def test_concurrent_trace_operations(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.slow  # Mark as slow due to large trace structure
-async def test_trace_persistence_large_trace(tmp_path: Path) -> None:
-    backend = SQLiteBackend(tmp_path / "test.db")
+async def test_trace_persistence_large_trace(sqlite_backend_factory) -> None:
+    backend = sqlite_backend_factory("test.db")
     run_id = "large_run"
     await backend.save_run_start(create_run(backend, run_id))
 

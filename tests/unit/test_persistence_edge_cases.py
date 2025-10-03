@@ -3,7 +3,6 @@
 import pytest
 import time
 import asyncio
-from pathlib import Path
 from typing import Any, List
 import uuid
 from datetime import datetime
@@ -11,7 +10,6 @@ from datetime import datetime
 from flujo.domain.models import PipelineContext, StepResult, PipelineResult
 from flujo.application.core.execution_manager import ExecutionManager
 from flujo.application.core.state_manager import StateManager
-from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.domain import Step
 from flujo.testing.utils import StubAgent
 
@@ -23,10 +21,9 @@ class TestPersistenceOptimizationEdgeCases:
     """Test edge cases related to persistence optimizations."""
 
     @pytest.mark.asyncio
-    async def test_persistence_frequency_optimization(self, tmp_path: Path):
+    async def test_persistence_frequency_optimization(self, sqlite_backend_factory):
         """Test that persistence frequency optimization works correctly."""
-        db_path = tmp_path / "test.db"
-        backend = SQLiteBackend(db_path)
+        backend = sqlite_backend_factory("test.db")
         state_manager = StateManager(state_backend=backend)
 
         # Create a multi-step pipeline
@@ -93,10 +90,9 @@ class TestPersistenceOptimizationEdgeCases:
         assert workflow_state["current_step_index"] == 3
 
     @pytest.mark.asyncio
-    async def test_persistence_on_step_failure(self, tmp_path: Path):
+    async def test_persistence_on_step_failure(self, sqlite_backend_factory):
         """Test that persistence works correctly when steps fail."""
-        db_path = tmp_path / "test.db"
-        backend = SQLiteBackend(db_path)
+        backend = sqlite_backend_factory("test.db")
         state_manager = StateManager(state_backend=backend)
 
         # Create a failing agent
@@ -167,10 +163,9 @@ class TestPersistenceOptimizationEdgeCases:
 
     @pytest.mark.asyncio
     @pytest.mark.slow  # Mark as slow due to performance measurement
-    async def test_large_context_serialization_performance(self, tmp_path: Path):
+    async def test_large_context_serialization_performance(self, sqlite_backend_factory):
         """Test that large context serialization doesn't cause performance issues."""
-        db_path = tmp_path / "test.db"
-        backend = SQLiteBackend(db_path)
+        backend = sqlite_backend_factory("large_context.db")
         state_manager = StateManager(state_backend=backend)
 
         # Create context with large data
@@ -240,10 +235,9 @@ class TestPersistenceOptimizationEdgeCases:
         assert "large_data" in workflow_state["pipeline_context"]
 
     @pytest.mark.asyncio
-    async def test_serialization_error_handling(self, tmp_path: Path):
+    async def test_serialization_error_handling(self, sqlite_backend_factory):
         """Test that serialization errors are handled gracefully."""
-        db_path = tmp_path / "test.db"
-        backend = SQLiteBackend(db_path)
+        backend = sqlite_backend_factory("serialization_error.db")
         state_manager = StateManager(state_backend=backend)
 
         # Create context that might cause serialization issues
@@ -309,10 +303,9 @@ class TestPersistenceOptimizationEdgeCases:
         assert "error" in workflow_state["pipeline_context"]
 
     @pytest.mark.asyncio
-    async def test_concurrent_persistence_operations(self, tmp_path: Path):
+    async def test_concurrent_persistence_operations(self, sqlite_backend_factory):
         """Test that concurrent persistence operations don't cause issues."""
-        db_path = tmp_path / "test.db"
-        backend = SQLiteBackend(db_path)
+        backend = sqlite_backend_factory("concurrent.db")
         state_manager = StateManager(state_backend=backend)
 
         # Create multiple agents, one per step per pipeline
@@ -378,10 +371,9 @@ class TestPersistenceOptimizationEdgeCases:
             assert workflow_state["run_id"] == f"concurrent_run_{i}"
 
     @pytest.mark.asyncio
-    async def test_persistence_with_none_context(self, tmp_path: Path):
+    async def test_persistence_with_none_context(self, sqlite_backend_factory):
         """Test that persistence works correctly with None context."""
-        db_path = tmp_path / "test.db"
-        backend = SQLiteBackend(db_path)
+        backend = sqlite_backend_factory("none_context.db")
         state_manager = StateManager(state_backend=backend)
 
         agent = StubAgent(["output"])
@@ -441,10 +433,9 @@ class TestPersistenceOptimizationEdgeCases:
         assert workflow_state["pipeline_context"] is None
 
     @pytest.mark.asyncio
-    async def test_persistence_with_complex_nested_objects(self, tmp_path: Path):
+    async def test_persistence_with_complex_nested_objects(self, sqlite_backend_factory):
         """Test that persistence works with complex nested objects."""
-        db_path = tmp_path / "test.db"
-        backend = SQLiteBackend(db_path)
+        backend = sqlite_backend_factory("complex_nested.db")
         state_manager = StateManager(state_backend=backend)
 
         # Create context with complex nested objects
@@ -519,10 +510,9 @@ class TestPersistenceOptimizationEdgeCases:
 
     @pytest.mark.asyncio
     @pytest.mark.slow  # Mark as slow due to performance measurement
-    async def test_persistence_performance_under_load(self, tmp_path: Path):
+    async def test_persistence_performance_under_load(self, sqlite_backend_factory):
         """Test persistence performance under high load."""
-        db_path = tmp_path / "test.db"
-        backend = SQLiteBackend(db_path)
+        backend = sqlite_backend_factory("performance_load.db")
         state_manager = StateManager(state_backend=backend)
 
         # Create a simple agent
@@ -589,10 +579,9 @@ class TestPersistenceOptimizationEdgeCases:
             assert workflow_state is not None
 
     @pytest.mark.asyncio
-    async def test_persistence_with_circular_references(self, tmp_path: Path):
+    async def test_persistence_with_circular_references(self, sqlite_backend_factory):
         """Test that persistence handles circular references gracefully."""
-        db_path = tmp_path / "test.db"
-        backend = SQLiteBackend(db_path)
+        backend = sqlite_backend_factory("circular_refs.db")
         state_manager = StateManager(state_backend=backend)
 
         # Create context that might have circular references

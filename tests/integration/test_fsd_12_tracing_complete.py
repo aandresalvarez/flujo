@@ -59,9 +59,15 @@ class TestFSD12TracingComplete:
             pass
 
     @pytest.fixture
-    def state_backend(self, temp_db_path):
-        """Create a SQLite backend for testing."""
-        return SQLiteBackend(temp_db_path)
+    async def state_backend(self, temp_db_path):
+        """Create a SQLite backend for testing with proper cleanup."""
+        backend = SQLiteBackend(temp_db_path)
+        yield backend
+        # Ensure backend is properly closed
+        try:
+            await backend.close()
+        except Exception:
+            pass
 
     @pytest.fixture
     def complex_pipeline(self):
@@ -198,21 +204,20 @@ class TestFSD12TracingComplete:
 
         run_id = final_result.final_pipeline_context.run_id
 
-        # Create new backend instance to simulate restart
-        new_backend = SQLiteBackend(state_backend.db_path)
+        # Create new backend instance to simulate restart - Use async with for proper cleanup
+        async with SQLiteBackend(state_backend.db_path) as new_backend:
+            # Verify trace can be retrieved
+            trace = await new_backend.get_trace(run_id)
+            assert trace is not None
+            assert trace["name"] == "pipeline_run"
 
-        # Verify trace can be retrieved
-        trace = await new_backend.get_trace(run_id)
-        assert trace is not None
-        assert trace["name"] == "pipeline_run"
+            # Verify spans can be retrieved
+            spans = await new_backend.get_spans(run_id)
+            assert len(spans) > 0
 
-        # Verify spans can be retrieved
-        spans = await new_backend.get_spans(run_id)
-        assert len(spans) > 0
-
-        # Verify span statistics
-        stats = await new_backend.get_span_statistics()
-        assert stats is not None
+            # Verify span statistics
+            stats = await new_backend.get_span_statistics()
+            assert stats is not None
 
     @pytest.mark.asyncio
     @pytest.mark.slow  # Mark as slow due to performance variability
