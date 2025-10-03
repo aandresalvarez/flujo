@@ -627,6 +627,18 @@ class DefaultAgentRunner:
             raise RuntimeError("Agent is None")
 
         target_agent = getattr(agent, "_agent", agent)
+        
+        # Debug logging for agent type
+        try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"[AGENT_DEBUG] agent type: {type(agent).__name__}, target_agent type: {type(target_agent).__name__}")
+            if hasattr(target_agent, "__module__"):
+                logger.info(f"[AGENT_DEBUG] target_agent module: {target_agent.__module__}")
+            if hasattr(target_agent, "__name__"):
+                logger.info(f"[AGENT_DEBUG] target_agent name: {target_agent.__name__}")
+        except Exception:
+            pass
 
         executable_func = None
         if stream:
@@ -690,11 +702,35 @@ class DefaultAgentRunner:
                 if breach_event is not None:
                     filtered_kwargs["breach_event"] = breach_event
 
+        # Check if this is a builtin skill that needs dict unpacking
+        should_unpack_payload = False
+        try:
+            # Builtin skills are plain async functions (not wrapped in agents)
+            # and expect their parameters as kwargs, not as a single positional dict
+            if (
+                inspect.iscoroutinefunction(executable_func)
+                and isinstance(payload, dict)
+                and hasattr(executable_func, "__module__")
+                and executable_func.__module__ == "flujo.builtins"
+            ):
+                should_unpack_payload = True
+                # Debug logging
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"[BUILTIN] Unpacking payload for {getattr(executable_func, '__name__', 'unknown')}: {list(payload.keys())}")
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"[BUILTIN] Error checking for unpacking: {e}")
+        
         try:
             if stream:
                 # Case 1: async generator function
                 if inspect.isasyncgenfunction(executable_func):
-                    async_generator = executable_func(payload, **filtered_kwargs)
+                    if should_unpack_payload:
+                        async_generator = executable_func(**payload, **filtered_kwargs)
+                    else:
+                        async_generator = executable_func(payload, **filtered_kwargs)
                     chunks = []
                     async for chunk in async_generator:
                         chunks.append(chunk)
@@ -710,7 +746,10 @@ class DefaultAgentRunner:
 
                 # Case 2: coroutine function that returns an async iterator
                 if inspect.iscoroutinefunction(executable_func):
-                    result = await executable_func(payload, **filtered_kwargs)
+                    if should_unpack_payload:
+                        result = await executable_func(**payload, **filtered_kwargs)
+                    else:
+                        result = await executable_func(payload, **filtered_kwargs)
                     if hasattr(result, "__aiter__"):
                         chunks = []
                         async for chunk in result:
@@ -730,7 +769,10 @@ class DefaultAgentRunner:
                     return result
 
                 # Case 3: regular callable returning an async iterator/generator
-                result = executable_func(payload, **filtered_kwargs)
+                if should_unpack_payload:
+                    result = executable_func(**payload, **filtered_kwargs)
+                else:
+                    result = executable_func(payload, **filtered_kwargs)
                 if hasattr(result, "__aiter__"):
                     chunks = []
                     async for chunk in result:
@@ -751,9 +793,15 @@ class DefaultAgentRunner:
 
             # Non-streaming execution
             if inspect.iscoroutinefunction(executable_func):
-                _res = await executable_func(payload, **filtered_kwargs)
+                if should_unpack_payload:
+                    _res = await executable_func(**payload, **filtered_kwargs)
+                else:
+                    _res = await executable_func(payload, **filtered_kwargs)
             else:
-                _res = executable_func(payload, **filtered_kwargs)
+                if should_unpack_payload:
+                    _res = executable_func(**payload, **filtered_kwargs)
+                else:
+                    _res = executable_func(payload, **filtered_kwargs)
                 if inspect.iscoroutine(_res):
                     _res = await _res
 
