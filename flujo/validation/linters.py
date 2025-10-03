@@ -1759,6 +1759,250 @@ class ExceptionLinter(BaseLinter):
         return out
 
 
+class LoopScopingLinter(BaseLinter):
+    """Loop step scoping validation: LOOP-001.
+
+    Detects step references (steps['name']) inside loop bodies that may not work as expected
+    due to loop scoping. In loop bodies, only previous_step or context should be used.
+    """
+
+    def analyze(self, pipeline: Any) -> Iterable[ValidationFinding]:
+        """Check for step references inside loop/map bodies."""
+        out: list[ValidationFinding] = []
+        steps = getattr(pipeline, "steps", []) or []
+
+        def _check_loop_body_steps(
+            body_steps: list[Any], loop_name: str, loop_meta: dict[str, Any]
+        ) -> None:
+            """Recursively check steps in a loop body for step references."""
+            for idx, step in enumerate(body_steps):
+                try:
+                    meta = getattr(step, "meta", {})
+
+                    # Check for condition_expression or exit_expression with steps[] references
+                    # These are stored in the meta dict for ConditionalStep
+                    for field_name in ["condition_expression", "exit_expression"]:
+                        expr = None
+
+                        # Check both direct attribute and meta dict
+                        if hasattr(step, field_name):
+                            expr = getattr(step, field_name, None)
+                        elif isinstance(meta, dict) and field_name in meta:
+                            expr = meta.get(field_name)
+
+                        if isinstance(expr, str) and (
+                            "steps[" in expr
+                            or "steps.get(" in expr
+                            or re.search(r"\bsteps\.", expr)
+                        ):
+                            yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+                            loc_path = (yloc or {}).get(
+                                "path"
+                            ) or f"loop '{loop_name}' body steps[{idx}].{field_name}"
+                            fpath = (yloc or {}).get("file")
+                            line = (yloc or {}).get("line")
+                            col = (yloc or {}).get("column")
+
+                            sev = _override_severity("LOOP-001", "warning")
+                            if sev is not None:
+                                out.append(
+                                    ValidationFinding(
+                                        rule_id="LOOP-001",
+                                        severity=sev,
+                                        message=(
+                                            f"Step reference detected in {field_name} inside loop body '{loop_name}'. "
+                                            f"Loop body steps are scoped to the current iteration and may not be "
+                                            f"accessible via steps['name']."
+                                        ),
+                                        step_name=getattr(step, "name", None),
+                                        location_path=loc_path,
+                                        file=fpath,
+                                        line=line,
+                                        column=col,
+                                        suggestion=(
+                                            "Use 'previous_step' to reference the immediate previous step in the loop body.\n"
+                                            "\n"
+                                            "Example:\n"
+                                            "  ❌ condition_expression: \"steps['process'].output.status == 'done'\"\n"
+                                            "  ✅ condition_expression: \"previous_step.status == 'done'\"\n"
+                                            "\n"
+                                            "To access steps from outside the loop, use context to carry data."
+                                        ),
+                                    )
+                                )
+
+                    # Check templated_input for step references
+                    meta = getattr(step, "meta", {})
+                    templ = meta.get("templated_input")
+                    if isinstance(templ, str) and (
+                        "steps[" in templ or "steps.get(" in templ or re.search(r"\bsteps\.", templ)
+                    ):
+                        yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+                        loc_path = (yloc or {}).get(
+                            "path"
+                        ) or f"loop '{loop_name}' body steps[{idx}].input"
+                        fpath = (yloc or {}).get("file")
+                        line = (yloc or {}).get("line")
+                        col = (yloc or {}).get("column")
+
+                        sev = _override_severity("LOOP-001", "warning")
+                        if sev is not None:
+                            out.append(
+                                ValidationFinding(
+                                    rule_id="LOOP-001",
+                                    severity=sev,
+                                    message=(
+                                        f"Step reference detected in template inside loop body '{loop_name}'. "
+                                        f"Loop body steps are scoped to the current iteration."
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                    location_path=loc_path,
+                                    file=fpath,
+                                    line=line,
+                                    column=col,
+                                    suggestion=(
+                                        "Use '{{ previous_step }}' to reference the immediate previous step.\n"
+                                        "\n"
+                                        "Example:\n"
+                                        '  ❌ input: "{{ steps.process.output }}"\n'
+                                        '  ✅ input: "{{ previous_step }}"\n'
+                                    ),
+                                )
+                            )
+
+                    # Recursively check nested loop bodies
+                    if hasattr(step, "loop_body_pipeline"):
+                        nested_pipeline = getattr(step, "loop_body_pipeline", None)
+                        if nested_pipeline and hasattr(nested_pipeline, "steps"):
+                            nested_steps = getattr(nested_pipeline, "steps", [])
+                            nested_meta = getattr(step, "meta", {})
+                            _check_loop_body_steps(
+                                nested_steps, getattr(step, "name", "nested_loop"), nested_meta
+                            )
+
+                except Exception:
+                    continue
+
+        # Check each top-level step for loops/maps
+        for step in steps:
+            try:
+                # Check LoopStep
+                if hasattr(step, "loop_body_pipeline"):
+                    pipeline_body = getattr(step, "loop_body_pipeline", None)
+                    if pipeline_body and hasattr(pipeline_body, "steps"):
+                        body_steps = getattr(pipeline_body, "steps", [])
+                        meta = getattr(step, "meta", {})
+                        _check_loop_body_steps(body_steps, getattr(step, "name", "loop"), meta)
+
+                # Check MapStep (inherits from LoopStep)
+                if hasattr(step, "pipeline_to_run"):
+                    pipeline_body = getattr(step, "pipeline_to_run", None)
+                    if pipeline_body and hasattr(pipeline_body, "steps"):
+                        body_steps = getattr(pipeline_body, "steps", [])
+                        meta = getattr(step, "meta", {})
+                        _check_loop_body_steps(body_steps, getattr(step, "name", "map"), meta)
+
+            except Exception:
+                continue
+
+        return out
+
+
+class TemplateControlStructureLinter(BaseLinter):
+    """Template Jinja2 control structure validation: TEMPLATE-001.
+
+    Detects unsupported Jinja2 control structures ({% %}) in templates.
+    Flujo only supports {{ }} expressions and | filters, not control flow.
+    """
+
+    def analyze(self, pipeline: Any) -> Iterable[ValidationFinding]:
+        """Check for unsupported Jinja2 control structures in templates."""
+        out: list[ValidationFinding] = []
+        steps = getattr(pipeline, "steps", []) or []
+
+        def _check_template_field(template_str: str, field_name: str, step: Any, idx: int) -> None:
+            """Check a single template field for control structures."""
+            if not isinstance(template_str, str):
+                return
+
+            # Detect {% %} control structures
+            if "{%" in template_str or "%}" in template_str:
+                meta = getattr(step, "meta", {})
+                yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+                loc_path = (yloc or {}).get("path") or f"steps[{idx}].{field_name}"
+                fpath = (yloc or {}).get("file")
+                line = (yloc or {}).get("line")
+                col = (yloc or {}).get("column")
+
+                # Try to extract the control structure name
+                control_match = re.search(r"\{%\s*([a-z]+)", template_str)
+                control_name = control_match.group(1) if control_match else "unknown"
+
+                sev = _override_severity("TEMPLATE-001", "error")
+                if sev is not None:
+                    out.append(
+                        ValidationFinding(
+                            rule_id="TEMPLATE-001",
+                            severity=sev,
+                            message=(
+                                f"Unsupported Jinja2 control structure '{{%{control_name}%}}' detected in {field_name}. "
+                                f"Flujo templates support expressions {{{{ }}}} and filters |, but NOT control structures {{%{control_name}%}}."
+                            ),
+                            step_name=getattr(step, "name", None),
+                            location_path=loc_path,
+                            file=fpath,
+                            line=line,
+                            column=col,
+                            suggestion=(
+                                "Alternatives:\n"
+                                "  1. Use template filters: {{ context.items | join('\\n') }}\n"
+                                '  2. Use custom skill: uses: "skills:format_data"\n'
+                                "  3. Use conditional steps for if/else logic\n"
+                                "  4. Pre-format data in a previous step\n"
+                                "\n"
+                                "Supported:\n"
+                                "  ✅ {{ variable }}\n"
+                                "  ✅ {{ value | filter }}\n"
+                                "  ✅ {{ context.nested.field }}\n"
+                                "\n"
+                                "NOT Supported:\n"
+                                "  ❌ {% for %}, {% if %}, {% set %}\n"
+                                "  ❌ {% macro %}, {% include %}\n"
+                                "\n"
+                                "Documentation: https://flujo.dev/docs/templates"
+                            ),
+                        )
+                    )
+
+        # Check all steps for template fields
+        for idx, step in enumerate(steps):
+            try:
+                meta = getattr(step, "meta", {})
+
+                # Check templated_input
+                templ = meta.get("templated_input")
+                if templ:
+                    _check_template_field(templ, "input", step, idx)
+
+                # Check message field (for HITL steps)
+                if hasattr(step, "message"):
+                    message = getattr(step, "message", None)
+                    if message:
+                        _check_template_field(message, "message", step, idx)
+
+                # Check other common template fields
+                for field in ["description", "prompt", "system_prompt"]:
+                    if hasattr(step, field):
+                        value = getattr(step, field, None)
+                        if value:
+                            _check_template_field(value, field, step, idx)
+
+            except Exception:
+                continue
+
+        return out
+
+
 def run_linters(pipeline: Any) -> ValidationReport:
     """Run linters and return a ValidationReport (always-on)."""
     linters: list[BaseLinter] = [
@@ -1769,6 +2013,8 @@ def run_linters(pipeline: Any) -> ValidationReport:
         AgentLinter(),
         OrchestrationLinter(),
         ExceptionLinter(),
+        LoopScopingLinter(),
+        TemplateControlStructureLinter(),
     ]
     errors: list[ValidationFinding] = []
     warnings: list[ValidationFinding] = []

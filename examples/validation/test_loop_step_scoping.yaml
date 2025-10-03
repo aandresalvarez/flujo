@@ -1,0 +1,56 @@
+version: "0.1"
+name: "Test Loop Step Scoping Validator"
+
+# This file tests the LOOP-001 validator
+# It should produce a WARNING when validated
+
+agents:
+  processor:
+    model: "openai:gpt-4o"
+    system_prompt: "Process and return status"
+    output_schema:
+      type: object
+      properties:
+        status: { type: string }
+        result: { type: string }
+
+steps:
+  - kind: step
+    name: init
+    agent:
+      id: "flujo.builtins.passthrough"
+    input: '{"ready": false}'
+    updates_context: true
+  
+  # ❌ This loop should trigger LOOP-001 WARNING
+  - kind: loop
+    name: processing_loop
+    loop:
+      body:
+        # Process step
+        - kind: step
+          name: process
+          uses: agents.processor
+          input: "Process data"
+        
+        # ❌ This conditional references steps['process'] - should trigger warning
+        - kind: conditional
+          name: check_status
+          condition_expression: "steps['process'].output.status == 'done'"
+          branches:
+            true:
+              - kind: step
+                name: finish
+                agent:
+                  id: "flujo.builtins.passthrough"
+                input: "Finished"
+            false:
+              - kind: step
+                name: continue
+                agent:
+                  id: "flujo.builtins.passthrough"
+                input: "Continue"
+      
+      max_loops: 5
+      exit_expression: "False"  # Never exits (for testing)
+
