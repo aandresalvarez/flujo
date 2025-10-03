@@ -627,18 +627,6 @@ class DefaultAgentRunner:
             raise RuntimeError("Agent is None")
 
         target_agent = getattr(agent, "_agent", agent)
-        
-        # Debug logging for agent type
-        try:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"[AGENT_DEBUG] agent type: {type(agent).__name__}, target_agent type: {type(target_agent).__name__}")
-            if hasattr(target_agent, "__module__"):
-                logger.info(f"[AGENT_DEBUG] target_agent module: {target_agent.__module__}")
-            if hasattr(target_agent, "__name__"):
-                logger.info(f"[AGENT_DEBUG] target_agent name: {target_agent.__name__}")
-        except Exception:
-            pass
 
         executable_func = None
         if stream:
@@ -714,14 +702,8 @@ class DefaultAgentRunner:
                 and executable_func.__module__ == "flujo.builtins"
             ):
                 should_unpack_payload = True
-                # Debug logging
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(f"[BUILTIN] Unpacking payload for {getattr(executable_func, '__name__', 'unknown')}: {list(payload.keys())}")
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"[BUILTIN] Error checking for unpacking: {e}")
+        except Exception:
+            pass
         
         try:
             if stream:

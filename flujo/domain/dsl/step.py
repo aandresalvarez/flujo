@@ -505,12 +505,23 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 # Build the arguments to pass to the callable
                 call_args: list[Any] = []
                 callable_kwargs: dict[str, Any] = {}
+                
+                # Check if this is a builtin skill that needs dict unpacking
+                is_builtin_skill = (
+                    hasattr(func, "__module__")
+                    and func.__module__ == "flujo.builtins"
+                    and isinstance(data, dict)
+                )
 
                 params = list(self._original_sig.parameters.values())
                 if params:
                     first_param = params[0]
+                    # For builtin skills with dict data, unpack as kwargs instead of positional
+                    if is_builtin_skill:
+                        # Unpack data dict as kwargs
+                        callable_kwargs.update(data)
                     # Pass data positionally for common kinds including *args
-                    if first_param.kind in (
+                    elif first_param.kind in (
                         inspect.Parameter.POSITIONAL_ONLY,
                         inspect.Parameter.POSITIONAL_OR_KEYWORD,
                         inspect.Parameter.VAR_POSITIONAL,

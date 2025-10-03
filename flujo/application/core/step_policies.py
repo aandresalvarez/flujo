@@ -2568,6 +2568,15 @@ def _normalize_builtin_params(step: Any, data: Any) -> Any:
     if agent_spec is None:
         return data
     
+    # Check if the agent has a _step_callable that's a builtin
+    if hasattr(agent_spec, '_step_callable'):
+        func = agent_spec._step_callable
+        if hasattr(func, '__module__') and func.__module__ == 'flujo.builtins':
+            # This is a builtin skill, look for params in step
+            step_input = getattr(step, 'input', None)
+            if isinstance(step_input, dict):
+                return step_input
+    
     agent_id = None
     if isinstance(agent_spec, str):
         agent_id = agent_spec
