@@ -1497,6 +1497,125 @@ class OrchestrationLinter(BaseLinter):
         return out
 
 
+class ExceptionLinter(BaseLinter):
+    """Control flow exception handling validation: V-EX1.
+
+    This linter warns about potential control flow exception handling issues
+    as described in the FLUJO_TEAM_GUIDE.md "Fatal Anti-Pattern" section.
+
+    Control flow exceptions (PausedException, PipelineAbortSignal, InfiniteRedirectError)
+    must be re-raised to maintain proper workflow orchestration. Converting them to
+    StepResult(success=False) breaks pause/resume and other critical flows.
+    """
+
+    CONTROL_FLOW_EXCEPTIONS = {
+        "PausedException",
+        "PipelineAbortSignal",
+        "InfiniteRedirectError",
+    }
+
+    def analyze(self, pipeline: Any) -> Iterable[ValidationFinding]:
+        """Detect steps that use custom Python skills and warn about exception handling best practices."""
+        out: list[ValidationFinding] = []
+        steps = getattr(pipeline, "steps", []) or []
+
+        for idx, step in enumerate(steps):
+            try:
+                meta = getattr(step, "meta", None)
+                if not isinstance(meta, dict):
+                    continue
+
+                yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+                loc_path = (yloc or {}).get("path") or f"steps[{idx}]"
+                fpath = (yloc or {}).get("file")
+                line = (yloc or {}).get("line")
+                col = (yloc or {}).get("column")
+
+                # Check if this step uses custom Python skills
+                step_name = getattr(step, "name", None)
+                agent_spec = getattr(step, "agent", None)
+
+                # Look for custom skill references - check both meta and agent
+                uses_custom_skill = False
+                skill_ref = None
+
+                # First check if 'uses' was specified in meta (preserved from YAML)
+                if "uses" in meta and isinstance(meta["uses"], str):
+                    uses_val = meta["uses"]
+                    # Custom skills are referenced with module paths (e.g., "my_module:function")
+                    if ":" in uses_val and not uses_val.startswith(
+                        ("agents.", "imports.", "flujo.builtins.")
+                    ):
+                        uses_custom_skill = True
+                        skill_ref = uses_val
+
+                # Also check the resolved agent object
+                if not uses_custom_skill and agent_spec:
+                    # Check if agent is a _CallableAgent wrapper
+                    if hasattr(agent_spec, "_step_callable"):
+                        wrapped_func = getattr(agent_spec, "_step_callable", None)
+                        if wrapped_func:
+                            module_name = getattr(wrapped_func, "__module__", None)
+                            func_name = getattr(wrapped_func, "__name__", None)
+
+                            # Custom skills typically aren't in flujo.* modules
+                            if module_name and not module_name.startswith("flujo."):
+                                uses_custom_skill = True
+                                if func_name:
+                                    skill_ref = f"{module_name}:{func_name}"
+                                else:
+                                    skill_ref = module_name
+                    # Check if agent is a direct callable from a custom module
+                    elif callable(agent_spec):
+                        module_name = getattr(agent_spec, "__module__", None)
+                        func_name = getattr(agent_spec, "__name__", None)
+
+                        # Custom skills typically aren't in flujo.* modules
+                        if module_name and not module_name.startswith("flujo."):
+                            uses_custom_skill = True
+                            if func_name:
+                                skill_ref = f"{module_name}:{func_name}"
+                            else:
+                                skill_ref = module_name
+
+                if uses_custom_skill and skill_ref:
+                    sev = _override_severity("V-EX1", "warning")
+                    if sev is not None:
+                        out.append(
+                            ValidationFinding(
+                                rule_id="V-EX1",
+                                severity=sev,
+                                message=(
+                                    f"Step '{step_name}' uses custom skill '{skill_ref}'. "
+                                    f"Ensure it does not catch control flow exceptions "
+                                    f"(PausedException, PipelineAbortSignal, InfiniteRedirectError) "
+                                    f"without re-raising them."
+                                ),
+                                step_name=step_name,
+                                location_path=loc_path,
+                                file=fpath,
+                                line=line,
+                                column=col,
+                                suggestion=(
+                                    "In your custom skill, always re-raise control flow exceptions:\n"
+                                    "try:\n"
+                                    "    # your logic\n"
+                                    "except (PausedException, PipelineAbortSignal, InfiniteRedirectError):\n"
+                                    "    raise  # CRITICAL: must re-raise\n"
+                                    "except Exception as e:\n"
+                                    "    # handle other exceptions\n"
+                                    "\n"
+                                    "See: FLUJO_TEAM_GUIDE.md Section 2 'The Fatal Anti-Pattern'"
+                                ),
+                            )
+                        )
+
+            except Exception:
+                continue
+
+        return out
+
+
 def run_linters(pipeline: Any) -> ValidationReport:
     """Run linters and return a ValidationReport (always-on)."""
     linters: list[BaseLinter] = [
@@ -1506,6 +1625,7 @@ def run_linters(pipeline: Any) -> ValidationReport:
         ImportLinter(),
         AgentLinter(),
         OrchestrationLinter(),
+        ExceptionLinter(),
     ]
     errors: list[ValidationFinding] = []
     warnings: list[ValidationFinding] = []

@@ -48,6 +48,19 @@ Suppression:
   - Why: branches expect heterogeneous input types but receive the same input.
   - Fix: add adapter steps per branch or unify input types.
 
+## <a id="v-ex1"></a>V‑EX1 — Control flow exception handling
+  - Why: Custom skills must re-raise control flow exceptions (PausedException, PipelineAbortSignal, InfiniteRedirectError) to maintain proper workflow orchestration. Converting them to StepResult(success=False) breaks pause/resume flows.
+  - Fix: Always re-raise control flow exceptions in your custom skill:
+    ```python
+    try:
+        # your logic
+    except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+        raise  # CRITICAL: must re-raise
+    except Exception as e:
+        # handle other exceptions
+    ```
+  - See: FLUJO_TEAM_GUIDE.md Section 2 "The Fatal Anti-Pattern"
+
 ## <a id="v-sm1"></a>V‑SM1 — StateMachine transitions validity
   - Why: invalid states or no path to an end state.
   - Fix: correct state names and transition rules.

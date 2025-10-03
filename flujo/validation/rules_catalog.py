@@ -93,6 +93,13 @@ _CATALOG: Dict[str, RuleInfo] = {
         default_severity="warning",
         help_uri=_BASE_URI + "v-l1",
     ),
+    "V-EX1": RuleInfo(
+        id="V-EX1",
+        title="Control flow exception handling",
+        description="Custom skills must re-raise control flow exceptions (PausedException, PipelineAbortSignal, InfiniteRedirectError)",
+        default_severity="warning",
+        help_uri=_BASE_URI + "v-ex1",
+    ),
     "V-SM1": RuleInfo(
         id="V-SM1",
         title="State machine unreachable end",
