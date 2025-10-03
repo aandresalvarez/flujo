@@ -52,7 +52,7 @@ steps:
         
         assert result.success
         assert result.final_pipeline_context.scratchpad.get("test_key") == "params_value"
-        assert result.context.scratchpad.get("current_state") == "complete"
+        assert result.final_pipeline_context.scratchpad.get("current_state") == "complete"
     
     @pytest.mark.fast
     async def test_context_merge_in_statemachine_with_input(self) -> None:
@@ -93,7 +93,7 @@ steps:
         
         assert result.success
         assert result.final_pipeline_context.scratchpad.get("test_key") == "input_value"
-        assert result.context.scratchpad.get("current_state") == "complete"
+        assert result.final_pipeline_context.scratchpad.get("current_state") == "complete"
     
     @pytest.mark.fast
     async def test_context_merge_in_toplevel_with_params(self) -> None:
@@ -279,6 +279,6 @@ steps:
         
         assert result.success
         assert result.final_pipeline_context.scratchpad.get("current_state") == "final"
-        assert result.context.scratchpad.get("step_count") == 1
+        assert result.final_pipeline_context.scratchpad.get("step_count") == 1
         assert result.step_history[-1].name == "test_sm"
 
