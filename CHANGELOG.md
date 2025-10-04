@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.38] - 2025-10-04
+
+### Fixed
+- Loop/HITL: Prevent nested loop creation on resume in `DefaultLoopStepExecutor`. Resuming from a HITL pause advances within the current loop iteration using scratchpad indices and evaluates exit conditions in the parent loop context.
+
+### Added
+- DSL/Blueprint: `sink_to` forwarded for YAML steps using `uses: "pkg.mod:fn"` callable import path to persist scalar outputs to context.
+
+### Docs
+- Team Guide: Added “HITL In Loops – Resume Semantics (Updated)” clarifying pause propagation, idempotent iteration context, exit condition timing, and `sink_to` parity.
+
 ### Added
 
 #### Framework Ergonomics Improvements (2025-10-02)

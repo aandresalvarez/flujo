@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List
 import openai
-from pydantic_ai.usage import Usage
+from pydantic_ai.usage import RunUsage
 
 from ..models import EmbeddingResult
 
@@ -62,9 +62,10 @@ class OpenAIEmbeddingClient:
         embeddings = [item.embedding for item in response.data]
 
         # Create usage information from the response
-        usage_info = Usage(
-            request_tokens=response.usage.prompt_tokens,
-            total_tokens=response.usage.total_tokens,
+        # For embeddings, we only have input tokens (the text being embedded)
+        usage_info = RunUsage(
+            input_tokens=response.usage.prompt_tokens,
+            output_tokens=0,  # Embeddings don't produce output tokens
         )
 
         # Return the embedding result

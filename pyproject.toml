@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # --------------------------------------------------------------------------- #
 [project]
 name = "flujo"
-version = "0.4.37"  # Project-based CLI journey (FSD-021)
+version = "0.4.38"  # HITL-in-loop resume fix + sink_to YAML wiring
 description = "A modern, type-safe framework for building AI-powered applications with structured outputs and robust error handling."
 readme = "README.md"
 license = {text = "AGPL-3.0"}
@@ -30,7 +30,8 @@ classifiers = [
 ]
 dependencies = [
     "pydantic>=2.11.7,<2.13",
-    "pydantic-ai>=0.7.0,<0.7.3",
+    "pydantic-ai>=1.0.15,<1.1",
+    "openai>=2.1.0,<3.0",
     "pydantic-settings>=2.0.0",
     "aiosqlite>=0.19.0",
     "tenacity>=8.2.0",
