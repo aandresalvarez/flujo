@@ -5470,9 +5470,11 @@ class DefaultLoopStepExecutor:
             # This ensures that when the loop continues, it starts from step 0 of the next iteration
             iteration_count += 1
             current_step_index = 0
-            telemetry.logfire.info(
-                f"LoopStep '{loop_step.name}' completed iteration {iteration_count - 1}, starting iteration {iteration_count}"
-            )
+            # Only log if we're going to continue (i.e., haven't exceeded max_loops)
+            if iteration_count <= max_loops:
+                telemetry.logfire.info(
+                    f"LoopStep '{loop_step.name}' completed iteration {iteration_count - 1}, starting iteration {iteration_count}"
+                )
 
             iter_mapper = (
                 loop_step.get_iteration_input_mapper()
@@ -5661,18 +5663,23 @@ class DefaultLoopStepExecutor:
                 else:
                     success_flag = False
                     feedback_msg = "reached max_loops"
+        # CRITICAL FIX: Calculate attempts based on exit reason
+        # - If exited by max_loops: iteration_count was incremented past max_loops, so subtract 1
+        # - If exited by condition/failure: iteration_count is the last completed iteration, use as-is
+        completed_iterations = iteration_count - 1 if (exit_reason is None or exit_reason == "max_loops") and iteration_count > max_loops else iteration_count
+        
         result = StepResult(
             name=loop_step.name,
             success=success_flag,
             output=final_output,
-            attempts=iteration_count,  # CRITICAL FIX: attempts should always be the number of completed iterations
+            attempts=completed_iterations,
             latency_s=time.monotonic() - start_time,
             token_counts=cumulative_tokens,
             cost_usd=cumulative_cost,
             feedback=feedback_msg,
             branch_context=current_context,
             metadata_={
-                "iterations": iteration_count,
+                "iterations": completed_iterations,
                 "exit_reason": exit_reason or "max_loops",
                 **(
                     {
