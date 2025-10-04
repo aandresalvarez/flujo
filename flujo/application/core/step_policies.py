@@ -2821,8 +2821,9 @@ class DefaultAgentStepExecutor:
                     template_config = config.template or TemplateConfig()
                     strict = template_config.undefined_variables == "strict"
                     log_resolution = template_config.log_resolution
-                except Exception:
+                except Exception as e:
                     # Fallback to defaults if config unavailable
+                    telemetry.logfire.debug(f"Failed to load template config: {e}")
                     pass
 
                 steps_map = get_steps_map_from_context(context)
@@ -2857,8 +2858,11 @@ class DefaultAgentStepExecutor:
                 f"[AgentStep] Template resolution failed in step '{step.name}': {e}"
             )
             raise
-        except Exception:
+        except Exception as e:
             # Non-fatal templating failure should not abort the step (backward compat)
+            telemetry.logfire.debug(
+                f"[AgentStep] Non-fatal template error in step '{step.name}': {e}"
+            )
             pass
         # --- Quota reservation (estimate + reserve) ---
         # Prefer explicitly injected estimator; then factory; then local heuristic
@@ -6856,8 +6860,9 @@ class DefaultHitlStepExecutor:
                         template_config = config.template or TemplateConfig()
                         strict = template_config.undefined_variables == "strict"
                         log_resolution = template_config.log_resolution
-                    except Exception:
+                    except Exception as e:
                         # Fallback to defaults if config unavailable
+                        telemetry.logfire.debug(f"Failed to load template config: {e}")
                         pass
 
                     steps_map = get_steps_map_from_context(context)

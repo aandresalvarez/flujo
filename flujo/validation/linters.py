@@ -1772,10 +1772,10 @@ class LoopScopingLinter(BaseLinter):
         steps = getattr(pipeline, "steps", []) or []
 
         def _check_loop_body_steps(
-            body_steps: list[Any], loop_name: str, loop_meta: dict[str, Any]
+            body_steps: list[Any], loop_name: str, _loop_meta: dict[str, Any]
         ) -> None:
             """Recursively check steps in a loop body for step references."""
-            for idx, step in enumerate(body_steps):
+            for _idx, step in enumerate(body_steps):
                 try:
                     meta = getattr(step, "meta", {})
 
@@ -1798,7 +1798,7 @@ class LoopScopingLinter(BaseLinter):
                             yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
                             loc_path = (yloc or {}).get(
                                 "path"
-                            ) or f"loop '{loop_name}' body steps[{idx}].{field_name}"
+                            ) or f"loop '{loop_name}' body steps[{_idx}].{field_name}"
                             fpath = (yloc or {}).get("file")
                             line = (yloc or {}).get("line")
                             col = (yloc or {}).get("column")
@@ -1840,7 +1840,7 @@ class LoopScopingLinter(BaseLinter):
                         yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
                         loc_path = (yloc or {}).get(
                             "path"
-                        ) or f"loop '{loop_name}' body steps[{idx}].input"
+                        ) or f"loop '{loop_name}' body steps[{_idx}].input"
                         fpath = (yloc or {}).get("file")
                         line = (yloc or {}).get("line")
                         col = (yloc or {}).get("column")
@@ -1880,7 +1880,11 @@ class LoopScopingLinter(BaseLinter):
                                 nested_steps, getattr(step, "name", "nested_loop"), nested_meta
                             )
 
-                except Exception:
+                except Exception as e:
+                    # Log validation error but continue checking other steps
+                    import logging
+
+                    logging.getLogger(__name__).debug(f"Failed to validate loop body step: {e}")
                     continue
 
         # Check each top-level step for loops/maps
@@ -1902,7 +1906,11 @@ class LoopScopingLinter(BaseLinter):
                         meta = getattr(step, "meta", {})
                         _check_loop_body_steps(body_steps, getattr(step, "name", "map"), meta)
 
-            except Exception:
+            except Exception as e:
+                # Log validation error but continue checking other steps
+                import logging
+
+                logging.getLogger(__name__).debug(f"Failed to validate step: {e}")
                 continue
 
         return out
@@ -1997,7 +2005,11 @@ class TemplateControlStructureLinter(BaseLinter):
                         if value:
                             _check_template_field(value, field, step, idx)
 
-            except Exception:
+            except Exception as e:
+                # Log validation error but continue checking other steps
+                import logging
+
+                logging.getLogger(__name__).debug(f"Failed to validate template field: {e}")
                 continue
 
         return out
@@ -2018,17 +2030,21 @@ class HitlNestedContextLinter(BaseLinter):
         # Import step types lazily to avoid circular dependencies
         try:
             from ..domain.dsl.step import HumanInTheLoopStep as _HITLStep
-        except Exception:
+        except Exception as e:
+            # Log import error but continue
+            import logging
+
+            logging.getLogger(__name__).debug(f"Failed to import HumanInTheLoopStep: {e}")
             _HITLStep = None  # type: ignore
 
         if _HITLStep is None:
             return out
 
         def _check_for_hitl_in_steps(
-            steps: list[Any], context_chain: list[str], parent_step_name: str | None = None
+            steps: list[Any], context_chain: list[str], _parent_step_name: str | None = None
         ) -> None:
             """Recursively check steps for HITL in nested contexts."""
-            for idx, step in enumerate(steps):
+            for _idx, step in enumerate(steps):
                 try:
                     # Check if this is a HITL step
                     is_hitl = isinstance(step, _HITLStep)
@@ -2102,7 +2118,7 @@ class HitlNestedContextLinter(BaseLinter):
                         if loop_pipeline and hasattr(loop_pipeline, "steps"):
                             nested_steps = getattr(loop_pipeline, "steps", [])
                             step_name = getattr(step, "name", "loop")
-                            new_chain = context_chain + [f"loop:{step_name}"]
+                            new_chain = [*context_chain, f"loop:{step_name}"]
                             _check_for_hitl_in_steps(nested_steps, new_chain, step_name)
 
                     # Check map bodies (similar to loops)
@@ -2111,7 +2127,7 @@ class HitlNestedContextLinter(BaseLinter):
                         if map_pipeline and hasattr(map_pipeline, "steps"):
                             nested_steps = getattr(map_pipeline, "steps", [])
                             step_name = getattr(step, "name", "map")
-                            new_chain = context_chain + [f"map:{step_name}"]
+                            new_chain = [*context_chain, f"map:{step_name}"]
                             _check_for_hitl_in_steps(nested_steps, new_chain, step_name)
 
                     # Check conditional branches
@@ -2122,7 +2138,8 @@ class HitlNestedContextLinter(BaseLinter):
                             for branch_key, branch_pipeline in branches.items():
                                 if branch_pipeline and hasattr(branch_pipeline, "steps"):
                                     branch_steps = getattr(branch_pipeline, "steps", [])
-                                    new_chain = context_chain + [
+                                    new_chain = [
+                                        *context_chain,
                                         f"conditional:{step_name}",
                                         f"branch:{branch_key}",
                                     ]
@@ -2136,13 +2153,20 @@ class HitlNestedContextLinter(BaseLinter):
                             for branch_name, branch_pipeline in parallel_branches.items():
                                 if branch_pipeline and hasattr(branch_pipeline, "steps"):
                                     branch_steps = getattr(branch_pipeline, "steps", [])
-                                    new_chain = context_chain + [
+                                    new_chain = [
+                                        *context_chain,
                                         f"parallel:{step_name}",
                                         f"branch:{branch_name}",
                                     ]
                                     _check_for_hitl_in_steps(branch_steps, new_chain, step_name)
 
-                except Exception:
+                except Exception as e:
+                    # Log validation error but continue checking other steps
+                    import logging
+
+                    logging.getLogger(__name__).debug(
+                        f"Failed to validate HITL nested context: {e}"
+                    )
                     continue
 
         # Start checking from top-level steps

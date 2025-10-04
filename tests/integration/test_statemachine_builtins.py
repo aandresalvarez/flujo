@@ -4,6 +4,7 @@ This test suite validates that builtin skills (flujo.builtins.*) work consistent
 across all step types (StateMachine, conditional, loop, top-level) and with both
 'agent.params' and 'input' parameter syntaxes.
 """
+
 import pytest
 from flujo.domain.blueprint.loader import load_pipeline_blueprint_from_yaml
 from flujo.testing.utils import gather_result
@@ -12,7 +13,7 @@ from tests.conftest import create_test_flujo
 
 class TestBuiltinSkillConsistency:
     """Test that builtin skills work consistently across step types."""
-    
+
     @pytest.mark.fast
     async def test_context_merge_in_statemachine_with_params(self) -> None:
         """Test context_merge with agent.params in StateMachine."""
@@ -49,13 +50,15 @@ steps:
         pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
         runner = create_test_flujo(pipeline)
         result = await gather_result(runner, "test")
-        
+
         assert result.success
         assert result.final_pipeline_context.scratchpad.get("test_key") == "params_value"
         # StateMachine reads next_state and transitions, but doesn't update current_state for terminal states
         assert result.final_pipeline_context.scratchpad.get("next_state") == "complete"
-    
-    @pytest.mark.skip(reason="input: syntax for builtins needs additional work; use params: instead")
+
+    @pytest.mark.skip(
+        reason="input: syntax for builtins needs additional work; use params: instead"
+    )
     @pytest.mark.fast
     async def test_context_merge_in_statemachine_with_input(self) -> None:
         """Test context_merge with input in StateMachine."""
@@ -92,12 +95,12 @@ steps:
         pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
         runner = create_test_flujo(pipeline)
         result = await gather_result(runner, "test")
-        
+
         assert result.success
         assert result.final_pipeline_context.scratchpad.get("test_key") == "input_value"
         # StateMachine reads next_state and transitions, but doesn't update current_state for terminal states
         assert result.final_pipeline_context.scratchpad.get("next_state") == "complete"
-    
+
     @pytest.mark.fast
     async def test_context_merge_in_toplevel_with_params(self) -> None:
         """Test context_merge with agent.params in top-level steps."""
@@ -118,14 +121,16 @@ steps:
         pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
         runner = create_test_flujo(pipeline)
         result = await gather_result(runner, "test")
-        
+
         assert result.success
         # Check that context_merge succeeded
         assert result.step_history[0].success
         # Check that context was updated
         assert result.final_pipeline_context.scratchpad.get("test_key") == "toplevel_params"
-    
-    @pytest.mark.skip(reason="input: syntax for builtins needs additional work; use params: instead")
+
+    @pytest.mark.skip(
+        reason="input: syntax for builtins needs additional work; use params: instead"
+    )
     @pytest.mark.fast
     async def test_context_merge_in_toplevel_with_input(self) -> None:
         """Test context_merge with input in top-level steps."""
@@ -146,13 +151,13 @@ steps:
         pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
         runner = create_test_flujo(pipeline)
         result = await gather_result(runner, "test")
-        
+
         assert result.success
         # Check that context_merge succeeded
         assert result.step_history[0].success
         # Check that context was updated
         assert result.final_pipeline_context.scratchpad.get("test_key") == "toplevel_input"
-    
+
     @pytest.mark.fast
     async def test_context_merge_in_conditional_branch(self) -> None:
         """Test context_merge in conditional branch."""
@@ -178,11 +183,11 @@ steps:
         pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
         runner = create_test_flujo(pipeline)
         result = await gather_result(runner, "test")
-        
+
         assert result.success
         # Check that context was updated in the branch
         assert result.final_pipeline_context.scratchpad.get("branch_key") == "yes_branch"
-    
+
     @pytest.mark.fast
     async def test_context_set_with_params(self) -> None:
         """Test context_set builtin with params."""
@@ -203,12 +208,14 @@ steps:
         pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
         runner = create_test_flujo(pipeline)
         result = await gather_result(runner, "test")
-        
+
         assert result.success
         assert result.step_history[0].success
         assert result.final_pipeline_context.scratchpad.get("counter") == 42
-    
-    @pytest.mark.skip(reason="input: syntax for builtins needs additional work; use params: instead")
+
+    @pytest.mark.skip(
+        reason="input: syntax for builtins needs additional work; use params: instead"
+    )
     @pytest.mark.fast
     async def test_context_set_with_input(self) -> None:
         """Test context_set builtin with input."""
@@ -229,12 +236,14 @@ steps:
         pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
         runner = create_test_flujo(pipeline)
         result = await gather_result(runner, "test")
-        
+
         assert result.success
         assert result.step_history[0].success
         assert result.final_pipeline_context.scratchpad.get("counter") == 99
-    
-    @pytest.mark.skip(reason="input: syntax for builtins needs additional work; use params: instead")
+
+    @pytest.mark.skip(
+        reason="input: syntax for builtins needs additional work; use params: instead"
+    )
     @pytest.mark.fast
     async def test_statemachine_dynamic_transitions(self) -> None:
         """Test StateMachine with dynamic next_state transitions."""
@@ -282,11 +291,10 @@ steps:
         pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
         runner = create_test_flujo(pipeline)
         result = await gather_result(runner, "test")
-        
+
         assert result.success
         # Verify the state machine transitioned through init -> middle -> final
         # The context should show we set next_state to trigger transitions
         assert result.final_pipeline_context.scratchpad.get("next_state") == "final"
         assert result.final_pipeline_context.scratchpad.get("step_count") == 1
         assert result.step_history[-1].name == "test_sm"
-

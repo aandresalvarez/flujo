@@ -160,7 +160,7 @@ class TestExceptionLinterCanBeSuppressed:
     @pytest.mark.skip(reason="Suppression mechanism not yet implemented for V-EX1")
     def test_vex1_respects_inline_suppression(self):
         """Test that V-EX1 can be suppressed with inline comments.
-        
+
         This test is currently skipped because the inline suppression mechanism
         is not yet implemented. When implemented, this test should verify that:
         1. The suppression comment is parsed from YAML
