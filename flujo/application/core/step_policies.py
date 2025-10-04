@@ -4844,12 +4844,16 @@ class DefaultLoopStepExecutor:
             else:
                 # Regular execution for empty loop_body_steps (single-step pipeline)
                 # CRITICAL FIX: Disable internal retries when loop has fallback handling
-                # Check if the body step has a fallback configured
+                # BUT: Skip this for MapSteps - they handle errors differently
                 has_loop_fallback = False
                 original_max_retries = None
                 body_step = None
                 
-                if hasattr(body_pipeline, "steps") and body_pipeline.steps:
+                # Check if this is a MapStep (which shouldn't have retry disabling)
+                from flujo.domain.dsl.loop import MapStep
+                is_map_step = isinstance(loop_step, MapStep)
+                
+                if not is_map_step and hasattr(body_pipeline, "steps") and body_pipeline.steps:
                     body_step = body_pipeline.steps[0]
                     has_loop_fallback = hasattr(body_step, "fallback_step") and body_step.fallback_step is not None
                     
@@ -4916,9 +4920,10 @@ class DefaultLoopStepExecutor:
                     )
                     if iter_mapper and iteration_count < max_loops:
                         try:
-                            # CRITICAL FIX: Call mapper with the iteration that was just completed, not the next one
+                            # Call mapper with current iteration number (not iteration_count-1)
+                            # iteration_count is still the current iteration at this point (not yet incremented)
                             current_data = iter_mapper(
-                                current_data, current_context, iteration_count - 1
+                                current_data, current_context, iteration_count
                             )
                         except Exception:
                             return to_outcome(
