@@ -405,6 +405,33 @@ env_file = ".does-not-exist"
         finally:
             os.unlink(config_path)
 
+    def test_template_config_loading(self):
+        """Test that [template] section is properly loaded from flujo.toml.
+
+        Regression test for: Template config was defined but never loaded,
+        making strict template mode impossible to enable.
+        """
+        config_content = """
+        [template]
+        undefined_variables = "strict"
+        log_resolution = true
+        """
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+            f.write(config_content)
+            config_path = f.name
+
+        try:
+            config_manager = ConfigManager(config_path)
+            config = config_manager.load_config()
+
+            # Verify template config is populated
+            assert config.template is not None, "Template config should be loaded from flujo.toml"
+            assert config.template.undefined_variables == "strict"
+            assert config.template.log_resolution is True
+        finally:
+            os.unlink(config_path)
+
 
 class TestConfigurationModels:
     """Test the configuration data models."""
