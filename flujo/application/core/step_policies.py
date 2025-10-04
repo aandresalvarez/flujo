@@ -4493,11 +4493,14 @@ class DefaultLoopStepExecutor:
         loop_body_steps = []
 
         # Extract steps from the loop body pipeline for step-by-step execution
-        if hasattr(body_pipeline, "steps") and body_pipeline.steps:
+        # CRITICAL FIX: Only use step-by-step execution when there are multiple steps
+        # or when we need to handle HITL pauses. For single steps, use regular execution
+        # to preserve fallback behavior.
+        if hasattr(body_pipeline, "steps") and body_pipeline.steps and len(body_pipeline.steps) > 1:
             loop_body_steps = body_pipeline.steps
         else:
-            # Fallback: create a single step from the pipeline
-            loop_body_steps = [body_pipeline]
+            # For single step, use regular execution to preserve fallback behavior
+            loop_body_steps = None
 
         while iteration_count <= max_loops:
             with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {iteration_count}"):
@@ -4871,8 +4874,9 @@ class DefaultLoopStepExecutor:
                     )
                     if iter_mapper and iteration_count < max_loops:
                         try:
+                            # CRITICAL FIX: Call mapper with the iteration that was just completed, not the next one
                             current_data = iter_mapper(
-                                current_data, current_context, iteration_count
+                                current_data, current_context, iteration_count - 1
                             )
                         except Exception:
                             return to_outcome(
@@ -4880,7 +4884,7 @@ class DefaultLoopStepExecutor:
                                     name=loop_step.name,
                                     success=False,
                                     output=None,
-                                    attempts=iteration_count,
+                                    attempts=iteration_count,  # CRITICAL FIX: attempts should always be the number of completed iterations
                                     latency_s=time.monotonic() - start_time,
                                     token_counts=cumulative_tokens,
                                     cost_usd=cumulative_cost,
@@ -5024,7 +5028,7 @@ class DefaultLoopStepExecutor:
                             name=loop_step.name,
                             success=False,
                             output=None,
-                            attempts=iteration_count,
+                            attempts=iteration_count,  # CRITICAL FIX: attempts should always be the number of completed iterations
                             latency_s=time.monotonic() - start_time,
                             token_counts=cumulative_tokens,
                             cost_usd=cumulative_cost,
@@ -5406,7 +5410,7 @@ class DefaultLoopStepExecutor:
                             name=loop_step.name,
                             success=False,
                             output=None,
-                            attempts=iteration_count,
+                            attempts=iteration_count,  # CRITICAL FIX: attempts should always be the number of completed iterations
                             latency_s=time.monotonic() - start_time,
                             token_counts=cumulative_tokens,
                             cost_usd=cumulative_cost,
@@ -5439,7 +5443,8 @@ class DefaultLoopStepExecutor:
             # use the same condition.
             if iter_mapper and iteration_count <= max_loops:
                 try:
-                    current_data = iter_mapper(current_data, current_context, iteration_count)
+                    # CRITICAL FIX: Call mapper with the iteration that was just completed, not the next one
+                    current_data = iter_mapper(current_data, current_context, iteration_count - 1)
                 except Exception as e:
                     telemetry.logfire.error(
                         f"Error in iteration_input_mapper for LoopStep '{loop_step.name}' at iteration {iteration_count}: {e}"
@@ -5449,7 +5454,7 @@ class DefaultLoopStepExecutor:
                             name=loop_step.name,
                             success=False,
                             output=None,
-                            attempts=iteration_count,
+                            attempts=iteration_count,  # CRITICAL FIX: attempts should always be the number of completed iterations
                             latency_s=time.monotonic() - start_time,
                             token_counts=cumulative_tokens,
                             cost_usd=cumulative_cost,
@@ -5536,7 +5541,7 @@ class DefaultLoopStepExecutor:
                     name=loop_step.name,
                     success=False,
                     output=None,
-                    attempts=iteration_count,
+                    attempts=iteration_count,  # CRITICAL FIX: attempts should always be the number of completed iterations
                     latency_s=time.monotonic() - start_time,
                     token_counts=cumulative_tokens,
                     cost_usd=cumulative_cost,
@@ -5618,7 +5623,7 @@ class DefaultLoopStepExecutor:
             name=loop_step.name,
             success=success_flag,
             output=final_output,
-            attempts=iteration_count,
+            attempts=iteration_count,  # CRITICAL FIX: attempts should always be the number of completed iterations
             latency_s=time.monotonic() - start_time,
             token_counts=cumulative_tokens,
             cost_usd=cumulative_cost,
