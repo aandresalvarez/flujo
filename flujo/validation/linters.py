@@ -2115,7 +2115,7 @@ class HitlNestedContextLinter(BaseLinter):
                                         "      - kind: conditional\n"
                                         "        branches:\n"
                                         "          true:\n"
-                                        "            - kind: hitl  # ← SILENTLY SKIPPED!\n"
+                                        "            - kind: hitl  # <- SILENTLY SKIPPED!\n"
                                         "              message: 'Question?'\n"
                                         "\n"
                                         "  # ✅ WORKS - HITL at top-level\n"
