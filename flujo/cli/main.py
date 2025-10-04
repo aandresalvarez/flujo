@@ -475,7 +475,7 @@ def dev_health_check(
                 try:
                     # Numeric epoch
                     if isinstance(ts, (int, float)):
-                        return datetime.utcfromtimestamp(float(ts))
+                        return datetime.fromtimestamp(float(ts), tz=timezone.utc)
                     if isinstance(ts, str):
                         s = ts.strip()
                         # Support Z-terminated ISO by normalizing to UTC
@@ -483,11 +483,10 @@ def dev_health_check(
                             return (
                                 datetime.fromisoformat(s.replace("Z", "+00:00"))
                                 .astimezone(timezone.utc)
-                                .replace(tzinfo=None)
                             )
                         except Exception:
                             # Try epoch encoded as string
-                            return datetime.utcfromtimestamp(float(s))
+                            return datetime.fromtimestamp(float(s), tz=timezone.utc)
                     return None
                 except Exception:
                     return None

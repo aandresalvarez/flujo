@@ -217,7 +217,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.pipeline: Pipeline[RunnerInT, RunnerOutT] | None = pipeline
         self.registry = registry
         if pipeline_name is None:
-            from datetime import datetime, timezone
+            from datetime import datetime
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             pipeline_name = f"unnamed_{timestamp}"
