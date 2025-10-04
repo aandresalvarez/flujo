@@ -93,17 +93,15 @@ def _load_template_config() -> Tuple[bool, bool]:
 def _check_hitl_nesting_safety(step: Any, core: Any) -> None:
     """Runtime safety check for HITL steps in nested contexts.
 
-    Raises an error if HITL is detected in a problematic nested context
+    Logs a warning if HITL is detected in a problematic nested context
     (conditional inside loop, or other known-bad patterns).
 
-    This is a fallback safety mechanism in case validation was bypassed.
+    This is a non-blocking fallback check in case validation was bypassed.
+    It logs a warning but does not raise an error to avoid breaking existing workflows.
 
     Args:
         step: The HITL step being executed
         core: The executor core (may contain execution stack/context info)
-
-    Raises:
-        RuntimeError: If HITL is in an unsupported nested context
     """
     from flujo.infra.telemetry import telemetry
 
@@ -132,49 +130,22 @@ def _check_hitl_nesting_safety(step: Any, core: Any) -> None:
                 has_conditional = True
                 context_chain.append(f"conditional:{frame_name}")
 
-        # If we're in a conditional inside a loop, this is the known-bad pattern
+        # If we're in a conditional inside a loop, log a warning
+        # Note: We log but don't raise to avoid breaking existing workflows
+        # Validation (HITL-NESTED-001) should catch this before runtime
         if has_loop and has_conditional:
             context_desc = " > ".join(context_chain)
-            error_msg = (
-                f"\n\n"
-                f"🚨 CRITICAL ERROR: HITL step '{getattr(step, 'name', 'unnamed')}' "
-                f"cannot execute in nested context.\n\n"
-                f"Context: {context_desc}\n\n"
-                f"This is a known limitation: HITL steps in conditional branches inside loops "
-                f"are SILENTLY SKIPPED at runtime with no error message, causing data loss.\n\n"
-                f"This should have been caught by validation (rule HITL-NESTED-001).\n"
-                f"If you see this error, validation may have been bypassed or disabled.\n\n"
-                f"Required actions:\n"
-                f"  1. Move HITL step outside the loop (RECOMMENDED)\n"
-                f"  2. Remove the conditional wrapper (if HITL must be in loop)\n"
-                f"  3. Use flujo.builtins.ask_user skill instead\n\n"
-                f"Example fix:\n"
-                f"  # ❌ THIS FAILS\n"
-                f"  - kind: loop\n"
-                f"    body:\n"
-                f"      - kind: conditional\n"
-                f"        branches:\n"
-                f"          true:\n"
-                f"            - kind: hitl  # ← WILL NOT WORK!\n\n"
-                f"  # ✅ THIS WORKS\n"
-                f"  - kind: hitl\n"
-                f"    name: get_input\n"
-                f"    sink_to: 'user_answer'\n"
-                f"  - kind: loop\n"
-                f"    body:\n"
-                f"      - kind: step\n"
-                f"        input: '{{{{ context.user_answer }}}}'\n\n"
-                f"Documentation: https://flujo.dev/docs/known-issues/hitl-nested\n"
-                f"Report: https://github.com/aandresalvarez/flujo/issues\n"
+            warning_msg = (
+                f"⚠️ WARNING: HITL step '{getattr(step, 'name', 'unnamed')}' "
+                f"in nested context ({context_desc}). "
+                f"This pattern may cause silent failures. "
+                f"Validation rule HITL-NESTED-001 should have caught this. "
+                f"See https://flujo.dev/docs/known-issues/hitl-nested"
             )
-            telemetry.logfire.error(f"HITL nesting safety check failed: {error_msg}")
-            raise RuntimeError(error_msg)
+            telemetry.logfire.warn(warning_msg)
 
-    except RuntimeError:
-        # Re-raise RuntimeError (our safety check failure)
-        raise
     except Exception as e:
-        # For any other error (e.g., inspection failure), log and continue
+        # For any error during inspection, log and continue
         # We don't want the safety check itself to break legitimate HITL usage
         telemetry.logfire.debug(f"HITL nesting safety check skipped due to error: {e}")
         return

@@ -34,7 +34,7 @@ Based on extensive user feedback and real-world evidence, **WARN-HITL-001 has be
 - Added detailed example fix with both failing and working patterns
 
 **New Error Message**:
-```
+```text
 ❌ ERROR [HITL-NESTED-001]: HITL step 'ask_user' will be SILENTLY SKIPPED at runtime.
 Context: loop:clarification_loop > conditional:handle_response
 This is a known limitation: HITL steps in nested contexts (loops, conditionals) do NOT execute.
@@ -42,7 +42,7 @@ The step will be filtered out silently with no error message, causing data loss.
 ```
 
 **New Suggestion**:
-```
+```text
 CRITICAL: This pipeline will fail at runtime. Apply one of these workarounds:
 
   1. Move HITL step outside the loop (RECOMMENDED)
@@ -76,8 +76,8 @@ Example fix:
       - kind: step
         input: '{{ context.user_answer }}'
 
-Documentation: https://flujo.dev/docs/known-issues/hitl-nested
-Report hours lost debugging this? https://github.com/aandresalvarez/flujo/issues
+Documentation: <https://flujo.dev/docs/known-issues/hitl-nested>
+Report hours lost debugging this? <https://github.com/aandresalvarez/flujo/issues>
 ```
 
 ---
@@ -130,16 +130,13 @@ def _check_hitl_nesting_safety(step: Any, core: Any) -> None:
 ```
 
 **Runtime Error Message**:
-```
-🚨 CRITICAL ERROR: HITL step 'ask_user' cannot execute in nested context.
+```text
+⚠️ WARNING: HITL step 'ask_user' in nested context (loop:clarification_loop > conditional:handle_response).
+This pattern may cause silent failures.
+Validation rule HITL-NESTED-001 should have caught this.
+See <https://flujo.dev/docs/known-issues/hitl-nested>
 
-Context: loop:clarification_loop > conditional:handle_response
-
-This is a known limitation: HITL steps in conditional branches inside loops
-are SILENTLY SKIPPED at runtime with no error message, causing data loss.
-
-This should have been caught by validation (rule HITL-NESTED-001).
-If you see this error, validation may have been bypassed or disabled.
+Note: This is a non-blocking warning. The validation ERROR should catch this before runtime.
 
 Required actions:
   1. Move HITL step outside the loop (RECOMMENDED)
@@ -254,7 +251,7 @@ RuntimeError: [full error with fix instructions]
 **Migration**: 
 - Pipelines with HITL in nested contexts **will fail validation**
 - Apply one of the suggested workarounds
-- See: https://flujo.dev/docs/known-issues/hitl-nested
+- See: <https://flujo.dev/docs/known-issues/hitl-nested>
 
 **Backward Compatibility**:
 - Legacy `WARN-HITL-001` rule ID still recognized
