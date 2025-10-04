@@ -4800,14 +4800,22 @@ class DefaultLoopStepExecutor:
                             if current_context is not None and hasattr(current_context, "scratchpad"):
                                 current_context.scratchpad["status"] = "paused"
                                 current_context.scratchpad["pause_message"] = str(e)
-                                # CRITICAL FIX: On HITL pause, resume at the NEXT step in the CURRENT iteration
-                                # The runner will handle logging the paused command with user input, so we skip
-                                # to the next step after the HITL pause to avoid re-executing it.
-                                current_context.scratchpad["loop_step_index"] = step_idx + 1  # Next step in current iteration
-                                current_context.scratchpad["loop_iteration"] = iteration_count  # Same iteration
-                                telemetry.logfire.info(
-                                    f"LoopStep '{loop_step.name}' updated context status to 'paused' at step {step_idx + 1}, will resume at step {step_idx + 2}"
-                                )
+                                # CRITICAL FIX: On HITL pause, check if this is the last step
+                                # If it's the last step, move to next iteration; otherwise continue current iteration
+                                if step_idx + 1 >= len(loop_body_steps):
+                                    # Last step in iteration - move to next iteration
+                                    current_context.scratchpad["loop_step_index"] = 0
+                                    current_context.scratchpad["loop_iteration"] = iteration_count + 1
+                                    telemetry.logfire.info(
+                                        f"LoopStep '{loop_step.name}' paused at last step {step_idx + 1}, will resume at next iteration"
+                                    )
+                                else:
+                                    # Not last step - resume at next step in current iteration
+                                    current_context.scratchpad["loop_step_index"] = step_idx + 1
+                                    current_context.scratchpad["loop_iteration"] = iteration_count
+                                    telemetry.logfire.info(
+                                        f"LoopStep '{loop_step.name}' paused at step {step_idx + 1}, will resume at step {step_idx + 2}"
+                                    )
 
                             # ✅ CRITICAL: Re-raise PausedException to let runner handle pause/resume
                             # When resumed, the loop will continue from current_step_index
