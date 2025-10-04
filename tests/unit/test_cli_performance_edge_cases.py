@@ -24,7 +24,7 @@ class TestCLIPerformanceEdgeCases:
     @pytest.fixture
     async def large_database_with_mixed_data(self, tmp_path) -> Path:
         """Create a database with mixed data types for performance testing.
-        
+
         Changed from module-scoped to function-scoped to ensure proper async execution.
         Reduced default size from 200 to 50 for faster test execution.
         """

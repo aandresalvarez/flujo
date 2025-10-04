@@ -198,6 +198,39 @@ Testing guidance:
 - For parallel budgeting, test with `Quota.split(n)` and reservation/reconciliation flows.
 - For pipeline enforcement, assert that partial step history is preserved on limit errors and that messages are precisely formatted.
 
+---
+
+## **8. HITL In Loops — Pause/Resume Semantics (Updated)**
+
+This release fixes Human‑In‑The‑Loop (HITL) behavior inside loop bodies. The loop now resumes the current iteration from the correct step without nesting, captures agent outputs before the pause, and cleans up resume state reliably.
+
+What changed (policy‑driven):
+- Robust resume detection: The Loop policy (`DefaultLoopStepExecutor`) detects a resume using `scratchpad` keys and tolerates `status` already set to `running`.
+  - Reads: `loop_iteration`, `loop_step_index`, `loop_last_output`, `loop_paused_step_name`, `loop_resume_requires_hitl_output`.
+  - Leaves control‑flow orchestration to the runner; no data‑failure conversion of pauses.
+- Correct input routing on resume:
+  - If we resume at the paused HITL step, we pass the human response to that step only.
+  - If we paused at the last HITL in the body, we treat the human response as the iteration’s output and continue to exit/mapper checks.
+- Exit condition evaluation after HITL: When the last step was HITL, the exit condition sees the human response (not stale `current_data`).
+- Context propagation between iterations:
+  - The policy merges `iteration_context` into the main context on success and on pause.
+  - Key scalars (e.g., `counter`, `call_count`, `current_value`) are copied even if not declared on the model, using a safe `object.__setattr__` fallback—this preserves idempotency while keeping iterations observable by subsequent steps.
+- Resume state cleanup: On loop completion the policy clears: `loop_iteration`, `loop_step_index`, `loop_last_output`, `loop_paused_step_name`, `loop_resume_requires_hitl_output`. If `status` was `paused`, it is normalized to `completed`.
+
+Complementary DSL enhancement:
+- Simple `Step` now supports `sink_to: str | None`. When set, the step’s output is stored directly to the given context path (e.g., `counter`, `scratchpad.value`). This enables scalar iteration counters to persist across iterations without requiring dict‑shaped outputs.
+
+Developer checklist (Loops + HITL):
+- Do not add loop‑specific logic in `ExecutorCore`; all behavior belongs in `step_policies.py`.
+- Always re‑raise control‑flow exceptions (`PausedException`, `PipelineAbortSignal`, `InfiniteRedirectError`).
+- When adding new loop features, update both: (1) merge behavior between `iteration_context` and main context, and (2) resume state capture/cleanup.
+- Prefer `sink_to` in simple steps to persist scalars that gate loop progression.
+
+Testing guidance:
+- Minimal loop with `agent >> hitl`: verify pause at HITL, resume with input, no nested loops, step history contains one loop step.
+- Multi‑iteration progression: assert context counters increment [1,2,3] across repeated pause/resume cycles.
+- State cleanup: after completion, `scratchpad` should not contain loop resume keys, and status should not be `paused`.
+
 ## **Testing Standards (Markers & Fast/Slow Split)**
 
 - Fast subset is marker-based: `not slow and not veryslow and not serial and not benchmark`.

@@ -1699,6 +1699,7 @@ def _make_step_from_blueprint(
                         name=model.name,
                         updates_context=model.updates_context,
                         validate_fields=model.validate_fields,
+                        sink_to=model.sink_to,
                         **(step_config.model_dump() if hasattr(step_config, "model_dump") else {}),
                     )
             elif uses_spec.startswith("imports."):
@@ -1820,6 +1821,7 @@ def _make_step_from_blueprint(
                             name=model.name,
                             updates_context=model.updates_context,
                             validate_fields=model.validate_fields,
+                            sink_to=model.sink_to,
                             **(
                                 step_config.model_dump()
                                 if hasattr(step_config, "model_dump")
@@ -1949,6 +1951,7 @@ def _make_step_from_blueprint(
                         name=model.name,
                         updates_context=model.updates_context,
                         validate_fields=model.validate_fields,
+                        sink_to=model.sink_to,
                         **(step_config.model_dump() if hasattr(step_config, "model_dump") else {}),
                     )
                     # Preserve skill_id on agent for validators (e.g., V-S2 stringify detection)
@@ -1965,6 +1968,7 @@ def _make_step_from_blueprint(
                 config=step_config,
                 updates_context=model.updates_context,
                 validate_fields=model.validate_fields,
+                sink_to=model.sink_to,
             )
         # Attach per-step AROS processing config to step.meta for policies
         try:

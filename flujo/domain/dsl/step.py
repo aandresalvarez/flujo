@@ -154,6 +154,17 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         default=False,
         description="Whether to validate that step return values match context fields.",
     )
+    # Optional sink_to for simple steps: store the step's output directly into
+    # a context path (e.g., "counter" or "scratchpad.field"). This is useful
+    # when the step returns a scalar value that should be persisted in context
+    # without requiring a dict-shaped output.
+    sink_to: str | None = Field(
+        default=None,
+        description=(
+            "Context path to automatically store the step output "
+            "(e.g., 'counter' or 'scratchpad.value')."
+        ),
+    )
     meta: Dict[str, Any] = Field(
         default_factory=dict,
         description="Arbitrary metadata about this step.",
@@ -471,6 +482,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         name: str | None = None,
         updates_context: bool = False,
         validate_fields: bool = False,  # New parameter
+        sink_to: str | None = None,  # Scalar output destination
         processors: Optional[AgentProcessors] = None,
         persist_feedback_to_context: Optional[str] = None,
         persist_validation_results_to: Optional[str] = None,
@@ -552,6 +564,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "persist_validation_results_to": persist_validation_results_to,
                 "updates_context": updates_context,
                 "validate_fields": validate_fields,
+                "sink_to": sink_to,
                 "meta": {"is_adapter": True} if is_adapter else {},
                 "config": StepConfig(**config),
             }
@@ -567,6 +580,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         mapper: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
         name: str | None = None,
         updates_context: bool = False,
+        sink_to: str | None = None,
         processors: Optional[AgentProcessors] = None,
         persist_feedback_to_context: Optional[str] = None,
         persist_validation_results_to: Optional[str] = None,
@@ -577,6 +591,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             mapper,
             name=name,
             updates_context=updates_context,
+            sink_to=sink_to,
             processors=processors,
             persist_feedback_to_context=persist_feedback_to_context,
             persist_validation_results_to=persist_validation_results_to,
@@ -921,6 +936,7 @@ def step(
     *,
     updates_context: bool = False,
     validate_fields: bool = False,  # New parameter for field validation
+    sink_to: str | None = None,  # Scalar output destination
     name: Optional[str] = None,
     **config_kwargs: Any,
 ) -> Callable[
@@ -935,6 +951,7 @@ def step(
     name: str | None = None,
     updates_context: bool = False,
     validate_fields: bool = False,  # New parameter for field validation
+    sink_to: str | None = None,  # Scalar output destination
     processors: Optional[AgentProcessors] = None,
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
@@ -951,6 +968,7 @@ def step(
             name=name or fn.__name__,
             updates_context=updates_context,
             validate_fields=validate_fields,  # Pass the new parameter
+            sink_to=sink_to,  # Pass sink_to parameter
             processors=processors,
             persist_feedback_to_context=persist_feedback_to_context,
             persist_validation_results_to=persist_validation_results_to,

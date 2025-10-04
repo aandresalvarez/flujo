@@ -2156,6 +2156,40 @@ async def _execute_simple_step_policy_impl(
             except Exception:
                 pass
 
+            # Optional sink_to support for simple steps: store scalar or structured outputs
+            # into a specific context path (e.g., "counter" or "scratchpad.field").
+            try:
+                sink_path = getattr(step, "sink_to", None)
+                if sink_path and context is not None:
+                    from flujo.utils.context import set_nested_context_field as _set_field
+
+                    try:
+                        _set_field(context, str(sink_path), result.output)
+                    except Exception as _sink_err:
+                        # Fallback: allow top-level attribute assignment for BaseModel contexts
+                        try:
+                            if "." not in str(sink_path):
+                                object.__setattr__(context, str(sink_path), result.output)
+                            else:
+                                raise _sink_err
+                        except Exception:
+                            try:
+                                telemetry.logfire.warning(
+                                    f"Failed to sink step output to {sink_path}: {_sink_err}"
+                                )
+                            except Exception:
+                                pass
+                    else:
+                        try:
+                            telemetry.logfire.info(
+                                f"Step '{getattr(step, 'name', '')}' sink_to stored output to {sink_path}"
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                # Never fail a step due to sink_to application errors
+                pass
+
             # Record successful step output into scratchpad['steps'] for templating references
             # Store a compact string snapshot to avoid memory bloat in long runs.
             try:
@@ -4479,28 +4513,102 @@ class DefaultLoopStepExecutor:
         # Restore iteration counter when resuming loops
         saved_iteration = 1
         saved_step_index = 0
+        is_resuming = False  # Track if this is a resume call
+        saved_last_output = None  # Track last output before pause
+        resume_requires_hitl_output = False
+        resume_payload = data
+        paused_step_name: str | None = None
         scratchpad_ref = getattr(current_context, "scratchpad", None)
         if isinstance(scratchpad_ref, dict):
-            maybe_iteration = scratchpad_ref.pop("loop_iteration", None)
-            maybe_index = scratchpad_ref.pop("loop_step_index", None)
-            if isinstance(maybe_iteration, int) and maybe_iteration >= 1:
-                saved_iteration = maybe_iteration
-            if isinstance(maybe_index, int) and maybe_index >= 0:
-                saved_step_index = maybe_index
+            maybe_iteration = scratchpad_ref.get("loop_iteration")
+            maybe_index = scratchpad_ref.get("loop_step_index")
+            maybe_status = scratchpad_ref.get("status")
+            maybe_last_output = scratchpad_ref.get("loop_last_output")
+            resume_flag = scratchpad_ref.get("loop_resume_requires_hitl_output")
+            paused_step_name_raw = scratchpad_ref.get("loop_paused_step_name")
+            if isinstance(paused_step_name_raw, str) and paused_step_name_raw:
+                paused_step_name = paused_step_name_raw
 
-        iteration_count = saved_iteration
+            if (
+                isinstance(maybe_iteration, int)
+                and maybe_iteration >= 1
+                and isinstance(maybe_index, int)
+                and maybe_index >= 0
+                and (maybe_status in {"paused", "running", None})
+            ):
+                saved_iteration = maybe_iteration
+                saved_step_index = maybe_index
+                is_resuming = True
+                saved_last_output = maybe_last_output
+                resume_requires_hitl_output = bool(resume_flag)
+
+                telemetry.logfire.info(
+                    f"LoopStep '{loop_step.name}' RESUMING from iteration {saved_iteration}, step {saved_step_index} (status={maybe_status})"
+                )
+
+                # Ensure status reflects active execution
+                scratchpad_ref["status"] = "running"
+
+                if resume_requires_hitl_output:
+                    # Prefer the most recent HITL response recorded on the context over the inbound data payload.
+                    try:
+                        hitl_history = getattr(current_context, "hitl_history", None)
+                        if isinstance(hitl_history, list) and hitl_history:
+                            latest_resp = getattr(hitl_history[-1], "human_response", None)
+                            if latest_resp is not None:
+                                resume_payload = latest_resp
+                    except Exception:
+                        pass
+                    if resume_payload is None:
+                        try:
+                            steps_snap = scratchpad_ref.get("steps")
+                            if (
+                                isinstance(steps_snap, dict)
+                                and isinstance(paused_step_name, str)
+                                and paused_step_name in steps_snap
+                            ):
+                                resume_payload = steps_snap.get(paused_step_name)
+                        except Exception:
+                            pass
+                else:
+                    resume_payload = data
+
+        iteration_count = saved_iteration if saved_iteration >= 1 else 1
         current_step_index = saved_step_index  # Track position within loop body
         loop_body_steps = []
 
         # Extract steps from the loop body pipeline for step-by-step execution
         # CRITICAL FIX: Extract steps for step-by-step execution
-        # Only use step-by-step for multi-step pipelines (2+ steps)
-        # Single-step pipelines use regular execution to preserve fallback behavior
+        # Use step-by-step for ALL multi-step pipelines to support HITL properly
         if hasattr(body_pipeline, "steps") and body_pipeline.steps and len(body_pipeline.steps) > 1:
             loop_body_steps = body_pipeline.steps
+            telemetry.logfire.info(
+                f"LoopStep '{loop_step.name}' using step-by-step execution with {len(loop_body_steps)} steps"
+            )
         else:
             # Use regular execution for single-step or no-step pipelines
             loop_body_steps = []
+            telemetry.logfire.info(
+                f"LoopStep '{loop_step.name}' using regular execution (single/no-step pipeline)"
+            )
+
+        if is_resuming:
+            total_steps = len(loop_body_steps)
+            if total_steps == 0:
+                current_step_index = 0
+            elif current_step_index > total_steps:
+                telemetry.logfire.warning(
+                    f"LoopStep '{loop_step.name}' resume step index {current_step_index} exceeds body length {total_steps}; clamping"
+                )
+                current_step_index = total_steps
+
+            if saved_last_output is not None:
+                current_data = saved_last_output
+
+            if resume_requires_hitl_output and current_step_index >= total_steps:
+                # Resuming after HITL at the end of the body – treat the recorded human response as the final output
+                if resume_payload is not None:
+                    current_data = resume_payload
 
         while iteration_count <= max_loops:
             with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {iteration_count}"):
@@ -4721,6 +4829,36 @@ class DefaultLoopStepExecutor:
 
                 try:
                     core._enable_cache = False
+
+                    # CRITICAL FIX FOR RESUME: When resuming, restore the last output as current_data
+                    # The 'data' parameter contains human input on resume for HITL; for non-HITL pauses we may
+                    # have advanced the iteration. In that case, compute the next iteration's input via the
+                    # iteration_input_mapper using the saved last output from the completed iteration.
+                    if is_resuming and saved_last_output is not None:
+                        current_data = saved_last_output
+                        telemetry.logfire.info(
+                            "[POLICY] RESUME: Restored loop data from saved state, human input will be passed to HITL step"
+                        )
+                        # If this is a non-HITL resume at the beginning of a new iteration, compute next input
+                        try:
+                            if (not resume_requires_hitl_output) and current_step_index == 0:
+                                iter_mapper = (
+                                    loop_step.get_iteration_input_mapper()
+                                    if hasattr(loop_step, "get_iteration_input_mapper")
+                                    else getattr(loop_step, "iteration_input_mapper", None)
+                                )
+                                if iter_mapper is not None:
+                                    # iteration_count already reflects the new iteration; mapper expects
+                                    # the index of the completed one → iteration_count - 1
+                                    mapped_input = iter_mapper(current_data, current_context, iteration_count - 1)
+                                    current_data = mapped_input
+                                    telemetry.logfire.info(
+                                        f"[POLICY] RESUME: Applied iteration_input_mapper for iteration {iteration_count - 1} to seed next iteration"
+                                    )
+                        except Exception:
+                            # Never fail resume due to next-input mapping; continue with saved output
+                            pass
+
                     telemetry.logfire.info(
                         f"[POLICY] Starting step-by-step execution for iteration {iteration_count}, step {current_step_index}"
                     )
@@ -4735,11 +4873,30 @@ class DefaultLoopStepExecutor:
                             f"[POLICY] Executing step {step_idx + 1}/{len(loop_body_steps)}: {getattr(step, 'name', 'unnamed')}"
                         )
 
+                        # CRITICAL FIX: On resume, pass human input to the step that was paused (HITL step)
+                        # For other steps, use the current_data from previous step output
+                        step_input_data = current_data
+                        if is_resuming and step_idx == saved_step_index:
+                            # Only override the step input with the human response when the pause
+                            # originated from an explicit HITL step. For non-HITL pauses (e.g.,
+                            # agentic command executor), re-run the step with the same data.
+                            if resume_requires_hitl_output:
+                                step_input_data = resume_payload
+                                telemetry.logfire.info(
+                                    f"[POLICY] RESUME: Passing human input to step {step_idx + 1} (HITL resumption)"
+                                )
+                            else:
+                                telemetry.logfire.info(
+                                    f"[POLICY] RESUME: Re-running step {step_idx + 1} with prior data (non-HITL pause)"
+                                )
+                            # Clear the resume flag so subsequent steps get normal data
+                            is_resuming = False
+
                         try:
                             # Execute individual step
                             step_result = await core.execute(
                                 step=step,
-                                data=current_data,
+                                data=step_input_data,
                                 context=iteration_context,
                                 resources=resources,
                                 limits=limits,
@@ -4752,6 +4909,28 @@ class DefaultLoopStepExecutor:
 
                             # Update data and context for next step
                             current_data = step_result.output
+                            # Ensure simple step sink_to is honored inside loop iterations
+                            try:
+                                sink_path = getattr(step, "sink_to", None)
+                                if sink_path and iteration_context is not None:
+                                    from flujo.utils.context import (
+                                        set_nested_context_field as _set_field,
+                                    )
+
+                                    try:
+                                        _set_field(iteration_context, str(sink_path), current_data)
+                                    except Exception:
+                                        # Fallback to top-level attribute set for BaseModel contexts
+                                        if "." not in str(sink_path):
+                                            try:
+                                                object.__setattr__(
+                                                    iteration_context, str(sink_path), current_data
+                                                )
+                                            except Exception:
+                                                pass
+                            except Exception:
+                                # Never fail loop due to sink_to application errors
+                                pass
                             if step_result.branch_context is not None:
                                 iteration_context = ContextManager.merge(
                                     iteration_context, step_result.branch_context
@@ -4778,6 +4957,22 @@ class DefaultLoopStepExecutor:
                                     from flujo.utils.context import safe_merge_context_updates
 
                                     safe_merge_context_updates(current_context, iteration_context)
+                                    # Ensure key scalar fields propagate even if not declared on the model
+                                    try:
+                                        for fname in ("counter", "call_count", "current_value"):
+                                            if hasattr(iteration_context, fname):
+                                                val = getattr(iteration_context, fname)
+                                                try:
+                                                    setattr(current_context, fname, val)
+                                                except Exception:
+                                                    try:
+                                                        object.__setattr__(
+                                                            current_context, fname, val
+                                                        )
+                                                    except Exception:
+                                                        pass
+                                    except Exception:
+                                        pass
                                     telemetry.logfire.info(
                                         f"LoopStep '{loop_step.name}' successfully merged iteration context state"
                                     )
@@ -4806,23 +5001,66 @@ class DefaultLoopStepExecutor:
                             ):
                                 current_context.scratchpad["status"] = "paused"
                                 current_context.scratchpad["pause_message"] = str(e)
-                                # CRITICAL FIX: On HITL pause, check if this is the last step
-                                # If it's the last step, move to next iteration; otherwise continue current iteration
-                                if step_idx + 1 >= len(loop_body_steps):
-                                    # Last step in iteration - move to next iteration
+
+                                # CRITICAL FIX: Save current loop data for resume
+                                # This ensures we can restore the correct data flow on resume
+                                current_context.scratchpad["loop_last_output"] = current_data
+
+                                body_len = len(loop_body_steps)
+                                resume_next_index = step_idx
+                                resume_iteration = iteration_count
+                                paused_step_is_hitl = isinstance(step, HumanInTheLoopStep)
+
+                                if paused_step_is_hitl:
+                                    resume_next_index = step_idx + 1
+
+                                if resume_next_index < 0:
+                                    resume_next_index = 0
+                                if resume_next_index > body_len:
+                                    resume_next_index = body_len
+
+                                current_context.scratchpad["loop_step_index"] = resume_next_index
+                                current_context.scratchpad["loop_iteration"] = resume_iteration
+                                if isinstance(getattr(step, "name", None), str):
+                                    current_context.scratchpad["loop_paused_step_name"] = getattr(
+                                        step, "name", ""
+                                    )
+
+                                if paused_step_is_hitl:
+                                    current_context.scratchpad[
+                                        "loop_resume_requires_hitl_output"
+                                    ] = True
+                                else:
+                                    current_context.scratchpad.pop(
+                                        "loop_resume_requires_hitl_output", None
+                                    )
+
+                                # If the paused step is the last in the body and it's NOT a HITL
+                                # (e.g., agentic command executor raised a pause to ask human),
+                                # advance to the next iteration so the planner can produce the next command.
+                                if not paused_step_is_hitl and (step_idx + 1) >= body_len:
                                     current_context.scratchpad["loop_step_index"] = 0
                                     current_context.scratchpad["loop_iteration"] = (
                                         iteration_count + 1
                                     )
                                     telemetry.logfire.info(
-                                        f"LoopStep '{loop_step.name}' paused at last step {step_idx + 1}, will resume at next iteration"
+                                        f"LoopStep '{loop_step.name}' paused at final non-HITL step {step_idx + 1}, "
+                                        "will resume at next iteration"
+                                    )
+                                elif paused_step_is_hitl and resume_next_index >= body_len:
+                                    telemetry.logfire.info(
+                                        f"LoopStep '{loop_step.name}' paused at final HITL step {step_idx + 1}, "
+                                        "will resume with human response before next iteration"
+                                    )
+                                elif paused_step_is_hitl:
+                                    telemetry.logfire.info(
+                                        f"LoopStep '{loop_step.name}' paused at HITL step {step_idx + 1}, "
+                                        f"will resume at step {resume_next_index + 1}"
                                     )
                                 else:
-                                    # Not last step - resume at next step in current iteration
-                                    current_context.scratchpad["loop_step_index"] = step_idx + 1
-                                    current_context.scratchpad["loop_iteration"] = iteration_count
                                     telemetry.logfire.info(
-                                        f"LoopStep '{loop_step.name}' paused at step {step_idx + 1}, will resume at step {step_idx + 2}"
+                                        f"LoopStep '{loop_step.name}' paused at step {step_idx + 1}, "
+                                        f"will resume by retrying this step"
                                     )
 
                             # ✅ CRITICAL: Re-raise PausedException to let runner handle pause/resume
@@ -5138,7 +5376,13 @@ class DefaultLoopStepExecutor:
                         try:
                             old_value = getattr(current_context, field_name, None)
                             new_value = getattr(iteration_context, field_name)
-                            setattr(current_context, field_name, new_value)
+                            try:
+                                setattr(current_context, field_name, new_value)
+                            except Exception:
+                                try:
+                                    object.__setattr__(current_context, field_name, new_value)
+                                except Exception as e2:
+                                    raise e2
                             telemetry.logfire.info(
                                 f"LoopStep '{loop_step.name}' updated {field_name}: {old_value} -> {new_value}"
                             )
@@ -5450,9 +5694,24 @@ class DefaultLoopStepExecutor:
             if cond:
                 try:
                     should_exit = False
+                    # Prefer the most semantically correct data for condition evaluation on resume:
+                    # - When resuming after a HITL at the end of the body, use the human response
+                    #   (resume_payload) as the last output value.
+                    # - Otherwise, use the current_data accumulated from the body.
+                    data_for_cond = current_data
+                    try:
+                        if (
+                            is_resuming
+                            and resume_requires_hitl_output
+                            and current_step_index >= len(loop_body_steps)
+                        ):
+                            if resume_payload is not None:
+                                data_for_cond = resume_payload
+                    except Exception:
+                        pass
                     try:
                         # Legacy style: cond(last_output, context)
-                        should_exit = bool(cond(current_data, current_context))
+                        should_exit = bool(cond(data_for_cond, current_context))
                     except TypeError:
                         # Compatibility: allow cond(pipeline_result, context)
                         should_exit = bool(cond(pipeline_result, current_context))
@@ -5710,6 +5969,29 @@ class DefaultLoopStepExecutor:
             if (exit_reason is None or exit_reason == "max_loops") and iteration_count > max_loops
             else iteration_count
         )
+
+        # CRITICAL FIX: Clean up loop resume state on completion
+        # This ensures the next run doesn't think it's resuming
+        if current_context is not None and hasattr(current_context, "scratchpad"):
+            try:
+                scratchpad = current_context.scratchpad
+                if isinstance(scratchpad, dict):
+                    # Clear loop-specific resume state
+                    scratchpad.pop("loop_iteration", None)
+                    scratchpad.pop("loop_step_index", None)
+                    scratchpad.pop("loop_last_output", None)
+                    scratchpad.pop("loop_resume_requires_hitl_output", None)
+                    scratchpad.pop("loop_paused_step_name", None)
+                    # Update status to completed if it was paused
+                    if scratchpad.get("status") == "paused":
+                        scratchpad["status"] = "completed"
+                    telemetry.logfire.info(
+                        f"LoopStep '{loop_step.name}' cleaned up resume state on completion"
+                    )
+            except Exception as cleanup_error:
+                telemetry.logfire.warning(
+                    f"LoopStep '{loop_step.name}' failed to clean up resume state: {cleanup_error}"
+                )
 
         result = StepResult(
             name=loop_step.name,
@@ -7303,6 +7585,23 @@ class DefaultCacheStepExecutor:
                                     cached_result.feedback = (
                                         f"Context validation failed: {validation_error}"
                                     )
+                            # Honor optional sink_to on wrapped simple steps when resuming from cache
+                            try:
+                                sink_path = getattr(cache_step.wrapped_step, "sink_to", None)
+                                if sink_path:
+                                    from flujo.utils.context import (
+                                        set_nested_context_field as _set_field,
+                                    )
+
+                                    try:
+                                        _set_field(context, str(sink_path), cached_result.output)
+                                    except Exception:
+                                        if "." not in str(sink_path):
+                                            object.__setattr__(
+                                                context, str(sink_path), cached_result.output
+                                            )
+                            except Exception:
+                                pass
                         return to_outcome(cached_result)
                 except Exception as e:
                     telemetry.logfire.error(
