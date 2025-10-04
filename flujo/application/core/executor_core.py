@@ -2190,6 +2190,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         "previous_step": data,
                         "steps": steps_wrapped,
                     }
+                    # Add resume_input if HITL history exists
+                    try:
+                        if attempt_context and hasattr(attempt_context, "hitl_history") and attempt_context.hitl_history:
+                            fmt_context["resume_input"] = attempt_context.hitl_history[-1].human_response
+                    except Exception:
+                        pass  # resume_input will be undefined if no HITL history
+                    
                     if isinstance(templ_spec, str) and ("{{" in templ_spec and "}}" in templ_spec):
                         data = AdvancedPromptFormatter(templ_spec).format(**fmt_context)
                     else:
