@@ -346,6 +346,9 @@ def _get_enabled_filters() -> set[str]:
 def format_prompt(template: str, **kwargs: Any) -> str:
     """Convenience wrapper around :class:`AdvancedPromptFormatter`.
 
+    This helper respects the global template configuration from flujo.toml,
+    including strict mode and resolution logging.
+
     Parameters
     ----------
     template:
@@ -358,6 +361,20 @@ def format_prompt(template: str, **kwargs: Any) -> str:
     str
         The rendered template.
     """
+    # Load template configuration to honor strict mode and logging settings
+    strict = False
+    log_resolution = False
+    try:
+        from flujo.infra.config_manager import get_config_manager, TemplateConfig
 
-    formatter = AdvancedPromptFormatter(template)
+        config_mgr = get_config_manager()
+        config = config_mgr.load_config()
+        template_config = config.template or TemplateConfig()
+        strict = template_config.undefined_variables == "strict"
+        log_resolution = template_config.log_resolution
+    except Exception:
+        # Fallback to defaults if config unavailable
+        pass
+
+    formatter = AdvancedPromptFormatter(template, strict=strict, log_resolution=log_resolution)
     return formatter.format(**kwargs)
