@@ -210,7 +210,7 @@ class PipelineResult(BaseModel, Generic[ContextT]):
     @property
     def output(self) -> Any | None:
         """Return the output of the last step in the pipeline.
-        
+
         This is a convenience property for backward compatibility with tests
         and code that expects result.output.
         """

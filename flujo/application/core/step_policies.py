@@ -4829,15 +4829,15 @@ class DefaultLoopStepExecutor:
 
                 try:
                     core._enable_cache = False
-                    
+
                     # CRITICAL FIX FOR RESUME: When resuming, restore the last output as current_data
                     # The 'data' parameter contains human input on resume, which is wrong for the loop
                     if is_resuming and saved_last_output is not None:
                         current_data = saved_last_output
                         telemetry.logfire.info(
-                            f"[POLICY] RESUME: Restored loop data from saved state, human input will be passed to HITL step"
+                            "[POLICY] RESUME: Restored loop data from saved state, human input will be passed to HITL step"
                         )
-                    
+
                     telemetry.logfire.info(
                         f"[POLICY] Starting step-by-step execution for iteration {iteration_count}, step {current_step_index}"
                     )
@@ -4892,7 +4892,9 @@ class DefaultLoopStepExecutor:
                             try:
                                 sink_path = getattr(step, "sink_to", None)
                                 if sink_path and iteration_context is not None:
-                                    from flujo.utils.context import set_nested_context_field as _set_field
+                                    from flujo.utils.context import (
+                                        set_nested_context_field as _set_field,
+                                    )
 
                                     try:
                                         _set_field(iteration_context, str(sink_path), current_data)
@@ -4900,7 +4902,9 @@ class DefaultLoopStepExecutor:
                                         # Fallback to top-level attribute set for BaseModel contexts
                                         if "." not in str(sink_path):
                                             try:
-                                                object.__setattr__(iteration_context, str(sink_path), current_data)
+                                                object.__setattr__(
+                                                    iteration_context, str(sink_path), current_data
+                                                )
                                             except Exception:
                                                 pass
                             except Exception:
@@ -4941,7 +4945,9 @@ class DefaultLoopStepExecutor:
                                                     setattr(current_context, fname, val)
                                                 except Exception:
                                                     try:
-                                                        object.__setattr__(current_context, fname, val)
+                                                        object.__setattr__(
+                                                            current_context, fname, val
+                                                        )
                                                     except Exception:
                                                         pass
                                     except Exception:
@@ -4974,11 +4980,11 @@ class DefaultLoopStepExecutor:
                             ):
                                 current_context.scratchpad["status"] = "paused"
                                 current_context.scratchpad["pause_message"] = str(e)
-                                
+
                                 # CRITICAL FIX: Save current loop data for resume
                                 # This ensures we can restore the correct data flow on resume
                                 current_context.scratchpad["loop_last_output"] = current_data
-                                
+
                                 body_len = len(loop_body_steps)
                                 resume_next_index = step_idx
                                 resume_iteration = iteration_count
@@ -4995,12 +5001,14 @@ class DefaultLoopStepExecutor:
                                 current_context.scratchpad["loop_step_index"] = resume_next_index
                                 current_context.scratchpad["loop_iteration"] = resume_iteration
                                 if isinstance(getattr(step, "name", None), str):
-                                    current_context.scratchpad[
-                                        "loop_paused_step_name"
-                                    ] = getattr(step, "name", "")
+                                    current_context.scratchpad["loop_paused_step_name"] = getattr(
+                                        step, "name", ""
+                                    )
 
                                 if paused_step_is_hitl:
-                                    current_context.scratchpad["loop_resume_requires_hitl_output"] = True
+                                    current_context.scratchpad[
+                                        "loop_resume_requires_hitl_output"
+                                    ] = True
                                 else:
                                     current_context.scratchpad.pop(
                                         "loop_resume_requires_hitl_output", None
@@ -5011,7 +5019,9 @@ class DefaultLoopStepExecutor:
                                 # advance to the next iteration so the planner can produce the next command.
                                 if not paused_step_is_hitl and (step_idx + 1) >= body_len:
                                     current_context.scratchpad["loop_step_index"] = 0
-                                    current_context.scratchpad["loop_iteration"] = iteration_count + 1
+                                    current_context.scratchpad["loop_iteration"] = (
+                                        iteration_count + 1
+                                    )
                                     telemetry.logfire.info(
                                         f"LoopStep '{loop_step.name}' paused at final non-HITL step {step_idx + 1}, "
                                         "will resume at next iteration"
@@ -5669,7 +5679,11 @@ class DefaultLoopStepExecutor:
                     # - Otherwise, use the current_data accumulated from the body.
                     data_for_cond = current_data
                     try:
-                        if is_resuming and resume_requires_hitl_output and current_step_index >= len(loop_body_steps):
+                        if (
+                            is_resuming
+                            and resume_requires_hitl_output
+                            and current_step_index >= len(loop_body_steps)
+                        ):
                             if resume_payload is not None:
                                 data_for_cond = resume_payload
                     except Exception:
@@ -7554,13 +7568,17 @@ class DefaultCacheStepExecutor:
                             try:
                                 sink_path = getattr(cache_step.wrapped_step, "sink_to", None)
                                 if sink_path:
-                                    from flujo.utils.context import set_nested_context_field as _set_field
+                                    from flujo.utils.context import (
+                                        set_nested_context_field as _set_field,
+                                    )
 
                                     try:
                                         _set_field(context, str(sink_path), cached_result.output)
                                     except Exception:
                                         if "." not in str(sink_path):
-                                            object.__setattr__(context, str(sink_path), cached_result.output)
+                                            object.__setattr__(
+                                                context, str(sink_path), cached_result.output
+                                            )
                             except Exception:
                                 pass
                         return to_outcome(cached_result)
