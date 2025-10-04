@@ -191,7 +191,8 @@ from flujo.domain.dsl.parallel import ParallelStep  # noqa: E402
 from flujo.domain.dsl.pipeline import Pipeline  # noqa: E402
 from flujo.domain.dsl.step import HumanInTheLoopStep, MergeStrategy, BranchFailureStrategy, Step  # noqa: E402
 from flujo.domain.dsl.import_step import ImportStep  # noqa: E402
-from flujo.domain.dsl.pipeline import Pipeline as _PipelineDSL  # noqa: E402
+
+# from flujo.domain.dsl.pipeline import Pipeline as _PipelineDSL  # noqa: E402  # Not used in step-by-step execution
 from ..conversation.history_manager import HistoryManager, HistoryStrategyConfig  # noqa: E402
 from ...processors.conversation import ConversationHistoryPromptProcessor  # noqa: E402
 from flujo.domain.models import PipelineResult  # noqa: E402
@@ -4298,7 +4299,7 @@ class DefaultLoopStepExecutor:
 
         # Standard policy context_setter extraction - this is how we get the context_setter
         # that the legacy _handle_loop_step method expected
-        context_setter = getattr(core, "_context_setter", None)
+        # context_setter = getattr(core, "_context_setter", None)  # Not used in step-by-step execution
 
         # Migrated loop execution logic from core with parameterized calls via `core`
         import time
@@ -4471,7 +4472,21 @@ class DefaultLoopStepExecutor:
                 telemetry.logfire.debug(f"[POLICY] Opened overall loop span for '{loop_step.name}'")
         except Exception:
             pass
-        for iteration_count in range(1, max_loops + 1):
+        # CRITICAL FIX: Step-by-step execution to handle HITL pauses within loop body
+        # Instead of using a for loop that restarts on PausedException, we use a while loop
+        # that can track position within the loop body and resume from the correct step.
+        iteration_count = 1
+        current_step_index = 0  # Track position within loop body
+        loop_body_steps = []
+
+        # Extract steps from the loop body pipeline for step-by-step execution
+        if hasattr(body_pipeline, "steps") and body_pipeline.steps:
+            loop_body_steps = body_pipeline.steps
+        else:
+            # Fallback: create a single step from the pipeline
+            loop_body_steps = [body_pipeline]
+
+        while iteration_count <= max_loops:
             with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {iteration_count}"):
                 telemetry.logfire.info(
                     f"LoopStep '{loop_step.name}': Starting Iteration {iteration_count}/{max_loops}"
@@ -4485,6 +4500,36 @@ class DefaultLoopStepExecutor:
                     _tm.add_event("loop.iteration", {"iteration": iteration_count})
             except Exception:
                 pass
+
+            # CRITICAL FIX: Check if we're resuming from a paused state
+            # If so, restore the step position and continue from where we left off
+            if current_context is not None and hasattr(current_context, "scratchpad"):
+                scratchpad = current_context.scratchpad
+                if isinstance(scratchpad, dict):
+                    saved_step_index = scratchpad.get("loop_step_index")
+                    saved_iteration = scratchpad.get("loop_iteration")
+
+                    if saved_step_index is not None and saved_iteration == iteration_count:
+                        # We're resuming from a paused state within the same iteration
+                        current_step_index = saved_step_index
+                        telemetry.logfire.info(
+                            f"LoopStep '{loop_step.name}' resuming from step {current_step_index} in iteration {iteration_count}"
+                        )
+                        # Clear the saved position since we're resuming
+                        scratchpad.pop("loop_step_index", None)
+                        scratchpad.pop("loop_iteration", None)
+                    elif saved_iteration is not None and saved_iteration < iteration_count:
+                        # We're starting a new iteration, reset step position
+                        current_step_index = 0
+                        telemetry.logfire.info(
+                            f"LoopStep '{loop_step.name}' starting new iteration {iteration_count}, resetting step position"
+                        )
+                        # Clear the saved position
+                        scratchpad.pop("loop_step_index", None)
+                        scratchpad.pop("loop_iteration", None)
+                    else:
+                        # Normal execution, start from beginning
+                        current_step_index = 0
             # Snapshot state BEFORE this iteration so we can construct a clean
             # loop-level result if a usage limit is breached during/after it.
             prev_current_context = current_context
@@ -4576,18 +4621,18 @@ class DefaultLoopStepExecutor:
                         step_history=[],
                     )
                 )
-            config = None
-            try:
-                if hasattr(body_pipeline, "steps") and getattr(body_pipeline, "steps"):
-                    body_step = body_pipeline.steps[0]
-                    config = getattr(body_step, "config", None)
-            except Exception:
-                config = None
+            # config = None  # Not used in step-by-step execution
+            # try:
+            #     if hasattr(body_pipeline, "steps") and getattr(body_pipeline, "steps"):
+            #         body_step = body_pipeline.steps[0]
+            #         # config = getattr(body_step, "config", None)  # Not used in step-by-step execution
+            # except Exception:
+            #     # config = None  # Not used in step-by-step execution
             # For loop bodies, disable retries when a fallback is configured OR plugins are present.
             # This prevents retries from overshadowing plugin failures (e.g., agent exhaustion)
             # and aligns loop tests that assert specific plugin failure messaging.
             # Prepare a loop-scoped pipeline with conversation processors attached when enabled
-            instrumented_pipeline = body_pipeline
+            # instrumented_pipeline = body_pipeline  # Not used in step-by-step execution
             hitl_step_names: set[str] = set()
             agent_step_names: set[str] = set()
 
@@ -4675,191 +4720,128 @@ class DefaultLoopStepExecutor:
                                 new_steps.append(st)
                         else:
                             new_steps.append(st)
-                    instrumented_pipeline = _PipelineDSL.model_construct(steps=new_steps)
+                    # instrumented_pipeline = _PipelineDSL.model_construct(steps=new_steps)  # Not used in step-by-step execution
             except Exception:
-                instrumented_pipeline = body_pipeline
+                # instrumented_pipeline = body_pipeline  # Not used in step-by-step execution
+                pass
 
-            if config is not None and (
-                (hasattr(body_step, "fallback_step") and body_step.fallback_step is not None)
-                or (hasattr(body_step, "plugins") and getattr(body_step, "plugins"))
-            ):
-                original_retries = config.max_retries
-                config.max_retries = 0
-                # Disable cache during loop-body execution to prevent stale
-                # results from previous iterations affecting context updates
-                original_cache_enabled = getattr(core, "_enable_cache", True)
-                try:
-                    setattr(core, "_enable_cache", False)
+            # CRITICAL FIX: Step-by-step execution to handle HITL pauses within loop body
+            # Execute each step in the loop body individually, tracking position for proper resume
+            original_cache_enabled = getattr(core, "_enable_cache", True)
+            pipeline_result = None
+
+            try:
+                setattr(core, "_enable_cache", False)
+                telemetry.logfire.info(
+                    f"[POLICY] Starting step-by-step execution for iteration {iteration_count}, step {current_step_index}"
+                )
+
+                # Execute steps one by one, starting from current_step_index
+                step_results = []
+                for step_idx in range(current_step_index, len(loop_body_steps)):
+                    step = loop_body_steps[step_idx]
+                    current_step_index = step_idx  # Update position
+
                     telemetry.logfire.info(
-                        f"[POLICY] About to call _execute_pipeline_via_policies for iteration {iteration_count}"
-                    )
-                    pipeline_result: PipelineResult[
-                        Any
-                    ] = await core._execute_pipeline_via_policies(
-                        instrumented_pipeline,
-                        current_data,
-                        iteration_context,
-                        resources,
-                        limits,
-                        None,
-                        context_setter,
-                    )
-                    telemetry.logfire.info(
-                        f"[POLICY] _execute_pipeline_via_policies completed for iteration {iteration_count}"
-                    )
-                except PausedException as e:
-                    # ✅ FLUJO BEST PRACTICE: Control Flow Exception Pattern
-                    #
-                    # TASK 7 IMPLEMENTATION: Correct HITL State Handling in Loops
-                    # This implements the proper handling of PausedException within loop iterations
-                    # according to the Flujo Team Guide's "Control Flow Exception Pattern".
-                    #
-                    # PROBLEM SOLVED: Previously, HITL steps (like AskHumanCommand) that raised
-                    # PausedException within loops would cause the entire loop to fail instead of
-                    # pausing correctly. This was because the exception was being caught and
-                    # converted to a failed StepResult.
-                    #
-                    # ARCHITECTURE: This handler ensures:
-                    # 1. Context state from the paused iteration is preserved via safe merging
-                    # 2. The main loop context reflects the paused state
-                    # 3. The PausedException propagates to the top-level runner for orchestration
-
-                    # 1. A HITL step inside the loop body has paused execution.
-                    telemetry.logfire.info(
-                        f"LoopStep '{loop_step.name}' paused by HITL at iteration {iteration_count}."
+                        f"[POLICY] Executing step {step_idx + 1}/{len(loop_body_steps)}: {getattr(step, 'name', 'unnamed')}"
                     )
 
-                    # 2. Merge any context updates from the iteration context before updating status.
-                    #    CRITICAL: This ensures paused_step_input and other HITL state is properly transferred
-                    #    from the iteration scope to the main loop scope for resumption.
-                    if iteration_context is not None and current_context is not None:
-                        try:
-                            from flujo.utils.context import safe_merge_context_updates
+                    try:
+                        # Execute individual step
+                        step_result = await core.execute(
+                            step=step,
+                            data=current_data,
+                            context=iteration_context,
+                            resources=resources,
+                            limits=limits,
+                            stream=False,
+                            on_chunk=None,
+                            breach_event=None,
+                            _fallback_depth=_fallback_depth,
+                        )
+                        step_results.append(step_result)
 
-                            safe_merge_context_updates(current_context, iteration_context)
-                            telemetry.logfire.info(
-                                f"LoopStep '{loop_step.name}' successfully merged iteration context state"
+                        # Update data and context for next step
+                        current_data = step_result.output
+                        if step_result.branch_context is not None:
+                            iteration_context = ContextManager.merge(
+                                iteration_context, step_result.branch_context
                             )
-                        except Exception as merge_error:
-                            # Fallback to basic merge if safe_merge fails
-                            telemetry.logfire.warning(
-                                f"LoopStep '{loop_step.name}' safe_merge failed, using fallback: {merge_error}"
-                            )
-                            try:
-                                merged_context = ContextManager.merge(
-                                    current_context, iteration_context
-                                )
-                                if merged_context:
-                                    current_context = merged_context
-                            except Exception as fallback_error:
-                                telemetry.logfire.error(
-                                    f"LoopStep '{loop_step.name}' context merge fallback failed: {fallback_error}"
-                                )
+                        cumulative_cost += step_result.cost_usd or 0.0
+                        cumulative_tokens += step_result.token_counts or 0
 
-                    # 3. Update the main loop's context to reflect the paused state.
-                    #    This follows the Flujo pattern for state management via context scratchpad.
-                    #    The 'status' field is used by the runner to detect pause state.
-                    if current_context is not None and hasattr(current_context, "scratchpad"):
-                        current_context.scratchpad["status"] = "paused"
-                        current_context.scratchpad["pause_message"] = str(e)
                         telemetry.logfire.info(
-                            f"LoopStep '{loop_step.name}' updated context status to 'paused'"
+                            f"[POLICY] Step {step_idx + 1} completed successfully"
                         )
 
-                    # 4. Stop the loop immediately and re-raise the exception.
-                    #    ✅ CRITICAL: Control flow exceptions must be re-raised, never swallowed.
-                    #    This is fundamental to the Flujo architecture - PausedException must propagate
-                    #    to the ExecutionManager/Runner level where it can trigger proper pause/resume
-                    #    orchestration. Swallowing this exception would break HITL workflows.
-                    raise e
-                except Exception as e:
-                    # ✅ FLUJO BEST PRACTICE: Log and re-raise all other exceptions
-                    telemetry.logfire.info(
-                        f"LoopStep '{loop_step.name}' caught non-PausedException: {type(e).__name__}: {str(e)}"
-                    )
-                    raise
-                finally:
-                    setattr(core, "_enable_cache", original_cache_enabled)
+                    except PausedException as e:
+                        # ✅ CRITICAL FIX: Handle HITL pause within loop body
+                        # When HITL pauses, we save the current position and merge context state
+                        # so that when resumed, execution continues from the next step
 
-                config.max_retries = original_retries
-            else:
-                original_cache_enabled = getattr(core, "_enable_cache", True)
-                try:
-                    setattr(core, "_enable_cache", False)
-                    telemetry.logfire.info(
-                        f"[POLICY] About to call _execute_pipeline_via_policies for iteration {iteration_count}"
-                    )
-                    pipeline_result = await core._execute_pipeline_via_policies(
-                        instrumented_pipeline,
-                        current_data,
-                        iteration_context,
-                        resources,
-                        limits,
-                        None,
-                        context_setter,
-                    )
-                    telemetry.logfire.info(
-                        f"[POLICY] _execute_pipeline_via_policies completed for iteration {iteration_count}"
-                    )
-                except PausedException as e:
-                    # ✅ FLUJO BEST PRACTICE: Control Flow Exception Pattern
-                    #
-                    # TASK 7 IMPLEMENTATION: Correct HITL State Handling in Loops (Non-Pipeline Path)
-                    # This is the second execution path for loops that cannot be executed as pipelines.
-                    # Applies the same HITL pause handling pattern as the pipeline path for consistency.
-                    #
-                    # DUAL EXECUTION PATHS: Flujo loops support both pipeline-based execution
-                    # (for better performance and tracing) and direct step execution (for
-                    # compatibility). Both paths must handle PausedException identically.
-                    telemetry.logfire.info(
-                        f"LoopStep '{loop_step.name}' paused by HITL at iteration {iteration_count} (non-pipeline path)."
-                    )
-
-                    # Merge any context updates from the iteration context before updating status
-                    # Same logic as pipeline path - preserve HITL state for resumption
-                    if iteration_context is not None and current_context is not None:
-                        try:
-                            from flujo.utils.context import safe_merge_context_updates
-
-                            safe_merge_context_updates(current_context, iteration_context)
-                            telemetry.logfire.info(
-                                f"LoopStep '{loop_step.name}' successfully merged iteration context state (non-pipeline path)"
-                            )
-                        except Exception as merge_error:
-                            telemetry.logfire.warning(
-                                f"LoopStep '{loop_step.name}' safe_merge failed, using fallback (non-pipeline path): {merge_error}"
-                            )
-                            try:
-                                merged_context = ContextManager.merge(
-                                    current_context, iteration_context
-                                )
-                                if merged_context:
-                                    current_context = merged_context
-                            except Exception as fallback_error:
-                                telemetry.logfire.error(
-                                    f"LoopStep '{loop_step.name}' context merge fallback failed (non-pipeline path): {fallback_error}"
-                                )
-
-                    # Update the main loop's context to reflect the paused state
-                    # Consistent with pipeline path - set status for runner detection
-                    if current_context is not None and hasattr(current_context, "scratchpad"):
-                        current_context.scratchpad["status"] = "paused"
-                        current_context.scratchpad["pause_message"] = str(e)
                         telemetry.logfire.info(
-                            f"LoopStep '{loop_step.name}' updated context status to 'paused' (non-pipeline path)"
+                            f"LoopStep '{loop_step.name}' paused by HITL at iteration {iteration_count}, step {step_idx + 1}."
                         )
 
-                    # ✅ CRITICAL: Control flow exceptions must be re-raised, never swallowed
-                    # Same principle as pipeline path - PausedException must propagate for orchestration
-                    raise e
-                except Exception as e:
-                    # ✅ FLUJO BEST PRACTICE: Log and re-raise all other exceptions
-                    telemetry.logfire.info(
-                        f"LoopStep '{loop_step.name}' caught non-PausedException (non-pipeline path): {type(e).__name__}: {str(e)}"
-                    )
-                    raise
-                finally:
-                    setattr(core, "_enable_cache", original_cache_enabled)
+                        # Merge any context updates from the iteration context before updating status
+                        if iteration_context is not None and current_context is not None:
+                            try:
+                                from flujo.utils.context import safe_merge_context_updates
+
+                                safe_merge_context_updates(current_context, iteration_context)
+                                telemetry.logfire.info(
+                                    f"LoopStep '{loop_step.name}' successfully merged iteration context state"
+                                )
+                            except Exception as merge_error:
+                                telemetry.logfire.warning(
+                                    f"LoopStep '{loop_step.name}' safe_merge failed, using fallback: {merge_error}"
+                                )
+                                try:
+                                    merged_context = ContextManager.merge(
+                                        current_context, iteration_context
+                                    )
+                                    if merged_context:
+                                        current_context = merged_context
+                                except Exception as fallback_error:
+                                    telemetry.logfire.error(
+                                        f"LoopStep '{loop_step.name}' context merge fallback failed: {fallback_error}"
+                                    )
+
+                        # Update the main loop's context to reflect the paused state
+                        if current_context is not None and hasattr(current_context, "scratchpad"):
+                            current_context.scratchpad["status"] = "paused"
+                            current_context.scratchpad["pause_message"] = str(e)
+                            # Save the current step position for resumption
+                            current_context.scratchpad["loop_step_index"] = step_idx + 1
+                            current_context.scratchpad["loop_iteration"] = iteration_count
+                            telemetry.logfire.info(
+                                f"LoopStep '{loop_step.name}' updated context status to 'paused' at step {step_idx + 1}"
+                            )
+
+                        # ✅ CRITICAL: Re-raise PausedException to let runner handle pause/resume
+                        # When resumed, the loop will continue from current_step_index
+                        raise e
+
+                    except Exception as e:
+                        telemetry.logfire.error(
+                            f"LoopStep '{loop_step.name}' step {step_idx + 1} failed: {type(e).__name__}: {str(e)}"
+                        )
+                        raise
+
+                # All steps completed successfully for this iteration
+                # Create a pipeline result from the step results
+                pipeline_result = PipelineResult(
+                    output=current_data,
+                    step_history=step_results,
+                    context=iteration_context,
+                )
+
+                telemetry.logfire.info(
+                    f"[POLICY] Step-by-step execution completed for iteration {iteration_count}"
+                )
+
+            finally:
+                setattr(core, "_enable_cache", original_cache_enabled)
             if any(not sr.success for sr in pipeline_result.step_history):
                 body_step = body_pipeline.steps[0]
                 if hasattr(body_step, "fallback_step") and body_step.fallback_step is not None:
@@ -5422,6 +5404,15 @@ class DefaultLoopStepExecutor:
                             step_history=iteration_results,
                         )
                     )
+
+            # CRITICAL FIX: Increment iteration count and reset step position for next iteration
+            # This ensures that when the loop continues, it starts from step 0 of the next iteration
+            iteration_count += 1
+            current_step_index = 0
+            telemetry.logfire.info(
+                f"LoopStep '{loop_step.name}' completed iteration {iteration_count - 1}, starting iteration {iteration_count}"
+            )
+
             iter_mapper = (
                 loop_step.get_iteration_input_mapper()
                 if hasattr(loop_step, "get_iteration_input_mapper")

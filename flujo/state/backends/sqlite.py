@@ -1481,7 +1481,9 @@ class SQLiteBackend(StateBackend):
                 try:
                     import sqlite3 as _sqlite
 
-                    created_at = run_data.get("created_at") or datetime.now(timezone.utc).isoformat()
+                    created_at = (
+                        run_data.get("created_at") or datetime.now(timezone.utc).isoformat()
+                    )
                     updated_at = run_data.get("updated_at") or created_at
                     with _sqlite.connect(self.db_path) as _db:
                         # Fast pragmas to reduce fsync/IO cost on first write
@@ -1545,7 +1547,9 @@ class SQLiteBackend(StateBackend):
 
                 try:
                     # OPTIMIZATION: Use simplified schema for better performance
-                    created_at = run_data.get("created_at") or datetime.now(timezone.utc).isoformat()
+                    created_at = (
+                        run_data.get("created_at") or datetime.now(timezone.utc).isoformat()
+                    )
                     updated_at = run_data.get("updated_at") or created_at
 
                     await db.execute(

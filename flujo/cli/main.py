@@ -480,9 +480,8 @@ def dev_health_check(
                         s = ts.strip()
                         # Support Z-terminated ISO by normalizing to UTC
                         try:
-                            return (
-                                datetime.fromisoformat(s.replace("Z", "+00:00"))
-                                .astimezone(timezone.utc)
+                            return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(
+                                timezone.utc
                             )
                         except Exception:
                             # Try epoch encoded as string
