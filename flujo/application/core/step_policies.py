@@ -4494,12 +4494,12 @@ class DefaultLoopStepExecutor:
 
         # Extract steps from the loop body pipeline for step-by-step execution
         # CRITICAL FIX: Extract steps for step-by-step execution
-        # Always use a list to avoid None checks later
-        if hasattr(body_pipeline, "steps") and body_pipeline.steps:
+        # Only use step-by-step for multi-step pipelines (2+ steps)
+        # Single-step pipelines use regular execution to preserve fallback behavior
+        if hasattr(body_pipeline, "steps") and body_pipeline.steps and len(body_pipeline.steps) > 1:
             loop_body_steps = body_pipeline.steps
         else:
-            # Fallback: treat the pipeline itself as a single step
-            # We'll use a marker to indicate we should use regular execution
+            # Use regular execution for single-step or no-step pipelines
             loop_body_steps = []
 
         while iteration_count <= max_loops:
