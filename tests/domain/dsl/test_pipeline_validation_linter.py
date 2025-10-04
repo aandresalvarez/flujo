@@ -201,8 +201,11 @@ def test_hitl_in_conditional_inside_loop_triggers_nested_error() -> None:
     def _needs_more_info(previous: str, _ctx: Any) -> str:
         return "true" if str(previous) else "false"
 
+    async def _finalize_step(x: Any) -> Any:
+        return x
+
     ask_human = Step.human_in_the_loop(name="ask_user", message_for_user="Need details?")
-    finalize = Step.from_callable(_id, name="finalize")
+    finalize = Step.from_callable(_finalize_step, name="finalize")
 
     conditional = Step.branch_on(
         name="maybe_request_info",
