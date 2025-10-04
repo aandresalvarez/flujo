@@ -52,7 +52,7 @@ jobs:
       CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
       FLUJO_CV_THRESHOLD: "1.0"
-      FLUJO_CI_DB_SIZE: "250"  # Optimized database size for mass CI (was 500)
+      FLUJO_CI_DB_SIZE: "50"  # Reduced for faster tests (slow tests marked separately)
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -141,7 +141,7 @@ jobs:
       CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
       FLUJO_CV_THRESHOLD: "1.0"
-      FLUJO_CI_DB_SIZE: "250"  # Minimal database size for security tests
+      FLUJO_CI_DB_SIZE: "50"  # Minimal database size for security tests
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

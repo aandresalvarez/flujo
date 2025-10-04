@@ -4475,7 +4475,7 @@ class DefaultLoopStepExecutor:
         # CRITICAL FIX: Step-by-step execution to handle HITL pauses within loop body
         # Instead of using a for loop that restarts on PausedException, we use a while loop
         # that can track position within the loop body and resume from the correct step.
-        
+
         # Restore iteration counter when resuming loops
         saved_iteration = 1
         saved_step_index = 0
@@ -4487,7 +4487,7 @@ class DefaultLoopStepExecutor:
                 saved_iteration = maybe_iteration
             if isinstance(maybe_index, int) and maybe_index >= 0:
                 saved_step_index = maybe_index
-        
+
         iteration_count = saved_iteration
         current_step_index = saved_step_index  # Track position within loop body
         loop_body_steps = []
@@ -4791,13 +4791,19 @@ class DefaultLoopStepExecutor:
                                         )
                                         if merged_context:
                                             current_context = merged_context
-                                    except (ValueError, TypeError, AttributeError) as fallback_error:
+                                    except (
+                                        ValueError,
+                                        TypeError,
+                                        AttributeError,
+                                    ) as fallback_error:
                                         telemetry.logfire.error(
                                             f"LoopStep '{loop_step.name}' context merge fallback failed: {fallback_error}"
                                         )
 
                             # Update the main loop's context to reflect the paused state
-                            if current_context is not None and hasattr(current_context, "scratchpad"):
+                            if current_context is not None and hasattr(
+                                current_context, "scratchpad"
+                            ):
                                 current_context.scratchpad["status"] = "paused"
                                 current_context.scratchpad["pause_message"] = str(e)
                                 # CRITICAL FIX: On HITL pause, check if this is the last step
@@ -4805,7 +4811,9 @@ class DefaultLoopStepExecutor:
                                 if step_idx + 1 >= len(loop_body_steps):
                                     # Last step in iteration - move to next iteration
                                     current_context.scratchpad["loop_step_index"] = 0
-                                    current_context.scratchpad["loop_iteration"] = iteration_count + 1
+                                    current_context.scratchpad["loop_iteration"] = (
+                                        iteration_count + 1
+                                    )
                                     telemetry.logfire.info(
                                         f"LoopStep '{loop_step.name}' paused at last step {step_idx + 1}, will resume at next iteration"
                                     )
@@ -4848,21 +4856,24 @@ class DefaultLoopStepExecutor:
                 has_loop_fallback = False
                 original_max_retries = None
                 body_step = None
-                
+
                 # Check if this is a MapStep (which shouldn't have retry disabling)
                 from flujo.domain.dsl.loop import MapStep
+
                 is_map_step = isinstance(loop_step, MapStep)
-                
+
                 if not is_map_step and hasattr(body_pipeline, "steps") and body_pipeline.steps:
                     body_step = body_pipeline.steps[0]
-                    has_loop_fallback = hasattr(body_step, "fallback_step") and body_step.fallback_step is not None
-                    
+                    has_loop_fallback = (
+                        hasattr(body_step, "fallback_step") and body_step.fallback_step is not None
+                    )
+
                     # If loop will handle fallbacks, temporarily disable step retries
                     # This ensures first failure triggers loop's fallback logic immediately
                     if has_loop_fallback and hasattr(body_step, "config"):
                         original_max_retries = body_step.config.max_retries
                         body_step.config.max_retries = 0
-                
+
                 # Disable cache during loop iterations to prevent stale results
                 original_cache_enabled = getattr(core, "_enable_cache", True)
                 try:
@@ -4880,7 +4891,11 @@ class DefaultLoopStepExecutor:
                     # Restore original cache setting
                     core._enable_cache = original_cache_enabled
                     # Restore original max_retries
-                    if original_max_retries is not None and body_step is not None and hasattr(body_step, "config"):
+                    if (
+                        original_max_retries is not None
+                        and body_step is not None
+                        and hasattr(body_step, "config")
+                    ):
                         body_step.config.max_retries = original_max_retries
             if any(not sr.success for sr in pipeline_result.step_history):
                 body_step = body_pipeline.steps[0]
@@ -5102,15 +5117,23 @@ class DefaultLoopStepExecutor:
                 # The ContextManager.merge() might not work correctly for simple field updates,
                 # so we manually copy important fields to ensure they persist across iterations
                 iteration_context = pipeline_result.final_pipeline_context
-                
+
                 # Debug logging to see what's happening
                 telemetry.logfire.info(
                     f"LoopStep '{loop_step.name}' context merge: iteration_counter={getattr(iteration_context, 'counter', 'N/A')}, "
                     f"main_counter={getattr(current_context, 'counter', 'N/A')}"
                 )
-                
+
                 # Copy important fields from iteration context to main context
-                for field_name in ['counter', 'call_count', 'iteration_count', 'accumulated_value', 'is_complete', 'is_clear', 'current_value']:
+                for field_name in [
+                    "counter",
+                    "call_count",
+                    "iteration_count",
+                    "accumulated_value",
+                    "is_complete",
+                    "is_clear",
+                    "current_value",
+                ]:
                     if hasattr(iteration_context, field_name):
                         try:
                             old_value = getattr(current_context, field_name, None)
@@ -5120,15 +5143,19 @@ class DefaultLoopStepExecutor:
                                 f"LoopStep '{loop_step.name}' updated {field_name}: {old_value} -> {new_value}"
                             )
                         except Exception as e:
-                            telemetry.logfire.warning(f"LoopStep '{loop_step.name}' failed to update {field_name}: {e}")
-                
+                            telemetry.logfire.warning(
+                                f"LoopStep '{loop_step.name}' failed to update {field_name}: {e}"
+                            )
+
                 # Also merge using ContextManager.merge() as a fallback
                 try:
                     merged_context = ContextManager.merge(current_context, iteration_context)
                     if merged_context is not None:
                         current_context = merged_context
                 except Exception as e:
-                    telemetry.logfire.warning(f"LoopStep '{loop_step.name}' ContextManager.merge failed: {e}")
+                    telemetry.logfire.warning(
+                        f"LoopStep '{loop_step.name}' ContextManager.merge failed: {e}"
+                    )
                     # If merge fails, at least we have the field updates above
                     pass
             elif pipeline_result.final_pipeline_context is not None:
@@ -5503,19 +5530,21 @@ class DefaultLoopStepExecutor:
                     telemetry.logfire.error(
                         f"Error in iteration_input_mapper for LoopStep '{loop_step.name}' at iteration {iteration_count}: {e}"
                     )
+                    # Mapper is called AFTER incrementing iteration_count, so completed iterations = iteration_count - 1
+                    completed_before_mapper_error = iteration_count - 1
                     return to_outcome(
                         StepResult(
                             name=loop_step.name,
                             success=False,
                             output=None,
-                            attempts=iteration_count,  # CRITICAL FIX: attempts should always be the number of completed iterations
+                            attempts=completed_before_mapper_error,
                             latency_s=time.monotonic() - start_time,
                             token_counts=cumulative_tokens,
                             cost_usd=cumulative_cost,
                             feedback=f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}",
                             branch_context=current_context,
                             metadata_={
-                                "iterations": iteration_count,
+                                "iterations": completed_before_mapper_error,
                                 "exit_reason": "iteration_input_mapper_error",
                             },
                             step_history=iteration_results,
@@ -5676,8 +5705,12 @@ class DefaultLoopStepExecutor:
         # CRITICAL FIX: Calculate attempts based on exit reason
         # - If exited by max_loops: iteration_count was incremented past max_loops, so subtract 1
         # - If exited by condition/failure: iteration_count is the last completed iteration, use as-is
-        completed_iterations = iteration_count - 1 if (exit_reason is None or exit_reason == "max_loops") and iteration_count > max_loops else iteration_count
-        
+        completed_iterations = (
+            iteration_count - 1
+            if (exit_reason is None or exit_reason == "max_loops") and iteration_count > max_loops
+            else iteration_count
+        )
+
         result = StepResult(
             name=loop_step.name,
             success=success_flag,
