@@ -2064,8 +2064,27 @@ class HitlNestedContextLinter(BaseLinter):
                             kind = meta.get("kind", "")
                             is_hitl = kind == "hitl"
 
-                    # If this is a HITL step in a nested context, warn
+                    # If this is a HITL step in a problematic nested context, warn
+                    # Only block HITL in conditional branches inside loops (not HITL directly in loops)
                     if is_hitl and len(context_chain) > 0:
+                        # Check if this is a problematic pattern: conditional inside loop
+                        # We need to ensure a conditional appears AFTER the innermost loop
+                        loop_indices = [
+                            i for i, ctx in enumerate(context_chain) 
+                            if ctx.startswith(("loop:", "map:"))
+                        ]
+                        if not loop_indices:
+                            continue  # No loops present, allow HITL
+                        
+                        innermost_loop_idx = max(loop_indices)
+                        conditional_inside_loop = any(
+                            idx > innermost_loop_idx
+                            and context_chain[idx].startswith("conditional:")
+                            for idx in range(innermost_loop_idx + 1, len(context_chain))
+                        )
+                        
+                        if not conditional_inside_loop:
+                            continue  # Skip validation for HITL directly in loops or conditionals outside loops
                         meta = getattr(step, "meta", {})
                         yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
                         loc_path = (yloc or {}).get(
@@ -2086,7 +2105,7 @@ class HitlNestedContextLinter(BaseLinter):
                                     message=(
                                         f"HITL step '{getattr(step, 'name', 'unnamed')}' will be SILENTLY SKIPPED at runtime. "
                                         f"Context: {context_desc}. "
-                                        f"This is a known limitation: HITL steps in nested contexts (loops, conditionals) do NOT execute. "
+                                        f"This is a known limitation: HITL steps in conditional branches inside loops do NOT execute. "
                                         f"The step will be filtered out silently with no error message, causing data loss."
                                     ),
                                     step_name=getattr(step, "name", None),
@@ -2103,7 +2122,7 @@ class HitlNestedContextLinter(BaseLinter):
                                         "\n"
                                         "  2. Remove the conditional wrapper\n"
                                         "     - If the HITL must be in a loop, remove the conditional\n"
-                                        "     - HITL directly in loop body may work (test thoroughly)\n"
+                                        "     - HITL directly in loop body should work\n"
                                         "\n"
                                         "  3. Use flujo.builtins.ask_user skill instead\n"
                                         "     - Built-in skills may have better nested context support\n"

@@ -131,24 +131,46 @@ def _check_hitl_nesting_safety(step: Any, core: Any) -> None:
 
 **Runtime Error Message**:
 ```text
-⚠️ WARNING: HITL step 'ask_user' in nested context (loop:clarification_loop > conditional:handle_response).
-This pattern may cause silent failures.
-Validation rule HITL-NESTED-001 should have caught this.
-See <https://flujo.dev/docs/known-issues/hitl-nested>
 
-Note: This is a non-blocking warning. The validation ERROR should catch this before runtime.
+🚨 CRITICAL ERROR: HITL step 'ask_user' cannot execute in nested context.
+
+Context: loop:clarification_loop > conditional:handle_response
+
+This is a known limitation: HITL steps in conditional branches inside loops are SILENTLY SKIPPED at runtime with no error message, causing data loss.
+
+This should have been caught by validation (rule HITL-NESTED-001).
+If you see this error, validation may have been bypassed or disabled.
 
 Required actions:
-  1. Move HITL step outside the loop (RECOMMENDED)
-  2. Remove the conditional wrapper (if HITL must be in loop)
-  3. Use flujo.builtins.ask_user skill instead
-  
-[... full example fix ...]
+  1. Move the HITL step outside the loop (RECOMMENDED).
+  2. Remove the conditional wrapper if the HITL must stay in the loop.
+  3. Use flujo.builtins.ask_user skill instead.
+
+Example fix:
+  # ❌ THIS FAILS
+  - kind: loop
+    body:
+      - kind: conditional
+        branches:
+          true:
+            - kind: hitl  # ← WILL NOT WORK!
+
+  # ✅ THIS WORKS
+  - kind: hitl
+    name: get_input
+    sink_to: 'user_answer'
+  - kind: loop
+    body:
+      - kind: step
+        input: '{{ context.user_answer }}'
+
+Documentation: https://flujo.dev/docs/known-issues/hitl-nested
+Report: https://github.com/aandresalvarez/flujo/issues
 ```
 
 **Benefits**:
 - Fallback protection if validation is bypassed
-- Converts silent failure → loud failure with clear diagnostics
+- Converts silent failure → hard failure with clear diagnostics
 - Developer cannot miss this error
 
 ---
@@ -171,8 +193,13 @@ description: "Test YAML to trigger WARN-HITL-001 validation warning for HITL in 
 
 **After**:
 ```yaml
-description: "Test YAML to trigger HITL-NESTED-001 validation ERROR for HITL in nested contexts"
-# ❌ HITL-NESTED-001 ERROR: HITL step inside loop (SILENTLY SKIPPED AT RUNTIME)
+description: "Test YAML to trigger HITL-NESTED-001 validation ERROR for HITL in conditional branches within loops"
+
+# Note: HITL directly inside a loop body (without a conditional) is allowed and should
+# not trigger HITL-NESTED-001. This fixture focuses solely on the unsupported patterns.
+- kind: conditional
+  name: check_status
+  ...
 ```
 
 ---
@@ -391,4 +418,3 @@ This change directly addresses user feedback:
 **Documentation**: ✅ Error messages comprehensive, examples clear
 
 **User Satisfaction**: 🎯 Expected to dramatically reduce debugging time and frustration
-
