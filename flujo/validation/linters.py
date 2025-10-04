@@ -11,10 +11,10 @@ from threading import RLock
 
 # Conditional imports for TOML support (py311+ has tomllib, fallback to tomli)
 try:
-    import tomllib as toml_lib  # type: ignore[import-not-found]
+    import tomllib as toml_lib
 except ImportError:
     try:
-        import tomli as toml_lib  # type: ignore[import-untyped]
+        import tomli as toml_lib  # type: ignore[no-redef]
     except ImportError:
         toml_lib = None  # type: ignore[assignment]
 
