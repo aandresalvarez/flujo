@@ -1,0 +1,70 @@
+version: "0.1"
+name: "test_template_resolution_bug"
+description: |
+  Reproduction case for the template resolution bug reported in nested contexts.
+  
+  With strict mode DISABLED (default "warn"):
+  - Template will resolve to empty string (backward compat)
+  - Warning will be logged about empty resolution
+  
+  With strict mode ENABLED ([template] undefined_variables = "strict" in flujo.toml):
+  - Template will raise TemplateResolutionError with clear message
+  - Shows available variables
+  - Pipeline fails fast with clear error
+
+agents:
+  test_agent:
+    model: "openai:gpt-4o-mini"
+    system_prompt: "Output JSON: {\"action\": \"ask\", \"question\": \"What is your name?\"}"
+    output_schema:
+      type: object
+      properties:
+        action: { type: string }
+        question: { type: string }
+
+steps:
+  # This reproduces the exact bug scenario from the bug report:
+  # Loop → Conditional → HITL with template referencing undefined variable
+  
+  - kind: loop
+    name: test_loop
+    loop:
+      body:
+        - kind: step
+          name: agent_step
+          uses: agents.test_agent
+          updates_context: true
+          # Agent outputs: {"action": "ask", "question": "What is your name?"}
+        
+        - kind: conditional
+          name: check_action
+          condition_expression: "previous_step.action == 'ask'"
+          branches:
+            true:
+              # ❌ BUG: Uses context.question (doesn't exist)
+              # Should use previous_step.question instead
+              - kind: hitl
+                name: ask_user_broken
+                message: "{{ context.question }}"
+                # In strict mode: TemplateResolutionError
+                # In warn mode: Empty string + warning logged
+                # In ignore mode: Empty string (silent)
+              
+              # This step won't be reached if strict mode fails above
+              - kind: step
+                name: record_response
+                agent: { id: "flujo.builtins.passthrough" }
+                input: "User answered"
+      
+      exit_expression: "context.action == 'finish'"
+      max_loops: 1
+
+# To enable strict mode, create flujo.toml:
+# [template]
+# undefined_variables = "strict"
+# log_resolution = true
+
+# Expected behavior:
+# - Default (warn mode): Empty message, warning in logs
+# - Strict mode: Clear error with available variables
+

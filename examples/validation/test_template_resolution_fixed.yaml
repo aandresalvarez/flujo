@@ -1,0 +1,64 @@
+version: "0.1"
+name: "test_template_resolution_fixed"
+description: |
+  CORRECTED version showing proper template variable access patterns in nested contexts.
+  
+  This demonstrates the three correct ways to reference step outputs in templates:
+  1. previous_step - For immediate previous step
+  2. steps.step_name.output - For named steps
+  3. context.scratchpad.explicit_field - For explicitly stored context
+
+agents:
+  test_agent:
+    model: "openai:gpt-4o-mini"
+    system_prompt: "Output JSON: {\"action\": \"ask\", \"question\": \"What is your name?\"}"
+    output_schema:
+      type: object
+      properties:
+        action: { type: string }
+        question: { type: string }
+
+steps:
+  - kind: loop
+    name: test_loop
+    loop:
+      body:
+        - kind: step
+          name: agent_step
+          uses: agents.test_agent
+          updates_context: true
+          # Agent outputs: {"action": "ask", "question": "What is your name?"}
+        
+        - kind: conditional
+          name: check_action
+          condition_expression: "previous_step.action == 'ask'"
+          branches:
+            true:
+              # ✅ CORRECT: Pattern 1 - Use previous_step
+              - kind: hitl
+                name: ask_user_method1
+                message: "{{ previous_step.question }}"
+              
+              # ✅ CORRECT: Pattern 2 - Use named step reference
+              # - kind: hitl
+              #   name: ask_user_method2
+              #   message: "{{ steps.agent_step.output.question }}"
+              
+              # ✅ CORRECT: Pattern 3 - Explicit context storage
+              # First store in known location:
+              # - kind: step
+              #   name: store_question
+              #   agent: { id: "flujo.builtins.passthrough" }
+              #   input: "{{ previous_step.question }}"
+              #   updates_context: true
+              #   sink_to: "scratchpad.current_question"
+              # Then reference it:
+              # - kind: hitl
+              #   name: ask_user_method3
+              #   message: "{{ context.scratchpad.current_question }}"
+      
+      exit_expression: "context.action == 'finish'"
+      max_loops: 1
+
+# This works in all modes (strict, warn, ignore) because variables are defined
+

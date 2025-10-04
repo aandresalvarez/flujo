@@ -13,7 +13,9 @@ PLACEHOLDER_REGEX = re.compile(r"\{\{\s*([^\}]+?)\s*\}\}")
 class AdvancedPromptFormatter:
     """Format prompt templates with conditionals, loops and nested data."""
 
-    def __init__(self, template: str) -> None:
+    def __init__(
+        self, template: str, *, strict: bool = False, log_resolution: bool = False
+    ) -> None:
         """Initialize the formatter with a template string.
 
         Parameters
@@ -21,20 +23,54 @@ class AdvancedPromptFormatter:
         template:
             Template string containing ``{{`` placeholders and optional
             ``#if`` and ``#each`` blocks.
+        strict:
+            If True, raise TemplateResolutionError on undefined variables.
+            If False, return None (resolves to empty string).
+        log_resolution:
+            If True, log template resolution process for debugging.
         """
         self.template = template
+        self._strict = strict
+        self._log_resolution = log_resolution
         # Generate a unique escape marker for this formatter instance
         # to prevent collisions with user content
         self._escape_marker = f"__ESCAPED_TEMPLATE_{uuid.uuid4().hex[:8]}__"
 
     def _get_nested_value(self, data: Dict[str, Any], key: str) -> Any:
-        """Retrieve ``key`` from ``data`` using dotted attribute syntax."""
+        """Retrieve ``key`` from ``data`` using dotted attribute syntax.
+
+        In strict mode, raises TemplateResolutionError if key is undefined.
+        """
+        from ..exceptions import TemplateResolutionError
 
         value: Any = data
+        path_parts: list[str] = []
+
         for part in key.split("."):
+            path_parts.append(part)
             if isinstance(value, dict):
+                if part not in value:
+                    # Undefined variable
+                    if self._strict:
+                        available = list(data.keys()) if isinstance(data, dict) else []
+                        raise TemplateResolutionError(
+                            f"Undefined template variable: '{key}' "
+                            f"(failed at '{'.'.join(path_parts)}'). "
+                            f"Available variables: {available}"
+                        )
+                    return None
                 value = value.get(part)
             else:
+                if not hasattr(value, part):
+                    # Undefined attribute
+                    if self._strict:
+                        available = list(data.keys()) if isinstance(data, dict) else []
+                        raise TemplateResolutionError(
+                            f"Undefined template variable: '{key}' "
+                            f"(failed at '{'.'.join(path_parts)}'). "
+                            f"Available variables: {available}"
+                        )
+                    return None
                 value = getattr(value, part, None)
             if value is None:
                 return None
@@ -84,6 +120,16 @@ class AdvancedPromptFormatter:
 
     def format(self, **kwargs: Any) -> str:
         """Render the template with the provided keyword arguments."""
+
+        # Log template resolution if enabled
+        if self._log_resolution:
+            try:
+                from ..infra import telemetry
+
+                telemetry.logfire.debug(f"[TEMPLATE] Rendering: {self.template[:100]}...")
+                telemetry.logfire.debug(f"[TEMPLATE] Available variables: {list(kwargs.keys())}")
+            except Exception:
+                pass
 
         # First, escape literal \{{ in the template
         processed = self.template.replace(r"\{{", self._escape_marker)
@@ -181,6 +227,23 @@ class AdvancedPromptFormatter:
 
         processed = PLACEHOLDER_REGEX.sub(placeholder_replacer, processed)
         processed = self._unescape_template_syntax(processed)
+
+        # Log resolved result and warn if empty when template had content
+        if self._log_resolution or (processed == "" and self.template.strip() != ""):
+            try:
+                from ..infra import telemetry
+
+                if self._log_resolution:
+                    telemetry.logfire.debug(f"[TEMPLATE] Resolved to: {processed[:100]}...")
+                if processed == "" and self.template.strip() != "" and "{{" in self.template:
+                    telemetry.logfire.warning(
+                        f"[TEMPLATE] Template resolved to empty string! "
+                        f"Original template: '{self.template[:100]}...' "
+                        f"Available variables: {list(kwargs.keys())}"
+                    )
+            except Exception:
+                pass
+
         return processed
 
     @staticmethod

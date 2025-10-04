@@ -223,3 +223,14 @@ class ParallelStepError(FlujoFrameworkError):
             "Consider using MergeStrategy.CONTEXT_UPDATE with field_mapping",
             "PARALLEL_STEP_ERROR",
         )
+
+
+class TemplateResolutionError(FlujoFrameworkError):
+    """Raised when a template variable cannot be resolved (strict mode)."""
+
+    def __init__(self, message: str):
+        super().__init__(
+            message,
+            "Use '{{ previous_step.field }}' or '{{ steps.step_name.output.field }}' for explicit references",
+            "TEMPLATE_RESOLUTION_ERROR",
+        )

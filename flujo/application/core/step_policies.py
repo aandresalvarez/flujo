@@ -1192,7 +1192,7 @@ async def _execute_simple_step_policy_impl(
                 processed_data = await core._processor_pipeline.apply_prompt(
                     step.processors, data, context=attempt_context
                 )
-            
+
             # Normalize builtin skill parameters to support both 'params' and 'input'
             processed_data = _normalize_builtin_params(step, processed_data)
 
@@ -2550,67 +2550,67 @@ class AgentStepExecutor(Protocol):
 def _normalize_builtin_params(step: Any, data: Any) -> Any:
     """
     Normalize builtin skill parameters to support both 'params' and 'input'.
-    
+
     For builtin skills (agent.id starts with 'flujo.builtins.'), accept parameters
     from either agent.params or step.input for consistency across step types.
-    
+
     Precedence: agent.params > step.input > original data
-    
+
     Args:
         step: The step being executed
         data: The original input data
-    
+
     Returns:
         Normalized parameters dict for builtin skills, or original data otherwise
     """
     # Check if this is a builtin skill
-    agent_spec = getattr(step, 'agent', None)
+    agent_spec = getattr(step, "agent", None)
     if agent_spec is None:
         return data
-    
+
     # Check if the agent has a _step_callable that's a builtin
-    if hasattr(agent_spec, '_step_callable'):
+    if hasattr(agent_spec, "_step_callable"):
         func = agent_spec._step_callable
-        if hasattr(func, '__module__') and func.__module__ == 'flujo.builtins':
+        if hasattr(func, "__module__") and func.__module__ == "flujo.builtins":
             # This is a builtin skill, look for params in step
-            step_input = getattr(step, 'input', None)
+            step_input = getattr(step, "input", None)
             if isinstance(step_input, dict):
                 return step_input
-    
+
     agent_id = None
     if isinstance(agent_spec, str):
         agent_id = agent_spec
     elif isinstance(agent_spec, dict):
-        agent_id = agent_spec.get('id')
-    elif hasattr(agent_spec, 'id'):
-        agent_id = getattr(agent_spec, 'id', None)
-    
+        agent_id = agent_spec.get("id")
+    elif hasattr(agent_spec, "id"):
+        agent_id = getattr(agent_spec, "id", None)
+
     # Only process flujo.builtins.* skills
-    if not isinstance(agent_id, str) or not agent_id.startswith('flujo.builtins.'):
+    if not isinstance(agent_id, str) or not agent_id.startswith("flujo.builtins."):
         return data
-    
+
     params: Dict[str, Any] = {}
-    
+
     # Priority 1: Get params from agent.params (documented way)
-    if isinstance(agent_spec, dict) and 'params' in agent_spec:
-        agent_params = agent_spec['params']
+    if isinstance(agent_spec, dict) and "params" in agent_spec:
+        agent_params = agent_spec["params"]
         if isinstance(agent_params, dict):
             params.update(agent_params)
-    elif hasattr(agent_spec, 'params'):
-        agent_params = getattr(agent_spec, 'params', None)
+    elif hasattr(agent_spec, "params"):
+        agent_params = getattr(agent_spec, "params", None)
         if isinstance(agent_params, dict):
             params.update(agent_params)
-    
+
     # Priority 2: Fallback to step.input if no params found (for consistency)
     if not params:
-        step_input = getattr(step, 'input', None)
+        step_input = getattr(step, "input", None)
         if isinstance(step_input, dict):
             params.update(step_input)
-    
+
     # Priority 3: Use original data if nothing else
     if not params:
         return data
-    
+
     return params
 
 
@@ -2808,6 +2808,22 @@ class DefaultAgentStepExecutor:
                     TemplateContextProxy,
                     StepValueProxy,
                 )
+                from flujo.infra.config_manager import get_global_config_manager
+                from flujo.infra.config_manager import TemplateConfig
+                from flujo.exceptions import TemplateResolutionError
+
+                # Get template configuration
+                strict = False
+                log_resolution = False
+                try:
+                    config_mgr = get_global_config_manager()
+                    config = config_mgr.load_config()
+                    template_config = config.template or TemplateConfig()
+                    strict = template_config.undefined_variables == "strict"
+                    log_resolution = template_config.log_resolution
+                except Exception:
+                    # Fallback to defaults if config unavailable
+                    pass
 
                 steps_map = get_steps_map_from_context(context)
                 steps_wrapped: Dict[str, Any] = {
@@ -2828,11 +2844,21 @@ class DefaultAgentStepExecutor:
                     pass  # resume_input will be undefined if no HITL history
 
                 if isinstance(templ_spec, str) and ("{{" in templ_spec and "}}" in templ_spec):
-                    data = AdvancedPromptFormatter(templ_spec).format(**fmt_context)
+                    # Use configured formatter with strict mode and logging
+                    formatter = AdvancedPromptFormatter(
+                        templ_spec, strict=strict, log_resolution=log_resolution
+                    )
+                    data = formatter.format(**fmt_context)
                 else:
                     data = templ_spec
+        except TemplateResolutionError as e:
+            # In strict mode, template errors are fatal
+            telemetry.logfire.error(
+                f"[AgentStep] Template resolution failed in step '{step.name}': {e}"
+            )
+            raise
         except Exception:
-            # Non-fatal templating failure should not abort the step
+            # Non-fatal templating failure should not abort the step (backward compat)
             pass
         # --- Quota reservation (estimate + reserve) ---
         # Prefer explicitly injected estimator; then factory; then local heuristic
@@ -6817,6 +6843,22 @@ class DefaultHitlStepExecutor:
                         TemplateContextProxy,
                         StepValueProxy,
                     )
+                    from flujo.infra.config_manager import get_global_config_manager
+                    from flujo.infra.config_manager import TemplateConfig
+                    from flujo.exceptions import TemplateResolutionError
+
+                    # Get template configuration
+                    strict = False
+                    log_resolution = False
+                    try:
+                        config_mgr = get_global_config_manager()
+                        config = config_mgr.load_config()
+                        template_config = config.template or TemplateConfig()
+                        strict = template_config.undefined_variables == "strict"
+                        log_resolution = template_config.log_resolution
+                    except Exception:
+                        # Fallback to defaults if config unavailable
+                        pass
 
                     steps_map = get_steps_map_from_context(context)
                     steps_wrapped = {
@@ -6828,7 +6870,18 @@ class DefaultHitlStepExecutor:
                         "previous_step": data,
                         "steps": steps_wrapped,
                     }
-                    return AdvancedPromptFormatter(text).format(**fmt_ctx)
+
+                    # Use configured formatter with strict mode and logging
+                    formatter = AdvancedPromptFormatter(
+                        text, strict=strict, log_resolution=log_resolution
+                    )
+                    return formatter.format(**fmt_ctx)
+                except TemplateResolutionError as e:
+                    # In strict mode, log the error with step context and re-raise
+                    telemetry.logfire.error(
+                        f"[HITL] Template resolution failed in step '{step.name}': {e}"
+                    )
+                    raise
                 except Exception:
                     return text
             return text
