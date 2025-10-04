@@ -3,9 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 from flujo.cli.main import app
+
+# Mark all tests in this module as slow (architect tests take >180s)
+pytestmark = [pytest.mark.slow]
 
 
 # Module-level variable to control the simulated user input

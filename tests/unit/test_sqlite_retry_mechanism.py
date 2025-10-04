@@ -9,7 +9,7 @@ import pytest
 from flujo.state.backends.sqlite import SQLiteBackend
 
 # Mark all tests in this module for serial execution to prevent SQLite concurrency issues
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.slow]
 
 
 @pytest.fixture

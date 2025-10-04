@@ -207,6 +207,17 @@ class PipelineResult(BaseModel, Generic[ContextT]):
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
+    @property
+    def output(self) -> Any | None:
+        """Return the output of the last step in the pipeline.
+        
+        This is a convenience property for backward compatibility with tests
+        and code that expects result.output.
+        """
+        if not self.step_history:
+            return None
+        return self.step_history[-1].output
+
 
 class RefinementCheck(BaseModel):
     """Standardized output from a critic pipeline in a refinement loop."""

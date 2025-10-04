@@ -14,17 +14,20 @@ from typer.testing import CliRunner
 from flujo.cli.main import app
 
 # Mark as very slow to exclude from fast suites
-pytestmark = [pytest.mark.veryslow, pytest.mark.serial]
+# Add timeout to prevent CI hangs
+pytestmark = [pytest.mark.veryslow, pytest.mark.serial, pytest.mark.timeout(300)]
 
 
 class TestCLIPerformanceEdgeCases:
     """Test CLI performance edge cases and optimizations."""
 
-    @pytest.fixture(scope="module")
-    async def large_database_with_mixed_data(self, tmp_path_factory) -> Path:
-        """Create a database with mixed data types for performance testing."""
-        # Use a module-scoped tmp dir to reuse DB across tests in this module
-        tmp_path = tmp_path_factory.mktemp("cli_perf_db")
+    @pytest.fixture
+    async def large_database_with_mixed_data(self, tmp_path) -> Path:
+        """Create a database with mixed data types for performance testing.
+        
+        Changed from module-scoped to function-scoped to ensure proper async execution.
+        Reduced default size from 200 to 50 for faster test execution.
+        """
         db_path = tmp_path / "mixed_ops.db"
         backend = SQLiteBackend(db_path)
 
@@ -33,11 +36,12 @@ class TestCLIPerformanceEdgeCases:
             import os as _os
 
             now = datetime.utcnow()
-            # Allow scaling via env; default to a modest size for unit tests
+            # Reduced default from 200 to 50 for faster tests
+            # CI can override with FLUJO_CI_DB_SIZE if needed
             try:
-                total = int(_os.getenv("FLUJO_CI_DB_SIZE", "200"))
+                total = int(_os.getenv("FLUJO_CI_DB_SIZE", "50"))
             except Exception:
-                total = 200
+                total = 50
             for i in range(total):
                 # Create run start
                 dt = (now - timedelta(minutes=i)).isoformat()

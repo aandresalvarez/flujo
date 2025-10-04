@@ -7,8 +7,12 @@ These tests verify that the Architect CLI actually works for users:
 - Basic functionality is accessible
 """
 
+import pytest
 from typer.testing import CliRunner
 from flujo.cli.main import app
+
+# Mark all tests in this module as slow (architect CLI integration tests)
+pytestmark = [pytest.mark.slow]
 
 
 class TestArchitectCLIIntegration:
