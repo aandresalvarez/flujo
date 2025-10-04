@@ -4493,14 +4493,14 @@ class DefaultLoopStepExecutor:
         loop_body_steps = []
 
         # Extract steps from the loop body pipeline for step-by-step execution
-        # CRITICAL FIX: Only use step-by-step execution when there are multiple steps
-        # or when we need to handle HITL pauses. For single steps, use regular execution
-        # to preserve fallback behavior.
-        if hasattr(body_pipeline, "steps") and body_pipeline.steps and len(body_pipeline.steps) > 1:
+        # CRITICAL FIX: Extract steps for step-by-step execution
+        # Always use a list to avoid None checks later
+        if hasattr(body_pipeline, "steps") and body_pipeline.steps:
             loop_body_steps = body_pipeline.steps
         else:
-            # For single step, use regular execution to preserve fallback behavior
-            loop_body_steps = None
+            # Fallback: treat the pipeline itself as a single step
+            # We'll use a marker to indicate we should use regular execution
+            loop_body_steps = []
 
         while iteration_count <= max_loops:
             with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {iteration_count}"):
@@ -4712,125 +4712,137 @@ class DefaultLoopStepExecutor:
                 # instrumented_pipeline = body_pipeline  # Not used in step-by-step execution
                 pass
 
-            # CRITICAL FIX: Step-by-step execution to handle HITL pauses within loop body
-            # Execute each step in the loop body individually, tracking position for proper resume
-            original_cache_enabled = getattr(core, "_enable_cache", True)
-            pipeline_result = None
+            # CRITICAL FIX: Choose execution method based on whether we have steps
+            if len(loop_body_steps) > 0:
+                # Step-by-step execution to handle HITL pauses within loop body
+                # Execute each step in the loop body individually, tracking position for proper resume
+                original_cache_enabled = getattr(core, "_enable_cache", True)
+                pipeline_result = None
 
-            try:
-                core._enable_cache = False
-                telemetry.logfire.info(
-                    f"[POLICY] Starting step-by-step execution for iteration {iteration_count}, step {current_step_index}"
-                )
-
-                # Execute steps one by one, starting from current_step_index
-                step_results = []
-                for step_idx in range(current_step_index, len(loop_body_steps)):
-                    step = loop_body_steps[step_idx]
-                    current_step_index = step_idx  # Update position
-
+                try:
+                    core._enable_cache = False
                     telemetry.logfire.info(
-                        f"[POLICY] Executing step {step_idx + 1}/{len(loop_body_steps)}: {getattr(step, 'name', 'unnamed')}"
+                        f"[POLICY] Starting step-by-step execution for iteration {iteration_count}, step {current_step_index}"
                     )
 
-                    try:
-                        # Execute individual step
-                        step_result = await core.execute(
-                            step=step,
-                            data=current_data,
-                            context=iteration_context,
-                            resources=resources,
-                            limits=limits,
-                            stream=False,
-                            on_chunk=None,
-                            breach_event=None,
-                            _fallback_depth=_fallback_depth,
-                        )
-                        step_results.append(step_result)
+                    # Execute steps one by one, starting from current_step_index
+                    step_results = []
+                    for step_idx in range(current_step_index, len(loop_body_steps)):
+                        step = loop_body_steps[step_idx]
+                        current_step_index = step_idx  # Update position
 
-                        # Update data and context for next step
-                        current_data = step_result.output
-                        if step_result.branch_context is not None:
-                            iteration_context = ContextManager.merge(
-                                iteration_context, step_result.branch_context
+                        telemetry.logfire.info(
+                            f"[POLICY] Executing step {step_idx + 1}/{len(loop_body_steps)}: {getattr(step, 'name', 'unnamed')}"
+                        )
+
+                        try:
+                            # Execute individual step
+                            step_result = await core.execute(
+                                step=step,
+                                data=current_data,
+                                context=iteration_context,
+                                resources=resources,
+                                limits=limits,
+                                stream=False,
+                                on_chunk=None,
+                                breach_event=None,
+                                _fallback_depth=_fallback_depth,
                             )
-                        cumulative_cost += step_result.cost_usd or 0.0
-                        cumulative_tokens += step_result.token_counts or 0
+                            step_results.append(step_result)
 
-                        telemetry.logfire.info(
-                            f"[POLICY] Step {step_idx + 1} completed successfully"
-                        )
-
-                    except PausedException as e:
-                        # ✅ CRITICAL FIX: Handle HITL pause within loop body
-                        # When HITL pauses, we save the current position and merge context state
-                        # so that when resumed, execution continues from the next step
-
-                        telemetry.logfire.info(
-                            f"LoopStep '{loop_step.name}' paused by HITL at iteration {iteration_count}, step {step_idx + 1}."
-                        )
-
-                        # Merge any context updates from the iteration context before updating status
-                        if iteration_context is not None and current_context is not None:
-                            try:
-                                from flujo.utils.context import safe_merge_context_updates
-
-                                safe_merge_context_updates(current_context, iteration_context)
-                                telemetry.logfire.info(
-                                    f"LoopStep '{loop_step.name}' successfully merged iteration context state"
+                            # Update data and context for next step
+                            current_data = step_result.output
+                            if step_result.branch_context is not None:
+                                iteration_context = ContextManager.merge(
+                                    iteration_context, step_result.branch_context
                                 )
-                            except (ValueError, TypeError, AttributeError) as merge_error:
-                                telemetry.logfire.warning(
-                                    f"LoopStep '{loop_step.name}' safe_merge failed, using fallback: {merge_error}"
-                                )
-                                try:
-                                    merged_context = ContextManager.merge(
-                                        current_context, iteration_context
-                                    )
-                                    if merged_context:
-                                        current_context = merged_context
-                                except (ValueError, TypeError, AttributeError) as fallback_error:
-                                    telemetry.logfire.error(
-                                        f"LoopStep '{loop_step.name}' context merge fallback failed: {fallback_error}"
-                                    )
+                            cumulative_cost += step_result.cost_usd or 0.0
+                            cumulative_tokens += step_result.token_counts or 0
 
-                        # Update the main loop's context to reflect the paused state
-                        if current_context is not None and hasattr(current_context, "scratchpad"):
-                            current_context.scratchpad["status"] = "paused"
-                            current_context.scratchpad["pause_message"] = str(e)
-                            # CRITICAL FIX: On HITL pause, skip to the next iteration after the pause is resolved
-                            # The runner will handle logging the paused command with user input, so we don't
-                            # need to re-execute the paused step. Instead, we move to the next iteration.
-                            current_context.scratchpad["loop_step_index"] = 0  # Start from beginning of next iteration
-                            current_context.scratchpad["loop_iteration"] = iteration_count + 1  # Next iteration
                             telemetry.logfire.info(
-                                f"LoopStep '{loop_step.name}' updated context status to 'paused' at step {step_idx + 1}"
+                                f"[POLICY] Step {step_idx + 1} completed successfully"
                             )
 
-                        # ✅ CRITICAL: Re-raise PausedException to let runner handle pause/resume
-                        # When resumed, the loop will continue from current_step_index
-                        raise e
+                        except PausedException as e:
+                            # ✅ CRITICAL FIX: Handle HITL pause within loop body
+                            # When HITL pauses, we save the current position and merge context state
+                            # so that when resumed, execution continues from the next step
 
-                    except (ValueError, TypeError, AttributeError, RuntimeError) as e:
-                        telemetry.logfire.error(
-                            f"LoopStep '{loop_step.name}' step {step_idx + 1} failed: {type(e).__name__}: {e!s}"
-                        )
-                        raise e
+                            telemetry.logfire.info(
+                                f"LoopStep '{loop_step.name}' paused by HITL at iteration {iteration_count}, step {step_idx + 1}."
+                            )
 
-                # All steps completed successfully for this iteration
-                # Create a pipeline result from the step results
-                pipeline_result = PipelineResult(
-                    output=current_data,
-                    step_history=step_results,
-                    final_pipeline_context=iteration_context,
+                            # Merge any context updates from the iteration context before updating status
+                            if iteration_context is not None and current_context is not None:
+                                try:
+                                    from flujo.utils.context import safe_merge_context_updates
+
+                                    safe_merge_context_updates(current_context, iteration_context)
+                                    telemetry.logfire.info(
+                                        f"LoopStep '{loop_step.name}' successfully merged iteration context state"
+                                    )
+                                except (ValueError, TypeError, AttributeError) as merge_error:
+                                    telemetry.logfire.warning(
+                                        f"LoopStep '{loop_step.name}' safe_merge failed, using fallback: {merge_error}"
+                                    )
+                                    try:
+                                        merged_context = ContextManager.merge(
+                                            current_context, iteration_context
+                                        )
+                                        if merged_context:
+                                            current_context = merged_context
+                                    except (ValueError, TypeError, AttributeError) as fallback_error:
+                                        telemetry.logfire.error(
+                                            f"LoopStep '{loop_step.name}' context merge fallback failed: {fallback_error}"
+                                        )
+
+                            # Update the main loop's context to reflect the paused state
+                            if current_context is not None and hasattr(current_context, "scratchpad"):
+                                current_context.scratchpad["status"] = "paused"
+                                current_context.scratchpad["pause_message"] = str(e)
+                                # CRITICAL FIX: On HITL pause, skip to the next iteration after the pause is resolved
+                                # The runner will handle logging the paused command with user input, so we don't
+                                # need to re-execute the paused step. Instead, we move to the next iteration.
+                                current_context.scratchpad["loop_step_index"] = 0  # Start from beginning of next iteration
+                                current_context.scratchpad["loop_iteration"] = iteration_count + 1  # Next iteration
+                                telemetry.logfire.info(
+                                    f"LoopStep '{loop_step.name}' updated context status to 'paused' at step {step_idx + 1}"
+                                )
+
+                            # ✅ CRITICAL: Re-raise PausedException to let runner handle pause/resume
+                            # When resumed, the loop will continue from current_step_index
+                            raise e
+
+                        except (ValueError, TypeError, AttributeError, RuntimeError) as e:
+                            telemetry.logfire.error(
+                                f"LoopStep '{loop_step.name}' step {step_idx + 1} failed: {type(e).__name__}: {e!s}"
+                            )
+                            raise e
+
+                    # All steps completed successfully for this iteration
+                    # Create a pipeline result from the step results
+                    pipeline_result = PipelineResult(
+                        output=current_data,
+                        step_history=step_results,
+                        final_pipeline_context=iteration_context,
+                    )
+
+                    telemetry.logfire.info(
+                        f"[POLICY] Step-by-step execution completed for iteration {iteration_count}"
+                    )
+
+                finally:
+                    core._enable_cache = original_cache_enabled
+            else:
+                # Regular execution for empty loop_body_steps (single-step pipeline)
+                pipeline_result = await core._execute_pipeline_via_policies(
+                    body_pipeline,
+                    current_data,
+                    iteration_context,
+                    resources,
+                    limits,
+                    breach_event,
                 )
-
-                telemetry.logfire.info(
-                    f"[POLICY] Step-by-step execution completed for iteration {iteration_count}"
-                )
-
-            finally:
-                core._enable_cache = original_cache_enabled
             if any(not sr.success for sr in pipeline_result.step_history):
                 body_step = body_pipeline.steps[0]
                 if hasattr(body_step, "fallback_step") and body_step.fallback_step is not None:
