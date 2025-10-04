@@ -4863,7 +4863,10 @@ class DefaultLoopStepExecutor:
                         original_max_retries = body_step.config.max_retries
                         body_step.config.max_retries = 0
                 
+                # Disable cache during loop iterations to prevent stale results
+                original_cache_enabled = getattr(core, "_enable_cache", True)
                 try:
+                    core._enable_cache = False
                     pipeline_result = await core._execute_pipeline_via_policies(
                         body_pipeline,
                         current_data,
@@ -4874,6 +4877,8 @@ class DefaultLoopStepExecutor:
                         context_setter,
                     )
                 finally:
+                    # Restore original cache setting
+                    core._enable_cache = original_cache_enabled
                     # Restore original max_retries
                     if original_max_retries is not None and body_step is not None and hasattr(body_step, "config"):
                         body_step.config.max_retries = original_max_retries
