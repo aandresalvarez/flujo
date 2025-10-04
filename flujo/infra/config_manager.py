@@ -317,6 +317,10 @@ class ConfigManager:
             if "validation" in data:
                 config_data["validation"] = data["validation"]
 
+            # Template configuration
+            if "template" in data:
+                config_data["template"] = data["template"]
+
             # Environment override for template filters (env > file)
             try:
                 env_filters = os.environ.get("FLUJO_ENABLED_FILTERS")
