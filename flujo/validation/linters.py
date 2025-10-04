@@ -2068,12 +2068,23 @@ class HitlNestedContextLinter(BaseLinter):
                     # Only block HITL in conditional branches inside loops (not HITL directly in loops)
                     if is_hitl and len(context_chain) > 0:
                         # Check if this is a problematic pattern: conditional inside loop
-                        has_loop = any(ctx.startswith("loop:") for ctx in context_chain)
-                        has_conditional = any(ctx.startswith("conditional:") for ctx in context_chain)
+                        # We need to ensure a conditional appears AFTER the innermost loop
+                        loop_indices = [
+                            i for i, ctx in enumerate(context_chain) 
+                            if ctx.startswith(("loop:", "map:"))
+                        ]
+                        if not loop_indices:
+                            continue  # No loops present, allow HITL
                         
-                        # Only block if both loop and conditional are present
-                        if not (has_loop and has_conditional):
-                            continue  # Skip validation for HITL directly in loops
+                        innermost_loop_idx = max(loop_indices)
+                        conditional_inside_loop = any(
+                            idx > innermost_loop_idx
+                            and context_chain[idx].startswith("conditional:")
+                            for idx in range(innermost_loop_idx + 1, len(context_chain))
+                        )
+                        
+                        if not conditional_inside_loop:
+                            continue  # Skip validation for HITL directly in loops or conditionals outside loops
                         meta = getattr(step, "meta", {})
                         yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
                         loc_path = (yloc or {}).get(
