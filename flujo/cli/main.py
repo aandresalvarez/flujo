@@ -469,13 +469,13 @@ def dev_health_check(
         parsed_times: dict[str, datetime] = {}
         cutoff = None
         if since_hours is not None:
-            cutoff = datetime.utcnow() - timedelta(hours=int(since_hours))
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=int(since_hours))
 
             def _parse(ts: object) -> datetime | None:
                 try:
                     # Numeric epoch
                     if isinstance(ts, (int, float)):
-                        return datetime.utcfromtimestamp(float(ts))
+                        return datetime.fromtimestamp(float(ts), tz=timezone.utc)
                     if isinstance(ts, str):
                         s = ts.strip()
                         # Support Z-terminated ISO by normalizing to UTC
@@ -483,11 +483,10 @@ def dev_health_check(
                             return (
                                 datetime.fromisoformat(s.replace("Z", "+00:00"))
                                 .astimezone(timezone.utc)
-                                .replace(tzinfo=None)
                             )
                         except Exception:
                             # Try epoch encoded as string
-                            return datetime.utcfromtimestamp(float(s))
+                            return datetime.fromtimestamp(float(s), tz=timezone.utc)
                     return None
                 except Exception:
                     return None
@@ -534,7 +533,7 @@ def dev_health_check(
         buckets: list[dict[str, Any]] = []
         now = None
         if since_hours is not None and cutoff is not None:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             mid = cutoff + (now - cutoff) / 2
             last_half_cut = mid
             try:
@@ -1102,7 +1101,7 @@ def dev_health_check(
                         "version": get_version_string()
                         if "get_version_string" in globals()
                         else "",
-                        "generated_at": datetime.utcnow().isoformat(),
+                        "generated_at": datetime.now(timezone.utc).isoformat(),
                         "totals": totals,
                         "stages": totals.get("stages", {}),
                         "steps": [{"name": k, **v} for k, v in per_step.items()],

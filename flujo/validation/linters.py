@@ -2024,11 +2024,11 @@ class TemplateControlStructureLinter(BaseLinter):
 
 
 class HitlNestedContextLinter(BaseLinter):
-    """HITL nested context validation: WARN-HITL-001.
+    """HITL nested context validation: HITL-NESTED-001 (CRITICAL).
 
     Detects HITL (Human-In-The-Loop) steps inside nested contexts like loops and conditionals.
-    HITL steps in nested contexts may exhibit complex pause/resume behavior and should be used
-    with caution or restructured to top-level steps.
+    HITL steps in nested contexts WILL BE SILENTLY SKIPPED at runtime, causing data loss.
+    This is a known limitation and pipelines with this pattern will fail.
     """
 
     def analyze(self, pipeline: Any) -> Iterable[ValidationFinding]:
@@ -2077,15 +2077,17 @@ class HitlNestedContextLinter(BaseLinter):
 
                         context_desc = " > ".join(context_chain)
 
-                        sev = _override_severity("WARN-HITL-001", "warning")
+                        sev = _override_severity("HITL-NESTED-001", "error")
                         if sev is not None:
                             out.append(
                                 ValidationFinding(
-                                    rule_id="WARN-HITL-001",
+                                    rule_id="HITL-NESTED-001",
                                     severity=sev,
                                     message=(
-                                        f"HITL step '{getattr(step, 'name', 'unnamed')}' found in nested context: {context_desc}. "
-                                        f"HITL steps in nested contexts (loops, conditionals) may exhibit complex pause/resume behavior."
+                                        f"HITL step '{getattr(step, 'name', 'unnamed')}' will be SILENTLY SKIPPED at runtime. "
+                                        f"Context: {context_desc}. "
+                                        f"This is a known limitation: HITL steps in nested contexts (loops, conditionals) do NOT execute. "
+                                        f"The step will be filtered out silently with no error message, causing data loss."
                                     ),
                                     step_name=getattr(step, "name", None),
                                     location_path=loc_path,
@@ -2093,28 +2095,41 @@ class HitlNestedContextLinter(BaseLinter):
                                     line=line,
                                     column=col,
                                     suggestion=(
-                                        "Consider one of these alternatives:\n"
-                                        "  1. Move HITL step to top-level (outside loop/conditional)\n"
-                                        "  2. Use flujo.builtins.ask_user skill instead\n"
-                                        "  3. Restructure pipeline to avoid nested HITL\n"
-                                        "  4. If intentional, ensure you understand pause/resume semantics\n"
+                                        "CRITICAL: This pipeline will fail at runtime. Apply one of these workarounds:\n"
                                         "\n"
-                                        "Example restructure:\n"
-                                        "  # ❌ HITL inside loop\n"
+                                        "  1. Move HITL step outside the loop (RECOMMENDED)\n"
+                                        "     - Collect user input before entering the loop\n"
+                                        "     - Store result in context for use inside loop\n"
+                                        "\n"
+                                        "  2. Remove the conditional wrapper\n"
+                                        "     - If the HITL must be in a loop, remove the conditional\n"
+                                        "     - HITL directly in loop body may work (test thoroughly)\n"
+                                        "\n"
+                                        "  3. Use flujo.builtins.ask_user skill instead\n"
+                                        "     - Built-in skills may have better nested context support\n"
+                                        "\n"
+                                        "Example fix:\n"
+                                        "  # ❌ WILL FAIL - HITL in conditional in loop\n"
                                         "  - kind: loop\n"
                                         "    body:\n"
-                                        "      - kind: hitl\n"
-                                        "        message: 'Question?'\n"
+                                        "      - kind: conditional\n"
+                                        "        branches:\n"
+                                        "          true:\n"
+                                        "            - kind: hitl  # <- SILENTLY SKIPPED!\n"
+                                        "              message: 'Question?'\n"
                                         "\n"
-                                        "  # ✅ HITL at top-level\n"
+                                        "  # ✅ WORKS - HITL at top-level\n"
                                         "  - kind: hitl\n"
+                                        "    name: get_input\n"
                                         "    message: 'Question?'\n"
+                                        "    sink_to: 'user_answer'\n"
                                         "  - kind: loop\n"
                                         "    body:\n"
                                         "      - kind: step\n"
-                                        "        input: '{{ context.answer }}'\n"
+                                        "        input: '{{ context.user_answer }}'\n"
                                         "\n"
-                                        "Documentation: https://flujo.dev/docs/hitl#nested-contexts"
+                                        "Documentation: https://flujo.dev/docs/known-issues/hitl-nested\n"
+                                        "Report hours lost debugging this? https://github.com/aandresalvarez/flujo/issues"
                                     ),
                                 )
                             )

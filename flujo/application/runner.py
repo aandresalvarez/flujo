@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import weakref
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import (
     Any,
     Callable,
@@ -678,7 +678,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             else:
                 # New run, record start metadata
                 self._ensure_pipeline()
-                now = datetime.utcnow().isoformat()
+                now = datetime.now(timezone.utc).isoformat()
                 await state_manager.record_run_start(
                     run_id_for_state,
                     self.pipeline_id,

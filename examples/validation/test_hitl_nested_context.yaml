@@ -1,9 +1,9 @@
 version: "0.1"
 name: "test_hitl_nested_context"
-description: "Test YAML to trigger WARN-HITL-001 validation warning for HITL in nested contexts"
+description: "Test YAML to trigger HITL-NESTED-001 validation ERROR for HITL in nested contexts"
 
 steps:
-  # This should trigger WARN-HITL-001 - HITL inside loop
+  # This should trigger HITL-NESTED-001 ERROR - HITL inside loop
   - kind: loop
     name: conversation_loop
     loop:
@@ -15,7 +15,7 @@ steps:
           input: "Analyzing..."
           updates_context: true
         
-        # ❌ WARN-HITL-001: HITL step inside loop
+        # ❌ HITL-NESTED-001 ERROR: HITL step inside loop (SILENTLY SKIPPED AT RUNTIME)
         - kind: hitl
           name: ask_user_in_loop
           message: "What's your question?"
@@ -30,13 +30,13 @@ steps:
       max_loops: 3
       exit_expression: "context.done == true"
   
-  # This should trigger WARN-HITL-001 - HITL inside conditional
+  # This should trigger HITL-NESTED-001 ERROR - HITL inside conditional
   - kind: conditional
     name: check_status
     condition_expression: "true"
     branches:
       true:
-        # ❌ WARN-HITL-001: HITL step inside conditional
+        # ❌ HITL-NESTED-001 ERROR: HITL step inside conditional (SILENTLY SKIPPED AT RUNTIME)
         - kind: hitl
           name: ask_user_in_conditional
           message: "Need input?"
@@ -48,7 +48,7 @@ steps:
             id: "flujo.builtins.passthrough"
           input: "Processing..."
   
-  # This should trigger WARN-HITL-001 - HITL inside conditional inside loop (nested)
+  # This should trigger HITL-NESTED-001 ERROR - HITL inside conditional inside loop (WORST CASE)
   - kind: loop
     name: nested_loop
     loop:
@@ -58,7 +58,7 @@ steps:
           condition_expression: "true"
           branches:
             true:
-              # ❌ WARN-HITL-001: HITL step inside conditional inside loop
+              # ❌ HITL-NESTED-001 CRITICAL ERROR: HITL step inside conditional inside loop (GUARANTEED SILENT FAILURE)
               - kind: hitl
                 name: ask_user_deeply_nested
                 message: "Deeply nested question?"
@@ -66,7 +66,7 @@ steps:
       
       max_loops: 2
   
-  # ✅ This should NOT trigger WARN-HITL-001 - top-level HITL is fine
+  # ✅ This should NOT trigger HITL-NESTED-001 - top-level HITL is fine
   - kind: hitl
     name: ask_user_top_level
     message: "This is fine - top-level HITL"

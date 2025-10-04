@@ -9,7 +9,7 @@ import re
 import sqlite3
 import time
 import weakref
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import (
     Any,
@@ -1481,7 +1481,7 @@ class SQLiteBackend(StateBackend):
                 try:
                     import sqlite3 as _sqlite
 
-                    created_at = run_data.get("created_at") or datetime.utcnow().isoformat()
+                    created_at = run_data.get("created_at") or datetime.now(timezone.utc).isoformat()
                     updated_at = run_data.get("updated_at") or created_at
                     with _sqlite.connect(self.db_path) as _db:
                         # Fast pragmas to reduce fsync/IO cost on first write
@@ -1545,7 +1545,7 @@ class SQLiteBackend(StateBackend):
 
                 try:
                     # OPTIMIZATION: Use simplified schema for better performance
-                    created_at = run_data.get("created_at") or datetime.utcnow().isoformat()
+                    created_at = run_data.get("created_at") or datetime.now(timezone.utc).isoformat()
                     updated_at = run_data.get("updated_at") or created_at
 
                     await db.execute(
@@ -1605,7 +1605,7 @@ class SQLiteBackend(StateBackend):
                     try:
                         run_id = step_data.get("run_id")
                         if run_id is not None:
-                            now = datetime.utcnow().isoformat()
+                            now = datetime.now(timezone.utc).isoformat()
                             await db.execute(
                                 """
                                 INSERT OR IGNORE INTO runs (
@@ -1640,7 +1640,7 @@ class SQLiteBackend(StateBackend):
                             step_data.get("cost_usd"),
                             step_data.get("token_counts"),
                             step_data.get("execution_time_ms"),
-                            step_data.get("created_at", datetime.utcnow().isoformat()),
+                            step_data.get("created_at", datetime.now(timezone.utc).isoformat()),
                         ),
                     )
                     await db.commit()
@@ -1675,7 +1675,7 @@ class SQLiteBackend(StateBackend):
                         """,
                         (
                             end_data.get("status", "completed"),
-                            end_data.get("updated_at", datetime.utcnow().isoformat()),
+                            end_data.get("updated_at", datetime.now(timezone.utc).isoformat()),
                             end_data.get("execution_time_ms"),
                             end_data.get("memory_usage_mb"),
                             end_data.get("total_steps", 0),
@@ -1761,7 +1761,7 @@ class SQLiteBackend(StateBackend):
 
                     # Ensure parent run exists to satisfy FK on spans(run_id)
                     try:
-                        now = datetime.utcnow().isoformat()
+                        now = datetime.now(timezone.utc).isoformat()
                         await db.execute(
                             """
                             INSERT OR IGNORE INTO runs (

@@ -16,12 +16,12 @@ class TestStrictModeRegressions:
 
     def test_strict_mode_raises_on_undefined_variable(self):
         """Regression test for Bug #2: Duplicate format() method disabled strict mode.
-        
+
         **The Bug**: AdvancedPromptFormatter had duplicate format() method (120 lines)
         that overwrote the correct implementation, disabling strict mode.
-        
+
         **Impact**: Strict template mode silently broken across entire codebase.
-        
+
         **Commit**: c86f5ad1
         """
         template = "Hello {{ undefined_var }}"
@@ -32,13 +32,13 @@ class TestStrictModeRegressions:
 
     def test_strict_mode_in_each_loops(self):
         """Regression test for Bug #3: Strict mode broken in #each loops.
-        
+
         **The Bug**: Inner AdvancedPromptFormatter instances in #each loops didn't
         inherit strict and log_resolution flags.
-        
+
         **Impact**: Undefined variables in loop bodies silently resolved to empty
         strings even in strict mode.
-        
+
         **Commit**: c86f5ad1
         """
         template = """
@@ -56,25 +56,24 @@ class TestStrictModeRegressions:
         template = "{{#each items}}- {{ this.name }}: {{ this.value }}{{/each}}"
         formatter = AdvancedPromptFormatter(template, strict=True)
 
-        result = formatter.format(items=[
-            {"name": "item1", "value": "val1"},
-            {"name": "item2", "value": "val2"}
-        ])
+        result = formatter.format(
+            items=[{"name": "item1", "value": "val1"}, {"name": "item2", "value": "val2"}]
+        )
 
         assert "item1: val1" in result
         assert "item2: val2" in result
 
     def test_format_prompt_respects_strict_mode_when_configured(self):
         """Regression test for Bug #6: format_prompt() bypassing strict mode.
-        
+
         **The Bug**: format_prompt() convenience wrapper created AdvancedPromptFormatter
         without passing config, so strict mode was ignored.
-        
+
         **Impact**: 50% of template rendering (conversation processors, agent wrappers,
         custom skills) bypassed strict mode.
-        
+
         **Commit**: f664774c
-        
+
         NOTE: This test verifies the code path but doesn't test config injection
         since that would require complex mocking. The key regression protection
         is ensuring format_prompt() CAN read config and pass it to formatter.
@@ -85,9 +84,7 @@ class TestStrictModeRegressions:
 undefined_variables = "strict"
 """
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".toml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
             f.write(config_content)
             config_path = f.name
 
@@ -130,11 +127,7 @@ undefined_variables = "strict"
 
     def test_format_prompt_with_valid_variables(self):
         """Ensure format_prompt works correctly with defined variables."""
-        result = format_prompt(
-            "Hello {{ name }}",
-            name="World",
-            context={"extra": "data"}
-        )
+        result = format_prompt("Hello {{ name }}", name="World", context={"extra": "data"})
 
         assert result == "Hello World"
 
@@ -176,12 +169,12 @@ class TestConfigManagerImports:
 
     def test_config_manager_imports_are_correct(self):
         """Regression test for Bug #5: Wrong import function name.
-        
+
         **The Bug**: Imported get_global_config_manager (doesn't exist) instead
         of get_config_manager in both Agent and HITL executors.
-        
+
         **Impact**: ImportError on first templated step, breaking all templating.
-        
+
         **Commit**: 1aeeb91a
         """
         # Verify the correct function exists and is importable
@@ -190,7 +183,7 @@ class TestConfigManagerImports:
         # Verify we can call it
         config_mgr = get_config_manager()
         assert config_mgr is not None
-        
+
         # Verify step policies can import it without error (import test)
         try:
             from flujo.application.core import step_policies  # noqa: F401
@@ -215,9 +208,7 @@ class TestLoggingConfiguration:
         template = "{{ value }}"
 
         # With logging enabled
-        formatter_with_log = AdvancedPromptFormatter(
-            template, strict=False, log_resolution=True
-        )
+        formatter_with_log = AdvancedPromptFormatter(template, strict=False, log_resolution=True)
         assert formatter_with_log._log_resolution is True
 
         # With logging disabled
@@ -234,4 +225,3 @@ class TestLoggingConfiguration:
         # Should not raise even if logging is enabled
         result = formatter.format(items=["a", "b", "c"])
         assert "abc" in result.replace("\n", "")
-
