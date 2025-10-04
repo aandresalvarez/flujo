@@ -220,7 +220,7 @@ All fixes follow Flujo's architectural principles:
 - Reserve → Execute → Reconcile pattern intact
 
 ### ✅ Centralized Configuration
-- All config access via `get_global_config_manager()`
+- All config access via `get_config_manager()`
 - No direct `flujo.toml` reading
 - Graceful fallback to defaults
 

@@ -78,7 +78,7 @@ Suggested fix: Use '{{ previous_step.question }}' or '{{ steps.step_name.output.
 from flujo.utils.prompting import AdvancedPromptFormatter
 
 # Needs to be updated to:
-from flujo.infra.config_manager import get_global_config_manager
+from flujo.infra.config_manager import get_config_manager
 
 def _render_message(raw: Optional[str]) -> str:
     # ... existing code ...
@@ -86,7 +86,7 @@ def _render_message(raw: Optional[str]) -> str:
     if "{{" in text and "}}" in text:
         try:
             # Get template configuration
-            config_mgr = get_global_config_manager()
+            config_mgr = get_config_manager()
             config = config_mgr.load_config()
             template_config = config.template or TemplateConfig()
             

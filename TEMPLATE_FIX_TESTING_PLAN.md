@@ -165,7 +165,7 @@ Use example YAMLs to verify behavior manually.
 **Solutions**:
 1. **Environment variables**: Already supported via pydantic-settings
 2. **Config file per test**: Use `tmp_path` to create test-specific `flujo.toml`
-3. **Mock ConfigManager**: Patch `get_global_config_manager()` in tests
+3. **Mock ConfigManager**: Patch `get_config_manager()` in tests
 
 **Recommended**: Option 2 (config file per test) - Most realistic
 
