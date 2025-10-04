@@ -16,9 +16,9 @@ class TestEmbeddingResult:
 
     def test_embedding_result_creation(self):
         """Test creating an EmbeddingResult instance."""
-        from pydantic_ai.usage import Usage
+        from pydantic_ai.usage import RunUsage
 
-        usage_info = Usage(request_tokens=100, total_tokens=100)
+        usage_info = RunUsage(input_tokens=100, output_tokens=0)
         embeddings = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
 
         result = EmbeddingResult(embeddings=embeddings, usage_info=usage_info)
@@ -28,9 +28,9 @@ class TestEmbeddingResult:
 
     def test_embedding_result_usage_method(self):
         """Test that EmbeddingResult implements the UsageReportingProtocol."""
-        from pydantic_ai.usage import Usage
+        from pydantic_ai.usage import RunUsage
 
-        usage_info = Usage(request_tokens=100, total_tokens=100)
+        usage_info = RunUsage(input_tokens=100, output_tokens=0)
         embeddings = [[0.1, 0.2, 0.3]]
 
         result = EmbeddingResult(embeddings=embeddings, usage_info=usage_info)
@@ -42,14 +42,14 @@ class TestEmbeddingResult:
 
     def test_embedding_result_with_zero_tokens(self):
         """Test EmbeddingResult with zero token usage."""
-        from pydantic_ai.usage import Usage
+        from pydantic_ai.usage import RunUsage
 
-        usage_info = Usage(request_tokens=0, total_tokens=0)
+        usage_info = RunUsage(input_tokens=0, output_tokens=0)
         embeddings = [[0.1, 0.2, 0.3]]
 
         result = EmbeddingResult(embeddings=embeddings, usage_info=usage_info)
 
-        assert result.usage().request_tokens == 0
+        assert result.usage().input_tokens == 0
         assert result.usage().total_tokens == 0
 
 
@@ -104,7 +104,7 @@ class TestOpenAIEmbeddingClient:
             assert result.embeddings[1] == [0.4, 0.5, 0.6]
 
             # Verify usage information
-            assert result.usage().request_tokens == 100
+            assert result.usage().input_tokens == 100
             assert result.usage().total_tokens == 100
 
     @pytest.mark.asyncio
@@ -350,10 +350,10 @@ class TestEmbeddingIntegrationWithCostTracking:
     async def test_embedding_result_with_cost_tracking(self):
         """Test that EmbeddingResult works with the existing cost tracking system."""
         from flujo.cost import extract_usage_metrics
-        from pydantic_ai.usage import Usage
+        from pydantic_ai.usage import RunUsage
 
         # Create an embedding result
-        usage_info = Usage(request_tokens=100, total_tokens=100)
+        usage_info = RunUsage(input_tokens=100, output_tokens=0)
         embeddings = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
         embedding_result = EmbeddingResult(embeddings=embeddings, usage_info=usage_info)
 
@@ -386,14 +386,14 @@ class TestEmbeddingIntegrationWithCostTracking:
         """Test that EmbeddingResult works when agent has no model_id."""
         from flujo.cost import extract_usage_metrics, clear_cost_cache
         from flujo.utils.model_utils import clear_model_id_cache
-        from pydantic_ai.usage import Usage
+        from pydantic_ai.usage import RunUsage
 
         # Clear caches to ensure test isolation
         clear_cost_cache()
         clear_model_id_cache()
 
         # Create an embedding result
-        usage_info = Usage(request_tokens=100, total_tokens=100)
+        usage_info = RunUsage(input_tokens=100, output_tokens=0)
         embeddings = [[0.1, 0.2, 0.3]]
         embedding_result = EmbeddingResult(embeddings=embeddings, usage_info=usage_info)
 
@@ -417,10 +417,10 @@ class TestEmbeddingIntegrationWithCostTracking:
     async def test_embedding_result_with_strict_mode(self):
         """Test that EmbeddingResult works correctly in strict mode."""
         from flujo.cost import extract_usage_metrics
-        from pydantic_ai.usage import Usage
+        from pydantic_ai.usage import RunUsage
 
         # Create an embedding result
-        usage_info = Usage(request_tokens=100, total_tokens=100)
+        usage_info = RunUsage(input_tokens=100, output_tokens=0)
         embeddings = [[0.1, 0.2, 0.3]]
         embedding_result = EmbeddingResult(embeddings=embeddings, usage_info=usage_info)
 

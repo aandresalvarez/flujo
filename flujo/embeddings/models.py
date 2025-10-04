@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
-from pydantic_ai.usage import Usage
+from pydantic_ai.usage import RunUsage
 
 
 @dataclass
@@ -20,10 +20,10 @@ class EmbeddingResult:
     embeddings: List[List[float]]
     """The embedding vectors returned by the embedding model."""
 
-    usage_info: Usage
+    usage_info: RunUsage
     """Usage information from the embedding operation."""
 
-    def usage(self) -> Usage:
+    def usage(self) -> RunUsage:
         """
         Return the usage information from this embedding operation.
 
@@ -32,7 +32,7 @@ class EmbeddingResult:
 
         Returns
         -------
-        Usage
+        RunUsage
             The usage information from the embedding operation.
         """
         return self.usage_info
