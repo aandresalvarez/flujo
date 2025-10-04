@@ -1,87 +1,62 @@
-# Loop Fix Status
+# Loop Fix Status - UPDATED
 
-## Current Issue
+## ✅ Fixed: TypeError for Single-Step Loops
 
-The `DefaultLoopStepExecutor` in `flujo/application/core/step_policies.py` has a critical bug where it sets `loop_body_steps = None` for single-step loops (line 4503) but then unconditionally tries to iterate over it (line 4729), causing:
+**Status**: RESOLVED in commit `5ba824a5`
 
-```
-TypeError: object of type 'NoneType' has no len()
-```
+The `TypeError: object of type 'NoneType' has no len()` issue has been fixed by:
+1. Always initializing `loop_body_steps` as a list (empty for single-step pipelines)
+2. Adding conditional execution: `if len(loop_body_steps) > 0` for multi-step, `else` for single-step
+3. Single-step loops now use regular `core._execute_pipeline_via_policies` execution
 
-## Failing Tests
+**Tests Now Passing**:
+- ✅ `tests/integration/test_caching_and_fallbacks.py::test_loop_step_fallback_continues`
+- ✅ `tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_body_step_failures`
 
-1. `tests/integration/test_caching_and_fallbacks.py::test_loop_step_fallback_continues`
-2. `tests/application/core/test_executor_core_loop_step_migration.py::TestLoopStepMigration::test_handle_loop_step_body_step_failures`
-3. `tests/integration/test_hitl_integration.py::test_map_with_hitl_pauses_each_item_and_collects_results`
+## ❌ Remaining Issue: HITL Pause/Resume in Loops
 
-## Root Cause
+**Status**: IN PROGRESS
 
-Lines 4499-4503:
+**Failing Test**:
+- `tests/integration/test_hitl_integration.py::test_map_with_hitl_pauses_each_item_and_collects_results`
+
+**Problem**: 
+After HITL pause in iteration 1 and resume, the loop completes iteration 2 successfully but then tries to start iteration 3, exceeding `max_loops=2` and causing a "failed" status instead of "paused".
+
+**Root Cause**:
+Lines 4806-4807 in `step_policies.py`:
 ```python
-if hasattr(body_pipeline, "steps") and body_pipeline.steps and len(body_pipeline.steps) > 1:
-    loop_body_steps = body_pipeline.steps
-else:
-    # For single step, use regular execution to preserve fallback behavior
-    loop_body_steps = None
+current_context.scratchpad["loop_step_index"] = 0  # Start from beginning of next iteration
+current_context.scratchpad["loop_iteration"] = iteration_count + 1  # Next iteration
 ```
 
-Line 4729:
+This is incorrectly setting the loop to resume at `iteration_count + 1` (iteration 2) when it should resume at the current iteration (iteration 1) but skip to the next step after the HITL pause.
+
+**Expected Behavior**:
+1. Loop starts iteration 1, pauses at step 2 (AnnotateItem - HITL)
+2. User provides input
+3. Loop resumes iteration 1 at step 3 (CombineItemAndNote)
+4. Iteration 1 completes
+5. Loop starts iteration 2
+6. Iteration 2 completes
+7. Loop exits successfully with status="completed" (not "failed")
+
+**Current Behavior**:
+1. Loop starts iteration 1, pauses at step 2
+2. User provides input
+3. Loop starts iteration 2 (skipping rest of iteration 1!)
+4. Iteration 2 completes
+5. Loop tries to start iteration 3, exceeds max_loops
+6. Loop fails with status="failed"
+
+**Required Fix**:
+Change lines 4806-4807 to resume at the NEXT step of the CURRENT iteration:
 ```python
-for step_idx in range(current_step_index, len(loop_body_steps)):  # ← Fails when None!
+current_context.scratchpad["loop_step_index"] = step_idx + 1  # Next step in current iteration
+current_context.scratchpad["loop_iteration"] = iteration_count  # Same iteration
 ```
 
-## Required Fix
-
-Add conditional execution starting at line 4715:
-
-```python
-# CRITICAL FIX: Choose execution method based on step count
-if loop_body_steps is not None:
-    # Step-by-step execution for multiple steps (handles HITL pauses)
-    original_cache_enabled = getattr(core, "_enable_cache", True)
-    pipeline_result = None
-    
-    try:
-        core._enable_cache = False
-        # ... (existing step-by-step execution code, lines 4722-4831, indented by 4 spaces)
-    finally:
-        core._enable_cache = original_cache_enabled
-else:
-    # Regular execution for single step (preserves fallback behavior)
-    pipeline_result = await core._execute_pipeline_via_policies(
-        body_pipeline,
-        current_data,
-        iteration_context,
-        resources,
-        limits,
-        breach_event,
-    )
-```
-
-## Implementation Challenge
-
-The fix requires indenting lines 4722-4831 (~110 lines) by 4 spaces to nest them inside the `if loop_body_steps is not None:` block. This is tedious and error-prone to do line-by-line with search-replace.
-
-## Recommended Approach
-
-Use a text editor or script to:
-1. Insert `if loop_body_steps is not None:` at line 4716
-2. Indent lines 4717-4834 by 4 spaces
-3. Add the `else:` clause with regular execution after line 4834
-4. Test compilation and run the failing tests
-
-## Alternative: Remove Conditional
-
-If step-by-step execution works for single-step loops, we could simplify by removing the conditional:
-
-```python
-# Always use step-by-step execution
-if hasattr(body_pipeline, "steps") and body_pipeline.steps:
-    loop_body_steps = body_pipeline.steps
-else:
-    # Convert single step to list
-    loop_body_steps = [body_pipeline]
-```
-
-This would require testing to ensure fallback behavior still works correctly.
-
+This will ensure:
+- HITL pause/resume continues from the next step in the same iteration
+- The loop doesn't skip steps or iterations
+- The loop respects `max_loops` correctly

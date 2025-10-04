@@ -4800,13 +4800,13 @@ class DefaultLoopStepExecutor:
                             if current_context is not None and hasattr(current_context, "scratchpad"):
                                 current_context.scratchpad["status"] = "paused"
                                 current_context.scratchpad["pause_message"] = str(e)
-                                # CRITICAL FIX: On HITL pause, skip to the next iteration after the pause is resolved
-                                # The runner will handle logging the paused command with user input, so we don't
-                                # need to re-execute the paused step. Instead, we move to the next iteration.
-                                current_context.scratchpad["loop_step_index"] = 0  # Start from beginning of next iteration
-                                current_context.scratchpad["loop_iteration"] = iteration_count + 1  # Next iteration
+                                # CRITICAL FIX: On HITL pause, resume at the NEXT step in the CURRENT iteration
+                                # The runner will handle logging the paused command with user input, so we skip
+                                # to the next step after the HITL pause to avoid re-executing it.
+                                current_context.scratchpad["loop_step_index"] = step_idx + 1  # Next step in current iteration
+                                current_context.scratchpad["loop_iteration"] = iteration_count  # Same iteration
                                 telemetry.logfire.info(
-                                    f"LoopStep '{loop_step.name}' updated context status to 'paused' at step {step_idx + 1}"
+                                    f"LoopStep '{loop_step.name}' updated context status to 'paused' at step {step_idx + 1}, will resume at step {step_idx + 2}"
                                 )
 
                             # ✅ CRITICAL: Re-raise PausedException to let runner handle pause/resume
