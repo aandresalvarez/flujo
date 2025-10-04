@@ -32,6 +32,18 @@ class ArosConfig(BaseModel):
     enable_reasoning_precheck: bool = False
 
 
+class TemplateConfig(BaseModel):
+    """Template rendering configuration loaded from flujo.toml [template] section.
+
+    Controls how templates handle undefined variables and logging behavior.
+    """
+
+    undefined_variables: str = (
+        "warn"  # "strict" (raise error), "warn" (log warning), "ignore" (silent)
+    )
+    log_resolution: bool = False  # Log template resolution process in debug mode
+
+
 class FlujoConfig(BaseModel):
     """Configuration loaded from flujo.toml files."""
 
@@ -64,6 +76,8 @@ class FlujoConfig(BaseModel):
     aros: Optional[ArosConfig] = None
     # Validation configuration
     validation: Optional["ValidationConfig"] = None
+    # Template configuration
+    template: Optional[TemplateConfig] = None
 
 
 class ValidationConfig(BaseModel):
@@ -302,6 +316,10 @@ class ConfigManager:
             # Validation configuration
             if "validation" in data:
                 config_data["validation"] = data["validation"]
+
+            # Template configuration
+            if "template" in data:
+                config_data["template"] = data["template"]
 
             # Environment override for template filters (env > file)
             try:

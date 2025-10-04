@@ -781,6 +781,11 @@ echo $?
 - ✅ Task 2.4: Template Expression Linting (V-T5, V-T6) (2025-10-02 21:00 UTC - Already Implemented)
 - ✅ Task 3.1: HITL Resume Value (resume_input variable) (2025-10-02 21:15 UTC)
 - ✅ Task 3.2: Update llm.md with All Patterns (2025-10-02 21:30 UTC)
+- ✅ **Verification**: HITL sink_to in Nested Contexts (2025-10-03)
+  - Verified `sink_to` works correctly in conditional branches via integration tests
+  - Updated `llm.md` to clarify this is NOT a bug - context merge mechanisms work as designed
+  - Tests: `test_hitl_sink_to_nested.py::test_hitl_sink_to_in_conditional_branch` ✅ PASSING
+  - Loop+HITL has complex resume semantics (separate issue, not related to `sink_to`)
 
 ---
 

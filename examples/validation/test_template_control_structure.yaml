@@ -1,0 +1,34 @@
+version: "0.1"
+name: "Test Template Control Structure Validator"
+
+# This file tests the TEMPLATE-001 validator
+# It should produce an ERROR when validated
+
+agents:
+  processor:
+    model: "openai:gpt-4o"
+    system_prompt: "Process data"
+    output_schema:
+      type: object
+      properties:
+        result: { type: string }
+
+steps:
+  - kind: step
+    name: init
+    agent:
+      id: "flujo.builtins.passthrough"
+    input: '{"items": ["a", "b", "c"]}'
+    updates_context: true
+  
+  # ❌ This should trigger TEMPLATE-001 ERROR
+  - kind: step
+    name: format_with_jinja2
+    agent:
+      id: "flujo.builtins.stringify"
+    input: |
+      Items:
+      {% for item in context.items %}
+      - {{ item }}
+      {% endfor %}
+

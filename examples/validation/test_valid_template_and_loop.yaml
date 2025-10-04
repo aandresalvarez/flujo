@@ -1,0 +1,66 @@
+version: "0.1"
+name: "Test Valid Template and Loop Usage"
+
+# This file demonstrates CORRECT usage
+# It should validate without errors or warnings
+
+agents:
+  processor:
+    model: "openai:gpt-4o"
+    system_prompt: "Process and return status"
+    output_schema:
+      type: object
+      properties:
+        status: { type: string, enum: ["continue", "done"] }
+        result: { type: string }
+
+steps:
+  - kind: step
+    name: init
+    agent:
+      id: "flujo.builtins.passthrough"
+    input: '{"items": ["a", "b", "c"], "ready": false}'
+    updates_context: true
+  
+  # ✅ CORRECT: Use template filter instead of control structure
+  - kind: step
+    name: format_items
+    agent:
+      id: "flujo.builtins.stringify"
+    input: "Items: {{ context.items | join(', ') }}"
+  
+  # ✅ CORRECT: Use previous_step inside loop body
+  - kind: loop
+    name: processing_loop
+    loop:
+      body:
+        # Process step
+        - kind: step
+          name: process
+          uses: agents.processor
+          input: "Process data"
+        
+        # ✅ CORRECT: Use previous_step instead of steps['process']
+        - kind: conditional
+          name: check_status
+          condition_expression: "previous_step.status == 'done'"
+          branches:
+            true:
+              - kind: step
+                name: finish
+                agent:
+                  id: "flujo.builtins.passthrough"
+                input: "{{ previous_step.result }}"
+            false:
+              - kind: step
+                name: continue
+                agent:
+                  id: "flujo.builtins.passthrough"
+                input: "Continuing..."
+      
+      propagation:
+        next_input: context
+      
+      # ✅ CORRECT: Use previous_step in exit expression
+      exit_expression: "previous_step.status == 'done'"
+      max_loops: 5

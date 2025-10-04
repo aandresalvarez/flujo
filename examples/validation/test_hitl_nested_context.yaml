@@ -1,0 +1,73 @@
+version: "0.1"
+name: "test_hitl_nested_context"
+description: "Test YAML to trigger WARN-HITL-001 validation warning for HITL in nested contexts"
+
+steps:
+  # This should trigger WARN-HITL-001 - HITL inside loop
+  - kind: loop
+    name: conversation_loop
+    loop:
+      body:
+        - kind: step
+          name: analyze
+          agent:
+            id: "flujo.builtins.passthrough"
+          input: "Analyzing..."
+          updates_context: true
+        
+        # ❌ WARN-HITL-001: HITL step inside loop
+        - kind: hitl
+          name: ask_user_in_loop
+          message: "What's your question?"
+          sink_to: "scratchpad.question"
+        
+        - kind: step
+          name: respond
+          agent:
+            id: "flujo.builtins.passthrough"
+          input: "Responding..."
+      
+      max_loops: 3
+      exit_expression: "context.done == true"
+  
+  # This should trigger WARN-HITL-001 - HITL inside conditional
+  - kind: conditional
+    name: check_status
+    condition_expression: "true"
+    branches:
+      true:
+        # ❌ WARN-HITL-001: HITL step inside conditional
+        - kind: hitl
+          name: ask_user_in_conditional
+          message: "Need input?"
+          sink_to: "scratchpad.input"
+        
+        - kind: step
+          name: process
+          agent:
+            id: "flujo.builtins.passthrough"
+          input: "Processing..."
+  
+  # This should trigger WARN-HITL-001 - HITL inside conditional inside loop (nested)
+  - kind: loop
+    name: nested_loop
+    loop:
+      body:
+        - kind: conditional
+          name: check_nested
+          condition_expression: "true"
+          branches:
+            true:
+              # ❌ WARN-HITL-001: HITL step inside conditional inside loop
+              - kind: hitl
+                name: ask_user_deeply_nested
+                message: "Deeply nested question?"
+                sink_to: "scratchpad.nested_answer"
+      
+      max_loops: 2
+  
+  # ✅ This should NOT trigger WARN-HITL-001 - top-level HITL is fine
+  - kind: hitl
+    name: ask_user_top_level
+    message: "This is fine - top-level HITL"
+    sink_to: "scratchpad.top_level_answer"

@@ -9,6 +9,19 @@ from ..domain.pipeline_validation import ValidationFinding, ValidationReport
 from ..infra.telemetry import logfire
 from threading import RLock
 
+# Conditional imports for TOML support (py311+ has tomllib, fallback to tomli)
+try:
+    import tomllib as toml_lib
+except ImportError:
+    try:
+        import tomli as toml_lib  # type: ignore[no-redef]
+    except ImportError:
+        toml_lib = None  # type: ignore[assignment]
+
+# Import config manager and template utils (used in validation rules)
+from ..infra.config_manager import ConfigManager
+from ..utils.prompting import _get_enabled_filters
+
 # --- Rule overrides (profile/file/env) for early skip and severity adjustment ---
 _OVERRIDE_CACHE: dict[str, str] | None = None
 _OVERRIDE_CACHE_LOCK = RLock()
@@ -49,23 +62,22 @@ def _load_rule_overrides() -> dict[str, str]:
                                 {str(k).upper(): str(v).lower() for k, v in data.items()}
                             )
                     elif rules_file.endswith((".toml", ".TOML")):
-                        try:
-                            import tomllib as _toml  # py311+
-                        except Exception:
-                            import tomli as _toml  # type: ignore
-                        with open(rules_file, "rb") as f:
-                            data = _toml.load(f)
-                        # Expect { validation = { rules = {"V-T*"="off", ...} } }
-                        try:
-                            vm = data.get("validation", {}).get("rules", {})
-                            if isinstance(vm, dict):
-                                mapping.update(
-                                    {str(k).upper(): str(v).lower() for k, v in vm.items()}
+                        if toml_lib is None:
+                            logfire.debug("[validate] TOML support not available (install tomli)")
+                        else:
+                            with open(rules_file, "rb") as f:
+                                data = toml_lib.load(f)
+                            # Expect { validation = { rules = {"V-T*"="off", ...} } }
+                            try:
+                                vm = data.get("validation", {}).get("rules", {})
+                                if isinstance(vm, dict):
+                                    mapping.update(
+                                        {str(k).upper(): str(v).lower() for k, v in vm.items()}
+                                    )
+                            except Exception as e:
+                                logfire.debug(
+                                    f"[validate] TOML rules parse (validation.rules) failed: {e!r}"
                                 )
-                        except Exception as e:
-                            logfire.debug(
-                                f"[validate] TOML rules parse (validation.rules) failed: {e!r}"
-                            )
                 except Exception as e:
                     logfire.debug(
                         f"[validate] Failed reading FLUJO_RULES_FILE '{rules_file}': {e!r}"
@@ -76,8 +88,6 @@ def _load_rule_overrides() -> dict[str, str]:
         try:
             profile = os.getenv("FLUJO_RULES_PROFILE")
             if profile:
-                from ..infra.config_manager import ConfigManager
-
                 cm = ConfigManager()
                 cfg = cm.load_config()
                 profiles = getattr(cfg, "validation", None)
@@ -202,9 +212,7 @@ class TemplateLinter(BaseLinter):
                 # V-T3: Unknown/disabled filters
                 if has_tokens:
                     try:
-                        from ..utils.prompting import _get_enabled_filters as _filters
-
-                        enabled = {s.lower() for s in _filters()}
+                        enabled = {s.lower() for s in _get_enabled_filters()}
                     except Exception:
                         enabled = {"join", "upper", "lower", "length", "tojson"}
                     for m in re.finditer(r"\|\s*([a-zA-Z_][a-zA-Z0-9_]*)", templ):
@@ -1759,6 +1767,423 @@ class ExceptionLinter(BaseLinter):
         return out
 
 
+class LoopScopingLinter(BaseLinter):
+    """Loop step scoping validation: LOOP-001.
+
+    Detects step references (steps['name']) inside loop bodies that may not work as expected
+    due to loop scoping. In loop bodies, only previous_step or context should be used.
+    """
+
+    def analyze(self, pipeline: Any) -> Iterable[ValidationFinding]:
+        """Check for step references inside loop/map bodies."""
+        out: list[ValidationFinding] = []
+        steps = getattr(pipeline, "steps", []) or []
+
+        def _check_loop_body_steps(
+            body_steps: list[Any], loop_name: str, _loop_meta: dict[str, Any]
+        ) -> None:
+            """Recursively check steps in a loop body for step references."""
+            for _idx, step in enumerate(body_steps):
+                try:
+                    meta = getattr(step, "meta", {})
+
+                    # Check for condition_expression or exit_expression with steps[] references
+                    # These are stored in the meta dict for ConditionalStep
+                    for field_name in ["condition_expression", "exit_expression"]:
+                        expr = None
+
+                        # Check both direct attribute and meta dict
+                        if hasattr(step, field_name):
+                            expr = getattr(step, field_name, None)
+                        elif isinstance(meta, dict) and field_name in meta:
+                            expr = meta.get(field_name)
+
+                        if isinstance(expr, str) and (
+                            "steps[" in expr
+                            or "steps.get(" in expr
+                            or re.search(r"\bsteps\.", expr)
+                        ):
+                            yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+                            loc_path = (yloc or {}).get(
+                                "path"
+                            ) or f"loop '{loop_name}' body steps[{_idx}].{field_name}"
+                            fpath = (yloc or {}).get("file")
+                            line = (yloc or {}).get("line")
+                            col = (yloc or {}).get("column")
+
+                            sev = _override_severity("LOOP-001", "warning")
+                            if sev is not None:
+                                out.append(
+                                    ValidationFinding(
+                                        rule_id="LOOP-001",
+                                        severity=sev,
+                                        message=(
+                                            f"Step reference detected in {field_name} inside loop body '{loop_name}'. "
+                                            f"Loop body steps are scoped to the current iteration and may not be "
+                                            f"accessible via steps['name']."
+                                        ),
+                                        step_name=getattr(step, "name", None),
+                                        location_path=loc_path,
+                                        file=fpath,
+                                        line=line,
+                                        column=col,
+                                        suggestion=(
+                                            "Use 'previous_step' to reference the immediate previous step in the loop body.\n"
+                                            "\n"
+                                            "Example:\n"
+                                            "  ❌ condition_expression: \"steps['process'].output.status == 'done'\"\n"
+                                            "  ✅ condition_expression: \"previous_step.status == 'done'\"\n"
+                                            "\n"
+                                            "To access steps from outside the loop, use context to carry data."
+                                        ),
+                                    )
+                                )
+
+                    # Check templated_input for step references
+                    meta = getattr(step, "meta", {})
+                    templ = meta.get("templated_input")
+                    if isinstance(templ, str) and (
+                        "steps[" in templ or "steps.get(" in templ or re.search(r"\bsteps\.", templ)
+                    ):
+                        yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+                        loc_path = (yloc or {}).get(
+                            "path"
+                        ) or f"loop '{loop_name}' body steps[{_idx}].input"
+                        fpath = (yloc or {}).get("file")
+                        line = (yloc or {}).get("line")
+                        col = (yloc or {}).get("column")
+
+                        sev = _override_severity("LOOP-001", "warning")
+                        if sev is not None:
+                            out.append(
+                                ValidationFinding(
+                                    rule_id="LOOP-001",
+                                    severity=sev,
+                                    message=(
+                                        f"Step reference detected in template inside loop body '{loop_name}'. "
+                                        f"Loop body steps are scoped to the current iteration."
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                    location_path=loc_path,
+                                    file=fpath,
+                                    line=line,
+                                    column=col,
+                                    suggestion=(
+                                        "Use '{{ previous_step }}' to reference the immediate previous step.\n"
+                                        "\n"
+                                        "Example:\n"
+                                        '  ❌ input: "{{ steps.process.output }}"\n'
+                                        '  ✅ input: "{{ previous_step }}"\n'
+                                    ),
+                                )
+                            )
+
+                    # Recursively check nested loop bodies
+                    if hasattr(step, "loop_body_pipeline"):
+                        nested_pipeline = getattr(step, "loop_body_pipeline", None)
+                        if nested_pipeline and hasattr(nested_pipeline, "steps"):
+                            nested_steps = getattr(nested_pipeline, "steps", [])
+                            nested_meta = getattr(step, "meta", {})
+                            _check_loop_body_steps(
+                                nested_steps, getattr(step, "name", "nested_loop"), nested_meta
+                            )
+
+                except Exception as e:
+                    # Log validation error but continue checking other steps
+                    import logging
+
+                    logging.getLogger(__name__).debug(f"Failed to validate loop body step: {e}")
+                    continue
+
+        # Check each top-level step for loops/maps
+        for step in steps:
+            try:
+                # Check LoopStep
+                if hasattr(step, "loop_body_pipeline"):
+                    pipeline_body = getattr(step, "loop_body_pipeline", None)
+                    if pipeline_body and hasattr(pipeline_body, "steps"):
+                        body_steps = getattr(pipeline_body, "steps", [])
+                        meta = getattr(step, "meta", {})
+                        _check_loop_body_steps(body_steps, getattr(step, "name", "loop"), meta)
+
+                # Check MapStep (inherits from LoopStep)
+                if hasattr(step, "pipeline_to_run"):
+                    pipeline_body = getattr(step, "pipeline_to_run", None)
+                    if pipeline_body and hasattr(pipeline_body, "steps"):
+                        body_steps = getattr(pipeline_body, "steps", [])
+                        meta = getattr(step, "meta", {})
+                        _check_loop_body_steps(body_steps, getattr(step, "name", "map"), meta)
+
+            except Exception as e:
+                # Log validation error but continue checking other steps
+                import logging
+
+                logging.getLogger(__name__).debug(f"Failed to validate step: {e}")
+                continue
+
+        return out
+
+
+class TemplateControlStructureLinter(BaseLinter):
+    """Template Jinja2 control structure validation: TEMPLATE-001.
+
+    Detects unsupported Jinja2 control structures ({% %}) in templates.
+    Flujo only supports {{ }} expressions and | filters, not control flow.
+    """
+
+    def analyze(self, pipeline: Any) -> Iterable[ValidationFinding]:
+        """Check for unsupported Jinja2 control structures in templates."""
+        out: list[ValidationFinding] = []
+        steps = getattr(pipeline, "steps", []) or []
+
+        def _check_template_field(template_str: str, field_name: str, step: Any, idx: int) -> None:
+            """Check a single template field for control structures."""
+            if not isinstance(template_str, str):
+                return
+
+            # Detect {% %} control structures
+            if "{%" in template_str or "%}" in template_str:
+                meta = getattr(step, "meta", {})
+                yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+                loc_path = (yloc or {}).get("path") or f"steps[{idx}].{field_name}"
+                fpath = (yloc or {}).get("file")
+                line = (yloc or {}).get("line")
+                col = (yloc or {}).get("column")
+
+                # Try to extract the control structure name
+                control_match = re.search(r"\{%\s*([a-z]+)", template_str)
+                control_name = control_match.group(1) if control_match else "unknown"
+
+                sev = _override_severity("TEMPLATE-001", "error")
+                if sev is not None:
+                    out.append(
+                        ValidationFinding(
+                            rule_id="TEMPLATE-001",
+                            severity=sev,
+                            message=(
+                                f"Unsupported Jinja2 control structure '{{%{control_name}%}}' detected in {field_name}. "
+                                f"Flujo templates support expressions {{{{ }}}} and filters |, but NOT control structures {{%{control_name}%}}."
+                            ),
+                            step_name=getattr(step, "name", None),
+                            location_path=loc_path,
+                            file=fpath,
+                            line=line,
+                            column=col,
+                            suggestion=(
+                                "Alternatives:\n"
+                                "  1. Use template filters: {{ context.items | join('\\n') }}\n"
+                                '  2. Use custom skill: uses: "skills:format_data"\n'
+                                "  3. Use conditional steps for if/else logic\n"
+                                "  4. Pre-format data in a previous step\n"
+                                "\n"
+                                "Supported:\n"
+                                "  ✅ {{ variable }}\n"
+                                "  ✅ {{ value | filter }}\n"
+                                "  ✅ {{ context.nested.field }}\n"
+                                "\n"
+                                "NOT Supported:\n"
+                                "  ❌ {% for %}, {% if %}, {% set %}\n"
+                                "  ❌ {% macro %}, {% include %}\n"
+                                "\n"
+                                "Documentation: https://flujo.dev/docs/templates"
+                            ),
+                        )
+                    )
+
+        # Check all steps for template fields
+        for idx, step in enumerate(steps):
+            try:
+                meta = getattr(step, "meta", {})
+
+                # Check templated_input
+                templ = meta.get("templated_input")
+                if templ:
+                    _check_template_field(templ, "input", step, idx)
+
+                # Check message field (for HITL steps)
+                if hasattr(step, "message"):
+                    message = getattr(step, "message", None)
+                    if message:
+                        _check_template_field(message, "message", step, idx)
+
+                # Check other common template fields
+                for field in ["description", "prompt", "system_prompt"]:
+                    if hasattr(step, field):
+                        value = getattr(step, field, None)
+                        if value:
+                            _check_template_field(value, field, step, idx)
+
+            except Exception as e:
+                # Log validation error but continue checking other steps
+                import logging
+
+                logging.getLogger(__name__).debug(f"Failed to validate template field: {e}")
+                continue
+
+        return out
+
+
+class HitlNestedContextLinter(BaseLinter):
+    """HITL nested context validation: WARN-HITL-001.
+
+    Detects HITL (Human-In-The-Loop) steps inside nested contexts like loops and conditionals.
+    HITL steps in nested contexts may exhibit complex pause/resume behavior and should be used
+    with caution or restructured to top-level steps.
+    """
+
+    def analyze(self, pipeline: Any) -> Iterable[ValidationFinding]:
+        """Check for HITL steps in nested contexts (loops, conditionals)."""
+        out: list[ValidationFinding] = []
+
+        # Import step types lazily to avoid circular dependencies
+        try:
+            from ..domain.dsl.step import HumanInTheLoopStep as _HITLStep
+        except Exception as e:
+            # Log import error but continue
+            import logging
+
+            logging.getLogger(__name__).debug(f"Failed to import HumanInTheLoopStep: {e}")
+            _HITLStep = None  # type: ignore
+
+        if _HITLStep is None:
+            return out
+
+        def _check_for_hitl_in_steps(
+            steps: list[Any], context_chain: list[str], _parent_step_name: str | None = None
+        ) -> None:
+            """Recursively check steps for HITL in nested contexts."""
+            for _idx, step in enumerate(steps):
+                try:
+                    # Check if this is a HITL step
+                    is_hitl = isinstance(step, _HITLStep)
+
+                    # Also check by kind field in meta (for YAML-loaded steps)
+                    if not is_hitl:
+                        meta = getattr(step, "meta", {})
+                        if isinstance(meta, dict):
+                            kind = meta.get("kind", "")
+                            is_hitl = kind == "hitl"
+
+                    # If this is a HITL step in a nested context, warn
+                    if is_hitl and len(context_chain) > 0:
+                        meta = getattr(step, "meta", {})
+                        yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+                        loc_path = (yloc or {}).get(
+                            "path"
+                        ) or f"step '{getattr(step, 'name', 'unnamed')}'"
+                        fpath = (yloc or {}).get("file")
+                        line = (yloc or {}).get("line")
+                        col = (yloc or {}).get("column")
+
+                        context_desc = " > ".join(context_chain)
+
+                        sev = _override_severity("WARN-HITL-001", "warning")
+                        if sev is not None:
+                            out.append(
+                                ValidationFinding(
+                                    rule_id="WARN-HITL-001",
+                                    severity=sev,
+                                    message=(
+                                        f"HITL step '{getattr(step, 'name', 'unnamed')}' found in nested context: {context_desc}. "
+                                        f"HITL steps in nested contexts (loops, conditionals) may exhibit complex pause/resume behavior."
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                    location_path=loc_path,
+                                    file=fpath,
+                                    line=line,
+                                    column=col,
+                                    suggestion=(
+                                        "Consider one of these alternatives:\n"
+                                        "  1. Move HITL step to top-level (outside loop/conditional)\n"
+                                        "  2. Use flujo.builtins.ask_user skill instead\n"
+                                        "  3. Restructure pipeline to avoid nested HITL\n"
+                                        "  4. If intentional, ensure you understand pause/resume semantics\n"
+                                        "\n"
+                                        "Example restructure:\n"
+                                        "  # ❌ HITL inside loop\n"
+                                        "  - kind: loop\n"
+                                        "    body:\n"
+                                        "      - kind: hitl\n"
+                                        "        message: 'Question?'\n"
+                                        "\n"
+                                        "  # ✅ HITL at top-level\n"
+                                        "  - kind: hitl\n"
+                                        "    message: 'Question?'\n"
+                                        "  - kind: loop\n"
+                                        "    body:\n"
+                                        "      - kind: step\n"
+                                        "        input: '{{ context.answer }}'\n"
+                                        "\n"
+                                        "Documentation: https://flujo.dev/docs/hitl#nested-contexts"
+                                    ),
+                                )
+                            )
+
+                    # Recursively check nested structures
+                    # Check loop bodies
+                    if hasattr(step, "loop_body_pipeline"):
+                        loop_pipeline = getattr(step, "loop_body_pipeline", None)
+                        if loop_pipeline and hasattr(loop_pipeline, "steps"):
+                            nested_steps = getattr(loop_pipeline, "steps", [])
+                            step_name = getattr(step, "name", "loop")
+                            new_chain = [*context_chain, f"loop:{step_name}"]
+                            _check_for_hitl_in_steps(nested_steps, new_chain, step_name)
+
+                    # Check map bodies (similar to loops)
+                    if hasattr(step, "pipeline_to_run"):
+                        map_pipeline = getattr(step, "pipeline_to_run", None)
+                        if map_pipeline and hasattr(map_pipeline, "steps"):
+                            nested_steps = getattr(map_pipeline, "steps", [])
+                            step_name = getattr(step, "name", "map")
+                            new_chain = [*context_chain, f"map:{step_name}"]
+                            _check_for_hitl_in_steps(nested_steps, new_chain, step_name)
+
+                    # Check conditional branches
+                    if hasattr(step, "branches"):
+                        branches = getattr(step, "branches", {})
+                        if isinstance(branches, dict):
+                            step_name = getattr(step, "name", "conditional")
+                            for branch_key, branch_pipeline in branches.items():
+                                if branch_pipeline and hasattr(branch_pipeline, "steps"):
+                                    branch_steps = getattr(branch_pipeline, "steps", [])
+                                    new_chain = [
+                                        *context_chain,
+                                        f"conditional:{step_name}",
+                                        f"branch:{branch_key}",
+                                    ]
+                                    _check_for_hitl_in_steps(branch_steps, new_chain, step_name)
+
+                    # Check parallel branches
+                    if hasattr(step, "parallel_branches"):
+                        parallel_branches = getattr(step, "parallel_branches", {})
+                        if isinstance(parallel_branches, dict):
+                            step_name = getattr(step, "name", "parallel")
+                            for branch_name, branch_pipeline in parallel_branches.items():
+                                if branch_pipeline and hasattr(branch_pipeline, "steps"):
+                                    branch_steps = getattr(branch_pipeline, "steps", [])
+                                    new_chain = [
+                                        *context_chain,
+                                        f"parallel:{step_name}",
+                                        f"branch:{branch_name}",
+                                    ]
+                                    _check_for_hitl_in_steps(branch_steps, new_chain, step_name)
+
+                except Exception as e:
+                    # Log validation error but continue checking other steps
+                    import logging
+
+                    logging.getLogger(__name__).debug(
+                        f"Failed to validate HITL nested context: {e}"
+                    )
+                    continue
+
+        # Start checking from top-level steps
+        steps = getattr(pipeline, "steps", []) or []
+        _check_for_hitl_in_steps(steps, [], None)
+
+        return out
+
+
 def run_linters(pipeline: Any) -> ValidationReport:
     """Run linters and return a ValidationReport (always-on)."""
     linters: list[BaseLinter] = [
@@ -1769,6 +2194,9 @@ def run_linters(pipeline: Any) -> ValidationReport:
         AgentLinter(),
         OrchestrationLinter(),
         ExceptionLinter(),
+        LoopScopingLinter(),
+        TemplateControlStructureLinter(),
+        HitlNestedContextLinter(),
     ]
     errors: list[ValidationFinding] = []
     warnings: list[ValidationFinding] = []

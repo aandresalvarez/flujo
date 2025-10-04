@@ -488,7 +488,7 @@ def test_lens_trace_command(tmp_path: Path) -> None:
 
 def test_lens_trace_command_regression_timestamps(tmp_path: Path) -> None:
     """Regression: test lens trace command with various timestamp formats for duration parsing.
-    
+
     Fixed: Uses autouse fixture for proper cleanup. Backend is properly tracked and closed.
     Previous issue was complex manual cleanup causing pytest to hang.
     """
@@ -568,7 +568,7 @@ def test_lens_trace_command_regression_timestamps(tmp_path: Path) -> None:
     result = runner.invoke(app, ["lens", "trace", run_id4])
     assert result.exit_code in [0, 1]
     assert "(duration:" not in result.stdout
-    
+
     # Autouse fixture cleanup_sqlite_backends_sync will handle backend cleanup
 
 

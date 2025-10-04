@@ -13,7 +13,9 @@ PLACEHOLDER_REGEX = re.compile(r"\{\{\s*([^\}]+?)\s*\}\}")
 class AdvancedPromptFormatter:
     """Format prompt templates with conditionals, loops and nested data."""
 
-    def __init__(self, template: str) -> None:
+    def __init__(
+        self, template: str, *, strict: bool = False, log_resolution: bool = False
+    ) -> None:
         """Initialize the formatter with a template string.
 
         Parameters
@@ -21,20 +23,54 @@ class AdvancedPromptFormatter:
         template:
             Template string containing ``{{`` placeholders and optional
             ``#if`` and ``#each`` blocks.
+        strict:
+            If True, raise TemplateResolutionError on undefined variables.
+            If False, return None (resolves to empty string).
+        log_resolution:
+            If True, log template resolution process for debugging.
         """
         self.template = template
+        self._strict = strict
+        self._log_resolution = log_resolution
         # Generate a unique escape marker for this formatter instance
         # to prevent collisions with user content
         self._escape_marker = f"__ESCAPED_TEMPLATE_{uuid.uuid4().hex[:8]}__"
 
     def _get_nested_value(self, data: Dict[str, Any], key: str) -> Any:
-        """Retrieve ``key`` from ``data`` using dotted attribute syntax."""
+        """Retrieve ``key`` from ``data`` using dotted attribute syntax.
+
+        In strict mode, raises TemplateResolutionError if key is undefined.
+        """
+        from ..exceptions import TemplateResolutionError
 
         value: Any = data
+        path_parts: list[str] = []
+
         for part in key.split("."):
+            path_parts.append(part)
             if isinstance(value, dict):
+                if part not in value:
+                    # Undefined variable
+                    if self._strict:
+                        available = list(data.keys()) if isinstance(data, dict) else []
+                        raise TemplateResolutionError(
+                            f"Undefined template variable: '{key}' "
+                            f"(failed at '{'.'.join(path_parts)}'). "
+                            f"Available variables: {available}"
+                        )
+                    return None
                 value = value.get(part)
             else:
+                if not hasattr(value, part):
+                    # Undefined attribute
+                    if self._strict:
+                        available = list(data.keys()) if isinstance(data, dict) else []
+                        raise TemplateResolutionError(
+                            f"Undefined template variable: '{key}' "
+                            f"(failed at '{'.'.join(path_parts)}'). "
+                            f"Available variables: {available}"
+                        )
+                    return None
                 value = getattr(value, part, None)
             if value is None:
                 return None
@@ -85,6 +121,16 @@ class AdvancedPromptFormatter:
     def format(self, **kwargs: Any) -> str:
         """Render the template with the provided keyword arguments."""
 
+        # Log template resolution if enabled
+        if self._log_resolution:
+            try:
+                from ..infra import telemetry
+
+                telemetry.logfire.debug(f"[TEMPLATE] Rendering: {self.template[:100]}...")
+                telemetry.logfire.debug(f"[TEMPLATE] Available variables: {list(kwargs.keys())}")
+            except Exception:
+                pass
+
         # First, escape literal \{{ in the template
         processed = self.template.replace(r"\{{", self._escape_marker)
 
@@ -102,7 +148,11 @@ class AdvancedPromptFormatter:
                 return ""
             parts = []
             for item in items:
-                inner_formatter = AdvancedPromptFormatter(block)
+                inner_formatter = AdvancedPromptFormatter(
+                    block,
+                    strict=self._strict,
+                    log_resolution=self._log_resolution,
+                )
                 rendered = inner_formatter.format(**kwargs, this=item)
                 rendered = self._escape_template_syntax(rendered)
                 parts.append(rendered)
@@ -181,6 +231,23 @@ class AdvancedPromptFormatter:
 
         processed = PLACEHOLDER_REGEX.sub(placeholder_replacer, processed)
         processed = self._unescape_template_syntax(processed)
+
+        # Log resolved result and warn if empty when template had content
+        if self._log_resolution or (processed == "" and self.template.strip() != ""):
+            try:
+                from ..infra import telemetry
+
+                if self._log_resolution:
+                    telemetry.logfire.debug(f"[TEMPLATE] Resolved to: {processed[:100]}...")
+                if processed == "" and self.template.strip() != "" and "{{" in self.template:
+                    telemetry.logfire.warning(
+                        f"[TEMPLATE] Template resolved to empty string! "
+                        f"Original template: '{self.template[:100]}...' "
+                        f"Available variables: {list(kwargs.keys())}"
+                    )
+            except Exception:
+                pass
+
         return processed
 
     @staticmethod
@@ -275,130 +342,12 @@ def _get_enabled_filters() -> set[str]:
     _CACHED_FILTERS = default
     return _CACHED_FILTERS
 
-    def format(self, **kwargs: Any) -> str:
-        """Render the template with the provided keyword arguments."""
-
-        # First, escape literal \{{ in the template
-        processed = self.template.replace(r"\{{", self._escape_marker)
-
-        def if_replacer(match: re.Match[str]) -> str:
-            key, content = match.groups()
-            value = self._get_nested_value(kwargs, key.strip())
-            return content if value else ""
-
-        processed = IF_BLOCK_REGEX.sub(if_replacer, processed)
-
-        def each_replacer(match: re.Match[str]) -> str:
-            key, block = match.groups()
-            items = self._get_nested_value(kwargs, key.strip())
-            if not isinstance(items, list):
-                return ""
-            parts = []
-            for item in items:
-                # Render the block with access to the current item via ``this``
-                # without pre-inserting the serialized value. This prevents any
-                # template syntax contained within ``item`` from being
-                # interpreted a second time when the inner formatter runs.
-                inner_formatter = AdvancedPromptFormatter(block)
-                rendered = inner_formatter.format(**kwargs, this=item)
-                # Escape any ``{{`` that appear in the rendered result so they
-                # survive the outer placeholder pass unchanged.
-                rendered = self._escape_template_syntax(rendered)
-                parts.append(rendered)
-            return "".join(parts)
-
-        processed = EACH_BLOCK_REGEX.sub(each_replacer, processed)
-
-        def _split_filters(expr: str) -> tuple[str, list[str]]:
-            parts: list[str] = []
-            buf: list[str] = []
-            in_single = False
-            in_double = False
-            paren = 0
-            for ch in expr:
-                if ch == "'" and not in_double:
-                    in_single = not in_single
-                    buf.append(ch)
-                    continue
-                if ch == '"' and not in_single:
-                    in_double = not in_double
-                    buf.append(ch)
-                    continue
-                if ch == "(" and not in_single and not in_double:
-                    paren += 1
-                    buf.append(ch)
-                    continue
-                if ch == ")" and not in_single and not in_double and paren > 0:
-                    paren -= 1
-                    buf.append(ch)
-                    continue
-                if ch == "|" and not in_single and not in_double and paren == 0:
-                    parts.append("".join(buf).strip())
-                    buf = []
-                else:
-                    buf.append(ch)
-            if buf:
-                parts.append("".join(buf).strip())
-            if not parts:
-                return expr, []
-            base = parts[0]
-            filters = parts[1:]
-            return base, filters
-
-        def _apply_filter(value: Any, flt: str) -> Any:
-            return AdvancedPromptFormatter._apply_filter_static(value, flt)
-
-        def _evaluate_with_fallback(expr: str) -> Any:
-            # Support simple "a or b or c" fallback semantics within placeholders.
-            # Evaluate each candidate left-to-right; use the first truthy value.
-            # - Identifiers are resolved via dotted lookup in kwargs.
-            # - Single/double-quoted strings are treated as literals.
-            # - Unknown/None/empty values are skipped.
-            candidates = (
-                [s.strip() for s in re.split(r"\s+or\s+", expr)] if " or " in expr else [expr]
-            )
-            chosen: Any = None
-            for subexpr in candidates:
-                # Quoted string literal
-                if (len(subexpr) >= 2) and (
-                    (subexpr[0] == subexpr[-1] == '"') or (subexpr[0] == subexpr[-1] == "'")
-                ):
-                    literal = subexpr[1:-1]
-                    if literal:
-                        chosen = literal
-                        break
-                    else:
-                        continue
-                # Variable/path lookup
-                v = self._get_nested_value({**kwargs, **{"this": kwargs.get("this")}}, subexpr)
-                # Treat empty string as falsy for fallback semantics
-                if v is not None and (str(v) != ""):
-                    chosen = v
-                    break
-            return chosen
-
-        def placeholder_replacer(match: re.Match[str]) -> str:
-            raw = match.group(1).strip()
-
-            base_expr, filters = _split_filters(raw)
-            value = _evaluate_with_fallback(base_expr)
-
-            # Apply filters in order
-            for flt in filters:
-                value = _apply_filter(value, flt)
-
-            # Serialize and escape chosen value (or empty string if none)
-            serialized_value = self._serialize(value)
-            return self._escape_template_syntax(serialized_value)
-
-        processed = PLACEHOLDER_REGEX.sub(placeholder_replacer, processed)
-        # Restore escaped template syntax
-        processed = self._unescape_template_syntax(processed)
-        return processed
-
 
 def format_prompt(template: str, **kwargs: Any) -> str:
     """Convenience wrapper around :class:`AdvancedPromptFormatter`.
+
+    This helper respects the global template configuration from flujo.toml,
+    including strict mode and resolution logging.
 
     Parameters
     ----------
@@ -412,6 +361,20 @@ def format_prompt(template: str, **kwargs: Any) -> str:
     str
         The rendered template.
     """
+    # Load template configuration to honor strict mode and logging settings
+    strict = False
+    log_resolution = False
+    try:
+        from flujo.infra.config_manager import get_config_manager, TemplateConfig
 
-    formatter = AdvancedPromptFormatter(template)
+        config_mgr = get_config_manager()
+        config = config_mgr.load_config()
+        template_config = config.template or TemplateConfig()
+        strict = template_config.undefined_variables == "strict"
+        log_resolution = template_config.log_resolution
+    except Exception:
+        # Fallback to defaults if config unavailable
+        pass
+
+    formatter = AdvancedPromptFormatter(template, strict=strict, log_resolution=log_resolution)
     return formatter.format(**kwargs)

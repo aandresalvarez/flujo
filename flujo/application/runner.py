@@ -1229,7 +1229,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             attempts=1,
         )
 
-        # If HITL step has sink_to, automatically store response to context
+        # Apply sink_to to context
+        # NOTE: This is applied here (in runner) rather than in the HITL executor
+        # because the executor works with forked contexts (in conditionals/loops),
+        # while the runner has access to the main context that gets persisted.
         if hasattr(paused_step, "sink_to") and paused_step.sink_to and ctx is not None:
             try:
                 from flujo.utils.context import set_nested_context_field
