@@ -154,6 +154,17 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         default=False,
         description="Whether to validate that step return values match context fields.",
     )
+    # Optional sink_to for simple steps: store the step's output directly into
+    # a context path (e.g., "counter" or "scratchpad.field"). This is useful
+    # when the step returns a scalar value that should be persisted in context
+    # without requiring a dict-shaped output.
+    sink_to: str | None = Field(
+        default=None,
+        description=(
+            "Context path to automatically store the step output "
+            "(e.g., 'counter' or 'scratchpad.value')."
+        ),
+    )
     meta: Dict[str, Any] = Field(
         default_factory=dict,
         description="Arbitrary metadata about this step.",
