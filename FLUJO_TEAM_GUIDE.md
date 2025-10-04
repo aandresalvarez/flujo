@@ -1718,3 +1718,27 @@ Conceptual pipeline outline:
 - Async first: both skills are non‑blocking and safe for concurrent execution.
 - Graceful degradation: if the optional dependency is missing or a search fails, returns an empty list rather than crashing.
 - Extraction uses `make_agent_async` with retries and repair for robust JSON outputs.
+## **HITL In Loops – Resume Semantics (Updated)**
+
+This update fixes nested-loop creation when resuming a Human-In-The-Loop (HITL) pause inside a loop body and clarifies the required policy behavior.
+
+- Source of truth: `flujo/application/core/step_policies.py` (`DefaultLoopStepExecutor`)
+- Anti-pattern avoided: never convert control-flow exceptions into data failures; always re-raise.
+
+Key behaviors
+- Pause propagation: HITL raises `PausedException` that propagates out of the loop policy to the runner. The policy never swallows it or returns a `StepResult(success=False)` for control-flow.
+- Resume continuity: On resume, the loop continues the current iteration using `scratchpad['loop_step_index']` and `scratchpad['loop_iteration']`; it does not start a nested loop instance.
+- Idempotent context: Each iteration runs inside `ContextManager.isolate()` and merges back only on success. On pause, minimal state (iteration index, paused step index/name, and optional `loop_resume_requires_hitl_output`) is recorded; no partial writes poison the parent context.
+- Exit checks in parent loop: `exit_expression`/`exit_condition` evaluates in the parent loop context after the iteration completes; a true value exits immediately (no extra nested iterations).
+- sink_to parity: Simple-step `sink_to` is honored inside loop iterations and also when resuming from cache hits, using `set_nested_context_field` for nested paths.
+
+Tracer notes
+- The loop span remains flat across resumes. You should not see `Span(name='my_loop', children=[Span(name='my_loop', ...)])` on resume.
+- Telemetry attributes set on pause: `loop_step_index`, `loop_iteration`, and (when HITL) `loop_resume_requires_hitl_output=true`.
+
+What to avoid
+- Do not read `flujo.toml` or env vars to infer resume logic; rely on runner-provided context/scratchpad only.
+- Do not catch `PausedException` and return a failure `StepResult`; always re-raise to let the runner orchestrate resume.
+
+Compatibility
+- Existing pipelines do not require YAML changes. If an agent finishes with an empty `question` field, the HITL template may show a friendly fallback (e.g., "[Processing complete - press Enter]") but the loop will not create nested iterations.
