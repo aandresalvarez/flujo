@@ -64,6 +64,32 @@ def _detect_mock_objects(obj: Any) -> None:
         return
 
 
+def _load_template_config() -> Tuple[bool, bool]:
+    """Load template configuration from flujo.toml with fallback to defaults.
+
+    Returns:
+        Tuple of (strict, log_resolution) where:
+        - strict: True if undefined_variables == "strict"
+        - log_resolution: True if template resolution logging is enabled
+    """
+    from flujo.infra.config_manager import get_config_manager, TemplateConfig
+    from flujo.infra.telemetry import telemetry
+
+    strict = False
+    log_resolution = False
+    try:
+        config_mgr = get_config_manager()
+        config = config_mgr.load_config()
+        template_config = config.template or TemplateConfig()
+        strict = template_config.undefined_variables == "strict"
+        log_resolution = template_config.log_resolution
+    except Exception as e:
+        # Fallback to defaults if config unavailable
+        telemetry.logfire.debug(f"Failed to load template config: {e}")
+
+    return strict, log_resolution
+
+
 from .types import ExecutionFrame  # noqa: E402
 from flujo.exceptions import (  # noqa: E402
     MissingAgentError,
@@ -2808,23 +2834,10 @@ class DefaultAgentStepExecutor:
                     TemplateContextProxy,
                     StepValueProxy,
                 )
-                from flujo.infra.config_manager import get_config_manager
-                from flujo.infra.config_manager import TemplateConfig
                 from flujo.exceptions import TemplateResolutionError
 
                 # Get template configuration
-                strict = False
-                log_resolution = False
-                try:
-                    config_mgr = get_config_manager()
-                    config = config_mgr.load_config()
-                    template_config = config.template or TemplateConfig()
-                    strict = template_config.undefined_variables == "strict"
-                    log_resolution = template_config.log_resolution
-                except Exception as e:
-                    # Fallback to defaults if config unavailable
-                    telemetry.logfire.debug(f"Failed to load template config: {e}")
-                    pass
+                strict, log_resolution = _load_template_config()
 
                 steps_map = get_steps_map_from_context(context)
                 steps_wrapped: Dict[str, Any] = {
@@ -6849,23 +6862,10 @@ class DefaultHitlStepExecutor:
                         TemplateContextProxy,
                         StepValueProxy,
                     )
-                    from flujo.infra.config_manager import get_config_manager
-                    from flujo.infra.config_manager import TemplateConfig
                     from flujo.exceptions import TemplateResolutionError
 
                     # Get template configuration
-                    strict = False
-                    log_resolution = False
-                    try:
-                        config_mgr = get_config_manager()
-                        config = config_mgr.load_config()
-                        template_config = config.template or TemplateConfig()
-                        strict = template_config.undefined_variables == "strict"
-                        log_resolution = template_config.log_resolution
-                    except Exception as e:
-                        # Fallback to defaults if config unavailable
-                        telemetry.logfire.debug(f"Failed to load template config: {e}")
-                        pass
+                    strict, log_resolution = _load_template_config()
 
                     steps_map = get_steps_map_from_context(context)
                     steps_wrapped = {

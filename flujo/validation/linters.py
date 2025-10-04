@@ -9,6 +9,19 @@ from ..domain.pipeline_validation import ValidationFinding, ValidationReport
 from ..infra.telemetry import logfire
 from threading import RLock
 
+# Conditional imports for TOML support (py311+ has tomllib, fallback to tomli)
+try:
+    import tomllib as toml_lib  # type: ignore[import-not-found]
+except ImportError:
+    try:
+        import tomli as toml_lib  # type: ignore[import-untyped]
+    except ImportError:
+        toml_lib = None  # type: ignore[assignment]
+
+# Import config manager and template utils (used in validation rules)
+from ..infra.config_manager import ConfigManager
+from ..utils.prompting import _get_enabled_filters
+
 # --- Rule overrides (profile/file/env) for early skip and severity adjustment ---
 _OVERRIDE_CACHE: dict[str, str] | None = None
 _OVERRIDE_CACHE_LOCK = RLock()
@@ -49,23 +62,22 @@ def _load_rule_overrides() -> dict[str, str]:
                                 {str(k).upper(): str(v).lower() for k, v in data.items()}
                             )
                     elif rules_file.endswith((".toml", ".TOML")):
-                        try:
-                            import tomllib as _toml  # py311+
-                        except Exception:
-                            import tomli as _toml  # type: ignore
-                        with open(rules_file, "rb") as f:
-                            data = _toml.load(f)
-                        # Expect { validation = { rules = {"V-T*"="off", ...} } }
-                        try:
-                            vm = data.get("validation", {}).get("rules", {})
-                            if isinstance(vm, dict):
-                                mapping.update(
-                                    {str(k).upper(): str(v).lower() for k, v in vm.items()}
+                        if toml_lib is None:
+                            logfire.debug("[validate] TOML support not available (install tomli)")
+                        else:
+                            with open(rules_file, "rb") as f:
+                                data = toml_lib.load(f)
+                            # Expect { validation = { rules = {"V-T*"="off", ...} } }
+                            try:
+                                vm = data.get("validation", {}).get("rules", {})
+                                if isinstance(vm, dict):
+                                    mapping.update(
+                                        {str(k).upper(): str(v).lower() for k, v in vm.items()}
+                                    )
+                            except Exception as e:
+                                logfire.debug(
+                                    f"[validate] TOML rules parse (validation.rules) failed: {e!r}"
                                 )
-                        except Exception as e:
-                            logfire.debug(
-                                f"[validate] TOML rules parse (validation.rules) failed: {e!r}"
-                            )
                 except Exception as e:
                     logfire.debug(
                         f"[validate] Failed reading FLUJO_RULES_FILE '{rules_file}': {e!r}"
@@ -76,8 +88,6 @@ def _load_rule_overrides() -> dict[str, str]:
         try:
             profile = os.getenv("FLUJO_RULES_PROFILE")
             if profile:
-                from ..infra.config_manager import ConfigManager
-
                 cm = ConfigManager()
                 cfg = cm.load_config()
                 profiles = getattr(cfg, "validation", None)
@@ -202,9 +212,7 @@ class TemplateLinter(BaseLinter):
                 # V-T3: Unknown/disabled filters
                 if has_tokens:
                     try:
-                        from ..utils.prompting import _get_enabled_filters as _filters
-
-                        enabled = {s.lower() for s in _filters()}
+                        enabled = {s.lower() for s in _get_enabled_filters()}
                     except Exception:
                         enabled = {"join", "upper", "lower", "length", "tojson"}
                     for m in re.finditer(r"\|\s*([a-zA-Z_][a-zA-Z0-9_]*)", templ):
