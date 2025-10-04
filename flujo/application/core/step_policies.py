@@ -4843,15 +4843,36 @@ class DefaultLoopStepExecutor:
                     core._enable_cache = original_cache_enabled
             else:
                 # Regular execution for empty loop_body_steps (single-step pipeline)
-                pipeline_result = await core._execute_pipeline_via_policies(
-                    body_pipeline,
-                    current_data,
-                    iteration_context,
-                    resources,
-                    limits,
-                    breach_event,
-                    context_setter,
-                )
+                # CRITICAL FIX: Disable internal retries when loop has fallback handling
+                # Check if the body step has a fallback configured
+                has_loop_fallback = False
+                original_max_retries = None
+                body_step = None
+                
+                if hasattr(body_pipeline, "steps") and body_pipeline.steps:
+                    body_step = body_pipeline.steps[0]
+                    has_loop_fallback = hasattr(body_step, "fallback_step") and body_step.fallback_step is not None
+                    
+                    # If loop will handle fallbacks, temporarily disable step retries
+                    # This ensures first failure triggers loop's fallback logic immediately
+                    if has_loop_fallback and hasattr(body_step, "config"):
+                        original_max_retries = body_step.config.max_retries
+                        body_step.config.max_retries = 0
+                
+                try:
+                    pipeline_result = await core._execute_pipeline_via_policies(
+                        body_pipeline,
+                        current_data,
+                        iteration_context,
+                        resources,
+                        limits,
+                        breach_event,
+                        context_setter,
+                    )
+                finally:
+                    # Restore original max_retries
+                    if original_max_retries is not None and body_step is not None and hasattr(body_step, "config"):
+                        body_step.config.max_retries = original_max_retries
             if any(not sr.success for sr in pipeline_result.step_history):
                 body_step = body_pipeline.steps[0]
                 if hasattr(body_step, "fallback_step") and body_step.fallback_step is not None:
