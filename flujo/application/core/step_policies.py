@@ -90,6 +90,96 @@ def _load_template_config() -> Tuple[bool, bool]:
     return strict, log_resolution
 
 
+def _check_hitl_nesting_safety(step: Any, core: Any) -> None:
+    """Runtime safety check for HITL steps in nested contexts.
+
+    Raises an error if HITL is detected in a problematic nested context
+    (conditional inside loop, or other known-bad patterns).
+
+    This is a fallback safety mechanism in case validation was bypassed.
+
+    Args:
+        step: The HITL step being executed
+        core: The executor core (may contain execution stack/context info)
+
+    Raises:
+        RuntimeError: If HITL is in an unsupported nested context
+    """
+    from flujo.infra.telemetry import telemetry
+
+    try:
+        # Try to get execution context/stack from core
+        # This is a best-effort check - if we can't determine nesting, we skip
+        execution_stack = getattr(core, "_execution_stack", None)
+        if execution_stack is None:
+            # No stack available, cannot determine nesting - skip check
+            return
+
+        # Check if we're inside a problematic nesting pattern
+        # Look for: loop + conditional (most common failure case)
+        has_loop = False
+        has_conditional = False
+        context_chain = []
+
+        for frame in execution_stack:
+            frame_type = getattr(frame, "step_kind", None) or getattr(frame, "kind", None)
+            frame_name = getattr(frame, "name", "unnamed")
+
+            if frame_type in ("loop", "LoopStep"):
+                has_loop = True
+                context_chain.append(f"loop:{frame_name}")
+            elif frame_type in ("conditional", "ConditionalStep"):
+                has_conditional = True
+                context_chain.append(f"conditional:{frame_name}")
+
+        # If we're in a conditional inside a loop, this is the known-bad pattern
+        if has_loop and has_conditional:
+            context_desc = " > ".join(context_chain)
+            error_msg = (
+                f"\n\n"
+                f"🚨 CRITICAL ERROR: HITL step '{getattr(step, 'name', 'unnamed')}' "
+                f"cannot execute in nested context.\n\n"
+                f"Context: {context_desc}\n\n"
+                f"This is a known limitation: HITL steps in conditional branches inside loops "
+                f"are SILENTLY SKIPPED at runtime with no error message, causing data loss.\n\n"
+                f"This should have been caught by validation (rule HITL-NESTED-001).\n"
+                f"If you see this error, validation may have been bypassed or disabled.\n\n"
+                f"Required actions:\n"
+                f"  1. Move HITL step outside the loop (RECOMMENDED)\n"
+                f"  2. Remove the conditional wrapper (if HITL must be in loop)\n"
+                f"  3. Use flujo.builtins.ask_user skill instead\n\n"
+                f"Example fix:\n"
+                f"  # ❌ THIS FAILS\n"
+                f"  - kind: loop\n"
+                f"    body:\n"
+                f"      - kind: conditional\n"
+                f"        branches:\n"
+                f"          true:\n"
+                f"            - kind: hitl  # ← WILL NOT WORK!\n\n"
+                f"  # ✅ THIS WORKS\n"
+                f"  - kind: hitl\n"
+                f"    name: get_input\n"
+                f"    sink_to: 'user_answer'\n"
+                f"  - kind: loop\n"
+                f"    body:\n"
+                f"      - kind: step\n"
+                f"        input: '{{{{ context.user_answer }}}}'\n\n"
+                f"Documentation: https://flujo.dev/docs/known-issues/hitl-nested\n"
+                f"Report: https://github.com/aandresalvarez/flujo/issues\n"
+            )
+            telemetry.logfire.error(f"HITL nesting safety check failed: {error_msg}")
+            raise RuntimeError(error_msg)
+
+    except RuntimeError:
+        # Re-raise RuntimeError (our safety check failure)
+        raise
+    except Exception as e:
+        # For any other error (e.g., inspection failure), log and continue
+        # We don't want the safety check itself to break legitimate HITL usage
+        telemetry.logfire.debug(f"HITL nesting safety check skipped due to error: {e}")
+        return
+
+
 from .types import ExecutionFrame  # noqa: E402
 from flujo.exceptions import (  # noqa: E402
     MissingAgentError,
@@ -6840,6 +6930,10 @@ class DefaultHitlStepExecutor:
 
         telemetry.logfire.debug("=== HANDLE HITL STEP ===")
         telemetry.logfire.debug(f"HITL step name: {step.name}")
+
+        # Runtime safety check: Detect HITL in nested contexts
+        # This is a fallback in case validation was bypassed or disabled
+        _check_hitl_nesting_safety(step, core)
 
         # If resuming, auto-consume the most recent human response that matches
         # this HITL step's rendered message. This enables proper resume behavior

@@ -262,12 +262,20 @@ _CATALOG: Dict[str, RuleInfo] = {
         default_severity="error",
         help_uri=_BASE_URI + "template-001",
     ),
+    "HITL-NESTED-001": RuleInfo(
+        id="HITL-NESTED-001",
+        title="HITL in nested context (CRITICAL)",
+        description="HITL step in nested context (loop/conditional) will be SILENTLY SKIPPED at runtime, causing data loss. This is a known limitation.",
+        default_severity="error",
+        help_uri=_BASE_URI + "hitl-nested-001",
+    ),
+    # Legacy alias for backward compatibility
     "WARN-HITL-001": RuleInfo(
         id="WARN-HITL-001",
-        title="HITL in nested context",
-        description="HITL step found in nested context (loop/conditional) may exhibit complex pause/resume behavior",
-        default_severity="warning",
-        help_uri=_BASE_URI + "warn-hitl-001",
+        title="HITL in nested context (DEPRECATED - use HITL-NESTED-001)",
+        description="Legacy rule ID. Use HITL-NESTED-001 instead.",
+        default_severity="error",
+        help_uri=_BASE_URI + "hitl-nested-001",
     ),
 }
 
