@@ -3412,6 +3412,41 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             except Exception:
                 pass
 
+            # Optional sink_to support for simple steps: store scalar or structured outputs
+            # into a specific context path (e.g., "scratchpad.counter").
+            # This enables scalar iteration counters to persist across iterations.
+            try:
+                sink_path = getattr(step, "sink_to", None)
+                if sink_path and attempt_context is not None:
+                    from ...utils.context import set_nested_context_field as _set_field
+
+                    try:
+                        _set_field(attempt_context, str(sink_path), processed_output)
+                        telemetry.logfire.info(
+                            f"Step '{getattr(step, 'name', '')}' sink_to stored output to {sink_path}"
+                        )
+                    except Exception as _sink_err:
+                        # Fallback: allow top-level attribute assignment for BaseModel contexts
+                        try:
+                            if "." not in str(sink_path):
+                                object.__setattr__(
+                                    attempt_context, str(sink_path), processed_output
+                                )
+                                telemetry.logfire.info(
+                                    f"Step '{getattr(step, 'name', '')}' sink_to stored output to {sink_path} (fallback)"
+                                )
+                            else:
+                                telemetry.logfire.warning(
+                                    f"Failed to sink step output to {sink_path}: {_sink_err}"
+                                )
+                        except Exception:
+                            telemetry.logfire.warning(
+                                f"Failed to sink step output to {sink_path}: {_sink_err}"
+                            )
+            except Exception:
+                # Never fail a step due to sink_to application errors
+                pass
+
             # Merge any per-attempt context mutations back into the main context
             # even when there was only a single attempt. This ensures context
             # mutations made by the agent (e.g., signature injection) are

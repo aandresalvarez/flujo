@@ -482,6 +482,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         name: str | None = None,
         updates_context: bool = False,
         validate_fields: bool = False,  # New parameter
+        sink_to: str | None = None,  # Scalar output destination
         processors: Optional[AgentProcessors] = None,
         persist_feedback_to_context: Optional[str] = None,
         persist_validation_results_to: Optional[str] = None,
@@ -563,6 +564,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "persist_validation_results_to": persist_validation_results_to,
                 "updates_context": updates_context,
                 "validate_fields": validate_fields,
+                "sink_to": sink_to,
                 "meta": {"is_adapter": True} if is_adapter else {},
                 "config": StepConfig(**config),
             }
@@ -932,6 +934,7 @@ def step(
     *,
     updates_context: bool = False,
     validate_fields: bool = False,  # New parameter for field validation
+    sink_to: str | None = None,  # Scalar output destination
     name: Optional[str] = None,
     **config_kwargs: Any,
 ) -> Callable[
@@ -946,6 +949,7 @@ def step(
     name: str | None = None,
     updates_context: bool = False,
     validate_fields: bool = False,  # New parameter for field validation
+    sink_to: str | None = None,  # Scalar output destination
     processors: Optional[AgentProcessors] = None,
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
@@ -962,6 +966,7 @@ def step(
             name=name or fn.__name__,
             updates_context=updates_context,
             validate_fields=validate_fields,  # Pass the new parameter
+            sink_to=sink_to,  # Pass sink_to parameter
             processors=processors,
             persist_feedback_to_context=persist_feedback_to_context,
             persist_validation_results_to=persist_validation_results_to,
