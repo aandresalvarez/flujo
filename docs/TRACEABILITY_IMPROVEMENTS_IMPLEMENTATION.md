@@ -31,7 +31,7 @@ Implementing comprehensive execution traceability to eliminate silent step skipp
 3. `examples/validation/test_hitl_nested_context.yaml` - Comprehensive test file
 
 **Test results:**
-```
+```text
 ✅ Detected all 3 nested HITL steps correctly
 ✅ Provided clear context chains for each
 ✅ Did NOT flag top-level HITL (correct behavior)
@@ -39,7 +39,7 @@ Implementing comprehensive execution traceability to eliminate silent step skipp
 ```
 
 **Example output:**
-```
+```text
 Warning [WARN-HITL-001] ask_user_deeply_nested: HITL step 'ask_user_deeply_nested' found in nested context: loop:nested_loop > conditional:check_nested > branch:true. HITL steps in nested contexts (loops, conditionals) may exhibit complex pause/resume behavior.
 
 Suggestion: Consider one of these alternatives:

@@ -69,7 +69,7 @@ log_resolution = true            # Enable debug logging
 - **Ignore mode**: Silent (not recommended)
 
 **Example error in strict mode:**
-```
+```text
 TemplateResolutionError: Undefined template variable: 'context.question'
 
 Available variables: ['context', 'previous_step', 'steps']

@@ -64,4 +64,3 @@ steps:
       # ✅ CORRECT: Use previous_step in exit expression
       exit_expression: "previous_step.status == 'done'"
       max_loops: 5
-

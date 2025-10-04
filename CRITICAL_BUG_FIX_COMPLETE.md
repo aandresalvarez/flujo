@@ -83,7 +83,7 @@ log_resolution = true
 - Shows available variables in error message
 - Clear suggestions for correct patterns
 - Example error:
-  ```
+  ```text
   TemplateResolutionError: Undefined template variable: 'context.question'
   Available variables: ['context', 'previous_step', 'steps']
   Suggestion: Use '{{ previous_step.question }}' or '{{ steps.agent.output.question }}'
@@ -94,7 +94,7 @@ log_resolution = true
 - Shows available variables
 - Warns when template resolves to empty string
 - Example log:
-  ```
+  ```text
   [TEMPLATE] Rendering: {{ context.question }}
   [TEMPLATE] Available variables: ['context', 'previous_step', 'steps']
   [TEMPLATE] WARNING: Template resolved to empty string!

@@ -44,7 +44,7 @@ log_resolution = true
   - Added warning when template resolves to empty string
 
 **Log Output:**
-```
+```text
 [TEMPLATE] Rendering: {{ context.question }}
 [TEMPLATE] Available variables: ['context', 'previous_step', 'steps']
 [TEMPLATE] WARNING: Template resolved to empty string! Original: '{{ context.question }}' Available: [...]
@@ -279,17 +279,17 @@ async def test_template_strict_mode_undefined_variable():
 
 ## 💪 Recommendation
 
-**Option 1: Finish Now** (Recommended)
+### Option 1: Finish Now (Recommended)
 - Spend 2 more hours to complete integration, tests, docs
 - Ship a complete, tested, documented solution
 - Users can enable strict mode immediately
 
-**Option 2: Commit Infrastructure, Finish Later**
+### Option 2: Commit Infrastructure, Finish Later
 - Commit current progress (configuration + core logic)
 - Create follow-up ticket for integration
 - Risk: Feature exists but isn't usable yet
 
-**Option 3: Simplify Scope**
+### Option 3: Simplify Scope
 - Just enable warnings (no strict mode)
 - Skip configuration (hard-code warn behavior)
 - Faster but less flexible

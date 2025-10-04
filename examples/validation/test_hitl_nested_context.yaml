@@ -71,4 +71,3 @@ steps:
     name: ask_user_top_level
     message: "This is fine - top-level HITL"
     sink_to: "scratchpad.top_level_answer"
-

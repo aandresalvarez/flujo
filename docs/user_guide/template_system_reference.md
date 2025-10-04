@@ -191,7 +191,7 @@ input: |
 ### TEMPLATE-001: Unsupported Jinja2 Control Structure
 
 **Error message:**
-```
+```text
 Error [TEMPLATE-001]: Unsupported Jinja2 control structure '{%for%}' detected in input.
 Flujo templates support expressions {{ }} and filters |, but NOT control structures {%for%}.
 ```
