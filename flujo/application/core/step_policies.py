@@ -4831,12 +4831,33 @@ class DefaultLoopStepExecutor:
                     core._enable_cache = False
 
                     # CRITICAL FIX FOR RESUME: When resuming, restore the last output as current_data
-                    # The 'data' parameter contains human input on resume, which is wrong for the loop
+                    # The 'data' parameter contains human input on resume for HITL; for non-HITL pauses we may
+                    # have advanced the iteration. In that case, compute the next iteration's input via the
+                    # iteration_input_mapper using the saved last output from the completed iteration.
                     if is_resuming and saved_last_output is not None:
                         current_data = saved_last_output
                         telemetry.logfire.info(
                             "[POLICY] RESUME: Restored loop data from saved state, human input will be passed to HITL step"
                         )
+                        # If this is a non-HITL resume at the beginning of a new iteration, compute next input
+                        try:
+                            if (not resume_requires_hitl_output) and current_step_index == 0:
+                                iter_mapper = (
+                                    loop_step.get_iteration_input_mapper()
+                                    if hasattr(loop_step, "get_iteration_input_mapper")
+                                    else getattr(loop_step, "iteration_input_mapper", None)
+                                )
+                                if iter_mapper is not None:
+                                    # iteration_count already reflects the new iteration; mapper expects
+                                    # the index of the completed one → iteration_count - 1
+                                    mapped_input = iter_mapper(current_data, current_context, iteration_count - 1)
+                                    current_data = mapped_input
+                                    telemetry.logfire.info(
+                                        f"[POLICY] RESUME: Applied iteration_input_mapper for iteration {iteration_count - 1} to seed next iteration"
+                                    )
+                        except Exception:
+                            # Never fail resume due to next-input mapping; continue with saved output
+                            pass
 
                     telemetry.logfire.info(
                         f"[POLICY] Starting step-by-step execution for iteration {iteration_count}, step {current_step_index}"
