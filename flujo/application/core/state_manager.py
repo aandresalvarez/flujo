@@ -1,7 +1,7 @@
 """State management with intelligent caching and delta-based persistence."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Generic, Optional, TypeVar, Tuple
 
 from flujo.domain.models import StepResult, BaseModel, PipelineResult
@@ -418,7 +418,7 @@ class StateManager(Generic[ContextT]):
             return
         try:
             # Use provided timestamps or generate defaults
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             created_at = created_at or now
             updated_at = updated_at or now
 
@@ -462,8 +462,8 @@ class StateManager(Generic[ContextT]):
                     "step_name": step_result.name,
                     "step_index": step_index,
                     "status": "completed" if step_result.success else "failed",
-                    "start_time": datetime.utcnow(),
-                    "end_time": datetime.utcnow(),
+                    "start_time": datetime.now(timezone.utc),
+                    "end_time": datetime.now(timezone.utc),
                     "duration_ms": int(step_result.latency_s * 1000),
                     "cost": step_result.cost_usd,
                     "tokens": step_result.token_counts,
@@ -504,7 +504,7 @@ class StateManager(Generic[ContextT]):
                         "status": "completed"
                         if all(s.success for s in result.step_history)
                         else "failed",
-                        "end_time": datetime.utcnow(),
+                        "end_time": datetime.now(timezone.utc),
                         "total_cost": result.total_cost_usd,
                         "final_context": result.final_pipeline_context.model_dump()
                         if result.final_pipeline_context

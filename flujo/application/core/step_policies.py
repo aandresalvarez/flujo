@@ -73,7 +73,7 @@ def _load_template_config() -> Tuple[bool, bool]:
         - log_resolution: True if template resolution logging is enabled
     """
     from flujo.infra.config_manager import get_config_manager, TemplateConfig
-    from flujo.infra.telemetry import telemetry
+    import flujo.infra.telemetry as telemetry
 
     strict = False
     log_resolution = False
@@ -103,8 +103,6 @@ def _check_hitl_nesting_safety(step: Any, core: Any) -> None:
         step: The HITL step being executed
         core: The executor core (may contain execution stack/context info)
     """
-    from flujo.infra.telemetry import telemetry
-
     try:
         # Try to get execution context/stack from core
         # This is a best-effort check - if we can't determine nesting, we skip
@@ -136,7 +134,7 @@ def _check_hitl_nesting_safety(step: Any, core: Any) -> None:
         if has_loop and has_conditional:
             context_desc = " > ".join(context_chain)
             warning_msg = (
-                f"⚠️ WARNING: HITL step '{getattr(step, 'name', 'unnamed')}' "
+                f"WARNING: HITL step '{getattr(step, 'name', 'unnamed')}' "
                 f"in nested context ({context_desc}). "
                 f"This pattern may cause silent failures. "
                 f"Validation rule HITL-NESTED-001 should have caught this. "
