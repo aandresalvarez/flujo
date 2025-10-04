@@ -187,12 +187,16 @@ class TestConfigManagerImports:
         # Verify the correct function exists and is importable
         from flujo.infra.config_manager import get_config_manager
 
-        # Verify step policies can import it without error
-        from flujo.application.core import step_policies
-
         # Verify we can call it
         config_mgr = get_config_manager()
         assert config_mgr is not None
+        
+        # Verify step policies can import it without error (import test)
+        try:
+            from flujo.application.core import step_policies  # noqa: F401
+            # If this import succeeds, the function is accessible
+        except ImportError as e:
+            pytest.fail(f"Step policies cannot import config_manager: {e}")
 
     def test_format_prompt_helper_imports_correctly(self):
         """Verify format_prompt can import config manager correctly."""
