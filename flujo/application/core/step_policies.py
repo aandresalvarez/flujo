@@ -4712,60 +4712,59 @@ class DefaultLoopStepExecutor:
                 # instrumented_pipeline = body_pipeline  # Not used in step-by-step execution
                 pass
 
-            # CRITICAL FIX: Choose execution method based on step count
-            if loop_body_steps is not None:
-                # Step-by-step execution for multiple steps (handles HITL pauses)
-                original_cache_enabled = getattr(core, "_enable_cache", True)
-                pipeline_result = None
+            # CRITICAL FIX: Step-by-step execution to handle HITL pauses within loop body
+            # Execute each step in the loop body individually, tracking position for proper resume
+            original_cache_enabled = getattr(core, "_enable_cache", True)
+            pipeline_result = None
 
-                try:
-                    core._enable_cache = False
+            try:
+                core._enable_cache = False
+                telemetry.logfire.info(
+                    f"[POLICY] Starting step-by-step execution for iteration {iteration_count}, step {current_step_index}"
+                )
+
+                # Execute steps one by one, starting from current_step_index
+                step_results = []
+                for step_idx in range(current_step_index, len(loop_body_steps)):
+                    step = loop_body_steps[step_idx]
+                    current_step_index = step_idx  # Update position
+
                     telemetry.logfire.info(
-                        f"[POLICY] Starting step-by-step execution for iteration {iteration_count}, step {current_step_index}"
+                        f"[POLICY] Executing step {step_idx + 1}/{len(loop_body_steps)}: {getattr(step, 'name', 'unnamed')}"
                     )
 
-                    # Execute steps one by one, starting from current_step_index
-                    step_results = []
-                    for step_idx in range(current_step_index, len(loop_body_steps)):
-                        step = loop_body_steps[step_idx]
-                        current_step_index = step_idx  # Update position
+                    try:
+                        # Execute individual step
+                        step_result = await core.execute(
+                            step=step,
+                            data=current_data,
+                            context=iteration_context,
+                            resources=resources,
+                            limits=limits,
+                            stream=False,
+                            on_chunk=None,
+                            breach_event=None,
+                            _fallback_depth=_fallback_depth,
+                        )
+                        step_results.append(step_result)
+
+                        # Update data and context for next step
+                        current_data = step_result.output
+                        if step_result.branch_context is not None:
+                            iteration_context = ContextManager.merge(
+                                iteration_context, step_result.branch_context
+                            )
+                        cumulative_cost += step_result.cost_usd or 0.0
+                        cumulative_tokens += step_result.token_counts or 0
 
                         telemetry.logfire.info(
-                            f"[POLICY] Executing step {step_idx + 1}/{len(loop_body_steps)}: {getattr(step, 'name', 'unnamed')}"
+                            f"[POLICY] Step {step_idx + 1} completed successfully"
                         )
 
-                        try:
-                            # Execute individual step
-                            step_result = await core.execute(
-                                step=step,
-                                data=current_data,
-                                context=iteration_context,
-                                resources=resources,
-                                limits=limits,
-                                stream=False,
-                                on_chunk=None,
-                                breach_event=None,
-                                _fallback_depth=_fallback_depth,
-                            )
-                            step_results.append(step_result)
-
-                            # Update data and context for next step
-                            current_data = step_result.output
-                            if step_result.branch_context is not None:
-                                iteration_context = ContextManager.merge(
-                                    iteration_context, step_result.branch_context
-                                )
-                            cumulative_cost += step_result.cost_usd or 0.0
-                            cumulative_tokens += step_result.token_counts or 0
-
-                            telemetry.logfire.info(
-                                f"[POLICY] Step {step_idx + 1} completed successfully"
-                            )
-
-                        except PausedException as e:
-                            # ✅ CRITICAL FIX: Handle HITL pause within loop body
-                            # When HITL pauses, we save the current position and merge context state
-                            # so that when resumed, execution continues from the next step
+                    except PausedException as e:
+                        # ✅ CRITICAL FIX: Handle HITL pause within loop body
+                        # When HITL pauses, we save the current position and merge context state
+                        # so that when resumed, execution continues from the next step
 
                         telemetry.logfire.info(
                             f"LoopStep '{loop_step.name}' paused by HITL at iteration {iteration_count}, step {step_idx + 1}."
