@@ -6823,6 +6823,8 @@ class DefaultHitlStepExecutor:
         """Handle Human-In-The-Loop step execution."""
         import time
 
+        from flujo.exceptions import TemplateResolutionError
+
         telemetry.logfire.debug("=== HANDLE HITL STEP ===")
         telemetry.logfire.debug(f"HITL step name: {step.name}")
 
@@ -6893,6 +6895,9 @@ class DefaultHitlStepExecutor:
 
         try:
             rendered_message = _render_message(step.message_for_user)
+        except TemplateResolutionError:
+            # In strict mode, template failures must propagate
+            raise
         except Exception:
             rendered_message = "Paused"
 
