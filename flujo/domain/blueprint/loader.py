@@ -1801,6 +1801,7 @@ def _make_step_from_blueprint(
                             name=model.name,
                             updates_context=model.updates_context,
                             validate_fields=model.validate_fields,
+                            sink_to=model.sink_to,
                             **(
                                 step_config.model_dump()
                                 if hasattr(step_config, "model_dump")
