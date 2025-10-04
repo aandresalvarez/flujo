@@ -46,7 +46,7 @@ from .recipes.factories import (
 # Ensure framework primitives are registered at import time
 from . import framework as _framework  # noqa: F401
 
-__version__ = "0.4.37"  # Project-based CLI journey (FSD-021)
+__version__ = "0.4.38"  # HITL-in-loop resume fix + sink_to YAML wiring
 
 __all__ = [
     "Flujo",
