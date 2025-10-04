@@ -1,35 +1,11 @@
 version: "0.1"
 name: "test_hitl_nested_context"
-description: "Test YAML to trigger HITL-NESTED-001 validation ERROR for HITL in nested contexts"
+description: "Test YAML to trigger HITL-NESTED-001 validation ERROR for HITL in conditional branches within loops"
+
+# Note: HITL directly inside a loop body (without a conditional) is allowed and should
+# not trigger HITL-NESTED-001. This fixture focuses solely on the unsupported patterns.
 
 steps:
-  # This should trigger HITL-NESTED-001 ERROR - HITL inside loop
-  - kind: loop
-    name: conversation_loop
-    loop:
-      body:
-        - kind: step
-          name: analyze
-          agent:
-            id: "flujo.builtins.passthrough"
-          input: "Analyzing..."
-          updates_context: true
-        
-        # ❌ HITL-NESTED-001 ERROR: HITL step inside loop (SILENTLY SKIPPED AT RUNTIME)
-        - kind: hitl
-          name: ask_user_in_loop
-          message: "What's your question?"
-          sink_to: "scratchpad.question"
-        
-        - kind: step
-          name: respond
-          agent:
-            id: "flujo.builtins.passthrough"
-          input: "Responding..."
-      
-      max_loops: 3
-      exit_expression: "context.done == true"
-  
   # This should trigger HITL-NESTED-001 ERROR - HITL inside conditional
   - kind: conditional
     name: check_status

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from flujo.domain.dsl import Step, Pipeline
+from flujo.domain.dsl.loop import LoopStep
 from flujo.domain.dsl.step import MergeStrategy
 from flujo.domain.dsl.parallel import ParallelStep
 
@@ -179,3 +180,45 @@ def test_suggestions_present_for_rules() -> None:
     rep = (Pipeline.from_step(s1) >> s2).validate_graph()
     sug = next(f.suggestion for f in rep.warnings if f.rule_id == "V-A5")
     assert sug is not None and "updates_context" in sug
+
+
+def test_hitl_directly_in_loop_body_allowed() -> None:
+    hitl = Step.human_in_the_loop(name="collect_feedback", message_for_user="Continue?")
+    loop_body = Pipeline.from_step(hitl)
+
+    loop = LoopStep(
+        name="interactive_loop",
+        loop_body_pipeline=loop_body,
+        exit_condition_callable=lambda _output, _ctx: True,
+        max_retries=1,
+    )
+
+    report = Pipeline.from_step(loop).validate_graph()
+    assert not any(f.rule_id == "HITL-NESTED-001" for f in report.errors)
+
+
+def test_hitl_in_conditional_inside_loop_triggers_nested_error() -> None:
+    def _needs_more_info(previous: str, _ctx: Any) -> str:
+        return "true" if str(previous) else "false"
+
+    ask_human = Step.human_in_the_loop(name="ask_user", message_for_user="Need details?")
+    finalize = Step.from_callable(_id, name="finalize")
+
+    conditional = Step.branch_on(
+        name="maybe_request_info",
+        condition_callable=_needs_more_info,
+        branches={
+            "true": Pipeline.from_step(ask_human),
+            "false": Pipeline.from_step(finalize),
+        },
+    )
+
+    loop = LoopStep(
+        name="conditional_loop",
+        loop_body_pipeline=Pipeline.from_step(conditional),
+        exit_condition_callable=lambda _output, _ctx: True,
+        max_retries=1,
+    )
+
+    report = Pipeline.from_step(loop).validate_graph()
+    assert any(f.rule_id == "HITL-NESTED-001" for f in report.errors)
