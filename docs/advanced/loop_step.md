@@ -205,7 +205,7 @@ See: [LOOP-001 Validation Rule](../user_guide/loop_step_scoping.md#validation-ru
 ## See Also
 
 - [Loop Step Scoping Guide](../user_guide/loop_step_scoping.md)
-- [MapStep Documentation](map_step.md)
-- [Context Management](../user_guide/context.md)
+- [MapStep Design](../map_step_design.md)
+- [Pipeline Context](../user_guide/pipeline_context.md)
 - [Template Variables](../user_guide/template_variables_nested_contexts.md)
 
