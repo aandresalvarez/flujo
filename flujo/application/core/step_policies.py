@@ -4475,8 +4475,21 @@ class DefaultLoopStepExecutor:
         # CRITICAL FIX: Step-by-step execution to handle HITL pauses within loop body
         # Instead of using a for loop that restarts on PausedException, we use a while loop
         # that can track position within the loop body and resume from the correct step.
-        iteration_count = 1
-        current_step_index = 0  # Track position within loop body
+        
+        # Restore iteration counter when resuming loops
+        saved_iteration = 1
+        saved_step_index = 0
+        scratchpad_ref = getattr(current_context, "scratchpad", None)
+        if isinstance(scratchpad_ref, dict):
+            maybe_iteration = scratchpad_ref.pop("loop_iteration", None)
+            maybe_index = scratchpad_ref.pop("loop_step_index", None)
+            if isinstance(maybe_iteration, int) and maybe_iteration >= 1:
+                saved_iteration = maybe_iteration
+            if isinstance(maybe_index, int) and maybe_index >= 0:
+                saved_step_index = maybe_index
+        
+        iteration_count = saved_iteration
+        current_step_index = saved_step_index  # Track position within loop body
         loop_body_steps = []
 
         # Extract steps from the loop body pipeline for step-by-step execution
@@ -4486,7 +4499,7 @@ class DefaultLoopStepExecutor:
             # Fallback: create a single step from the pipeline
             loop_body_steps = [body_pipeline]
 
-        while iteration_count <= max_loops:
+        while iteration_count < max_loops:
             with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {iteration_count}"):
                 telemetry.logfire.info(
                     f"LoopStep '{loop_step.name}': Starting Iteration {iteration_count}/{max_loops}"
@@ -4501,35 +4514,6 @@ class DefaultLoopStepExecutor:
             except Exception:
                 pass
 
-            # CRITICAL FIX: Check if we're resuming from a paused state
-            # If so, restore the step position and continue from where we left off
-            if current_context is not None and hasattr(current_context, "scratchpad"):
-                scratchpad = current_context.scratchpad
-                if isinstance(scratchpad, dict):
-                    saved_step_index = scratchpad.get("loop_step_index")
-                    saved_iteration = scratchpad.get("loop_iteration")
-
-                    if saved_step_index is not None and saved_iteration == iteration_count:
-                        # We're resuming from a paused state within the same iteration
-                        current_step_index = saved_step_index
-                        telemetry.logfire.info(
-                            f"LoopStep '{loop_step.name}' resuming from step {current_step_index} in iteration {iteration_count}"
-                        )
-                        # Clear the saved position since we're resuming
-                        scratchpad.pop("loop_step_index", None)
-                        scratchpad.pop("loop_iteration", None)
-                    elif saved_iteration is not None and saved_iteration < iteration_count:
-                        # We're starting a new iteration, reset step position
-                        current_step_index = 0
-                        telemetry.logfire.info(
-                            f"LoopStep '{loop_step.name}' starting new iteration {iteration_count}, resetting step position"
-                        )
-                        # Clear the saved position
-                        scratchpad.pop("loop_step_index", None)
-                        scratchpad.pop("loop_iteration", None)
-                    else:
-                        # Normal execution, start from beginning
-                        current_step_index = 0
             # Snapshot state BEFORE this iteration so we can construct a clean
             # loop-level result if a usage limit is breached during/after it.
             prev_current_context = current_context
@@ -4731,7 +4715,7 @@ class DefaultLoopStepExecutor:
             pipeline_result = None
 
             try:
-                setattr(core, "_enable_cache", False)
+                core._enable_cache = False
                 telemetry.logfire.info(
                     f"[POLICY] Starting step-by-step execution for iteration {iteration_count}, step {current_step_index}"
                 )
@@ -4792,7 +4776,7 @@ class DefaultLoopStepExecutor:
                                 telemetry.logfire.info(
                                     f"LoopStep '{loop_step.name}' successfully merged iteration context state"
                                 )
-                            except Exception as merge_error:
+                            except (ValueError, TypeError, AttributeError) as merge_error:
                                 telemetry.logfire.warning(
                                     f"LoopStep '{loop_step.name}' safe_merge failed, using fallback: {merge_error}"
                                 )
@@ -4802,7 +4786,7 @@ class DefaultLoopStepExecutor:
                                     )
                                     if merged_context:
                                         current_context = merged_context
-                                except Exception as fallback_error:
+                                except (ValueError, TypeError, AttributeError) as fallback_error:
                                     telemetry.logfire.error(
                                         f"LoopStep '{loop_step.name}' context merge fallback failed: {fallback_error}"
                                     )
@@ -4822,18 +4806,18 @@ class DefaultLoopStepExecutor:
                         # When resumed, the loop will continue from current_step_index
                         raise e
 
-                    except Exception as e:
+                    except (ValueError, TypeError, AttributeError, RuntimeError) as e:
                         telemetry.logfire.error(
-                            f"LoopStep '{loop_step.name}' step {step_idx + 1} failed: {type(e).__name__}: {str(e)}"
+                            f"LoopStep '{loop_step.name}' step {step_idx + 1} failed: {type(e).__name__}: {e!s}"
                         )
-                        raise
+                        raise e
 
                 # All steps completed successfully for this iteration
                 # Create a pipeline result from the step results
                 pipeline_result = PipelineResult(
                     output=current_data,
                     step_history=step_results,
-                    context=iteration_context,
+                    final_pipeline_context=iteration_context,
                 )
 
                 telemetry.logfire.info(
@@ -4841,7 +4825,7 @@ class DefaultLoopStepExecutor:
                 )
 
             finally:
-                setattr(core, "_enable_cache", original_cache_enabled)
+                core._enable_cache = original_cache_enabled
             if any(not sr.success for sr in pipeline_result.step_history):
                 body_step = body_pipeline.steps[0]
                 if hasattr(body_step, "fallback_step") and body_step.fallback_step is not None:
@@ -5056,10 +5040,39 @@ class DefaultLoopStepExecutor:
                 last = pipeline_result.step_history[-1]
                 current_data = last.output
             if pipeline_result.final_pipeline_context is not None and current_context is not None:
-                merged_context = ContextManager.merge(
-                    current_context, pipeline_result.final_pipeline_context
+                # CRITICAL FIX: Ensure context updates are properly applied between iterations
+                # The ContextManager.merge() might not work correctly for simple field updates,
+                # so we manually copy important fields to ensure they persist across iterations
+                iteration_context = pipeline_result.final_pipeline_context
+                
+                # Debug logging to see what's happening
+                telemetry.logfire.info(
+                    f"LoopStep '{loop_step.name}' context merge: iteration_counter={getattr(iteration_context, 'counter', 'N/A')}, "
+                    f"main_counter={getattr(current_context, 'counter', 'N/A')}"
                 )
-                current_context = merged_context or pipeline_result.final_pipeline_context
+                
+                # Copy important fields from iteration context to main context
+                for field_name in ['counter', 'call_count', 'iteration_count', 'accumulated_value', 'is_complete', 'is_clear', 'current_value']:
+                    if hasattr(iteration_context, field_name):
+                        try:
+                            old_value = getattr(current_context, field_name, None)
+                            new_value = getattr(iteration_context, field_name)
+                            setattr(current_context, field_name, new_value)
+                            telemetry.logfire.info(
+                                f"LoopStep '{loop_step.name}' updated {field_name}: {old_value} -> {new_value}"
+                            )
+                        except Exception as e:
+                            telemetry.logfire.warning(f"LoopStep '{loop_step.name}' failed to update {field_name}: {e}")
+                
+                # Also merge using ContextManager.merge() as a fallback
+                try:
+                    merged_context = ContextManager.merge(current_context, iteration_context)
+                    if merged_context is not None:
+                        current_context = merged_context
+                except Exception as e:
+                    telemetry.logfire.warning(f"LoopStep '{loop_step.name}' ContextManager.merge failed: {e}")
+                    # If merge fails, at least we have the field updates above
+                    pass
             elif pipeline_result.final_pipeline_context is not None:
                 current_context = pipeline_result.final_pipeline_context
             # Append conversational turns for this iteration when enabled

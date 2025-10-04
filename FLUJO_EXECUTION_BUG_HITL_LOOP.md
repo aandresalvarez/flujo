@@ -51,19 +51,19 @@ for iteration_count in range(1, max_loops + 1):
 ## 📊 **Evidence from Debug Traces**
 
 ### **Expected Behavior**
-```
-clarification_loop (iteration: 1)
-├── agent runs → outputs question + slots
-├── HITL pauses
-├── [USER responds]
-└── update_slots runs → updates context
-└── clarification_loop (iteration: 2)  ← NEW ITERATION
-    ├── agent runs → sees updated slots
-    └── HITL pauses again
+```text
+ clarification_loop (iteration: 1)
+ ├── agent runs → outputs question + slots
+ ├── HITL pauses
+ ├── [USER responds]
+ └── update_slots runs → updates context
+ └── clarification_loop (iteration: 2)  ← NEW ITERATION
+     ├── agent runs → sees updated slots
+     └── HITL pauses again
 ```
 
 ### **Actual Behavior (BUG)**
-```
+```text
 clarification_loop (iteration: 1)
 ├── agent runs → outputs question + slots
 ├── HITL pauses
