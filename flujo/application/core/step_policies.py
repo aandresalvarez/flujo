@@ -4856,12 +4856,18 @@ class DefaultLoopStepExecutor:
                         # For other steps, use the current_data from previous step output
                         step_input_data = current_data
                         if is_resuming and step_idx == saved_step_index:
-                            # This is the step we're resuming at - it's likely the HITL step
-                            # Pass the human input captured during resume to this step
-                            step_input_data = resume_payload
-                            telemetry.logfire.info(
-                                f"[POLICY] RESUME: Passing human input to step {step_idx + 1} (resumption point)"
-                            )
+                            # Only override the step input with the human response when the pause
+                            # originated from an explicit HITL step. For non-HITL pauses (e.g.,
+                            # agentic command executor), re-run the step with the same data.
+                            if resume_requires_hitl_output:
+                                step_input_data = resume_payload
+                                telemetry.logfire.info(
+                                    f"[POLICY] RESUME: Passing human input to step {step_idx + 1} (HITL resumption)"
+                                )
+                            else:
+                                telemetry.logfire.info(
+                                    f"[POLICY] RESUME: Re-running step {step_idx + 1} with prior data (non-HITL pause)"
+                                )
                             # Clear the resume flag so subsequent steps get normal data
                             is_resuming = False
 
@@ -5000,7 +5006,17 @@ class DefaultLoopStepExecutor:
                                         "loop_resume_requires_hitl_output", None
                                     )
 
-                                if paused_step_is_hitl and resume_next_index >= body_len:
+                                # If the paused step is the last in the body and it's NOT a HITL
+                                # (e.g., agentic command executor raised a pause to ask human),
+                                # advance to the next iteration so the planner can produce the next command.
+                                if not paused_step_is_hitl and (step_idx + 1) >= body_len:
+                                    current_context.scratchpad["loop_step_index"] = 0
+                                    current_context.scratchpad["loop_iteration"] = iteration_count + 1
+                                    telemetry.logfire.info(
+                                        f"LoopStep '{loop_step.name}' paused at final non-HITL step {step_idx + 1}, "
+                                        "will resume at next iteration"
+                                    )
+                                elif paused_step_is_hitl and resume_next_index >= body_len:
                                     telemetry.logfire.info(
                                         f"LoopStep '{loop_step.name}' paused at final HITL step {step_idx + 1}, "
                                         "will resume with human response before next iteration"
