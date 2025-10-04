@@ -8,6 +8,9 @@ from typer.testing import CliRunner
 
 from flujo.cli.main import app
 
+# Mark all tests in this module as slow (architect self-correction tests take >180s)
+pytestmark = [pytest.mark.slow]
+
 
 class _DummyReport:
     def __init__(self, is_valid: bool = True) -> None:
