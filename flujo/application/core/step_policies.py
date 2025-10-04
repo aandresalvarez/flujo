@@ -4499,7 +4499,7 @@ class DefaultLoopStepExecutor:
             # Fallback: create a single step from the pipeline
             loop_body_steps = [body_pipeline]
 
-        while iteration_count < max_loops:
+        while iteration_count <= max_loops:
             with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {iteration_count}"):
                 telemetry.logfire.info(
                     f"LoopStep '{loop_step.name}': Starting Iteration {iteration_count}/{max_loops}"
@@ -4795,9 +4795,11 @@ class DefaultLoopStepExecutor:
                         if current_context is not None and hasattr(current_context, "scratchpad"):
                             current_context.scratchpad["status"] = "paused"
                             current_context.scratchpad["pause_message"] = str(e)
-                            # Save the current step position for resumption
-                            current_context.scratchpad["loop_step_index"] = step_idx + 1
-                            current_context.scratchpad["loop_iteration"] = iteration_count
+                            # CRITICAL FIX: On HITL pause, skip to the next iteration after the pause is resolved
+                            # The runner will handle logging the paused command with user input, so we don't
+                            # need to re-execute the paused step. Instead, we move to the next iteration.
+                            current_context.scratchpad["loop_step_index"] = 0  # Start from beginning of next iteration
+                            current_context.scratchpad["loop_iteration"] = iteration_count + 1  # Next iteration
                             telemetry.logfire.info(
                                 f"LoopStep '{loop_step.name}' updated context status to 'paused' at step {step_idx + 1}"
                             )
@@ -5431,7 +5433,11 @@ class DefaultLoopStepExecutor:
                 if hasattr(loop_step, "get_iteration_input_mapper")
                 else getattr(loop_step, "iteration_input_mapper", None)
             )
-            if iter_mapper and iteration_count < max_loops:
+            # CRITICAL FIX: Call the mapper if we're going to execute another iteration
+            # After incrementing iteration_count, we check if iteration_count <= max_loops
+            # to decide if we should execute the next iteration. So the mapper should also
+            # use the same condition.
+            if iter_mapper and iteration_count <= max_loops:
                 try:
                     current_data = iter_mapper(current_data, current_context, iteration_count)
                 except Exception as e:
