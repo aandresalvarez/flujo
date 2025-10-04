@@ -4299,7 +4299,7 @@ class DefaultLoopStepExecutor:
 
         # Standard policy context_setter extraction - this is how we get the context_setter
         # that the legacy _handle_loop_step method expected
-        # context_setter = getattr(core, "_context_setter", None)  # Not used in step-by-step execution
+        context_setter = getattr(core, "_context_setter", None)
 
         # Migrated loop execution logic from core with parameterized calls via `core`
         import time
@@ -4842,6 +4842,7 @@ class DefaultLoopStepExecutor:
                     resources,
                     limits,
                     breach_event,
+                    context_setter,
                 )
             if any(not sr.success for sr in pipeline_result.step_history):
                 body_step = body_pipeline.steps[0]
