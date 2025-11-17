@@ -5113,13 +5113,59 @@ class DefaultLoopStepExecutor:
                                 body_len = len(loop_body_steps)
                                 resume_iteration = iteration_count
                                 paused_step_is_hitl = isinstance(step, HumanInTheLoopStep)
-                                resume_next_index = (
-                                    step_idx + 1 if paused_step_is_hitl else step_idx
+                                exception_requires_payload = bool(
+                                    getattr(e, "requires_resume_payload", False)
                                 )
+                                scratchpad_data: dict[str, Any] = {}
+                                try:
+                                    scratchpad_data = (
+                                        current_context.scratchpad
+                                        if isinstance(
+                                            getattr(current_context, "scratchpad", None), dict
+                                        )
+                                        else {}
+                                    )
+                                except Exception:
+                                    scratchpad_data = {}
+                                pending_cmd_present = bool(scratchpad_data.get("paused_step_input"))
+                                # Non-HITL steps (e.g., command executor) tag this flag to
+                                # signal that a human payload is required on resume even if
+                                # paused_step_input was cleared during context merging.
+                                loop_resume_flag = bool(
+                                    scratchpad_data.get("loop_resume_requires_hitl_output")
+                                )
+                                ask_human_pending = False
+                                try:
+                                    from flujo.domain.commands import AskHumanCommand as _AskHuman
+
+                                    ask_human_pending = isinstance(current_data, _AskHuman)
+                                except Exception:
+                                    try:
+                                        ask_human_pending = bool(
+                                            isinstance(current_data, dict)
+                                            and str(current_data.get("type", "")).lower()
+                                            == "ask_human"
+                                        )
+                                    except Exception:
+                                        ask_human_pending = False
+                                requires_resume_payload = bool(
+                                    paused_step_is_hitl
+                                    or pending_cmd_present
+                                    or exception_requires_payload
+                                    or loop_resume_flag
+                                    or ask_human_pending
+                                )
+                                resume_next_index = (
+                                    step_idx + 1 if requires_resume_payload else step_idx
+                                )
+                                if resume_next_index < 0:
+                                    resume_next_index = 0
+                                elif resume_next_index > body_len:
+                                    resume_next_index = body_len
                                 resume_state = LoopResumeState(
                                     iteration=resume_iteration,
                                     step_index=resume_next_index,
-                                    requires_hitl_payload=paused_step_is_hitl,
+                                    requires_hitl_payload=requires_resume_payload,
                                     last_output=current_data,
                                     paused_step_name=getattr(step, "name", None),
                                 )
@@ -5137,12 +5183,12 @@ class DefaultLoopStepExecutor:
                                         f"LoopStep '{loop_step.name}' paused at final non-HITL step {step_idx + 1}, "
                                         "will resume at next iteration"
                                     )
-                                elif paused_step_is_hitl and resume_next_index >= body_len:
+                                elif requires_resume_payload and resume_next_index >= body_len:
                                     telemetry.logfire.info(
                                         f"LoopStep '{loop_step.name}' paused at final HITL step {step_idx + 1}, "
                                         "will resume with human response before next iteration"
                                     )
-                                elif paused_step_is_hitl:
+                                elif requires_resume_payload:
                                     telemetry.logfire.info(
                                         f"LoopStep '{loop_step.name}' paused at HITL step {step_idx + 1}, "
                                         f"will resume at step {resume_next_index + 1}"
