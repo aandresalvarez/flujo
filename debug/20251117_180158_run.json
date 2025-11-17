@@ -1,0 +1,131 @@
+{
+  "exported_at": "2025-11-17T18:01:58.863976Z",
+  "pipeline_name": "pipeline",
+  "run_id": null,
+  "env": {
+    "FLUJO_DEBUG": "1",
+    "FLUJO_DEBUG_PROMPTS": null,
+    "FLUJO_TRACE_PREVIEW_LEN": null
+  },
+  "trace_tree": {
+    "name": "pipeline_run",
+    "status": "paused",
+    "start_time": 139381.540179291,
+    "end_time": 139381.575184458,
+    "attributes": {
+      "flujo.input": "yes\nyes\nyes",
+      "flujo.run_id": "run_26f641561fb2446694ece2115dd0ea05",
+      "flujo.pipeline.name": "test_hitl_loop_local",
+      "flujo.pipeline.version": "latest"
+    },
+    "events": [],
+    "children": [
+      {
+        "name": "init",
+        "status": "completed",
+        "start_time": 139381.540668833,
+        "end_time": 139381.541923541,
+        "attributes": {
+          "flujo.step.type": "Step",
+          "step_input": "yes\nyes\nyes",
+          "flujo.step.policy": "DefaultAgentStepExecutor",
+          "flujo.cache.hit": false,
+          "success": true,
+          "latency_s": 0.000494541,
+          "flujo.budget.actual_cost_usd": 0.0,
+          "flujo.budget.actual_tokens": 0
+        },
+        "events": [],
+        "children": []
+      },
+      {
+        "name": "test_loop",
+        "status": "running",
+        "start_time": 139381.544271291,
+        "end_time": null,
+        "attributes": {
+          "flujo.step.type": "LoopStep",
+          "step_input": "{'count': 1}",
+          "flujo.step.policy": "DefaultLoopStepExecutor",
+          "flujo.cache.hit": false
+        },
+        "events": [
+          {
+            "name": "loop.iteration",
+            "attributes": {
+              "iteration": 1
+            }
+          }
+        ],
+        "children": []
+      }
+    ]
+  },
+  "result": {
+    "total_cost_usd": 0.0,
+    "total_tokens": 0,
+    "step_history": [
+      {
+        "name": "init",
+        "success": true,
+        "attempts": 1,
+        "latency_s": 0.000494541,
+        "token_counts": 0,
+        "cost_usd": 0.0,
+        "feedback": null,
+        "output": {
+          "count": 1
+        },
+        "metadata": {},
+        "step_history": []
+      }
+    ]
+  },
+  "final_context": {
+    "run_id": "run_26f641561fb2446694ece2115dd0ea05",
+    "initial_prompt": "yes\nyes\nyes",
+    "scratchpad": {
+      "status": "paused",
+      "steps": {
+        "init": {
+          "count": 1
+        },
+        "agent_decides": {
+          "action": "ask",
+          "question": "Question 1?",
+          "count": 1
+        }
+      },
+      "last_state_update": 139381.546216458,
+      "hitl_message": "Question 1?",
+      "hitl_data": {
+        "action": "ask",
+        "question": "Question 1?",
+        "count": 1
+      },
+      "paused_step_input": {
+        "type": "ask_human",
+        "question": "Question 1?"
+      },
+      "pause_message": "Question 1?",
+      "loop_last_output": {
+        "action": "ask",
+        "question": "Question 1?",
+        "count": 1
+      },
+      "loop_step_index": 2,
+      "loop_iteration": 1,
+      "loop_paused_step_name": "ask_user",
+      "loop_resume_requires_hitl_output": true
+    },
+    "hitl_history": [],
+    "command_log": [],
+    "conversation_history": [
+      {
+        "role": "assistant",
+        "content": "Question 1?"
+      }
+    ],
+    "call_count": 0
+  }
+}
