@@ -174,6 +174,7 @@ class ExecutionManager(Generic[ContextT]):
             step_result = None
             step_result_recorded: bool = False
             usage_limit_exceeded = False  # Track if a usage limit exception was raised
+            paused_execution = False  # Track if execution was paused
 
             # ✅ CRITICAL FIX: Persist state AFTER step execution for crash recovery
             # This ensures state reflects the completed step for proper resumption
@@ -971,6 +972,7 @@ class ExecutionManager(Generic[ContextT]):
                             state_created_at=state_created_at,
                             step_history=result.step_history,
                         )
+                    paused_execution = True
                     self.set_final_context(result, context)
                     yield result
                     return
@@ -1007,6 +1009,7 @@ class ExecutionManager(Generic[ContextT]):
                             state_created_at=state_created_at,
                             step_history=result.step_history,
                         )
+                    paused_execution = True
                     self.set_final_context(result, context)
                     yield result
                     return
@@ -1044,6 +1047,7 @@ class ExecutionManager(Generic[ContextT]):
                     run_id is not None
                     and idx == len(self.pipeline.steps) - 1
                     and not self.inside_loop_step
+                    and not paused_execution
                 ):
                     # Phase 2: Completion gate at persist-time as well
                     # Only mark completed when we have one StepResult per pipeline step and all succeeded.
