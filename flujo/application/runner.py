@@ -51,6 +51,8 @@ from ..domain.models import (
     Failure,
     Paused,
     Chunk,
+    ConversationTurn,
+    ConversationRole,
 )
 from ..domain.commands import AgentCommand
 from pydantic import TypeAdapter
@@ -1352,13 +1354,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                             generated_command=pending_cmd,
                             perceived_output=str(current_input),
                             executed_output=str(current_input),
+                            execution_result=str(current_input),
                             executed_successfully=True,
                         )
                         ctx.command_log.append(log_entry)
                         ctx.conversation_history.append(
-                            HumanInteraction(
-                                message_to_human=scratch.get("pause_message", ""),
-                                human_response=current_input,
+                            ConversationTurn(
+                                role=ConversationRole.user,
+                                content=str(current_input),
                             )
                         )
             step_history = paused_result.step_history[:start_idx]
@@ -1369,7 +1372,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 ctx.scratchpad["status"] = "completed"
             except Exception:
                 pass
-            exec_manager = ExecutionManager(
+            exec_manager: ExecutionManager[ContextT] = ExecutionManager(
                 self.pipeline,
                 state_manager=StateManager(self.state_backend),
             )
