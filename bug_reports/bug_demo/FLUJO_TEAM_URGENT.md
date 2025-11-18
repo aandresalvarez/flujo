@@ -5,6 +5,11 @@
 **Date**: October 4, 2025  
 **Flujo Version**: 0.4.37
 
+> **Note (November 17, 2025 / Flujo 0.4.38):** This report is preserved as a
+> historical artifact describing the original production outage. The current
+> PR bundles it for context even though the active branch is testing against
+> Flujo 0.4.38.
+
 ---
 
 ## 🎯 Quick Summary
@@ -199,4 +204,3 @@ Thank you for your rapid response on previous issues! 🙏
 **Flujo Version**: 0.4.37  
 **Date**: October 4, 2025  
 **Debug Log**: `debug/20251004_215628_run.json`
-

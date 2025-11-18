@@ -5162,19 +5162,12 @@ class DefaultLoopStepExecutor:
                                     resume_next_index = 0
                                 elif resume_next_index > body_len:
                                     resume_next_index = body_len
-                                resume_state = LoopResumeState(
-                                    iteration=resume_iteration,
-                                    step_index=resume_next_index,
-                                    requires_hitl_payload=requires_resume_payload,
-                                    last_output=current_data,
-                                    paused_step_name=getattr(step, "name", None),
-                                )
-                                resume_state.persist(current_context, body_len)
-
                                 # If the paused step is the last in the body and it's NOT a HITL
                                 # (e.g., agentic command executor raised a pause to ask human),
                                 # advance to the next iteration so the planner can produce the next command.
                                 if not paused_step_is_hitl and (step_idx + 1) >= body_len:
+                                    resume_iteration = iteration_count + 1
+                                    resume_next_index = 0
                                     current_context.scratchpad["loop_step_index"] = 0
                                     current_context.scratchpad["loop_iteration"] = (
                                         iteration_count + 1
@@ -5198,6 +5191,15 @@ class DefaultLoopStepExecutor:
                                         f"LoopStep '{loop_step.name}' paused at step {step_idx + 1}, "
                                         f"will resume by retrying this step"
                                     )
+
+                                resume_state = LoopResumeState(
+                                    iteration=resume_iteration,
+                                    step_index=resume_next_index,
+                                    requires_hitl_payload=requires_resume_payload,
+                                    last_output=current_data,
+                                    paused_step_name=getattr(step, "name", None),
+                                )
+                                resume_state.persist(current_context, body_len)
 
                             # ✅ CRITICAL: Re-raise PausedException to let runner handle pause/resume
                             # When resumed, the loop will continue from current_step_index

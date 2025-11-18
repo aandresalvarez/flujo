@@ -4,7 +4,11 @@
 # Analyzes the actual failing clarification pipeline run
 #
 
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(dirname "$0")"
+if ! cd "$SCRIPT_DIR"; then
+    echo "❌ Failed to change directory to $SCRIPT_DIR" >&2
+    exit 1
+fi
 
 echo "╔════════════════════════════════════════════════════════════════╗"
 echo "║        DEMONSTRATING FLUJO NESTED LOOP BUG                     ║"

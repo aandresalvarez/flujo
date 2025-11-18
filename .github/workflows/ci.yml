@@ -87,7 +87,7 @@ jobs:
       - name: Run fast tests with coverage (${{ matrix.mode }})
         run: |
           # Run fast tests with limited parallelism for CI stability and speed
-          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n 3
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n 2
 
       - name: Store fast tests coverage file
         uses: actions/upload-artifact@v4
