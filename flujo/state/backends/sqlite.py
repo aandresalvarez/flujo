@@ -1579,12 +1579,10 @@ class SQLiteBackend(StateBackend):
             async def _save() -> None:
                 # Use pooled connection when available to avoid connect() overhead
                 db = self._connection_pool
+                temp_conn: Optional[aiosqlite.Connection] = None
                 if db is None:
-                    db_cm = await self._create_connection()
-                    db = await db_cm.__aenter__()
-                    should_close = True
-                else:
-                    should_close = False
+                    temp_conn = await self._create_connection()
+                    db = temp_conn
 
                 try:
                     # OPTIMIZATION: Use simplified schema for better performance
@@ -1617,8 +1615,8 @@ class SQLiteBackend(StateBackend):
                     )
                     await db.commit()
                 finally:
-                    if should_close:
-                        await db_cm.__aexit__(None, None, None)
+                    if temp_conn is not None:
+                        await temp_conn.close()
 
             await self._with_retries(_save)
 
@@ -1629,21 +1627,15 @@ class SQLiteBackend(StateBackend):
             async def _save() -> None:
                 # Prefer pooled connection to avoid connection setup overhead on hot paths
                 db = self._connection_pool
-                _temp_conn = False
+                temp_conn: Optional[aiosqlite.Connection] = None
                 if db is None:
-                    db_cm = await self._create_connection()
-                    db = await db_cm.__aenter__()
-                    _temp_conn = True
-                    try:
-                        await db.execute("PRAGMA foreign_keys = ON")
-                        await db.execute("PRAGMA busy_timeout = 1000")
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        await db.execute("PRAGMA foreign_keys = ON")
-                    except Exception:
-                        pass
+                    temp_conn = await self._create_connection()
+                    db = temp_conn
+                try:
+                    await db.execute("PRAGMA foreign_keys = ON")
+                    await db.execute("PRAGMA busy_timeout = 1000")
+                except Exception:
+                    pass
 
                 try:
                     # Ensure parent run row exists to avoid FK failures in concurrent/resume scenarios
@@ -1690,8 +1682,8 @@ class SQLiteBackend(StateBackend):
                     )
                     await db.commit()
                 finally:
-                    if _temp_conn:
-                        await db_cm.__aexit__(None, None, None)
+                    if temp_conn is not None:
+                        await temp_conn.close()
 
             await self._with_retries(_save)
 
@@ -1701,15 +1693,15 @@ class SQLiteBackend(StateBackend):
 
             async def _save() -> None:
                 db = self._connection_pool
-                _temp_conn = False
+                temp_conn: Optional[aiosqlite.Connection] = None
                 if db is None:
-                    db_cm = await self._create_connection()
-                    db = await db_cm.__aenter__()
-                    _temp_conn = True
-                    try:
-                        await db.execute("PRAGMA busy_timeout = 1000")
-                    except Exception:
-                        pass
+                    temp_conn = await self._create_connection()
+                    db = temp_conn
+                try:
+                    await db.execute("PRAGMA busy_timeout = 1000")
+                except Exception:
+                    pass
+
                 try:
                     await db.execute(
                         """
@@ -1730,8 +1722,8 @@ class SQLiteBackend(StateBackend):
                     )
                     await db.commit()
                 finally:
-                    if _temp_conn:
-                        await db_cm.__aexit__(None, None, None)
+                    if temp_conn is not None:
+                        await temp_conn.close()
 
             await self._with_retries(_save)
 
@@ -1984,7 +1976,8 @@ class SQLiteBackend(StateBackend):
             except Exception:
                 pass
             conn = await self._create_connection()
-            async with conn as db:
+            try:
+                db = conn
                 await db.execute("PRAGMA foreign_keys = ON")
                 async with db.execute(
                     """
@@ -2012,6 +2005,8 @@ class SQLiteBackend(StateBackend):
                     if not rows_typed:
                         return None
                     return self._reconstruct_trace_tree(rows_typed)
+            finally:
+                await conn.close()
 
     async def get_spans(
         self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
@@ -2026,7 +2021,8 @@ class SQLiteBackend(StateBackend):
             except Exception:
                 pass
             conn = await self._create_connection()
-            async with conn as db:
+            try:
+                db = conn
                 await db.execute("PRAGMA foreign_keys = ON")
                 query = """
                     SELECT span_id, parent_span_id, name, start_time, end_time,
@@ -2068,6 +2064,8 @@ class SQLiteBackend(StateBackend):
                             }
                         )
                     return results
+            finally:
+                await conn.close()
 
     async def get_span_statistics(
         self,
@@ -2078,7 +2076,8 @@ class SQLiteBackend(StateBackend):
         await self._ensure_init()
         async with self._lock:
             conn = await self._create_connection()
-            async with conn as db:
+            try:
+                db = conn
                 await db.execute("PRAGMA foreign_keys = ON")
                 query = """
                     SELECT s.name, s.status, s.start_time, s.end_time,
@@ -2130,6 +2129,8 @@ class SQLiteBackend(StateBackend):
                         else:
                             data["average"] = 0.0
                     return stats
+            finally:
+                await conn.close()
 
     async def delete_run(self, run_id: str) -> None:
         """Delete a run from the runs table (cascades to traces). Audit log deletion."""
@@ -2142,10 +2143,13 @@ class SQLiteBackend(StateBackend):
             except Exception:
                 pass
             conn = await self._create_connection()
-            async with conn as db:
+            try:
+                db = conn
                 await db.execute("PRAGMA foreign_keys = ON")
                 await db.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
                 await db.commit()
+            finally:
+                await conn.close()
 
 
 # Ensure we shut down any pooled connections on interpreter exit
