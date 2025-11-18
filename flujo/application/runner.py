@@ -1255,6 +1255,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     async def resume_async(
         self, paused_result: PipelineResult[ContextT], human_input: Any
     ) -> PipelineResult[ContextT]:
+        """Resume a paused pipeline with human input."""
+        try:
+            return await self._resume_async_inner(paused_result, human_input)
+        finally:
+            await self._shutdown_state_backend()
+
+    async def _resume_async_inner(
+        self, paused_result: PipelineResult[ContextT], human_input: Any
+    ) -> PipelineResult[ContextT]:
         try:
                 """Resume a paused pipeline with human input."""
                 ctx: ContextT | None = paused_result.final_pipeline_context
@@ -1583,7 +1592,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 return paused_result
 
         finally:
-            await self._shutdown_state_backend()
+            # Legacy compatibility: helper should not manage backend lifecycle directly.
+            pass
+
     async def replay_from_trace(self, run_id: str) -> PipelineResult[ContextT]:
         """Replay a prior run deterministically using recorded trace and responses (FSD-013)."""
         # 1) Load trace and step history
