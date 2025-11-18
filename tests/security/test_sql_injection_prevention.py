@@ -7,7 +7,7 @@ legal, and finance applications where data integrity and security are paramount.
 
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 
 from flujo.state.backends.sqlite import (
@@ -247,22 +247,38 @@ class TestSQLInjectionPrevention:
     @pytest.mark.asyncio
     async def test_parameterized_queries_used(self, backend: SQLiteBackend):
         """Test that all database operations use parameterized queries."""
-        await backend._ensure_init()
+        captured_queries = []
 
-        # Mock aiosqlite.connect to capture SQL statements
-        with patch("aiosqlite.connect") as mock_connect:
-            mock_db = MagicMock()
+        class _FakeConn:
+            daemon = True
+            name = 'mock-conn'
 
-            # Configure the mock to handle async operations
-            async def async_execute(*args, **kwargs):
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def execute(self, *args, **kwargs):
+                captured_queries.append((args, kwargs))
                 return None
 
-            async def async_commit():
+            async def commit(self):
                 return None
 
-            mock_db.execute = async_execute
-            mock_db.commit = async_commit
-            mock_connect.return_value.__aenter__.return_value = mock_db
+            async def close(self):
+                return None
+
+        fake_conn = _FakeConn()
+
+        async def _fake_create_connection():
+            return fake_conn
+
+        async_mock_create = AsyncMock(side_effect=_fake_create_connection)
+        async_mock_ensure = AsyncMock()
+
+        with patch.object(backend, "_create_connection", new=async_mock_create) as mock_conn_factory, \
+             patch.object(backend, "_ensure_init", new=async_mock_ensure):
 
             # Try to save state with potentially malicious input
             malicious_state = {
@@ -291,7 +307,7 @@ class TestSQLInjectionPrevention:
 
             # Verify that parameterized queries were used by checking mock calls
             # The mock should have been called with parameterized queries, not string concatenation
-            assert mock_connect.called, "Database connection should have been established"
+            assert mock_conn_factory.await_count > 0, "Database connection should have been established"
 
             # Check that the operation completed without raising exceptions
             # This indicates that the parameterized query system handled the malicious input safely
