@@ -339,6 +339,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         # Track ownership to ensure we only tear down default state backends automatically.
         self._owns_state_backend = state_backend is None
         self.delete_on_completion = delete_on_completion
+        self._pending_close_tasks: list[asyncio.Task[Any]] = []
 
     def _create_default_backend(self) -> "ExecutionBackend":
         """Create a default LocalBackend with properly wired ExecutorCore.
@@ -402,7 +403,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         except RuntimeError:
             asyncio.run(self.aclose())
         else:
-            loop.create_task(self.aclose())
+            task = loop.create_task(self.aclose())
+            self._pending_close_tasks.append(task)
+            task.add_done_callback(self._handle_close_task_done)
 
     async def __aenter__(self) -> "Flujo[RunnerInT, RunnerOutT, ContextT]":
         return self
@@ -423,9 +426,29 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         exc_type: Type[BaseException] | None,
         exc: BaseException | None,
         tb: Any,
-    ) -> bool:
+    ) -> Literal[False]:
         self.close()
         return False
+
+    def _handle_close_task_done(self, task: asyncio.Task[Any]) -> None:
+        """Detach finished close tasks and surface unexpected errors."""
+        try:
+            self._pending_close_tasks.remove(task)
+        except ValueError:
+            pass
+        try:
+            exc = task.exception()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            return
+        if exc is not None:
+            try:
+                from ..infra import telemetry as _telemetry
+
+                _telemetry.logfire.warning(f"Runner close task raised: {exc}")
+            except Exception:
+                pass
 
     def _ensure_pipeline(self) -> Pipeline[RunnerInT, RunnerOutT]:
         """Load the configured pipeline from the registry if needed."""

@@ -337,7 +337,8 @@ class SQLiteBackend(StateBackend):
         try:
             conn.daemon = True
             conn.name = f"flujo-sqlite-{id(self)}"
-        except Exception:
+        except AttributeError:
+            # Best-effort: not all connection implementations expose thread attrs
             pass
         return conn
 

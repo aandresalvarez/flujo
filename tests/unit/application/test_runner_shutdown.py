@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from pathlib import Path
 from typing import Any
+
+import pytest
 
 from flujo import Flujo, Pipeline, Step
 from flujo.domain.models import PipelineContext
 from flujo.domain.resources import AppResources
 from flujo.state.backends.memory import InMemoryBackend
+from flujo.state.backends.sqlite import SQLiteBackend
 
 
 async def _echo_agent(
@@ -26,13 +30,17 @@ def _make_runner(**kwargs: Any) -> Flujo[str, Any, PipelineContext]:
     return Flujo(pipeline, enable_tracing=False, **kwargs)
 
 
-def test_runner_shuts_down_default_state_backend() -> None:
+def test_runner_shuts_down_default_state_backend(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runner-owned SQLite backends should shut down and leave no worker threads."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FLUJO_TEST_MODE", "0")
     runner = _make_runner()
     result = runner.run("hello world")
     assert result.output == "HELLO WORLD"
     backend = runner.state_backend
-    assert backend is not None
-    # The SQLite backend should have closed its pooled connection after the run.
+    assert isinstance(backend, SQLiteBackend)
     assert getattr(backend, "_connection_pool", None) is None
     lingering = [
         t
@@ -43,6 +51,7 @@ def test_runner_shuts_down_default_state_backend() -> None:
 
 
 class _RecordingBackend(InMemoryBackend):
+    """Test double to record shutdown invocations."""
     def __init__(self) -> None:
         super().__init__()
         self.shutdown_calls = 0
@@ -52,6 +61,7 @@ class _RecordingBackend(InMemoryBackend):
 
 
 def test_runner_does_not_shutdown_injected_backend() -> None:
+    """Runner should not manage the lifecycle of injected state backends."""
     backend = _RecordingBackend()
     runner = _make_runner(state_backend=backend)
     runner.run("custom backend")
