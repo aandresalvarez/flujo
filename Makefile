@@ -53,6 +53,10 @@ lint: .uv ## Lint the code for issues
 	@echo "🔎 Linting code..."
 	@uv run ruff check flujo/ tests/ scripts/
 
+.PHONY: precommit
+precommit: .uv ## Run pre-commit hooks on staged files (install hooks with `pre-commit install`)
+	@echo "🛡️  Running pre-commit hooks on staged files..."
+	@uv run pre-commit run
 
 .PHONY: typecheck
 typecheck: .uv ## Run static type checking with mypy

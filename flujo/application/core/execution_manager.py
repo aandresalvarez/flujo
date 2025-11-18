@@ -1,14 +1,9 @@
 """Main execution manager that orchestrates pipeline execution components."""
 
 from __future__ import annotations
-import asyncio
-import time
-import uuid
+
 from datetime import datetime
-from typing import Any, AsyncIterator, Dict, List, Generic, Optional, TypeVar, cast
-
-
-
+from typing import Any, AsyncIterator, Generic, Optional, TypeVar
 
 from flujo.domain.backends import ExecutionBackend
 from flujo.domain.models import (
@@ -160,7 +155,6 @@ class ExecutionManager(Generic[ContextT]):
             Streaming output chunks or step results
         """
         try:
-
             from ...infra import telemetry as _tm
 
             _tm.logfire.debug(
@@ -1180,8 +1174,6 @@ class ExecutionManager(Generic[ContextT]):
         """Set the final context in the pipeline result."""
         if context is not None:
             result.final_pipeline_context = context
-
-
 
     async def persist_final_state(
         self,
