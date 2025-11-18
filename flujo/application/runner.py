@@ -51,6 +51,8 @@ from ..domain.models import (
     Failure,
     Paused,
     Chunk,
+    ConversationTurn,
+    ConversationRole,
 )
 from ..domain.commands import AgentCommand
 from pydantic import TypeAdapter
@@ -1355,7 +1357,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                             executed_successfully=True,
                         )
                         ctx.command_log.append(log_entry)
-                        ctx.conversation_history.append(str(current_input))
+                        ctx.conversation_history.append(ConversationTurn(role=ConversationRole.user, content=str(current_input)))
             step_history = paused_result.step_history[:start_idx]
             step_history.append(paused_step_result)
             paused_result.step_history = step_history
