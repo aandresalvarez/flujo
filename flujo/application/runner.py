@@ -51,8 +51,6 @@ from ..domain.models import (
     Failure,
     Paused,
     Chunk,
-    ConversationTurn,
-    ConversationRole,
 )
 from ..domain.commands import AgentCommand
 from pydantic import TypeAdapter
@@ -60,7 +58,7 @@ from ..domain.resources import AppResources
 from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend
 from ..infra.console_tracer import ConsoleTracer
-from ..state import StateBackend
+from ..state import StateBackend, WorkflowState
 from ..infra.registry import PipelineRegistry
 
 from .core.context_manager import (
