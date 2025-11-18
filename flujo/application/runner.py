@@ -51,8 +51,6 @@ from ..domain.models import (
     Failure,
     Paused,
     Chunk,
-    ConversationTurn,
-    ConversationRole,
 )
 from ..domain.commands import AgentCommand
 from pydantic import TypeAdapter
@@ -1278,13 +1276,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 if isinstance(ctx, PipelineContext):
                     if not isinstance(getattr(ctx, "conversation_history", None), list):
                         setattr(ctx, "conversation_history", [])
-                    from flujo.domain.models import ConversationTurn, ConversationRole
 
                     hist = ctx.conversation_history
                     last_content = hist[-1].content if hist else None
                     text_value = str(current_input)
                     if text_value and text_value != last_content:
-                        hist.append(ConversationTurn(role=ConversationRole.user, content=text_value))
+                        hist.append(current_input)
             except Exception:
                 pass
             paused_step_result = StepResult(
@@ -1358,12 +1355,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                             executed_successfully=True,
                         )
                         ctx.command_log.append(log_entry)
-                        ctx.conversation_history.append(
-                            ConversationTurn(
-                                role=ConversationRole.user,
-                                content=str(current_input),
-                            )
-                        )
+                        ctx.conversation_history.append(str(current_input))
             step_history = paused_result.step_history[:start_idx]
             step_history.append(paused_step_result)
             paused_result.step_history = step_history
