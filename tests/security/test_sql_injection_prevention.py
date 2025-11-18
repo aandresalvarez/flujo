@@ -7,7 +7,7 @@ legal, and finance applications where data integrity and security are paramount.
 
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, AsyncMock
 from datetime import datetime
 
 from flujo.state.backends.sqlite import (
