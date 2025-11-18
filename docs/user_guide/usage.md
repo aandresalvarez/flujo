@@ -106,6 +106,13 @@ if result.trace_tree:
     print(f"Steps executed: {len(result.step_history)}")
     for step in result.step_history:
         print(f"  {step.name}: {'✅' if step.success else '❌'} ({step.latency_s:.3f}s)")
+
+# When you're done, close the runner (or use it as a context manager) to release resources.
+flujo.close()
+
+# Context manager usage guarantees cleanup even if an exception is raised.
+with Flujo(pipeline) as runner:
+    runner.run("SELECT FROM")
 ```
 
 ## Environment Variables
