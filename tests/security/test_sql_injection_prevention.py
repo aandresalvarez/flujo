@@ -312,7 +312,7 @@ async def test_parameterized_queries_used(tmp_path: Path):
         async_mock_create = AsyncMock(side_effect=_fake_create_connection)
         async_mock_init = AsyncMock()
 
-        with patch.object(backend, "_create_connection", new=async_mock_create) as mock_conn_factory, \
+        with patch.object(backend, "_create_connection", new=async_mock_create), \
              patch.object(backend, "_init_db", new=async_mock_init):
 
             # Try to save state with potentially malicious input
@@ -430,7 +430,7 @@ async def test_edge_case_security():
             identifier_valid = _validate_sql_identifier(column_name)
             definition_valid = _validate_column_definition(column_def)
             assert not (identifier_valid is True and definition_valid is True), (
-                f"Validation failed: {repr(column_name)} and {repr(column_def)} were both accepted!"
+                f"Validation failed: {column_name!r} and {column_def!r} were both accepted!"
             )
         except ValueError:
             # Expected for unsafe inputs

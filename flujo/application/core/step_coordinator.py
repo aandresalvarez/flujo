@@ -419,8 +419,10 @@ class StepCoordinator(Generic[ContextT]):
                                 except Exception:
                                     pass
                                 raise PipelineAbortSignal("Paused for HITL")
+
                             else:
                                 # Unknown control outcome: propagate as abort
+
                                 raise PipelineAbortSignal("Paused for HITL")
                         else:
                             # Backend returned a legacy value or invalid.

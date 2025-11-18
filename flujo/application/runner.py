@@ -337,7 +337,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         else:
             self.state_backend = state_backend
         # Track ownership to ensure we only tear down default state backends automatically.
-        self._owns_state_backend = state_backend is None
+        self._owns_state_backend: bool = state_backend is None
         self.delete_on_completion = delete_on_completion
         self._pending_close_tasks: list[asyncio.Task[Any]] = []
 
@@ -510,8 +510,6 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         step_coordinator: StepCoordinator[ContextT] = StepCoordinator[ContextT](
             self.hooks, self.resources
         )
-
-        # Build root quota if usage limits are defined
         root_quota = None
         if self.usage_limits is not None:
             total_cost_limit = (
@@ -866,7 +864,17 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         except Exception:
                             expected = 0
                         have = len(chunk.step_history)
-                        if expected > 0 and have < expected and start_idx == 0:
+                        # Check if paused to avoid padding valid partial results
+                        is_paused = False
+                        try:
+                            ctx = chunk.final_pipeline_context
+                            if ctx and getattr(ctx, "scratchpad", {}).get("status") == "paused":
+                                is_paused = True
+                        except Exception:
+                            pass
+
+                        if not is_paused and expected > 0 and have < expected and start_idx == 0:
+
                             # Pad only when we suspect a missing-outcome scenario:
                             # - explicit 'no terminal outcome' feedback, OR
                             # - no recorded failures so far (all successes) but history is short

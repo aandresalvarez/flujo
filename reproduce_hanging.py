@@ -10,7 +10,7 @@ import sys
 # The user said "OpenAI API: Working".
 # I'll try to use a dummy agent first to see if it hangs without OpenAI.
 
-async def simple_agent(input_str: str, context) -> str:
+async def simple_agent(input_str: str) -> str:
     return f"Echo: {input_str}"
 
 step = Step.solution(simple_agent, name="test")
