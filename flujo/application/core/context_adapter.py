@@ -643,12 +643,12 @@ def _inject_context_with_deep_merge(
                 except Exception:
                     pass
                 setattr(context, key, value)
-        elif not hasattr(context, key):
-            # Skip fields that don't exist in the context model
-            continue
         else:
-            # If the field exists on the context but is not in the model, set it directly
-            setattr(context, key, value)
+            # Allow dynamic or previously-added attributes (Pydantic BaseModel blocks setattr)
+            try:
+                object.__setattr__(context, key, value)
+            except Exception:
+                setattr(context, key, value)
 
     # Final validation pass
     try:
@@ -720,12 +720,11 @@ def _inject_context(
 
             # Apply the validated value to the specific field
             setattr(context, key, value)
-        elif not hasattr(context, key):
-            # Skip fields that don't exist in the context model
-            continue
         else:
-            # If the field exists on the context but is not in the model, set it directly
-            setattr(context, key, value)
+            try:
+                object.__setattr__(context, key, value)
+            except Exception:
+                setattr(context, key, value)
 
     # Final validation pass
     try:

@@ -19,6 +19,14 @@ _VERBOSE_DEBUG: bool = bool(os.getenv("FLUJO_VERBOSE_CONTEXT_DEBUG"))
 T = TypeVar("T", bound=BaseModel)
 
 
+def _force_setattr(target: Any, name: str, value: Any) -> None:
+    """Assign attribute bypassing Pydantic's field checks when necessary."""
+    try:
+        setattr(target, name, value)
+    except Exception:
+        object.__setattr__(target, name, value)
+
+
 # Cache for excluded fields to avoid repeated environment variable access
 _EXCLUDED_FIELDS_CACHE: Optional[set[str]] = None
 _ENV_EXCLUDED_FIELDS_CACHE: Optional[str] = None
@@ -318,6 +326,18 @@ def safe_merge_context_updates(
                 if not key.startswith("_")
             }
 
+        # Include dynamically added attributes that model_dump/model.dict may skip
+        try:
+            extra_attrs = getattr(source_context, "__dict__", {})
+            if isinstance(extra_attrs, dict):
+                for extra_key, extra_value in extra_attrs.items():
+                    if extra_key.startswith("_"):
+                        continue
+                    if extra_key not in source_fields:
+                        source_fields[extra_key] = extra_value
+        except Exception:
+            pass
+
         # Performance guard: if source_fields look like trivial mock data, skip merge
         try:
             from unittest.mock import Mock
@@ -370,7 +390,13 @@ def safe_merge_context_updates(
                 # Check if field exists in target
                 if not hasattr(target_context, field_name):
                     if _VERBOSE_DEBUG:
-                        logger.debug(f"Field not found in target: {field_name}")
+                        logger.debug(f"Field not found in target: {field_name}, creating it")
+                    try:
+                        value_to_set = getattr(source_context, field_name)
+                    except Exception:
+                        value_to_set = source_value
+                    _force_setattr(target_context, field_name, value_to_set)
+                    updated_count += 1
                     continue
 
                 # Always get the actual value from the source context for merging
@@ -414,7 +440,7 @@ def safe_merge_context_updates(
                         current_value, actual_source_value
                     )
                     if merged_value != current_value:
-                        setattr(target_context, field_name, merged_value)
+                        _force_setattr(target_context, field_name, merged_value)
                         updated_count += 1
                         if _VERBOSE_DEBUG:
                             logger.debug(f"Updated dict field: {field_name}")
@@ -475,7 +501,7 @@ def safe_merge_context_updates(
                     try:
                         if current_value != actual_source_value:
                             # Use setattr to trigger Pydantic validation
-                            setattr(target_context, field_name, actual_source_value)
+                            _force_setattr(target_context, field_name, actual_source_value)
                             updated_count += 1
                             if _VERBOSE_DEBUG:
                                 logger.debug(f"Updated simple field: {field_name}")
@@ -554,7 +580,7 @@ def safe_context_field_update(context: Any, field_name: str, new_value: Any) -> 
         # Only update if value has changed
         if current_value != new_value:
             # Use setattr to trigger Pydantic validation
-            setattr(context, field_name, new_value)
+            _force_setattr(context, field_name, new_value)
 
             # Note: Pydantic v2 field validators are not automatically called on attribute assignment
             # So we don't validate the entire context after each field update
@@ -794,7 +820,7 @@ def set_nested_context_field(context: Any, path: str, value: Any) -> bool:
             return True
         else:
             # Fall back to attribute assignment
-            setattr(target, final_field, value)
+            _force_setattr(target, final_field, value)
             return True
     except (AttributeError, TypeError) as e:
         raise AttributeError(

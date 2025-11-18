@@ -1,0 +1,39 @@
+version: '0.1'
+name: test_hitl_loop_local
+
+steps:
+  # Initialize counter
+  - kind: step
+    name: init
+    uses: "skills.custom_tools:init_counter"
+    updates_context: true
+
+  # Simple loop with HITL (stubbed agent)
+  - kind: loop
+    name: test_loop
+    loop:
+      body:
+        # Agent decides: ask or finish (stubbed)
+        - kind: step
+          name: agent_decides
+          uses: "skills.custom_tools:counter_agent"
+          input: |
+            Current count: {{ context.count }}
+            Decide: ask or finish?
+          updates_context: true
+
+        # HITL step
+        - kind: hitl
+          name: ask_user
+          message: "{{ previous_step.question }}"
+
+      # Exit when agent says finish
+      exit_expression: "context.action == 'finish'"
+      max_loops: 10
+
+  # Final step to confirm we exited the loop
+  - kind: step
+    name: success
+    uses: "flujo.builtins.passthrough"
+    input: "SUCCESS! Loop exited cleanly after {{ context.count }} iterations."
+

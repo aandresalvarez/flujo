@@ -223,13 +223,16 @@ def make_agentic_loop_pipeline(
                 elif cmd.type == "ask_human":
                     if isinstance(context, PipelineContext):
                         context.scratchpad["paused_step_input"] = cmd
+                        context.scratchpad["loop_resume_requires_hitl_output"] = True
                     # Do NOT create or append a log entry here; only log on resume
                     from flujo.infra import telemetry
 
                     telemetry.logfire.info(
                         f"_CommandExecutor raising PausedException for question: {cmd.question}"
                     )
-                    raise PausedException(message=cmd.question)
+                    pause_exc = PausedException(message=cmd.question)
+                    setattr(pause_exc, "requires_resume_payload", True)
+                    raise pause_exc
                 elif cmd.type == "finish":
                     exec_result = cmd.final_answer
             except PausedException:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+from dataclasses import dataclass
 from typing import Any, Awaitable, Optional, Protocol, Callable, Dict, List, Tuple, Type
 from typing import Any as _Any
 from unittest.mock import Mock, MagicMock, AsyncMock
@@ -205,6 +206,86 @@ import time  # noqa: E402
 Note: The pipeline orchestration helper has moved to ExecutorCore._execute_pipeline_via_policies
 to centralize orchestration logic. Policy code should delegate to the core instead of re-implementing it.
 """
+
+
+# Structured helpers ---------------------------------------------------------
+
+
+@dataclass
+class LoopResumeState:
+    """Structured representation of the data needed to resume a paused loop iteration."""
+
+    iteration: int = 1
+    step_index: int = 0
+    requires_hitl_payload: bool = False
+    last_output: Any | None = None
+    paused_step_name: str | None = None
+
+    STORAGE_KEY = "loop_resume_state"
+
+    @classmethod
+    def from_context(cls, context: Any) -> Optional["LoopResumeState"]:
+        scratch = getattr(context, "scratchpad", None)
+        if not isinstance(scratch, dict):
+            return None
+        raw = scratch.get(cls.STORAGE_KEY)
+        if isinstance(raw, dict):
+            try:
+                return cls(
+                    iteration=int(raw.get("iteration", 1)),
+                    step_index=int(raw.get("step_index", 0)),
+                    requires_hitl_payload=bool(raw.get("requires_hitl_payload", False)),
+                    last_output=raw.get("last_output"),
+                    paused_step_name=raw.get("paused_step_name"),
+                )
+            except Exception:
+                pass
+
+        maybe_iteration = scratch.get("loop_iteration")
+        maybe_index = scratch.get("loop_step_index")
+        if isinstance(maybe_iteration, int) and isinstance(maybe_index, int):
+            return cls(
+                iteration=maybe_iteration,
+                step_index=maybe_index,
+                requires_hitl_payload=bool(scratch.get("loop_resume_requires_hitl_output")),
+                last_output=scratch.get("loop_last_output"),
+                paused_step_name=scratch.get("loop_paused_step_name"),
+            )
+        return None
+
+    def persist(self, context: Any, body_length: int) -> None:
+        scratch = getattr(context, "scratchpad", None)
+        if not isinstance(scratch, dict):
+            return
+        bounded_index = max(0, min(self.step_index, body_length))
+        payload = {
+            "iteration": max(1, self.iteration),
+            "step_index": bounded_index,
+            "requires_hitl_payload": bool(self.requires_hitl_payload),
+            "last_output": self.last_output,
+            "paused_step_name": self.paused_step_name,
+        }
+        scratch[self.STORAGE_KEY] = payload
+        scratch["loop_iteration"] = payload["iteration"]
+        scratch["loop_step_index"] = bounded_index
+        scratch["loop_last_output"] = self.last_output
+        if self.paused_step_name:
+            scratch["loop_paused_step_name"] = self.paused_step_name
+        if self.requires_hitl_payload:
+            scratch["loop_resume_requires_hitl_output"] = True
+        else:
+            scratch.pop("loop_resume_requires_hitl_output", None)
+
+    @classmethod
+    def clear(cls, context: Any) -> None:
+        scratch = getattr(context, "scratchpad", None)
+        if isinstance(scratch, dict):
+            scratch.pop(cls.STORAGE_KEY, None)
+            scratch.pop("loop_iteration", None)
+            scratch.pop("loop_step_index", None)
+            scratch.pop("loop_last_output", None)
+            scratch.pop("loop_paused_step_name", None)
+            scratch.pop("loop_resume_requires_hitl_output", None)
 
 
 # --- Policy Registry (FSD-010) ---
@@ -4510,6 +4591,12 @@ class DefaultLoopStepExecutor:
         # Instead of using a for loop that restarts on PausedException, we use a while loop
         # that can track position within the loop body and resume from the correct step.
 
+        def _clear_hitl_markers(ctx: Any) -> None:
+            scratch = getattr(ctx, "scratchpad", None)
+            if isinstance(scratch, dict):
+                scratch.pop("hitl_data", None)
+                scratch.pop("paused_step_input", None)
+
         # Restore iteration counter when resuming loops
         saved_iteration = 1
         saved_step_index = 0
@@ -4519,7 +4606,22 @@ class DefaultLoopStepExecutor:
         resume_payload = data
         paused_step_name: str | None = None
         scratchpad_ref = getattr(current_context, "scratchpad", None)
-        if isinstance(scratchpad_ref, dict):
+
+        resume_state = LoopResumeState.from_context(current_context) if current_context else None
+        if resume_state is not None:
+            saved_iteration = resume_state.iteration
+            saved_step_index = resume_state.step_index
+            is_resuming = True
+            saved_last_output = resume_state.last_output
+            resume_requires_hitl_output = resume_state.requires_hitl_payload
+            paused_step_name = resume_state.paused_step_name
+            LoopResumeState.clear(current_context)
+            if isinstance(scratchpad_ref, dict):
+                scratchpad_ref["status"] = "running"
+            telemetry.logfire.info(
+                f"LoopStep '{loop_step.name}' RESUMING from iteration {saved_iteration}, step {saved_step_index}"
+            )
+        elif isinstance(scratchpad_ref, dict):
             maybe_iteration = scratchpad_ref.get("loop_iteration")
             maybe_index = scratchpad_ref.get("loop_step_index")
             maybe_status = scratchpad_ref.get("status")
@@ -4546,32 +4648,31 @@ class DefaultLoopStepExecutor:
                     f"LoopStep '{loop_step.name}' RESUMING from iteration {saved_iteration}, step {saved_step_index} (status={maybe_status})"
                 )
 
-                # Ensure status reflects active execution
                 scratchpad_ref["status"] = "running"
 
-                if resume_requires_hitl_output:
-                    # Prefer the most recent HITL response recorded on the context over the inbound data payload.
-                    try:
-                        hitl_history = getattr(current_context, "hitl_history", None)
-                        if isinstance(hitl_history, list) and hitl_history:
-                            latest_resp = getattr(hitl_history[-1], "human_response", None)
-                            if latest_resp is not None:
-                                resume_payload = latest_resp
-                    except Exception:
-                        pass
-                    if resume_payload is None:
-                        try:
-                            steps_snap = scratchpad_ref.get("steps")
-                            if (
-                                isinstance(steps_snap, dict)
-                                and isinstance(paused_step_name, str)
-                                and paused_step_name in steps_snap
-                            ):
-                                resume_payload = steps_snap.get(paused_step_name)
-                        except Exception:
-                            pass
-                else:
-                    resume_payload = data
+        if resume_requires_hitl_output:
+            # Prefer the most recent HITL response recorded on the context over the inbound data payload.
+            try:
+                hitl_history = getattr(current_context, "hitl_history", None)
+                if isinstance(hitl_history, list) and hitl_history:
+                    latest_resp = getattr(hitl_history[-1], "human_response", None)
+                    if latest_resp is not None:
+                        resume_payload = latest_resp
+            except Exception:
+                pass
+            if resume_payload is None and isinstance(scratchpad_ref, dict):
+                try:
+                    steps_snap = scratchpad_ref.get("steps")
+                    if (
+                        isinstance(steps_snap, dict)
+                        and isinstance(paused_step_name, str)
+                        and paused_step_name in steps_snap
+                    ):
+                        resume_payload = steps_snap.get(paused_step_name)
+                except Exception:
+                    pass
+        else:
+            resume_payload = data
 
         iteration_count = saved_iteration if saved_iteration >= 1 else 1
         current_step_index = saved_step_index  # Track position within loop body
@@ -4850,7 +4951,9 @@ class DefaultLoopStepExecutor:
                                 if iter_mapper is not None:
                                     # iteration_count already reflects the new iteration; mapper expects
                                     # the index of the completed one → iteration_count - 1
-                                    mapped_input = iter_mapper(current_data, current_context, iteration_count - 1)
+                                    mapped_input = iter_mapper(
+                                        current_data, current_context, iteration_count - 1
+                                    )
                                     current_data = mapped_input
                                     telemetry.logfire.info(
                                         f"[POLICY] RESUME: Applied iteration_input_mapper for iteration {iteration_count - 1} to seed next iteration"
@@ -4868,6 +4971,7 @@ class DefaultLoopStepExecutor:
                     for step_idx in range(current_step_index, len(loop_body_steps)):
                         step = loop_body_steps[step_idx]
                         current_step_index = step_idx  # Update position
+                        consumed_resume_for_step = False
 
                         telemetry.logfire.info(
                             f"[POLICY] Executing step {step_idx + 1}/{len(loop_body_steps)}: {getattr(step, 'name', 'unnamed')}"
@@ -4885,6 +4989,7 @@ class DefaultLoopStepExecutor:
                                 telemetry.logfire.info(
                                     f"[POLICY] RESUME: Passing human input to step {step_idx + 1} (HITL resumption)"
                                 )
+                                consumed_resume_for_step = isinstance(step, HumanInTheLoopStep)
                             else:
                                 telemetry.logfire.info(
                                     f"[POLICY] RESUME: Re-running step {step_idx + 1} with prior data (non-HITL pause)"
@@ -4937,6 +5042,10 @@ class DefaultLoopStepExecutor:
                                 )
                             cumulative_cost += step_result.cost_usd or 0.0
                             cumulative_tokens += step_result.token_counts or 0
+
+                            if consumed_resume_for_step and isinstance(step, HumanInTheLoopStep):
+                                _clear_hitl_markers(iteration_context)
+                                _clear_hitl_markers(current_context)
 
                             telemetry.logfire.info(
                                 f"[POLICY] Step {step_idx + 1} completed successfully"
@@ -5001,44 +5110,64 @@ class DefaultLoopStepExecutor:
                             ):
                                 current_context.scratchpad["status"] = "paused"
                                 current_context.scratchpad["pause_message"] = str(e)
-
-                                # CRITICAL FIX: Save current loop data for resume
-                                # This ensures we can restore the correct data flow on resume
-                                current_context.scratchpad["loop_last_output"] = current_data
-
                                 body_len = len(loop_body_steps)
-                                resume_next_index = step_idx
                                 resume_iteration = iteration_count
                                 paused_step_is_hitl = isinstance(step, HumanInTheLoopStep)
+                                exception_requires_payload = bool(
+                                    getattr(e, "requires_resume_payload", False)
+                                )
+                                scratchpad_data: dict[str, Any] = {}
+                                try:
+                                    scratchpad_data = (
+                                        current_context.scratchpad
+                                        if isinstance(
+                                            getattr(current_context, "scratchpad", None), dict
+                                        )
+                                        else {}
+                                    )
+                                except Exception:
+                                    scratchpad_data = {}
+                                pending_cmd_present = bool(scratchpad_data.get("paused_step_input"))
+                                # Non-HITL steps (e.g., command executor) tag this flag to
+                                # signal that a human payload is required on resume even if
+                                # paused_step_input was cleared during context merging.
+                                loop_resume_flag = bool(
+                                    scratchpad_data.get("loop_resume_requires_hitl_output")
+                                )
+                                ask_human_pending = False
+                                try:
+                                    from flujo.domain.commands import AskHumanCommand as _AskHuman
 
-                                if paused_step_is_hitl:
-                                    resume_next_index = step_idx + 1
-
+                                    ask_human_pending = isinstance(current_data, _AskHuman)
+                                except Exception:
+                                    try:
+                                        ask_human_pending = bool(
+                                            isinstance(current_data, dict)
+                                            and str(current_data.get("type", "")).lower()
+                                            == "ask_human"
+                                        )
+                                    except Exception:
+                                        ask_human_pending = False
+                                requires_resume_payload = bool(
+                                    paused_step_is_hitl
+                                    or pending_cmd_present
+                                    or exception_requires_payload
+                                    or loop_resume_flag
+                                    or ask_human_pending
+                                )
+                                resume_next_index = (
+                                    step_idx + 1 if requires_resume_payload else step_idx
+                                )
                                 if resume_next_index < 0:
                                     resume_next_index = 0
-                                if resume_next_index > body_len:
+                                elif resume_next_index > body_len:
                                     resume_next_index = body_len
-
-                                current_context.scratchpad["loop_step_index"] = resume_next_index
-                                current_context.scratchpad["loop_iteration"] = resume_iteration
-                                if isinstance(getattr(step, "name", None), str):
-                                    current_context.scratchpad["loop_paused_step_name"] = getattr(
-                                        step, "name", ""
-                                    )
-
-                                if paused_step_is_hitl:
-                                    current_context.scratchpad[
-                                        "loop_resume_requires_hitl_output"
-                                    ] = True
-                                else:
-                                    current_context.scratchpad.pop(
-                                        "loop_resume_requires_hitl_output", None
-                                    )
-
                                 # If the paused step is the last in the body and it's NOT a HITL
                                 # (e.g., agentic command executor raised a pause to ask human),
                                 # advance to the next iteration so the planner can produce the next command.
                                 if not paused_step_is_hitl and (step_idx + 1) >= body_len:
+                                    resume_iteration = iteration_count + 1
+                                    resume_next_index = 0
                                     current_context.scratchpad["loop_step_index"] = 0
                                     current_context.scratchpad["loop_iteration"] = (
                                         iteration_count + 1
@@ -5047,12 +5176,12 @@ class DefaultLoopStepExecutor:
                                         f"LoopStep '{loop_step.name}' paused at final non-HITL step {step_idx + 1}, "
                                         "will resume at next iteration"
                                     )
-                                elif paused_step_is_hitl and resume_next_index >= body_len:
+                                elif requires_resume_payload and resume_next_index >= body_len:
                                     telemetry.logfire.info(
                                         f"LoopStep '{loop_step.name}' paused at final HITL step {step_idx + 1}, "
                                         "will resume with human response before next iteration"
                                     )
-                                elif paused_step_is_hitl:
+                                elif requires_resume_payload:
                                     telemetry.logfire.info(
                                         f"LoopStep '{loop_step.name}' paused at HITL step {step_idx + 1}, "
                                         f"will resume at step {resume_next_index + 1}"
@@ -5062,6 +5191,15 @@ class DefaultLoopStepExecutor:
                                         f"LoopStep '{loop_step.name}' paused at step {step_idx + 1}, "
                                         f"will resume by retrying this step"
                                     )
+
+                                resume_state = LoopResumeState(
+                                    iteration=resume_iteration,
+                                    step_index=resume_next_index,
+                                    requires_hitl_payload=requires_resume_payload,
+                                    last_output=current_data,
+                                    paused_step_name=getattr(step, "name", None),
+                                )
+                                resume_state.persist(current_context, body_len)
 
                             # ✅ CRITICAL: Re-raise PausedException to let runner handle pause/resume
                             # When resumed, the loop will continue from current_step_index
@@ -7381,12 +7519,13 @@ class DefaultHitlStepExecutor:
             last = hitl_hist[-1] if isinstance(hitl_hist, list) and hitl_hist else None
             sp = getattr(context, "scratchpad", None) if context is not None else None
             prev_data = sp.get("hitl_data") if isinstance(sp, dict) else None
+            status_is_paused = isinstance(sp, dict) and sp.get("status") == "paused"
             same_input = False
             try:
                 same_input = (prev_data == data) or (str(prev_data) == str(data))
             except Exception:
                 same_input = False
-            if last is not None and same_input:
+            if last is not None and same_input and status_is_paused:
                 msg = getattr(last, "message_to_human", None)
                 resp = getattr(last, "human_response", None)
                 if isinstance(msg, str) and msg == rendered_message and resp is not None:

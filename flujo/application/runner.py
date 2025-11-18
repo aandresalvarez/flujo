@@ -1299,6 +1299,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         execution_result=human_input,
                     )
                     ctx.command_log.append(log_entry)
+                    try:
+                        if isinstance(ctx.scratchpad, dict):
+                            ctx.scratchpad["loop_last_output"] = log_entry
+                    except Exception:
+                        pass
                 else:
                     # If we cannot reconstruct the command, still record an AskHuman with the pause message
                     try:
@@ -1310,6 +1315,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                             execution_result=human_input,
                         )
                         ctx.command_log.append(log_entry)
+                        try:
+                            if isinstance(ctx.scratchpad, dict):
+                                ctx.scratchpad["loop_last_output"] = log_entry
+                        except Exception:
+                            pass
                     except Exception:
                         pass
         # Resume semantics:

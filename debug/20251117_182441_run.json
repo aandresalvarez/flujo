@@ -1,0 +1,497 @@
+{
+  "exported_at": "2025-11-17T18:24:41.227151Z",
+  "pipeline_name": "pipeline",
+  "run_id": null,
+  "env": {
+    "FLUJO_DEBUG": "1",
+    "FLUJO_DEBUG_PROMPTS": null,
+    "FLUJO_TRACE_PREVIEW_LEN": null
+  },
+  "trace_tree": {
+    "name": "pipeline_run",
+    "status": "failed",
+    "start_time": 140742.253518625,
+    "end_time": 140742.338789291,
+    "attributes": {
+      "flujo.input": "",
+      "flujo.run_id": "run_6bdac9e69e004db0b678c60538948c7a",
+      "flujo.pipeline.name": "test_hitl_loop_local",
+      "flujo.pipeline.version": "latest"
+    },
+    "events": [],
+    "children": [
+      {
+        "name": "init",
+        "status": "completed",
+        "start_time": 140742.25393625,
+        "end_time": 140742.254860333,
+        "attributes": {
+          "flujo.step.type": "Step",
+          "step_input": "",
+          "flujo.step.policy": "DefaultAgentStepExecutor",
+          "flujo.cache.hit": false,
+          "success": true,
+          "latency_s": 0.000358083,
+          "flujo.budget.actual_cost_usd": 0.0,
+          "flujo.budget.actual_tokens": 0
+        },
+        "events": [],
+        "children": []
+      },
+      {
+        "name": "test_loop",
+        "status": "running",
+        "start_time": 140742.256445875,
+        "end_time": null,
+        "attributes": {
+          "flujo.step.type": "LoopStep",
+          "step_input": "{'count': 1}",
+          "flujo.step.policy": "DefaultLoopStepExecutor",
+          "flujo.cache.hit": false
+        },
+        "events": [
+          {
+            "name": "loop.iteration",
+            "attributes": {
+              "iteration": 1
+            }
+          },
+          {
+            "name": "flujo.resumed",
+            "attributes": {
+              "human_input": "yes"
+            }
+          }
+        ],
+        "children": [
+          {
+            "name": "test_loop",
+            "status": "failed",
+            "start_time": 140742.308735916,
+            "end_time": 140742.317421208,
+            "attributes": {
+              "flujo.step.type": "LoopStep",
+              "step_input": "yes",
+              "flujo.step.policy": "DefaultLoopStepExecutor",
+              "flujo.cache.hit": false,
+              "success": false,
+              "latency_s": 0.007997916982276365,
+              "flujo.budget.actual_cost_usd": 0.0,
+              "flujo.budget.actual_tokens": 0,
+              "feedback": "reached max_loops"
+            },
+            "events": [
+              {
+                "name": "loop.iteration",
+                "attributes": {
+                  "iteration": 1
+                }
+              },
+              {
+                "name": "loop.iteration",
+                "attributes": {
+                  "iteration": 2
+                }
+              },
+              {
+                "name": "loop.iteration",
+                "attributes": {
+                  "iteration": 3
+                }
+              },
+              {
+                "name": "loop.iteration",
+                "attributes": {
+                  "iteration": 4
+                }
+              },
+              {
+                "name": "loop.iteration",
+                "attributes": {
+                  "iteration": 5
+                }
+              },
+              {
+                "name": "loop.iteration",
+                "attributes": {
+                  "iteration": 6
+                }
+              },
+              {
+                "name": "loop.iteration",
+                "attributes": {
+                  "iteration": 7
+                }
+              },
+              {
+                "name": "loop.iteration",
+                "attributes": {
+                  "iteration": 8
+                }
+              },
+              {
+                "name": "loop.iteration",
+                "attributes": {
+                  "iteration": 9
+                }
+              },
+              {
+                "name": "loop.iteration",
+                "attributes": {
+                  "iteration": 10
+                }
+              }
+            ],
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "result": {
+    "total_cost_usd": 0.0,
+    "total_tokens": 0,
+    "step_history": [
+      {
+        "name": "init",
+        "success": true,
+        "attempts": 1,
+        "latency_s": 0.000358083,
+        "token_counts": 0,
+        "cost_usd": 0.0,
+        "feedback": null,
+        "output": {
+          "count": 1
+        },
+        "metadata": {},
+        "step_history": []
+      },
+      {
+        "name": "test_loop",
+        "success": false,
+        "attempts": 10,
+        "latency_s": 0.007997916982276365,
+        "token_counts": 0,
+        "cost_usd": 0.0,
+        "feedback": "reached max_loops",
+        "output": "yes",
+        "metadata": {
+          "iterations": 10,
+          "exit_reason": "max_loops",
+          "evaluated_expression": "context.action == 'finish'",
+          "evaluated_value": false
+        },
+        "step_history": [
+          {
+            "name": "agent_decides",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.000576916,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": {
+              "action": "ask",
+              "question": "Question 1?",
+              "count": 1
+            },
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "ask_user",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.0,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": "yes",
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "agent_decides",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.000448333,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": {
+              "action": "ask",
+              "question": "Question 1?",
+              "count": 1
+            },
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "ask_user",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.0,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": "yes",
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "agent_decides",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.000445833,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": {
+              "action": "ask",
+              "question": "Question 1?",
+              "count": 1
+            },
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "ask_user",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.0,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": "yes",
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "agent_decides",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.000432333,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": {
+              "action": "ask",
+              "question": "Question 1?",
+              "count": 1
+            },
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "ask_user",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.0,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": "yes",
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "agent_decides",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.00048975,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": {
+              "action": "ask",
+              "question": "Question 1?",
+              "count": 1
+            },
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "ask_user",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.0,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": "yes",
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "agent_decides",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.000447583,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": {
+              "action": "ask",
+              "question": "Question 1?",
+              "count": 1
+            },
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "ask_user",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.0,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": "yes",
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "agent_decides",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.000475792,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": {
+              "action": "ask",
+              "question": "Question 1?",
+              "count": 1
+            },
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "ask_user",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.0,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": "yes",
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "agent_decides",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.000426167,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": {
+              "action": "ask",
+              "question": "Question 1?",
+              "count": 1
+            },
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "ask_user",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.0,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": "yes",
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "agent_decides",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.000414667,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": {
+              "action": "ask",
+              "question": "Question 1?",
+              "count": 1
+            },
+            "metadata": {},
+            "step_history": []
+          },
+          {
+            "name": "ask_user",
+            "success": true,
+            "attempts": 1,
+            "latency_s": 0.0,
+            "token_counts": 0,
+            "cost_usd": 0.0,
+            "feedback": null,
+            "output": "yes",
+            "metadata": {},
+            "step_history": []
+          }
+        ]
+      }
+    ]
+  },
+  "final_context": {
+    "run_id": "run_6bdac9e69e004db0b678c60538948c7a",
+    "initial_prompt": "",
+    "scratchpad": {
+      "status": "failed",
+      "steps": {
+        "init": {
+          "count": 1
+        },
+        "agent_decides": {
+          "action": "ask",
+          "question": "Question 1?",
+          "count": 1
+        },
+        "test_loop": "yes",
+        "ask_user": "yes"
+      },
+      "last_state_update": 140742.258001416,
+      "hitl_message": "Question 1?",
+      "hitl_data": {
+        "action": "ask",
+        "question": "Question 1?",
+        "count": 1
+      },
+      "pause_message": "Question 1?"
+    },
+    "hitl_history": [
+      {
+        "message_to_human": "Question 1?",
+        "human_response": "yes",
+        "timestamp": "2025-11-17T18:24:39.597517+00:00"
+      }
+    ],
+    "command_log": [
+      {
+        "turn": 1,
+        "generated_command": {
+          "type": "ask_human",
+          "question": "Question 1?"
+        },
+        "execution_result": "yes",
+        "timestamp": "2025-11-17T18:24:39.597537+00:00"
+      }
+    ],
+    "conversation_history": [
+      {
+        "role": "assistant",
+        "content": "Question 1?"
+      },
+      {
+        "role": "user",
+        "content": "yes"
+      }
+    ],
+    "call_count": 0
+  }
+}

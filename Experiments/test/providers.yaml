@@ -1,0 +1,7 @@
+providers:
+  openai_default:
+    engine: "openai:gpt-4o-mini"
+    temperature: 0.2
+  anthropic_safe:
+    engine: "anthropic:claude-*"
+    temperature: 0.1
