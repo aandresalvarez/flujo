@@ -248,6 +248,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         # Strict behavior toggles (robust defaults with optional enforcement)
         strict_context_isolation: bool = False,
         strict_context_merge: bool = False,
+        enable_optimized_error_handling: bool = True,
     ) -> None:
         # Validate parameters for compatibility
         if cache_size <= 0:
@@ -267,6 +268,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
         self._telemetry = telemetry or DefaultTelemetry()
         self._enable_cache = enable_cache
+        self.enable_optimized_error_handling = enable_optimized_error_handling
         # Estimation selection: factory first, then direct estimator, then default
         self._estimator_factory: UsageEstimatorFactory = (
             estimator_factory or build_default_estimator_factory()
@@ -829,41 +831,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # Critical control-flow: re-raise for callers that expect exceptions
             raise
         except Exception as e:
-            try:
-                telemetry.logfire.error(
-                    f"[DEBUG] ExecutorCore caught unexpected exception at step '{step_name}': {type(e).__name__}: {e}"
-                )
-            except Exception:
-                pass
-            step_name = str(getattr(step, "name", type(step).__name__))
-            # Normalize feedback to include error-type prefix for clearer propagation
-            err_type = type(e).__name__ if hasattr(e, "__class__") else "Exception"
-            failed_sr = StepResult(
-                name=step_name,
-                output=None,
-                success=False,
-                attempts=1,
-                latency_s=0.0,
-                token_counts=0,
-                cost_usd=0.0,
-                feedback=f"{err_type}: {str(e)}",
-                # If the step mutates context (updates_context), preserve the per-attempt
-                # context so callers can observe pre-failure mutations (e.g., counters).
-                branch_context=(
-                    frame.context
-                    if (getattr(step, "updates_context", False) and frame is not None)
-                    else None
-                )
-                if called_with_frame
-                else None,
-                metadata_={"error_type": type(e).__name__},
-                step_history=[],
+            if not self.enable_optimized_error_handling:
+                self._log_execution_error(step_name, e)
+            return self._build_failure_outcome(
+                step=step,
+                frame=frame,
+                exc=e,
+                called_with_frame=called_with_frame,
             )
-            outcome = Failure(error=e, feedback=failed_sr.feedback, step_result=failed_sr)
-            if called_with_frame:
-                return outcome
-            # Expose a typed Failure even for legacy signature to satisfy choke‑point tests
-            return outcome
 
         if (
             cache_key
@@ -879,19 +854,43 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             await self._cache_backend.put(cache_key, result, ttl_s=3600)
             telemetry.logfire.debug(f"Cached result for step: {getattr(step, 'name', '<unnamed>')}")
 
-        final_outcome: StepOutcome[StepResult] = (
-            Success(step_result=result)
-            if result.success
-            else Failure(
-                error=Exception(result.feedback or "step failed"),
-                feedback=result.feedback,
-                step_result=result,
+    def _log_execution_error(self, step_name: str, exc: Exception) -> None:
+        try:
+            telemetry.logfire.error(
+                f"[DEBUG] ExecutorCore caught unexpected exception at step '{step_name}': {type(exc).__name__}: {exc}"
             )
+        except Exception:
+            pass
+
+    def _build_failure_outcome(
+        self,
+        *,
+        step: Any,
+        frame: ExecutionFrame[Any],
+        exc: Exception,
+        called_with_frame: bool,
+    ) -> Failure:
+        step_name = self._safe_step_name(step)
+        err_type = type(exc).__name__ if hasattr(exc, "__class__") else "Exception"
+        include_branch_context = (
+            called_with_frame and getattr(step, "updates_context", False) and frame is not None
         )
-        if called_with_frame:
-            return final_outcome
-        # Legacy callers expect StepResult; normalize to inject minimal diagnostics when needed
-        return self._unwrap_outcome_to_step_result(result, step_name)
+        branch_ctx = frame.context if include_branch_context else None
+        failed_sr = StepResult(
+            name=step_name,
+            output=None,
+            success=False,
+            attempts=1,
+            latency_s=0.0,
+            token_counts=0,
+            cost_usd=0.0,
+            feedback=f"{err_type}: {exc}",
+            branch_context=branch_ctx,
+            metadata_={"error_type": type(exc).__name__},
+            step_history=[],
+        )
+        outcome = Failure(error=exc, feedback=failed_sr.feedback, step_result=failed_sr)
+        return outcome
 
     # Backward compatibility method for old execute signature
     async def execute_old_signature(
