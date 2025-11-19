@@ -49,6 +49,16 @@ def test_template_lints_vt2_vt3_vt4() -> None:
     pipeline = load_pipeline_blueprint_from_yaml(yaml_text)
     report = pipeline.validate_graph()
     rules = {w.rule_id for w in report.warnings}
+
+    # Debug: Print all warnings found (helps debug CI issues)
+    if "V-T4" not in rules:
+        import os
+        if os.getenv("CI") == "true":
+            print(f"DEBUG: Expected V-T4 but only found rules: {rules}")
+            print(f"DEBUG: All warnings:")
+            for w in report.warnings:
+                print(f"  {w.rule_id}: {w.message}")
+
     assert "V-T2" in rules  # 'this' misuse
     assert "V-T3" in rules  # unknown filter 'foo'
     assert "V-T4" in rules  # unknown steps.Missing
