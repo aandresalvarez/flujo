@@ -422,7 +422,7 @@ async def sqlite_backend(tmp_path):
         yield backend
     finally:
         try:
-            await backend.close()
+            await backend.shutdown()
         except Exception:
             pass  # Best effort cleanup
 
@@ -454,7 +454,7 @@ async def sqlite_backend_factory(tmp_path):
     # Cleanup all created backends
     for backend in backends:
         try:
-            await backend.close()
+            await backend.shutdown()
         except Exception:
             pass  # Best effort cleanup
 

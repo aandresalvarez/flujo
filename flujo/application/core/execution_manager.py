@@ -1,6 +1,7 @@
 """Main execution manager that orchestrates pipeline execution components."""
 
 from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, AsyncIterator, Generic, Optional, TypeVar
 
@@ -173,6 +174,7 @@ class ExecutionManager(Generic[ContextT]):
             step_result = None
             step_result_recorded: bool = False
             usage_limit_exceeded = False  # Track if a usage limit exception was raised
+            paused_execution = False  # Track if execution was paused
 
             # ✅ CRITICAL FIX: Persist state AFTER step execution for crash recovery
             # This ensures state reflects the completed step for proper resumption
@@ -916,25 +918,7 @@ class ExecutionManager(Generic[ContextT]):
 
                 except NonRetryableError:
                     raise
-                except Exception as e:
-                    # Ensure redirect-loop propagates as an exception to satisfy tests
-                    if e.__class__.__name__ == "InfiniteRedirectError":
-                        raise
-                    try:
-                        from flujo.exceptions import InfiniteRedirectError as CoreIRE
 
-                        if isinstance(e, CoreIRE):
-                            raise
-                    except Exception:
-                        pass
-                    try:
-                        from flujo.application.runner import InfiniteRedirectError as RunnerIRE
-
-                        if isinstance(e, RunnerIRE):
-                            raise
-                    except Exception:
-                        pass
-                    raise
                 except UsageLimitExceededError:
                     # ✅ TASK 7.3: FIX STEP HISTORY POPULATION
                     # Ensure the step result is added to history before re-raising the exception
@@ -988,9 +972,11 @@ class ExecutionManager(Generic[ContextT]):
                             state_created_at=state_created_at,
                             step_history=result.step_history,
                         )
+                    paused_execution = True
                     self.set_final_context(result, context)
                     yield result
                     return
+
                 except PausedException as e:
                     # Handle pause by updating context and returning current result
                     if context is not None:
@@ -1023,9 +1009,11 @@ class ExecutionManager(Generic[ContextT]):
                             state_created_at=state_created_at,
                             step_history=result.step_history,
                         )
+                    paused_execution = True
                     self.set_final_context(result, context)
                     yield result
                     return
+
                 except PipelineContextInitializationError as e:
                     # Propagate PipelineContextInitializationError so it can be converted to ContextInheritanceError
                     # at the appropriate level (e.g., in as_step method)
@@ -1033,6 +1021,25 @@ class ExecutionManager(Generic[ContextT]):
                 except ContextInheritanceError as e:
                     # Propagate ContextInheritanceError immediately
                     raise e
+                except Exception as e:
+                    # Ensure redirect-loop propagates as an exception to satisfy tests
+                    if e.__class__.__name__ == "InfiniteRedirectError":
+                        raise
+                    try:
+                        from flujo.exceptions import InfiniteRedirectError as CoreIRE
+
+                        if isinstance(e, CoreIRE):
+                            raise
+                    except Exception:
+                        pass
+                    try:
+                        from flujo.application.runner import InfiniteRedirectError as RunnerIRE
+
+                        if isinstance(e, RunnerIRE):
+                            raise
+                    except Exception:
+                        pass
+                    raise
 
             finally:
                 # Persist final state if we have a run_id and this is the last step
@@ -1040,6 +1047,7 @@ class ExecutionManager(Generic[ContextT]):
                     run_id is not None
                     and idx == len(self.pipeline.steps) - 1
                     and not self.inside_loop_step
+                    and not paused_execution
                 ):
                     # Phase 2: Completion gate at persist-time as well
                     # Only mark completed when we have one StepResult per pipeline step and all succeeded.

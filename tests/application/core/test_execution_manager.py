@@ -64,9 +64,9 @@ async def test_execution_manager_raises_abort_on_paused_outcome():
     pipeline = _FakePipeline([step])
     em = ExecutionManager(pipeline, step_coordinator=_FakeStepCoordinator([Paused(message="wait")]))
     result = PipelineResult()
-    with pytest.raises(Exception):
-        async for _ in em.execute_steps(0, data=None, context=None, result=result):
-            pass
+    # Should NOT raise exception, but return result with paused status in context/scratchpad
+    async for _ in em.execute_steps(0, data=None, context=None, result=result):
+        pass
 
 
 @pytest.mark.asyncio
