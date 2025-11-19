@@ -833,12 +833,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         except Exception as e:
             if not self.enable_optimized_error_handling:
                 self._log_execution_error(step_name, e)
-            return self._build_failure_outcome(
+            failure_outcome = self._build_failure_outcome(
                 step=step,
                 frame=frame,
                 exc=e,
                 called_with_frame=called_with_frame,
             )
+            if called_with_frame:
+                return failure_outcome
+            assert failure_outcome.step_result is not None
+            return failure_outcome.step_result
 
         if (
             cache_key
@@ -869,7 +873,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         frame: ExecutionFrame[Any],
         exc: Exception,
         called_with_frame: bool,
-    ) -> Failure:
+    ) -> Failure[StepResult]:
         step_name = self._safe_step_name(step)
         err_type = type(exc).__name__ if hasattr(exc, "__class__") else "Exception"
         include_branch_context = (
@@ -889,8 +893,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             metadata_={"error_type": type(exc).__name__},
             step_history=[],
         )
-        outcome = Failure(error=exc, feedback=failed_sr.feedback, step_result=failed_sr)
-        return outcome
+        return Failure[StepResult](error=exc, feedback=failed_sr.feedback, step_result=failed_sr)
 
     # Backward compatibility method for old execute signature
     async def execute_old_signature(
