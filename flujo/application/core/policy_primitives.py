@@ -1,0 +1,348 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple, Type
+
+from flujo.domain.dsl.step import Step
+from flujo.exceptions import MockDetectionError
+from flujo.infra import telemetry
+
+__all__ = [
+    "LoopResumeState",
+    "PolicyRegistry",
+    "_unpack_agent_result",
+    "_detect_mock_objects",
+    "_load_template_config",
+    "_check_hitl_nesting_safety",
+    "_normalize_plugin_feedback",
+    "_normalize_builtin_params",
+]
+
+
+# Structured helpers ---------------------------------------------------------
+
+
+@dataclass
+class LoopResumeState:
+    """Structured representation of the data needed to resume a paused loop iteration."""
+
+    iteration: int = 1
+    step_index: int = 0
+    requires_hitl_payload: bool = False
+    last_output: Any | None = None
+    paused_step_name: str | None = None
+
+    STORAGE_KEY = "loop_resume_state"
+
+    @classmethod
+    def from_context(cls, context: Any) -> Optional["LoopResumeState"]:
+        scratch = getattr(context, "scratchpad", None)
+        if not isinstance(scratch, dict):
+            return None
+        raw = scratch.get(cls.STORAGE_KEY)
+        if isinstance(raw, dict):
+            try:
+                return cls(
+                    iteration=int(raw.get("iteration", 1)),
+                    step_index=int(raw.get("step_index", 0)),
+                    requires_hitl_payload=bool(raw.get("requires_hitl_payload", False)),
+                    last_output=raw.get("last_output"),
+                    paused_step_name=raw.get("paused_step_name"),
+                )
+            except Exception:
+                pass
+
+        maybe_iteration = scratch.get("loop_iteration")
+        maybe_index = scratch.get("loop_step_index")
+        if isinstance(maybe_iteration, int) and isinstance(maybe_index, int):
+            return cls(
+                iteration=maybe_iteration,
+                step_index=maybe_index,
+                requires_hitl_payload=bool(scratch.get("loop_resume_requires_hitl_output")),
+                last_output=scratch.get("loop_last_output"),
+                paused_step_name=scratch.get("loop_paused_step_name"),
+            )
+        return None
+
+    def persist(self, context: Any, body_length: int) -> None:
+        scratch = getattr(context, "scratchpad", None)
+        if not isinstance(scratch, dict):
+            return
+        bounded_index = max(0, min(self.step_index, body_length))
+        payload = {
+            "iteration": max(1, self.iteration),
+            "step_index": bounded_index,
+            "requires_hitl_payload": bool(self.requires_hitl_payload),
+            "last_output": self.last_output,
+            "paused_step_name": self.paused_step_name,
+        }
+        scratch[self.STORAGE_KEY] = payload
+        scratch["loop_iteration"] = payload["iteration"]
+        scratch["loop_step_index"] = bounded_index
+        scratch["loop_last_output"] = self.last_output
+        if self.paused_step_name:
+            scratch["loop_paused_step_name"] = self.paused_step_name
+        if self.requires_hitl_payload:
+            scratch["loop_resume_requires_hitl_output"] = True
+        else:
+            scratch.pop("loop_resume_requires_hitl_output", None)
+
+    @classmethod
+    def clear(cls, context: Any) -> None:
+        scratch = getattr(context, "scratchpad", None)
+        if isinstance(scratch, dict):
+            scratch.pop(cls.STORAGE_KEY, None)
+            scratch.pop("loop_iteration", None)
+            scratch.pop("loop_step_index", None)
+            scratch.pop("loop_last_output", None)
+            scratch.pop("loop_paused_step_name", None)
+            scratch.pop("loop_resume_requires_hitl_output", None)
+
+
+# --- Policy Registry (FSD-010) ---
+
+
+class PolicyRegistry:
+    """Registry that maps `Step` subclasses to their execution policy instances."""
+
+    def __init__(self) -> None:
+        # Type-safe mapping: Step subclass → policy instance (opaque type)
+        self._registry: Dict[Type[Step[Any, Any]], Any] = {}
+        # Preload any globally registered policies from framework registry
+        try:
+            # Ensure core primitives/policies are registered by importing the framework
+            # module which performs registration at import time.
+            try:  # pragma: no cover - import side-effect
+                import flujo.framework  # noqa: F401
+            except Exception:
+                # Defensive: if import fails, continue with whatever was registered explicitly
+                pass
+            from ...framework.registry import get_registered_policies
+
+            for step_cls, policy_instance in get_registered_policies().items():
+                # Defer binding to executor core; raw policy instances are kept here
+                self._registry[step_cls] = policy_instance
+        except Exception:
+            # Framework registry may not be initialized yet; ignore
+            pass
+
+    def register(self, step_type: Type[Step[Any, Any]], policy: Any) -> None:
+        """Register a policy for a given `Step` subclass."""
+
+        # Local import to avoid circulars during module import time
+        from flujo.domain.dsl.step import Step as _BaseStep
+
+        if not isinstance(step_type, type) or not issubclass(step_type, _BaseStep):
+            raise TypeError("step_type must be a subclass of Step")
+        self._registry[step_type] = policy
+
+    def get(self, step_type: Type[Step[Any, Any]]) -> Optional[Any]:
+        """Return the policy for `step_type` or its nearest registered ancestor."""
+
+        # Exact match fast-path
+        policy = self._registry.get(step_type)
+        if policy is not None:
+            return policy
+        try:
+            for base in step_type.__mro__[1:]:  # skip the class itself
+                if base in self._registry:
+                    return self._registry[base]
+        except Exception:
+            pass
+        return None
+
+
+# Shared utilities -----------------------------------------------------------
+
+
+def _unpack_agent_result(output: Any) -> Any:
+    """Best-effort unpacking of common agent result wrappers."""
+
+    try:
+        from pydantic import BaseModel as _BM  # local import to avoid startup costs
+
+        if isinstance(output, _BM):
+            return output
+    except Exception:
+        pass
+    for attr in ("output", "content", "result", "data", "text", "message", "value"):
+        try:
+            if hasattr(output, attr):
+                return getattr(output, attr)
+        except Exception:
+            pass
+    return output
+
+
+def _detect_mock_objects(obj: Any) -> None:
+    """Raise MockDetectionError when the object is a unittest.mock instance."""
+
+    try:
+        from unittest.mock import Mock as _M, MagicMock as _MM
+
+        _mock_types: Tuple[type[Any], ...]
+        try:
+            from unittest.mock import AsyncMock as _AM  # py>=3.8
+
+            _mock_types = (_M, _MM, _AM)
+        except Exception:  # pragma: no cover - AsyncMock may be unavailable
+            _mock_types = (_M, _MM)
+        if isinstance(obj, _mock_types):
+            raise MockDetectionError("Mock object detected in agent output")
+    except Exception:
+        return
+
+
+def _load_template_config() -> Tuple[bool, bool]:
+    """Load template configuration from flujo.toml with fallback to defaults."""
+
+    from flujo.infra.config_manager import TemplateConfig, get_config_manager
+    import flujo.infra.telemetry as template_telemetry
+
+    strict = False
+    log_resolution = False
+    try:
+        config_mgr = get_config_manager()
+        config = config_mgr.load_config()
+        template_config = config.template or TemplateConfig()
+        strict = template_config.undefined_variables == "strict"
+        log_resolution = template_config.log_resolution
+    except Exception as exc:
+        template_telemetry.logfire.debug(f"Failed to load template config: {exc}")
+
+    return strict, log_resolution
+
+
+def _check_hitl_nesting_safety(step: Any, core: Any) -> None:
+    """Runtime safety check for HITL steps in nested contexts."""
+
+    try:
+        execution_stack = getattr(core, "_execution_stack", None)
+        if execution_stack is None:
+            return
+
+        has_loop = False
+        has_conditional = False
+        context_chain: List[str] = []
+
+        for frame in execution_stack:
+            frame_type = getattr(frame, "step_kind", None) or getattr(frame, "kind", None)
+            frame_name = getattr(frame, "name", "unnamed")
+
+            if frame_type in ("loop", "LoopStep"):
+                has_loop = True
+                context_chain.append(f"loop:{frame_name}")
+            elif frame_type in ("conditional", "ConditionalStep"):
+                has_conditional = True
+                context_chain.append(f"conditional:{frame_name}")
+
+        if has_loop and has_conditional:
+            context_desc = " > ".join(context_chain)
+            error_msg = (
+                "\n\n"
+                f"🚨 CRITICAL ERROR: HITL step '{getattr(step, 'name', 'unnamed')}' "
+                "cannot execute in nested context.\n\n"
+                f"Context: {context_desc}\n\n"
+                "This is a known limitation: HITL steps in conditional branches inside loops "
+                "are SILENTLY SKIPPED at runtime with no error message, causing data loss.\n\n"
+                "This should have been caught by validation (rule HITL-NESTED-001).\n"
+                "If you see this error, validation may have been bypassed or disabled.\n\n"
+                "Required actions:\n"
+                "  1. Move the HITL step outside the loop (RECOMMENDED).\n"
+                "  2. Remove the conditional wrapper if the HITL must stay in the loop.\n"
+                "  3. Use flujo.builtins.ask_user skill instead.\n\n"
+                "Example fix:\n"
+                "  # ❌ THIS FAILS\n"
+                "  - kind: loop\n"
+                "    body:\n"
+                "      - kind: conditional\n"
+                "        branches:\n"
+                "          true:\n"
+                "            - kind: hitl  # ← WILL NOT WORK!\n\n"
+                "  # ✅ THIS WORKS\n"
+                "  - kind: hitl\n"
+                "    name: get_input\n"
+                "    sink_to: 'user_answer'\n"
+                "  - kind: loop\n"
+                "    body:\n"
+                "      - kind: step\n"
+                "        input: '{{ context.user_answer }}'\n\n"
+                "Documentation: https://flujo.dev/docs/known-issues/hitl-nested\n"
+                "Report: https://github.com/aandresalvarez/flujo/issues\n"
+            )
+            telemetry.logfire.error(f"HITL nesting safety check failed: {error_msg}")
+            raise RuntimeError(error_msg)
+
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        telemetry.logfire.debug(f"HITL nesting safety check skipped due to error: {exc}")
+        return
+
+
+def _normalize_plugin_feedback(msg: str) -> str:
+    """Shared message normalizer for consistent feedback formatting across policies."""
+
+    try:
+        prefixes = (
+            "Plugin execution failed after max retries: ",
+            "Plugin validation failed: ",
+            "Agent execution failed: ",
+        )
+        changed = True
+        while changed:
+            changed = False
+            for prefix in prefixes:
+                if msg.startswith(prefix):
+                    msg = msg[len(prefix) :]
+                    changed = True
+        return msg.strip()
+    except Exception:
+        return msg
+
+
+def _normalize_builtin_params(step: Any, data: Any) -> Any:
+    """Normalize builtin skill parameters to support both 'params' and 'input'."""
+
+    agent_spec = getattr(step, "agent", None)
+    if agent_spec is None:
+        return data
+
+    if hasattr(agent_spec, "_step_callable"):
+        func = agent_spec._step_callable
+        if hasattr(func, "__module__") and func.__module__ == "flujo.builtins":
+            step_input = getattr(step, "input", None)
+            if isinstance(step_input, dict):
+                return step_input
+
+    agent_id = None
+    if isinstance(agent_spec, str):
+        agent_id = agent_spec
+    elif isinstance(agent_spec, dict):
+        agent_id = agent_spec.get("id")
+    elif hasattr(agent_spec, "id"):
+        agent_id = getattr(agent_spec, "id", None)
+
+    if not isinstance(agent_id, str) or not agent_id.startswith("flujo.builtins."):
+        return data
+
+    params: Dict[str, Any] = {}
+
+    if isinstance(agent_spec, dict) and "params" in agent_spec:
+        agent_params = agent_spec["params"]
+        if isinstance(agent_params, dict):
+            params.update(agent_params)
+    elif hasattr(agent_spec, "params"):
+        agent_params = getattr(agent_spec, "params", None)
+        if isinstance(agent_params, dict):
+            params.update(agent_params)
+
+    if not params:
+        step_input = getattr(step, "input", None)
+        if isinstance(step_input, dict):
+            params.update(step_input)
+
+    if not params:
+        return data
+
+    return params

@@ -46,7 +46,6 @@ from ...cost import extract_usage_metrics
 from .step_policies import (
     AgentResultUnpacker,
     AgentStepExecutor,
-    PolicyRegistry,
     CacheStepExecutor,
     ConditionalStepExecutor,
     DefaultAgentResultUnpacker,
@@ -70,6 +69,7 @@ from .step_policies import (
     TimeoutRunner,
     ValidatorInvoker,
 )
+from .policy_primitives import PolicyRegistry
 from .types import TContext_w_Scratch, ExecutionFrame
 from .context_manager import ContextManager
 from .context_adapter import _build_context_update, _inject_context_with_deep_merge
