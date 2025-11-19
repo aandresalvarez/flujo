@@ -286,4 +286,3 @@ Flujo is available under a dual-license model:
 
 *   **AGPL-3.0:** For open-source projects and non-commercial use, Flujo is licensed under the AGPL-3.0. See the [`LICENSE`](LICENSE) file for details.
 *   **Commercial License:** For commercial use in proprietary applications, a separate commercial license is required. Please contact [Your Contact Email/Website] for more information.
-# Test comment for pre-commit hook verification
