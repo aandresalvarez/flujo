@@ -5,7 +5,7 @@ from flujo.domain.dsl.conditional import ConditionalStep
 from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
 from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.domain.dsl.step import Step
-from flujo.domain.models import Failure, StepResult
+from flujo.domain.models import StepResult
 
 
 class _RaisingAgentStepExecutor:
