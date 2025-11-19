@@ -841,7 +841,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             )
             if called_with_frame:
                 return failure_outcome
-            return failure_outcome
+            return self._unwrap_outcome_to_step_result(failure_outcome, self._safe_step_name(step))
 
         if (
             cache_key
