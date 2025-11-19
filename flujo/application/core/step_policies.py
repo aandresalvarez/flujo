@@ -181,6 +181,7 @@ from flujo.exceptions import (  # noqa: E402
     InfiniteRedirectError,
     PricingNotConfiguredError,
     ConfigurationError,
+    PipelineAbortSignal,
 )
 from flujo.cost import extract_usage_metrics  # noqa: E402
 from flujo.utils.performance import time_perf_ns, time_perf_ns_to_seconds  # noqa: E402
@@ -6247,6 +6248,22 @@ class DefaultParallelStepExecutor:
             )
             branch_contexts[branch_name] = branch_context
 
+        def _merge_branch_context_into_parent(branch_ctx: Any) -> None:
+            nonlocal context
+            if context is None or branch_ctx is None:
+                return
+            try:
+                from flujo.utils.context import safe_merge_context_updates as _merge
+
+                _merge(context, branch_ctx)
+            except Exception:
+                try:
+                    merged_ctx = ContextManager.merge(context, branch_ctx)
+                    if merged_ctx is not None:
+                        context = merged_ctx
+                except Exception:
+                    pass
+
         # Branch executor
         async def execute_branch(
             branch_name: str,
@@ -6321,7 +6338,8 @@ class DefaultParallelStepExecutor:
                                 final_pipeline_context=branch_context,
                             )
                         elif isinstance(step_outcome, Paused):
-                            # Propagate control-flow
+                            # Propagate control-flow and preserve branch context
+                            _merge_branch_context_into_parent(branch_context)
                             raise PausedException(step_outcome.message)
                         else:
                             # Unknown/Chunk/Aborted -> synthesize failure
@@ -6391,7 +6409,6 @@ class DefaultParallelStepExecutor:
                 )
                 return branch_name, branch_result
             except (
-                UsageLimitExceededError,
                 MockDetectionError,
                 InfiniteRedirectError,
                 PricingNotConfiguredError,
@@ -6405,6 +6422,11 @@ class DefaultParallelStepExecutor:
                 # Re-raise usage limit exceptions - these should not be converted to branch failures
                 telemetry.logfire.info(f"Branch {branch_name} hit usage limit: {e}")
                 raise e
+            except PausedException:
+                _merge_branch_context_into_parent(branch_context)
+                raise
+            except PipelineAbortSignal:
+                raise
             except Exception as e:
                 telemetry.logfire.error(f"Branch {branch_name} failed with exception: {e}")
                 failure = StepResult(
@@ -6433,11 +6455,13 @@ class DefaultParallelStepExecutor:
 
         # Execute branches concurrently using the shared quota, and proactively cancel on breach
         pending: set[asyncio.Task] = set()
+        task_to_branch: dict[asyncio.Task, str] = {}
         for bn, bp in zip(branch_names, branch_pipelines):
             t = asyncio.create_task(
                 execute_branch(bn, bp, branch_contexts[bn], branch_quota_map.get(bn))
             )
             pending.add(t)
+            task_to_branch[t] = bn
 
         async def _handle_branch_result(branch_execution_result: Any, idx: int) -> None:
             nonlocal total_cost, total_tokens, all_successful
@@ -6510,9 +6534,22 @@ class DefaultParallelStepExecutor:
             # Process all finished tasks, aggregating successful results first.
             usage_limit_error: UsageLimitExceededError | None = None
             usage_limit_error_msg: str | None = None
+            pause_message: str | None = None
+            pause_branch: str | None = None
+            abort_branch: str | None = None
+            abort_signal: PipelineAbortSignal | None = None
             for d in done:
+                branch_hint = task_to_branch.get(d)
                 try:
                     res = d.result()
+                except PausedException as paused_exc:
+                    pause_message = str(paused_exc)
+                    pause_branch = branch_hint
+                    break
+                except PipelineAbortSignal as abort_exc:
+                    abort_signal = abort_exc
+                    abort_branch = branch_hint
+                    break
                 except UsageLimitExceededError as ex:
                     # Defer raising until we aggregate any other completed successes
                     usage_limit_error = ex
@@ -6533,6 +6570,34 @@ class DefaultParallelStepExecutor:
                     raise
                 await _handle_branch_result(res, completed_count)
                 completed_count += 1
+
+            if pause_message is not None:
+                for p in pending:
+                    p.cancel()
+                try:
+                    if pending:
+                        await asyncio.gather(*pending, return_exceptions=True)
+                except Exception:
+                    pass
+                if pause_branch:
+                    telemetry.logfire.info(
+                        f"Parallel branch '{pause_branch}' paused: {pause_message}"
+                    )
+                return Paused(message=pause_message or "Paused")
+
+            if abort_signal is not None:
+                for p in pending:
+                    p.cancel()
+                try:
+                    if pending:
+                        await asyncio.gather(*pending, return_exceptions=True)
+                except Exception:
+                    pass
+                if abort_branch:
+                    telemetry.logfire.info(
+                        f"Parallel branch '{abort_branch}' triggered abort: {abort_signal}"
+                    )
+                raise abort_signal
 
             # If a usage limit breach occurred in any completed branch, cancel the rest and
             # raise an error that includes the aggregated step history so far.
@@ -7073,42 +7138,29 @@ class DefaultConditionalStepExecutor:
                                     context_setter=context_setter,
                                     _fallback_depth=_fallback_depth,
                                 )
-                            except (_Abort, _PausedExc) as _pe:
-                                # If the branch step is an explicit HITL, merge branch context state
-                                # (conversation/hitl) back into the parent before re-raising pause.
-                                # This preserves nested HITL state across loop/conditional boundaries.
+                            except (_Abort, _PausedExc):
+                                # Always propagate control-flow so the runner can pause/abort.
+                                # Best-effort: merge branch context back to the parent before bubbling.
                                 from flujo.domain.dsl.step import HumanInTheLoopStep as _HITL
 
-                                if isinstance(pipeline_step, _HITL):
+                                is_hitl = isinstance(pipeline_step, _HITL)
+                                if context is not None and branch_context is not None:
                                     try:
-                                        if context is not None and branch_context is not None:
-                                            try:
-                                                from flujo.utils.context import (
-                                                    safe_merge_context_updates as _merge,
-                                                )
+                                        from flujo.utils.context import (
+                                            safe_merge_context_updates as _merge,
+                                        )
 
-                                                _merge(context, branch_context)
-                                            except Exception:
-                                                # Fallback to model-level merge
-                                                try:
-                                                    mc = ContextManager.merge(
-                                                        context, branch_context
-                                                    )
-                                                    if mc is not None:
-                                                        context = mc
-                                                except Exception:
-                                                    pass
+                                        _merge(context, branch_context)
                                     except Exception:
-                                        pass
-                                    raise
-                                # Non-HITL pause inside a branch should be treated as failure
-                                return to_outcome(
-                                    StepResult(
-                                        name=conditional_step.name,
-                                        success=False,
-                                        feedback=f"Paused in branch step '{getattr(pipeline_step, 'name', 'step')}': {_pe}",
-                                    )
-                                )
+                                        try:
+                                            merged_ctx = ContextManager.merge(
+                                                context, branch_context
+                                            )
+                                            if merged_ctx is not None and is_hitl:
+                                                context = merged_ctx
+                                        except Exception:
+                                            pass
+                                raise
                         # Normalize StepOutcome to StepResult, and propagate Paused
                         if isinstance(res_any, StepOutcome):
                             if isinstance(res_any, Success):

@@ -81,18 +81,19 @@ async def test_conditional_policy_returns_failure_on_paused_branch():
         default_branch_pipeline=Pipeline.from_step(Step(name="H", agent=_HitlAgent())),
     )
 
-    out = await DefaultConditionalStepExecutor().execute(
-        core,
-        cond,
-        data={"branch": "h"},
-        context=None,
-        resources=None,
-        limits=None,
-        context_setter=None,
-        _fallback_depth=0,
-    )
-    # Conditional policy translates Paused into Failure at this layer
-    assert isinstance(out, Failure)
+    from flujo.exceptions import PausedException
+
+    with pytest.raises(PausedException):
+        await DefaultConditionalStepExecutor().execute(
+            core,
+            cond,
+            data={"branch": "h"},
+            context=None,
+            resources=None,
+            limits=None,
+            context_setter=None,
+            _fallback_depth=0,
+        )
 
 
 @pytest.mark.asyncio

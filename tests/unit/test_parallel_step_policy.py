@@ -5,7 +5,7 @@ from flujo.application.core.step_policies import DefaultParallelStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.parallel import ParallelStep
-from flujo.domain.models import Success, Failure
+from flujo.domain.models import Success, Failure, Paused
 
 
 @pytest.mark.asyncio
@@ -100,8 +100,8 @@ async def test_parallel_policy_yields_failure_on_paused_branch():
         context_setter=None,
         step_executor=None,
     )
-    # Parallel policy currently wraps paused branch into Failure with appropriate feedback
-    assert isinstance(outcome, Failure)
+    # Parallel policy should propagate Paused so the runner pauses
+    assert isinstance(outcome, Paused)
 
 
 @pytest.mark.asyncio
