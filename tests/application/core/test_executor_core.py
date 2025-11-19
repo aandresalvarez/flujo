@@ -34,11 +34,9 @@ async def test_executor_core_choke_point_converts_unexpected_exception_to_failur
     step = Step(name="unit", agent=object())
 
     outcome = await core.execute(step=step, data="x")
-    assert isinstance(outcome, Failure)
-    assert isinstance(outcome.error, Exception)
+    assert isinstance(outcome, StepResult)
+    assert outcome.success is False
     assert "boom" in (outcome.feedback or "")
-    assert isinstance(outcome.step_result, StepResult)
-    assert outcome.step_result.success is False
 
 
 def test_executor_core_policy_registry_populated():
