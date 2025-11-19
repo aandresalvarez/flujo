@@ -53,9 +53,10 @@ def test_template_lints_vt2_vt3_vt4() -> None:
     # Debug: Print all warnings found (helps debug CI issues)
     if "V-T4" not in rules:
         import os
+
         if os.getenv("CI") == "true":
             print(f"DEBUG: Expected V-T4 but only found rules: {rules}")
-            print(f"DEBUG: All warnings:")
+            print("DEBUG: All warnings:")
             for w in report.warnings:
                 print(f"  {w.rule_id}: {w.message}")
 
