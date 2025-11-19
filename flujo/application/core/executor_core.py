@@ -841,8 +841,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             )
             if called_with_frame:
                 return failure_outcome
-            assert failure_outcome.step_result is not None
-            return failure_outcome.step_result
+            return failure_outcome
 
         if (
             cache_key
