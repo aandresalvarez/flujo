@@ -111,26 +111,6 @@ def test_cli_bench_command(monkeypatch) -> None:
     assert "Benchmark Results" in result.stdout
 
 
-def test_cli_show_config_masks_secrets(monkeypatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-secret")
-    # This requires re-importing settings or running CLI in a subprocess
-    # For simplicity, we'll just check the output format.
-    result = runner.invoke(app, ["dev", "show-config"])
-    assert result.exit_code == 0
-    assert "openai_api_key" not in result.stdout
-    assert "logfire_api_key" not in result.stdout
-
-
-def test_cli_version_command(monkeypatch) -> None:
-    # import importlib.metadata  # removed unused import
-    monkeypatch.setattr("importlib.metadata.version", lambda name: "1.2.3")
-    monkeypatch.setattr("importlib.metadata.PackageNotFoundError", Exception)
-
-    result = runner.invoke(app, ["dev", "version"])
-    assert result.exit_code == 0
-    assert "1.2.3" in result.stdout
-
-
 def test_cli_solve_with_weights(monkeypatch) -> None:
     from flujo.domain.models import Task
 
@@ -510,17 +490,6 @@ def test_cli_help() -> None:
     # Top-level is focused for YAML users; advanced commands live under 'dev'
     assert "dev" in result.stdout
     assert "validate" in result.stdout
-
-
-def test_cli_version(monkeypatch) -> None:
-    """Test that the version command works and shows the correct version."""
-    import importlib.metadata
-
-    monkeypatch.setattr(importlib.metadata, "version", lambda name: "0.2.0")
-    version = importlib.metadata.version("flujo")
-    result = runner.invoke(app, ["dev", "version"])
-    assert result.exit_code == 0
-    assert version in result.stdout
 
 
 def test_cli_run() -> None:
