@@ -8,14 +8,13 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING, Protocol
 
-from ...domain.models import PipelineResult, StepResult, UsageLimits
+from ...domain.models import StepResult, UsageLimits
 from ...domain.validation import ValidationResult
 from ...exceptions import (
     ContextInheritanceError,
     InfiniteFallbackError,
     InfiniteRedirectError,
     PausedException,
-    UsageLimitExceededError,
 )
 from ...infra import telemetry
 from ...signature_tools import analyze_signature
@@ -366,44 +365,9 @@ class ThreadSafeMeter:
             self.completion_tokens += completion_tokens
 
     async def guard(self, limits: UsageLimits, step_history: Optional[List[Any]] = None) -> None:
-        # Fast path: lock-free reads to avoid event loop scheduling spikes
-        cost_usd: float = self.total_cost_usd
-        total_tokens: int = self.prompt_tokens + self.completion_tokens
-
-        # Check cost limit quickly without constructing messages/objects
-        limit_cost = limits.total_cost_usd_limit
-        if (
-            limit_cost is not None
-            and isinstance(limit_cost, (int, float))
-            and cost_usd - limit_cost > 1e-9
-        ):
-            # Only build error payload when actually exceeding
-            msg = f"Cost limit of ${limit_cost} exceeded (current: ${cost_usd})"
-            raise UsageLimitExceededError(
-                msg,
-                PipelineResult(
-                    step_history=step_history or [],
-                    total_cost_usd=cost_usd,
-                    total_tokens=total_tokens,
-                ),
-            )
-
-        # Check token limit quickly
-        limit_tokens = limits.total_tokens_limit
-        if (
-            limit_tokens is not None
-            and isinstance(limit_tokens, (int, float))
-            and total_tokens - limit_tokens > 0
-        ):
-            msg = f"Token limit of {limit_tokens} exceeded (current: {total_tokens})"
-            raise UsageLimitExceededError(
-                msg,
-                PipelineResult(
-                    step_history=step_history or [],
-                    total_cost_usd=cost_usd,
-                    total_tokens=total_tokens,
-                ),
-            )
+        # Compatibility no-op: enforcement now happens via proactive quota reservations.
+        # This shim is retained for legacy callers/tests that still invoke guard().
+        return None
 
     async def snapshot(self) -> tuple[float, int, int]:
         async with self._lock:

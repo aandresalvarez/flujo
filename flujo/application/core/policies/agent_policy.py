@@ -719,10 +719,6 @@ class DefaultAgentStepExecutor:
                 # Precheck is best-effort; continue with normal execution
                 pass
 
-            # Check usage limits at the start of each attempt - this should raise UsageLimitExceededError if breached
-            if limits is not None:
-                await core._usage_meter.guard(limits, result.step_history)
-
             processed_data = data
             if hasattr(step, "processors") and getattr(step, "processors", None):
                 processed_data = await core._processor_pipeline.apply_prompt(

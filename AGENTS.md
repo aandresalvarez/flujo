@@ -73,7 +73,7 @@ Adherence to these patterns is mandatory for all contributions.
 
 ### ✅ **4. Proactive Quota System**
 - **The Rule**: Resource limits are enforced proactively via the **Reserve -> Execute -> Reconcile** pattern.
-- **The Anti-Pattern**: **Never** introduce reactive, post-execution checks. The `breach_event` and legacy "governor" patterns are disallowed. Use `Quota.split()` for parallel branches.
+- **The Anti-Pattern**: **Never** introduce reactive, post-execution checks. The `breach_event` and legacy "governor" patterns are disallowed. Use `Quota.split()` for parallel branches. Any new code must be quota-only (no breach_event plumbing, no UsageGovernor surface).
 
 ### ✅ **5. Centralized Configuration**
 - **The Rule**: Access all configuration via `flujo.infra.config_manager` and its helpers (`get_settings()`, etc.).

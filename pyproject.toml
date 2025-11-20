@@ -245,24 +245,6 @@ disable_error_code = [
 
 [[tool.mypy.overrides]]
 module = [
-  "flujo.application.core.ultra_executor",
-]
-disable_error_code = [
-  "no-any-return",
-  "no-untyped-def",
-  "no-untyped-call",
-  "call-arg",
-  "arg-type",
-  "type-arg",
-  "attr-defined",
-  "redundant-cast",
-  "misc",
-  "assignment",
-  "type-var",
-]
-
-[[tool.mypy.overrides]]
-module = [
   "flujo.infra.settings",
 ]
 disable_error_code = [

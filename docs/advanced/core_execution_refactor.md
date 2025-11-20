@@ -61,21 +61,20 @@ Handles all workflow state persistence and loading operations.
 - `persist_workflow_state()` - Save current state
 - `get_run_id_from_context()` - Extract run_id
 
-### 3. UsageGovernor
+### 3. Quota Enforcement (Pure Quota)
 
-**File**: `flujo/application/core/usage_governor.py`
+**Files**: Quota model in `flujo/domain/models.py`; proactive enforcement in
+`flujo/application/core/policies/agent_policy.py`, `parallel_policy.py`, and related policy
+modules.
 
-Manages usage limits and cost tracking during pipeline execution.
+Enforces usage limits proactively via reserve/execute/reconcile. Legacy governors and
+breach_event hooks are removed.
 
 **Key Responsibilities**:
-- Check cost limits
-- Check token limits
-- Update telemetry spans with usage metrics
-- Handle limit breaches gracefully
-
-**Key Methods**:
-- `check_usage_limits()` - Validate current usage against limits
-- `update_telemetry_span()` - Add usage metrics to spans
+- Estimate usage before agent invocation and reserve quota
+- Split quota for parallel branches (`Quota.split`) and reconcile actuals
+- Raise `UsageLimitExceededError` proactively when reservations fail or actuals exceed limits
+- Surface usage metrics through policy outcomes for telemetry
 
 ### 4. StepCoordinator
 
@@ -148,7 +147,8 @@ The refactor maintains full backward compatibility. Existing code using the `Flu
 When adding new execution-related features:
 
 1. **State Management**: Extend `StateManager` for new state operations
-2. **Usage Limits**: Extend `UsageGovernor` for new limit types
+2. **Quota Enforcement**: Extend quota estimation/reservation in policies (agent/loop/parallel) or
+   evolve `Quota` for new limit types
 3. **Step Coordination**: Extend `StepCoordinator` for new step behaviors
 4. **Type Validation**: Extend `TypeValidator` for new type rules
 5. **Execution Flow**: Extend `ExecutionManager` for new coordination patterns
@@ -158,7 +158,7 @@ When adding new execution-related features:
 Each component has comprehensive unit tests in `tests/unit/test_execution_manager.py`:
 
 - **StateManager Tests**: Test state loading, persistence, and run_id extraction
-- **UsageGovernor Tests**: Test limit checking and telemetry updates
+- **Quota/Usage Tests**: Test proactive reservation, limit enforcement, and telemetry updates
 - **TypeValidator Tests**: Test type compatibility validation
 - **StepCoordinator Tests**: Test step execution and hook dispatching
 - **ExecutionManager Tests**: Test overall execution coordination

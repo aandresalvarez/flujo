@@ -169,6 +169,7 @@ The framework standardizes on typed outcomes. When touching older code or writin
 - Update any tests that previously asserted on `breach_event` to assert it is not used.
 - Ensure partial `PipelineResult.step_history` is preserved on usage errors.
 - Reviewer grep: reject changes that add imports or references matching `breach_event`.
+- Quota-only: no `UsageGovernor` surface, no breach_event plumbing anywhere.
 
 ---
 
@@ -247,7 +248,7 @@ The framework standardizes on proactive quota budgeting. When touching older cod
 **Removed/Disallowed (do not reintroduce):**
 - Reactive budget enforcement patterns that allow steps to overrun before a check.
 - Any "governor" pattern or equivalents for parallel usage aggregation.
-- Propagating or inspecting a `breach_event` parameter in agents, policies, or backends.
+- Propagating or inspecting a `breach_event` parameter in agents, policies, or backends. Quota-only paths are mandatory.
 
 **Required patterns (always apply):**
 - Reserve → Execute → Reconcile in every policy that consumes resources.
@@ -259,7 +260,7 @@ The framework standardizes on proactive quota budgeting. When touching older cod
 - Preserve input branch order when setting `executed_branches` metadata.
 
 **Test and review checklist:**
-- Parallel budgeting tests: use `Quota.split(n)` and `UsageEstimate`; do not simulate a governor.
+- Parallel budgeting tests: use `Quota.split(n)` and `UsageEstimate`; do not simulate a governor or breach_event.
 - Update any tests that previously asserted on `breach_event` to assert it is not used.
 - Ensure partial `PipelineResult.step_history` is preserved on usage errors and that messages match exactly.
 - Reviewer grep: reject changes that add imports or references matching `breach_event`, `ParallelUsageGovernor`, or reactive post-step limit checks.

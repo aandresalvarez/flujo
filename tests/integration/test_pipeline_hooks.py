@@ -14,6 +14,8 @@ from flujo.domain.events import (
 )
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.testing.utils import StubAgent, DummyPlugin, PluginOutcome, gather_result
+
+# Quota mode: tests no longer rely on UsageGovernor; reuse fixed metric agent for limits
 from tests.integration.test_usage_governor import FixedMetricAgent
 from flujo.exceptions import UsageLimitExceededError, PipelineAbortSignal
 from tests.conftest import create_test_flujo

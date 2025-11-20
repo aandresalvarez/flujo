@@ -104,8 +104,6 @@ from .executor_protocols import (
 # to avoid unused-import lint warnings, as ExecutorCore uses structural typing
 # and accepts concrete implementations via dependency injection.
 
-_ParallelUsageGovernor = None  # FSD-009: legacy governor removed; pure quota only
-
 # Module-level defaults for strictness to avoid per-instance configuration overhead
 try:
     from ...infra.settings import get_settings as _get_settings_default
@@ -761,7 +759,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
 
         # FSD-009: Remove reactive post-step usage checks from non-parallel codepaths.
-        # Preemptive quota reservations are enforced in policies; keep parallel governor only.
+        # Preemptive quota reservations are enforced in policies; no reactive governor path remains.
 
         cache_key = None
         if self._enable_cache and not isinstance(step, LoopStep):
@@ -2136,10 +2134,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     attempt_context = pre_attempt_context
 
             start_ns = time_perf_ns()
-
-            # Guard usage limits pre-execution (legacy behavior kept)
-            if limits is not None:
-                await self._usage_meter.guard(limits, result.step_history)
 
             # Dynamic input templating per attempt
             try:
@@ -3530,14 +3524,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return Failure(
             error=Exception(result.feedback), feedback=result.feedback, step_result=result
         )
-
-    # Class-level exposure for tests expecting governor on type
-    try:
-        from . import step_policies as _sp
-
-        _ParallelUsageGovernor = getattr(_sp, "_ParallelUsageGovernor", None)
-    except Exception:  # pragma: no cover
-        _ParallelUsageGovernor = None
 
 
 # Backward compatibility: lightweight usage tracker used by some tests

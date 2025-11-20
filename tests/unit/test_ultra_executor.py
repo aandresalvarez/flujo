@@ -31,7 +31,6 @@ from flujo.domain.models import StepResult, UsageLimits, BaseModel
 from flujo.domain.dsl.step import Step, StepConfig
 from flujo.domain.validation import ValidationResult
 from flujo.exceptions import (
-    UsageLimitExceededError,
     PausedException,
 )
 
@@ -237,21 +236,19 @@ class TestUsageMeterInterface:
 
     @pytest.mark.asyncio
     async def test_usage_limit_enforcement(self):
-        """Test usage limit enforcement."""
+        """Guard is compatibility-only; quota enforces limits elsewhere."""
         meter = ThreadSafeMeter()
 
         # Add usage that exceeds limits
         await meter.add(10.0, 1000, 500)
 
-        # Test cost limit
-        limits = UsageLimits(total_cost_usd_limit=5.0)
-        with pytest.raises(UsageLimitExceededError):
-            await meter.guard(limits)
-
-        # Test token limit
-        limits = UsageLimits(total_tokens_limit=1000)
-        with pytest.raises(UsageLimitExceededError):
-            await meter.guard(limits)
+        limits = UsageLimits(total_cost_usd_limit=5.0, total_tokens_limit=1000)
+        assert await meter.guard(limits) is None
+        # Ensure tracked usage remains intact for reconciliation/telemetry
+        cost, prompt_tokens, completion_tokens = await meter.snapshot()
+        assert cost == 10.0
+        assert prompt_tokens == 1000
+        assert completion_tokens == 500
 
     @pytest.mark.asyncio
     async def test_concurrent_usage_tracking(self):
@@ -675,7 +672,7 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_usage_limit_exception_propagation(self):
-        """Test that usage limit exceptions are propagated."""
+        """Guard no longer raises; usage is tracked and execution succeeds in quota mode."""
         usage_meter = ThreadSafeMeter()
         executor = ExecutorCore(usage_meter=usage_meter, enable_cache=False)
 
@@ -723,8 +720,14 @@ class TestErrorHandling:
         step = TestStep()
 
         limits = UsageLimits(total_cost_usd_limit=5.0)
-        with pytest.raises(UsageLimitExceededError):
-            await executor.execute(step, "input", limits=limits)
+        result = await executor.execute(step, "input", limits=limits)
+        assert isinstance(result, StepResult)
+        assert result.success is True
+        # Usage meter retains preloaded values plus measured usage (~0.00125 cost)
+        cost, prompt_tokens, completion_tokens = await usage_meter.snapshot()
+        assert cost == pytest.approx(10.00125, rel=1e-6)
+        assert prompt_tokens == 1100  # preloaded 1000 + measured 100
+        assert completion_tokens == 550  # preloaded 500 + measured 50
 
     @pytest.mark.asyncio
     async def test_max_retries_exceeded(self):

@@ -281,7 +281,7 @@ async def test_streaming_invokes_on_chunk(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_usage_guard_called(monkeypatch):
+async def test_usage_guard_not_called_in_quota_mode(monkeypatch):
     core = ExecutorCore()
     policy = DefaultSimpleStepExecutor()
     step = Step(name="s", agent=StubAgent(["ok"]))
@@ -301,10 +301,8 @@ async def test_usage_guard_called(monkeypatch):
         on_chunk=None,
         cache_key=None,
     )
-    # The dual-check pattern calls guard twice: pre-execution and post-execution
-    # This provides enhanced robustness by validating usage limits at both stages
-    guard.assert_called()
-    assert guard.call_count >= 1  # At least one call required
+    # In pure quota mode, guard is not used; enforcement happens via quotas
+    guard.assert_not_called()
     sr = res.step_result if hasattr(res, "step_result") else res
     assert sr.success is True
 

@@ -17,7 +17,7 @@ from typing import Dict, List, Any
 from unittest.mock import Mock
 
 # Import the optimized components
-from flujo.application.core.ultra_executor import (
+from flujo.application.core.executor_core import (
     ExecutorCore,
     OptimizedExecutorCore,
     OptimizationConfig,

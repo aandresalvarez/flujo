@@ -258,10 +258,6 @@ async def _execute_simple_step_policy_impl(
 
         start_ns = time_perf_ns()
         try:
-            # Keep a single pre-execution guard call for legacy tests expecting guard invocation
-            if limits is not None:
-                await core._usage_meter.guard(limits, result.step_history)
-
             # FSD-017: Dynamic input templating - per-attempt resolution for simple steps
             try:
                 templ_spec = None
@@ -867,7 +863,7 @@ async def _execute_simple_step_policy_impl(
                     result.output = None
                     result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                     if limits:
-                        pass  # FSD-009: reactive guard removed; enforcement via quota and parallel governor
+                        pass  # FSD-009: reactive guard removed; enforcement via quota only
                     telemetry.logfire.error(
                         f"Step '{step.name}' plugin failed after {result.attempts} attempts"
                     )
@@ -1244,7 +1240,7 @@ async def _execute_simple_step_policy_impl(
             except Exception:
                 pass
             if limits:
-                pass  # FSD-009: reactive guard removed; enforcement via quota and parallel governor
+                pass  # FSD-009: reactive guard removed; enforcement via quota only
             if cache_key and getattr(core, "_enable_cache", False):
                 await core._cache_backend.put(cache_key, result, ttl_s=3600)
                 telemetry.logfire.debug(f"Cached result for step: {step.name}")
@@ -1323,7 +1319,7 @@ async def _execute_simple_step_policy_impl(
                 result.output = None
                 result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
                 if limits:
-                    pass  # FSD-009: reactive guard removed; enforcement via quota and parallel governor
+                    pass  # FSD-009: reactive guard removed; enforcement via quota only
                 telemetry.logfire.error(
                     f"Step '{step.name}' plugin failed after {result.attempts} attempts"
                 )
@@ -1436,7 +1432,7 @@ async def _execute_simple_step_policy_impl(
             result.output = None
             result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
             if limits:
-                pass  # FSD-009: reactive guard removed; enforcement via quota and parallel governor
+                pass  # FSD-009: reactive guard removed; enforcement via quota only
             telemetry.logfire.error(
                 f"Step '{step.name}' agent failed after {result.attempts} attempts"
             )
@@ -1552,7 +1548,7 @@ async def _execute_simple_step_policy_impl(
             result.output = None
             result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
             if limits:
-                pass  # FSD-009: reactive guard removed; enforcement via quota and parallel governor
+                pass  # FSD-009: reactive guard removed; enforcement via quota only
             telemetry.logfire.error(
                 f"Step '{step.name}' agent failed after {result.attempts} attempts"
             )

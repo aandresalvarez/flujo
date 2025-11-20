@@ -59,7 +59,6 @@ class ExecutionManager(Generic[ContextT]):
         backend: Optional[ExecutionBackend] = None,  # ✅ NEW: Receive the backend directly.
         state_manager: Optional[StateManager[ContextT]] = None,
         usage_limits: Optional[UsageLimits] = None,
-        usage_governor: Any | None = None,
         step_coordinator: Optional[StepCoordinator[ContextT]] = None,
         type_validator: Optional[TypeValidator] = None,
         inside_loop_step: bool = False,
@@ -90,14 +89,7 @@ class ExecutionManager(Generic[ContextT]):
         else:
             self.backend = backend
         self.state_manager = state_manager or StateManager()
-        # FSD-009: Legacy reactive UsageGovernor removed; pure quota only
-        # Back-compat: accept usage_governor and extract limits if provided
         self.usage_limits = usage_limits
-        if self.usage_limits is None and usage_governor is not None:
-            try:
-                self.usage_limits = getattr(usage_governor, "usage_limits", None)
-            except Exception:
-                self.usage_limits = None
         self.step_coordinator = step_coordinator or StepCoordinator()
         self.type_validator = type_validator or TypeValidator()
         self.inside_loop_step = inside_loop_step  # Track if we're inside a loop step
@@ -139,7 +131,7 @@ class ExecutionManager(Generic[ContextT]):
         This is the main execution loop that coordinates all components:
         - Step execution via StepCoordinator
         - State persistence via StateManager
-        - Usage limit checking via UsageGovernor
+        - Usage limit checking via quota (UsageGovernor legacy removed)
         - Type validation via TypeValidator
 
         Args:

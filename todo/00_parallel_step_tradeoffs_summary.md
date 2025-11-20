@@ -12,7 +12,8 @@ This document provides an overview of both trade-offs and their relationship to 
 ## The Deadlock Problem
 
 ### Root Cause
-The original parallel step execution had a complex locking mechanism that could cause deadlocks:
+The original parallel step execution had a complex locking mechanism that could cause deadlocks
+(legacy; this breach_event/governor wiring was removed when shifting to pure quota):
 
 ```python
 # Problematic pattern that caused deadlocks
@@ -24,7 +25,8 @@ async with semaphore:  # Lock 1
 ```
 
 ### Solution Applied
-We simplified the execution to eliminate lock contention:
+We simplified the execution to eliminate lock contention (and later removed breach_event/governor
+plumbing entirely in favor of proactive quota):
 
 ```python
 # Simplified, deadlock-free approach

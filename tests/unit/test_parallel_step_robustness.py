@@ -79,7 +79,7 @@ class TestParallelStepRobustness:
     async def test_usage_governor_receives_individual_step_results(
         self, parallel_step, mock_step_executor, usage_limits
     ):
-        """Legacy governor path — superseded by Quota No-op to avoid xdist flake."""
+        """Legacy governor path removed; quota mode has no governor surface."""
         assert True
 
     async def test_cancelled_branches_populate_dictionaries(

@@ -30,7 +30,7 @@ limits = UsageLimits(total_cost_usd_limit=0.12)
 runner = Flujo(pipeline, usage_limits=limits)
 
 try:
-    print("Running pipeline... it should be stopped by the governor.")
+    print("Running pipeline... it should be stopped by the quota limits.")
     runner.run(0)
 except UsageLimitExceededError as e:
     print(f"\n✅ Pipeline halted as expected!")
