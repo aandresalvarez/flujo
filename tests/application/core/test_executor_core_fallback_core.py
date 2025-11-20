@@ -117,7 +117,7 @@ class TestExecutorCoreFallback:
             False,  # stream
             None,  # on_chunk
             "cache_key",
-            None,  # breach_event
+            None,  # legacy  (unused)
         )
 
         # Assert
@@ -170,7 +170,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  # legacy  (unused)
             )
 
             # Assert
@@ -220,7 +220,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  # legacy  (unused)
             )
 
             # Assert
@@ -271,7 +271,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  # legacy  (unused)
             )
 
             # Assert
@@ -322,7 +322,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  # legacy  (unused)
             )
 
             # Assert
@@ -371,7 +371,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  #
             )
 
             # Assert
@@ -415,7 +415,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  #
             )
 
         # Assert
@@ -455,7 +455,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  #
             )
 
             # Assert
@@ -503,7 +503,7 @@ class TestExecutorCoreFallback:
                     False,  # stream
                     None,  # on_chunk
                     "cache_key",
-                    None,  # breach_event
+                    None,  #
                 )
 
             # Assert
@@ -551,7 +551,7 @@ class TestExecutorCoreFallback:
                 True,  # stream
                 AsyncMock(),  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  #
             )
 
             # Assert
@@ -607,7 +607,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  #
             )
 
             # Assert
@@ -649,7 +649,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  #
             )
 
         # Assert
@@ -679,7 +679,7 @@ class TestExecutorCoreFallback:
             False,  # stream
             None,  # on_chunk
             "cache_key",
-            None,  # breach_event
+            None,  # legacy  (unused)
         )
 
         # Assert
@@ -715,7 +715,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  # legacy  (unused)
             )
 
     @pytest.mark.asyncio
@@ -742,7 +742,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  # legacy  (unused)
             )
 
     @pytest.mark.asyncio
@@ -767,7 +767,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  # legacy  (unused)
             )
 
     @pytest.mark.asyncio
@@ -817,7 +817,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  # legacy  (unused)
             )
 
             # Assert
@@ -871,7 +871,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  #
             )
 
             # Assert
@@ -902,7 +902,7 @@ class TestExecutorCoreFallback:
             False,  # stream
             None,  # on_chunk
             "cache_key",
-            None,  # breach_event
+            None,  # legacy  (unused)
         )
 
         # Assert
@@ -913,13 +913,12 @@ class TestExecutorCoreFallback:
         assert "fallback_triggered" not in (result.metadata_ or {})
 
     @pytest.mark.asyncio
-    async def test_fallback_with_breach_event(self, executor_core, create_step_with_fallback):
-        """Test fallback behavior with breach event."""
+    async def test_fallback_with_quota_only(self, executor_core, create_step_with_fallback):
+        """Test fallback behavior without  (quota-only)."""
         # Arrange
         primary_step, fallback_step = create_step_with_fallback(
             primary_fails=True, fallback_succeeds=True
         )
-        breach_event = Mock()
 
         # Configure executor - provide enough side effects for all retry attempts
         executor_core._agent_runner.run.side_effect = [
@@ -954,7 +953,6 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                breach_event,  # breach_event
             )
 
             # Assert
@@ -1003,7 +1001,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  #
             )
 
             # Assert
@@ -1052,7 +1050,7 @@ class TestExecutorCoreFallback:
                 False,  # stream
                 None,  # on_chunk
                 "cache_key",
-                None,  # breach_event
+                None,  #
             )
 
             # Assert

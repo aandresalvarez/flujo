@@ -26,7 +26,6 @@ async def test_simple_policy_owned_execution():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 
@@ -52,7 +51,6 @@ async def test_simple_policy_success_path(monkeypatch):
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
     )
     assert res.success is True
     assert res.output == "ok" or res.output is not None
@@ -76,7 +74,6 @@ async def test_simple_policy_with_plugin_success(monkeypatch):
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
     )
     assert res.success is True
     assert res.output is not None
@@ -101,7 +98,6 @@ async def test_simple_policy_with_validator_failure(monkeypatch):
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
     )
     assert res.success is False or res.feedback is not None
 
@@ -134,7 +130,6 @@ async def test_processors_pipeline_applied(monkeypatch):
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
     )
     assert res.success is True
     assert res.output == "po:mid"
@@ -161,7 +156,6 @@ async def test_retry_attempt_counts(monkeypatch):
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
     )
     assert isinstance(res, Success)
     assert res.step_result.success is True
@@ -198,7 +192,6 @@ async def test_fallback_success_path(monkeypatch):
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
     )
     assert isinstance(res, Success)
     assert res.step_result.success is True
@@ -240,7 +233,6 @@ async def test_fallback_failure_path(monkeypatch):
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
     )
     assert isinstance(res, Failure)
     assert res.step_result is not None
@@ -255,7 +247,15 @@ async def test_streaming_invokes_on_chunk(monkeypatch):
     policy = DefaultSimpleStepExecutor()
     step = Step(name="s", agent=StubAgent(["final"]))
 
-    async def runner(agent, payload, context, resources, options, stream, on_chunk, breach_event):
+    async def runner(
+        agent,
+        payload,
+        context,
+        resources,
+        options,
+        stream,
+        on_chunk,
+    ):
         # Simulate streaming
         if stream and on_chunk is not None:
             await on_chunk("chunk1")
@@ -274,7 +274,6 @@ async def test_streaming_invokes_on_chunk(monkeypatch):
         stream=True,
         on_chunk=on_chunk,
         cache_key=None,
-        breach_event=None,
     )
     on_chunk.assert_called_once()
     sr = res.step_result if hasattr(res, "step_result") else res
@@ -301,7 +300,6 @@ async def test_usage_guard_called(monkeypatch):
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
     )
     # The dual-check pattern calls guard twice: pre-execution and post-execution
     # This provides enhanced robustness by validating usage limits at both stages
@@ -331,7 +329,6 @@ async def test_cache_put_called_on_success(monkeypatch):
         stream=False,
         on_chunk=None,
         cache_key="key",
-        breach_event=None,
     )
     sr = res.step_result if hasattr(res, "step_result") else res
     assert sr.success is True

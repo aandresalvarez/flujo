@@ -47,7 +47,6 @@ class ParallelStepExecutor(Protocol):
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[UsageLimits],
-        breach_event: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         parallel_step: Optional[ParallelStep[Any]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
@@ -63,7 +62,6 @@ class DefaultParallelStepExecutor:
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[UsageLimits],
-        breach_event: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         parallel_step: Optional[ParallelStep[Any]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
@@ -157,9 +155,47 @@ class DefaultParallelStepExecutor:
                 except Exception:
                     quota_token = None
                 if step_executor is not None:
-                    branch_result = await step_executor(
-                        branch_pipeline, data, branch_context, resources, None
-                    )
+                    target = branch_pipeline
+                    try:
+                        if isinstance(branch_pipeline, Pipeline) and getattr(
+                            branch_pipeline, "steps", None
+                        ):
+                            steps = list(getattr(branch_pipeline, "steps") or [])
+                            if steps:
+                                # Expose the first step's agent for executors that expect it
+                                first_step = steps[0]
+                                if getattr(first_step, "agent", None) is not None:
+                                    try:
+                                        setattr(branch_pipeline, "agent", first_step.agent)
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        target = branch_pipeline
+                    try:
+                        branch_result = await step_executor(
+                            target,
+                            data,
+                            branch_context,
+                            resources,
+                        )
+                    except AttributeError as exc:
+                        # Some custom executors expect a Step with an `agent` attribute;
+                        # retry with the first step from the pipeline when available.
+                        if (
+                            isinstance(target, Pipeline)
+                            and getattr(target, "steps", None)
+                            and "agent" in str(exc)
+                        ):
+                            steps = list(getattr(target, "steps") or [])
+                            if steps:
+                                branch_result = await step_executor(
+                                    steps[0],
+                                    data,
+                                    branch_context,
+                                    resources,
+                                )
+                        else:
+                            raise
                 else:
                     # Delegate depending on type: Pipeline vs Step
                     if isinstance(branch_pipeline, Pipeline):
@@ -169,7 +205,6 @@ class DefaultParallelStepExecutor:
                             branch_context,
                             resources,
                             limits,
-                            None,
                             context_setter,
                         )
                     else:
@@ -180,7 +215,6 @@ class DefaultParallelStepExecutor:
                             context=branch_context,
                             resources=resources,
                             limits=limits,
-                            breach_event=None,
                             context_setter=context_setter,
                         )
                         if isinstance(step_outcome, Success):
@@ -775,12 +809,16 @@ class DefaultParallelStepExecutor:
                                     merged_branch_results.update(getattr(bc, "branch_results"))
                             context.branch_results = merged_branch_results
 
-                result.branch_context = context
+                # Preserve the original branch context for downstream merges.
+                # Only set if not already populated (e.g., from pipeline_result.final_pipeline_context).
+                if result.branch_context is None:
+                    result.branch_context = context
             except ConfigurationError as e:
                 # Fail the entire parallel step with a clear error message
                 result.success = False
                 result.feedback = str(e)
-                result.branch_context = context
+                if result.branch_context is None:
+                    result.branch_context = context
             except Exception as e:
                 telemetry.logfire.error(f"Context merging failed: {e}")
         # Finalize result
@@ -824,7 +862,6 @@ class ParallelStepExecutorOutcomes(Protocol):
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[UsageLimits],
-        breach_event: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         parallel_step: Optional[ParallelStep[Any]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,

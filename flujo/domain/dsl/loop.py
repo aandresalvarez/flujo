@@ -10,11 +10,15 @@ from typing import (
     Optional,
     TypeVar,
     Iterable,
-    Self,
     ClassVar,
 )
 
-from pydantic import Field
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
+
+from pydantic import Field, model_validator
 import contextvars
 
 from ..models import BaseModel
@@ -60,6 +64,72 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
     )
 
     model_config = {"arbitrary_types_allowed": True, "populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_fields(cls: type[Self], data: Any) -> Any:
+        """Support legacy construction using 'body' and 'exit_expression' keys."""
+        if not isinstance(data, dict):
+            return data
+        working = dict(data)
+        # Map legacy `body` list to loop_body_pipeline Pipeline
+        try:
+            if "loop_body_pipeline" not in working and "body" in working:
+                body_steps = working.pop("body")
+                if isinstance(body_steps, list):
+                    from .pipeline import Pipeline
+
+                    working["loop_body_pipeline"] = Pipeline(steps=body_steps)
+        except Exception:
+            pass
+        # Map legacy exit_expression string to callable
+        try:
+            if "exit_condition_callable" not in working and "exit_expression" in working:
+                expr_raw = working.pop("exit_expression")
+                if isinstance(expr_raw, str):
+                    expr_str = expr_raw.strip()
+                    # Strip Jinja-style delimiters
+                    if expr_str.startswith("{{") and expr_str.endswith("}}"):
+                        expr_str = expr_str[2:-2].strip()
+
+                    def _resolve_path(path: str, output: Any, ctx: Optional[TContext]) -> Any:
+                        names: dict[str, Any] = {
+                            "previous_step": output,
+                            "output": output,
+                            "context": ctx,
+                        }
+                        target: Any = names
+                        for part in path.split("."):
+                            if isinstance(target, dict):
+                                target = target.get(part)
+                            else:
+                                target = getattr(target, part, None)
+                            if target is None:
+                                return None
+                        return target
+
+                    if " is defined" in expr_str:
+                        path = expr_str.split(" is defined", 1)[0].strip()
+
+                        def _legacy_exit(output: Any, ctx: Optional[TContext]) -> bool:
+                            return _resolve_path(path, output, ctx) is not None
+
+                    else:
+                        from flujo.utils.expressions import compile_expression_to_callable
+
+                        expr_fn = compile_expression_to_callable(expr_str)
+
+                        def _legacy_exit(output: Any, ctx: Optional[TContext]) -> bool:
+                            val = expr_fn(output, ctx)
+                            try:
+                                return bool(val)
+                            except Exception:
+                                return False
+
+                    working["exit_condition_callable"] = _legacy_exit
+        except Exception:
+            pass
+        return working
 
     def get_max_loops(self) -> int:
         """Get the maximum number of loops."""

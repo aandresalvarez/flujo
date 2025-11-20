@@ -21,7 +21,6 @@ async def _noop_agent(
     options=None,
     stream=False,
     on_chunk=None,
-    breach_event=None,
 ):
     class _R:
         def usage(self):

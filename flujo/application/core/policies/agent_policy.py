@@ -47,7 +47,6 @@ class AgentStepExecutor(Protocol):
         stream: bool,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]],
         cache_key: Optional[str],
-        breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]: ...
 
@@ -64,7 +63,6 @@ class DefaultAgentStepExecutor:
         stream: bool,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]],
         cache_key: Optional[str],
-        breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]:
         # Pre-execution AROS instrumentation expected by some unit/integration tests.
@@ -177,7 +175,6 @@ class DefaultAgentStepExecutor:
                 stream,
                 on_chunk,
                 cache_key,
-                breach_event,
                 _fallback_depth,
             )
         except PausedException as e:
@@ -570,7 +567,6 @@ class DefaultAgentStepExecutor:
                                                 options=vopts,
                                                 stream=False,
                                                 on_chunk=None,
-                                                breach_event=breach_event,
                                             )
                                     except Exception:
                                         vres = None
@@ -673,7 +669,6 @@ class DefaultAgentStepExecutor:
                                                 options={},
                                                 stream=False,
                                                 on_chunk=None,
-                                                breach_event=breach_event,
                                             )
                                         finally:
                                             # Reconcile quota reservation
@@ -857,7 +852,6 @@ class DefaultAgentStepExecutor:
                     options=options,
                     stream=stream,
                     on_chunk=on_chunk,
-                    breach_event=breach_event,
                 )
                 try:
                     telemetry.logfire.info(
@@ -1043,7 +1037,6 @@ class DefaultAgentStepExecutor:
                                         stream=stream,
                                         on_chunk=on_chunk,
                                         cache_key=None,
-                                        breach_event=breach_event,
                                         _fallback_depth=_fallback_depth + 1,
                                     )
                                     # Accumulate metrics
@@ -1130,7 +1123,6 @@ class DefaultAgentStepExecutor:
                                 stream=stream,
                                 on_chunk=on_chunk,
                                 cache_key=None,
-                                breach_event=breach_event,
                                 _fallback_depth=_fallback_depth + 1,
                             )
                             result.cost_usd = (result.cost_usd or 0.0) + (fb_res.cost_usd or 0.0)
@@ -1353,7 +1345,6 @@ class DefaultAgentStepExecutor:
                             stream=stream,
                             on_chunk=on_chunk,
                             cache_key=None,
-                            breach_event=breach_event,
                             _fallback_depth=_fallback_depth + 1,
                         )
                         # Accumulate metrics
@@ -1524,7 +1515,6 @@ class AgentStepExecutorOutcomes(Protocol):
         stream: bool,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]],
         cache_key: Optional[str],
-        breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]: ...
 

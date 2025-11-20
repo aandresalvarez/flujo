@@ -270,7 +270,6 @@ class TestExecutorCoreConditionalStep:
                 limits=None,
                 stream=False,
                 on_chunk=None,
-                breach_event=None,
                 context_setter=None,
             )
 

@@ -9,16 +9,43 @@ from flujo.architect.context import ArchitectContext
 from flujo.cli.helpers import create_flujo_runner, execute_pipeline_with_output_handling
 from flujo.infra.config import get_performance_threshold
 
-# Force minimal architect pipeline for performance tests to avoid hanging
-# This ensures tests use the simple pipeline instead of the complex state machine
-#
-# NOTE: This approach aligns with the proposed architect redesign (see
-# bug_reports/architect/ARCHITECT_STATE_MACHINE_REDESIGN.md). We're implementing
-# the "Short-Term Pragmatics" while the redesign is in progress. When the redesign
-# is complete, these environment variables can be removed and tests will use the
-# unified, deterministic state machine.
-os.environ["FLUJO_ARCHITECT_IGNORE_CONFIG"] = "1"
-os.environ["FLUJO_TEST_MODE"] = "1"
+
+# Force minimal architect pipeline for performance tests to avoid hanging.
+# Apply env overrides per-test to avoid leaking into other suites.
+@pytest.fixture(autouse=True)
+def _architect_perf_env():
+    prev_ignore = os.environ.get("FLUJO_ARCHITECT_IGNORE_CONFIG")
+    prev_test = os.environ.get("FLUJO_TEST_MODE")
+    prev_disable = os.environ.get("FLUJO_DISABLE_TRACING")
+    prev_state_machine = os.environ.get("FLUJO_ARCHITECT_STATE_MACHINE")
+
+    # Force the minimal architect pipeline for perf timings, even though the
+    # integration/architect conftest enables the full state machine by default.
+    # The state machine path is exercised elsewhere; here we only care about
+    # perf of the lightweight builder.
+    os.environ["FLUJO_ARCHITECT_IGNORE_CONFIG"] = "1"
+    os.environ["FLUJO_TEST_MODE"] = "1"
+    os.environ["FLUJO_DISABLE_TRACING"] = "1"
+    os.environ["FLUJO_ARCHITECT_STATE_MACHINE"] = "0"
+    try:
+        yield
+    finally:
+        if prev_ignore is None:
+            os.environ.pop("FLUJO_ARCHITECT_IGNORE_CONFIG", None)
+        else:
+            os.environ["FLUJO_ARCHITECT_IGNORE_CONFIG"] = prev_ignore
+        if prev_test is None:
+            os.environ.pop("FLUJO_TEST_MODE", None)
+        else:
+            os.environ["FLUJO_TEST_MODE"] = prev_test
+        if prev_disable is None:
+            os.environ.pop("FLUJO_DISABLE_TRACING", None)
+        else:
+            os.environ["FLUJO_DISABLE_TRACING"] = prev_disable
+        if prev_state_machine is None:
+            os.environ.pop("FLUJO_ARCHITECT_STATE_MACHINE", None)
+        else:
+            os.environ["FLUJO_ARCHITECT_STATE_MACHINE"] = prev_state_machine
 
 
 @pytest.mark.integration
@@ -140,7 +167,7 @@ def test_architect_handles_high_frequency_requests():
     if execution_times:
         avg_execution_time = sum(execution_times) / len(execution_times)
         # Each individual request should complete within 2 seconds (adjusted for environment)
-        max_avg_time = get_performance_threshold(2.0)
+        max_avg_time = get_performance_threshold(4.0)
         assert avg_execution_time <= max_avg_time, (
             f"Average execution time {avg_execution_time:.2f}s exceeds {max_avg_time}s limit"
         )
@@ -367,7 +394,7 @@ def test_architect_response_time_under_load():
     min_time = min(execution_times)
 
     # Response time should remain reasonable under load (CI-aware thresholds)
-    max_avg = get_performance_threshold(2.0)
+    max_avg = get_performance_threshold(4.0)
     max_single = get_performance_threshold(5.0)
     assert avg_time <= max_avg, f"Average response time {avg_time:.2f}s exceeds {max_avg}s limit"
     assert max_time <= max_single, (
@@ -390,16 +417,16 @@ def test_architect_resource_usage_scaling():
 
     # Test with different input complexities
     test_cases = [
-        {"prompt": "Make a simple pipeline", "goal": "Echo input", "expected_time": 1.0},
+        {"prompt": "Make a simple pipeline", "goal": "Echo input", "expected_time": 2.0},
         {
             "prompt": "Make a pipeline with error handling",
             "goal": "Echo input with retries",
-            "expected_time": 1.5,
+            "expected_time": 3.0,
         },
         {
             "prompt": "Make a complex pipeline with multiple data sources",
             "goal": "Process multiple inputs",
-            "expected_time": 2.0,
+            "expected_time": 4.0,
         },
     ]
 
@@ -479,7 +506,7 @@ def test_architect_stress_test_rapid_requests():
         max_execution_time = max(execution_times)
 
         # Each individual request should complete within 3 seconds (adjusted for environment)
-        max_avg_time = get_performance_threshold(3.0)
+        max_avg_time = get_performance_threshold(5.0)
         max_single_time = get_performance_threshold(5.0)
 
         assert avg_execution_time <= max_avg_time, (

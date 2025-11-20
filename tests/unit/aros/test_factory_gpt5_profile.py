@@ -116,7 +116,6 @@ async def test_policy_openai_gpt4o_auto_grammar_applied(monkeypatch):
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 
@@ -167,7 +166,6 @@ async def test_policy_enables_structured_output_for_gpt5_family_without_network(
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 

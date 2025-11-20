@@ -239,15 +239,21 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                 )
 
             usage_info = raw_output.usage()
-            # Guard against mocks and invalid values; support multiple field names
-            prompt_tokens = _safe_int(
-                getattr(usage_info, "request_tokens", getattr(usage_info, "input_tokens", 0)),
-                default=0,
-            )
-            completion_tokens = _safe_int(
-                getattr(usage_info, "response_tokens", getattr(usage_info, "output_tokens", 0)),
-                default=0,
-            )
+            # Guard against mocks and invalid values; prefer the modern fields and
+            # fall back only when absent (avoid touching deprecated attributes when possible).
+            if hasattr(usage_info, "input_tokens"):
+                prompt_tokens = _safe_int(getattr(usage_info, "input_tokens"), default=0)
+            elif hasattr(usage_info, "request_tokens"):
+                prompt_tokens = _safe_int(getattr(usage_info, "request_tokens"), default=0)
+            else:
+                prompt_tokens = 0
+
+            if hasattr(usage_info, "output_tokens"):
+                completion_tokens = _safe_int(getattr(usage_info, "output_tokens"), default=0)
+            elif hasattr(usage_info, "response_tokens"):
+                completion_tokens = _safe_int(getattr(usage_info, "response_tokens"), default=0)
+            else:
+                completion_tokens = 0
 
             # Check if cost was set by a post-processor (e.g., image cost post-processor)
             usage_cost = getattr(usage_info, "cost_usd", None)

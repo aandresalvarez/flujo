@@ -2298,36 +2298,52 @@ def _validate_impl(
             sarif_rules: list[dict[str, Any]] = []
             sarif_results: list[dict[str, Any]] = []
 
+            def _append_rule(info: Any, rid: str | None = None) -> None:
+                rule_id = (rid or getattr(info, "id", "") or "").upper()
+                if not rule_id or rule_id in rules_index:
+                    return
+                sarif_rules.append(
+                    {
+                        "id": rule_id,
+                        "name": (getattr(info, "title", None) or rule_id),
+                        "shortDescription": {"text": (getattr(info, "title", None) or rule_id)},
+                        **(
+                            {"fullDescription": {"text": getattr(info, "description")}}
+                            if (hasattr(info, "description") and getattr(info, "description"))
+                            else {}
+                        ),
+                        **(
+                            {"helpUri": getattr(info, "help_uri")}
+                            if (hasattr(info, "help_uri") and getattr(info, "help_uri"))
+                            else {
+                                "helpUri": f"https://aandresalvarez.github.io/flujo/reference/validation_rules/#{rule_id.lower()}"
+                            }
+                        ),
+                    }
+                )
+                rules_index[rule_id] = len(sarif_rules) - 1
+
             def _rule_ref(rule_id: str) -> dict[str, Any]:
                 rid = (rule_id or "").upper()
                 if rid not in rules_index:
-                    rules_index[rid] = len(sarif_rules)
                     try:
                         from ..validation.rules_catalog import get_rule
 
                         info = get_rule(rid)
                     except Exception:
                         info = None
-                    sarif_rules.append(
-                        {
-                            "id": rid,
-                            "name": (getattr(info, "title", None) or rid),
-                            "shortDescription": {"text": (getattr(info, "title", None) or rid)},
-                            **(
-                                {"fullDescription": {"text": getattr(info, "description")}}
-                                if (hasattr(info, "description") and getattr(info, "description"))
-                                else {}
-                            ),
-                            **(
-                                {"helpUri": info.help_uri}
-                                if (hasattr(info, "help_uri") and getattr(info, "help_uri"))
-                                else {
-                                    "helpUri": f"https://aandresalvarez.github.io/flujo/reference/validation_rules/#{rid.lower()}"
-                                }
-                            ),
-                        }
-                    )
+                    _append_rule(info, rid)
                 return {"ruleId": rid}
+
+            # Preload the entire catalog so metadata is present even when there are zero findings.
+            try:
+                from ..validation import rules_catalog as _rules_catalog
+
+                for _rule in getattr(_rules_catalog, "_CATALOG", {}).values():
+                    _append_rule(_rule)
+            except Exception:
+                # Best-effort; fall back to lazy rule additions when findings reference them.
+                pass
 
             def _location(f: Any) -> dict[str, Any]:
                 region: dict[str, Any] = {}

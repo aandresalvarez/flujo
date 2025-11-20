@@ -1,8 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Generic, Optional, TypeVar, Self
+from typing import Any, Callable, Dict, Generic, Optional, TypeVar
 
-from pydantic import Field
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
+
+from pydantic import Field, model_validator
 
 from ..models import BaseModel
 from .step import Step, BranchKey
@@ -44,6 +49,17 @@ class ConditionalStep(Step[Any, Any], Generic[TContext]):
     )
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_fields(cls: type[Self], data: Any) -> Any:
+        """Support legacy construction using `condition` instead of `condition_callable`."""
+        if isinstance(data, dict):
+            working = dict(data)
+            if "condition" in working and "condition_callable" not in working:
+                working["condition_callable"] = working.pop("condition")
+            return working
+        return data
 
     @property
     def is_complex(self) -> bool:

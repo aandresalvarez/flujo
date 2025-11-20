@@ -5,7 +5,7 @@ import os
 from typing import Optional
 
 
-@dataclass(slots=True)
+@dataclass
 class Settings:
     """Process-level settings for Flujo.
 

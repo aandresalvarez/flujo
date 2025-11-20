@@ -16,13 +16,16 @@ from typing import (
     TypeVar,
     Dict,
     Type,
-    ParamSpec,
-    Concatenate,
     overload,
     Union,
     cast,
     TYPE_CHECKING,
 )
+
+try:
+    from typing import ParamSpec, Concatenate
+except ImportError:
+    from typing_extensions import ParamSpec, Concatenate
 
 # contextvars import removed; using context-scoped storage for refine_until
 import inspect
@@ -146,6 +149,12 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         default=None,
         description=("Append ValidationResult objects to this context attribute (must be a list)."),
     )
+    # Optional declarative input (templated). Alias preserves legacy ``input`` param.
+    input_: Any | None = Field(
+        default=None,
+        alias="input",
+        description="Explicit step input (can be templated).",
+    )
     updates_context: bool = Field(
         default=False,
         description="Whether the step output should merge into the pipeline context.",
@@ -209,6 +218,22 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         if self.config != default_config:
             config_repr = f", config={self.config!r}"
         return f"Step(name={self.name!r}, agent={agent_repr}{config_repr})"
+
+    @property
+    def input(self) -> Any | None:
+        """Return the declarative input value (legacy alias)."""
+        return self.input_
+
+    def model_post_init(self, __context: Any) -> None:
+        # Surface declarative input as templating spec so executors apply it uniformly.
+        if self.input_ is not None:
+            try:
+                meta_dict: dict[str, Any] = dict(self.meta or {})
+                meta_dict.setdefault("templated_input", self.input_)
+                object.__setattr__(self, "meta", meta_dict)
+            except Exception:
+                # Do not fail initialization if meta isn't mutable
+                pass
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover - behavior
         """Disallow direct invocation of a Step."""

@@ -43,7 +43,7 @@ def test_state_machine_dsl_executes_end_to_end() -> None:
     core: ExecutorCore[Ctx] = ExecutorCore()
 
     async def _run() -> None:
-        res = await core._execute_pipeline_via_policies(pipe, "hi", ctx, None, None, None, None)
+        res = await core._execute_pipeline_via_policies(pipe, "hi", ctx, None, None, None)
         assert res is not None
         assert len(res.step_history) >= 1
 

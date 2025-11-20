@@ -56,7 +56,6 @@ steps:
             None,
             None,
             None,
-            None,
         )
     )
 

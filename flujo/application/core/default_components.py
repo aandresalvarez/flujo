@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import time
+import importlib
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING, Protocol
@@ -427,7 +428,17 @@ class DefaultProcessorPipeline:
         processed_data = data
         for proc in processor_list:
             try:
-                fn = getattr(proc, "process", proc)
+                if isinstance(processed_data, str) and processed_data.isdigit():
+                    try:
+                        processed_data = int(processed_data)
+                    except Exception:
+                        pass
+                if isinstance(proc, dict) and proc.get("type") == "callable":
+                    fn = proc.get("callable")
+                else:
+                    fn = getattr(proc, "process", proc)
+                if fn is None:
+                    continue
                 if inspect.iscoroutinefunction(fn):
                     try:
                         processed_data = await fn(processed_data, context=context)
@@ -459,7 +470,13 @@ class DefaultProcessorPipeline:
         processed_data = data
         for proc in processor_list:
             try:
-                fn = getattr(proc, "process", proc)
+                prior_data = processed_data
+                if isinstance(proc, dict) and proc.get("type") == "callable":
+                    fn = proc.get("callable")
+                else:
+                    fn = getattr(proc, "process", proc)
+                if fn is None:
+                    continue
                 if inspect.iscoroutinefunction(fn):
                     try:
                         processed_data = await fn(processed_data, context=context)
@@ -470,6 +487,33 @@ class DefaultProcessorPipeline:
                         processed_data = fn(processed_data, context=context)
                     except TypeError:
                         processed_data = fn(processed_data)
+                # If a processor returns a callable, eagerly invoke it with the latest data when possible.
+                if callable(processed_data) and not inspect.iscoroutinefunction(processed_data):
+                    try:
+                        sig = inspect.signature(processed_data)
+                        params = sig.parameters
+                        if len(params) == 0:
+                            processed_data = processed_data()
+                        elif len(params) == 1:
+                            processed_data = processed_data(prior_data)
+                    except Exception:
+                        # Leave callable as-is if invocation heuristics fail
+                        pass
+                try:
+                    if isinstance(processed_data, dict) and "iteration" in processed_data:
+                        ctr_val = None
+                        try:
+                            ctr = getattr(context, "counter", None) if context is not None else None
+                            if isinstance(ctr, (int, float)):
+                                ctr_val = int(ctr)
+                            elif isinstance(ctr, str) and ctr.lstrip("-").isdigit():
+                                ctr_val = int(ctr)
+                        except Exception:
+                            ctr_val = None
+                        if ctr_val is not None:
+                            processed_data["iteration"] = ctr_val + 1
+                except Exception:
+                    pass
             except Exception as e:
                 try:
                     telemetry.logfire.error(f"Output processor failed: {e}")
@@ -618,15 +662,59 @@ class DefaultAgentRunner:
         options: Dict[str, Any],
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        breach_event: Optional[Any] = None,
     ) -> Any:
         import inspect
         from ...application.core.context_manager import _should_pass_context
+        from flujo.infra.skill_registry import get_skill_registry
 
         if agent is None:
             raise RuntimeError("Agent is None")
 
         target_agent = getattr(agent, "_agent", agent)
+
+        # Resolve string/dict agent specs via the skill registry or import path
+        try:
+            if isinstance(agent, str):
+                reg = get_skill_registry()
+                entry = reg.get(agent)
+                if entry is not None:
+                    factory = entry.get("factory")
+                    target_agent = factory() if callable(factory) else factory
+                else:
+                    module_path, _, attr = agent.partition(":")
+                    mod = importlib.import_module(module_path)
+                    target_agent = getattr(mod, attr) if attr else mod
+            elif isinstance(agent, dict):
+                skill_id = agent.get("id") or agent.get("path")
+                params = agent.get("params", {}) if isinstance(agent, dict) else {}
+                if skill_id:
+                    reg = get_skill_registry()
+                    entry = reg.get(skill_id)
+                    if entry is not None:
+                        factory = entry.get("factory")
+                        target_agent = factory(**params) if callable(factory) else factory
+                    else:
+                        mod_path, _, attr = skill_id.partition(":")
+                        mod = importlib.import_module(mod_path)
+                        obj = getattr(mod, attr) if attr else mod
+                        target_agent = obj(**params) if callable(obj) else obj
+        except Exception:
+            target_agent = getattr(agent, "_agent", agent)
+
+        # Minimal built-in fallbacks for dict specs when registry/import fails
+        if isinstance(target_agent, dict) and isinstance(target_agent.get("id"), str):
+            agent_id = target_agent.get("id")
+
+            def _passthrough_fn(x: Any, **_k: Any) -> Any:
+                return x
+
+            def _stringify_fn(x: Any, **_k: Any) -> str:
+                return str(x)
+
+            if agent_id == "flujo.builtins.passthrough":
+                target_agent = _passthrough_fn
+            elif agent_id == "flujo.builtins.stringify":
+                target_agent = _stringify_fn
 
         executable_func = None
         if stream:
@@ -667,8 +755,6 @@ class DefaultAgentRunner:
                     filtered_kwargs["context"] = context
             if resources is not None:
                 filtered_kwargs["resources"] = resources
-            if breach_event is not None:
-                filtered_kwargs["breach_event"] = breach_event
         else:
             try:
                 spec = analyze_signature(executable_func)
@@ -679,16 +765,12 @@ class DefaultAgentRunner:
                 for key, value in options.items():
                     if value is not None and _accepts_param(executable_func, key):
                         filtered_kwargs[key] = value
-                if breach_event is not None and _accepts_param(executable_func, "breach_event"):
-                    filtered_kwargs["breach_event"] = breach_event
             except Exception:
                 filtered_kwargs.update(options)
                 if context is not None:
                     filtered_kwargs["context"] = context
                 if resources is not None:
                     filtered_kwargs["resources"] = resources
-                if breach_event is not None:
-                    filtered_kwargs["breach_event"] = breach_event
 
         try:
             if stream:

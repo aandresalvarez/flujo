@@ -38,7 +38,6 @@ class ImportStepExecutor(Protocol):
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[UsageLimits],
-        breach_event: Optional[Any],
         context_setter: Callable[[PipelineResult[Any], Optional[Any]], None],
     ) -> StepOutcome[StepResult]: ...
 
@@ -52,7 +51,6 @@ class DefaultImportStepExecutor:
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[UsageLimits],
-        breach_event: Optional[Any],
         context_setter: Callable[[PipelineResult[Any], Optional[Any]], None],
     ) -> StepOutcome[StepResult]:
         from ..context_manager import ContextManager
@@ -213,7 +211,6 @@ class DefaultImportStepExecutor:
                 sub_context,
                 resources,
                 limits,
-                breach_event,
                 context_setter,
             )
         except PausedException as e:

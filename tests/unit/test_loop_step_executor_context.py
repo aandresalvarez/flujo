@@ -34,7 +34,6 @@ class _Core(ExecutorCore):
         _context: Any,
         _resources: Any,
         _limits: Any,
-        _breach_event: Any,
         _context_setter: Any,
     ) -> PipelineResult[Any]:
         # Produce a successful single-step result with a final context to merge

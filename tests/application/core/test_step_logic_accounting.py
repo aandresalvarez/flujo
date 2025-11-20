@@ -53,9 +53,7 @@ class MockStepExecutor:
         self.fallback_result = fallback_result
         self.call_count = 0
 
-    async def __call__(
-        self, step: Step, data: Any, context: Any, resources: Any, breach_event: Any
-    ) -> StepResult:
+    async def __call__(self, step: Step, data: Any, context: Any, resources: Any) -> StepResult:
         self.call_count += 1
         return self.fallback_result
 

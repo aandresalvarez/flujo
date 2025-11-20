@@ -74,7 +74,6 @@ class DefaultDynamicRouterStepExecutor:
             quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
             stream=False,
             on_chunk=None,
-            breach_event=None,
             context_setter=(
                 context_setter if context_setter is not None else (lambda _pr, _ctx: None)
             ),
@@ -167,7 +166,6 @@ class DefaultDynamicRouterStepExecutor:
                 context=context,
                 resources=resources,
                 limits=limits,
-                breach_event=None,
                 context_setter=context_setter,
             )
         finally:

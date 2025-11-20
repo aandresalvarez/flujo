@@ -174,7 +174,6 @@ class StateMachinePolicyExecutor:
                         iteration_context,
                         resources,
                         limits,
-                        None,
                         frame.context_setter,
                     )
                 except PausedException as e:
@@ -241,7 +240,25 @@ class StateMachinePolicyExecutor:
             total_cost += float(getattr(pipeline_result, "total_cost_usd", 0.0))
             total_tokens += int(getattr(pipeline_result, "total_tokens", 0))
             try:
-                for sr in getattr(pipeline_result, "step_history", []) or []:
+                hist = getattr(pipeline_result, "step_history", []) or []
+                if not hist:
+                    # Ensure state visibility even when sub-pipeline produced no step_history
+                    step_history.append(
+                        StepResult(
+                            name=current_state,
+                            success=bool(getattr(pipeline_result, "success", True)),
+                            output=getattr(pipeline_result, "output", None)
+                            if hasattr(pipeline_result, "output")
+                            else None,
+                            attempts=1,
+                            latency_s=float(getattr(pipeline_result, "latency_s", 0.0) or 0.0),
+                            token_counts=int(getattr(pipeline_result, "total_tokens", 0) or 0),
+                            cost_usd=float(getattr(pipeline_result, "total_cost_usd", 0.0) or 0.0),
+                            feedback=None,
+                            step_history=list(hist),
+                        )
+                    )
+                for sr in hist:
                     if isinstance(sr, StepResult):
                         total_latency += float(getattr(sr, "latency_s", 0.0))
                         step_history.append(sr)
@@ -472,35 +489,6 @@ class StateMachinePolicyExecutor:
                             # If a hop was decided, mirror it to next_state for clarity
                             if isinstance(spf.get("next_state"), str) is False:
                                 spf["next_state"] = current_state
-        except Exception:
-            pass
-
-        # Ensure visibility of key states in CI/test runs: if the PlanApproval
-        # state was logically traversed (by design) but did not materialize a
-        # concrete StepResult due to earlier short-circuiting in certain
-        # environments, synthesize a minimal success record so introspection
-        # can assert its presence without altering outcome semantics.
-        try:
-            if isinstance(getattr(step, "states", None), dict) and "PlanApproval" in getattr(
-                step, "states", {}
-            ):
-                has_plan_approval = any(
-                    isinstance(sr, StepResult) and getattr(sr, "name", "") == "PlanApproval"
-                    for sr in step_history
-                )
-                if not has_plan_approval:
-                    step_history.append(
-                        StepResult(
-                            name="PlanApproval",
-                            output=None,
-                            success=True,
-                            attempts=1,
-                            latency_s=0.0,
-                            token_counts=0,
-                            cost_usd=0.0,
-                            feedback=None,
-                        )
-                    )
         except Exception:
             pass
 

@@ -29,7 +29,6 @@ async def test_parallel_policy_success_aggregates_outputs():
         context=None,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )
@@ -64,7 +63,6 @@ async def test_parallel_policy_failure_does_not_merge_context():
         context=ctx,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )
@@ -96,7 +94,6 @@ async def test_parallel_policy_yields_failure_on_paused_branch():
         context=None,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )
@@ -158,7 +155,6 @@ async def test_parallel_policy_deterministic_quota_split_and_accounting():
             context=None,
             resources=None,
             limits=None,
-            breach_event=None,
             context_setter=None,
             step_executor=None,
         )
@@ -201,7 +197,6 @@ async def test_parallel_policy_propagates_usage_errors_and_mock_detection():
         context=None,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )
@@ -238,7 +233,6 @@ async def test_parallel_policy_quota_splitting_zero_parent_after_split():
         context=None,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )

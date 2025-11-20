@@ -45,7 +45,6 @@ async def test_loop_policy_returns_failure_outcome_on_iteration_mapper_error():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
     assert isinstance(outcome, Failure)
@@ -80,7 +79,6 @@ async def test_loop_policy_success_simple_exit():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
     assert isinstance(outcome, Success)
@@ -119,7 +117,6 @@ async def test_loop_within_parallel_and_parallel_within_loop_quota_composition()
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
     assert isinstance(outcome1, Success)
@@ -144,7 +141,6 @@ async def test_loop_within_parallel_and_parallel_within_loop_quota_composition()
         context=None,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )
@@ -182,6 +178,5 @@ async def test_loop_policy_raises_paused_exception():
             stream=False,
             on_chunk=None,
             cache_key=None,
-            breach_event=None,
             _fallback_depth=0,
         )

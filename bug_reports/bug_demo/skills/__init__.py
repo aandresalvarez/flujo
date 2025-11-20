@@ -2,4 +2,3 @@
 
 Provides minimal stub functions to avoid external LLM dependencies.
 """
-

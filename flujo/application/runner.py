@@ -85,6 +85,41 @@ _type_hints_cache_weak: weakref.WeakKeyDictionary[Callable[..., Any], Dict[str, 
 )
 _type_hints_cache_id: dict[int, tuple[weakref.ref[Any], Dict[str, Any]]] = {}
 
+_CtxT = TypeVar("_CtxT", bound=PipelineContext)
+
+
+class _RunAsyncHandle(Generic[_CtxT]):
+    """Async iterable that is also awaitable (returns final PipelineResult)."""
+
+    def __init__(self, factory: Callable[[], AsyncIterator[PipelineResult[_CtxT]]]) -> None:
+        self._factory = factory
+
+    def __aiter__(self) -> AsyncIterator[PipelineResult[_CtxT]]:
+        return self._factory()
+
+    def __await__(self):
+        async def _consume() -> PipelineResult[_CtxT]:
+            agen = self._factory()
+            last_pr: PipelineResult[_CtxT] | None = None
+            try:
+                async for item in agen:
+                    if isinstance(item, PipelineResult):
+                        last_pr = item
+                    elif isinstance(item, StepResult):
+                        # Wrap step result into a PipelineResult-like view
+                        pr = PipelineResult[_CtxT](step_history=[item])
+                        last_pr = pr
+                if last_pr is None:
+                    return PipelineResult()
+                return last_pr
+            finally:
+                try:
+                    await agen.aclose()
+                except Exception:
+                    pass
+
+        return _consume().__await__()
+
 
 def _cached_signature(func: Callable[..., Any]) -> inspect.Signature | None:
     """Return and cache the signature of ``func``.
@@ -169,7 +204,7 @@ InfiniteRedirectError = _InfiniteRedirectError
 
 RunnerInT = TypeVar("RunnerInT")
 RunnerOutT = TypeVar("RunnerOutT")
-ContextT = TypeVar("ContextT", bound=BaseModel)
+ContextT = TypeVar("ContextT", bound=PipelineContext)
 
 
 class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
@@ -541,28 +576,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         ):
             yield item
 
-    async def run_async(
+    async def _run_async_impl(
         self,
         initial_input: RunnerInT,
         *,
         run_id: str | None = None,
         initial_context_data: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[PipelineResult[ContextT]]:
-        """Run the pipeline asynchronously.
-
-        Parameters
-        ----------
-        run_id:
-            Optional identifier for this run. When provided the runner will load
-            and persist state under this ID, enabling durable execution without
-            embedding the ID in the context model.
-
-        This method should be used when an asyncio event loop is already
-        running, such as within Jupyter notebooks or async web frameworks.
-
-        It yields any streaming output from the final step and then the final
-        ``PipelineResult`` object.
-        """
+        """Internal implementation for async pipeline execution."""
 
         async def _run_generator() -> AsyncIterator[PipelineResult[ContextT]]:
             # Dev-only deprecation: warn when legacy runner is used and flag is enabled
@@ -909,6 +930,40 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                                         step_history=[],
                                     )
                                     StepCoordinator().update_pipeline_result(chunk, synthesized)
+                        # If the manager already produced a paused result, propagate it immediately
+                        try:
+                            ctx = chunk.final_pipeline_context
+                            if (
+                                isinstance(ctx, PipelineContext)
+                                and ctx.scratchpad.get("status") == "paused"
+                            ):
+                                paused = True
+                                pipeline_result_obj = chunk
+                                _yielded_pipeline_result = True
+                                try:
+                                    # Ensure paused reflected on result success/status
+                                    chunk.success = False
+                                except Exception:
+                                    pass
+                                yield chunk
+                                return
+                            # Heuristic: if loop resume markers exist but status wasn't set, mark as paused.
+                            if isinstance(ctx, PipelineContext) and (
+                                "loop_iteration" in ctx.scratchpad
+                                or "loop_step_index" in ctx.scratchpad
+                            ):
+                                try:
+                                    ctx.scratchpad["status"] = "paused"
+                                    pipeline_result_obj = chunk
+                                    paused = True
+                                    _yielded_pipeline_result = True
+                                    chunk.success = False
+                                    yield chunk
+                                    return
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                         pipeline_result_obj = chunk
                         _yielded_pipeline_result = True
                     # print(f"RUNNER yield {type(chunk).__name__}")
@@ -931,6 +986,17 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             except PipelineAbortSignal as e:
                 telemetry.logfire.debug(str(e))
                 paused = True
+                try:
+                    if isinstance(current_context_instance, PipelineContext):
+                        current_context_instance.scratchpad["status"] = "paused"
+                        current_context_instance.scratchpad.setdefault(
+                            "pause_message", str(e) or "Paused for HITL"
+                        )
+                        pipeline_result_obj.final_pipeline_context = cast(
+                            Optional[ContextT], current_context_instance
+                        )
+                except Exception:
+                    pass
                 if not _yielded_pipeline_result:
                     _yielded_pipeline_result = True
                     yield _prepare_pipeline_result_for_emit(pad_missing=False)
@@ -975,6 +1041,23 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                         pipeline_result_obj,
                         cast(Optional[ContextT], current_context_instance),
                     )
+                    # If execution ended early without explicit pause flag, infer pause when
+                    # a HITL step exists and not all steps produced results.
+                    try:
+                        if (
+                            not paused
+                            and self.pipeline is not None
+                            and any(isinstance(s, HumanInTheLoopStep) for s in self.pipeline.steps)
+                            and len(pipeline_result_obj.step_history) < len(self.pipeline.steps)
+                        ):
+                            paused = True
+                            try:
+                                if isinstance(current_context_instance, PipelineContext):
+                                    current_context_instance.scratchpad["status"] = "paused"
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
                     # Initialize final_status default for cases with no step history
                     final_status: Literal[
                         "running", "paused", "completed", "failed", "cancelled"
@@ -1074,6 +1157,25 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 yield item
         finally:
             await self._shutdown_state_backend()
+
+    def run_async(
+        self,
+        initial_input: RunnerInT,
+        *,
+        run_id: str | None = None,
+        initial_context_data: Optional[Dict[str, Any]] = None,
+    ) -> _RunAsyncHandle[ContextT]:
+        """Run the pipeline asynchronously.
+
+        Returns an object that is both async-iterable (streaming) and awaitable
+        (returns the final PipelineResult), preserving legacy convenience.
+        """
+
+        return _RunAsyncHandle(
+            lambda: self._run_async_impl(
+                initial_input, run_id=run_id, initial_context_data=initial_context_data
+            )
+        )
 
     async def run_outcomes_async(
         self,

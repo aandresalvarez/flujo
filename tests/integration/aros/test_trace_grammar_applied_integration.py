@@ -63,7 +63,6 @@ async def test_grammar_applied_aggregates_via_trace_hook_with_mock_pipeline():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 

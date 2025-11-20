@@ -325,7 +325,6 @@ class ExecutionManager(Generic[ContextT]):
                                             quota=self.root_quota,
                                             stream=False,
                                             on_chunk=None,
-                                            breach_event=None,
                                             context_setter=lambda _res, _ctx: None,
                                         )
                                         _out_local2 = await _core_local2.execute(_frame_local2)
@@ -523,7 +522,6 @@ class ExecutionManager(Generic[ContextT]):
                                 quota=self.root_quota,
                                 stream=False,
                                 on_chunk=None,
-                                breach_event=None,
                                 context_setter=lambda _res, _ctx: None,
                             )
                             _out_local = await _core_local.execute(_frame_local)

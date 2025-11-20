@@ -47,7 +47,6 @@ async def test_conversation_history_skips_finish_artifact():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 

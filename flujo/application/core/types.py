@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from flujo.domain.dsl.step import Step
 from ...domain.resources import AppResources
 from ...domain.models import UsageLimits, PipelineResult, Quota
-import asyncio
 
 
 class ContextWithScratchpad(Protocol):
@@ -38,8 +37,6 @@ class ExecutionFrame(Generic[TContext_w_Scratch]):
     # Streaming and callback parameters
     stream: bool
     on_chunk: Optional[Callable[[Any], Awaitable[None]]]
-    breach_event: Optional[asyncio.Event]
-
     # Context management
     context_setter: Callable[[PipelineResult[Any], Optional[Any]], None]
 

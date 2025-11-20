@@ -40,7 +40,6 @@ async def test_outlines_enforcement_fails_on_non_matching_output():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
     assert isinstance(outcome, Failure)
@@ -73,7 +72,6 @@ async def test_outlines_enforcement_passes_on_matching_output():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
     assert isinstance(outcome, Success)

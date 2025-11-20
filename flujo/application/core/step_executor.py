@@ -32,7 +32,6 @@ async def _execute_agent_step(
     stream: bool,
     on_chunk: Optional[Callable[[Any], Awaitable[None]]],
     cache_key: Optional[str],
-    breach_event: Optional[Any],
     _fallback_depth: int = 0,
 ) -> StepResult:
     """
@@ -131,7 +130,6 @@ async def _execute_agent_step(
                 options=options,
                 stream=stream,
                 on_chunk=on_chunk,
-                breach_event=breach_event,
             )
 
             # FSD-003 Debug: Check if agent execution actually succeeded
@@ -229,7 +227,6 @@ async def _execute_agent_step(
                                 options={},
                                 stream=stream,
                                 on_chunk=on_chunk,
-                                breach_event=breach_event,
                             )
                             prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
                                 raw_output=redirected_output,

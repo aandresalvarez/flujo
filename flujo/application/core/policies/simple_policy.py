@@ -50,7 +50,6 @@ class SimpleStepExecutor(Protocol):
         stream: bool,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]],
         cache_key: Optional[str],
-        breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]: ...
 
@@ -67,7 +66,6 @@ class DefaultSimpleStepExecutor:
         stream: bool,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]],
         cache_key: Optional[str],
-        breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]:
         # Delegate orchestration to ExecutorCore to preserve separation of concerns
@@ -84,7 +82,6 @@ class DefaultSimpleStepExecutor:
                 stream,
                 on_chunk,
                 cache_key,
-                breach_event,
                 _fallback_depth,
             )
             # Cache successful outcomes here when called directly via policy
@@ -115,7 +112,6 @@ async def _execute_simple_step_policy_impl(
     stream: bool,
     on_chunk: Optional[Callable[[Any], Awaitable[None]]],
     cache_key: Optional[str],
-    breach_event: Optional[Any],
     _fallback_depth: int,
 ) -> StepOutcome[StepResult]:
     """Deprecated: Orchestration moved into ExecutorCore.
@@ -132,7 +128,6 @@ async def _execute_simple_step_policy_impl(
             stream,
             on_chunk,
             cache_key,
-            breach_event,
             _fallback_depth,
         )
     except PausedException as e:
@@ -437,7 +432,6 @@ async def _execute_simple_step_policy_impl(
                     options=options,
                     stream=stream,
                     on_chunk=on_chunk,
-                    breach_event=breach_event,
                 )
             except PausedException:
                 # Re-raise PausedException immediately without retrying
@@ -895,7 +889,6 @@ async def _execute_simple_step_policy_impl(
                                 limits=limits,
                                 stream=stream,
                                 on_chunk=on_chunk,
-                                breach_event=breach_event,
                                 _fallback_depth=_fallback_depth + 1,
                             )
                             if fallback_result.metadata_ is None:
@@ -1059,7 +1052,6 @@ async def _execute_simple_step_policy_impl(
                                 limits=limits,
                                 stream=stream,
                                 on_chunk=on_chunk,
-                                breach_event=breach_event,
                                 _fallback_depth=_fallback_depth + 1,
                             )
                             if fallback_result.metadata_ is None:
@@ -1364,7 +1356,6 @@ async def _execute_simple_step_policy_impl(
                             limits=limits,
                             stream=stream,
                             on_chunk=on_chunk,
-                            breach_event=breach_event,
                             _fallback_depth=_fallback_depth + 1,
                         )
                         if fallback_result.metadata_ is None:
@@ -1466,7 +1457,6 @@ async def _execute_simple_step_policy_impl(
                         limits=limits,
                         stream=stream,
                         on_chunk=on_chunk,
-                        breach_event=breach_event,
                         _fallback_depth=_fallback_depth + 1,
                     )
                     if fallback_result.metadata_ is None:
@@ -1581,7 +1571,6 @@ async def _execute_simple_step_policy_impl(
                         limits=limits,
                         stream=stream,
                         on_chunk=on_chunk,
-                        breach_event=breach_event,
                         _fallback_depth=_fallback_depth + 1,
                     )
                     if fallback_result.metadata_ is None:
@@ -1688,7 +1677,6 @@ class SimpleStepExecutorOutcomes(Protocol):
         stream: bool,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]],
         cache_key: Optional[str],
-        breach_event: Optional[Any],
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]: ...
 

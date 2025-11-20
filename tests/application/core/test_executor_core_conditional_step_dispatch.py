@@ -40,7 +40,6 @@ class TestExecutorCoreConditionalStepDispatch:
                 limits=None,
                 stream=False,
                 on_chunk=None,
-                breach_event=None,
                 context_setter=None,
             )
 
@@ -77,7 +76,6 @@ class TestExecutorCoreConditionalStepDispatch:
                 limits=test_limits,
                 stream=False,
                 on_chunk=None,
-                breach_event=None,
                 context_setter=test_context_setter,
             )
 
@@ -108,7 +106,6 @@ class TestExecutorCoreConditionalStepDispatch:
                 limits=None,
                 stream=False,
                 on_chunk=None,
-                breach_event=None,
                 context_setter=None,
             )
 
@@ -138,7 +135,6 @@ class TestExecutorCoreConditionalStepDispatch:
                     limits=None,
                     stream=False,
                     on_chunk=None,
-                    breach_event=None,
                     context_setter=None,
                 )
 
@@ -166,7 +162,6 @@ class TestExecutorCoreConditionalStepDispatch:
                 limits=None,
                 stream=False,
                 on_chunk=None,
-                breach_event=None,
                 context_setter=None,
             )
 

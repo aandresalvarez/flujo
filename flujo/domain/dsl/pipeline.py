@@ -1445,6 +1445,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     ) -> "Step[PipeInT, PipelineResult[Any]]":
         """Wrap this pipeline as a composable Step, delegating to Flujo runner's as_step."""
         from flujo.application.runner import Flujo
+        from flujo.domain.models import PipelineContext
 
-        runner: Flujo[PipeInT, PipeOutT, BaseModel] = Flujo(self)
+        runner: Flujo[PipeInT, PipeOutT, PipelineContext] = Flujo(self)
         return runner.as_step(name, inherit_context=inherit_context, **kwargs)

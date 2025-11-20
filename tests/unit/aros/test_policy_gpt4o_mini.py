@@ -44,7 +44,6 @@ async def test_policy_openai_gpt4o_mini_auto_grammar_applied(monkeypatch):
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 

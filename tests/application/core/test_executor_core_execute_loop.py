@@ -18,7 +18,6 @@ class DummyExecutor(ExecutorCore):
         stream,
         on_chunk,
         cache_key,
-        breach_event,
         _fallback_depth,
     ):
         # Return a StepResult that increments numeric data by 1

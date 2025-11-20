@@ -32,44 +32,9 @@ class CostlyAgent:
         self.tokens = tokens
         self.delay = delay
 
-    async def run(self, data: Any, *, breach_event=None) -> Any:
-        print(f"[DEBUG] CostlyAgent.run called with breach_event: {breach_event is not None}")
-
-        # Check for breach event to support proactive cancellation
-        if breach_event is not None and breach_event.is_set():
-            print("[DEBUG] CostlyAgent early exit due to breach_event")
-
-            # Early exit if breach detected
-            class Output(BaseModel):
-                value: Any
-                cost_usd: float = 0.0
-                token_counts: int = 0
-
-            return Output(value=data)
-
-        print(f"[DEBUG] CostlyAgent starting sleep for {self.delay}s")
-
-        # Check breach_event periodically during sleep for better responsiveness
-        sleep_interval = 0.01  # Check every 10ms
-        remaining_time = self.delay
-
-        while remaining_time > 0:
-            if breach_event is not None and breach_event.is_set():
-                print("[DEBUG] CostlyAgent cancelled during sleep")
-
-                # Early exit if breach detected during sleep
-                class Output(BaseModel):
-                    value: Any
-                    cost_usd: float = 0.0
-                    token_counts: int = 0
-
-                return Output(value=data)
-
-            sleep_time = min(sleep_interval, remaining_time)
-            await asyncio.sleep(sleep_time)
-            remaining_time -= sleep_time
-
-        print("[DEBUG] CostlyAgent completed sleep, returning result")
+    async def run(self, data: Any) -> Any:
+        # Simulate work and cost; proactive cancellation now handled via quota, not
+        await asyncio.sleep(self.delay)
 
         class Output(BaseModel):
             value: Any

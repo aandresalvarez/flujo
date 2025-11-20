@@ -36,7 +36,6 @@ class CacheStepExecutor(Protocol):
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[UsageLimits],
-        breach_event: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         step_executor: Optional[Callable[..., Awaitable[StepResult]]],
     ) -> StepOutcome[StepResult]: ...
@@ -51,7 +50,6 @@ class DefaultCacheStepExecutor:
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[UsageLimits],
-        breach_event: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
         # Backward-compat: retain 'step' parameter for legacy inspection tooling
@@ -119,7 +117,6 @@ class DefaultCacheStepExecutor:
                     quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
                     stream=False,
                     on_chunk=None,
-                    breach_event=breach_event,
                     context_setter=(
                         context_setter if context_setter is not None else (lambda _pr, _ctx: None)
                     ),
@@ -196,7 +193,6 @@ class DefaultCacheStepExecutor:
             quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
             stream=False,
             on_chunk=None,
-            breach_event=breach_event,
             context_setter=(
                 context_setter if context_setter is not None else (lambda _pr, _ctx: None)
             ),

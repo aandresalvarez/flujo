@@ -16,7 +16,6 @@ class IAgentRunner(Protocol):
         options: Dict[str, Any],
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        breach_event: Optional[Any] = None,
     ) -> Any: ...
 
 

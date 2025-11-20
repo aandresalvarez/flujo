@@ -635,7 +635,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         limits: Optional[UsageLimits],
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        breach_event: Optional[Any] = None,
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
         _fallback_depth: int = 0,
     ) -> StepResult:
@@ -655,7 +654,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             )
         if isinstance(step, DynamicParallelRouterStep):
             return await self._handle_dynamic_router_step(
-                step, data, context, resources, limits, breach_event, context_setter
+                step, data, context, resources, limits, context_setter
             )
         if isinstance(step, HumanInTheLoopStep):
             return await self._handle_hitl_step(
@@ -670,7 +669,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             limits=limits,
             stream=stream,
             on_chunk=on_chunk,
-            breach_event=breach_event,
             context_setter=context_setter,
             _fallback_depth=fb_depth,
         )
@@ -703,7 +701,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 quota=kwargs.get("quota", self.CURRENT_QUOTA.get()),
                 stream=kwargs.get("stream", False),
                 on_chunk=kwargs.get("on_chunk"),
-                breach_event=kwargs.get("breach_event"),
                 context_setter=kwargs.get(
                     "context_setter",
                     lambda _res, _ctx: None,  # default no-op setter
@@ -753,7 +750,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         stream = getattr(frame, "stream", False)
         # Accessors kept for completeness; policies pull from frame directly
         _ = getattr(frame, "on_chunk", None)
-        _ = getattr(frame, "breach_event", None)
         # context_setter is consumed by policy callables; keep available on frame
         result = getattr(frame, "result", None)
         _fallback_depth = getattr(frame, "_fallback_depth", 0)
@@ -920,7 +916,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         limits: Optional[UsageLimits] = None,
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        breach_event: Optional[Any] = None,
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
         result: Optional[StepResult] = None,
         _fallback_depth: int = 0,
@@ -940,7 +935,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 limits=limits,
                 stream=stream,
                 on_chunk=on_chunk,
-                breach_event=breach_event,
                 context_setter=context_setter,
                 result=result,
                 _fallback_depth=_fallback_depth,
@@ -960,10 +954,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         stream: bool,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]],
         cache_key: Optional[str],
-        breach_event: Optional[Any],
-        _fallback_depth: int = 0,
+        _fallback_depth: int | None = 0,
         _from_policy: bool = False,
     ) -> StepResult:
+        # Normalize fallback depth to an int to keep comparisons safe in policies
+        fb_depth: int
+        try:
+            fb_depth = int(_fallback_depth) if _fallback_depth is not None else 0
+        except Exception:
+            fb_depth = 0
         outcome = await self.simple_step_executor.execute(
             self,
             step,
@@ -974,8 +973,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             stream,
             on_chunk,
             cache_key,
-            breach_event,
-            _fallback_depth,
+            fb_depth,
         )
         return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
@@ -986,7 +984,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context: Any | None = None,
         resources: Any | None = None,
         limits: Any | None = None,
-        breach_event: Any | None = None,
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
         *,
         parallel_step: Any | None = None,
@@ -1000,7 +997,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             context,
             resources,
             limits,
-            breach_event,
             context_setter,
             ps,
             step_executor,
@@ -1014,11 +1010,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context: Any,
         resources: Any,
         limits: Any,
-        breach_event: Any,
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
     ) -> PipelineResult[Any]:
         return await self._execute_pipeline_via_policies(
-            pipeline, data, context, resources, limits, breach_event, context_setter
+            pipeline, data, context, resources, limits, context_setter
         )
 
     async def _execute_pipeline_via_policies(
@@ -1028,7 +1023,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[Any],
-        breach_event: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
     ) -> PipelineResult[Any]:
         """Execute all steps in a pipeline using policy routing.
@@ -1061,7 +1055,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     quota=self.CURRENT_QUOTA.get(),
                     stream=False,
                     on_chunk=None,
-                    breach_event=breach_event,
                     context_setter=(context_setter or (lambda _r, _c: None)),
                     _fallback_depth=0,
                 )
@@ -1270,7 +1263,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 False,
                 None,
                 None,
-                None,
                 _fallback_depth,
             )
             return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(loop_step))
@@ -1284,7 +1276,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context: Any | None = None,
         resources: Any | None = None,
         limits: Any | None = None,
-        breach_event: Any | None = None,
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
         router_step: Any | None = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
@@ -1314,7 +1305,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
         cache_key: Optional[str] = None,
-        breach_event: Optional[Any] = None,
         _fallback_depth: int = 0,
         **kwargs: Any,
     ) -> StepResult:
@@ -1370,7 +1360,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 resources,
                 limits,
                 False,
-                None,
                 None,
                 None,
                 _fallback_depth,
@@ -1452,7 +1441,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     resources,
                     limits,
                     None,
-                    None,
                 )
                 # Append last step result when available
                 try:
@@ -1486,8 +1474,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         False,
                         None,
                         None,
-                        None,
                         0,
+                        False,
                     )
                     step_history.append(sr)
                     if not sr.success:
@@ -1573,7 +1561,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[UsageLimits],
-        breach_event: Optional[Any] = None,
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
         *,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
@@ -1586,7 +1573,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             context,
             resources,
             limits,
-            breach_event,
             context_setter,
             step_executor,
         )
@@ -1646,7 +1632,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[UsageLimits],
-        breach_event: Optional[Any] = None,
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
         **kwargs: Any,
     ) -> StepResult:
@@ -1701,7 +1686,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context = frame.context
         resources = frame.resources
         limits = frame.limits
-        breach_event = frame.breach_event
         context_setter = frame.context_setter
         outcome = await self.cache_step_executor.execute(
             self,
@@ -1710,7 +1694,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             context,
             resources,
             limits,
-            breach_event,
             context_setter,
             None,
         )
@@ -1722,7 +1705,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context = frame.context
         resources = frame.resources
         limits = frame.limits
-        breach_event = frame.breach_event
         context_setter = frame.context_setter
         if self.import_step_executor is None:
             # Fallback: treat as default step (should not happen if executor is present)
@@ -1736,7 +1718,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             context,
             resources,
             limits,
-            breach_event,
             context_setter,
         )
 
@@ -1746,7 +1727,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context = frame.context
         resources = frame.resources
         limits = frame.limits
-        breach_event = frame.breach_event
         context_setter = frame.context_setter
         res_any = await self.parallel_step_executor.execute(
             self,
@@ -1755,7 +1735,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             context,
             resources,
             limits,
-            breach_event,
             context_setter,
             cast(ParallelStep[Any], step),
             None,
@@ -1781,7 +1760,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         stream = frame.stream
         on_chunk = frame.on_chunk
         cache_key = self._cache_key(frame) if self._enable_cache else None
-        breach_event = frame.breach_event
         _fallback_depth = frame._fallback_depth
         res_any = await self.loop_step_executor.execute(
             self,
@@ -1793,7 +1771,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             stream,
             on_chunk,
             cache_key,
-            breach_event,
             _fallback_depth,
         )
         if isinstance(res_any, StepOutcome):
@@ -1962,7 +1939,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         stream = frame.stream
         on_chunk = frame.on_chunk
         cache_key = self._cache_key(frame) if self._enable_cache else None
-        breach_event = frame.breach_event
         _fallback_depth = frame._fallback_depth
         # Preserve legacy routing semantics for validation/streaming/fallback cases
         try:
@@ -1985,7 +1961,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             stream,
             on_chunk,
             cache_key,
-            breach_event,
             fb_depth_norm,
         )
         # Cache successful outcomes (policy-level, since execute() may unwrap)
@@ -2016,7 +1991,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         stream: bool,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]],
         cache_key: Optional[str],
-        breach_event: Optional[Any],
         _fallback_depth: int,
     ) -> StepOutcome[StepResult]:
         """Centralizes retries, validation, plugins, and fallback orchestration.
@@ -2346,7 +2320,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     options=options,
                     stream=stream,
                     on_chunk=on_chunk,
-                    breach_event=breach_event,
                 )
                 agent_output = await self.timeout_runner.run_with_timeout(agent_coro, timeout_s)
 
@@ -2404,7 +2377,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             limits=limits,
                             stream=stream,
                             on_chunk=on_chunk,
-                            breach_event=breach_event,
                             _fallback_depth=_fallback_depth + 1,
                         )
                     except Exception as fb_exc:
@@ -2558,7 +2530,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             limits=limits,
                             stream=stream,
                             on_chunk=on_chunk,
-                            breach_event=breach_event,
                             _fallback_depth=_fallback_depth + 1,
                         )
                     except (
@@ -2885,7 +2856,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 limits=limits,
                                 stream=stream,
                                 on_chunk=on_chunk,
-                                breach_event=breach_event,
                                 _fallback_depth=_fallback_depth + 1,
                             )
                         except (
@@ -3129,7 +3099,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             limits=limits,
                             stream=stream,
                             on_chunk=on_chunk,
-                            breach_event=breach_event,
                             _fallback_depth=_fallback_depth + 1,
                         )
                         # Normalize nested outcome to a StepResult
@@ -3313,7 +3282,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             limits=limits,
                             stream=stream,
                             on_chunk=on_chunk,
-                            breach_event=breach_event,
                             _fallback_depth=_fallback_depth + 1,
                         )
                         # Type guard for union type handling

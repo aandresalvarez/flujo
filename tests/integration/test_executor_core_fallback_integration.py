@@ -81,7 +81,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -107,7 +106,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -134,7 +132,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -177,7 +174,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -222,7 +218,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -261,7 +256,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=limits,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -317,7 +311,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=True,
             on_chunk=on_chunk,
-            breach_event=None,
         )
 
         # Assert
@@ -357,7 +350,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -406,7 +398,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -455,7 +446,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -492,7 +482,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Act - Second execution (should use cache)
@@ -504,7 +493,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -545,7 +533,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -582,7 +569,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -619,7 +605,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -656,7 +641,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -693,7 +677,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -730,7 +713,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -769,7 +751,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -798,7 +779,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert - Should fail without fallback (old behavior)
@@ -835,7 +815,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -872,7 +851,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -909,7 +887,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -918,10 +895,9 @@ class TestExecutorCoreFallbackIntegration:
         assert result.metadata_["fallback_triggered"] is True
 
     @pytest.mark.asyncio
-    async def test_real_fallback_with_breach_event(self, real_executor_core):
-        """Test fallback with breach event using real components."""
+    async def test_real_fallback_with_quota_only(self, real_executor_core):
+        """Test fallback in quota-only mode (breach_event removed)."""
         # Arrange
-        breach_event = Mock()
 
         primary_agent = Mock()
         primary_agent.run = AsyncMock(side_effect=Exception("Primary failed"))
@@ -948,7 +924,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=breach_event,
         )
 
         # Assert
@@ -985,7 +960,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -1023,7 +997,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -1061,7 +1034,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -1099,7 +1071,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -1137,7 +1108,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -1168,7 +1138,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert
@@ -1209,7 +1178,6 @@ class TestExecutorCoreFallbackIntegration:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
         )
 
         # Assert

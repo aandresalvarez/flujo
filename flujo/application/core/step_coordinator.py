@@ -448,7 +448,6 @@ class StepCoordinator(Generic[ContextT]):
                                         quota=quota,
                                         stream=False,
                                         on_chunk=None,
-                                        breach_event=None,
                                         context_setter=lambda _r, _c: None,
                                     )
                                     out2 = await core2.execute(frame2)

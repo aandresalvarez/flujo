@@ -437,8 +437,11 @@ def _reconstruct_payload(self, original_payload: dict, data: dict) -> dict:
 
     def reconstruct(original: Any, value: Any) -> Any:
         """Rebuild a value using the type of ``original``."""
+        # If the incoming value is None, preserve the original structure/value
+        if value is None:
+            return original
         if original is None:
-            return None
+            return value
         if isinstance(original, BaseModel):
             if isinstance(value, dict):
                 fixed_value = {

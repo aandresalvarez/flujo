@@ -53,7 +53,6 @@ async def test_agent_strict_pricing_error_surfaces_post_reservation():
             stream=False,
             on_chunk=None,
             cache_key=None,
-            breach_event=None,
             _fallback_depth=0,
         )
         from flujo.domain.models import Failure as OutcomeFailure

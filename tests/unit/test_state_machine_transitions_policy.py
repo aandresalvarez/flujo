@@ -19,7 +19,6 @@ class _FakeCore:
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[Any],
-        breach_event: Optional[Any],
         context_setter: Optional[Any],
     ) -> Any:  # returns PipelineResult[Any]
         self.calls += 1
@@ -38,7 +37,6 @@ class _FakeCorePause:
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[Any],
-        breach_event: Optional[Any],
         context_setter: Optional[Any],
     ) -> Any:  # raises PausedException
         from flujo.exceptions import PausedException
@@ -88,7 +86,6 @@ def test_success_transition_applies_and_stops_on_end_state() -> None:
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
     policy = StateMachinePolicyExecutor()
@@ -138,7 +135,6 @@ def test_failure_transition_wildcard_to_failed() -> None:
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
     policy = StateMachinePolicyExecutor()
@@ -180,7 +176,6 @@ def test_pause_transition_reenters_state_and_reraises() -> None:
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
     policy = StateMachinePolicyExecutor()
@@ -234,7 +229,6 @@ def test_no_rule_fallbacks_to_legacy_next_state() -> None:
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
     policy = StateMachinePolicyExecutor()
@@ -293,7 +287,6 @@ def test_when_runtime_error_treated_as_non_match() -> None:
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
     policy = StateMachinePolicyExecutor()
@@ -343,7 +336,6 @@ def test_no_transitions_legacy_flow_and_step_history() -> None:
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
     policy = StateMachinePolicyExecutor()
@@ -406,7 +398,6 @@ def test_totals_aggregate_across_states() -> None:
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
     policy = StateMachinePolicyExecutor()
