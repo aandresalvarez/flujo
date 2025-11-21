@@ -68,7 +68,7 @@ from .core.execution_manager import ExecutionManager
 from .core.state_manager import StateManager
 from .run_plan_resolver import RunPlanResolver
 from .run_session import RunSession
-from .tracer_resolver import attach_local_tracer
+from .tracer_resolver import setup_tracing
 
 import uuid
 import warnings
@@ -317,35 +317,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             # Defensive fallback: preserve provided limits
             self.usage_limits = usage_limits
 
-        self.hooks: list[Any] = []
-        # Tracing: honor caller's enable_tracing flag, with an env opt-out to reduce perf overhead
-        # in performance/stress tests (does not affect correctness tests that assert traces).
-        try:
-            if str(os.getenv("FLUJO_DISABLE_TRACING", "")).strip().lower() in {
-                "1",
-                "true",
-                "on",
-                "yes",
-            }:
-                enable_tracing = False
-        except Exception:
-            pass
-        # Do not auto-disable during tests by default; tests may assert presence of trace data.
-        if enable_tracing:
-            from flujo.tracing.manager import TraceManager, set_active_trace_manager
-
-            self._trace_manager = TraceManager()
-            # Expose the active trace manager via contextvar for processors/utilities
-            try:
-                set_active_trace_manager(self._trace_manager)
-            except Exception:
-                pass
-            self.hooks.append(self._trace_manager.hook)
-        else:
-            self._trace_manager = None
-        if hooks:
-            self.hooks.extend(hooks)
-        attach_local_tracer(local_tracer, self.hooks)
+        self.hooks: list[Any] = list(hooks) if hooks else []
+        # Centralized tracing/bootstrap: helper attaches trace manager and console tracer hooks.
+        self._trace_manager = setup_tracing(
+            enable_tracing=enable_tracing,
+            local_tracer=local_tracer,
+            hooks=self.hooks,
+        )
         if backend is None:
             # ✅ COMPOSITION ROOT: Create and wire all dependencies
             backend = self._create_default_backend()
