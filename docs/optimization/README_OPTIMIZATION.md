@@ -56,7 +56,7 @@ result = await executor.execute(step, data, context=context)
 ### Custom Configuration
 
 ```python
-from flujo.application.core.executor_core import OptimizationConfig
+from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
 
 # Create custom optimization configuration
 config = OptimizationConfig(
@@ -67,7 +67,7 @@ config = OptimizationConfig(
 )
 
 # Create executor with custom configuration
-executor = OptimizedExecutorCore(optimization_config=config)
+executor = ExecutorCore(optimization_config=config)
 ```
 
 ## 🎯 Optimization Components
@@ -242,19 +242,19 @@ def debug_memory_usage(executor):
 
 ## 🔄 Migration Guide
 
-### From Standard ExecutorCore
+### From OptimizedExecutorCore (compatibility shim)
 
 ```python
 # Old code
-from flujo.application.core.executor_core import ExecutorCore
-executor = ExecutorCore()
-
-# New optimized code
 from flujo.application.core.executor_core import OptimizedExecutorCore
-executor = OptimizedExecutorCore()  # Drop-in replacement
+executor = OptimizedExecutorCore()
+
+# New supported code
+from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
+executor = ExecutorCore(optimization_config=OptimizationConfig())
 ```
 
-The OptimizedExecutorCore maintains full backward compatibility with the standard ExecutorCore.
+The OptimizedExecutorCore remains for backward compatibility but delegates to ExecutorCore.
 
 ## 📋 Best Practices
 
@@ -262,7 +262,7 @@ The OptimizedExecutorCore maintains full backward compatibility with the standar
 Begin with the default configuration and adjust based on your specific needs:
 
 ```python
-executor = OptimizedExecutorCore()  # Use defaults first
+executor = ExecutorCore(optimization_config=OptimizationConfig())
 ```
 
 ### 2. Monitor Performance

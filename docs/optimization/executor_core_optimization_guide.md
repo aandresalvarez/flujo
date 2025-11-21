@@ -42,7 +42,7 @@ config = OptimizationConfig(
 )
 
 # Create executor with custom configuration
-executor = OptimizedExecutorCore(optimization_config=config)
+executor = ExecutorCore(optimization_config=config)
 ```
 
 ## Optimization Components
@@ -316,7 +316,7 @@ config = OptimizationConfig(
     performance_degradation_threshold=0.2,
 )
 
-executor = OptimizedExecutorCore(optimization_config=config)
+executor = ExecutorCore(optimization_config=config)
 
 # The executor will automatically adjust settings based on performance
 ```
@@ -326,7 +326,7 @@ executor = OptimizedExecutorCore(optimization_config=config)
 ### Example 1: Data Processing Pipeline
 
 ```python
-from flujo.application.core.executor_core import OptimizedExecutorCore, OptimizationConfig
+from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
 
 # Configuration for data processing
 config = OptimizationConfig(
@@ -346,7 +346,7 @@ config = OptimizationConfig(
     cache_max_size=1000,
 )
 
-executor = OptimizedExecutorCore(optimization_config=config)
+executor = ExecutorCore(optimization_config=config)
 
 # Process large dataset
 for batch in data_batches:
@@ -375,7 +375,7 @@ config = OptimizationConfig(
     cache_max_size=100,
 )
 
-executor = OptimizedExecutorCore(optimization_config=config)
+executor = ExecutorCore(optimization_config=config)
 
 # Handle API requests
 async def handle_request(request_data):
@@ -392,7 +392,7 @@ config = OptimizationConfig(
     enable_automatic_optimization=True,
 )
 
-executor = OptimizedExecutorCore(optimization_config=config)
+executor = ExecutorCore(optimization_config=config)
 
 # Execute with monitoring
 result, metrics = await executor.execute_with_monitoring(
@@ -562,7 +562,7 @@ for rec in recommendations:
 Begin with the default configuration and adjust based on your specific needs:
 
 ```python
-executor = OptimizedExecutorCore()  # Use defaults first
+executor = ExecutorCore(optimization_config=OptimizationConfig())  # Use defaults first
 ```
 
 ### 2. Monitor Performance
@@ -600,26 +600,21 @@ test_results = await executor.execute_with_monitoring(test_step, test_data)
 
 ## Migration Guide
 
-### From Standard ExecutorCore
+### From OptimizedExecutorCore (compatibility shim)
 
 ```python
 # Old code
-from flujo.application.core.executor_core import ExecutorCore
-executor = ExecutorCore()
-
-# New optimized code
 from flujo.application.core.executor_core import OptimizedExecutorCore
-executor = OptimizedExecutorCore()  # Drop-in replacement
+executor = OptimizedExecutorCore()
+
+# New supported code
+from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
+executor = ExecutorCore(optimization_config=OptimizationConfig())
 ```
 
 ### Backward Compatibility
 
-The OptimizedExecutorCore maintains full backward compatibility with the standard ExecutorCore:
-
-```python
-# All existing code continues to work
-result = await executor.execute(step, data, context=context)
-```
+`OptimizedExecutorCore` remains available for legacy callers and delegates to `ExecutorCore`.
 
 ## Conclusion
 

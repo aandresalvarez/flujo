@@ -257,6 +257,26 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         if concurrency_limit is not None and concurrency_limit <= 0:
             raise ValueError("concurrency_limit must be positive if specified")
 
+        self.optimization_config: OptimizationConfig = self._coerce_optimization_config(
+            optimization_config
+        )
+        config_issues = self.optimization_config.validate()
+        if config_issues:
+            warnings.warn(
+                "OptimizationConfig validation issues: " + ", ".join(config_issues),
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+        effective_enable_optimized_error_handling = (
+            bool(self.optimization_config.enable_optimized_error_handling)
+            if optimization_config is not None
+            else bool(enable_optimized_error_handling)
+        )
+        self.optimization_config.enable_optimized_error_handling = (
+            effective_enable_optimized_error_handling
+        )
+
         self._agent_runner = agent_runner or DefaultAgentRunner()
         self._processor_pipeline = processor_pipeline or DefaultProcessorPipeline()
         self._validator_runner = validator_runner or DefaultValidatorRunner()
@@ -267,7 +287,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
         self._telemetry = telemetry or DefaultTelemetry()
         self._enable_cache = enable_cache
-        self.enable_optimized_error_handling = enable_optimized_error_handling
+        self.enable_optimized_error_handling = effective_enable_optimized_error_handling
         # Estimation selection: factory first, then direct estimator, then default
         self._estimator_factory: UsageEstimatorFactory = (
             estimator_factory or build_default_estimator_factory()
@@ -819,7 +839,34 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             PricingNotConfiguredError,
             MockDetectionError,
             InfiniteRedirectError,
-        ):
+        ) as e:
+            if self.enable_optimized_error_handling and isinstance(e, MissingAgentError):
+                safe_name = self._safe_step_name(step)
+                result = StepResult(
+                    name=safe_name,
+                    output=None,
+                    success=False,
+                    attempts=0,
+                    latency_s=0.0,
+                    token_counts=0,
+                    cost_usd=0.0,
+                    feedback=str(e) if str(e) else "Missing agent configuration",
+                    branch_context=None,
+                    metadata_={
+                        "optimized_error_handling": True,
+                        "error_type": type(e).__name__,
+                    },
+                    step_history=[],
+                )
+                try:
+                    telemetry.logfire.warning(
+                        f"ExecutorCore handled missing agent for step '{safe_name}' gracefully"
+                    )
+                except Exception:
+                    pass
+                if called_with_frame:
+                    return Failure(error=e, feedback=result.feedback, step_result=result)
+                return result
             # Re-raise well-known control/config exceptions to satisfy legacy tests and semantics
             raise
         except InfiniteFallbackError:
@@ -3526,6 +3573,87 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             error=Exception(result.feedback), feedback=result.feedback, step_result=result
         )
 
+    def _coerce_optimization_config(self, config: Any) -> OptimizationConfig:
+        if config is None:
+            return OptimizationConfig()
+        if isinstance(config, OptimizationConfig):
+            return config
+        if isinstance(config, dict):
+            return OptimizationConfig.from_dict(config)
+        warnings.warn(
+            "Unsupported optimization_config type; using defaults.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return OptimizationConfig()
+
+    def get_optimization_stats(self) -> dict[str, Any]:
+        return {
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "optimization_enabled": True,
+            "performance_score": 95.0,
+            "execution_stats": {
+                "total_steps": 0,
+                "successful_steps": 0,
+                "failed_steps": 0,
+                "average_execution_time": 0.0,
+            },
+            "optimization_config": self.optimization_config.to_dict(),
+        }
+
+    def get_config_manager(self) -> Any:
+        class ConfigManager:
+            def __init__(self, current_config: OptimizationConfig) -> None:
+                self.current_config = current_config
+                self.available_configs = [
+                    "default",
+                    "high_performance",
+                    "memory_efficient",
+                ]
+
+            def get_current_config(self) -> OptimizationConfig:
+                return self.current_config
+
+        return ConfigManager(self.optimization_config)
+
+    def get_performance_recommendations(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "type": "cache_optimization",
+                "priority": "medium",
+                "description": "Consider increasing cache size for better performance",
+            },
+            {
+                "type": "memory_optimization",
+                "priority": "high",
+                "description": "Enable object pooling for memory optimization",
+            },
+            {
+                "type": "batch_processing",
+                "priority": "low",
+                "description": "Use batch processing for multiple steps",
+            },
+        ]
+
+    def export_config(self, format_type: str = "dict") -> dict[str, Any]:
+        if format_type == "dict":
+            return {
+                "optimization_config": self.optimization_config.to_dict(),
+                "executor_type": "ExecutorCore",
+                "version": "1.0.0",
+                "features": {
+                    "object_pool": True,
+                    "context_optimization": True,
+                    "memory_optimization": True,
+                    "optimized_telemetry": True,
+                    "performance_monitoring": True,
+                    "optimized_error_handling": True,
+                    "circuit_breaker": True,
+                },
+            }
+        raise ValueError(f"Unsupported format type: {format_type}")
+
 
 # Backward compatibility: lightweight usage tracker used by some tests
 @dataclass
@@ -3616,117 +3744,6 @@ class OptimizedExecutorCore(ExecutorCore[Any]):
             stacklevel=2,
         )
         super().__init__(*args, **kwargs)
-
-    async def execute(
-        self,
-        frame_or_step: Any | None = None,
-        data: Any | None = None,
-        **kwargs: Any,
-    ) -> StepOutcome[StepResult] | StepResult:
-        """Execute with optimized error handling when enabled.
-
-        Returns a failed StepResult instead of raising for certain configuration
-        errors (e.g., missing agent) to keep execution resilient under
-        optimization-focused scenarios.
-        """
-        try:
-            return await super().execute(frame_or_step, data, **kwargs)
-        except Exception as exc:  # Graceful handling for specific errors
-            from ...exceptions import MissingAgentError
-
-            # Extract the step object for reporting (handle None and legacy kwargs)
-            if isinstance(frame_or_step, ExecutionFrame):
-                step_obj: Any = frame_or_step.step
-            else:
-                step_obj = kwargs.get("step", frame_or_step)
-            step_name = self._safe_step_name(step_obj) if step_obj is not None else "unknown_step"
-            # Only transform well-known configuration issues
-            if isinstance(exc, MissingAgentError):
-                telemetry.logfire.warning(
-                    f"Optimized executor handled missing agent for step '{step_name}' gracefully"
-                )
-                return StepResult(
-                    name=step_name,
-                    output=None,
-                    success=False,
-                    attempts=0,
-                    latency_s=0.0,
-                    token_counts=0,
-                    cost_usd=0.0,
-                    feedback=str(exc) if str(exc) else "Missing agent configuration",
-                    branch_context=None,
-                    metadata_={
-                        "optimized_error_handling": True,
-                        "error_type": type(exc).__name__,
-                    },
-                    step_history=[],
-                )
-            # Re-raise all other exceptions
-            raise
-
-    def get_optimization_stats(self) -> dict[str, Any]:
-        return {
-            "cache_hits": 0,
-            "cache_misses": 0,
-            "optimization_enabled": True,
-            "performance_score": 95.0,
-            "execution_stats": {
-                "total_steps": 0,
-                "successful_steps": 0,
-                "failed_steps": 0,
-                "average_execution_time": 0.0,
-            },
-            "optimization_config": OptimizationConfig().to_dict(),
-        }
-
-    def get_config_manager(self) -> Any:
-        class ConfigManager:
-            def __init__(self) -> None:
-                self.current_config = OptimizationConfig()
-                self.available_configs = ["default", "high_performance", "memory_efficient"]
-
-            def get_current_config(self) -> OptimizationConfig:
-                return self.current_config
-
-        return ConfigManager()
-
-    def get_performance_recommendations(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "type": "cache_optimization",
-                "priority": "medium",
-                "description": "Consider increasing cache size for better performance",
-            },
-            {
-                "type": "memory_optimization",
-                "priority": "high",
-                "description": "Enable object pooling for memory optimization",
-            },
-            {
-                "type": "batch_processing",
-                "priority": "low",
-                "description": "Use batch processing for multiple steps",
-            },
-        ]
-
-    def export_config(self, format_type: str = "dict") -> dict[str, Any]:
-        if format_type == "dict":
-            return {
-                "optimization_config": OptimizationConfig().to_dict(),
-                "executor_type": "OptimizedExecutorCore",
-                "version": "1.0.0",
-                "features": {
-                    "object_pool": True,
-                    "context_optimization": True,
-                    "memory_optimization": True,
-                    "optimized_telemetry": True,
-                    "performance_monitoring": True,
-                    "optimized_error_handling": True,
-                    "circuit_breaker": True,
-                },
-            }
-        else:
-            raise ValueError(f"Unsupported format type: {format_type}")
 
 
 __all__ = [

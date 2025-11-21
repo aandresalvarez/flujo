@@ -53,7 +53,7 @@ memory_config = OptimizationConfig(
     enable_circuit_breaker=False,
     enable_cache_optimization=False,
 )
-memory_executor = OptimizedExecutorCore(optimization_config=memory_config)
+memory_executor = ExecutorCore(optimization_config=memory_config)
 memory_time = await measure_execution_time(memory_executor, test_step, test_data)
 
 print(f"Baseline: {baseline_time}ms")
@@ -82,7 +82,7 @@ cpu_optimized_config = OptimizationConfig(
 ```python
 # Monitor performance in real-time
 async def monitor_performance():
-    executor = OptimizedExecutorCore()
+    executor = ExecutorCore()
 
     while True:
         stats = executor.get_optimization_stats()
@@ -408,7 +408,7 @@ safe_config = OptimizationConfig(
 #### Verify Configuration Application
 ```python
 # Verify configuration is applied
-executor = OptimizedExecutorCore(optimization_config=config)
+executor = ExecutorCore(optimization_config=config)
 
 # Check current configuration
 current_config = executor.optimization_config

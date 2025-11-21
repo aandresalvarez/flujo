@@ -16,7 +16,6 @@ from flujo.application.core.executor_core import (
     Blake3Hasher,
     ExecutorCore,
     InMemoryLRUBackend,
-    OptimizedExecutorCore,
     OptimizationConfig,
     OrjsonSerializer,
     ThreadSafeMeter,
@@ -24,10 +23,6 @@ from flujo.application.core.executor_core import (
 from flujo.domain.dsl.step import Step, StepConfig
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.testing.utils import StubAgent
-
-pytestmark = pytest.mark.filterwarnings(
-    "ignore:OptimizedExecutorCore is deprecated; use ExecutorCore with OptimizationConfig.:DeprecationWarning"
-)
 
 
 def create_test_step(name: str, outputs: list = None, should_fail: bool = False) -> Step:
@@ -79,7 +74,7 @@ class TestOptimizationFunctionalityPreservation:
 
     @pytest.fixture
     def optimized_executor(self):
-        """Create OptimizedExecutorCore with all optimizations enabled."""
+        """Create ExecutorCore with all optimizations enabled."""
         config = OptimizationConfig(
             enable_object_pool=True,
             enable_context_optimization=True,
@@ -93,7 +88,7 @@ class TestOptimizationFunctionalityPreservation:
             enable_circuit_breaker=True,
             enable_automatic_optimization=False,  # Disable for testing
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.mark.asyncio
     async def test_basic_step_execution_preserved(
@@ -216,7 +211,7 @@ class TestOptimizationBackwardCompatibility:
             **legacy_executor_config,
             "optimization_config": OptimizationConfig(enable_automatic_optimization=False),
         }
-        optimized_executor = OptimizedExecutorCore(**legacy_config_with_optimization)
+        optimized_executor = ExecutorCore(**legacy_config_with_optimization)
         assert optimized_executor is not None
 
     def test_optimization_config_defaults(self):
@@ -261,7 +256,7 @@ class TestOptimizationBackwardCompatibility:
         """Test that the API remains compatible."""
         # Create both executor types
         standard_executor = ExecutorCore()
-        optimized_executor = OptimizedExecutorCore()
+        optimized_executor = ExecutorCore()
 
         # Create test step
         step = create_test_step("api_test_step", ["api_result"])
@@ -321,7 +316,7 @@ class TestOptimizationErrorHandling:
             enable_circuit_breaker=True,
             enable_automatic_optimization=False,
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.mark.asyncio
     async def test_optimization_failure_fallback(self, error_prone_executor):
@@ -415,7 +410,7 @@ class TestOptimizationPerformanceRegression:
         """Test that optimized execution isn't significantly slower."""
         # Create both executor types
         standard_executor = ExecutorCore()
-        optimized_executor = OptimizedExecutorCore()
+        optimized_executor = ExecutorCore()
 
         # Measure standard executor time
         start_time = time.perf_counter()
@@ -451,7 +446,7 @@ class TestOptimizationPerformanceRegression:
         initial_memory = process.memory_info().rss
 
         # Create optimized executor and run multiple executions
-        optimized_executor = OptimizedExecutorCore()
+        optimized_executor = ExecutorCore()
 
         for _ in range(10):
             await optimized_executor.execute(performance_step, performance_data)
@@ -468,7 +463,7 @@ class TestOptimizationPerformanceRegression:
     @pytest.mark.asyncio
     async def test_concurrent_execution_performance(self, performance_step, performance_data):
         """Test performance under concurrent execution."""
-        optimized_executor = OptimizedExecutorCore()
+        optimized_executor = ExecutorCore()
 
         # Create multiple concurrent executions
         tasks = []
@@ -506,7 +501,7 @@ class TestOptimizationIntegration:
             enable_circuit_breaker=True,
             enable_automatic_optimization=False,
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.mark.asyncio
     async def test_component_interaction(self, integrated_executor):

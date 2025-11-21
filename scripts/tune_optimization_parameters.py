@@ -22,7 +22,7 @@ from flujo.application.core.optimization_parameter_tuner import (  # noqa: E402
     OptimizationParameterTuner,
     TuningStrategy,
 )
-from flujo.application.core.executor_core import OptimizationConfig, OptimizedExecutorCore  # noqa: E402
+from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig  # noqa: E402
 from flujo.domain.dsl.step import Step, StepConfig  # noqa: E402
 from flujo.testing.utils import StubAgent  # noqa: E402
 
@@ -93,7 +93,7 @@ class ParameterTuningManager:
 
     async def benchmark_executor_performance(self, config: OptimizationConfig) -> dict:
         """Benchmark executor performance with given configuration."""
-        executor = OptimizedExecutorCore(optimization_config=config)
+        executor = ExecutorCore(optimization_config=config)
         step = self.create_test_step()
         data = {"test": "parameter_tuning"}
 

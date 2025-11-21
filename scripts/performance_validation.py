@@ -17,11 +17,7 @@ from typing import Dict, List, Any
 from unittest.mock import Mock
 
 # Import the optimized components
-from flujo.application.core.executor_core import (
-    ExecutorCore,
-    OptimizedExecutorCore,
-    OptimizationConfig,
-)
+from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
 from flujo.domain.dsl.step import Step, StepConfig
 from flujo.testing.utils import StubAgent
 
@@ -86,7 +82,7 @@ class PerformanceValidator:
             overall_score=0.0,
         )
 
-    def _create_optimized_executor(self) -> OptimizedExecutorCore:
+    def _create_optimized_executor(self) -> ExecutorCore:
         """Create optimized executor with all optimizations enabled."""
         config = OptimizationConfig(
             enable_object_pool=True,
@@ -99,7 +95,7 @@ class PerformanceValidator:
             enable_automatic_optimization=True,
             max_concurrent_executions=50,
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @contextmanager
     def memory_monitor(self):

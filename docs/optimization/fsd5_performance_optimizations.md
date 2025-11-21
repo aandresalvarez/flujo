@@ -82,7 +82,7 @@ print(stats)
 The optimizations can be configured through the `OptimizationConfig`:
 
 ```python
-from flujo.application.core.optimized_executor_core import OptimizationConfig
+from flujo.application.core.executor_core import OptimizationConfig
 
 config = OptimizationConfig(
     enable_object_pooling=True,
