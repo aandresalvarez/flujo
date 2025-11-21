@@ -532,3 +532,27 @@ def get_state_uri(force_reload: bool = False) -> Optional[str]:
 def get_aros_config(force_reload: bool = False) -> ArosConfig:
     """Convenience accessor for AROS defaults."""
     return get_config_manager(force_reload=force_reload).get_aros_config()
+
+
+# Wire domain-level config provider interface to avoid direct infra imports in domain logic
+set_default_config_provider_fn: Optional[Callable[[Any], None]]
+try:  # pragma: no cover - import guard
+    from flujo.domain.interfaces import (
+        set_default_config_provider as _set_default_config_provider_fn,
+    )
+
+    set_default_config_provider_fn = _set_default_config_provider_fn
+except Exception:  # pragma: no cover - defensive fallback
+    set_default_config_provider_fn = None
+
+
+class _ConfigProviderAdapter:
+    def load_config(self) -> Any:  # pragma: no cover - simple delegation
+        return ConfigManager().load_config()
+
+
+if set_default_config_provider_fn is not None:  # pragma: no cover - simple wiring
+    try:
+        set_default_config_provider_fn(_ConfigProviderAdapter())
+    except Exception:
+        pass

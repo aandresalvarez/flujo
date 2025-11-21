@@ -383,7 +383,7 @@ def _register_architect_agents() -> None:
             try:
                 if any(isinstance(x, dict) and x.get("id") == sid for x in available):
                     return True
-                entry = get_skill_registry().get(sid)
+                entry = get_skill_registry().get(sid, scope=None)
                 # Treat empty dicts/None as unavailable
                 return bool(entry) if isinstance(entry, dict) else (entry is not None)
             except Exception:

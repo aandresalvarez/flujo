@@ -327,12 +327,12 @@ def get_registered_factory(skill_id: str):
         If the skill is not registered in the registry
     """
     from flujo.builtins import _register_builtins
-    from flujo.infra.skill_registry import get_skill_registry
+    from flujo.infra.skill_registry import get_skill_registry_provider
 
     # Ensure builtins are registered
     _register_builtins()
 
-    reg = get_skill_registry()
+    reg = get_skill_registry_provider().get_registry()
     entry = reg.get(skill_id)
     assert entry is not None, f"Skill not registered: {skill_id}"
     return entry["factory"]

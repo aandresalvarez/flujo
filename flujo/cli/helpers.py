@@ -1231,9 +1231,9 @@ def execute_pipeline_with_output_handling(
                 # Aggressively release caches that can inflate RSS across runs
                 try:
                     # Clear dynamic skills but preserve built-in registrations
-                    from flujo.infra.skill_registry import get_skill_registry
+                    from flujo.infra.skill_registry import get_skill_registry_provider
 
-                    reg = get_skill_registry()
+                    reg = get_skill_registry_provider().get_registry()
                     entries = getattr(reg, "_entries", None)
                     if isinstance(entries, dict):
                         preserved: dict[str, Any] = {
@@ -2099,9 +2099,9 @@ def find_side_effect_skills_in_yaml(yaml_text: str, *, base_dir: Optional[str] =
         # Don't warn during testing to avoid output pollution
         return []
 
-    from flujo.infra.skill_registry import get_skill_registry
+    from flujo.infra.skill_registry import get_skill_registry_provider
 
-    reg = get_skill_registry()
+    reg = get_skill_registry_provider().get_registry()
     found: set[str] = set()
 
     def _scan(node: Any) -> None:
@@ -2171,9 +2171,9 @@ def enrich_yaml_with_required_params(
         # Don't warn during testing to avoid output pollution
         return yaml_text
 
-    from flujo.infra.skill_registry import get_skill_registry
+    from flujo.infra.skill_registry import get_skill_registry_provider
 
-    registry = get_skill_registry()
+    registry = get_skill_registry_provider().get_registry()
     changed = False
 
     def _collect_required(entry: dict[str, Any]) -> list[str]:

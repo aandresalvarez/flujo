@@ -6,15 +6,28 @@ import os as _os
 from flujo.domain.dsl import Pipeline, Step
 from flujo.domain.dsl import MapStep
 from flujo.domain.dsl.state_machine import StateMachineStep
-from flujo.infra.skill_registry import get_skill_registry
-from flujo.infra import telemetry as _telemetry
 from flujo.domain.base_model import BaseModel as _BaseModel
+from flujo.domain.interfaces import (
+    SkillResolver,
+    TelemetrySink,
+    get_config_provider,
+    get_skill_resolver,
+    get_telemetry_sink,
+)
 
 # Ensure core builtin skills are registered for heuristics
 try:  # pragma: no cover - best-effort
     import flujo.builtins as _builtins  # noqa: F401
 except Exception:
     pass
+
+
+def _telemetry() -> TelemetrySink:
+    return get_telemetry_sink()
+
+
+def _skill_resolver() -> SkillResolver:
+    return get_skill_resolver()
 
 
 async def _emit_minimal_yaml(goal: str) -> dict[str, Any]:
@@ -89,7 +102,7 @@ async def _goto(state: str, *, context: _BaseModel | None = None) -> Dict[str, A
         # Only set next_state - the state machine will handle updating current_state
         sp: Dict[str, Any] = {"next_state": state}
         try:
-            _telemetry.logfire.info(f"[ArchitectSM] goto -> {state}")
+            _telemetry().info(f"[ArchitectSM] goto -> {state}")
         except Exception:
             pass
         return {"scratchpad": sp}
@@ -101,7 +114,7 @@ def _make_transition_guard(target_state: str) -> Any:
     async def _guard(_x: Any = None, *, context: _BaseModel | None = None) -> Dict[str, Any]:
         """Force next_state to target_state unconditionally to break stale loops."""
         try:
-            _telemetry.logfire.info(f"[ArchitectSM] guard -> forcing next_state={target_state}")
+            _telemetry().info(f"[ArchitectSM] guard -> forcing next_state={target_state}")
         except Exception:
             pass
         # Only set next_state - the state machine will handle updating current_state
@@ -116,7 +129,7 @@ async def _trace_next_state(_x: Any = None, *, context: _BaseModel | None = None
         sp = getattr(context, "scratchpad", {}) if context is not None else {}
         ns = sp.get("next_state") if isinstance(sp, dict) else None
         try:
-            _telemetry.logfire.info(f"[ArchitectSM] trace next_state={ns}")
+            _telemetry().info(f"[ArchitectSM] trace next_state={ns}")
         except Exception:
             pass
     except Exception:
@@ -147,7 +160,7 @@ def _skill_available(skill_id: str, *, available: Optional[List[Dict[str, Any]]]
     except Exception:
         pass
     try:
-        entry = get_skill_registry().get(skill_id)
+        entry = _skill_resolver().get(skill_id, scope=None)
         # Treat empty dicts and None as unavailable
         if isinstance(entry, dict):
             return bool(entry)
@@ -289,7 +302,7 @@ async def _generate_yaml_from_plan(
             if isinstance(scratchpad, dict):
                 scratchpad["next_state"] = "Validation"
     except Exception as e:
-        _telemetry.logfire.error(f"[ArchitectSM] Failed to update context scratchpad: {e}")
+        _telemetry().error(f"[ArchitectSM] Failed to update context scratchpad: {e}")
 
     # CRITICAL FIX: Also directly update the context fields to ensure they are preserved
     try:
@@ -299,7 +312,7 @@ async def _generate_yaml_from_plan(
             if hasattr(context, "generated_yaml"):
                 setattr(context, "generated_yaml", yaml_text)
     except Exception as e:
-        _telemetry.logfire.error(f"[ArchitectSM] GenerateYAML failed to set context fields: {e}")
+        _telemetry().error(f"[ArchitectSM] GenerateYAML failed to set context fields: {e}")
         pass
 
     # Return the YAML generation results
@@ -308,7 +321,7 @@ async def _generate_yaml_from_plan(
         "yaml_text": yaml_text,
     }
     try:
-        _telemetry.logfire.info(f"[ArchitectSM] GenerateYAML returning: {result}")
+        _telemetry().info(f"[ArchitectSM] GenerateYAML returning: {result}")
     except Exception:
         pass
     return result
@@ -328,7 +341,7 @@ async def _run_planner_agent(
       - plan_summary: str, steps: List[{'step_name','purpose'}]
     """
     try:
-        reg = get_skill_registry()
+        reg = _skill_resolver()
     except Exception:
         reg = None
 
@@ -468,7 +481,7 @@ async def _match_one_tool(
             if disable in {"0", "false", "no", "off"}:
                 raise RuntimeError("Agentic tool matcher explicitly disabled by env var")
 
-            reg = get_skill_registry()
+            reg = _skill_resolver()
             entry = reg.get("flujo.architect.tool_matcher") if reg else None
             if entry and isinstance(entry, dict) and entry.get("factory"):
                 agent_callable = entry["factory"]()
@@ -486,7 +499,7 @@ async def _match_one_tool(
                     }
         except Exception as e:
             try:
-                _telemetry.logfire.warning(
+                _telemetry().warning(
                     f"[ArchitectSM] ToolMatcher agent failed for step '{step_name}': {e}. Falling back."
                 )
             except Exception:
@@ -500,7 +513,7 @@ async def _match_one_tool(
         }
     except Exception as e:
         try:
-            _telemetry.logfire.warning(
+            _telemetry().warning(
                 f"[ArchitectSM] ToolMatcher unexpected error for step: {e}. Using safe default."
             )
         except Exception:
@@ -543,7 +556,7 @@ async def _generate_yaml_from_tool_selections(
         if disable in {"0", "false", "no", "off"}:
             raise RuntimeError("Agentic YAML writer explicitly disabled by env var")
 
-        reg = get_skill_registry()
+        reg = _skill_resolver()
         entry = reg.get("flujo.architect.yaml_writer") if reg else None
         if entry and isinstance(entry, dict) and entry.get("factory"):
             agent_callable = entry["factory"]()
@@ -632,18 +645,18 @@ async def _generate_yaml_from_tool_selections(
                 pass
             return {"generated_yaml": yaml_text, "yaml_text": yaml_text}
         except Exception as e:
-            _telemetry.logfire.info(f"[Architect] Exception in tool selections processing: {e}")
+            _telemetry().info(f"[Architect] Exception in tool selections processing: {e}")
             pass
 
     # 2) If no selections, fallback to legacy plan-based generator
-    _telemetry.logfire.info("[Architect] No tool selections, falling back to plan-based generator")
+    _telemetry().info("[Architect] No tool selections, falling back to plan-based generator")
     return await _generate_yaml_from_plan(None, context=context)
 
 
 def _build_state_machine_pipeline() -> "Pipeline[Any, Any]":
     """Programmatically build the full Architect state machine."""
     # GatheringContext: discover skills + analyze project + framework schema
-    reg = get_skill_registry()
+    reg = _skill_resolver()
     # discover_skills is an agent; factory returns an agent instance
     try:
         discover_entry = reg.get("flujo.builtins.discover_skills")
@@ -819,7 +832,7 @@ def _build_state_machine_pipeline() -> "Pipeline[Any, Any]":
         if hitl and not noni:
             # Interactive HITL path
             try:
-                reg = get_skill_registry()
+                reg = _skill_resolver()
                 ask_entry = reg.get("flujo.builtins.ask_user") or {}
                 chk_entry = reg.get("flujo.builtins.check_user_confirmation") or {}
                 ask_factory = ask_entry.get("factory") if ask_entry else None
@@ -857,7 +870,7 @@ def _build_state_machine_pipeline() -> "Pipeline[Any, Any]":
             plan = None
         if not isinstance(plan, list):
             return await _goto("Generation", context=context)
-        reg = get_skill_registry()
+        reg = _skill_resolver()
         changed = False
         for step in plan:
             try:
@@ -972,28 +985,26 @@ def _build_state_machine_pipeline() -> "Pipeline[Any, Any]":
 
     try:
         capture_entry = reg.get("flujo.builtins.capture_validation_report")
-        _telemetry.logfire.info(f"[ArchitectSM] CaptureReport registry lookup: {capture_entry}")
+        _telemetry().info(f"[ArchitectSM] CaptureReport registry lookup: {capture_entry}")
         if capture_entry and isinstance(capture_entry, dict):
             _capture = capture_entry["factory"]()
-            _telemetry.logfire.info("[ArchitectSM] CaptureReport using registry function")
+            _telemetry().info("[ArchitectSM] CaptureReport using registry function")
             capture: Step[Any, Any] = Step.from_callable(
                 _capture, name="CaptureReport", updates_context=True
             )
         else:
-            _telemetry.logfire.info("[ArchitectSM] CaptureReport using fallback function")
+            _telemetry().info("[ArchitectSM] CaptureReport using fallback function")
 
             async def _capture_fallback(
                 rep: Any, *, context: _BaseModel | None = None
             ) -> Dict[str, Any]:
                 try:
-                    _telemetry.logfire.info(
-                        f"[ArchitectSM] CaptureReport FIRST fallback: rep={rep}"
-                    )
+                    _telemetry().info(f"[ArchitectSM] CaptureReport FIRST fallback: rep={rep}")
                     # Extract the actual validation result from the rep
                     is_valid = True  # Default to valid
                     if isinstance(rep, dict) and "is_valid" in rep:
                         is_valid = bool(rep.get("is_valid"))
-                        _telemetry.logfire.info(
+                        _telemetry().info(
                             f"[ArchitectSM] CaptureReport: extracted is_valid={is_valid} from rep"
                         )
 
@@ -1001,11 +1012,11 @@ def _build_state_machine_pipeline() -> "Pipeline[Any, Any]":
                     if context is not None and hasattr(context, "yaml_is_valid"):
                         try:
                             setattr(context, "yaml_is_valid", is_valid)
-                            _telemetry.logfire.info(
+                            _telemetry().info(
                                 f"[ArchitectSM] CaptureReport: set yaml_is_valid={is_valid} in context"
                             )
                         except Exception as e:
-                            _telemetry.logfire.error(
+                            _telemetry().error(
                                 f"[ArchitectSM] CaptureReport: Failed to set yaml_is_valid: {e}"
                             )
                 except Exception:
@@ -1031,11 +1042,9 @@ def _build_state_machine_pipeline() -> "Pipeline[Any, Any]":
                     # Otherwise, check if there are validation errors
                     elif "errors" in rep and rep.get("errors"):
                         is_valid = False
-                _telemetry.logfire.info(
-                    f"[ArchitectSM] CaptureReport: setting yaml_is_valid={is_valid}"
-                )
+                _telemetry().info(f"[ArchitectSM] CaptureReport: setting yaml_is_valid={is_valid}")
             except Exception as e:
-                _telemetry.logfire.error(f"[ArchitectSM] CaptureReport error: {e}")
+                _telemetry().error(f"[ArchitectSM] CaptureReport error: {e}")
                 is_valid = True  # Default to valid to prevent infinite loops
             return {"validation_report": rep, "yaml_is_valid": is_valid}
 
@@ -1058,23 +1067,21 @@ def _build_state_machine_pipeline() -> "Pipeline[Any, Any]":
                 valid = False
 
         try:
-            _telemetry.logfire.info(f"[ArchitectSM] ValidationDecision: yaml_is_valid={valid}")
+            _telemetry().info(f"[ArchitectSM] ValidationDecision: yaml_is_valid={valid}")
         except Exception:
             pass
 
         if valid:
             # YAML is valid, proceed to DryRunOffer
             try:
-                _telemetry.logfire.info("[ArchitectSM] ValidationDecision -> DryRunOffer")
+                _telemetry().info("[ArchitectSM] ValidationDecision -> DryRunOffer")
             except Exception:
                 pass
             return {"scratchpad": {"next_state": "DryRunOffer"}}
         else:
             # YAML is invalid, attempt repair and re-validate
             try:
-                _telemetry.logfire.info(
-                    "[ArchitectSM] ValidationDecision -> Validation (repair attempt)"
-                )
+                _telemetry().info("[ArchitectSM] ValidationDecision -> Validation (repair attempt)")
             except Exception:
                 pass
             try:
@@ -1364,10 +1371,8 @@ def build_architect_pipeline() -> Pipeline[Any, Any]:
 
     # 3) Honor flujo.toml default via ConfigManager, if present
     try:
-        from flujo.infra.config_manager import ConfigManager as _CfgMgr
-
-        cfg = _CfgMgr().load_config()
-        arch = getattr(cfg, "architect", None)
+        cfg = get_config_provider().load_config()
+        arch = getattr(cfg, "architect", None) if cfg is not None else None
         if arch and bool(getattr(arch, "state_machine_default", False)):
             return _build_state_machine_pipeline()
     except Exception:

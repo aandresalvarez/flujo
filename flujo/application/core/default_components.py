@@ -629,7 +629,7 @@ class DefaultAgentRunner:
     ) -> Any:
         import inspect
         from ...application.core.context_manager import _should_pass_context
-        from flujo.infra.skill_registry import get_skill_registry
+        from flujo.domain.interfaces import get_skill_resolver
 
         if agent is None:
             raise RuntimeError("Agent is None")
@@ -639,8 +639,8 @@ class DefaultAgentRunner:
         # Resolve string/dict agent specs via the skill registry or import path
         try:
             if isinstance(agent, str):
-                reg = get_skill_registry()
-                entry = reg.get(agent)
+                reg = get_skill_resolver()
+                entry = reg.get(agent) if reg is not None else None
                 if entry is not None:
                     factory = entry.get("factory")
                     target_agent = factory() if callable(factory) else factory
@@ -652,8 +652,8 @@ class DefaultAgentRunner:
                 skill_id = agent.get("id") or agent.get("path")
                 params = agent.get("params", {}) if isinstance(agent, dict) else {}
                 if skill_id:
-                    reg = get_skill_registry()
-                    entry = reg.get(skill_id)
+                    reg = get_skill_resolver()
+                    entry = reg.get(skill_id) if reg is not None else None
                     if entry is not None:
                         factory = entry.get("factory")
                         target_agent = factory(**params) if callable(factory) else factory

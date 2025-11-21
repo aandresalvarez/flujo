@@ -2944,9 +2944,9 @@ def create(  # <--- REVERT BACK TO SYNC
             # Ensure built-in skills are registered and collect available skills
             try:
                 import flujo.builtins as _ensure_builtins  # noqa: F401
-                from flujo.infra.skill_registry import get_skill_registry as _get_skill_registry
+                from flujo.infra.skill_registry import get_skill_registry_provider as _get_provider
 
-                _reg = _get_skill_registry()
+                _reg = _get_provider().get_registry()
                 _entries = getattr(_reg, "_entries", {})
                 _available_skills = [
                     {
