@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import warnings
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast
 from pydantic import BaseModel
@@ -3608,6 +3609,14 @@ class OptimizationConfig:
 
 
 class OptimizedExecutorCore(ExecutorCore[Any]):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        warnings.warn(
+            "OptimizedExecutorCore is deprecated; use ExecutorCore with OptimizationConfig.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)
+
     async def execute(
         self,
         frame_or_step: Any | None = None,

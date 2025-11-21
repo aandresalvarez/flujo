@@ -8,22 +8,26 @@ verification, API compatibility, and configuration compatibility.
 """
 
 import asyncio
-import pytest
 import time
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import AsyncMock, Mock
 
+import pytest
 from flujo.application.core.executor_core import (
+    Blake3Hasher,
     ExecutorCore,
+    InMemoryLRUBackend,
     OptimizedExecutorCore,
     OptimizationConfig,
     OrjsonSerializer,
-    Blake3Hasher,
-    InMemoryLRUBackend,
     ThreadSafeMeter,
 )
-from flujo.domain.models import StepResult, UsageLimits
 from flujo.domain.dsl.step import Step, StepConfig
+from flujo.domain.models import StepResult, UsageLimits
 from flujo.testing.utils import StubAgent
+
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:OptimizedExecutorCore is deprecated; use ExecutorCore with OptimizationConfig.:DeprecationWarning"
+)
 
 
 def create_test_step(name: str, outputs: list = None, should_fail: bool = False) -> Step:

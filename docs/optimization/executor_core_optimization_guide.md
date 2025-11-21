@@ -18,11 +18,13 @@ The ExecutorCore optimization system provides comprehensive performance improvem
 
 ### Basic Usage
 
+> Recommended entrypoint: use `ExecutorCore` with an `OptimizationConfig`. `OptimizedExecutorCore` remains as a compatibility shim and emits a deprecation warning.
+
 ```python
-from flujo.application.core.executor_core import OptimizedExecutorCore, OptimizationConfig
+from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
 
 # Create optimized executor with default settings
-executor = OptimizedExecutorCore()
+executor = ExecutorCore(optimization_config=OptimizationConfig())
 
 # Execute a step with optimizations
 result = await executor.execute(step, data, context=context)

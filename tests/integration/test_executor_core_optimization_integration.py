@@ -8,26 +8,30 @@ workflow testing to ensure all components work together seamlessly.
 
 import asyncio
 import gc
-import pytest
-import time
-import psutil
 import os
+import time
 from typing import Any
 from unittest.mock import Mock
 
+import psutil
+import pytest
+from flujo.application.core.adaptive_resource_manager import (
+    get_global_adaptive_resource_manager,
+)
 from flujo.application.core.executor_core import (
     OptimizationConfig,
     OptimizedExecutorCore,
 )
-from flujo.domain.dsl.step import Step, StepConfig
-from flujo.application.core.adaptive_resource_manager import (
-    get_global_adaptive_resource_manager,
-)
-from flujo.application.core.load_balancer import get_global_load_balancer
 from flujo.application.core.graceful_degradation import (
     get_global_degradation_controller,
 )
+from flujo.application.core.load_balancer import get_global_load_balancer
+from flujo.domain.dsl.step import Step, StepConfig
 from flujo.testing.utils import StubAgent
+
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:OptimizedExecutorCore is deprecated; use ExecutorCore with OptimizationConfig.:DeprecationWarning"
+)
 
 
 def create_test_step(output: str = "test_output", name: str = "test_step") -> Any:

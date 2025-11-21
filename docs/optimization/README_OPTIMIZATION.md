@@ -4,6 +4,8 @@
 
 This documentation provides comprehensive guidance for using and configuring ExecutorCore optimizations in Flujo. The optimization system provides significant performance improvements through memory optimization, execution optimization, telemetry optimization, and error handling optimization.
 
+> **Compatibility notice:** `OptimizedExecutorCore` is kept as a shim for backward compatibility. The supported path is `ExecutorCore` with an `OptimizationConfig`; the shim forwards to the same engine and emits a deprecation warning.
+
 ## 📚 Documentation Structure
 
 ### Core Guides
@@ -38,12 +40,16 @@ This documentation provides comprehensive guidance for using and configuring Exe
 ### Basic Usage
 
 ```python
-from flujo.application.core.executor_core import OptimizedExecutorCore
+from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
 
-# Create optimized executor with default settings
-executor = OptimizedExecutorCore()
+opt_config = OptimizationConfig(
+    enable_object_pool=True,
+    enable_context_optimization=True,
+    enable_memory_optimization=True,
+    enable_optimized_telemetry=True,
+)
 
-# Execute a step with optimizations
+executor = ExecutorCore(optimization_config=opt_config)
 result = await executor.execute(step, data, context=context)
 ```
 
