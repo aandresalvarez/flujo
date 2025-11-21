@@ -241,6 +241,12 @@ Testing guidance:
   - DB/trace replay integration: `@pytest.mark.slow`.
 - Do not rely on file-name filters to keep heavy tests out of fast runs—use markers.
 
+## **SQLite Schema Safeguards**
+
+- Migration whitelist: new columns added by migrations must match `ALLOWED_COLUMNS` in `flujo/state/backends/sqlite.py` (currently `total_steps INTEGER DEFAULT 0`, `error_message TEXT`, `execution_time_ms INTEGER`, `memory_usage_mb REAL`, `step_history TEXT`).
+- Identifier rules: SQL identifiers must match `[a-zA-Z_][a-zA-Z0-9_]*`, stay under `MAX_SQL_IDENTIFIER_LENGTH` (1000), and exclude zero-width/null control chars.
+- When evolving schema, extend the whitelist first and keep definitions stable; do not bypass identifier validation or add ad-hoc column shapes.
+
 ### **7.1 Migration Notes: Pure Quota System (UPDATED)**
 
 The framework standardizes on proactive quota budgeting. When touching older code or writing new features:
