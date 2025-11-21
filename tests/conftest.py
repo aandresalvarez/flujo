@@ -329,46 +329,66 @@ def get_registered_factory(skill_id: str):
     from flujo.builtins import _register_builtins
     from flujo.infra.skill_registry import get_skill_registry_provider
 
-    # Ensure builtins are registered
+    # Ensure builtins are registered; retry in case another worker cleared registry entries.
     _register_builtins()
 
     reg = get_skill_registry_provider().get_registry()
     entry = reg.get(skill_id)
     if entry is None and skill_id in {"flujo.builtins.wrap_dict", "flujo.builtins.ensure_object"}:
-        # Best-effort fallback registration to avoid test flakiness if the global
-        # builtins registration was skipped earlier in the test run.
-        if skill_id == "flujo.builtins.wrap_dict":
-
-            async def _wrap_dict(data, *, key: str = "value"):
-                return {str(key) if key is not None else "value": data}
-
-            reg.register(
-                "flujo.builtins.wrap_dict",
-                lambda: _wrap_dict,
-                description="Wrap any input under a provided key (default 'value').",
-            )
-        else:
-
-            async def _ensure_object(data, *, key: str = "value"):
-                if isinstance(data, dict):
-                    return data
-                try:
-                    import json as _json
-
-                    if isinstance(data, (str, bytes)):
-                        parsed = _json.loads(data.decode() if isinstance(data, bytes) else data)
-                        if isinstance(parsed, dict):
-                            return parsed
-                except Exception:
-                    pass
-                return {str(key) if key is not None else "value": data}
-
-            reg.register(
-                "flujo.builtins.ensure_object",
-                lambda: _ensure_object,
-                description="Coerce input to an object or wrap under key.",
-            )
+        _register_builtins()
         entry = reg.get(skill_id)
+        if entry is None:
+            if skill_id == "flujo.builtins.wrap_dict":
+
+                async def _wrap_dict(data: Any, *, key: str = "value") -> dict[str, Any]:
+                    return {str(key) if key is not None else "value": data}
+
+                reg.register(
+                    "flujo.builtins.wrap_dict",
+                    lambda: _wrap_dict,
+                    description="Wrap any input under a provided key (default 'value').",
+                )
+            else:
+                try:
+                    from pydantic import BaseModel as PydanticBaseModel  # type: ignore
+                except Exception:  # pragma: no cover - fallback only
+                    PydanticBaseModel = type("PydanticBaseModel", (), {})  # type: ignore
+                try:
+                    from flujo.domain.base_model import BaseModel as DomainBaseModel  # type: ignore
+                except Exception:  # pragma: no cover - fallback only
+                    DomainBaseModel = PydanticBaseModel  # type: ignore
+
+                async def _ensure_object(data: Any, *, key: str = "value") -> dict[str, Any]:
+                    if isinstance(data, dict):
+                        return data
+                    try:
+                        if isinstance(data, (PydanticBaseModel, DomainBaseModel)):
+                            return data.model_dump()
+                    except Exception:
+                        pass
+                    try:
+                        import json as _json
+
+                        if isinstance(data, (str, bytes)):
+                            parsed = _json.loads(data.decode() if isinstance(data, bytes) else data)
+                            if isinstance(parsed, dict):
+                                return parsed
+                    except Exception:
+                        pass
+                    try:
+                        from flujo.utils.serialization import safe_serialize as _safe
+
+                        payload = _safe(data)
+                    except Exception:
+                        payload = data
+                    return {str(key) if key is not None else "value": payload}
+
+                reg.register(
+                    "flujo.builtins.ensure_object",
+                    lambda: _ensure_object,
+                    description="Coerce input to an object or wrap under key.",
+                )
+            entry = reg.get(skill_id)
 
     assert entry is not None, f"Skill not registered: {skill_id}"
     return entry["factory"]
