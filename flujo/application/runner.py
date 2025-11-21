@@ -65,6 +65,7 @@ from .core.context_manager import (
 
 from .core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
 from .core.execution_manager import ExecutionManager
+from .core.factories import BackendFactory, ExecutorFactory
 from .core.state_manager import StateManager
 from .run_plan_resolver import RunPlanResolver
 from .run_session import RunSession
@@ -238,6 +239,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         backend: Optional[ExecutionBackend] = None,
         state_backend: Optional[StateBackend] = None,
         delete_on_completion: bool = False,
+        executor_factory: Optional[ExecutorFactory] = None,
+        backend_factory: Optional[BackendFactory] = None,
         pipeline_version: str = "latest",
         local_tracer: Union[str, Any, None] = None,
         registry: Optional[PipelineRegistry] = None,
@@ -317,6 +320,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             # Defensive fallback: preserve provided limits
             self.usage_limits = usage_limits
 
+        self._executor_factory = executor_factory or ExecutorFactory()
+        self._backend_factory = backend_factory or BackendFactory(self._executor_factory)
+
         self.hooks: list[Any] = list(hooks) if hooks else []
         # Centralized tracing/bootstrap: helper attaches trace manager and console tracer hooks.
         self._trace_manager = setup_tracing(
@@ -361,36 +367,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         This method acts as the Composition Root, assembling all the
         components needed for optimal execution.
         """
-        from ..application.core.executor_core import ExecutorCore
-        from ..application.core.default_components import (
-            OrjsonSerializer,
-            Blake3Hasher,
-            InMemoryLRUBackend,
-            ThreadSafeMeter,
-            DefaultAgentRunner,
-            DefaultProcessorPipeline,
-            DefaultValidatorRunner,
-            DefaultPluginRunner,
-            DefaultTelemetry,
-        )
-
-        # ✅ Assemble ExecutorCore with explicit high-performance components
-        executor: ExecutorCore[Any] = ExecutorCore(
-            serializer=OrjsonSerializer(),
-            hasher=Blake3Hasher(),
-            cache_backend=InMemoryLRUBackend(),
-            usage_meter=ThreadSafeMeter(),
-            agent_runner=DefaultAgentRunner(),
-            processor_pipeline=DefaultProcessorPipeline(),
-            validator_runner=DefaultValidatorRunner(),
-            plugin_runner=DefaultPluginRunner(),
-            telemetry=DefaultTelemetry(),
-        )
-
-        # ✅ Create LocalBackend and inject the executor
-        from ..infra.backends import LocalBackend
-
-        return LocalBackend(executor=executor)
+        return self._backend_factory.create_execution_backend()
 
     def disable_tracing(self) -> None:
         """Disable tracing by removing the TraceManager hook."""
