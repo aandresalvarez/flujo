@@ -55,10 +55,9 @@ class _FakeBackend:
 @pytest.mark.fast
 def test_health_check_json_export_includes_bucket_step_and_model_breakdowns(tmp_path, monkeypatch):
     # Monkeypatch backend loader to use fake backend
-    from flujo.cli import main as cli_main
 
     fake = _FakeBackend()
-    monkeypatch.setattr(cli_main, "load_backend_from_config", lambda: fake)
+    monkeypatch.setattr("flujo.cli.dev_commands.load_backend_from_config", lambda: fake)
 
     out_path = tmp_path / "hc.json"
     # Call function directly; it runs anyio.run internally
@@ -98,10 +97,8 @@ def test_health_check_json_export_includes_bucket_step_and_model_breakdowns(tmp_
 
 @pytest.mark.fast
 def test_health_check_recommendations_include_stage_aware(monkeypatch, capsys):
-    from flujo.cli import main as cli_main
-
     fake = _FakeBackend()
-    monkeypatch.setattr(cli_main, "load_backend_from_config", lambda: fake)
+    monkeypatch.setattr("flujo.cli.dev_commands.load_backend_from_config", lambda: fake)
 
     _dev_health_check(
         project=None,
@@ -122,10 +119,8 @@ def test_health_check_recommendations_include_stage_aware(monkeypatch, capsys):
 
 @pytest.mark.fast
 def test_health_check_json_export_without_since_hours_has_no_buckets(tmp_path, monkeypatch):
-    from flujo.cli import main as cli_main
-
     fake = _FakeBackend()
-    monkeypatch.setattr(cli_main, "load_backend_from_config", lambda: fake)
+    monkeypatch.setattr("flujo.cli.dev_commands.load_backend_from_config", lambda: fake)
 
     out_path = tmp_path / "hc2.json"
     _dev_health_check(
@@ -153,10 +148,8 @@ def test_health_check_handles_no_runs(monkeypatch, capsys):
             self.runs = []
             self.spans = {}
 
-    from flujo.cli import main as cli_main
-
     empty = _EmptyBackend()
-    monkeypatch.setattr(cli_main, "load_backend_from_config", lambda: empty)
+    monkeypatch.setattr("flujo.cli.dev_commands.load_backend_from_config", lambda: empty)
 
     # Should print a message and not raise
     _dev_health_check(

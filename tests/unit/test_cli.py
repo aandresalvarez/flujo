@@ -248,7 +248,7 @@ def test_cli_add_eval_case_uses_safe_deserialize(tmp_path, monkeypatch) -> None:
         calls["called"] = True
         return data
 
-    monkeypatch.setattr("flujo.cli.main.safe_deserialize", fake_deserialize)
+    monkeypatch.setattr("flujo.cli.dev_commands.safe_deserialize", fake_deserialize)
 
     result = runner.invoke(
         app,
@@ -386,7 +386,7 @@ def test_cli_explain(tmp_path) -> None:
         "from flujo.domain import Step\npipeline = Step.model_validate({'name': 'A'}) >> Step.model_validate({'name': 'B'})\n"
     )
 
-    result = runner.invoke(app, ["dev", "show-steps", str(file)])
+    result = runner.invoke(app, ["dev", "explain", str(file)])
     assert result.exit_code == 0
     assert "A" in result.stdout
     assert "B" in result.stdout

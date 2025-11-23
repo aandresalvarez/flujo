@@ -5,6 +5,19 @@ import weakref
 import types
 from pydantic import BaseModel
 from ...utils.context import safe_merge_context_updates
+from .context_strategies import (
+    ContextIsolationStrategy,
+    LenientIsolation,
+    StrictIsolation,
+    SelectiveIsolation,
+)
+
+try:
+    from ...infra.settings import get_settings as _get_settings_default
+
+    _SETTINGS_DEFAULTS: Any | None = _get_settings_default()
+except Exception:
+    _SETTINGS_DEFAULTS = None
 
 
 class ContextManager:
@@ -21,10 +34,64 @@ class ContextManager:
         pass
 
     @staticmethod
-    def isolate(
+    def _resolve_strategy(
+        include_keys: Optional[List[str]] = None,
+    ) -> ContextIsolationStrategy:
+        """Select an isolation strategy based on settings and include_keys."""
+        strict_iso = False
+        strict_merge = False
+        settings_obj: Any = _SETTINGS_DEFAULTS
+        if settings_obj is None:
+            try:
+                # Fallback: fetch settings lazily to support tests that monkeypatch env
+                from ...infra.settings import get_settings as _gs  # local import to avoid cycles
+
+                settings_obj = _gs()
+            except Exception:
+                settings_obj = None
+        try:
+            strict_iso = bool(getattr(settings_obj, "strict_context_isolation", False))
+            strict_merge = bool(getattr(settings_obj, "strict_context_merge", False))
+        except Exception:
+            strict_iso = False
+            strict_merge = False
+
+        # Selective isolation path preserves explicit include_keys even under lenient settings
+        if include_keys:
+            iso_impl = (
+                ContextManager._isolate_strict_impl
+                if strict_iso
+                else ContextManager._isolate_lenient_impl
+            )
+            merge_impl = (
+                ContextManager._merge_strict_impl
+                if strict_merge
+                else ContextManager._merge_lenient_impl
+            )
+            return SelectiveIsolation(iso_impl, merge_impl, include_keys=list(include_keys))
+
+        if strict_iso or strict_merge:
+            iso_impl = (
+                ContextManager._isolate_strict_impl
+                if strict_iso
+                else ContextManager._isolate_lenient_impl
+            )
+            merge_impl = (
+                ContextManager._merge_strict_impl
+                if strict_merge
+                else ContextManager._merge_lenient_impl
+            )
+            return StrictIsolation(iso_impl, merge_impl)
+
+        return LenientIsolation(
+            ContextManager._isolate_lenient_impl, ContextManager._merge_lenient_impl
+        )
+
+    @staticmethod
+    def _isolate_lenient_impl(
         context: Optional[BaseModel], include_keys: Optional[List[str]] = None
     ) -> Optional[BaseModel]:
-        """Return a deep copy of the context for isolation."""
+        """Return a deep copy of the context for isolation (lenient behavior)."""
         if context is None:
             return None
         # Fast path: skip isolation for unittest.mock contexts used in performance tests
@@ -138,6 +205,20 @@ class ContextManager:
         - For Pydantic, uses model_copy(deep=True) and deep-copies scratchpad when present.
         - Else, attempts deepcopy. If both fail, raises ContextIsolationError.
         """
+        return ContextManager._isolate_strict_impl(context, include_keys)
+
+    @staticmethod
+    def isolate(
+        context: Optional[BaseModel], include_keys: Optional[List[str]] = None
+    ) -> Optional[BaseModel]:
+        """Isolate context using the configured strategy."""
+        strategy = ContextManager._resolve_strategy(include_keys)
+        return strategy.isolate(context, include_keys)
+
+    @staticmethod
+    def _isolate_strict_impl(
+        context: Optional[BaseModel], include_keys: Optional[List[str]] = None
+    ) -> Optional[BaseModel]:
         if context is None:
             return None
         # Allow mocks without isolation for performance tests
@@ -159,7 +240,7 @@ class ContextManager:
 
         # Selective isolation if keys provided (reuse non-strict which is safe)
         if include_keys:
-            isolated = ContextManager.isolate(context, include_keys)
+            isolated = ContextManager._isolate_lenient_impl(context, include_keys)
             if isolated is None:
                 raise ContextManager.ContextIsolationError("Selective isolation returned None")
             return isolated
@@ -197,6 +278,21 @@ class ContextManager:
     def merge(
         main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
     ) -> Optional[BaseModel]:
+        """Merge updates from branch_context into main_context using configured strategy."""
+        strategy = ContextManager._resolve_strategy()
+        return strategy.merge(main_context, branch_context)
+
+    @staticmethod
+    def merge_strict(
+        main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
+    ) -> Optional[BaseModel]:
+        """Strict merge with robust fallbacks and error signaling."""
+        return ContextManager._merge_strict_impl(main_context, branch_context)
+
+    @staticmethod
+    def _merge_lenient_impl(
+        main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
+    ) -> Optional[BaseModel]:
         """Merge updates from branch_context into main_context and return the result."""
         if main_context is None:
             return branch_context
@@ -223,7 +319,7 @@ class ContextManager:
         return main_context
 
     @staticmethod
-    def merge_strict(
+    def _merge_strict_impl(
         main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
     ) -> Optional[BaseModel]:
         """Strict merge with robust fallbacks and error signaling.

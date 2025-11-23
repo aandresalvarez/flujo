@@ -1,84 +1,71 @@
-"""
-Regression tests for pause propagation through nested control-flow policies.
-
-These tests ensure ConditionalStep (inside LoopStep) and ParallelStep bubble
-PausedException all the way to the runner so nested HITL steps behave correctly.
-"""
+"""Integration coverage for Paused control-flow bubbling in nested structures."""
 
 from __future__ import annotations
 
 import pytest
 
-from flujo import Flujo
-from flujo.domain.dsl import Pipeline, Step, LoopStep, HumanInTheLoopStep
 from flujo.domain.dsl.conditional import ConditionalStep
+from flujo.domain.dsl.loop import LoopStep
 from flujo.domain.dsl.parallel import ParallelStep
-from flujo.domain.models import PipelineResult
-from flujo.testing.utils import StubAgent
+from flujo.domain.dsl.pipeline import Pipeline
+from flujo.domain.dsl.step import (
+    BranchFailureStrategy,
+    HumanInTheLoopStep,
+    Step,
+)
+from flujo.domain.models import Paused
+from tests.conftest import create_test_flujo
 
 
-pytestmark = [pytest.mark.slow, pytest.mark.serial]
+class _EchoAgent:
+    async def run(self, payload, context=None, resources=None, **kwargs):
+        return f"ok:{payload}"
 
 
-async def _run_until_pause(runner: Flujo, payload: object) -> PipelineResult:
-    paused_result = None
-    async for result in runner.run_async(payload):
-        paused_result = result
-        break
-    assert paused_result is not None, "Runner should yield a PipelineResult before exiting"
-    return paused_result
-
-
-@pytest.mark.timeout(120)
 @pytest.mark.asyncio
-async def test_loop_conditional_hitl_propagates_pause() -> None:
-    """Loop -> Conditional -> HITL pauses the entire pipeline."""
-    hitl_step = HumanInTheLoopStep(
-        name="nested_hitl",
-        message_for_user="Provide additional input",
-    )
-    hitl_branch = Pipeline.from_step(hitl_step)
+async def test_nested_pause_bubbles_from_loop_conditional_hitl() -> None:
+    """Loop → Conditional → HITL should surface a Paused outcome."""
+    hitl_step = HumanInTheLoopStep(name="hitl_nested", message_for_user="pause here")
     conditional = ConditionalStep(
         name="route_to_hitl",
         condition_callable=lambda _out, _ctx: "hitl",
-        branches={"hitl": hitl_branch},
+        branches={"hitl": Pipeline.from_step(hitl_step)},
     )
-    loop_body = Pipeline.from_step(conditional)
     loop = LoopStep(
-        name="loop_with_conditional",
-        loop_body_pipeline=loop_body,
-        exit_condition_callable=lambda _output, _context: True,
+        name="outer_loop",
+        loop_body_pipeline=Pipeline.from_step(conditional),
+        exit_condition_callable=lambda _out, _ctx: True,
         max_loops=1,
     )
-    pipeline = Pipeline.from_step(loop)
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(Pipeline.from_step(loop))
 
-    paused_result = await _run_until_pause(runner, {"input": "start"})
-    ctx = paused_result.final_pipeline_context
-    assert ctx is not None and hasattr(ctx, "scratchpad"), "Loop context should exist"
-    assert ctx.scratchpad.get("status") == "paused", "Runner must surface a paused state"
+    outcomes = []
+    async for item in runner.run_outcomes_async({"payload": "start"}):
+        outcomes.append(item)
+        break
+
+    assert outcomes and isinstance(outcomes[0], Paused)
 
 
-@pytest.mark.timeout(120)
 @pytest.mark.asyncio
-async def test_parallel_hitl_branch_propagates_pause() -> None:
-    """Parallel branch hitting HITL pauses the entire runner."""
-    hitl_step = HumanInTheLoopStep(
+async def test_parallel_branch_hitl_pauses_entire_step() -> None:
+    """Parallel → HITL branch should pause the whole parallel step."""
+    branches = {
+        "fast": Step(name="fast_branch", agent=_EchoAgent()),
+        "hitl": Pipeline.from_step(
+            HumanInTheLoopStep(name="hitl_branch", message_for_user="pause here too")
+        ),
+    }
+    parallel_step = ParallelStep(
         name="parallel_hitl",
-        message_for_user="Confirm parallel branch",
+        branches=branches,
+        on_branch_failure=BranchFailureStrategy.PROPAGATE,
     )
-    agent_step = Step(name="agent_branch", agent=StubAgent(["done"]))
-    parallel = ParallelStep(
-        name="parallel_gate",
-        branches={
-            "hitl": Pipeline.from_step(hitl_step),
-            "agent": Pipeline.from_step(agent_step),
-        },
-    )
-    pipeline = Pipeline.from_step(parallel)
-    runner = Flujo(pipeline)
+    runner = create_test_flujo(Pipeline.from_step(parallel_step))
 
-    paused_result = await _run_until_pause(runner, "payload")
-    ctx = paused_result.final_pipeline_context
-    assert ctx is not None and hasattr(ctx, "scratchpad")
-    assert ctx.scratchpad.get("status") == "paused", "Parallel HITL should pause the runner"
+    outcomes = []
+    async for item in runner.run_outcomes_async("payload"):
+        outcomes.append(item)
+        break
+
+    assert outcomes and isinstance(outcomes[0], Paused)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import importlib.util as _importlib_util
+from pathlib import Path
 from typing import Any, Optional, Dict
 from flujo import Flujo
 from flujo.domain.dsl.pipeline import Pipeline
@@ -19,6 +20,16 @@ from typing import Callable
 os.environ["FLUJO_TEST_MODE"] = "1"
 # Disable background memory monitoring to cut per-test overhead and avoid linger
 os.environ.setdefault("FLUJO_DISABLE_MEMORY_MONITOR", "1")
+
+# Ensure subprocess CLI invocations can import the local package even when executed
+# from a temporary working directory. This prepends the repo root to PYTHONPATH.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_current_pp = os.environ.get("PYTHONPATH")
+if _current_pp:
+    if str(_REPO_ROOT) not in _current_pp.split(os.pathsep):
+        os.environ["PYTHONPATH"] = os.pathsep.join([str(_REPO_ROOT), _current_pp])
+else:
+    os.environ["PYTHONPATH"] = str(_REPO_ROOT)
 
 # Provide a lightweight fallback for the pytest-benchmark fixture when the
 # plugin isn't installed OR when plugin autoloading is disabled.

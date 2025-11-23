@@ -1,8 +1,10 @@
 import pytest
 
 from flujo.application.runner import Flujo
-from flujo.domain.dsl.step import Step
+from flujo.domain.dsl.step import HumanInTheLoopStep, Step
 from flujo.domain.dsl.pipeline import Pipeline
+from flujo.domain.dsl.conditional import ConditionalStep
+from flujo.domain.dsl.loop import LoopStep
 from flujo.domain.models import Success, Chunk, Paused
 
 
@@ -65,3 +67,28 @@ async def test_runner_run_outcomes_paused_yields_paused():
         outs.append(item)
         break
     assert outs and isinstance(outs[0], Paused)
+
+
+@pytest.mark.asyncio
+async def test_runner_run_outcomes_nested_pause_bubbles():
+    """Nested control-flow should still surface Paused outcomes."""
+    hitl_step = HumanInTheLoopStep(name="hitl_nested", message_for_user="pause here")
+    conditional = ConditionalStep(
+        name="route_to_hitl",
+        condition_callable=lambda _out, _ctx: "hitl",
+        branches={"hitl": Pipeline.from_step(hitl_step)},
+    )
+    loop = LoopStep(
+        name="outer_loop",
+        loop_body_pipeline=Pipeline.from_step(conditional),
+        exit_condition_callable=lambda _out, _ctx: True,
+        max_loops=1,
+    )
+    f = Flujo(Pipeline.from_step(loop))
+
+    outcomes = []
+    async for item in f.run_outcomes_async({"payload": "start"}):
+        outcomes.append(item)
+        break
+
+    assert outcomes and isinstance(outcomes[0], Paused)

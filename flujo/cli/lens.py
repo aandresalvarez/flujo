@@ -28,6 +28,15 @@ lens_app = typer.Typer(
 )
 
 
+def register_lens_app(app: typer.Typer) -> None:
+    """Register the lens sub-app with the main CLI app.
+
+    Args:
+        app: The main Typer app instance to register the lens app with.
+    """
+    app.add_typer(lens_app, name="lens")
+
+
 @lens_app.command("list")
 def list_runs(
     status: Union[str, None] = typer.Option(None),

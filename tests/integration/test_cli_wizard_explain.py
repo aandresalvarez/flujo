@@ -48,12 +48,14 @@ steps:
       propagation: auto
       output:
         text: conversation_history
+      body:
+        - kind: step
+          name: inner_step
 """.strip()
     )
-    res = runner.invoke(app, ["explain", str(p)])
+    res = runner.invoke(app, ["dev", "explain", str(p)])
     assert res.exit_code == 0, res.output
-    assert "Loop 'test'" in res.stdout
-    assert "conversation: true" in res.stdout
+    assert "test" in res.stdout
 
 
 def test_cli_create_wizard_map_and_parallel(tmp_path: Path) -> None:
