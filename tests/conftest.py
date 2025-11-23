@@ -249,6 +249,14 @@ def _clear_state_uri_env(monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _clear_project_root_env(monkeypatch):
+    """Avoid FLUJO_PROJECT_ROOT leakage between tests (affects project root helpers)."""
+
+    monkeypatch.delenv("FLUJO_PROJECT_ROOT", raising=False)
+    yield
+
+
 def create_test_flujo(
     pipeline: Pipeline[Any, Any] | Step[Any, Any],
     *,
