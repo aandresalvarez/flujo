@@ -28,7 +28,7 @@ def setup_cli_environment(project_root: Optional[str] = None) -> None:
 
         root = resolve_project_root(explicit=explicit, allow_missing=True)
 
-        if project_root and root is not None:
+        if root is not None:
             os.environ["FLUJO_PROJECT_ROOT"] = str(root)
 
         # Add project root to sys.path if not already present

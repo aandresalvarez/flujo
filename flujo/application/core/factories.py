@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Optional
+import os
 
 from flujo.application.core.default_components import (
     Blake3Hasher,
@@ -15,11 +16,13 @@ from flujo.application.core.default_components import (
     ThreadSafeMeter,
 )
 from flujo.application.core.estimation import build_default_estimator_factory
-from flujo.application.core.executor_core import ExecutorCore
+from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
+from flujo.application.core.executor_protocols import ICacheBackend, ITelemetry
 from flujo.infra.backends import LocalBackend
 from flujo.state.backends.memory import InMemoryBackend
 from flujo.state.backends.sqlite import SQLiteBackend
-from flujo.utils.config import get_settings
+from flujo.state.backends.base import StateBackend
+from flujo.utils.config import get_settings, Settings
 
 
 class ExecutorFactory:
@@ -28,9 +31,9 @@ class ExecutorFactory:
     def __init__(
         self,
         *,
-        telemetry: Any | None = None,
-        cache_backend: Any | None = None,
-        optimization_config: Any | None = None,
+        telemetry: ITelemetry | None = None,
+        cache_backend: ICacheBackend | None = None,
+        optimization_config: OptimizationConfig | None = None,
     ) -> None:
         self._telemetry = telemetry
         self._cache_backend = cache_backend
@@ -66,11 +69,19 @@ class BackendFactory:
         return LocalBackend(executor=exec_core)
 
     def create_state_backend(
-        self, *, settings: Any | None = None, db_path: Path | str | None = None
-    ) -> Any:
+        self, *, settings: Settings | None = None, db_path: Path | str | None = None
+    ) -> StateBackend:
         cfg = settings or get_settings()
         if bool(getattr(cfg, "test_mode", False)):
             return InMemoryBackend()
 
-        target_path = Path(db_path) if db_path is not None else Path.cwd() / "flujo_ops.db"
+        if db_path is not None:
+            target_path = Path(db_path)
+        else:
+            root_hint = os.getenv("FLUJO_PROJECT_ROOT")
+            try:
+                root_base = Path(root_hint).resolve() if root_hint else Path.cwd()
+            except Exception:
+                root_base = Path.cwd()
+            target_path = root_base / "flujo_ops.db"
         return SQLiteBackend(target_path)

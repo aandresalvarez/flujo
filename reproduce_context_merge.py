@@ -9,11 +9,6 @@ logging.basicConfig(level=logging.DEBUG)
 class MyContext(BaseModel):
     run_id: str
 
-    def __setattr__(self, name, value):
-        if name == "run_id":
-            super().__setattr__(name, value)
-        # Note: Missing handling for other attributes!
-
 
 def test_merge():
     original = MyContext(run_id="original")

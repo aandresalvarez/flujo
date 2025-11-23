@@ -1,18 +1,16 @@
 from __future__ import annotations
-# mypy: ignore-errors
 
-from ._shared import (  # noqa: F401
+from ._shared import (
     Any,
-    Awaitable,
     Callable,
     Dict,
     ImportStep,
     InfiniteRedirectError,
     NonRetryableError,
+    PipelineAbortSignal,
     Optional,
     Paused,
     PausedException,
-    Pipeline,
     PipelineResult,
     PricingNotConfiguredError,
     Protocol,
@@ -23,7 +21,6 @@ from ._shared import (  # noqa: F401
     UsageLimits,
     UsageLimitExceededError,
     telemetry,
-    to_outcome,
 )
 
 # --- Import Step Executor policy ---
@@ -149,8 +146,10 @@ class DefaultImportStepExecutor:
                 if isinstance(sp, dict):
                     if isinstance(data, dict):
 
-                        def _deep_merge_dict(a: dict, b: dict) -> dict:
-                            res = dict(a)
+                        def _deep_merge_dict(
+                            a: Dict[str, Any], b: Dict[str, Any]
+                        ) -> Dict[str, Any]:
+                            res: Dict[str, Any] = dict(a)
                             for k, v in b.items():
                                 if k in res and isinstance(res[k], dict) and isinstance(v, dict):
                                     res[k] = _deep_merge_dict(res[k], v)
@@ -219,6 +218,7 @@ class DefaultImportStepExecutor:
             # conversation/hitl state inside its isolated context. Without merging
             # that state back to the parent's context before propagating the pause,
             # resuming will re-enter with stale state and cause repeated questions.
+            propagate = True
             try:
                 if context is not None and sub_context is not None:
                     try:
@@ -234,8 +234,12 @@ class DefaultImportStepExecutor:
                                 context = merged_ctx
                         except Exception:
                             pass
+                # Default to propagating unless explicitly disabled on the step
+                try:
+                    propagate = bool(getattr(step, "propagate_hitl", True))
+                except Exception:
+                    propagate = True
                 # Mark parent context as paused only when propagation is enabled
-                propagate = bool(getattr(step, "propagate_hitl", True))
                 if propagate:
                     if context is not None and hasattr(context, "scratchpad"):
                         try:
@@ -284,6 +288,7 @@ class DefaultImportStepExecutor:
             InfiniteRedirectError,
             NonRetryableError,
             PricingNotConfiguredError,
+            PipelineAbortSignal,
         ):
             # Re-raise control-flow/config exceptions per policy
             raise
@@ -465,7 +470,7 @@ class DefaultImportStepExecutor:
                         continue
                 parent_sr.output = update_data
             except Exception:
-                parent_sr.output = inner_sr.output
+                parent_sr.output = getattr(inner_sr, "output", None)
         elif getattr(step, "updates_context", False) and step.outputs == []:
             # Explicit empty mapping provided: do not merge anything back
             parent_sr.output = None
@@ -478,9 +483,9 @@ class DefaultImportStepExecutor:
             try:
                 parent_sr.output = PipelineResult(final_pipeline_context=child_final_ctx)
             except Exception:
-                parent_sr.output = inner_sr.output
+                parent_sr.output = getattr(inner_sr, "output", None)
         else:
-            parent_sr.output = getattr(inner_sr, "output", None)
+            parent_sr.output = getattr(inner_sr, "output", None) if inner_sr is not None else None
 
         return Success(step_result=parent_sr)
 

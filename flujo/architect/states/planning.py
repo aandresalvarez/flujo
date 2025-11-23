@@ -13,6 +13,7 @@ from flujo.architect.states.common import (
 )
 from flujo.domain.base_model import BaseModel as _BaseModel
 from flujo.domain.dsl import Pipeline, Step
+from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 
 
 async def make_plan_from_goal(*_: Any, context: _BaseModel | None = None) -> Dict[str, Any]:
@@ -147,6 +148,9 @@ async def run_planner_agent(_x: Any = None, *, context: _BaseModel | None = None
             if plan_summary:
                 out["plan_summary"] = plan_summary
             return out
+    except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+        # Preserve orchestration signals
+        raise
     except Exception:
         pass
 

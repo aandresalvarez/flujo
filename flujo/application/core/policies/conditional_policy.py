@@ -212,7 +212,16 @@ class DefaultConditionalStepExecutor:
                                             safe_merge_context_updates as _merge,
                                         )
 
-                                        _merge(context, branch_context)
+                                        merged = _merge(context, branch_context)
+                                        if merged is False:
+                                            try:
+                                                merged_ctx = ContextManager.merge(
+                                                    context, branch_context
+                                                )
+                                                if merged_ctx is not None:
+                                                    context = merged_ctx
+                                            except Exception:
+                                                pass
                                     except Exception:
                                         try:
                                             merged_ctx = ContextManager.merge(
@@ -243,6 +252,29 @@ class DefaultConditionalStepExecutor:
                                     feedback=res_any.feedback,
                                 )
                             elif isinstance(res_any, Paused):
+                                if context is not None and branch_context is not None:
+                                    try:
+                                        from flujo.utils.context import safe_merge_context_updates
+
+                                        merged = safe_merge_context_updates(context, branch_context)
+                                        if merged is False:
+                                            try:
+                                                merged_ctx = ContextManager.merge(
+                                                    context, branch_context
+                                                )
+                                                if merged_ctx is not None:
+                                                    context = merged_ctx
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        try:
+                                            merged_ctx = ContextManager.merge(
+                                                context, branch_context
+                                            )
+                                            if merged_ctx is not None:
+                                                context = merged_ctx
+                                        except Exception:
+                                            pass
                                 return res_any
                             else:
                                 step_result = StepResult(

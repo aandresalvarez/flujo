@@ -43,8 +43,6 @@ def get_excluded_fields() -> set[str]:
         set[str]: A set of field names to exclude.
     """
     global _EXCLUDED_FIELDS_CACHE
-    global _ENV_EXCLUDED_FIELDS_CACHE
-
     import os
 
     # Always recompute to avoid stale globals across tests/suites.
@@ -60,10 +58,12 @@ def get_excluded_fields() -> set[str]:
         "cache_keys",
     }
 
-    # Always read the environment afresh
-    env_val = _ENV_EXCLUDED_FIELDS_CACHE
-    if env_val is None:
-        env_val = os.getenv("EXCLUDED_FIELDS", "")
+    # Always read the environment afresh (test helpers may preseed _ENV_EXCLUDED_FIELDS_CACHE)
+    env_val = (
+        _ENV_EXCLUDED_FIELDS_CACHE
+        if _ENV_EXCLUDED_FIELDS_CACHE is not None
+        else os.getenv("EXCLUDED_FIELDS", "")
+    )
 
     excluded_fields = env_val
     # Defensive: ensure excluded_fields is a string-like value

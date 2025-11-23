@@ -1,13 +1,10 @@
 from __future__ import annotations
-# mypy: ignore-errors
 
-from ._shared import (  # noqa: F401
+from ._shared import (
     Any,
     Dict,
     Failure,
     Optional,
-    Pipeline,
-    PipelineContext,
     PipelineResult,
     StepOutcome,
     StepResult,
@@ -17,7 +14,6 @@ from ._shared import (  # noqa: F401
     ExecutionFrame,
     PausedException,
     telemetry,
-    time,
 )
 
 # --- StateMachine policy executor (FSD-025) ---

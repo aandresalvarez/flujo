@@ -142,6 +142,8 @@ async def match_one_tool(
     step_item: Dict[str, Any], *, context: _BaseModel | None = None
 ) -> Dict[str, Any]:
     """Run ToolMatcher agent for a single planned step; resilient with safe fallback."""
+    from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
+
     try:
         step_name = step_item.get("step_name") if isinstance(step_item, dict) else None
         purpose = step_item.get("purpose") if isinstance(step_item, dict) else None
@@ -183,6 +185,9 @@ async def match_one_tool(
                         "chosen_agent_id": res.get("chosen_agent_id"),
                         "agent_params": res.get("agent_params") or {},
                     }
+        except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+            # Preserve orchestration control-flow signals
+            raise
         except Exception as e:
             try:
                 message = (
@@ -198,6 +203,9 @@ async def match_one_tool(
             "chosen_agent_id": "flujo.builtins.stringify",
             "agent_params": {},
         }
+    except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+        # Allow orchestrator control-flow to bubble up
+        raise
     except Exception as e:
         try:
             telemetry().warning(
@@ -224,6 +232,8 @@ async def generate_yaml_from_tool_selections(
     _x: Any = None, *, context: _BaseModel | None = None
 ) -> Dict[str, Any]:
     """YAML writer using agent when available, with robust fallback."""
+    from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
+
     goal = None
     flujo_schema: Dict[str, Any] = {}
     selections: List[Dict[str, Any]] = []
@@ -322,6 +332,9 @@ async def generate_yaml_from_tool_selections(
             except Exception:
                 pass
             return {"generated_yaml": yaml_text, "yaml_text": yaml_text}
+        except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+            # Preserve orchestration signals raised while building YAML
+            raise
         except Exception as e:
             telemetry().info(f"[Architect] Exception in tool selections processing: {e}")
 

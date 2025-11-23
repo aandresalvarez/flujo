@@ -35,44 +35,44 @@ Flujo 2.0 unifies:
 **Goal**: Establish the Integrity Ledger and basic Runtime Kernel updates.
 
 - [ ] **Define Data Model**:
-    - Create `IntegrityEvent` Pydantic model (Run, Step, StateSnapshot, PolicyCheck, SideEffect).
-    - Design `events` table schema for SQLite.
+  - Create `IntegrityEvent` Pydantic model (Run, Step, StateSnapshot, PolicyCheck, SideEffect).
+  - Design `events` table schema for SQLite.
 - [ ] **Refactor Storage**:
-    - Update `SQLiteBackend` to support append-only `IntegrityEvent` logging.
-    - Ensure atomic transactions for event writes.
+  - Update `SQLiteBackend` to support append-only `IntegrityEvent` logging.
+  - Ensure atomic transactions for event writes.
 - [ ] **Runtime Instrumentation**:
-    - Update `ExecutorCore` to construct and emit `IntegrityEvent` at step boundaries.
-    - Capture `state_before` and `state_after` snapshots.
+  - Update `ExecutorCore` to construct and emit `IntegrityEvent` at step boundaries.
+  - Capture `state_before` and `state_after` snapshots.
 - [ ] **Basic Replay**:
-    - Implement `flujo replay` CLI to reconstruct state from the ledger.
+  - Implement `flujo replay` CLI to reconstruct state from the ledger.
 
 ### Phase 2: Policy Engine & Gating (Weeks 5-8)
 **Goal**: Implement the "Firewall" for agents.
 
 - [ ] **Policy Engine Core**:
-    - Create `PolicyEngine` class.
-    - Implement Static Checks (e.g., `deny_tools`, `max_cost` in `pipeline.yaml`).
-    - Implement Dynamic Checks (input: state + action, output: allow/deny).
+  - Create `PolicyEngine` class.
+  - Implement Static Checks (e.g., `deny_tools`, `max_cost` in `pipeline.yaml`).
+  - Implement Dynamic Checks (input: state + action, output: allow/deny).
 - [ ] **Side-Effect Adapters**:
-    - Build `flujo.adapters.http` (wrapper around `httpx`).
-    - Build `flujo.adapters.fs` (safe file system ops).
-    - Integrate Adapters with `PolicyEngine`.
+  - Build `flujo.adapters.http` (wrapper around `httpx`).
+  - Build `flujo.adapters.fs` (safe file system ops).
+  - Integrate Adapters with `PolicyEngine`.
 - [ ] **Agent Integration**:
-    - Update `AgentStepExecutor` to use Adapters.
-    - Enforce policy checks before tool execution.
+  - Update `AgentStepExecutor` to use Adapters.
+  - Enforce policy checks before tool execution.
 
 ### Phase 3: Developer Experience & Telemetry (Weeks 9-12)
 **Goal**: Make it usable and observable.
 
 - [ ] **DX / SDK**:
-    - Typed `Context` API (`ctx.state`).
-    - `@step` decorator improvements for 2.0 semantics.
-    - `flujo validate` CLI for static policy checks.
+  - Typed `Context` API (`ctx.state`).
+  - `@step` decorator improvements for 2.0 semantics.
+  - `flujo validate` CLI for static policy checks.
 - [ ] **Telemetry Exporter**:
-    - Implement `IntegrityEvent` -> OTLP exporter.
-    - Verify integration with LangSmith/Langfuse.
+  - Implement `IntegrityEvent` -> OTLP exporter.
+  - Verify integration with LangSmith/Langfuse.
 - [ ] **Compliance**:
-    - "Audit Log" export command (JSON/CSV of decisions).
+  - "Audit Log" export command (JSON/CSV of decisions).
 
 ---
 

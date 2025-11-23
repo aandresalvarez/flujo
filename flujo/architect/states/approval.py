@@ -5,6 +5,7 @@ from typing import Any, Dict
 from flujo.architect.states.common import goto, skill_resolver
 from flujo.domain.base_model import BaseModel as _BaseModel
 from flujo.domain.dsl import Pipeline, Step
+from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 
 
 async def approval_noop(x: str, *, context: _BaseModel | None = None) -> str:
@@ -49,6 +50,9 @@ async def _plan_approval_runner(
                 resp = await _ask(question="Does this plan look correct? (Y/n)")
                 key = await _chk(user_input=str(resp))
                 approved = str(key).strip().lower() == "approved"
+        except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+            # Preserve orchestration control-flow
+            raise
         except Exception:
             approved = True
 

@@ -17,20 +17,21 @@ def build_gathering_state() -> Pipeline[Any, Any]:
     """Gather available skills, analyze the project, and move to GoalClarification."""
     reg = skill_resolver()
     # discover_skills is an agent; factory returns an agent instance
+    discover: Step[Any, Any]
     try:
         discover_entry = reg.get("flujo.builtins.discover_skills")
         if discover_entry and isinstance(discover_entry, dict):
             _discover_agent = discover_entry["factory"]()
-            discover = Step.solution(_discover_agent, name="DiscoverSkills", updates_context=True)
+            discover = Step.from_callable(
+                _discover_agent, name="DiscoverSkills", updates_context=True
+            )
         else:
 
             async def _discover_fallback(*_a: Any, **_k: Any) -> Dict[str, Any]:
                 return {"available_skills": []}
 
             discover = Step.from_callable(
-                _discover_fallback,
-                name="DiscoverSkills",
-                updates_context=True,
+                _discover_fallback, name="DiscoverSkills", updates_context=True
             )
     except Exception:
 

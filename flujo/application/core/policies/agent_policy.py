@@ -882,7 +882,6 @@ class DefaultAgentStepExecutor:
                 result.feedback = str(e_usage)
                 result.output = None
                 result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                return to_outcome(result)
                 # Quota reconcile for this step's actuals
                 try:
                     if current_quota is not None:
@@ -971,6 +970,7 @@ class DefaultAgentStepExecutor:
                         pass
                 except Exception:
                     pass
+                return to_outcome(result)
             processed_output = agent_output
             last_processed_output = processed_output
             if hasattr(step, "processors") and step.processors:

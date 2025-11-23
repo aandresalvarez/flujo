@@ -5,6 +5,7 @@ from typing import Any, Dict
 from flujo.architect.states.common import skill_resolver, telemetry
 from flujo.domain.base_model import BaseModel as _BaseModel
 from flujo.domain.dsl import Pipeline, Step
+from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 
 
 async def _select_yaml_text(_x: Any = None, *, context: _BaseModel | None = None) -> str:
@@ -51,9 +52,9 @@ def build_validation_state() -> Pipeline[Any, Any]:
             async def _capture_fallback(
                 rep: Any, *, context: _BaseModel | None = None
             ) -> Dict[str, Any]:
+                is_valid = True
                 try:
                     telemetry().info(f"[ArchitectSM] CaptureReport FIRST fallback: rep={rep}")
-                    is_valid = True
                     if isinstance(rep, dict) and "is_valid" in rep:
                         is_valid = bool(rep.get("is_valid"))
                         msg = f"[ArchitectSM] CaptureReport: extracted is_valid={is_valid} from rep"
@@ -139,6 +140,8 @@ def build_validation_state() -> Pipeline[Any, Any]:
                     out = {}
             else:
                 out = {}
+        except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+            raise
         except Exception:
             out = {}
 

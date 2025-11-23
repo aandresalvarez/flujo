@@ -10,6 +10,7 @@ from flujo.architect.states.generation import (
 )
 from flujo.domain.base_model import BaseModel as _BaseModel
 from flujo.domain.dsl import Pipeline, Step
+from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 
 
 async def _finalize(_x: Any = None, *, context: _BaseModel | None = None) -> Dict[str, Any]:
@@ -86,38 +87,36 @@ async def _finalize(_x: Any = None, *, context: _BaseModel | None = None) -> Dic
                         pass
             except Exception:
                 pass
+    except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+        raise
     except Exception:
         yaml_text = 'version: "0.1"\nname: fallback_pipeline\nsteps: []\n'
 
-    try:
-        if isinstance(yaml_text, str):
-            needs_stringify = "flujo.builtins.stringify" not in yaml_text
-            empty_steps = "steps: []" in yaml_text
-            if needs_stringify or empty_steps:
-                goal_value = getattr(context, "user_goal", None)
-                name = normalize_name_from_goal(str(goal_value or "pipeline"))
-                import yaml as _yaml
+    if isinstance(yaml_text, str):
+        empty_steps = "steps: []" in yaml_text
+        if empty_steps:
+            goal_value = getattr(context, "user_goal", None)
+            name = normalize_name_from_goal(str(goal_value or "pipeline"))
+            import yaml as _yaml
 
-                step_dict = {
-                    "kind": "step",
-                    "name": "Echo Input",
-                    "agent": {"id": "flujo.builtins.stringify", "params": {}},
-                }
-                block = _yaml.safe_dump(step_dict, sort_keys=False).strip()
-                steps_block = "\n".join(
-                    [
-                        "- " + line if i == 0 else "  " + line
-                        for i, line in enumerate(block.splitlines())
-                    ]
-                )
-                yaml_text = f'\nversion: "0.1"\nname: {name}\nsteps:\n{steps_block}\n'
-                try:
-                    setattr(context, "generated_yaml", yaml_text)
-                    setattr(context, "yaml_text", yaml_text)
-                except Exception:
-                    pass
-    except Exception:
-        pass
+            step_dict = {
+                "kind": "step",
+                "name": "Echo Input",
+                "agent": {"id": "flujo.builtins.stringify", "params": {}},
+            }
+            block = _yaml.safe_dump(step_dict, sort_keys=False).strip()
+            steps_block = "\n".join(
+                [
+                    "- " + line if i == 0 else "  " + line
+                    for i, line in enumerate(block.splitlines())
+                ]
+            )
+            yaml_text = f'\nversion: "0.1"\nname: {name}\nsteps:\n{steps_block}\n'
+            try:
+                setattr(context, "generated_yaml", yaml_text)
+                setattr(context, "yaml_text", yaml_text)
+            except Exception:
+                pass
 
     try:
         if context is not None:

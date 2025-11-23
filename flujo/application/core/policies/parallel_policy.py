@@ -129,7 +129,14 @@ class DefaultParallelStepExecutor:
             try:
                 from flujo.utils.context import safe_merge_context_updates as _merge
 
-                _merge(context, branch_ctx)
+                merged = _merge(context, branch_ctx)
+                if merged is False:
+                    try:
+                        merged_ctx = ContextManager.merge(context, branch_ctx)
+                        if merged_ctx is not None:
+                            context = merged_ctx
+                    except Exception:
+                        pass
             except Exception:
                 try:
                     merged_ctx = ContextManager.merge(context, branch_ctx)

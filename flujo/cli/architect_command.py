@@ -8,6 +8,7 @@ import typer
 import click
 from typing_extensions import Annotated
 
+from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 from . import helpers
 from .helpers import (
     create_flujo_runner,
@@ -941,6 +942,9 @@ def create(  # <--- REVERT BACK TO SYNC
     except typer.Exit:
         # Preserve explicit exit codes for wizard/architect flows without wrapping
         raise
+    except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+        # Allow orchestration control-flow signals to propagate
+        raise
     except Exception as e:
         print_rich_or_typer(f"[red]Failed to create pipeline: {e}", stderr=True)
         raise typer.Exit(1) from e
@@ -1009,6 +1013,7 @@ def _run_create_wizard(
     out_mode = (
         "text" if non_interactive else _ty.prompt("Output mode (text/fields)", default="text")
     )
+    map_step = (map_step_name or "process").strip() or "process"
 
     lines: list[str] = ['version: "0.1"', "steps:"]
     lines.append("  - kind: step\n    name: get_goal")
@@ -1115,7 +1120,7 @@ def _run_create_wizard(
         lines.append(f"      iterable_input: {it_name}")
         lines.append("      body:")
         lines.append(
-            "        - kind: step\n          name: process\n          updates_context: false"
+            f"        - kind: step\n          name: {map_step}\n          updates_context: false"
         )
         lines.append("      init:")
         lines.append('        - set: "context.scratchpad.note"\n          value: "mapping"')
