@@ -530,9 +530,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             # so we assume it should have been loaded.
                             # For now, we log to telemetry if available
                             if self._telemetry:
-                                self._telemetry.warning(
-                                    f"Failed to hydrate reference {field_name}: {e}"
-                                )
+                                warning_fn = getattr(self._telemetry, "warning", None)
+                                if warning_fn:
+                                    warning_fn(f"Failed to hydrate reference {field_name}: {e}")
 
     async def _persist_context(self, context: Optional[Any]) -> None:
         """Persist ContextReference fields in the context using registered providers."""
@@ -551,9 +551,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                 await provider.save(field_value.key, field_value._value)
                             except Exception as e:
                                 if self._telemetry:
-                                    self._telemetry.warning(
-                                        f"Failed to persist reference {field_name}: {e}"
-                                    )
+                                    warning_fn = getattr(self._telemetry, "warning", None)
+                                    if warning_fn:
+                                        warning_fn(f"Failed to persist reference {field_name}: {e}")
 
     def _is_complex_step(self, step: Any) -> bool:
         # 1) Explicit object-oriented hook/property
