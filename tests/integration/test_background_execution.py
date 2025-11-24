@@ -67,6 +67,10 @@ async def test_background_execution_fire_and_forget():
         assert result.step_history[0].success is True
         assert "Launched in background" in (result.step_history[0].feedback or "")
 
+        # Verify the foreground step received the input data (passed through from bg step)
+        assert result.step_history[1].name == "fg_step"
+        assert result.step_history[1].output == "fast_input"  # fg_step ran with "input" data
+
         # 4. Wait for background tasks to complete (aclose does this automatically)
         # The 'async with' block exit triggers aclose()
 

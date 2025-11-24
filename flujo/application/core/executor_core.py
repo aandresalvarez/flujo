@@ -755,7 +755,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     async def wait_for_background_tasks(self, timeout: float = 5.0) -> None:
-        """Wait for all background tasks to complete with a timeout."""
+        """Wait for all background tasks to complete with a timeout.
+
+        Cancels any tasks that don't complete within the timeout period.
+        """
         if not self._background_tasks:
             return
 
@@ -771,10 +774,31 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             done, pending_set = await asyncio.wait(
                 pending, timeout=timeout, return_when=asyncio.ALL_COMPLETED
             )
+
+            # Remove completed tasks from tracking
+            for task in done:
+                self._background_tasks.discard(task)
+
+            # Cancel any tasks that didn't complete within the timeout
             if pending_set:
                 telemetry.logfire.warning(
-                    f"{len(pending_set)} background tasks timed out during shutdown."
+                    f"{len(pending_set)} background tasks timed out during shutdown. Cancelling..."
                 )
+                for task in pending_set:
+                    task.cancel()
+                    self._background_tasks.discard(task)
+
+                # Wait briefly for cancellations to complete
+                if pending_set:
+                    try:
+                        await asyncio.wait(pending_set, timeout=0.5)
+                    except asyncio.CancelledError:
+                        raise  # Re-raise cancellation to propagate
+                    except Exception as cancel_err:
+                        telemetry.logfire.debug(f"Error during task cancellation: {cancel_err}")
+        except asyncio.CancelledError:
+            # Re-raise to propagate cancellation signal
+            raise
         except Exception as e:
             telemetry.logfire.error(f"Error waiting for background tasks: {e}")
 

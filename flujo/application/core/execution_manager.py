@@ -420,7 +420,7 @@ class ExecutionManager(Generic[ContextT]):
                                 step_result = StepResult(
                                     name=getattr(step, "name", "<unnamed>"),
                                     success=True,
-                                    output=None,
+                                    output=data,  # Pass through input data to next step
                                     feedback=f"Launched in background (task_id={item.task_id})",
                                     metadata_={"background_task_id": item.task_id},
                                 )
