@@ -134,3 +134,7 @@ assert result.final_pipeline_context.counter == 1
 ```
 
 In this example, `flujo` automatically injects the `MyContext` and `MyResources` objects into the `my_mapper` function because they are type-hinted as keyword-only arguments named `context` and `resources`.
+
+### Transactional resources (per-attempt)
+
+If your `AppResources` object implements a sync or async context manager, Flujo will enter it for **each step attempt** and exit it afterward. This lets you bind a database session/transaction to a single attempt (including retries and parallel branches) without holding connections across the entire run. Make sure the resource is re-entrant or can hand out per-attempt handles (e.g., via a pool) so parallel steps do not trample shared state.
