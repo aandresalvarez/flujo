@@ -886,6 +886,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # Propagate control-flow exception (tests expect it to be raised)
             raise e
         except PausedException as e:
+            # Persist managed state before pausing (critical for HITL flows that prepare state)
+            await self._persist_context(getattr(frame, "context", None))
             if called_with_frame:
                 return Paused(message=str(e))
             raise

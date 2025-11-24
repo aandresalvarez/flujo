@@ -33,7 +33,7 @@ class ContextReference(BaseModel, Generic[T]):
 
     def get(self) -> T:
         if self._value is None:
-            raise ValueError("State not hydrated. Executor failed to load data.")
+            raise ValueError("State not hydrated")
         return self._value
 
     def set(self, value: T) -> None:
