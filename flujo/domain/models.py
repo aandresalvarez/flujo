@@ -3,7 +3,7 @@
 from __future__ import annotations
 from typing import Any, List, Optional, Literal, Dict, Generic, TypeVar, Tuple
 from threading import RLock
-from pydantic import Field, ConfigDict, field_validator
+from pydantic import Field, ConfigDict, field_validator, PrivateAttr
 from typing import ClassVar
 from datetime import datetime, timezone
 import uuid
@@ -17,6 +17,27 @@ from .base_model import BaseModel
 # ---------------------------------------------------------------------------
 
 T = TypeVar("T")
+
+
+class ContextReference(BaseModel, Generic[T]):
+    """
+    A serializable pointer to external state.
+    """
+
+    provider_id: str
+    key: str
+
+    # Private attribute to hold runtime data.
+    # Private attributes are NOT serialized by Pydantic default.
+    _value: Optional[T] = PrivateAttr(default=None)
+
+    def get(self) -> T:
+        if self._value is None:
+            raise ValueError("State not hydrated")
+        return self._value
+
+    def set(self, value: T) -> None:
+        self._value = value
 
 
 class StepOutcome(BaseModel, Generic[T]):
@@ -100,6 +121,7 @@ __all__ = [
     "ConversationTurn",
     "ConversationRole",
     "BaseModel",
+    "ContextReference",
 ]
 
 

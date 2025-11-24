@@ -78,6 +78,18 @@ class SkillRegistryProvider(Protocol):
     def get_registry(self, *, scope: str | None = None) -> SkillRegistry: ...
 
 
+class StateProvider(Protocol):
+    """Protocol for external state providers that manage data persistence."""
+
+    async def load(self, key: str) -> Any:
+        """Fetch data from external storage."""
+        ...
+
+    async def save(self, key: str, data: Any) -> None:
+        """Commit data to external storage."""
+        ...
+
+
 @dataclass
 class _NullTelemetrySpan:
     def __enter__(self) -> "_NullTelemetrySpan":
@@ -305,4 +317,5 @@ __all__ = [
     "set_default_skills_discovery",
     "get_skill_registry_provider",
     "set_default_skill_registry_provider",
+    "StateProvider",
 ]

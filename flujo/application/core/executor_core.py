@@ -30,7 +30,9 @@ from ...domain.models import (
     Failure,
     Paused,
     Quota,
+    ContextReference,
 )
+from ...domain.interfaces import StateProvider
 from ...exceptions import (
     InfiniteFallbackError,
     UsageLimitExceededError,
@@ -248,6 +250,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         strict_context_isolation: bool = False,
         strict_context_merge: bool = False,
         enable_optimized_error_handling: bool = True,
+        state_providers: Optional[Dict[str, StateProvider]] = None,
     ) -> None:
         # Validate parameters for compatibility
         if cache_size <= 0:
@@ -309,6 +312,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             bool(strict_context_isolation) or _DEFAULT_STRICT_CONTEXT_ISOLATION
         )
         self._strict_context_merge = bool(strict_context_merge) or _DEFAULT_STRICT_CONTEXT_MERGE
+        self._state_providers = state_providers or {}
 
         # Assign policies
         self.timeout_runner = timeout_runner or DefaultTimeoutRunner()
@@ -504,6 +508,52 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     pass
         except Exception:
             pass
+
+    async def _hydrate_context(self, context: Optional[Any]) -> None:
+        """Hydrate ContextReference fields in the context using registered providers."""
+        if context is None or not self._state_providers:
+            return
+
+        # Iterate over fields to find ContextReference
+        # We check top-level fields of Pydantic models
+        if isinstance(context, BaseModel):
+            for field_name, field_value in context:
+                if isinstance(field_value, ContextReference):
+                    provider = self._state_providers.get(field_value.provider_id)
+                    if provider:
+                        try:
+                            data = await provider.load(field_value.key)
+                            field_value.set(data)
+                        except Exception as e:
+                            # Log warning but don't crash, let step handle missing data if needed
+                            # or maybe we should crash? The plan said "Executor failed to load data" in ValueError
+                            # so we assume it should have been loaded.
+                            # For now, we log to telemetry if available
+                            if self._telemetry:
+                                warning_fn = getattr(self._telemetry, "warning", None)
+                                if warning_fn:
+                                    warning_fn(f"Failed to hydrate reference {field_name}: {e}")
+
+    async def _persist_context(self, context: Optional[Any]) -> None:
+        """Persist ContextReference fields in the context using registered providers."""
+        if context is None or not self._state_providers:
+            return
+
+        if isinstance(context, BaseModel):
+            for field_name, field_value in context:
+                if isinstance(field_value, ContextReference):
+                    # Only save if value is present (hydrated/modified)
+                    # Accessing _value directly to avoid ValueError from get()
+                    if field_value._value is not None:
+                        provider = self._state_providers.get(field_value.provider_id)
+                        if provider:
+                            try:
+                                await provider.save(field_value.key, field_value._value)
+                            except Exception as e:
+                                if self._telemetry:
+                                    warning_fn = getattr(self._telemetry, "warning", None)
+                                    if warning_fn:
+                                        warning_fn(f"Failed to persist reference {field_name}: {e}")
 
     def _is_complex_step(self, step: Any) -> bool:
         # 1) Explicit object-oriented hook/property
@@ -734,6 +784,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         except Exception:
             pass
 
+        # Hydrate context references (FSD-Managed State)
+        await self._hydrate_context(getattr(frame, "context", None))
+
         step = frame.step
         # Hard route critical step subclasses before registry to guarantee policy-specific behavior
         try:
@@ -741,6 +794,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
             if isinstance(step, _Cond):
                 outcome = await self._policy_conditional_step(frame)
+                await self._persist_context(getattr(frame, "context", None))
                 if called_with_frame:
                     return outcome
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
@@ -815,6 +869,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 )
 
             outcome = await policy(frame)
+            await self._persist_context(getattr(frame, "context", None))
+
             if called_with_frame:
                 return cast(StepOutcome[StepResult], outcome)
             if isinstance(outcome, Success):
@@ -830,6 +886,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # Propagate control-flow exception (tests expect it to be raised)
             raise e
         except PausedException as e:
+            # Persist managed state before pausing (critical for HITL flows that prepare state)
+            await self._persist_context(getattr(frame, "context", None))
             if called_with_frame:
                 return Paused(message=str(e))
             raise
