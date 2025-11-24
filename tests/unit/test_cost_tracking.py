@@ -375,17 +375,17 @@ class TestExtractUsageMetrics:
         raw_output = MockResponse()
         agent = MockAgent()
 
-        # Capture warning messages
-        from flujo.infra import telemetry
+        # Capture warning messages by patching at the module level where it's used
+        import flujo.infra.telemetry as telemetry_module
 
         warning_messages = []
-        original_warning = telemetry.logfire.warning
+        original_warning = telemetry_module.logfire.warning
 
         def capture_warning(message, *args, **kwargs):
             warning_messages.append(message)
             original_warning(message, *args, **kwargs)
 
-        telemetry.logfire.warning = capture_warning
+        telemetry_module.logfire.warning = capture_warning
 
         try:
             prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
@@ -393,7 +393,9 @@ class TestExtractUsageMetrics:
             )
 
             # Verify that a critical warning was logged about using 0.0 cost
-            assert len(warning_messages) > 0
+            assert len(warning_messages) > 0, (
+                f"Expected warnings but got none. Tokens: p={prompt_tokens}, c={completion_tokens}, cost={cost_usd}"
+            )
             warning_message = warning_messages[0]
             assert "CRITICAL" in warning_message
             assert "Could not determine model" in warning_message
@@ -405,7 +407,7 @@ class TestExtractUsageMetrics:
 
         finally:
             # Restore original warning method
-            telemetry.logfire.warning = original_warning
+            telemetry_module.logfire.warning = original_warning
 
     def test_extract_usage_metrics_graceful_fallback(self):
         """Test that the system gracefully falls back when usage information is incomplete."""
