@@ -42,6 +42,8 @@ async def _finalize(_x: Any = None, *, context: _BaseModel | None = None) -> Dic
                         cand = gen.get("yaml_text") or gen.get("generated_yaml")
                         if isinstance(cand, str) and cand.strip():
                             yaml_text = cand
+                except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+                    raise
                 except Exception:
                     pass
 
@@ -52,6 +54,8 @@ async def _finalize(_x: Any = None, *, context: _BaseModel | None = None) -> Dic
                         cand2 = gen2.get("yaml_text") or gen2.get("generated_yaml")
                         if isinstance(cand2, str) and cand2.strip():
                             yaml_text = cand2
+                except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+                    raise
                 except Exception:
                     pass
 

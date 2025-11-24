@@ -1,5 +1,4 @@
 from __future__ import annotations
-# mypy: ignore-errors
 
 from ._shared import (  # noqa: F401
     Any,
@@ -145,10 +144,11 @@ class DefaultConditionalStepExecutor:
                         span.set_attribute("resolved_branch_key", str(resolved_key))
                 except Exception:
                     pass
-                # Determine branch
+                # Determine branch using resolved key when present; otherwise use evaluated branch_key
                 branch_to_execute = None
-                if resolved_key is not None:
-                    branch_to_execute = conditional_step.branches[resolved_key]
+                target_key = resolved_key if resolved_key is not None else branch_key
+                if target_key in conditional_step.branches:
+                    branch_to_execute = conditional_step.branches[target_key]
                 elif conditional_step.default_branch_pipeline is not None:
                     branch_to_execute = conditional_step.default_branch_pipeline
                 else:

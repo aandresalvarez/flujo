@@ -343,6 +343,7 @@ class DefaultParallelStepExecutor:
                 _merge_branch_context_into_parent(branch_context)
                 raise
             except PipelineAbortSignal:
+                _merge_branch_context_into_parent(branch_context)
                 raise
             except Exception as e:
                 telemetry.logfire.error(f"Branch {branch_name} failed with exception: {e}")
