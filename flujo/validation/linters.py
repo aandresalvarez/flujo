@@ -239,10 +239,26 @@ class TemplateLinter(BaseLinter):
                 # V-T4: Unknown step proxy name in steps.<name>
                 if has_tokens:
                     prior_names = {getattr(s, "name", "") for s in steps[:idx]}
+                    # Debug logging for CI
+                    import os
+
+                    is_ci = os.getenv("CI") == "true"
+                    if is_ci:
+                        logfire.debug(f"[V-T4] Checking template: {templ[:100]}")
+                        logfire.debug(f"[V-T4] Prior step names: {prior_names}")
+
                     for sm in re.finditer(r"steps\.([A-Za-z0-9_]+)\b", templ):
                         ref = sm.group(1)
+                        if is_ci:
+                            logfire.debug(f"[V-T4] Found reference: steps.{ref}")
+                            logfire.debug(
+                                f"[V-T4] ref={ref!r}, in prior_names={ref in prior_names}"
+                            )
+
                         if ref and ref not in prior_names:
                             sev = _override_severity("V-T4", "warning")
+                            if is_ci:
+                                logfire.debug(f"[V-T4] Severity for V-T4: {sev}")
                             if sev is not None:
                                 out.append(
                                     ValidationFinding(

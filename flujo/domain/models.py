@@ -105,6 +105,13 @@ class Chunk(StepOutcome[T]):
     step_name: str | None = None
 
 
+class BackgroundLaunched(StepOutcome[T]):
+    """Step launched in background; execution continues immediately."""
+
+    task_id: str
+    step_name: str
+
+
 __all__ = [
     "Task",
     "Candidate",

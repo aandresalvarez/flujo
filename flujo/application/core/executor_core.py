@@ -11,8 +11,9 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import warnings
+import uuid
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast
+from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast, Set
 from pydantic import BaseModel
 
 from ...domain.dsl.conditional import ConditionalStep
@@ -31,6 +32,7 @@ from ...domain.models import (
     Paused,
     Quota,
     ContextReference,
+    BackgroundLaunched,
 )
 from ...domain.interfaces import StateProvider
 from ...exceptions import (
@@ -41,6 +43,7 @@ from ...exceptions import (
     MockDetectionError,
     PricingNotConfiguredError,
     InfiniteRedirectError,
+    PipelineAbortSignal,
 )
 from ...infra import telemetry
 from ...steps.cache_step import CacheStep
@@ -313,6 +316,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
         self._strict_context_merge = bool(strict_context_merge) or _DEFAULT_STRICT_CONTEXT_MERGE
         self._state_providers = state_providers or {}
+        self._background_tasks: Set[asyncio.Task[Any]] = set()
 
         # Assign policies
         self.timeout_runner = timeout_runner or DefaultTimeoutRunner()
@@ -686,6 +690,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             )
         if isinstance(outcome, Paused):
             raise PausedException(outcome.message)
+        if isinstance(outcome, BackgroundLaunched):
+            return StepResult(
+                name=step_name,
+                output=None,
+                success=True,
+                feedback=f"Launched in background (task_id={outcome.task_id})",
+                metadata_={"background_task_id": outcome.task_id},
+            )
         # For Chunk/Aborted or unknown: synthesize conservative failure
         return StepResult(
             name=step_name,
@@ -743,6 +755,128 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
         return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
+    async def wait_for_background_tasks(self, timeout: float = 5.0) -> None:
+        """Wait for all background tasks to complete with a timeout.
+
+        Cancels any tasks that don't complete within the timeout period.
+        """
+        if not self._background_tasks:
+            return
+
+        # Create a copy to avoid modification during iteration if tasks complete
+        pending = list(self._background_tasks)
+        if not pending:
+            return
+
+        telemetry.logfire.info(
+            f"Waiting for {len(pending)} background tasks to complete (timeout={timeout}s)..."
+        )
+        try:
+            done, pending_set = await asyncio.wait(
+                pending, timeout=timeout, return_when=asyncio.ALL_COMPLETED
+            )
+
+            # Remove completed tasks from tracking
+            for task in done:
+                self._background_tasks.discard(task)
+
+            # Cancel any tasks that didn't complete within the timeout
+            if pending_set:
+                telemetry.logfire.warning(
+                    f"{len(pending_set)} background tasks timed out during shutdown. Cancelling..."
+                )
+                for task in pending_set:
+                    task.cancel()
+                    self._background_tasks.discard(task)
+
+                # Wait briefly for cancellations to complete
+                if pending_set:
+                    try:
+                        await asyncio.wait(pending_set, timeout=0.5)
+                    except asyncio.CancelledError:
+                        raise  # Re-raise cancellation to propagate
+                    except Exception as cancel_err:
+                        telemetry.logfire.debug(f"Error during task cancellation: {cancel_err}")
+        except asyncio.CancelledError:
+            # Re-raise to propagate cancellation signal
+            raise
+        except Exception as e:
+            telemetry.logfire.error(f"Error waiting for background tasks: {e}")
+
+    async def _execute_background_task(
+        self,
+        step: Step[Any, Any],
+        data: Any,
+        context: Optional[TContext_w_Scratch],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+    ) -> None:
+        """Execute a step in the background, logging any errors."""
+        try:
+            # Create a deep copy of context for isolation if possible
+            # This is critical to avoid race conditions with the main pipeline
+            isolated_context = self._isolate_context(context)
+
+            # Execute the step using the simple executor (or policy routing)
+            # We use _execute_simple_step directly for now as most background tasks are simple agents
+            # If we need full policy routing, we could call self.execute recursively,
+            # but we'd need to be careful about infinite recursion if not handled right.
+            # Ideally, we route via policy registry but force sync mode to avoid recursion.
+
+            # For now, let's use the policy registry dispatch but ensure we don't loop on background mode
+            # We can do this by creating a new frame with modified config if needed,
+            # but since we are already inside the background task, the 'execute' call
+            # will see it's running and just execute.
+            # However, to be safe and explicit, let's use _execute_simple_step
+            # or the appropriate executor for the step type.
+
+            # Simplest approach: delegate to execute() but ensure we handle the result
+            # We pass a flag or just rely on the fact that we are in a separate task.
+            # But wait, if we call execute() again with the same step, it might try to launch background again
+            # if we don't distinguish.
+            # The check in execute() will look at step.config.execution_mode.
+            # We should probably temporarily override it or use a lower-level executor.
+
+            # Better: Use the policy registry to get the bound method, but we need to ensure
+            # we don't trigger the background launch logic again.
+            # The background launch logic will be in `execute`.
+            # If we call `execute` again, we need to make sure we don't hit that block.
+            # We can clone the step and set execution_mode="sync" for the actual execution.
+
+            step_copy = step.model_copy(deep=True)
+            if hasattr(step_copy, "config"):
+                step_copy.config.execution_mode = "sync"
+
+            # Create a new frame
+            frame = ExecutionFrame(
+                step=step_copy,
+                data=data,
+                context=isolated_context,
+                resources=resources,
+                limits=limits,
+                quota=self.CURRENT_QUOTA.get(),
+                stream=False,
+                on_chunk=None,
+                context_setter=lambda _res, _ctx: None,
+                result=None,
+                _fallback_depth=0,
+            )
+
+            # Execute
+            await self.execute(frame)
+
+        except (PausedException, PipelineAbortSignal) as control_flow_err:
+            # Control-flow exceptions from background tasks are logged but don't propagate
+            # since the main pipeline has moved on. This is intentional for background mode.
+            telemetry.logfire.warning(
+                f"Background task '{getattr(step, 'name', 'unknown')}' raised control-flow signal: {control_flow_err}"
+            )
+        except Exception as e:
+            # Log all other errors but don't propagate - background tasks are fire-and-forget
+            telemetry.logfire.error(
+                f"Background task failed for step '{getattr(step, 'name', 'unknown')}': {e}"
+            )
+
     async def execute(
         self,
         frame_or_step: Any | None = None,
@@ -788,6 +922,41 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         await self._hydrate_context(getattr(frame, "context", None))
 
         step = frame.step
+
+        # Check for background execution mode
+        # We do this before policy dispatch to intercept any step type
+        if (
+            hasattr(step, "config")
+            and getattr(step.config, "execution_mode", "sync") == "background"
+        ):
+            task_id = f"bg_{uuid.uuid4().hex}"
+            step_name = self._safe_step_name(step)
+
+            # Launch detached task
+            task = asyncio.create_task(
+                self._execute_background_task(
+                    step,
+                    frame.data,
+                    frame.context,
+                    getattr(frame, "resources", None),
+                    getattr(frame, "limits", None),
+                ),
+                name=f"flujo_bg_{step_name}_{task_id}",
+            )
+
+            # Track task
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+
+            telemetry.logfire.info(f"Launched background step '{step_name}' (task_id={task_id})")
+
+            bg_outcome: StepOutcome[StepResult] = BackgroundLaunched(
+                task_id=task_id, step_name=step_name
+            )
+            if called_with_frame:
+                return bg_outcome
+            return self._unwrap_outcome_to_step_result(bg_outcome, step_name)
+
         # Hard route critical step subclasses before registry to guarantee policy-specific behavior
         try:
             from ...domain.dsl.conditional import ConditionalStep as _Cond

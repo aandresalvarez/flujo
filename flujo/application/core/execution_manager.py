@@ -16,6 +16,7 @@ from flujo.domain.models import (
     Paused,
     Aborted,
     Chunk,
+    BackgroundLaunched,
 )
 
 try:
@@ -413,6 +414,14 @@ class ExecutionManager(Generic[ContextT]):
                                 self.set_final_context(result, context)
                                 yield result
                                 return
+                            elif isinstance(item, BackgroundLaunched):
+                                step_result = StepResult(
+                                    name=getattr(step, "name", "<unnamed>"),
+                                    success=True,
+                                    output=data,  # Pass through input data to next step
+                                    feedback=f"Launched in background (task_id={item.task_id})",
+                                    metadata_={"background_task_id": item.task_id},
+                                )
                             else:
                                 # Unknown outcome: ignore
                                 pass

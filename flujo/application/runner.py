@@ -385,6 +385,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
     async def aclose(self) -> None:
         """Asynchronously release runner-owned resources."""
+        # Wait for background tasks if executor supports it
+        try:
+            executor = getattr(self.backend, "_executor", None)
+            if executor and hasattr(executor, "wait_for_background_tasks"):
+                await executor.wait_for_background_tasks()
+        except Exception:
+            pass
+
         await self._shutdown_state_backend()
 
     def close(self) -> None:
