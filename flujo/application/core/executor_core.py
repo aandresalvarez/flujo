@@ -43,6 +43,7 @@ from ...exceptions import (
     MockDetectionError,
     PricingNotConfiguredError,
     InfiniteRedirectError,
+    PipelineAbortSignal,
 )
 from ...infra import telemetry
 from ...steps.cache_step import CacheStep
@@ -864,7 +865,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # Execute
             await self.execute(frame)
 
+        except (PausedException, PipelineAbortSignal) as control_flow_err:
+            # Control-flow exceptions from background tasks are logged but don't propagate
+            # since the main pipeline has moved on. This is intentional for background mode.
+            telemetry.logfire.warning(
+                f"Background task '{getattr(step, 'name', 'unknown')}' raised control-flow signal: {control_flow_err}"
+            )
         except Exception as e:
+            # Log all other errors but don't propagate - background tasks are fire-and-forget
             telemetry.logfire.error(
                 f"Background task failed for step '{getattr(step, 'name', 'unknown')}': {e}"
             )

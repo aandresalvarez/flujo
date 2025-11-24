@@ -60,6 +60,21 @@ def test_template_lints_vt2_vt3_vt4() -> None:
             for w in report.warnings:
                 print(f"  {w.rule_id}: {w.message}")
 
+            # Additional debugging: check the actual step structure
+            print("DEBUG: Pipeline steps:")
+            for idx, step in enumerate(pipeline.steps):
+                print(f"  Step {idx}: name={getattr(step, 'name', None)}")
+                meta = getattr(step, "meta", {})
+                templ = meta.get("templated_input", None)
+                print(f"    templated_input: {repr(templ)}")
+
+            # Check environment variables that might affect validation
+            import os
+
+            print(f"DEBUG: FLUJO_RULES_JSON={os.getenv('FLUJO_RULES_JSON')}")
+            print(f"DEBUG: FLUJO_RULES_FILE={os.getenv('FLUJO_RULES_FILE')}")
+            print(f"DEBUG: FLUJO_RULES_PROFILE={os.getenv('FLUJO_RULES_PROFILE')}")
+
     assert "V-T2" in rules  # 'this' misuse
     assert "V-T3" in rules  # unknown filter 'foo'
     assert "V-T4" in rules  # unknown steps.Missing

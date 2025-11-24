@@ -101,7 +101,7 @@ async def test_background_execution_context_isolation():
     # but we verified it didn't crash and main context wasn't mutated during run.
 
 
-async def failing_background_task(data: Any) -> None:
+async def failing_background_task(_data: Any) -> None:
     await asyncio.sleep(0.1)
     raise ValueError("Boom!")
 

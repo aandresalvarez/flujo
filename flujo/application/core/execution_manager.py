@@ -414,8 +414,6 @@ class ExecutionManager(Generic[ContextT]):
                                 self.set_final_context(result, context)
                                 yield result
                                 return
-                                # Unknown outcome: ignore
-                                pass
                             elif isinstance(item, BackgroundLaunched):
                                 step_result = StepResult(
                                     name=getattr(step, "name", "<unnamed>"),
