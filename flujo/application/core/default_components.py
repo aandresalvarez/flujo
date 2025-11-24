@@ -847,6 +847,18 @@ class DefaultTelemetry:
 
         return decorator
 
+    def info(self, message: str, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def warning(self, message: str, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def error(self, message: str, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def debug(self, message: str, *args: Any, **kwargs: Any) -> None:
+        pass
+
 
 __all__ = [
     # Serialization / hashing
