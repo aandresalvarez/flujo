@@ -12,8 +12,10 @@ async def test_estimate_plan_cost_sums_registry_estimates() -> None:
     # Register two fake skills and inject est_cost metadata
     reg.register("test.skill_a", lambda **_: (lambda: None))
     reg.register("test.skill_b", lambda **_: (lambda: None))
-    reg._entries["test.skill_a"]["est_cost"] = 0.01  # type: ignore[attr-defined]
-    reg._entries["test.skill_b"]["est_cost"] = 0.05  # type: ignore[attr-defined]
+    entry_a = reg.get("test.skill_a") or {}
+    entry_b = reg.get("test.skill_b") or {}
+    entry_a["est_cost"] = 0.01
+    entry_b["est_cost"] = 0.05
 
     plan = [
         {"name": "A", "agent": {"id": "test.skill_a", "params": {}}},

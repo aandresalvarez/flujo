@@ -26,7 +26,6 @@ async def test_execute_frame_converts_unexpected_exception_into_failure_outcome(
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
 

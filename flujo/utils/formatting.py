@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+
 def format_cost(value: float | int) -> str:
     """
     Format a cost value for display, following production-grade standards.

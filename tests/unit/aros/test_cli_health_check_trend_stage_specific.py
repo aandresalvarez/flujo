@@ -47,10 +47,8 @@ class _FakeBackendTrend:
 
 @pytest.mark.fast
 def test_trend_stage_specific_recommendations(monkeypatch, capsys):
-    from flujo.cli import main as cli_main
-
     fake = _FakeBackendTrend()
-    monkeypatch.setattr(cli_main, "load_backend_from_config", lambda: fake)
+    monkeypatch.setattr("flujo.cli.dev_commands.load_backend_from_config", lambda: fake)
 
     _dev_health_check(
         project=None,

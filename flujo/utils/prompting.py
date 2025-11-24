@@ -1,3 +1,4 @@
+from __future__ import annotations
 import re
 import json
 import uuid
@@ -269,13 +270,15 @@ class AdvancedPromptFormatter:
         try:
             allowed = _get_enabled_filters()
         except Exception:
-            allowed = {"join", "upper", "lower", "length", "tojson"}
+            allowed = {"join", "upper", "lower", "length", "tojson", "default"}
         if lname not in allowed:
             raise ValueError(f"Unknown template filter: {name}")
         if lname == "upper":
             return str(value).upper()
         if lname == "lower":
             return str(value).lower()
+        if lname == "default":
+            return value if value not in (None, "", []) else (arg or "")
         if lname == "length":
             try:
                 return len(value)
@@ -324,7 +327,7 @@ def _get_enabled_filters() -> set[str]:
     if _cached_ok:
         return _CACHED_FILTERS  # type: ignore[return-value]
 
-    default = {"join", "upper", "lower", "length", "tojson"}
+    default = {"join", "upper", "lower", "length", "tojson", "default"}
     try:
         from ..infra.config_manager import get_config_manager
 

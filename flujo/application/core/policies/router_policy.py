@@ -1,0 +1,224 @@
+from __future__ import annotations
+# mypy: ignore-errors
+
+from .parallel_policy import DefaultParallelStepExecutor
+from ._shared import (  # noqa: F401
+    Any,
+    Awaitable,
+    Callable,
+    ContextManager,
+    Dict,
+    ExecutionFrame,
+    Failure,
+    List,
+    Optional,
+    ParallelStep,
+    Paused,
+    Pipeline,
+    PipelineResult,
+    Protocol,
+    StepOutcome,
+    StepResult,
+    Step,
+    Success,
+    UsageLimits,
+    telemetry,
+    to_outcome,
+)
+
+# --- Dynamic Router Step Executor policy ---
+
+
+class DynamicRouterStepExecutor(Protocol):
+    async def execute(
+        self,
+        core: Any,
+        router_step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        # Backward-compat: expose 'step' in signature for legacy inspection
+        step: Optional[Any] = None,
+    ) -> StepOutcome[StepResult]: ...
+
+
+class DefaultDynamicRouterStepExecutor:
+    async def execute(
+        self,
+        core: Any,
+        router_step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        step: Optional[Any] = None,
+    ) -> StepOutcome[StepResult]:
+        """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
+
+        telemetry.logfire.debug("=== HANDLE DYNAMIC ROUTER STEP ===")
+        telemetry.logfire.debug(f"Dynamic router step name: {router_step.name}")
+
+        # Phase 1: Execute the router agent to decide which branches to run
+        router_agent_step: Any = Step(
+            name=f"{router_step.name}_router", agent=router_step.router_agent
+        )
+        router_frame = ExecutionFrame(
+            step=router_agent_step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
+            stream=False,
+            on_chunk=None,
+            context_setter=(
+                context_setter if context_setter is not None else (lambda _pr, _ctx: None)
+            ),
+        )
+        router_result = await core.execute(router_frame)
+        # Normalize StepOutcome to StepResult for router evaluation
+        if isinstance(router_result, StepOutcome):
+            if isinstance(router_result, Success):
+                router_result = router_result.step_result
+            elif isinstance(router_result, Failure):
+                router_result = router_result.step_result or StepResult(
+                    name=core._safe_step_name(router_step),
+                    success=False,
+                    feedback=router_result.feedback,
+                )
+            elif isinstance(router_result, Paused):
+                return router_result
+            else:
+                router_result = StepResult(
+                    name=core._safe_step_name(router_step),
+                    success=False,
+                    feedback="Unsupported outcome",
+                )
+
+        # Handle router failure
+        if not router_result.success:
+            result = StepResult(
+                name=core._safe_step_name(router_step),
+                success=False,
+                feedback=f"Router agent failed: {router_result.feedback}",
+            )
+            result.cost_usd = router_result.cost_usd
+            result.token_counts = router_result.token_counts
+            return to_outcome(result)
+
+        # Process router output to get branch names
+        selected_branch_names = router_result.output
+        if isinstance(selected_branch_names, str):
+            selected_branch_names = [selected_branch_names]
+        if not isinstance(selected_branch_names, list):
+            return to_outcome(
+                StepResult(
+                    name=core._safe_step_name(router_step),
+                    success=False,
+                    feedback=f"Router agent must return a list of branch names, got {type(selected_branch_names).__name__}",
+                )
+            )
+
+        # Filter branches based on router's decision
+        selected_branches = {
+            name: router_step.branches[name]
+            for name in selected_branch_names
+            if name in router_step.branches
+        }
+        # Handle no selected branches
+        if not selected_branches:
+            return to_outcome(
+                StepResult(
+                    name=core._safe_step_name(router_step),
+                    success=True,
+                    output={},
+                    cost_usd=router_result.cost_usd,
+                    token_counts=router_result.token_counts,
+                )
+            )
+
+        # Phase 2: Execute selected branches in parallel via policy
+        temp_parallel_step: Any = ParallelStep(
+            name=router_step.name,
+            branches=selected_branches,
+            merge_strategy=router_step.merge_strategy,
+            on_branch_failure=router_step.on_branch_failure,
+            context_include_keys=router_step.context_include_keys,
+            field_mapping=router_step.field_mapping,
+        )
+        # Use the DefaultParallelStepExecutor policy directly instead of legacy core method
+        parallel_executor = DefaultParallelStepExecutor()
+        # Ensure CURRENT_QUOTA is set for the parallel execution block
+        quota_token = None
+        try:
+            if hasattr(core, "CURRENT_QUOTA"):
+                quota_token = core.CURRENT_QUOTA.set(core.CURRENT_QUOTA.get())
+        except Exception:
+            quota_token = None
+        try:
+            pr_any = await parallel_executor.execute(
+                core=core,
+                step=temp_parallel_step,
+                data=data,
+                context=context,
+                resources=resources,
+                limits=limits,
+                context_setter=context_setter,
+            )
+        finally:
+            try:
+                if quota_token is not None and hasattr(core, "CURRENT_QUOTA"):
+                    core.CURRENT_QUOTA.reset(quota_token)
+            except Exception:
+                pass
+
+        # Normalize StepOutcome from parallel policy to StepResult for router aggregation
+        if isinstance(pr_any, StepOutcome):
+            if isinstance(pr_any, Success):
+                parallel_result = pr_any.step_result
+            elif isinstance(pr_any, Failure):
+                parallel_result = pr_any.step_result or StepResult(
+                    name=core._safe_step_name(router_step), success=False, feedback=pr_any.feedback
+                )
+            elif isinstance(pr_any, Paused):
+                return pr_any
+            else:
+                parallel_result = StepResult(
+                    name=core._safe_step_name(router_step),
+                    success=False,
+                    feedback="Unsupported outcome",
+                )
+        else:
+            parallel_result = pr_any
+
+        # Add router usage metrics
+        parallel_result.cost_usd += router_result.cost_usd
+        parallel_result.token_counts += router_result.token_counts
+
+        # Merge branch context into original context
+        if parallel_result.branch_context is not None and context is not None:
+            merged_ctx = ContextManager.merge(context, parallel_result.branch_context)
+            parallel_result.branch_context = merged_ctx
+            if context_setter is not None:
+                try:
+                    pipeline_result: PipelineResult[Any] = PipelineResult(
+                        step_history=[parallel_result],
+                        total_cost_usd=parallel_result.cost_usd,
+                        total_tokens=parallel_result.token_counts,
+                        final_pipeline_context=parallel_result.branch_context,
+                    )
+                    context_setter(pipeline_result, context)
+                except Exception as e:
+                    telemetry.logfire.warning(
+                        f"Context setter failed for DynamicParallelRouterStep: {e}"
+                    )
+
+        # Record executed branches
+        parallel_result.metadata_["executed_branches"] = selected_branch_names
+        return to_outcome(parallel_result)
+
+
+# --- End Dynamic Router Step Executor policy ---

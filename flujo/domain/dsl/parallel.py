@@ -9,8 +9,12 @@ from typing import (
     Optional,
     TypeVar,
     Union,
-    Self,
 )
+
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 from pydantic import Field
 

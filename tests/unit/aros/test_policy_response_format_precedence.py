@@ -52,7 +52,6 @@ async def test_policy_does_not_override_user_response_format():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
     assert isinstance(outcome, Success)

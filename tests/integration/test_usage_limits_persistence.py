@@ -9,7 +9,6 @@ from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.models import PipelineContext, PipelineResult, StepResult
 from flujo.exceptions import UsageLimitExceededError
 from flujo.state.backends.memory import InMemoryBackend
-from flujo.application.core.usage_governor import UsageGovernor
 from flujo.domain.models import UsageLimits
 
 
@@ -47,7 +46,7 @@ async def test_usage_limit_failure_persists_snapshot() -> None:
     exec_manager = ExecutionManager[PipelineContext](
         pipeline,
         state_manager=state_manager,
-        usage_governor=UsageGovernor(UsageLimits(total_tokens_limit=1)),
+        usage_limits=UsageLimits(total_tokens_limit=1),
     )
 
     run_id = "usage-limit-run"

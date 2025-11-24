@@ -22,8 +22,8 @@ def sanitize_filename(filename: str) -> str:
 class TestSQLiteBackendFuzzing:
     """Fuzzing tests to catch edge cases and potential issues."""
 
-    # Mark all fuzzing tests as slow since they are resource-intensive
-    pytestmark = pytest.mark.slow
+    # Mark all fuzzing tests as slow and stress since they are resource-intensive
+    pytestmark = [pytest.mark.slow, pytest.mark.stress]
 
     @pytest.mark.asyncio
     async def test_fuzz_database_filename_edge_cases(self, tmp_path: Path) -> None:

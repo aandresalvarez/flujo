@@ -28,7 +28,6 @@ from flujo.application.core.executor_core import (
 )
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.domain.validation import ValidationResult
-from flujo.exceptions import UsageLimitExceededError
 
 
 # --------------------------------------------------------------------------- #
@@ -194,21 +193,20 @@ class TestThreadSafeMeter:
 
     @pytest.mark.asyncio
     async def test_guard_usage_limits(self):
-        """Test usage limit enforcement."""
+        """Guard is a compatibility no-op in quota-only mode."""
         meter = ThreadSafeMeter()
 
         # Add some usage
         await meter.add(0.1, 50, 25)
 
-        # Test cost limit
-        limits = UsageLimits(total_cost_usd_limit=0.05)
-        with pytest.raises(UsageLimitExceededError):
-            await meter.guard(limits)
-
-        # Test token limit
-        limits = UsageLimits(total_tokens_limit=50)
-        with pytest.raises(UsageLimitExceededError):
-            await meter.guard(limits)
+        # Guard should not raise; quota enforcement happens elsewhere
+        limits = UsageLimits(total_cost_usd_limit=0.05, total_tokens_limit=50)
+        assert await meter.guard(limits) is None
+        # Totals remain unchanged
+        cost, prompt_tokens, completion_tokens = await meter.snapshot()
+        assert abs(cost - 0.1) < 1e-10
+        assert prompt_tokens == 50
+        assert completion_tokens == 25
 
     @pytest.mark.asyncio
     @pytest.mark.slow  # Mark as slow due to sleep timing operation

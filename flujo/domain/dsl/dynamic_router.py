@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union, Self
+from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union
+
+try:
+    from typing import Self
+except ImportError:
+    from typing_extensions import Self
 
 from pydantic import Field
 

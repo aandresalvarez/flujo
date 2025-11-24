@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List
 
 from .comparators import ComparisonRecord, compare_with_reason
 from .evidence import Badges, copy_badges
@@ -45,9 +45,7 @@ class OrdinalController:
 
         for contender in candidate_list[1:]:
             contender_badges = copy_badges(contender.get("badges"))
-            record: ComparisonRecord = compare_with_reason(
-                contender_badges, champion_badges
-            )
+            record: ComparisonRecord = compare_with_reason(contender_badges, champion_badges)
             winner = contender if record.winner > 0 else champion
             log.append(
                 self._format_log_entry(

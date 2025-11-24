@@ -841,10 +841,18 @@ def setup_solve_command_environment(
             metadata["weights"] = load_weights_file(cli_args["weights_path"])
 
         # Get model names
-        sol_model = cli_args["solution_model"] or settings.default_solution_model
-        rev_model = cli_args["review_model"] or settings.default_review_model
-        val_model = cli_args["validator_model"] or settings.default_validator_model
-        ref_model = cli_args["reflection_model"] or settings.default_reflection_model
+        sol_model = cli_args["solution_model"] or getattr(
+            settings, "default_solution_model", "openai:gpt-4o-mini"
+        )
+        rev_model = cli_args["review_model"] or getattr(
+            settings, "default_review_model", "openai:gpt-4o-mini"
+        )
+        val_model = cli_args["validator_model"] or getattr(
+            settings, "default_validator_model", "openai:gpt-4o-mini"
+        )
+        ref_model = cli_args["reflection_model"] or getattr(
+            settings, "default_reflection_model", "openai:gpt-4o-mini"
+        )
 
         # Create agents
         agents = create_agents_for_solve(sol_model, rev_model, val_model, ref_model)
@@ -1231,9 +1239,9 @@ def execute_pipeline_with_output_handling(
                 # Aggressively release caches that can inflate RSS across runs
                 try:
                     # Clear dynamic skills but preserve built-in registrations
-                    from flujo.infra.skill_registry import get_skill_registry
+                    from flujo.infra.skill_registry import get_skill_registry_provider
 
-                    reg = get_skill_registry()
+                    reg = get_skill_registry_provider().get_registry()
                     entries = getattr(reg, "_entries", None)
                     if isinstance(entries, dict):
                         preserved: dict[str, Any] = {
@@ -1710,8 +1718,25 @@ def load_mermaid_code(file: str, object_name: str, detail_level: str) -> str:
 
 def get_pipeline_step_names(path: str) -> list[str]:
     """Return the ordered step names for a pipeline file."""
-    pipeline, _ = load_pipeline_from_file(path)
+    if path.endswith((".yaml", ".yml")):
+        # Handle YAML files
+        with open(path, "r") as f:
+            yaml_text = f.read()
+        from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
+        import os
+
+        base_dir = os.path.dirname(os.path.abspath(path))
+        pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir, source_file=path)
+    else:
+        # Handle Python files
+        pipeline, _ = load_pipeline_from_file(path)
     return [step.name for step in pipeline.steps]
+
+
+def get_pipeline_explanation(path: str) -> list[str]:
+    """Return explanations for each step in a pipeline file."""
+    # For now, just return step names to match existing behavior
+    return get_pipeline_step_names(path)
 
 
 def validate_pipeline_file(path: str, *, include_imports: bool = True) -> ValidationReport:
@@ -2099,9 +2124,9 @@ def find_side_effect_skills_in_yaml(yaml_text: str, *, base_dir: Optional[str] =
         # Don't warn during testing to avoid output pollution
         return []
 
-    from flujo.infra.skill_registry import get_skill_registry
+    from flujo.infra.skill_registry import get_skill_registry_provider
 
-    reg = get_skill_registry()
+    reg = get_skill_registry_provider().get_registry()
     found: set[str] = set()
 
     def _scan(node: Any) -> None:
@@ -2171,9 +2196,9 @@ def enrich_yaml_with_required_params(
         # Don't warn during testing to avoid output pollution
         return yaml_text
 
-    from flujo.infra.skill_registry import get_skill_registry
+    from flujo.infra.skill_registry import get_skill_registry_provider
 
-    registry = get_skill_registry()
+    registry = get_skill_registry_provider().get_registry()
     changed = False
 
     def _collect_required(entry: dict[str, Any]) -> list[str]:

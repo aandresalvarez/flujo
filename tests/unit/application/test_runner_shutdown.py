@@ -52,6 +52,7 @@ def test_runner_shuts_down_default_state_backend(
 
 class _RecordingBackend(InMemoryBackend):
     """Test double to record shutdown invocations."""
+
     def __init__(self) -> None:
         super().__init__()
         self.shutdown_calls = 0

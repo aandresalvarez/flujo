@@ -48,7 +48,6 @@ async def test_agent_quota_reservation_failure_raises_usage_limit_no_fallback():
             stream=False,
             on_chunk=None,
             cache_key=None,
-            breach_event=None,
             _fallback_depth=0,
         )
     # Message parity: generic when no explicit limits passed
@@ -92,7 +91,6 @@ async def test_agent_primary_failure_fallback_success_with_quota_present():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
     assert isinstance(outcome, Success)
@@ -135,7 +133,6 @@ async def test_agent_quota_denial_uses_legacy_message_with_limits():
             stream=False,
             on_chunk=None,
             cache_key=None,
-            breach_event=None,
             _fallback_depth=0,
         )
     # When both exceeded, cost prioritization or most constrained ratio should pick cost here

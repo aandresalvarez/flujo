@@ -25,14 +25,13 @@ class TestParallelStepRobustness:
         """Create a mock step executor that tracks calls."""
         call_history = []
 
-        async def executor(step, data, context, resources, breach_event=None):
+        async def executor(step, data, context, resources):
             call_history.append(
                 {
                     "step": step,
                     "data": data,
                     "context": context,
                     "resources": resources,
-                    "breach_event": breach_event,
                 }
             )
 
@@ -80,7 +79,7 @@ class TestParallelStepRobustness:
     async def test_usage_governor_receives_individual_step_results(
         self, parallel_step, mock_step_executor, usage_limits
     ):
-        """Legacy governor path — superseded by Quota No-op to avoid xdist flake."""
+        """Legacy governor path removed; quota mode has no governor surface."""
         assert True
 
     async def test_cancelled_branches_populate_dictionaries(
@@ -90,27 +89,16 @@ class TestParallelStepRobustness:
         # Create a step executor that simulates early cancellation
         cancellation_calls = []
 
-        async def cancelling_executor(step, data, context, resources, breach_event=None):
+        async def cancelling_executor(step, data, context, resources):
             cancellation_calls.append(
                 {
                     "step": step,
                     "data": data,
-                    "breach_event": breach_event,
                 }
             )
 
-            # Simulate a step that gets cancelled early
-            if breach_event and breach_event.is_set():
-                return StepResult(
-                    name=step.name,
-                    output=None,
-                    success=False,
-                    attempts=1,
-                    latency_s=0.05,
-                    token_counts=5,
-                    cost_usd=0.005,
-                    feedback="Cancelled early",
-                )
+            # Simulate a step that completes quickly (quota-only mode)
+            await asyncio.sleep(0.01)
 
             # Normal execution
             return StepResult(
@@ -130,7 +118,6 @@ class TestParallelStepRobustness:
             context_setter_calls.append({"result": result, "context": context})
 
         # Execute the parallel step
-        breach_event = asyncio.Event()
         executor = ExecutorCore()
         await executor._handle_parallel_step(
             parallel_step=parallel_step,
@@ -138,7 +125,6 @@ class TestParallelStepRobustness:
             context=None,
             resources=None,
             limits=usage_limits,
-            breach_event=breach_event,
             context_setter=context_setter,
             step_executor=cancelling_executor,
         )
@@ -209,41 +195,14 @@ class TestParallelStepRobustness:
         assert hasattr(error.result, "step_history")
         assert len(error.result.step_history) > 0
 
-    async def test_breach_event_propagation_to_agents(
+    async def test_parallel_step_runs_without_breach_event(
         self, parallel_step, mock_step_executor, usage_limits
     ):
-        """Test that breach events are properly propagated to agents."""
-        # Create a step executor that tracks breach event propagation
-        breach_event_calls = []
-
-        async def tracking_executor(step, data, context, resources, breach_event=None):
-            breach_event_calls.append(
-                {
-                    "step": step,
-                    "data": data,
-                    "breach_event": breach_event,
-                }
-            )
-
-            # Simulate successful step execution
-            return StepResult(
-                name=step.name,
-                output=data,
-                success=True,
-                attempts=1,
-                latency_s=0.1,
-                token_counts=10,
-                cost_usd=0.01,
-            )
-
-        # Create a context setter that tracks what's set
-        context_setter_calls = []
+        """Ensure parallel execution succeeds in quota-only mode."""
 
         def context_setter(result, context):
-            context_setter_calls.append({"result": result, "context": context})
+            pass
 
-        # Execute the parallel step
-        breach_event = asyncio.Event()
         executor = ExecutorCore()
         await executor._handle_parallel_step(
             parallel_step=parallel_step,
@@ -251,16 +210,9 @@ class TestParallelStepRobustness:
             context=None,
             resources=None,
             limits=usage_limits,
-            breach_event=breach_event,
             context_setter=context_setter,
-            step_executor=tracking_executor,
+            step_executor=mock_step_executor,
         )
-
-        # Verify that breach_event was passed to each call
-        assert len(breach_event_calls) == 2
-        assert all("breach_event" in c for c in breach_event_calls)
-        # Pure quota mode: breach_event no longer propagated to agents
-        assert all(c["breach_event"] is None for c in breach_event_calls)
 
     async def test_parallel_step_handles_empty_branches(self, mock_step_executor, usage_limits):
         """Test that parallel step handles empty branches gracefully."""
@@ -278,7 +230,6 @@ class TestParallelStepRobustness:
             context=None,
             resources=None,
             limits=usage_limits,
-            breach_event=None,
             context_setter=context_setter,
         )
 
@@ -296,12 +247,11 @@ class TestParallelStepRobustness:
         # Create a step executor that simulates failures
         failure_calls = []
 
-        async def failing_executor(step, data, context, resources, breach_event=None):
+        async def failing_executor(step, data, context, resources):
             failure_calls.append(
                 {
                     "step": step,
                     "data": data,
-                    "breach_event": breach_event,
                 }
             )
 
@@ -324,7 +274,6 @@ class TestParallelStepRobustness:
             context_setter_calls.append({"result": result, "context": context})
 
         # Execute the parallel step
-        breach_event = asyncio.Event()
         executor = ExecutorCore()
         result = await executor._handle_parallel_step(
             parallel_step=parallel_step,
@@ -332,7 +281,6 @@ class TestParallelStepRobustness:
             context=None,
             resources=None,
             limits=usage_limits,
-            breach_event=breach_event,
             context_setter=context_setter,
             step_executor=failing_executor,
         )
@@ -351,7 +299,7 @@ class TestParallelStepRobustness:
         # Create a step executor that tracks execution timing
         execution_times = []
 
-        async def tracking_executor(step, data, context, resources, breach_event=None):
+        async def tracking_executor(step, data, context, resources):
             start_time = time.time()
             # Simulate some work
             await asyncio.sleep(0.01)
@@ -374,7 +322,6 @@ class TestParallelStepRobustness:
             context_setter_calls.append({"result": result, "context": context})
 
         # Execute the parallel step
-        breach_event = asyncio.Event()
         executor = ExecutorCore()
         await executor._handle_parallel_step(
             parallel_step=parallel_step,
@@ -382,7 +329,6 @@ class TestParallelStepRobustness:
             context=None,
             resources=None,
             limits=usage_limits,
-            breach_event=breach_event,
             context_setter=context_setter,
             step_executor=tracking_executor,
         )
@@ -406,7 +352,7 @@ class TestParallelStepRobustness:
         # Create a step executor that modifies context
         context_modifications = []
 
-        async def context_modifying_executor(step, data, context, resources, breach_event=None):
+        async def context_modifying_executor(step, data, context, resources):
             context_modifications.append(
                 {
                     "step": step,
@@ -437,7 +383,6 @@ class TestParallelStepRobustness:
             context_setter_calls.append({"result": result, "context": context})
 
         # Execute the parallel step
-        breach_event = asyncio.Event()
         executor = ExecutorCore()
         await executor._handle_parallel_step(
             parallel_step=parallel_step,
@@ -445,7 +390,6 @@ class TestParallelStepRobustness:
             context=initial_context,
             resources=None,
             limits=usage_limits,
-            breach_event=breach_event,
             context_setter=context_setter,
             step_executor=context_modifying_executor,
         )

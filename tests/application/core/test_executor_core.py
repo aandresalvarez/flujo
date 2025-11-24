@@ -20,7 +20,6 @@ class _RaisingAgentStepExecutor:
         stream,
         on_chunk,
         cache_key,
-        breach_event,
         _fallback_depth=0,
     ):
         raise ValueError("boom")

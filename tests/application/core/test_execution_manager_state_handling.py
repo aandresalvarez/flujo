@@ -5,7 +5,6 @@ from unittest.mock import Mock
 from typing import Any
 
 from flujo.application.core.execution_manager import ExecutionManager
-from flujo.application.core.usage_governor import UsageGovernor
 from flujo.application.core.step_coordinator import StepCoordinator
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step
@@ -116,11 +115,10 @@ async def test_execution_manager_updates_state_before_usage_check():
     # Create usage limits that will be exceeded
     usage_limits = UsageLimits(total_cost_usd_limit=0.4, total_tokens_limit=40)
 
-    # Create execution manager with usage governor
-    usage_governor = UsageGovernor(usage_limits)
+    # Create execution manager using quota-based limits
     execution_manager = ExecutionManager(
         pipeline=pipeline,
-        usage_governor=usage_governor,
+        usage_limits=usage_limits,
     )
 
     # Create initial pipeline result
@@ -202,11 +200,10 @@ async def test_execution_manager_handles_multiple_steps_before_breach():
     # Create usage limits that will be exceeded by step2
     usage_limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=20)
 
-    # Create execution manager with usage governor
-    usage_governor = UsageGovernor(usage_limits)
+    # Create execution manager using quota-based limits
     execution_manager = ExecutionManager(
         pipeline=pipeline,
-        usage_governor=usage_governor,
+        usage_limits=usage_limits,
     )
 
     # Create initial pipeline result

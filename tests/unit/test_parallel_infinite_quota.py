@@ -34,7 +34,6 @@ async def test_parallel_quota_split_with_infinite_cost_propagates_inf_to_childre
         context=None,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )

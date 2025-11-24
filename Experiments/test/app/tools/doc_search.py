@@ -7,7 +7,9 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 DEFAULT_ROOTS: Tuple[str, ...] = ("docs", "examples", "README.md")
 
 
-def search_local_docs(query: str, limit: int = 4, *, roots: Sequence[str] = DEFAULT_ROOTS) -> List[Dict[str, str]]:
+def search_local_docs(
+    query: str, limit: int = 4, *, roots: Sequence[str] = DEFAULT_ROOTS
+) -> List[Dict[str, str]]:
     """Return simple text matches for the query in project docs/examples."""
     needle = query.lower().strip()
     if not needle:

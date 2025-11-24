@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import Any, Awaitable, Optional, Callable, TYPE_CHECKING
 import time
-from pydantic import BaseModel
 from unittest.mock import Mock, MagicMock, AsyncMock
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.exceptions import (
@@ -20,6 +19,7 @@ if TYPE_CHECKING:
 from flujo.cost import extract_usage_metrics
 from flujo.utils.performance import time_perf_ns, time_perf_ns_to_seconds
 from flujo.infra import telemetry
+from .policy_primitives import _detect_mock_objects, _unpack_agent_result
 
 
 async def _execute_agent_step(
@@ -32,7 +32,6 @@ async def _execute_agent_step(
     stream: bool,
     on_chunk: Optional[Callable[[Any], Awaitable[None]]],
     cache_key: Optional[str],
-    breach_event: Optional[Any],
     _fallback_depth: int = 0,
 ) -> StepResult:
     """
@@ -66,29 +65,6 @@ async def _execute_agent_step(
     max_retries = step.config.max_retries
     if stream:
         max_retries = 0
-
-    # Helper functions for agent result processing
-    def _unpack_agent_result(output: Any) -> Any:
-        if isinstance(output, BaseModel):
-            return output
-        if hasattr(output, "output"):
-            return output.output
-        elif hasattr(output, "content"):
-            return output.content
-        elif hasattr(output, "result"):
-            return output.result
-        elif hasattr(output, "data"):
-            return output.data
-        elif hasattr(output, "text"):
-            return output.text
-        elif hasattr(output, "message"):
-            return output.message
-        else:
-            return output
-
-    def _detect_mock_objects(obj: Any) -> None:
-        if isinstance(obj, (Mock, MagicMock, AsyncMock)):
-            raise MockDetectionError("Mock object detected in agent output")
 
     if hasattr(max_retries, "_mock_name") or isinstance(max_retries, (Mock, MagicMock, AsyncMock)):
         max_retries = 3
@@ -154,7 +130,6 @@ async def _execute_agent_step(
                 options=options,
                 stream=stream,
                 on_chunk=on_chunk,
-                breach_event=breach_event,
             )
 
             # FSD-003 Debug: Check if agent execution actually succeeded
@@ -162,14 +137,10 @@ async def _execute_agent_step(
                 f"[StepExecutor] Agent output type: {type(agent_output)}, contains exception: {isinstance(agent_output, Exception)}"
             )
 
-            if isinstance(agent_output, (Mock, MagicMock, AsyncMock)):
-                raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
-
-            def _detect_mock_objects_in_output(obj: Any) -> None:
-                if isinstance(obj, (Mock, MagicMock, AsyncMock)):
-                    raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
-
-            _detect_mock_objects_in_output(agent_output)
+            try:
+                _detect_mock_objects(agent_output)
+            except MockDetectionError as exc:
+                raise MockDetectionError(f"Step '{step.name}' returned a Mock object") from exc
 
             prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
                 raw_output=agent_output, agent=step.agent, step_name=step.name
@@ -256,7 +227,6 @@ async def _execute_agent_step(
                                 options={},
                                 stream=stream,
                                 on_chunk=on_chunk,
-                                breach_event=breach_event,
                             )
                             prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
                                 raw_output=redirected_output,

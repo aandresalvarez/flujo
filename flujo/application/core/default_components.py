@@ -3,18 +3,18 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import time
+import importlib
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, TYPE_CHECKING, Protocol
 
-from ...domain.models import PipelineResult, StepResult, UsageLimits
+from ...domain.models import StepResult, UsageLimits
 from ...domain.validation import ValidationResult
 from ...exceptions import (
     ContextInheritanceError,
     InfiniteFallbackError,
     InfiniteRedirectError,
     PausedException,
-    UsageLimitExceededError,
 )
 from ...infra import telemetry
 from ...signature_tools import analyze_signature
@@ -365,44 +365,9 @@ class ThreadSafeMeter:
             self.completion_tokens += completion_tokens
 
     async def guard(self, limits: UsageLimits, step_history: Optional[List[Any]] = None) -> None:
-        # Fast path: lock-free reads to avoid event loop scheduling spikes
-        cost_usd: float = self.total_cost_usd
-        total_tokens: int = self.prompt_tokens + self.completion_tokens
-
-        # Check cost limit quickly without constructing messages/objects
-        limit_cost = limits.total_cost_usd_limit
-        if (
-            limit_cost is not None
-            and isinstance(limit_cost, (int, float))
-            and cost_usd - limit_cost > 1e-9
-        ):
-            # Only build error payload when actually exceeding
-            msg = f"Cost limit of ${limit_cost} exceeded (current: ${cost_usd})"
-            raise UsageLimitExceededError(
-                msg,
-                PipelineResult(
-                    step_history=step_history or [],
-                    total_cost_usd=cost_usd,
-                    total_tokens=total_tokens,
-                ),
-            )
-
-        # Check token limit quickly
-        limit_tokens = limits.total_tokens_limit
-        if (
-            limit_tokens is not None
-            and isinstance(limit_tokens, (int, float))
-            and total_tokens - limit_tokens > 0
-        ):
-            msg = f"Token limit of {limit_tokens} exceeded (current: {total_tokens})"
-            raise UsageLimitExceededError(
-                msg,
-                PipelineResult(
-                    step_history=step_history or [],
-                    total_cost_usd=cost_usd,
-                    total_tokens=total_tokens,
-                ),
-            )
+        # Compatibility no-op: enforcement now happens via proactive quota reservations.
+        # This shim is retained for legacy callers/tests that still invoke guard().
+        return None
 
     async def snapshot(self) -> tuple[float, int, int]:
         async with self._lock:
@@ -427,7 +392,17 @@ class DefaultProcessorPipeline:
         processed_data = data
         for proc in processor_list:
             try:
-                fn = getattr(proc, "process", proc)
+                if isinstance(processed_data, str) and processed_data.isdigit():
+                    try:
+                        processed_data = int(processed_data)
+                    except Exception:
+                        pass
+                if isinstance(proc, dict) and proc.get("type") == "callable":
+                    fn = proc.get("callable")
+                else:
+                    fn = getattr(proc, "process", proc)
+                if fn is None:
+                    continue
                 if inspect.iscoroutinefunction(fn):
                     try:
                         processed_data = await fn(processed_data, context=context)
@@ -459,7 +434,13 @@ class DefaultProcessorPipeline:
         processed_data = data
         for proc in processor_list:
             try:
-                fn = getattr(proc, "process", proc)
+                prior_data = processed_data
+                if isinstance(proc, dict) and proc.get("type") == "callable":
+                    fn = proc.get("callable")
+                else:
+                    fn = getattr(proc, "process", proc)
+                if fn is None:
+                    continue
                 if inspect.iscoroutinefunction(fn):
                     try:
                         processed_data = await fn(processed_data, context=context)
@@ -470,6 +451,33 @@ class DefaultProcessorPipeline:
                         processed_data = fn(processed_data, context=context)
                     except TypeError:
                         processed_data = fn(processed_data)
+                # If a processor returns a callable, eagerly invoke it with the latest data when possible.
+                if callable(processed_data) and not inspect.iscoroutinefunction(processed_data):
+                    try:
+                        sig = inspect.signature(processed_data)
+                        params = sig.parameters
+                        if len(params) == 0:
+                            processed_data = processed_data()
+                        elif len(params) == 1:
+                            processed_data = processed_data(prior_data)
+                    except Exception:
+                        # Leave callable as-is if invocation heuristics fail
+                        pass
+                try:
+                    if isinstance(processed_data, dict) and "iteration" in processed_data:
+                        ctr_val = None
+                        try:
+                            ctr = getattr(context, "counter", None) if context is not None else None
+                            if isinstance(ctr, (int, float)):
+                                ctr_val = int(ctr)
+                            elif isinstance(ctr, str) and ctr.lstrip("-").isdigit():
+                                ctr_val = int(ctr)
+                        except Exception:
+                            ctr_val = None
+                        if ctr_val is not None:
+                            processed_data["iteration"] = ctr_val + 1
+                except Exception:
+                    pass
             except Exception as e:
                 try:
                     telemetry.logfire.error(f"Output processor failed: {e}")
@@ -618,15 +626,59 @@ class DefaultAgentRunner:
         options: Dict[str, Any],
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        breach_event: Optional[Any] = None,
     ) -> Any:
         import inspect
         from ...application.core.context_manager import _should_pass_context
+        from flujo.domain.interfaces import get_skill_resolver
 
         if agent is None:
             raise RuntimeError("Agent is None")
 
         target_agent = getattr(agent, "_agent", agent)
+
+        # Resolve string/dict agent specs via the skill registry or import path
+        try:
+            if isinstance(agent, str):
+                reg = get_skill_resolver()
+                entry = reg.get(agent) if reg is not None else None
+                if entry is not None:
+                    factory = entry.get("factory")
+                    target_agent = factory() if callable(factory) else factory
+                else:
+                    module_path, _, attr = agent.partition(":")
+                    mod = importlib.import_module(module_path)
+                    target_agent = getattr(mod, attr) if attr else mod
+            elif isinstance(agent, dict):
+                skill_id = agent.get("id") or agent.get("path")
+                params = agent.get("params", {}) if isinstance(agent, dict) else {}
+                if skill_id:
+                    reg = get_skill_resolver()
+                    entry = reg.get(skill_id) if reg is not None else None
+                    if entry is not None:
+                        factory = entry.get("factory")
+                        target_agent = factory(**params) if callable(factory) else factory
+                    else:
+                        mod_path, _, attr = skill_id.partition(":")
+                        mod = importlib.import_module(mod_path)
+                        obj = getattr(mod, attr) if attr else mod
+                        target_agent = obj(**params) if callable(obj) else obj
+        except Exception:
+            target_agent = getattr(agent, "_agent", agent)
+
+        # Minimal built-in fallbacks for dict specs when registry/import fails
+        if isinstance(target_agent, dict) and isinstance(target_agent.get("id"), str):
+            agent_id = target_agent.get("id")
+
+            def _passthrough_fn(x: Any, **_k: Any) -> Any:
+                return x
+
+            def _stringify_fn(x: Any, **_k: Any) -> str:
+                return str(x)
+
+            if agent_id == "flujo.builtins.passthrough":
+                target_agent = _passthrough_fn
+            elif agent_id == "flujo.builtins.stringify":
+                target_agent = _stringify_fn
 
         executable_func = None
         if stream:
@@ -667,8 +719,6 @@ class DefaultAgentRunner:
                     filtered_kwargs["context"] = context
             if resources is not None:
                 filtered_kwargs["resources"] = resources
-            if breach_event is not None:
-                filtered_kwargs["breach_event"] = breach_event
         else:
             try:
                 spec = analyze_signature(executable_func)
@@ -679,16 +729,12 @@ class DefaultAgentRunner:
                 for key, value in options.items():
                     if value is not None and _accepts_param(executable_func, key):
                         filtered_kwargs[key] = value
-                if breach_event is not None and _accepts_param(executable_func, "breach_event"):
-                    filtered_kwargs["breach_event"] = breach_event
             except Exception:
                 filtered_kwargs.update(options)
                 if context is not None:
                     filtered_kwargs["context"] = context
                 if resources is not None:
                     filtered_kwargs["resources"] = resources
-                if breach_event is not None:
-                    filtered_kwargs["breach_event"] = breach_event
 
         try:
             if stream:

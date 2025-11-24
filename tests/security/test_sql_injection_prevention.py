@@ -17,9 +17,6 @@ from flujo.state.backends.sqlite import (
 )
 
 
-
-
-
 @pytest.mark.asyncio
 async def test_validate_sql_identifier_safe_identifiers():
     """Test that safe SQL identifiers are accepted."""
@@ -253,11 +250,11 @@ async def test_safe_schema_migration(tmp_path: Path):
         # In the file view (Step 18), I saw `async def _init_db(self, retry_count: int = 0, max_retries: int = 1) -> None:`.
         # I did NOT see `_ensure_init`.
         # So I should use `_init_db`.
-        
+
         # Wait, the original test code had `await backend._ensure_init()`.
         # If `_ensure_init` is missing, that would be an AttributeError, but not 'FixtureDef' object has no attribute 'unittest'.
         # I will use `_init_db` as seen in the code.
-        
+
         # Also, `save_state` might be `persist_workflow_state` or similar?
         # The base class has `save_state`.
         # I will check if `save_state` is implemented in `SQLiteBackend`.
@@ -265,7 +262,7 @@ async def test_safe_schema_migration(tmp_path: Path):
 
         # Re-reading the original test code:
         # await backend.save_state("test_run", test_state)
-        
+
         # I will keep save_state.
 
         await backend.save_state("test_run", test_state)
@@ -286,7 +283,7 @@ async def test_parameterized_queries_used(tmp_path: Path):
 
         class _FakeConn:
             daemon = True
-            name = 'mock-conn'
+            name = "mock-conn"
 
             async def __aenter__(self):
                 return self
@@ -312,9 +309,10 @@ async def test_parameterized_queries_used(tmp_path: Path):
         async_mock_create = AsyncMock(side_effect=_fake_create_connection)
         async_mock_init = AsyncMock()
 
-        with patch.object(backend, "_create_connection", new=async_mock_create), \
-             patch.object(backend, "_init_db", new=async_mock_init):
-
+        with (
+            patch.object(backend, "_create_connection", new=async_mock_create),
+            patch.object(backend, "_init_db", new=async_mock_init),
+        ):
             # Try to save state with potentially malicious input
             malicious_state = {
                 "run_id": "test'; DROP TABLE workflow_state; --",

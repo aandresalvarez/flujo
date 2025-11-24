@@ -61,7 +61,7 @@ def test_dev_help_semantics() -> None:
     for cmd in [
         "version",
         "show-config",
-        "show-steps",
+        "explain",
         "validate",
         "compile-yaml",
         "visualize",

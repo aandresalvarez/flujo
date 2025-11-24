@@ -40,8 +40,6 @@ class StepExecutionRequest:
     # Streaming support
     stream: bool = False
     on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None
-    # Breach event for usage limit cancellation
-    breach_event: Optional[Any] = None
 
 
 class ExecutionBackend(Protocol):

@@ -54,7 +54,6 @@ async def test_precheck_passes_max_tokens_to_validator():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 

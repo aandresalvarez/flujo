@@ -40,7 +40,7 @@ steps:
 
     import asyncio
 
-    res = asyncio.run(core._execute_pipeline_via_policies(p, None, ctx, None, None, None, None))
+    res = asyncio.run(core._execute_pipeline_via_policies(p, None, ctx, None, None, None))
 
     out = res.step_history[0].output if res.step_history else None
     assert isinstance(out, dict)

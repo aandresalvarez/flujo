@@ -1,3 +1,4 @@
+from __future__ import annotations
 from abc import abstractmethod
 from typing import Protocol, Any, runtime_checkable, Optional, Dict, Callable, Tuple
 from flujo.domain.base_model import BaseModel

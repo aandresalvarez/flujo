@@ -4,6 +4,14 @@ import os
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, List, cast
 from typing import Any as _TypeAny  # local alias to avoid name clash
 
+set_default_telemetry_sink_fn: Optional[Callable[[Any], None]]
+try:  # pragma: no cover - import guard
+    from flujo.domain.interfaces import set_default_telemetry_sink as _set_default_telemetry_sink_fn
+
+    set_default_telemetry_sink_fn = _set_default_telemetry_sink_fn
+except Exception:  # pragma: no cover - defensive fallback
+    set_default_telemetry_sink_fn = None
+
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace import SpanProcessor
     from .settings import Settings as TelemetrySettings
@@ -214,6 +222,40 @@ class _MockLogfire:
         )
 
 
+class _LogfireTelemetrySink:
+    """Adapter exposing module-level logfire through the domain TelemetrySink protocol."""
+
+    def info(self, message: str, *args: Any, **kwargs: Any) -> None:
+        try:
+            logfire.info(message, *args, **kwargs)
+        except Exception:
+            pass
+
+    def warning(self, message: str, *args: Any, **kwargs: Any) -> None:
+        try:
+            logfire.warning(message, *args, **kwargs)
+        except Exception:
+            pass
+
+    def error(self, message: str, *args: Any, **kwargs: Any) -> None:
+        try:
+            logfire.error(message, *args, **kwargs)
+        except Exception:
+            pass
+
+    def debug(self, message: str, *args: Any, **kwargs: Any) -> None:
+        try:
+            logfire.debug(message, *args, **kwargs)
+        except Exception:
+            pass
+
+    def span(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return logfire.span(name, *args, **kwargs)
+        except Exception:
+            return _MockLogfireSpan()
+
+
 # We initially set `logfire` to a mocked implementation. Once
 # `init_telemetry()` runs, we may replace it with the real `logfire` module.
 # Annotate as `_TypeAny` so that MyPy accepts this reassignment.
@@ -311,4 +353,11 @@ if not _initialized:
             init_telemetry()
     except Exception:
         # If auto-initialization fails, we still have the mock logfire available
+        pass
+
+# Expose telemetry sink to domain consumers (no-op if domain interfaces unavailable)
+if set_default_telemetry_sink_fn is not None:  # pragma: no cover - simple wiring
+    try:
+        set_default_telemetry_sink_fn(_LogfireTelemetrySink())
+    except Exception:
         pass

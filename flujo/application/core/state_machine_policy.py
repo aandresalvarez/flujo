@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .step_policies import StateMachinePolicyExecutor
+from .policies.state_machine_policy import StateMachinePolicyExecutor
 
 """Backward-compatible shim for StateMachine policy executor.
 

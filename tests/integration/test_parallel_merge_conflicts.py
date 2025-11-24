@@ -35,7 +35,7 @@ async def test_parallel_default_context_update_conflict_fails():
     base_ctx = Ctx(value="X")
 
     # Fake executor to inject branch contexts with conflicting values
-    async def fake_step_executor(step, input_data, context, resources, breach_event=None):
+    async def fake_step_executor(step, input_data, context, resources):
         nm = getattr(step.steps[0], "name", "")
         if nm == "a":
             return StepResult(
@@ -58,7 +58,6 @@ async def test_parallel_default_context_update_conflict_fails():
         context=base_ctx,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=fake_step_executor,
     )
@@ -87,7 +86,7 @@ async def test_parallel_overwrite_allows_conflict():
 
     base_ctx = Ctx(value="X")
 
-    async def fake_step_executor(step, input_data, context, resources, breach_event=None):
+    async def fake_step_executor(step, input_data, context, resources):
         nm = getattr(step.steps[0], "name", "")
         if nm == "a":
             return StepResult(
@@ -109,7 +108,6 @@ async def test_parallel_overwrite_allows_conflict():
         context=base_ctx,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=fake_step_executor,
     )

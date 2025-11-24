@@ -16,7 +16,6 @@ class _FakeParallelExecutor:
         context,
         resources,
         limits,
-        breach_event,
         context_setter,
         parallel_step=None,
         step_executor=None,
@@ -54,7 +53,6 @@ async def test_parallel_adapter_returns_outcome_in_backend_path():
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
 
@@ -87,7 +85,6 @@ async def test_conditional_adapter_returns_outcome_in_backend_path():
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
 

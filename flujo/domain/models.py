@@ -1,5 +1,6 @@
 """Domain models for flujo."""
 
+from __future__ import annotations
 from typing import Any, List, Optional, Literal, Dict, Generic, TypeVar, Tuple
 from threading import RLock
 from pydantic import Field, ConfigDict, field_validator
@@ -206,6 +207,19 @@ class PipelineResult(BaseModel, Generic[ContextT]):
     success: bool = True
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
+
+    @property
+    def status(self) -> str:
+        """Best-effort status indicator for backward compatibility."""
+        try:
+            ctx = self.final_pipeline_context
+            if ctx is not None and hasattr(ctx, "scratchpad"):
+                scratch = getattr(ctx, "scratchpad")
+                if isinstance(scratch, dict) and "status" in scratch:
+                    return str(scratch.get("status") or "unknown")
+        except Exception:
+            pass
+        return "completed" if self.success else "failed"
 
     @property
     def output(self) -> Any | None:
@@ -510,3 +524,16 @@ class PipelineContext(BaseModel):
     call_count: int = 0
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
+
+    @property
+    def steps(self) -> Dict[str, Any]:
+        """Expose recorded step outputs stored in scratchpad['steps']."""
+        try:
+            sp = getattr(self, "scratchpad", {})
+            if isinstance(sp, dict):
+                steps_map = sp.get("steps")
+                if isinstance(steps_map, dict):
+                    return steps_map
+        except Exception:
+            pass
+        return {}

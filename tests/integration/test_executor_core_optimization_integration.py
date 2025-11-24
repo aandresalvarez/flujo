@@ -8,25 +8,25 @@ workflow testing to ensure all components work together seamlessly.
 
 import asyncio
 import gc
-import pytest
-import time
-import psutil
 import os
+import time
 from typing import Any
 from unittest.mock import Mock
 
-from flujo.application.core.executor_core import (
-    OptimizationConfig,
-    OptimizedExecutorCore,
-)
-from flujo.domain.dsl.step import Step, StepConfig
+import psutil
+import pytest
 from flujo.application.core.adaptive_resource_manager import (
     get_global_adaptive_resource_manager,
 )
-from flujo.application.core.load_balancer import get_global_load_balancer
+from flujo.application.core.executor_core import (
+    ExecutorCore,
+    OptimizationConfig,
+)
 from flujo.application.core.graceful_degradation import (
     get_global_degradation_controller,
 )
+from flujo.application.core.load_balancer import get_global_load_balancer
+from flujo.domain.dsl.step import Step, StepConfig
 from flujo.testing.utils import StubAgent
 
 
@@ -67,7 +67,7 @@ class TestOptimizationComponentIntegration:
             telemetry_batch_size=100,
             optimization_analysis_interval_seconds=1.0,
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.fixture
     def partial_optimization_executor(self):
@@ -86,7 +86,7 @@ class TestOptimizationComponentIntegration:
             enable_automatic_optimization=False,
             max_concurrent_executions=8,
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.mark.asyncio
     async def test_end_to_end_optimization_workflow(self, full_optimization_executor):
@@ -297,7 +297,7 @@ class TestResourceManagementIntegration:
             memory_pressure_threshold_mb=50.0,
             cpu_usage_threshold_percent=80.0,
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.mark.asyncio
     async def test_adaptive_resource_management_integration(self, resource_optimized_executor):
@@ -447,7 +447,7 @@ class TestErrorHandlingIntegration:
             circuit_breaker_failure_threshold=3,
             circuit_breaker_recovery_timeout_seconds=2,
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.mark.asyncio
     async def test_error_recovery_integration(self, error_handling_executor):
@@ -602,7 +602,7 @@ class TestTelemetryIntegration:
             telemetry_batch_size=50,
             optimization_analysis_interval_seconds=0.5,
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.mark.asyncio
     async def test_telemetry_data_collection_integration(self, telemetry_executor):
@@ -666,7 +666,7 @@ class TestTelemetryIntegration:
             enable_object_pool=True,
             enable_automatic_optimization=False,
         )
-        no_telemetry_executor = OptimizedExecutorCore(optimization_config=no_telemetry_config)
+        no_telemetry_executor = ExecutorCore(optimization_config=no_telemetry_config)
 
         step = create_test_step("telemetry_overhead", "overhead_step")
         test_data = {"overhead": "measurement"}
@@ -725,7 +725,7 @@ class TestConfigurationIntegration:
             enable_memory_optimization=False,
             enable_automatic_optimization=False,
         )
-        executor = OptimizedExecutorCore(optimization_config=config)
+        executor = ExecutorCore(optimization_config=config)
 
         step = create_test_step("dynamic_config", "config_step")
         test_data = {"dynamic": "configuration"}
@@ -743,7 +743,7 @@ class TestConfigurationIntegration:
         )
 
         # Create new executor with updated config
-        optimized_executor = OptimizedExecutorCore(optimization_config=new_config)
+        optimized_executor = ExecutorCore(optimization_config=new_config)
 
         # Execute with optimizations enabled
         result2 = await optimized_executor.execute(step, test_data)
@@ -767,7 +767,7 @@ class TestConfigurationIntegration:
         ]
 
         for i, config in enumerate(valid_configs):
-            executor = OptimizedExecutorCore(optimization_config=config)
+            executor = ExecutorCore(optimization_config=config)
             step = create_test_step(f"config_validation_{i}", f"validation_step_{i}")
             result = await executor.execute(step, {"validation": f"test_{i}"})
             assert result is not None
@@ -790,7 +790,7 @@ class TestConfigurationIntegration:
 
         for i, features in enumerate(feature_combinations):
             config = OptimizationConfig(**features)
-            executor = OptimizedExecutorCore(optimization_config=config)
+            executor = ExecutorCore(optimization_config=config)
 
             step = create_test_step(f"feature_interaction_{i}", f"interaction_step_{i}")
             test_data = {"interaction": f"test_{i}"}

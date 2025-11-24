@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 from flujo.domain.dsl import Pipeline, Step
 
@@ -65,7 +65,6 @@ def _log_comparison(
     record: ComparisonRecord,
 ) -> str:
     winner = contender if record.winner > 0 else current_best
-    loser = current_best if record.winner > 0 else contender
     return (
         f"compare({contender['id']} vs {current_best['id']}): "
         f"{winner['id']} wins via {record.reason} "

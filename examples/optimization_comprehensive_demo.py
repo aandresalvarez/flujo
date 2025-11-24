@@ -21,11 +21,7 @@ from typing import Any, Dict, List
 from dataclasses import dataclass
 from datetime import datetime
 
-from flujo.application.core.executor_core import (
-    OptimizedExecutorCore,
-    OptimizationConfig,
-    ExecutorCore,
-)
+from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -161,7 +157,7 @@ class OptimizationDemo:
             enable_automatic_optimization=False,
         )
 
-        memory_executor = OptimizedExecutorCore(optimization_config=memory_config)
+        memory_executor = ExecutorCore(optimization_config=memory_config)
 
         # Define memory-intensive steps
         async def memory_intensive_step(data: TestData) -> List[str]:
@@ -241,7 +237,7 @@ class OptimizationDemo:
             enable_automatic_optimization=False,
         )
 
-        performance_executor = OptimizedExecutorCore(optimization_config=performance_config)
+        performance_executor = ExecutorCore(optimization_config=performance_config)
 
         # Define performance-intensive steps
         async def cpu_intensive_step(data: TestData) -> str:
@@ -333,7 +329,7 @@ class OptimizationDemo:
             enable_automatic_optimization=False,
         )
 
-        error_executor = OptimizedExecutorCore(optimization_config=error_config)
+        error_executor = ExecutorCore(optimization_config=error_config)
 
         # Define steps that may fail
         async def unreliable_step(data: TestData) -> str:
@@ -414,7 +410,7 @@ class OptimizationDemo:
             enable_automatic_optimization=False,
         )
 
-        monitoring_executor = OptimizedExecutorCore(optimization_config=monitoring_config)
+        monitoring_executor = ExecutorCore(optimization_config=monitoring_config)
 
         # Define monitored steps
         async def monitored_step(data: TestData) -> Dict[str, Any]:
@@ -465,7 +461,7 @@ class OptimizationDemo:
         logger.info("-" * 30)
 
         # Create executor with configuration management
-        config_manager = OptimizedExecutorCore()
+        config_manager = ExecutorCore()
 
         # Test configuration export/import
         logger.info("Testing configuration management...")
@@ -514,7 +510,7 @@ class OptimizationDemo:
         # Test different configurations
         configurations = {
             "Baseline": ExecutorCore(),
-            "Memory Optimized": OptimizedExecutorCore(
+            "Memory Optimized": ExecutorCore(
                 OptimizationConfig(
                     enable_object_pool=True,
                     enable_context_optimization=True,
@@ -530,7 +526,7 @@ class OptimizationDemo:
                     enable_automatic_optimization=False,
                 )
             ),
-            "Performance Optimized": OptimizedExecutorCore(
+            "Performance Optimized": ExecutorCore(
                 OptimizationConfig(
                     enable_object_pool=False,
                     enable_context_optimization=False,
@@ -546,7 +542,7 @@ class OptimizationDemo:
                     enable_automatic_optimization=False,
                 )
             ),
-            "Fully Optimized": OptimizedExecutorCore(
+            "Fully Optimized": ExecutorCore(
                 OptimizationConfig(
                     enable_object_pool=True,
                     enable_context_optimization=True,

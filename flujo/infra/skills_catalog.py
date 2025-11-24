@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 import os
 import json
 
@@ -109,3 +109,30 @@ def load_skills_entry_points(group: str = "flujo.skills") -> None:
             reg.register(ep.name, obj, description=f"entry_point:{group}")
         except Exception:
             continue
+
+
+# Wire domain-level skills discovery interface to avoid infra imports in domain logic
+set_default_skills_discovery_fn: Optional[Callable[[Any], None]]
+try:  # pragma: no cover - import guard
+    from flujo.domain.interfaces import (
+        set_default_skills_discovery as _set_default_skills_discovery_fn,
+    )
+
+    set_default_skills_discovery_fn = _set_default_skills_discovery_fn
+except Exception:  # pragma: no cover - defensive fallback
+    set_default_skills_discovery_fn = None
+
+
+class _SkillsDiscoveryAdapter:
+    def load_catalog(self, base_dir: str) -> None:  # pragma: no cover - simple delegation
+        load_skills_catalog(base_dir)
+
+    def load_entry_points(self) -> None:  # pragma: no cover - simple delegation
+        load_skills_entry_points()
+
+
+if set_default_skills_discovery_fn is not None:  # pragma: no cover - simple wiring
+    try:
+        set_default_skills_discovery_fn(_SkillsDiscoveryAdapter())
+    except Exception:
+        pass

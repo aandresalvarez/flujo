@@ -53,7 +53,6 @@ class TestExecutorCoreLoopStep:
             "stream",
             "on_chunk",
             "cache_key",
-            "breach_event",
             "_fallback_depth",
         }
         actual_params = set(sig.parameters.keys())

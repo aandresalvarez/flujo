@@ -1,11 +1,10 @@
 """Scoring utilities for flujo."""
 
-from typing import Callable, cast, Awaitable, List, Dict, Any
+from typing import List, Dict, Any
 from .models import Checklist
 from pydantic_ai import Agent
 import os
-from flujo.infra.telemetry import logfire
-from flujo.infra.settings import get_settings
+from .interfaces import get_settings_provider, get_telemetry_sink, TelemetrySink
 from ..exceptions import FeatureDisabled, RewardModelUnavailable
 
 
@@ -54,34 +53,38 @@ class RewardScorer:
     """
 
     def __init__(self) -> None:
-        # Always fetch the current settings from the module to support monkeypatching in tests
-        settings = get_settings()
-        if not settings.reward_enabled:
+        self._telemetry: TelemetrySink = get_telemetry_sink()
+
+        # Always fetch the current settings via the domain interface to support injection in tests
+        settings_provider = get_settings_provider()
+        settings = settings_provider.get_settings()
+        if settings is None:
+            raise RewardModelUnavailable("Settings provider did not return settings.")
+        if not getattr(settings, "reward_enabled", False):
             raise FeatureDisabled("RewardScorer is disabled by settings.")
-        if not settings.openai_api_key:
+        api_key = getattr(settings, "openai_api_key", None)
+        if not api_key:
             raise RewardModelUnavailable("OpenAI API key is required for RewardScorer.")
 
         # The Agent constructor's type hints are not strict enough for mypy strict mode.
         # See: https://github.com/pydantic/pydantic-ai/issues (file an issue if not present)
-        os.environ.setdefault("OPENAI_API_KEY", settings.openai_api_key.get_secret_value())
+        os.environ.setdefault("OPENAI_API_KEY", api_key.get_secret_value())
         self.agent = Agent(
             "openai:gpt-4o-mini",
             system_prompt="You are a reward model. You return a single float score from 0.0 to 1.0.",
             output_type=float,
         )
 
-    _instrument = cast(
-        Callable[[Callable[..., Awaitable[float]]], Callable[..., Awaitable[float]]],
-        logfire.instrument("reward_score"),
-    )
-
-    @_instrument
     async def score(self, text: str) -> float:
         """Calls the LLM judge to score the given text, returning its raw output. Async."""
         try:
-            # The output of a pydantic-ai agent run is the parsed model, not an AgentResult
-            result: Any = await self.agent.run(text)
+            # The output of a pydantic-ai agent run is the parsed model, not an AgentResult.
+            with self._telemetry.span("reward_score"):
+                result: Any = await self.agent.run(text)
             return float(result.output)
         except Exception as e:
-            logfire.error(f"RewardScorer failed: {e}")
+            try:
+                self._telemetry.error(f"RewardScorer failed: {e}")
+            except Exception:
+                pass
             return 0.0

@@ -27,7 +27,6 @@ async def test_simple_executor_path_returns_outcome_in_backend_path():
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
 

@@ -39,6 +39,76 @@ Examples:
 - `uv run flujo run --input - < input.txt`
 - `FLUJO_INPUT='goal' uv run flujo run`
 
+## **Programmatic Entrypoint for Non-CLI Hosts**
+
+Flujo provides a documented programmatic API for services, tests, and daemons that need to initialize Flujo without going through the CLI. This is essential for embedding Flujo in web services, background workers, or test environments.
+
+### **Bootstrap Function**
+
+Use `bootstrap_flujo()` to initialize the Flujo environment:
+
+```python
+from flujo.cli.programmatic import bootstrap_flujo
+
+# Minimal bootstrap for tests (no telemetry, no builtins)
+bootstrap_flujo(enable_telemetry=False, register_builtins=False)
+
+# Full bootstrap for services
+bootstrap_flujo(project_root="/path/to/project")
+```
+
+**Parameters:**
+- `project_root`: Optional explicit project root path. If None, resolves from current directory or `FLUJO_PROJECT_ROOT` env var.
+- `enable_telemetry`: If True, initializes telemetry services. Set to False for minimal initialization.
+- `register_builtins`: If True, registers builtin Flujo skills. Set to False if you only need core pipeline execution.
+
+**What it does:**
+- Sets up sys.path for project root (enables `skills.*` imports)
+- Initializes telemetry (if enabled)
+- Registers builtin skills (if enabled)
+
+### **Creating CLI App Programmatically**
+
+Use `create_flujo_app()` to get a fully configured CLI app without executing it:
+
+```python
+from flujo.cli.programmatic import create_flujo_app
+import typer
+
+# Create Flujo app
+flujo_app = create_flujo_app()
+
+# Embed in custom app
+my_app = typer.Typer()
+my_app.add_typer(flujo_app, name="flujo")
+
+# Or use directly
+if __name__ == "__main__":
+    flujo_app()
+```
+
+**Note:** This function does NOT initialize telemetry or register builtins. Call `bootstrap_flujo()` first if you need those services.
+
+### **Module Structure**
+
+The CLI has been decomposed into focused modules:
+
+- `flujo/cli/bootstrap.py`: Environment setup and service initialization
+- `flujo/cli/app_registration.py`: CLI app construction and command registration
+- `flujo/cli/test_setup.py`: Test/CI-specific environment configuration
+- `flujo/cli/programmatic.py`: Public API for non-CLI hosts
+- `flujo/cli/main.py`: CLI entry point (orchestrates the above modules)
+
+**When to use:**
+- **Services/Daemons**: Call `bootstrap_flujo()` at startup, then use Flujo APIs directly
+- **Tests**: Use minimal bootstrap (`enable_telemetry=False, register_builtins=False`)
+- **Custom CLI Apps**: Use `create_flujo_app()` to embed Flujo commands
+
+**Anti-patterns:**
+- ❌ Don't import `flujo.cli.main` in non-CLI contexts (use `programmatic` instead)
+- ❌ Don't call CLI-specific initialization in library code (keep it in CLI/bootstrap)
+- ❌ Don't bypass bootstrap for sys.path setup (use `bootstrap_flujo()`)
+
 ## **1. The Golden Rule: Respect the Policy-Driven Architecture**
 
 Flujo's core strength is the **separation between the DSL and the Execution Core via Policies**. This is the most important principle to understand.
@@ -169,6 +239,7 @@ The framework standardizes on typed outcomes. When touching older code or writin
 - Update any tests that previously asserted on `breach_event` to assert it is not used.
 - Ensure partial `PipelineResult.step_history` is preserved on usage errors.
 - Reviewer grep: reject changes that add imports or references matching `breach_event`.
+- Quota-only: no `UsageGovernor` surface, no breach_event plumbing anywhere.
 
 ---
 
@@ -240,6 +311,12 @@ Testing guidance:
   - DB/trace replay integration: `@pytest.mark.slow`.
 - Do not rely on file-name filters to keep heavy tests out of fast runs—use markers.
 
+## **SQLite Schema Safeguards**
+
+- Migration whitelist: new columns added by migrations must match `ALLOWED_COLUMNS` in `flujo/state/backends/sqlite.py` (currently `total_steps INTEGER DEFAULT 0`, `error_message TEXT`, `execution_time_ms INTEGER`, `memory_usage_mb REAL`, `step_history TEXT`).
+- Identifier rules: SQL identifiers must match `[a-zA-Z_][a-zA-Z0-9_]*`, stay under `MAX_SQL_IDENTIFIER_LENGTH` (1000), and exclude zero-width/null control chars.
+- When evolving schema, extend the whitelist first and keep definitions stable; do not bypass identifier validation or add ad-hoc column shapes.
+
 ### **7.1 Migration Notes: Pure Quota System (UPDATED)**
 
 The framework standardizes on proactive quota budgeting. When touching older code or writing new features:
@@ -247,7 +324,7 @@ The framework standardizes on proactive quota budgeting. When touching older cod
 **Removed/Disallowed (do not reintroduce):**
 - Reactive budget enforcement patterns that allow steps to overrun before a check.
 - Any "governor" pattern or equivalents for parallel usage aggregation.
-- Propagating or inspecting a `breach_event` parameter in agents, policies, or backends.
+- Propagating or inspecting a `breach_event` parameter in agents, policies, or backends. Quota-only paths are mandatory.
 
 **Required patterns (always apply):**
 - Reserve → Execute → Reconcile in every policy that consumes resources.
@@ -259,7 +336,7 @@ The framework standardizes on proactive quota budgeting. When touching older cod
 - Preserve input branch order when setting `executed_branches` metadata.
 
 **Test and review checklist:**
-- Parallel budgeting tests: use `Quota.split(n)` and `UsageEstimate`; do not simulate a governor.
+- Parallel budgeting tests: use `Quota.split(n)` and `UsageEstimate`; do not simulate a governor or breach_event.
 - Update any tests that previously asserted on `breach_event` to assert it is not used.
 - Ensure partial `PipelineResult.step_history` is preserved on usage errors and that messages match exactly.
 - Reviewer grep: reject changes that add imports or references matching `breach_event`, `ParallelUsageGovernor`, or reactive post-step limit checks.
@@ -388,6 +465,12 @@ Step execution, especially within retries, must be **idempotent with respect to 
 ### **✅ The Correct Pattern: Context Isolation for Complex Steps**
 
 The `ExecutorCore` automatically handles context isolation for retries in `_execute_simple_step`. For complex steps like `LoopStep` and `ParallelStep`, you **must do this manually**.
+
+ContextManager now delegates isolation/merge through strategies:
+- `LenientIsolation` (default) uses best-effort deep copies and safe merges.
+- `StrictIsolation` honors `strict_context_isolation`/`strict_context_merge` from `infra.settings`, raising on failures.
+- `SelectiveIsolation` applies when you pass `include_keys` (e.g., ParallelStep context_include_keys) to isolate only whitelisted fields.
+Use the include_keys path to keep branch contexts minimal and enable strict flags in environments where state corruption must surface as errors.
 
 ```python
 # In a policy for a complex step (e.g., LoopStep)

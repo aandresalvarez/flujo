@@ -37,7 +37,7 @@ def test_custom_step_registration_and_yaml_loader() -> None:
     core = ExecutorCore()
 
     async def _run() -> None:
-        res = await core._execute_pipeline_via_policies(p, None, None, None, None, None, None)
+        res = await core._execute_pipeline_via_policies(p, None, None, None, None, None)
         assert res is not None
         assert len(res.step_history) == 1
 

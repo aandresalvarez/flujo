@@ -43,10 +43,10 @@ def get_excluded_fields() -> set[str]:
         set[str]: A set of field names to exclude.
     """
     global _EXCLUDED_FIELDS_CACHE
+    import os
 
-    # Return cached result if available
-    if _EXCLUDED_FIELDS_CACHE is not None:
-        return _EXCLUDED_FIELDS_CACHE
+    # Always recompute to avoid stale globals across tests/suites.
+    _EXCLUDED_FIELDS_CACHE = None
 
     # Default excluded fields
     # 'command_log' is excluded to prevent redundant or conflicting entries during loop operations
@@ -58,16 +58,14 @@ def get_excluded_fields() -> set[str]:
         "cache_keys",
     }
 
-    # Retrieve excluded fields from configuration (e.g., environment variable or file)
-    # For simplicity, this example uses an environment variable.
-    import os
+    # Always read the environment afresh (test helpers may preseed _ENV_EXCLUDED_FIELDS_CACHE)
+    env_val = (
+        _ENV_EXCLUDED_FIELDS_CACHE
+        if _ENV_EXCLUDED_FIELDS_CACHE is not None
+        else os.getenv("EXCLUDED_FIELDS", "")
+    )
 
-    # Cache the environment variable value to prevent repeated access
-    global _ENV_EXCLUDED_FIELDS_CACHE
-    if _ENV_EXCLUDED_FIELDS_CACHE is None:
-        _ENV_EXCLUDED_FIELDS_CACHE = os.getenv("EXCLUDED_FIELDS", "")
-
-    excluded_fields = _ENV_EXCLUDED_FIELDS_CACHE
+    excluded_fields = env_val
     # Defensive: ensure excluded_fields is a string-like value
     if not isinstance(excluded_fields, str):  # pragma: no cover - CI hardening
         try:

@@ -85,7 +85,6 @@ class TestLegacyFunctionUsageAnalysis:
             context=None,
             resources=None,
             limits=None,
-            breach_event=None,
             context_setter=None,
             step_executor=mock_step_executor,
         )
@@ -145,7 +144,6 @@ class TestMigrationCompleteness:
             context=None,
             resources=None,
             limits=None,
-            breach_event=None,
             context_setter=None,
             step_executor=AsyncMock(),
         )
@@ -198,7 +196,6 @@ class TestMigrationCompleteness:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
             context_setter=None,
             result=None,
             _fallback_depth=0,
@@ -272,7 +269,6 @@ class TestDeprecationDecorator:
             context=None,
             resources=None,
             limits=None,
-            breach_event=None,
             context_setter=None,
             step_executor=AsyncMock(),
         )
@@ -292,26 +288,34 @@ class TestFunctionSignatureAnalysis:
         sig = inspect.signature(executor._handle_cache_step)
         params = list(sig.parameters.keys())
 
-        expected_params = [
+        expected_params = {
             "step",
             "data",
             "context",
             "resources",
             "limits",
-            "breach_event",
             "context_setter",
             "step_executor",
-        ]
-        for param in expected_params:
-            assert param in params
+        }
+        assert expected_params.issubset(params)
 
         # Test _handle_hitl_step signature
         sig = inspect.signature(executor._handle_hitl_step)
         params = list(sig.parameters.keys())
 
-        expected_params = ["step", "data", "context", "resources", "limits", "context_setter"]
-        for param in expected_params:
-            assert param in params
+        expected_params = {
+            "step",
+            "data",
+            "context",
+            "resources",
+            "limits",
+            "context_setter",
+            "stream",
+            "on_chunk",
+            "cache_key",
+            "_fallback_depth",
+        }
+        assert expected_params.issubset(params)
 
         # Test execute_step signature
         sig = inspect.signature(executor.execute_step)

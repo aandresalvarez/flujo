@@ -10,17 +10,17 @@ This guide provides comprehensive instructions for monitoring ExecutorCore perfo
 
 #### Enable Performance Monitoring
 ```python
-from flujo.application.core.executor_core import OptimizationConfig, OptimizedExecutorCore
+from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
 
 config = OptimizationConfig(
     enable_performance_monitoring=True,
     performance_monitoring_interval=300,  # 5 minutes
     performance_alert_threshold=0.2,      # 20% degradation alert
     performance_history_size=1000,        # Keep 1000 measurements
-    performance_metrics_export=True       # Export metrics for external systems
+    performance_metrics_export=True,      # Export metrics for external systems
 )
 
-executor = OptimizedExecutorCore(optimization_config=config)
+executor = ExecutorCore(optimization_config=config)
 ```
 
 #### Access Performance Metrics

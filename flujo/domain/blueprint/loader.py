@@ -14,9 +14,13 @@ import yaml
 
 from ..dsl import Pipeline, Step, StepConfig, ParallelStep
 from ...exceptions import ConfigurationError
-from ...infra.skill_registry import get_skill_registry
 from ..models import UsageLimits
 from .schema import AgentModel
+from ..interfaces import (
+    get_config_provider,
+    get_skill_resolver,
+    get_skills_discovery,
+)
 
 
 class BlueprintError(ConfigurationError):
@@ -2489,13 +2493,15 @@ def load_pipeline_blueprint_from_yaml(
             loc_index = {}
             sup_index = {}
         if base_dir:
-            from ...infra.skills_catalog import (
-                load_skills_catalog as _load_skills_catalog,
-                load_skills_entry_points as _load_skills_entry_points,
-            )
-
-            _load_skills_catalog(base_dir)
-            _load_skills_entry_points()
+            discovery = get_skills_discovery()
+            try:
+                discovery.load_catalog(base_dir)
+            except Exception:
+                pass
+            try:
+                discovery.load_entry_points()
+            except Exception:
+                pass
     except Exception:
         # Never fail blueprint loading due to skills discovery issues
         pass
@@ -2705,7 +2711,6 @@ def _import_object(path: str) -> Any:
     """
     import importlib
     import re
-    from ...infra.config_manager import get_config_manager
 
     module_name: str
     attr_name: Optional[str] = None
@@ -2729,9 +2734,9 @@ def _import_object(path: str) -> Any:
 
     # Enforce allow-list from flujo.toml: [settings] blueprint_allowed_imports = ["pkg", "pkg.sub"]
     try:
-        cfg = get_config_manager().load_config()
+        cfg = get_config_provider().load_config()
         allowed: Optional[list[str]] = None
-        if cfg and getattr(cfg, "settings", None) and isinstance(cfg.settings, object):
+        if cfg is not None and getattr(cfg, "settings", None) and isinstance(cfg.settings, object):
             # Accept both nested settings entry or top-level key 'blueprint_allowed_imports' in TOML
             allowed = getattr(cfg.settings, "blueprint_allowed_imports", None)
         if allowed is None:
@@ -2881,8 +2886,8 @@ def _resolve_agent_entry(agent: Union[str, Dict[str, Any]]) -> Any:
         skill_id = agent.get("id")
         params = agent.get("params", {})
         if skill_id:
-            reg = get_skill_registry()
-            entry = reg.get(skill_id)
+            resolver = get_skill_resolver()
+            entry = resolver.get(skill_id, scope=None)
             if entry is None:
                 # Fallback: try to import skill_id as module path or attribute
                 try:

@@ -22,7 +22,6 @@ class _FakeCore:
         context: Optional[Any],
         resources: Optional[Any],
         limits: Optional[Any],
-        breach_event: Optional[Any],
         context_setter: Optional[Any],
     ) -> Any:  # returns PipelineResult[Any]
         self.calls += 1
@@ -56,7 +55,6 @@ def test_policy_returns_failure_on_unknown_state() -> None:
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
     policy = StateMachinePolicyExecutor()
@@ -98,7 +96,6 @@ def test_policy_terminal_state_performs_no_calls() -> None:
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
     policy = StateMachinePolicyExecutor()
@@ -148,7 +145,6 @@ def test_policy_iterates_and_stops_on_end_state() -> None:
         limits=None,
         stream=False,
         on_chunk=None,
-        breach_event=None,
         context_setter=lambda _r, _c: None,
     )
     policy = StateMachinePolicyExecutor()

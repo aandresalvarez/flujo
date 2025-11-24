@@ -1,5 +1,6 @@
 """State management with intelligent caching and delta-based persistence."""
 
+from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Generic, Optional, TypeVar, Tuple

@@ -11,11 +11,11 @@ from flujo.domain.scoring import weighted_score, ratio_score, RewardScorer
 def monkeypatch_settings(monkeypatch, test_settings):
     """Helper function to monkeypatch settings across modules.
 
-    This function patches both the settings instance and the get_settings function
-    across multiple modules to ensure consistent test behavior. It updates:
+    This function patches both the settings instance and the settings provider
+    across modules to ensure consistent test behavior. It updates:
     - flujo.infra.settings.settings: The singleton settings instance
     - flujo.infra.settings.get_settings: The settings accessor function
-    - flujo.domain.scoring.get_settings: The settings accessor in scoring module
+    - flujo.domain.interfaces._DEFAULT_SETTINGS_PROVIDER: The domain settings provider
 
     Args:
         monkeypatch: pytest's monkeypatch fixture for modifying module attributes
@@ -31,9 +31,17 @@ def monkeypatch_settings(monkeypatch, test_settings):
     monkeypatch.setattr(settings_module, "settings", test_settings)
     # Also monkeypatch get_settings to return our test settings
     monkeypatch.setattr(settings_module, "get_settings", lambda: test_settings)
-    # Monkeypatch the import in the scoring module
-    scoring_module = sys.modules["flujo.domain.scoring"]
-    monkeypatch.setattr(scoring_module, "get_settings", lambda: test_settings)
+    # Monkeypatch the domain settings provider
+    import flujo.domain.interfaces as interfaces
+
+    class _Provider:
+        def __init__(self, settings):
+            self._settings = settings
+
+        def get_settings(self):
+            return self._settings
+
+    monkeypatch.setattr(interfaces, "_DEFAULT_SETTINGS_PROVIDER", _Provider(test_settings))
 
 
 def test_ratio_score() -> None:

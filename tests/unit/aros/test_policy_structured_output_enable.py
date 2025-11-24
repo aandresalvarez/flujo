@@ -51,7 +51,6 @@ async def test_policy_enables_structured_output_and_passes_response_format():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 
@@ -99,7 +98,6 @@ async def test_policy_structured_output_safe_noop_when_agent_no_kwargs():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 
@@ -141,7 +139,6 @@ async def test_policy_structured_output_skipped_for_unsupported_provider_records
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 
@@ -187,7 +184,6 @@ async def test_policy_structured_output_openai_records_grammar_applied_event():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 
@@ -232,7 +228,6 @@ async def test_policy_structured_output_auto_behaves_like_openai_json():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 
@@ -284,7 +279,6 @@ async def test_policy_outlines_sets_structured_grammar_option_and_traces():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 
@@ -334,7 +328,6 @@ async def test_policy_xgrammar_sets_structured_grammar_option_and_traces():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
 

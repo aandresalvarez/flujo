@@ -30,7 +30,7 @@ limits = UsageLimits(total_cost_usd_limit=0.12)
 runner = Flujo(pipeline, usage_limits=limits)
 
 try:
-    print("Running pipeline... it should be stopped by the governor.")
+    print("Running pipeline... it should be stopped by the quota limits.")
     runner.run(0)
 except UsageLimitExceededError as e:
     print(f"\n✅ Pipeline halted as expected!")
@@ -53,4 +53,4 @@ This mechanism is a critical safety feature for running `Flujo` in production.
 
 ## Advanced Usage
 
-For more complex scenarios involving loops, parallel execution, and nested workflows, see the [Budget-Aware Workflows](budget_aware_workflows.md) guide, which demonstrates how the Usage Governor works with `LoopStep` and `ParallelStep` constructs.
+For more complex scenarios involving loops, parallel execution, and nested workflows, see the **Safe Loop Budgeting** guide, which demonstrates proactive quota patterns with `LoopStep` and `ParallelStep` (**docs/cookbook/safe_loop_budgeting.md**).

@@ -45,7 +45,7 @@ async def test_parallel_executor_isolates_context_per_branch(
 
     # Provide a fake step executor to avoid invoking core._execute_pipeline
     async def fake_step_executor(
-        _branch_pipeline: Any, data: Any, ctx: Any, _resources: Any, _breach: Any
+        _branch_pipeline: Any, data: Any, ctx: Any, _resources: Any
     ) -> StepResult:
         return StepResult(name="branch", output=data, success=True, attempts=1)
 
@@ -61,7 +61,6 @@ async def test_parallel_executor_isolates_context_per_branch(
         context=base_context,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=fake_step_executor,
     )
@@ -104,7 +103,7 @@ async def test_parallel_executor_merges_successful_branch_contexts(
 
     # Provide a fake step executor that yields StepResult with branch_context for ok branches
     async def fake_step_executor(
-        _branch_pipeline: Any, data: Any, ctx: Any, _resources: Any, _breach: Any
+        _branch_pipeline: Any, data: Any, ctx: Any, _resources: Any
     ) -> StepResult:
         # Determine branch by probing pipeline name on first step, fallback to generic
         try:
@@ -129,7 +128,6 @@ async def test_parallel_executor_merges_successful_branch_contexts(
         context=base_context,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=fake_step_executor,
     )

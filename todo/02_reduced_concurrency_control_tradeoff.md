@@ -62,9 +62,10 @@ async def run_branch(key: str, branch_pipe: Any) -> None:
         completion_order.append(key)
 ```
 
-#### 4. Responsive Breach Watcher
+#### 4. Responsive Breach Watcher (legacy, removed in pure quota mode)
 ```python
-# Previous: Dedicated breach watcher with responsive signaling
+# Previous: Dedicated breach watcher with responsive signaling (breach_event/governor path)
+# This path was deleted; proactive quota reservations now enforce limits without a watcher.
 async def breach_watcher() -> None:
     """Watch for breach events and cancel all running tasks."""
     try:

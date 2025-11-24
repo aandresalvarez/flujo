@@ -140,7 +140,6 @@ class TestRemainingFunctionPreservation:
             context=None,
             resources=None,
             limits=None,
-            breach_event=None,
             context_setter=None,
             step_executor=mock_step_executor,
         )
@@ -198,7 +197,6 @@ class TestRemainingFunctionPreservation:
             context=None,
             resources=None,
             limits=None,
-            breach_event=None,
             context_setter=None,
             step_executor=mock_step_executor,
         )
@@ -290,7 +288,6 @@ class TestRemainingFunctionPreservation:
             limits=None,
             stream=False,
             on_chunk=None,
-            breach_event=None,
             context_setter=None,
             result=None,
             _fallback_depth=0,
@@ -423,7 +420,6 @@ class TestLegacyCleanupSafety:
                 context=None,
                 resources=None,
                 limits=None,
-                breach_event=None,
                 context_setter=None,
                 step_executor=None,
             )

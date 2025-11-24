@@ -5,7 +5,7 @@ from flujo.application.core.step_policies import DefaultParallelStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.parallel import ParallelStep
-from flujo.domain.models import Success, Failure
+from flujo.domain.models import Success, Failure, Paused
 
 
 @pytest.mark.asyncio
@@ -29,7 +29,6 @@ async def test_parallel_policy_success_aggregates_outputs():
         context=None,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )
@@ -64,7 +63,6 @@ async def test_parallel_policy_failure_does_not_merge_context():
         context=ctx,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )
@@ -96,12 +94,11 @@ async def test_parallel_policy_yields_failure_on_paused_branch():
         context=None,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )
-    # Parallel policy currently wraps paused branch into Failure with appropriate feedback
-    assert isinstance(outcome, Failure)
+    # Parallel policy should propagate Paused so the runner pauses
+    assert isinstance(outcome, Paused)
 
 
 @pytest.mark.asyncio
@@ -158,7 +155,6 @@ async def test_parallel_policy_deterministic_quota_split_and_accounting():
             context=None,
             resources=None,
             limits=None,
-            breach_event=None,
             context_setter=None,
             step_executor=None,
         )
@@ -201,7 +197,6 @@ async def test_parallel_policy_propagates_usage_errors_and_mock_detection():
         context=None,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )
@@ -238,7 +233,6 @@ async def test_parallel_policy_quota_splitting_zero_parent_after_split():
         context=None,
         resources=None,
         limits=None,
-        breach_event=None,
         context_setter=None,
         step_executor=None,
     )

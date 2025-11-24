@@ -47,7 +47,6 @@ async def test_reasoning_precheck_skipped_when_no_plan_found():
         stream=False,
         on_chunk=None,
         cache_key=None,
-        breach_event=None,
         _fallback_depth=0,
     )
     cur = tm._span_stack[-1]

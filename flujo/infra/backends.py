@@ -50,7 +50,6 @@ class LocalBackend(Generic[TContext]):
             quota=request.quota,
             stream=request.stream,
             on_chunk=request.on_chunk,
-            breach_event=request.breach_event,
             context_setter=lambda result, ctx: None,  # Default context setter for backend calls
         )
 

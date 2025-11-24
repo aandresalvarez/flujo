@@ -1,0 +1,5 @@
+version: "0.1"
+steps:
+  - name: Emit
+    uses: skills.custom_tools:emit
+    updates_context: true

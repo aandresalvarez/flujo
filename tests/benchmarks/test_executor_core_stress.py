@@ -14,7 +14,7 @@ import os
 import gc
 from unittest.mock import Mock, AsyncMock
 
-from flujo.application.core.executor_core import OptimizationConfig, OptimizedExecutorCore
+from flujo.application.core.executor_core import OptimizationConfig, ExecutorCore
 from flujo.application.core.adaptive_resource_manager import (
     get_global_adaptive_resource_manager,
     ResourceType,
@@ -44,7 +44,7 @@ class TestHighConcurrencyStress:
             enable_automatic_optimization=False,  # Disable for predictable testing
             max_concurrent_executions=100,  # Allow high concurrency
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.fixture
     def concurrent_step(self):
@@ -218,7 +218,7 @@ class TestMemoryPressureStress:
             cache_max_size=1000,  # Smaller cache
             memory_pressure_threshold_mb=100.0,  # Lower threshold
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.fixture
     def memory_intensive_step(self):
@@ -324,7 +324,7 @@ class TestMemoryPressureStress:
             enable_performance_monitoring=False,
             enable_automatic_optimization=False,
         )
-        unoptimized_executor = OptimizedExecutorCore(optimization_config=unoptimized_config)
+        unoptimized_executor = ExecutorCore(optimization_config=unoptimized_config)
 
         # Test with optimizations enabled
         optimized_config = OptimizationConfig(
@@ -335,7 +335,7 @@ class TestMemoryPressureStress:
             enable_performance_monitoring=True,
             enable_automatic_optimization=False,
         )
-        optimized_executor = OptimizedExecutorCore(optimization_config=optimized_config)
+        optimized_executor = ExecutorCore(optimization_config=optimized_config)
 
         test_data = {"optimization": "test"}
         process = psutil.Process(os.getpid())
@@ -409,7 +409,7 @@ class TestCPUIntensiveStress:
             enable_automatic_optimization=False,
             max_concurrent_executions=psutil.cpu_count() * 2,
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.fixture
     def cpu_intensive_step(self):
@@ -555,7 +555,7 @@ class TestNetworkLatencyStress:
             circuit_breaker_failure_threshold=3,
             circuit_breaker_recovery_timeout_seconds=5,
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.fixture
     def network_step(self):
@@ -654,7 +654,7 @@ class TestSustainedLoadStress:
             enable_optimized_error_handling=True,
             enable_automatic_optimization=False,
         )
-        return OptimizedExecutorCore(optimization_config=config)
+        return ExecutorCore(optimization_config=config)
 
     @pytest.mark.asyncio
     @pytest.mark.slow

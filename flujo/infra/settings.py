@@ -1,7 +1,7 @@
 """Settings and configuration for flujo."""
 
 import os
-from typing import Callable, ClassVar, Dict, Literal, Optional, cast
+from typing import Any, Callable, ClassVar, Dict, Literal, Optional, cast
 
 import dotenv
 from pydantic import (
@@ -201,3 +201,27 @@ def get_settings() -> Settings:
     from .config_manager import get_config_manager
 
     return get_config_manager().get_settings()
+
+
+# Wire domain-level settings provider interface to avoid direct infra imports in domain logic
+set_default_settings_provider_fn: Optional[Callable[[Any], None]]
+try:  # pragma: no cover - import guard
+    from flujo.domain.interfaces import (
+        set_default_settings_provider as _set_default_settings_provider_fn,
+    )
+
+    set_default_settings_provider_fn = _set_default_settings_provider_fn
+except Exception:  # pragma: no cover - defensive fallback
+    set_default_settings_provider_fn = None
+
+
+class _SettingsProviderAdapter:
+    def get_settings(self) -> Settings:  # pragma: no cover - simple delegation
+        return get_settings()
+
+
+if set_default_settings_provider_fn is not None:  # pragma: no cover - simple wiring
+    try:
+        set_default_settings_provider_fn(_SettingsProviderAdapter())
+    except Exception:
+        pass
