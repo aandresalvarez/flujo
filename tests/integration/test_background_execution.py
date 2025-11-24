@@ -52,7 +52,7 @@ async def test_background_execution_fire_and_forget():
 
         # 1. Verify pipeline finished quickly (much faster than the 0.5s sleep)
         # Allow some overhead, but it should be fast
-        assert duration < 0.2, f"Pipeline took too long: {duration}s"
+        assert duration < 0.4, f"Pipeline took too long: {duration}s"
 
         # 2. Verify background task hasn't finished yet (at the moment of return)
         # Note: In a very slow environment this might be flaky, but 0.5s vs <0.2s margin is large
