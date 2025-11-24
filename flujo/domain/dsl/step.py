@@ -20,6 +20,7 @@ from typing import (
     Union,
     cast,
     TYPE_CHECKING,
+    Literal,
 )
 
 try:
@@ -116,6 +117,7 @@ class StepConfig(BaseModel):
     top_k: int | None = None
     top_p: float | None = None
     preserve_fallback_diagnostics: bool = False
+    execution_mode: Literal["sync", "background"] = "sync"
 
 
 class Step(BaseModel, Generic[StepInT, StepOutT]):

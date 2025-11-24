@@ -16,6 +16,7 @@ from flujo.domain.models import (
     Success,
     Failure,
     Chunk,
+    BackgroundLaunched,
 )
 from flujo.domain.models import Paused as _Paused
 from flujo.domain.models import Quota
@@ -419,7 +420,15 @@ class StepCoordinator(Generic[ContextT]):
                                 except Exception:
                                     pass
                                 raise PipelineAbortSignal("Paused for HITL")
-
+                            elif isinstance(step_outcome, BackgroundLaunched):
+                                step_result = StepResult(
+                                    name=getattr(step, "name", "<unnamed>"),
+                                    success=True,
+                                    output=None,
+                                    feedback=f"Launched in background (task_id={step_outcome.task_id})",
+                                    metadata_={"background_task_id": step_outcome.task_id},
+                                )
+                                yield step_outcome
                             else:
                                 # Unknown control outcome: propagate as abort
 
