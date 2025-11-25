@@ -13,6 +13,8 @@ from __future__ import annotations
 import pytest
 from typing import Any, List
 
+from pydantic import Field
+
 from flujo import Flujo, Step
 from flujo.domain.models import PipelineContext, ContextReference
 from flujo.domain.interfaces import StateProvider
@@ -42,7 +44,9 @@ class MockStateProvider(StateProvider):
 class ContextWithReference(PipelineContext):
     """Test context with a ContextReference field."""
 
-    ref: ContextReference[List[int]] = ContextReference(provider_id="test_provider", key="test_key")
+    ref: ContextReference[List[int]] = Field(
+        default_factory=lambda: ContextReference(provider_id="test_provider", key="test_key")
+    )
 
 
 # --- Unit Tests: Factory Chain ---

@@ -224,6 +224,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         Backend used to persist :class:`WorkflowState` for durable execution.
     delete_on_completion : bool, default False
         If ``True`` remove persisted state once the run finishes.
+    state_providers : Dict[str, StateProvider], optional
+        External state providers for :class:`ContextReference` hydration. Ignored when a
+        custom ``executor_factory`` is supplied; pass providers directly to the factory
+        instead.
     """
 
     _trace_manager: Optional[Any]  # Will be TraceManager when tracing is enabled
@@ -361,6 +365,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         # Handle backend factory - ensure state_providers propagate even with custom backend_factory
         self._backend_factory = backend_factory or BackendFactory(self._executor_factory)
+        # If a custom backend_factory is supplied, align its executor factory so that any
+        # internally created executors also receive the configured state_providers.
+        if backend_factory is not None and hasattr(self._backend_factory, "_executor_factory"):
+            self._backend_factory._executor_factory = self._executor_factory
 
         combined_hooks: list[HookCallable] = []
         combined_hooks.extend(pipeline_hooks)
