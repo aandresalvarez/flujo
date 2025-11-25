@@ -9,12 +9,11 @@ Concrete defaults live in `default_components.py`; protocols in
 from __future__ import annotations
 
 import asyncio
-import contextvars
 import inspect
 import warnings
 import uuid
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast, Set
+from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast
 from pydantic import BaseModel
 
 from ...domain.dsl.conditional import ConditionalStep
@@ -23,6 +22,7 @@ from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.dsl.step import HumanInTheLoopStep, Step
 from ...domain.dsl.import_step import ImportStep
+from ...domain.interfaces import StateProvider
 from ...domain.models import (
     PipelineResult,
     StepResult,
@@ -31,11 +31,8 @@ from ...domain.models import (
     Success,
     Failure,
     Paused,
-    Quota,
-    ContextReference,
     BackgroundLaunched,
 )
-from ...domain.interfaces import StateProvider
 from ...exceptions import (
     InfiniteFallbackError,
     UsageLimitExceededError,
@@ -47,6 +44,12 @@ from ...exceptions import (
     PipelineAbortSignal,
 )
 from ...infra import telemetry
+from .quota_manager import CURRENT_QUOTA
+from .fallback_handler import FallbackHandler
+from .background_task_manager import BackgroundTaskManager
+from .cache_manager import CacheManager
+from .hydration_manager import HydrationManager
+from .step_history_tracker import StepHistoryTracker
 from ...steps.cache_step import CacheStep
 from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
 from ...cost import extract_usage_metrics
@@ -192,28 +195,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     - Centralized telemetry and usage metering
     """
 
-    # Context variables for tracking fallback relationships and chains
-    _fallback_relationships: contextvars.ContextVar[Dict[str, str]] = contextvars.ContextVar(
-        "fallback_relationships", default={}
-    )
-    _fallback_chain: contextvars.ContextVar[list[Step[Any, Any]]] = contextvars.ContextVar(
-        "fallback_chain", default=[]
-    )
-    # Context variable to propagate current quota across async calls
-    CURRENT_QUOTA: contextvars.ContextVar[Optional[Quota]] = contextvars.ContextVar(
-        "CURRENT_QUOTA", default=None
-    )
+    # Context variables moved to respective manager classes
 
-    # Cache for fallback relationship loop detection (True if loop detected, False otherwise)
-    _fallback_graph_cache: contextvars.ContextVar[Dict[str, bool]] = contextvars.ContextVar(
-        "fallback_graph_cache", default={}
-    )
-
-    # Maximum length for fallback chains to prevent infinite loops
-    _MAX_FALLBACK_CHAIN_LENGTH = 10
-
-    # Maximum iterations for fallback loop detection to prevent infinite loops
-    _DEFAULT_MAX_FALLBACK_ITERATIONS = 100
+    # Backward compatibility: expose CURRENT_QUOTA as class attribute
+    CURRENT_QUOTA = CURRENT_QUOTA
 
     def __init__(
         self,
@@ -289,9 +274,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._validator_runner = validator_runner or DefaultValidatorRunner()
         self._plugin_runner = plugin_runner or DefaultPluginRunner()
         self._usage_meter = usage_meter or ThreadSafeMeter()
-        self._cache_backend = cache_backend or InMemoryLRUBackend(
-            max_size=cache_size, ttl_s=cache_ttl
+        self._cache_manager = CacheManager(
+            backend=cache_backend or InMemoryLRUBackend(max_size=cache_size, ttl_s=cache_ttl),
+            key_generator=cache_key_generator,
+            enable_cache=enable_cache,
         )
+
+        # Backward compatibility properties for tests
+        self._cache_backend = self._cache_manager.backend
+        self._fallback_handler = FallbackHandler()
         self._telemetry = telemetry or DefaultTelemetry()
         self._enable_cache = enable_cache
         self.enable_optimized_error_handling = effective_enable_optimized_error_handling
@@ -300,8 +291,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             estimator_factory or build_default_estimator_factory()
         )
         self._usage_estimator: UsageEstimator = usage_estimator or HeuristicUsageEstimator()
-        self._step_history_so_far: list[StepResult] = []
+        self._step_history_tracker = StepHistoryTracker()
         self._concurrency_limit = concurrency_limit
+
+        # Backward compatibility properties for tests
+        # Note: These are set after all managers are initialized
 
         # Store additional components for compatibility
         self._serializer = serializer or OrjsonSerializer()
@@ -316,8 +310,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             bool(strict_context_isolation) or _DEFAULT_STRICT_CONTEXT_ISOLATION
         )
         self._strict_context_merge = bool(strict_context_merge) or _DEFAULT_STRICT_CONTEXT_MERGE
-        self._state_providers = state_providers or {}
-        self._background_tasks: Set[asyncio.Task[Any]] = set()
+        self._hydration_manager = HydrationManager(state_providers)
+        self._hydration_manager.set_telemetry(self._telemetry)
+        self._background_task_manager = BackgroundTaskManager()
+
+        # Backward compatibility properties for tests
+        self._state_providers = self._hydration_manager._state_providers
 
         # Assign policies
         self.timeout_runner = timeout_runner or DefaultTimeoutRunner()
@@ -419,18 +417,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     @property
     def cache(self) -> _LRUCache:
-        if not hasattr(self, "_cache"):
-            self._cache = _LRUCache(max_size=self._concurrency_limit * 100, ttl=3600)
-        return self._cache
+        return self._cache_manager.get_internal_cache()
 
     def clear_cache(self) -> None:
-        if hasattr(self, "_cache"):
-            self._cache.clear()
+        self._cache_manager.clear_cache()
 
     def _cache_key(self, frame: Any) -> str:
-        if not self._enable_cache:
-            return ""
-        return self._cache_key_generator.generate_key(
+        return self._cache_manager.generate_cache_key(
             frame.step, frame.data, frame.context, getattr(frame, "resources", None)
         )
 
@@ -513,52 +506,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     pass
         except Exception:
             pass
-
-    async def _hydrate_context(self, context: Optional[Any]) -> None:
-        """Hydrate ContextReference fields in the context using registered providers."""
-        if context is None or not self._state_providers:
-            return
-
-        # Iterate over fields to find ContextReference
-        # We check top-level fields of Pydantic models
-        if isinstance(context, BaseModel):
-            for field_name, field_value in context:
-                if isinstance(field_value, ContextReference):
-                    provider = self._state_providers.get(field_value.provider_id)
-                    if provider:
-                        try:
-                            data = await provider.load(field_value.key)
-                            field_value.set(data)
-                        except Exception as e:
-                            # Log warning but don't crash, let step handle missing data if needed
-                            # or maybe we should crash? The plan said "Executor failed to load data" in ValueError
-                            # so we assume it should have been loaded.
-                            # For now, we log to telemetry if available
-                            if self._telemetry:
-                                warning_fn = getattr(self._telemetry, "warning", None)
-                                if warning_fn:
-                                    warning_fn(f"Failed to hydrate reference {field_name}: {e}")
-
-    async def _persist_context(self, context: Optional[Any]) -> None:
-        """Persist ContextReference fields in the context using registered providers."""
-        if context is None or not self._state_providers:
-            return
-
-        if isinstance(context, BaseModel):
-            for field_name, field_value in context:
-                if isinstance(field_value, ContextReference):
-                    # Only save if value is present (hydrated/modified)
-                    # Accessing _value directly to avoid ValueError from get()
-                    if field_value._value is not None:
-                        provider = self._state_providers.get(field_value.provider_id)
-                        if provider:
-                            try:
-                                await provider.save(field_value.key, field_value._value)
-                            except Exception as e:
-                                if self._telemetry:
-                                    warning_fn = getattr(self._telemetry, "warning", None)
-                                    if warning_fn:
-                                        warning_fn(f"Failed to persist reference {field_name}: {e}")
 
     def _is_complex_step(self, step: Any) -> bool:
         # 1) Explicit object-oriented hook/property
@@ -757,52 +704,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     async def wait_for_background_tasks(self, timeout: float = 5.0) -> None:
-        """Wait for all background tasks to complete with a timeout.
-
-        Cancels any tasks that don't complete within the timeout period.
-        """
-        if not self._background_tasks:
-            return
-
-        # Create a copy to avoid modification during iteration if tasks complete
-        pending = list(self._background_tasks)
-        if not pending:
-            return
-
-        telemetry.logfire.info(
-            f"Waiting for {len(pending)} background tasks to complete (timeout={timeout}s)..."
-        )
-        try:
-            done, pending_set = await asyncio.wait(
-                pending, timeout=timeout, return_when=asyncio.ALL_COMPLETED
-            )
-
-            # Remove completed tasks from tracking
-            for task in done:
-                self._background_tasks.discard(task)
-
-            # Cancel any tasks that didn't complete within the timeout
-            if pending_set:
-                telemetry.logfire.warning(
-                    f"{len(pending_set)} background tasks timed out during shutdown. Cancelling..."
-                )
-                for task in pending_set:
-                    task.cancel()
-                    self._background_tasks.discard(task)
-
-                # Wait briefly for cancellations to complete
-                if pending_set:
-                    try:
-                        await asyncio.wait(pending_set, timeout=0.5)
-                    except asyncio.CancelledError:
-                        raise  # Re-raise cancellation to propagate
-                    except Exception as cancel_err:
-                        telemetry.logfire.debug(f"Error during task cancellation: {cancel_err}")
-        except asyncio.CancelledError:
-            # Re-raise to propagate cancellation signal
-            raise
-        except Exception as e:
-            telemetry.logfire.error(f"Error waiting for background tasks: {e}")
+        """Wait for all background tasks to complete with a timeout."""
+        await self._background_task_manager.wait_for_completion(timeout)
 
     async def _execute_background_task(
         self,
@@ -855,7 +758,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 context=isolated_context,
                 resources=resources,
                 limits=limits,
-                quota=self.CURRENT_QUOTA.get(),
+                quota=CURRENT_QUOTA.get(),
                 stream=False,
                 on_chunk=None,
                 context_setter=lambda _res, _ctx: None,
@@ -902,7 +805,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 context=kwargs.get("context"),
                 resources=kwargs.get("resources"),
                 limits=kwargs.get("limits"),
-                quota=kwargs.get("quota", self.CURRENT_QUOTA.get()),
+                quota=kwargs.get("quota", CURRENT_QUOTA.get()),
                 stream=kwargs.get("stream", False),
                 on_chunk=kwargs.get("on_chunk"),
                 context_setter=kwargs.get(
@@ -915,12 +818,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         # Set CURRENT_QUOTA for this execution context
         try:
-            self.CURRENT_QUOTA.set(getattr(frame, "quota", None))
+            CURRENT_QUOTA.set(getattr(frame, "quota", None))
         except Exception:
             pass
 
         # Hydrate context references (FSD-Managed State)
-        await self._hydrate_context(getattr(frame, "context", None))
+        await self._hydration_manager.hydrate_context(getattr(frame, "context", None))
 
         step = frame.step
 
@@ -946,8 +849,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             )
 
             # Track task
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
+            self._background_task_manager.add_task(task)
 
             telemetry.logfire.info(f"Launched background step '{step_name}' (task_id={task_id})")
 
@@ -964,7 +866,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
             if isinstance(step, _Cond):
                 outcome = await self._policy_conditional_step(frame)
-                await self._persist_context(getattr(frame, "context", None))
+                await self._hydration_manager.persist_context(getattr(frame, "context", None))
                 if called_with_frame:
                     return outcome
                 return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
@@ -1013,16 +915,17 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 if cache_key:
                     cached_result = await self._cache_backend.get(cache_key)
                     if cached_result is not None:
+                        cached_step_result = cast(StepResult, cached_result)
                         # Ensure cache hit metadata is visible to callers with minimal overhead
-                        md = getattr(cached_result, "metadata_", None)
+                        md = getattr(cached_step_result, "metadata_", None)
                         if md is None:
-                            cached_result.metadata_ = {"cache_hit": True}
+                            cached_step_result.metadata_ = {"cache_hit": True}
                         else:
                             md["cache_hit"] = True
                         # For backend/frame calls return typed outcome; for legacy calls return the StepResult directly
                         if called_with_frame:
-                            return Success(step_result=cached_result)
-                        return cached_result
+                            return Success(step_result=cached_step_result)
+                        return cached_step_result
             except Exception as e:
                 telemetry.logfire.warning(
                     f"Cache error for step {getattr(step, 'name', '<unnamed>')}: {e}"
@@ -1039,7 +942,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 )
 
             outcome = await policy(frame)
-            await self._persist_context(getattr(frame, "context", None))
+            await self._hydration_manager.persist_context(getattr(frame, "context", None))
 
             if called_with_frame:
                 return cast(StepOutcome[StepResult], outcome)
@@ -1057,7 +960,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             raise e
         except PausedException as e:
             # Persist managed state before pausing (critical for HITL flows that prepare state)
-            await self._persist_context(getattr(frame, "context", None))
+            await self._hydration_manager.persist_context(getattr(frame, "context", None))
             if called_with_frame:
                 # Use plain message for backward compatibility (tests expect plain message)
                 return Paused(message=getattr(e, "message", ""))
@@ -1313,10 +1216,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         """
         current_data = data
         current_context = context
-        total_cost = 0.0
-        total_tokens = 0
-        total_latency = 0.0
-        step_history: list[Any] = []
+        # Use the step history tracker
+        history_tracker = StepHistoryTracker()
 
         telemetry.logfire.info(
             f"[Core] _execute_pipeline_via_policies starting with {len(pipeline.steps)} steps"
@@ -1333,7 +1234,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     context=current_context,
                     resources=resources,
                     limits=limits,
-                    quota=self.CURRENT_QUOTA.get(),
+                    quota=CURRENT_QUOTA.get(),
                     stream=False,
                     on_chunk=None,
                     context_setter=(context_setter or (lambda _r, _c: None)),
@@ -1377,10 +1278,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         feedback=f"Unsupported outcome type: {type(outcome).__name__}",
                     )
 
-                total_cost += step_result.cost_usd
-                total_tokens += step_result.token_counts
-                total_latency += step_result.latency_s
-                step_history.append(step_result)
+                history_tracker.add_step_result(step_result)
 
                 current_data = (
                     step_result.output if step_result.output is not None else current_data
@@ -1478,7 +1376,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     branch_context=current_context,
                     metadata_={},
                 )
-                step_history.append(failure_result)
+                history_tracker.add_step_result(failure_result)
                 break
 
         # Best-effort: ensure YAML fields persist on the final context if produced by any step
@@ -1494,7 +1392,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     or not isinstance(gy, str)
                     or not gy.strip()
                 ):
-                    for sr in reversed(step_history):
+                    for sr in reversed(history_tracker.get_history()):
                         out = getattr(sr, "output", None)
                         if isinstance(out, dict):
                             cand = out.get("yaml_text") or out.get("generated_yaml")
@@ -1514,12 +1412,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         except Exception:
             pass
 
-        return PipelineResult(
-            step_history=step_history,
-            total_cost_usd=total_cost,
-            total_tokens=total_tokens,
-            final_pipeline_context=current_context,
-        )
+        return history_tracker.create_pipeline_result(final_context=current_context)
 
     async def _handle_loop_step(
         self,
@@ -1669,7 +1562,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         main_context = current_context
         current_input = data
         attempts = 0
-        step_history: list[StepResult] = []
+        step_history_tracker = StepHistoryTracker()
         last_feedback: Optional[str] = None
         exit_reason: str = "max_loops"
         final_output: Any = None
@@ -1700,7 +1593,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     feedback=fb,
                     branch_context=current_context,
                     metadata_={"iterations": i, "exit_reason": "input_mapper_error"},
-                    step_history=step_history,
+                    step_history=step_history_tracker.get_history(),
                 )
 
             # Prefer executing the body pipeline as a unit to honor overrides
@@ -1726,7 +1619,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 # Append last step result when available
                 try:
                     if pr.step_history:
-                        step_history.extend(pr.step_history)
+                        step_history_tracker.extend_history(pr.step_history)
                         body_output = pr.step_history[-1].output
                 except Exception:
                     pass
@@ -1758,7 +1651,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         0,
                         False,
                     )
-                    step_history.append(sr)
+                    step_history_tracker.add_step_result(sr)
                     if not sr.success:
                         fb = f"Loop body failed: {sr.feedback or 'Unknown error'}"
                         return StepResult(
@@ -1772,7 +1665,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             feedback=fb,
                             branch_context=current_context,
                             metadata_={"iterations": i, "exit_reason": "body_step_error"},
-                            step_history=step_history,
+                            step_history=step_history_tracker.get_history(),
                         )
                     body_output = sr.output
 
@@ -1795,7 +1688,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         feedback=None,
                         branch_context=current_context,
                         metadata_={"iterations": i, "exit_reason": exit_reason},
-                        step_history=step_history,
+                        step_history=step_history_tracker.get_history(),
                     )
             except Exception:
                 # Treat exit condition failure as non-matching; continue
@@ -1832,7 +1725,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             ),
             branch_context=current_context,
             metadata_={"iterations": attempts, "exit_reason": exit_reason},
-            step_history=step_history,
+            step_history=step_history_tracker.get_history(),
         )
 
     async def _handle_cache_step(
@@ -2306,22 +2199,21 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         # Reset fallback chain at top-level invocation to avoid leakage across runs
         try:
             if int(_fallback_depth) == 0:
-                self._fallback_chain.set([])
+                self._fallback_handler.reset()
         except Exception:
             pass
 
         # Fallback loop guard
-        if _fallback_depth > self._MAX_FALLBACK_CHAIN_LENGTH:
+        if _fallback_depth > self._fallback_handler.MAX_CHAIN_LENGTH:
             raise InfiniteFallbackError(
-                f"Fallback chain length exceeded maximum of {self._MAX_FALLBACK_CHAIN_LENGTH}"
+                f"Fallback chain length exceeded maximum of {self._fallback_handler.MAX_CHAIN_LENGTH}"
             )
-        fallback_chain = self._fallback_chain.get([])
+
         if _fallback_depth > 0:
             try:
-                existing_names = [getattr(s, "name", "<unnamed>") for s in fallback_chain]
-                current_name = getattr(step, "name", "<unnamed>")
-                if current_name in existing_names:
+                if self._fallback_handler.is_step_in_chain(step):
                     # Gracefully surface loop detection as a failure outcome
+                    current_name = getattr(step, "name", "<unnamed>")
                     fb_txt = (
                         f"Fallback loop detected: step '{current_name}' already in fallback chain"
                     )
@@ -2341,7 +2233,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     return Failure(
                         error=InfiniteFallbackError(fb_txt), feedback=fb_txt, step_result=failure_sr
                     )
-                self._fallback_chain.set(fallback_chain + [step])
+                self._fallback_handler.push_to_chain(step)
             except Exception:
                 pass
 
@@ -2562,7 +2454,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
                     _estimate = _UsageEstimate(cost_usd=est_cost, tokens=est_tokens)
                     try:
-                        _current_quota = self.CURRENT_QUOTA.get()
+                        _current_quota = CURRENT_QUOTA.get()
                     except Exception:
                         _current_quota = None
                     if _current_quota is not None:
@@ -3375,7 +3267,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
                             fb_step = None
                         if fb_step is not None:
-                            if fb_step in fallback_chain:
+                            if self._fallback_handler.is_step_in_chain(fb_step):
                                 # Graceful handling: return Failure with informative feedback
                                 fb_txt = f"Fallback loop detected: step '{getattr(fb_step, 'name', '<unnamed>')}' already in fallback chain"
                                 loop_sr = StepResult(

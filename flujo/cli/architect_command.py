@@ -357,7 +357,16 @@ def create(  # <--- REVERT BACK TO SYNC
                     fn = helper_fn  # helper may be monkeypatched (tests target this path)
                 else:
                     fn = main_fn
-                pipeline_obj = fn("<injected>") if fn is not None else None
+                pipeline_obj = None
+                if fn is not None:
+                    try:
+                        # Allow tests to monkeypatch the loader; ignore missing sentinel path
+                        pipeline_obj = fn("<injected>")
+                    except (typer.Exit, FileNotFoundError):
+                        pipeline_obj = None
+                    except Exception:
+                        # Fall back to programmatic builder on any injected-path failure
+                        pipeline_obj = None
                 if pipeline_obj is None:
                     # Respect explicit CLI override first
                     try:

@@ -105,12 +105,12 @@ test: .uv ## Run all tests via enhanced runner (robust, two-phase)
 .PHONY: test-fast
 test-fast: .uv ## Run fast tests in parallel with hang guards (excludes slow, veryslow, serial, and benchmark tests)
 	@echo "⚡ Running fast tests (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 8 --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
 
 .PHONY: test-fast-verbose
 test-fast-verbose: .uv ## Run fast tests with verbose output for debugging
 	@echo "🔍 Running fast tests with verbose output (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 --tb --pytest-args "-vv"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 8 --timeout 90 --tb --pytest-args "-vv"
 
 .PHONY: test-fast-serial
 test-fast-serial: .uv ## Run fast tests serially with hang guard (debug parallel issues)
@@ -125,7 +125,7 @@ test-fast-conservative: .uv ## Run fast tests with conservative parallelism (2 w
 .PHONY: test-robust
 test-robust: .uv ## Run tests with enhanced robustness and monitoring
 	@echo "🛡️ Running robust test suite (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 --pytest-args "--maxfail=5 -q"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 8 --timeout 90 --pytest-args "--maxfail=5 -q"
 
 .PHONY: test-stress
 test-stress: .uv ## Run stress tests to identify resource issues
@@ -231,6 +231,10 @@ test-analyze: .uv ## Analyze test collection and categorization
 	@echo "  • Integration tests: $(shell find tests/integration -name "*.py" | wc -l | tr -d ' ') files"
 	@echo "  • Benchmark tests: $(shell find tests/benchmarks -name "*.py" | wc -l | tr -d ' ') files"
 	@echo "  • E2E tests: $(shell find tests/e2e -name "*.py" | wc -l | tr -d ' ') files"
+
+.PHONY: test-workers
+test-workers: .uv ## Show optimal worker count recommendations for your system
+	@uv run python scripts/check_optimal_workers.py
 
 .PHONY: test-failing
 test-failing: .uv ## Run only failing tests to identify issues

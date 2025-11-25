@@ -117,6 +117,7 @@ Flujo's core strength is the **separation between the DSL and the Execution Core
 *   **When adding new step types**: Create a dedicated policy class in `flujo/application/core/step_policies.py`.
 *   **When modifying execution logic**: Update the relevant policy, never the `ExecutorCore` dispatcher.
 *   **When handling new exception types**: Use the `ErrorClassifier` and recovery strategy system.
+*   **Type Safety Requirement**: All policies must have complete type annotations (see Section 12 for mandatory requirements).
 
 ### **❌ Critical Anti-Pattern: Monolithic Execution Logic**
 *   **Never** put step-specific business logic directly in `ExecutorCore.execute()`. The `ExecutorCore` is a dispatcher, not an implementer.
@@ -360,7 +361,7 @@ The framework standardizes on proactive quota budgeting. When touching older cod
 
 ### **✅ Policy Class Structure**
 
-Every policy should follow this pattern with complete type safety:
+Every policy should follow this pattern with complete type safety. **Type annotations are mandatory - see Section 12 for requirements.**
 
 ```python
 from typing import Any, Optional, Dict, List
@@ -368,6 +369,7 @@ from flujo.application.core import ExecutorCore
 from flujo.domain.dsl import Step
 from flujo.domain.models import StepResult, PipelineContext
 from flujo.application.core.execution_frame import ExecutionFrame
+from flujo.type_definitions.common import JSONObject  # ✅ Use JSONObject, not Dict[str, Any]
 
 class DefaultYourStepExecutor:
     """Executor policy for YourStep with complete type safety."""
@@ -376,7 +378,7 @@ class DefaultYourStepExecutor:
         self,
         core: ExecutorCore,
         step: "YourStepType",  # Use string for forward references
-        data: Any,
+        data: Any,  # TODO: Replace with specific type when possible
         context: Optional[PipelineContext],
         execution_id: str,
         step_id: str,
@@ -420,15 +422,16 @@ class DefaultYourStepExecutor:
 Always use the centralized utilities for safety and consistency with proper typing:
 
 ```python
-from typing import Dict, Any, Optional
+from typing import Optional
 from flujo.application.core.context_manager import ContextManager
 from flujo.domain.models import PipelineContext
 from flujo.utils.context import safe_merge_context_updates
+from flujo.type_definitions.common import JSONObject  # ✅ Use JSONObject
 
 async def execute_with_context_isolation(
     self,
     parent_context: PipelineContext,
-    branch_data: Dict[str, Any]
+    branch_data: JSONObject  # ✅ Use JSONObject, not Dict[str, Any]
 ) -> PipelineContext:
     """Execute with proper context isolation and typing."""
 
@@ -440,7 +443,7 @@ async def execute_with_context_isolation(
 
     # For applying a dictionary of updates to an existing context
     # Use explicit typing for the updates dictionary
-    updates_dict: Dict[str, Any] = {"branch_result": branch_data}
+    updates_dict: JSONObject = {"branch_result": branch_data}  # ✅ Use JSONObject
     safe_merge_context_updates(parent_context, updates_dict)
 
     return parent_context
@@ -576,11 +579,14 @@ class WrongLoopStepExecutor:
 
 When adding a new step type to Flujo:
 
+> **⚠️ Type Safety Requirement**: All new step types must follow the type safety patterns from Section 12. Use `JSONObject` from `flujo.type_definitions.common` instead of `Dict[str, Any]`, and ensure all type annotations are complete.
+
 ### **Step 1: Define the Step Class**
 ```python
 # In a new module like flujo/domain/dsl/your_step.py
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from flujo.domain.dsl import Step
+from flujo.type_definitions.common import JSONObject  # ✅ Use JSONObject, not Dict[str, Any]
 from pydantic import BaseModel, Field
 
 class YourStepConfig(BaseModel):
@@ -589,7 +595,7 @@ class YourStepConfig(BaseModel):
     timeout_seconds: float = Field(default=30.0, description="Operation timeout")
     custom_option: Optional[str] = Field(default=None, description="Optional custom setting")
 
-class YourCustomStep(Step[Dict[str, Any], Dict[str, Any]]):
+class YourCustomStep(Step[JSONObject, JSONObject]):  # ✅ Use JSONObject, not Dict[str, Any]
     """Custom step with complete type safety and configuration."""
 
     # Step-specific configuration with explicit typing
@@ -608,22 +614,23 @@ class YourCustomStep(Step[Dict[str, Any], Dict[str, Any]]):
     @property
     def input_type(self) -> type:
         """Return the expected input type for type checking."""
-        return Dict[str, Any]
+        return JSONObject  # ✅ Use JSONObject
 
     @property
     def output_type(self) -> type:
         """Return the expected output type for type checking."""
-        return Dict[str, Any]
+        return JSONObject  # ✅ Use JSONObject
 ```
 
 ### **Step 2: Create the Policy**
 ```python
 # In flujo/application/core/step_policies.py
-from typing import Any, Dict, Optional, List
+from typing import Any, Optional, List
 from flujo.application.core import ExecutorCore
 from flujo.domain.dsl import Step
 from flujo.domain.models import StepResult, PipelineContext
 from flujo.domain.dsl.your_step import YourCustomStep, YourStepConfig
+from flujo.type_definitions.common import JSONObject  # ✅ Use JSONObject
 
 class DefaultYourCustomStepExecutor:
     """Executor policy for YourCustomStep with complete type safety."""
@@ -632,7 +639,7 @@ class DefaultYourCustomStepExecutor:
         self,
         core: ExecutorCore,
         step: YourCustomStep,
-        data: Dict[str, Any],
+        data: JSONObject,  # ✅ Use JSONObject, not Dict[str, Any]
         context: Optional[PipelineContext],
         execution_id: str,
         step_id: str
@@ -656,7 +663,7 @@ class DefaultYourCustomStepExecutor:
         # Implementation following the policy pattern with type safety
         try:
             # Your step logic here with explicit typing
-            result: Dict[str, Any] = await self._process_data(data, config, context)
+            result: JSONObject = await self._process_data(data, config, context)  # ✅ Use JSONObject
             return StepResult(success=True, output=result)
 
         except Exception as e:
@@ -665,10 +672,10 @@ class DefaultYourCustomStepExecutor:
 
     async def _process_data(
         self,
-        data: Dict[str, Any],
+        data: JSONObject,  # ✅ Use JSONObject, not Dict[str, Any]
         config: YourStepConfig,
         context: Optional[PipelineContext]
-    ) -> Dict[str, Any]:
+    ) -> JSONObject:  # ✅ Use JSONObject
         """Process data according to step configuration."""
         # Implementation here
         pass
@@ -722,6 +729,7 @@ async def execute(self, frame: ExecutionFrame) -> Any:
 - Unit tests for the policy class in isolation.
 - Integration tests for the complete step execution within a pipeline.
 - Regression tests for any identified edge cases.
+- **Type Safety Requirement**: Use typed test fixtures from `tests/test_types/fixtures.py` and `tests/test_types/mocks.py` (see Section 12).
 
 ---
 
@@ -1238,9 +1246,176 @@ class PerformanceAwareExecutor:
 
 ---
 
-## **12. Type Safety and Code Quality Maintenance (NEW)**
+## **12. Type Safety and Code Quality Maintenance (MANDATORY)**
 
-*These lessons were learned during the systematic fixing of 161 mypy errors and represent critical engineering principles that every team member must internalize to prevent type annotation debt accumulation.*
+> **⚠️ CRITICAL REQUIREMENT**: All Flujo code must follow the comprehensive type safety standards documented in [`docs/development/type_safety.md`](docs/development/type_safety.md). This guide establishes mandatory patterns, migration strategies, and best practices for maintaining strong type safety throughout the codebase.
+
+### **12.1 Mandatory Type Safety Requirements**
+
+**These requirements are NON-NEGOTIABLE and must be followed for all code contributions:**
+
+1. **Type Annotations Are Mandatory**
+   - All function signatures must have complete type annotations
+   - All local variables must be typed when initialized
+   - All return types must be explicitly declared
+   - No exceptions without documented justification
+
+2. **Type Checking Gate**
+   - **All contributions must pass `make typecheck` with zero errors**
+   - Type errors block PRs from being merged
+   - No `# type: ignore` comments without detailed justification
+   - Run `make typecheck` during development, not just before commits
+
+3. **Type Definitions Module Usage**
+   - **All JSON structures** must use `JSONObject` or `TypedDict` from `flujo.type_definitions`
+   - Import from `flujo.type_definitions.common` for `JSONObject`, `JSONArray`
+   - Import from `flujo.type_definitions.validation` for validation types
+   - Never use `Dict[str, Any]` directly - use `JSONObject` alias
+
+4. **Test Infrastructure Requirements**
+   - **All test fixtures** must use typed factories from `tests/test_types/fixtures.py`
+   - **All mock objects** must use typed factories from `tests/test_types/mocks.py`
+   - Never create ad-hoc test objects with `Any` types
+   - Use predefined test constants when available
+
+5. **API Response Validation**
+   - All external API responses must be validated with typed validators
+   - Use `APIResponseValidator` patterns from the Type Safety Guide
+   - Never process unvalidated external data
+
+6. **Generic Type Preservation**
+   - Use `TypeVar` to preserve type relationships
+   - Never use `Step[Any, Any]` when generics can preserve types
+   - Use `ContextT` consistently instead of `Optional[Any]` for context
+
+### **12.2 Type Safety Infrastructure**
+
+**Available Type Definitions:**
+```python
+# Core type aliases
+from flujo.type_definitions.common import (
+    JSONObject,      # Use instead of Dict[str, Any]
+    JSONArray,       # Use instead of List[Any]
+    BlueprintMetadata,
+    AgentResponseMetadata,
+    ExecutorConfig
+)
+
+# Validation types
+from flujo.type_definitions.validation import (
+    ValidationIssue,
+    ValidationResult,
+    APIResponseValidationResult
+)
+```
+
+**Available Test Utilities:**
+```python
+# Typed test fixtures
+from tests.test_types.fixtures import (
+    create_test_step,
+    create_test_step_result,
+    create_test_pipeline,
+    create_test_usage_limits,
+    TEST_STEP_RESULT_SUCCESS,
+    TEST_STEP_RESULT_FAILURE
+)
+
+# Typed mock factories
+from tests.test_types.mocks import (
+    create_mock_executor_core
+)
+```
+
+### **12.3 Migration Requirements**
+
+**For New Code (Immediate):**
+- Must follow all type safety patterns from the guide
+- Must use `JSONObject` instead of `Dict[str, Any]`
+- Must use typed test fixtures
+- Must pass `make typecheck` with zero errors
+
+**For Existing Code (Gradual Migration):**
+- When touching a file, improve its type safety
+- Replace `Dict[str, Any]` with `JSONObject` when encountered
+- Replace `Any` with specific types or generics when possible
+- Add type annotations to untyped functions
+
+**Migration Priority:**
+1. **High Priority**: Core domain types (`Step`, `PipelineResult`, context types)
+2. **High Priority**: Serialization utilities and JSON handling
+3. **Medium Priority**: Test infrastructure
+4. **Medium Priority**: API integration code
+
+### **12.4 Type Safety Enforcement**
+
+**Pre-Commit Requirements:**
+- `make typecheck` must pass with zero errors
+- `make lint` must pass with zero errors
+- All new `Any` usages must be documented with justification
+
+**Code Review Requirements:**
+- Reviewers must verify type annotations are complete
+- Reviewers must check that `make typecheck` passes
+- Reviewers must verify typed test fixtures are used
+- Reviewers must verify `JSONObject` is used instead of `Dict[str, Any]`
+
+**CI/CD Requirements:**
+- `make typecheck` runs on all PRs
+- Type errors block PR merges
+- Type coverage metrics are tracked
+
+### **12.5 Reference Documentation**
+
+- **Primary Guide**: [`docs/development/type_safety.md`](docs/development/type_safety.md) - Complete type safety patterns and migration strategy
+- **Type Definitions**: `flujo/type_definitions/` - Core type aliases and structures
+- **Test Fixtures**: `tests/test_types/` - Typed test utilities
+
+### **12.6 Common Type Safety Patterns**
+
+**Pattern 1: JSON Structures**
+```python
+# ❌ Bad
+def serialize(data: Dict[str, Any]) -> Dict[str, Any]:
+    ...
+
+# ✅ Good
+from flujo.type_definitions.common import JSONObject
+
+def serialize(data: JSONObject) -> JSONObject:
+    ...
+```
+
+**Pattern 2: Test Fixtures**
+```python
+# ❌ Bad
+def test_step():
+    step = Step(name="test", agent=Mock())  # No types
+
+# ✅ Good
+from tests.test_types.fixtures import create_test_step
+
+def test_step():
+    step = create_test_step(name="test", agent=mock_agent)  # Typed
+```
+
+**Pattern 3: Context Typing**
+```python
+# ❌ Bad
+def execute(step: Step[Any, Any], context: Optional[Any]) -> Any:
+    ...
+
+# ✅ Good
+from flujo.domain.types import ContextT
+
+def execute(
+    step: Step[StepInT, StepOutT],
+    context: Optional[ContextT]
+) -> StepOutT:
+    ...
+```
+
+*These requirements were established to prevent the accumulation of type annotation debt (like the 1,627 `Any` occurrences we're systematically addressing) and ensure Flujo maintains strong type safety throughout its codebase.*
 
 ## **13. Policy Contract Integrity and Change Localization (NEW)**
 
@@ -1329,7 +1504,8 @@ class ExplicitContextManager:
         """Execute with explicit context validity tracking."""
         
         # Track context changes explicitly
-        context_updates: Dict[str, Any] = {}
+        from flujo.type_definitions.common import JSONObject  # ✅ Use JSONObject
+        context_updates: JSONObject = {}  # ✅ Use JSONObject, not Dict[str, Any]
         
         try:
             result: Any = await self._process_with_explicit_changes(data, context, context_updates)
@@ -1348,7 +1524,7 @@ class ExplicitContextManager:
         self, 
         data: Any, 
         context: Optional[PipelineContext], 
-        updates: Dict[str, Any]
+        updates: JSONObject  # ✅ Use JSONObject, not Dict[str, Any]
     ) -> Any:
         """Process data with explicit context update tracking."""
         # All context changes are recorded in the updates dict
@@ -1509,17 +1685,24 @@ class LocalizedChangePolicy:
 
 ### **🎯 LESSON 19: Never Let Type Errors Accumulate**
 
+> **MANDATORY**: Follow the Type Safety Guide patterns: [`docs/development/type_safety.md`](docs/development/type_safety.md)
+
 **❌ The Dangerous Anti-Pattern:**
 - Adding new code without type annotations
 - Ignoring mypy errors during development
 - Running `make all` only before releases
 - Allowing type annotation debt to accumulate (like the 161 errors we just fixed)
+- Using `Dict[str, Any]` instead of `JSONObject` from `flujo.type_definitions`
+- Creating untyped test fixtures instead of using `tests/test_types/fixtures.py`
 
 **✅ The Engineering Excellence Pattern:**
 - **Every commit must pass `make all`** - no exceptions
 - **Fix type errors immediately** when they appear
 - **Run type checking during development**, not just before commits
 - **Treat mypy errors as blocking issues**, not technical debt
+- **Use typed patterns from the Type Safety Guide** for all new code
+- **Import from `flujo.type_definitions`** for JSON structures and validation types
+- **Use typed test fixtures** from `tests/test_types/` for all new tests
 
 ### **🎯 LESSON 20: Type Annotation Standards**
 
@@ -1739,20 +1922,36 @@ class DefaultYourStepExecutor:
 
 Before committing any code changes, ask yourself:
 
+### **Type Safety Requirements (MANDATORY - See Section 12)**
+- [ ] **Does `make typecheck` pass with 0 errors?** This is a hard requirement - no exceptions
+- [ ] **Are all function signatures fully typed?** All parameters and return types must have annotations
+- [ ] **Are all local variables typed?** Use explicit type annotations: `var: Type = value`
+- [ ] **Did I use `JSONObject` instead of `Dict[str, Any]`?** Import from `flujo.type_definitions.common`
+- [ ] **Did I use typed test fixtures?** Use factories from `tests/test_types/fixtures.py` and `tests/test_types/mocks.py`
+- [ ] **Are all `Any` usages justified?** Document why `Any` is necessary if used
+- [ ] **Did I preserve type relationships with generics?** Use `TypeVar` instead of `Any` when possible
+- [ ] **Did I validate external data?** Use typed validation patterns for API responses
+- [ ] **Did I follow the Type Safety Guide?** Review [`docs/development/type_safety.md`](docs/development/type_safety.md) for applicable patterns
+
+### **Code Quality Requirements**
+- [ ] **Does `make all` pass with 0 errors?** This includes typecheck, lint, and tests
 - [ ] **Did I change any test expectations?** If yes, can I justify why the old expectation was wrong?
 - [ ] **Did I adjust any performance thresholds?** If yes, did I investigate and fix the underlying performance issue first?
 - [ ] **Are all test failures caused by legitimate bugs in my code?** Have I fixed the root causes?
 - [ ] **Did I follow first principles debugging?** Did I trace execution paths and find the real issue?
 - [ ] **Will future developers understand why this change was made?** Is it documented in commit messages?
-- [ ] **Does `make all` pass with 0 errors?** Have I fixed all type and linting issues?
-- [ ] **Are all my functions and variables properly typed?** Have I added complete type annotations?
-- [ ] **Did I run type checking during development?** Or did I wait until the end?
-- [ ] **Are there any `Any` types that could be more specific?** Have I minimized type ambiguity?
-- [ ] **Does this change introduce new type errors?** Have I verified mypy is happy?
+
+### **Architecture Requirements**
+- [ ] **Did I follow the policy-driven architecture?** Is step-specific logic in policies, not ExecutorCore?
+- [ ] **Did I handle control flow exceptions correctly?** Re-raise `PausedException`, `PipelineAbortSignal`, `InfiniteRedirectError`
+- [ ] **Did I use context isolation for complex steps?** Use `ContextManager.isolate()` for loops and parallel steps
+- [ ] **Did I follow quota patterns?** Reserve → Execute → Reconcile for resource usage
 
 ---
 
-This guide ensures that all Flujo core team members build features that are architecturally consistent, performant, maintainable, and **type-safe**. The patterns here have been battle-tested and should be followed religiously to maintain Flujo's quality, reliability, and prevent the accumulation of technical debt like the 161 mypy errors we just systematically resolved.
+This guide ensures that all Flujo core team members build features that are architecturally consistent, performant, maintainable, and **type-safe**. The patterns here have been battle-tested and should be followed religiously to maintain Flujo's quality, reliability, and prevent the accumulation of technical debt.
+
+**Type Safety is Non-Negotiable**: All code must follow the comprehensive type safety standards in Section 12 and [`docs/development/type_safety.md`](docs/development/type_safety.md). This includes mandatory use of `JSONObject` from `flujo.type_definitions`, typed test fixtures from `tests/test_types/`, and passing `make typecheck` with zero errors. These requirements prevent the accumulation of type annotation debt (currently addressing 1,627 `Any` occurrences) and ensure Flujo maintains strong type safety throughout its codebase.
 
 ---
 
