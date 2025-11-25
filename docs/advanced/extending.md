@@ -138,3 +138,78 @@ In this example, `flujo` automatically injects the `MyContext` and `MyResources`
 ### Transactional resources (per-attempt)
 
 If your `AppResources` object implements a sync or async context manager, Flujo will enter it for **each step attempt** and exit it afterward. This lets you bind a database session/transaction to a single attempt (including retries and parallel branches) without holding connections across the entire run. Make sure the resource is re-entrant or can hand out per-attempt handles (e.g., via a pool) so parallel steps do not trample shared state.
+
+## State Providers for External Data
+
+For large datasets (knowledge graphs, vector stores, conversation history), use `StateProvider` and `ContextReference` instead of storing data directly in context. This keeps your context lightweight and serializable.
+
+### Defining a StateProvider
+
+```python
+from flujo.domain.interfaces import StateProvider
+from typing import List
+
+class KnowledgeGraphProvider(StateProvider):
+    """Manages external knowledge graph data."""
+    
+    def __init__(self, db_connection):
+        self._db = db_connection
+    
+    async def load(self, key: str) -> List[dict]:
+        """Load graph data from database."""
+        return await self._db.fetch_all(
+            "SELECT * FROM nodes WHERE graph_key = ?", key
+        )
+    
+    async def save(self, key: str, data: List[dict]) -> None:
+        """Persist graph updates to database."""
+        await self._db.execute_many(
+            "INSERT OR REPLACE INTO nodes (graph_key, data) VALUES (?, ?)",
+            [(key, node) for node in data]
+        )
+```
+
+### Using ContextReference
+
+```python
+from flujo.domain.models import PipelineContext, ContextReference
+from pydantic import Field
+
+class MyContext(PipelineContext):
+    # Lightweight pointer - not the actual data
+    knowledge: ContextReference[List[dict]] = Field(
+        default_factory=lambda: ContextReference(
+            provider_id="kg_provider",  # Maps to state_providers key
+            key="main_graph"            # Passed to provider.load/save
+        )
+    )
+```
+
+### Registering Providers
+
+```python
+runner = Flujo(
+    pipeline=my_pipeline,
+    context_model=MyContext,
+    state_providers={
+        "kg_provider": KnowledgeGraphProvider(my_db)
+    }
+)
+```
+
+### Accessing Data in Steps
+
+```python
+@step
+async def search_graph(query: str, *, context: MyContext) -> str:
+    # Automatically hydrated from provider
+    graph_data = context.knowledge.get()
+    
+    # Modify and set back (persisted after step completes)
+    graph_data.append({"query": query, "timestamp": datetime.now()})
+    context.knowledge.set(graph_data)
+    
+    return f"Processed with {len(graph_data)} nodes"
+```
+
+See `examples/state_providers_demo.py` for a complete working example.

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 import os
 
 from flujo.application.core.default_components import (
@@ -23,6 +23,7 @@ from flujo.state.backends.memory import InMemoryBackend
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.state.backends.base import StateBackend
 from flujo.utils.config import get_settings, Settings
+from flujo.domain.interfaces import StateProvider
 
 
 class ExecutorFactory:
@@ -34,10 +35,12 @@ class ExecutorFactory:
         telemetry: ITelemetry | None = None,
         cache_backend: ICacheBackend | None = None,
         optimization_config: OptimizationConfig | None = None,
+        state_providers: Optional[Dict[str, StateProvider]] = None,
     ) -> None:
         self._telemetry = telemetry
         self._cache_backend = cache_backend
         self._optimization_config = optimization_config
+        self._state_providers = state_providers or {}
 
     def create_executor(self) -> ExecutorCore[Any]:
         """Return a configured ExecutorCore."""
@@ -53,6 +56,7 @@ class ExecutorFactory:
             telemetry=self._telemetry or DefaultTelemetry(),
             optimization_config=self._optimization_config,
             estimator_factory=build_default_estimator_factory(),
+            state_providers=self._state_providers,
         )
 
 

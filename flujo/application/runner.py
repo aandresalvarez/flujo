@@ -54,6 +54,7 @@ from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend
+from ..domain.interfaces import StateProvider
 from ..state import StateBackend, WorkflowState
 from ..infra.registry import PipelineRegistry
 
@@ -247,6 +248,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         pipeline_name: Optional[str] = None,
         enable_tracing: bool = True,
         pipeline_id: Optional[str] = None,
+        state_providers: Optional[Dict[str, StateProvider]] = None,
     ) -> None:
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
@@ -339,7 +341,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             # Defensive fallback: preserve provided limits
             self.usage_limits = usage_limits
 
-        self._executor_factory = executor_factory or ExecutorFactory()
+        # Store state providers for ContextReference hydration
+        self._state_providers = state_providers or {}
+
+        # Pass state_providers to ExecutorFactory for ContextReference support
+        self._executor_factory = executor_factory or ExecutorFactory(
+            state_providers=self._state_providers
+        )
         self._backend_factory = backend_factory or BackendFactory(self._executor_factory)
 
         combined_hooks: list[HookCallable] = []
