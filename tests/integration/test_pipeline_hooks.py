@@ -222,6 +222,56 @@ async def test_hooks_receive_context_and_resources(
 
 
 @pytest.mark.asyncio
+async def test_pipeline_level_hooks_are_used_without_runner_wiring(
+    call_recorder: List[HookPayload],
+) -> None:
+    async def recorder(payload: HookPayload) -> None:
+        await generic_recorder_hook(call_recorder, payload)
+
+    pipeline = Pipeline.model_validate(
+        {
+            "steps": [
+                Step.model_validate(
+                    {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
+                )
+            ],
+            "hooks": [recorder],
+        }
+    )
+
+    runner = create_test_flujo(pipeline)
+    await gather_result(runner, "start")
+
+    events = [p.event_name for p in call_recorder]
+    assert events == ["pre_run", "pre_step", "post_step", "post_run"]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_on_finish_hooks_only_fire_on_post_run(
+    call_recorder: List[HookPayload],
+) -> None:
+    async def finish_only(payload: HookPayload) -> None:
+        call_recorder.append(payload)
+
+    pipeline = Pipeline.model_validate(
+        {
+            "steps": [
+                Step.model_validate(
+                    {"name": "s1", "agent": cast(AsyncAgentProtocol[Any, Any], StubAgent(["ok"]))}
+                )
+            ],
+            "on_finish": [finish_only],
+        }
+    )
+
+    runner = create_test_flujo(pipeline)
+    await gather_result(runner, "start")
+
+    events = [p.event_name for p in call_recorder]
+    assert events == ["post_run"]
+
+
+@pytest.mark.asyncio
 async def test_post_run_abort_does_not_mask_errors() -> None:
     """Abort signal in post_run should not hide UsageLimitExceededError."""
     limits = UsageLimits(total_cost_usd_limit=0.0, total_tokens_limit=None)

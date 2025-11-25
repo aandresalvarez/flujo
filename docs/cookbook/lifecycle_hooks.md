@@ -6,7 +6,19 @@ You need to integrate custom logic into the pipeline's execution flow. For examp
 
 ## The Solution
 
-The `Flujo` runner accepts an optional `hooks` parameter, which is a list of `async` functions. Hooks receive **typed payload objects** describing the event. You can raise `PipelineAbortSignal` from a hook to gracefully stop the run.
+The `Flujo` runner accepts an optional `hooks` parameter, which is a list of `async` functions. Hooks receive **typed payload objects** describing the event. You can raise `PipelineAbortSignal` from a hook to gracefully stop the run. You can attach hooks either when **building the pipeline** or when **instantiating the runner**:
+
+```python
+pipeline = Pipeline(
+    steps=[...],
+    hooks=[log_hook],            # runs for all events
+    on_finish=[janitor_hook],    # sugar: runs only on post_run
+)
+
+runner = Flujo(pipeline)  # pipeline hooks are picked up automatically
+# or pass extras/overrides here:
+# runner = Flujo(pipeline, hooks=[another_hook])
+```
 
 ```python
 from unittest.mock import MagicMock

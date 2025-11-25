@@ -348,8 +348,12 @@ later steps.
 
 ## Managed Resources
 
-You can also pass a long-lived resources container to the runner. Declare a
-keyword-only `resources` argument in your agents or plugins to use it.
+You can also pass a shared resources container to the runner. Declare a
+keyword-only `resources` argument in your agents or plugins to use it. If the
+`resources` object implements a sync or async context manager, Flujo will
+enter/exit it **per step attempt** (including retries and parallel branches),
+so you can bind a database transaction to a single attempt and rollback on
+failure.
 
 ```python
 class MyResources(AppResources):
@@ -361,6 +365,12 @@ async def query(data: int, *, resources: MyResources) -> str:
 
 runner = Flujo(query, resources=my_resources)
 ```
+
+Notes:
+- Context managers must be re-entrant or hand out per-attempt handles so
+  parallel steps do not fight over shared state.
+- If your resources are plain containers (no `__enter__/__aenter__`), they are
+  still injected as-is without additional lifecycle hooks.
 
 ### Conditional Branching
 

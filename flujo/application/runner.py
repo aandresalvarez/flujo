@@ -301,6 +301,25 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.initial_context_data: Dict[str, Any] = initial_context_data or {}
         self.resources = resources
 
+        def _post_run_only(hook: HookCallable) -> HookCallable:
+            async def _wrapped(payload: Any) -> None:
+                if getattr(payload, "event_name", None) == "post_run":
+                    await hook(payload)
+
+            return _wrapped
+
+        pipeline_hooks: list[HookCallable] = []
+        pipeline_finish_hooks: list[HookCallable] = []
+        try:
+            if self.pipeline is not None:
+                pipeline_hooks.extend(list(getattr(self.pipeline, "hooks", []) or []))
+                pipeline_finish_hooks.extend(
+                    [_post_run_only(h) for h in getattr(self.pipeline, "on_finish", []) or []]
+                )
+        except Exception:
+            pipeline_hooks = []
+            pipeline_finish_hooks = []
+
         # Resolve budget limits from TOML and enforce precedence/min rules (FSD-019)
         try:
             from ..infra.config_manager import ConfigManager
@@ -323,7 +342,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self._executor_factory = executor_factory or ExecutorFactory()
         self._backend_factory = backend_factory or BackendFactory(self._executor_factory)
 
-        self.hooks: list[Any] = list(hooks) if hooks else []
+        combined_hooks: list[HookCallable] = []
+        combined_hooks.extend(pipeline_hooks)
+        combined_hooks.extend(pipeline_finish_hooks)
+        if hooks:
+            combined_hooks.extend(list(hooks))
+        self.hooks: list[Any] = combined_hooks
         # Centralized tracing/bootstrap: helper attaches trace manager and console tracer hooks.
         self._trace_manager = setup_tracing(
             enable_tracing=enable_tracing,

@@ -12,7 +12,7 @@ from typing import (
     Dict,
 )
 import logging
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from ..pipeline_validation import ValidationFinding, ValidationReport
 from ..models import BaseModel
@@ -20,6 +20,7 @@ from flujo.domain.models import PipelineResult
 from ...exceptions import ConfigurationError
 from .step import Step, HumanInTheLoopStep
 from typing import TYPE_CHECKING
+from ..types import HookCallable
 
 if TYPE_CHECKING:
     from .loop import LoopStep
@@ -45,6 +46,8 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     """
 
     steps: Sequence[Step[Any, Any]]
+    hooks: list[HookCallable] = Field(default_factory=list)
+    on_finish: list[HookCallable] = Field(default_factory=list)
 
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
@@ -57,7 +60,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
     @classmethod
     def from_step(cls, step: Step[PipeInT, PipeOutT]) -> "Pipeline[PipeInT, PipeOutT]":
-        return cls.model_construct(steps=[step])
+        return cls.model_construct(steps=[step], hooks=[], on_finish=[])
 
     # Preserve concrete Step subclasses (e.g., CacheStep, HumanInTheLoopStep)
     @field_validator("steps", mode="before")
@@ -74,12 +77,20 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     def __rshift__(
         self, other: Step[PipeOutT, NewPipeOutT] | "Pipeline[PipeOutT, NewPipeOutT]"
     ) -> "Pipeline[PipeInT, NewPipeOutT]":
+        base_hooks = list(getattr(self, "hooks", []) or [])
+        base_finish = list(getattr(self, "on_finish", []) or [])
         if isinstance(other, Step):
             new_steps = list(self.steps) + [other]
-            return Pipeline.model_construct(steps=new_steps)
+            return Pipeline.model_construct(
+                steps=new_steps, hooks=base_hooks, on_finish=base_finish
+            )
         if isinstance(other, Pipeline):
             new_steps = list(self.steps) + list(other.steps)
-            return Pipeline.model_construct(steps=new_steps)
+            merged_hooks = base_hooks + list(getattr(other, "hooks", []) or [])
+            merged_finish = base_finish + list(getattr(other, "on_finish", []) or [])
+            return Pipeline.model_construct(
+                steps=new_steps, hooks=merged_hooks, on_finish=merged_finish
+            )
         raise TypeError("Can only chain Pipeline with Step or Pipeline")
 
     # ------------------------------------------------------------------
@@ -1449,3 +1460,12 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
         runner: Flujo[PipeInT, PipeOutT, PipelineContext] = Flujo(self)
         return runner.as_step(name, inherit_context=inherit_context, **kwargs)
+
+
+# Resolve forward references for hook payloads
+try:
+    from ..events import HookPayload as _HookPayload  # pragma: no cover
+
+    Pipeline.model_rebuild(_types_namespace={"HookPayload": _HookPayload})
+except Exception:  # pragma: no cover - defensive fallback
+    Pipeline.model_rebuild()
