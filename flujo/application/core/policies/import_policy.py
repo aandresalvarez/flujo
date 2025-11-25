@@ -247,7 +247,10 @@ class DefaultImportStepExecutor:
                             if isinstance(sp, dict):
                                 sp["status"] = "paused"
                                 msg = getattr(e, "message", None)
-                                sp["pause_message"] = msg if isinstance(msg, str) else str(e)
+                                # Use plain message for backward compatibility
+                                sp["pause_message"] = (
+                                    msg if isinstance(msg, str) else getattr(e, "message", "")
+                                )
                         except Exception:
                             pass
                 else:
@@ -267,7 +270,7 @@ class DefaultImportStepExecutor:
 
             # Proxy child HITL to parent when requested
             if propagate:
-                return Paused(message=str(e))
+                return Paused(message=getattr(e, "message", ""))
             # Legacy/opt-out: do not pause parent; return empty success result
             parent_sr = StepResult(
                 name=step.name,

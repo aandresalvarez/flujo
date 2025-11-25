@@ -981,7 +981,11 @@ class ExecutionManager(Generic[ContextT]):
                     if context is not None:
                         if hasattr(context, "scratchpad"):
                             context.scratchpad["status"] = "paused"
-                            context.scratchpad["pause_message"] = str(e)
+                            # Use plain message for backward compatibility (tests expect plain message)
+                            # Only set if not already set (loop policy or recipe may have set it already)
+                            if "pause_message" not in context.scratchpad:
+                                context.scratchpad["pause_message"] = getattr(e, "message", "")
+                            # If already set, preserve it (loop policy/recipe already set it correctly)
                     # Do not append the in‑flight step_result for pauses to keep
                     # history aligned with completed steps only.
                     # Best-effort: record latest step result for pause diagnostics

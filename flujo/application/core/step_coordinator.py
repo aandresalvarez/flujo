@@ -411,8 +411,10 @@ class StepCoordinator(Generic[ContextT]):
                                 try:
                                     if isinstance(context, PipelineContext):
                                         context.scratchpad["status"] = "paused"
-                                        context.scratchpad["pause_message"] = str(
-                                            getattr(step_outcome, "message", "Paused for HITL")
+                                        # Use plain message for backward compatibility
+                                        msg = getattr(step_outcome, "message", "Paused for HITL")
+                                        context.scratchpad["pause_message"] = (
+                                            msg if isinstance(msg, str) else str(msg)
                                         )
                                         scratch = context.scratchpad
                                         if "paused_step_input" not in scratch:
@@ -491,7 +493,11 @@ class StepCoordinator(Generic[ContextT]):
                 # Handle pause for human input; mark context and stop executing current step
                 if isinstance(context, PipelineContext):
                     context.scratchpad["status"] = "paused"
-                    context.scratchpad["pause_message"] = str(e)
+                    # Use plain message for backward compatibility (tests expect plain message)
+                    # Only set if not already set (loop policy or recipe may have set it already)
+                    if "pause_message" not in context.scratchpad:
+                        context.scratchpad["pause_message"] = getattr(e, "message", "")
+                    # If already set, preserve it (loop policy/recipe already set it correctly)
                     scratch = context.scratchpad
                     if "paused_step_input" not in scratch:
                         scratch["paused_step_input"] = data

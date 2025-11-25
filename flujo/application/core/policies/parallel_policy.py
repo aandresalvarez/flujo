@@ -113,13 +113,23 @@ class DefaultParallelStepExecutor:
         all_successful = True
         failure_messages: List[str] = []
         # Prepare branch contexts with proper isolation
+        # Phase 1: Mandatory isolation for parallel branches with verification
         for branch_name, branch_pipeline in parallel_step.branches.items():
-            # Use ContextManager for proper deep isolation
+            # Use ContextManager for proper deep isolation with purpose tracking
             branch_context = (
-                ContextManager.isolate(context, include_keys=parallel_step.context_include_keys)
+                ContextManager.isolate(
+                    context,
+                    include_keys=parallel_step.context_include_keys,
+                    purpose=f"parallel_branch:{branch_name}",
+                )
                 if context is not None
                 else None
             )
+
+            # Phase 1: Verify isolation before execution (strict mode)
+            if context is not None and branch_context is not None:
+                ContextManager.verify_isolation(context, branch_context)
+
             branch_contexts[branch_name] = branch_context
 
         def _merge_branch_context_into_parent(branch_ctx: Any) -> None:
@@ -161,6 +171,10 @@ class DefaultParallelStepExecutor:
                         quota_token = core.CURRENT_QUOTA.set(branch_quota)
                 except Exception:
                     quota_token = None
+                # Phase 1: Verify isolation before execution (strict mode)
+                if context is not None and branch_context is not None:
+                    ContextManager.verify_isolation(context, branch_context)
+
                 if step_executor is not None:
                     target = branch_pipeline
                     try:
@@ -461,7 +475,7 @@ class DefaultParallelStepExecutor:
                 try:
                     res = d.result()
                 except PausedException as paused_exc:
-                    pause_message = str(paused_exc)
+                    pause_message = getattr(paused_exc, "message", "")
                     pause_branch = branch_hint
                     break
                 except PipelineAbortSignal as abort_exc:

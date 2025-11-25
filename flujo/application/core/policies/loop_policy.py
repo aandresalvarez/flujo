@@ -428,9 +428,19 @@ class DefaultLoopStepExecutor:
             prev_current_context = current_context
             prev_cumulative_cost = cumulative_cost
             prev_cumulative_tokens = cumulative_tokens
+            # Phase 1: Mandatory isolation for loop iterations with verification
             iteration_context = (
-                ContextManager.isolate(current_context) if current_context is not None else None
+                ContextManager.isolate(
+                    current_context,
+                    purpose=f"loop_iteration:{loop_step.name}:{iteration_count}",
+                )
+                if current_context is not None
+                else None
             )
+
+            # Phase 1: Verify isolation before execution (strict mode)
+            if current_context is not None and iteration_context is not None:
+                ContextManager.verify_isolation(current_context, iteration_context)
             # Run compiled init ops once before the first iteration on the isolated context.
             # This follows idempotency and control-flow safety: operate on the iteration clone,
             # and re-raise control-flow exceptions without conversion.
@@ -988,11 +998,71 @@ class DefaultLoopStepExecutor:
                             )
 
                             # Merge any context updates from the iteration context before updating status
+                            # CRITICAL: Preserve pause_message if already set on current_context (from _iter_mapper)
                             if iteration_context is not None and current_context is not None:
                                 try:
                                     from flujo.utils.context import safe_merge_context_updates
 
+                                    # Save pause_message from current_context before merge (recipe may have set it)
+                                    # Also check iteration_context to avoid overwriting with formatted message
+                                    preserved_pause_message = None
+                                    iteration_pause_message = None
+                                    if hasattr(current_context, "scratchpad") and isinstance(
+                                        current_context.scratchpad, dict
+                                    ):
+                                        preserved_pause_message = current_context.scratchpad.get(
+                                            "pause_message"
+                                        )
+                                    if hasattr(iteration_context, "scratchpad") and isinstance(
+                                        iteration_context.scratchpad, dict
+                                    ):
+                                        iteration_pause_message = iteration_context.scratchpad.get(
+                                            "pause_message"
+                                        )
+                                        # Remove formatted pause_message from iteration_context to prevent overwrite
+                                        if (
+                                            iteration_pause_message
+                                            and iteration_pause_message != preserved_pause_message
+                                        ):
+                                            # If iteration_context has a different (likely formatted) pause_message, remove it
+                                            iteration_context.scratchpad.pop("pause_message", None)
+
+                                    # Phase 1: Verify isolation before merge (strict mode)
+                                    if (
+                                        current_context is not None
+                                        and iteration_context is not None
+                                    ):
+                                        ContextManager.verify_isolation(
+                                            current_context, iteration_context
+                                        )
                                     safe_merge_context_updates(current_context, iteration_context)
+
+                                    # Restore preserved pause_message if it was set (recipe set it correctly)
+                                    # Prefer current_context's plain message over iteration_context's formatted one
+                                    # CRITICAL: Also ensure the original context parameter has pause_message set
+                                    # so execution_manager sees it when it catches the re-raised exception
+                                    plain_msg = (
+                                        preserved_pause_message
+                                        if preserved_pause_message is not None
+                                        else getattr(e, "message", "")
+                                    )
+                                    if hasattr(current_context, "scratchpad") and isinstance(
+                                        current_context.scratchpad, dict
+                                    ):
+                                        # Always set plain message on current_context
+                                        current_context.scratchpad["pause_message"] = plain_msg
+                                    # Also set on original context parameter (execution_manager uses it)
+                                    if context is not None:
+                                        if hasattr(context, "scratchpad") and isinstance(
+                                            context.scratchpad, dict
+                                        ):
+                                            # Only set if not already set (preserve recipe's plain message)
+                                            if (
+                                                "pause_message" not in context.scratchpad
+                                                or context.scratchpad.get("pause_message")
+                                                != plain_msg
+                                            ):
+                                                context.scratchpad["pause_message"] = plain_msg
                                     # Ensure key scalar fields propagate even if not declared on the model
                                     try:
                                         for fname in ("counter", "call_count", "current_value"):
@@ -1017,11 +1087,30 @@ class DefaultLoopStepExecutor:
                                         f"LoopStep '{loop_step.name}' safe_merge failed, using fallback: {merge_error}"
                                     )
                                     try:
+                                        # Phase 1: Preserve pause_message before fallback merge
+                                        preserved_pause_message_fallback = None
+                                        if hasattr(current_context, "scratchpad") and isinstance(
+                                            current_context.scratchpad, dict
+                                        ):
+                                            preserved_pause_message_fallback = (
+                                                current_context.scratchpad.get("pause_message")
+                                            )
+
                                         merged_context = ContextManager.merge(
                                             current_context, iteration_context
                                         )
                                         if merged_context:
                                             current_context = merged_context
+
+                                        # Restore preserved pause_message if it was set (recipe set it correctly)
+                                        if (
+                                            preserved_pause_message_fallback is not None
+                                            and hasattr(current_context, "scratchpad")
+                                            and isinstance(current_context.scratchpad, dict)
+                                        ):
+                                            current_context.scratchpad["pause_message"] = (
+                                                preserved_pause_message_fallback
+                                            )
                                     except (
                                         ValueError,
                                         TypeError,
@@ -1052,7 +1141,23 @@ class DefaultLoopStepExecutor:
                                     current_context.scratchpad["loop_last_output"] = current_data
                                 except Exception:
                                     pass
-                                current_context.scratchpad["pause_message"] = str(e)
+                                # Use plain message for backward compatibility (tests expect plain message)
+                                # Only set if not already set (recipe may have set it already with plain message)
+                                # Recipes like agentic_loop set pause_message before raising the exception
+                                # CRITICAL: Ensure pause_message is set on both current_context and original context
+                                # so execution_manager sees it when it catches the re-raised exception
+                                plain_msg = getattr(e, "message", "")
+                                if "pause_message" not in current_context.scratchpad:
+                                    # Use plain message from exception, not formatted str(e)
+                                    current_context.scratchpad["pause_message"] = plain_msg
+                                # Also ensure original context parameter has pause_message (execution_manager uses it)
+                                if context is not None and context is not current_context:
+                                    if hasattr(context, "scratchpad") and isinstance(
+                                        context.scratchpad, dict
+                                    ):
+                                        if "pause_message" not in context.scratchpad:
+                                            context.scratchpad["pause_message"] = plain_msg
+                                # If already set, preserve it (recipe already set it correctly)
                                 body_len = len(loop_body_steps)
                                 resume_iteration = iteration_count
                                 paused_step_is_hitl = isinstance(step, HumanInTheLoopStep)

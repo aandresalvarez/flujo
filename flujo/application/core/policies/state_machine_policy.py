@@ -197,7 +197,10 @@ class StateMachinePolicyExecutor:
                                 try:
                                     scd["status"] = "paused"
                                     msg = getattr(e, "message", None)
-                                    scd["pause_message"] = msg if isinstance(msg, str) else str(e)
+                                    # Use plain message for backward compatibility
+                                    scd["pause_message"] = (
+                                        msg if isinstance(msg, str) else getattr(e, "message", "")
+                                    )
                                 except Exception:
                                     pass
                         # Best‑effort: reflect pause metadata on the outer context as well so
@@ -212,12 +215,14 @@ class StateMachinePolicyExecutor:
                                     context.scratchpad["current_state"] = target
                                     context.scratchpad["next_state"] = target
                                 context.scratchpad.setdefault("status", "paused")
-                                if not context.scratchpad.get("pause_message"):
+                                # Only set if not already set (loop policy or recipe may have set it already)
+                                if "pause_message" not in context.scratchpad:
                                     context.scratchpad["pause_message"] = (
-                                        getattr(e, "message", None)
+                                        getattr(e, "message", "")
                                         if isinstance(getattr(e, "message", None), str)
-                                        else str(e)
+                                        else getattr(e, "message", "")
                                     )
+                                # If already set, preserve it (loop policy/recipe already set it correctly)
                         except Exception:
                             pass
                         telemetry.logfire.info(

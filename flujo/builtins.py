@@ -2010,16 +2010,36 @@ def _register_builtins() -> None:
         )
 
         # HITL: prompt user for approval
-        async def ask_user(question: Optional[str] = None) -> str:
+        async def ask_user(
+            question: Optional[str] = None, *, context: DomainBaseModel | None = None
+        ) -> str:
             """Ask the user for input, with non-interactive fallback.
 
             Behavior:
-            - If stdin is non-interactive (e.g., piped input), return the provided
-              value directly without prompting. This enables CLI usage like:
-                  echo "goal" | flujo run pipeline.yaml
-            - Otherwise, prompt interactively using the question (or a default).
+            1) If context.initial_prompt is set (from piped input or FLUJO_INPUT), use it
+            2) If stdin is non-interactive (e.g., piped input), return the provided
+               value directly without prompting. This enables CLI usage like:
+                   echo "goal" | flujo run pipeline.yaml
+            3) Otherwise, prompt interactively using the question (or a default).
+
+            Args:
+                question: The question to ask the user (optional)
+                context: Pipeline context (injected automatically by Flujo)
+
+            Returns:
+                User input string
             """
             try:
+                # CRITICAL FIX: Check context.initial_prompt first (from piped input)
+                # This handles the case where stdin was already consumed by resolve_initial_input()
+                if context is not None:
+                    try:
+                        initial_prompt = getattr(context, "initial_prompt", None)
+                        if initial_prompt and str(initial_prompt).strip():
+                            return str(initial_prompt).strip()
+                    except Exception:
+                        pass
+
                 import sys as _sys
 
                 # Non-interactive: treat provided value as the answer and do not prompt

@@ -270,42 +270,72 @@ def resolve_initial_input(input_data: Optional[str]) -> str:
     3) If stdin is piped (non-TTY), read from stdin.
     4) Fallback to empty string (pipelines that don't require input).
 
+    CRITICAL: This function must be called BEFORE any other stdin reads.
+    Once stdin is consumed, it cannot be read again.
+
     Args:
         input_data: The value provided via ``--input`` option, if any.
 
     Returns:
         The resolved input string (possibly empty).
     """
+    from ..infra import telemetry
+
+    logfire = telemetry.logfire
+
     # 1) Explicit CLI value takes precedence
     if input_data is not None:
         # Conventional "-" means read from stdin
         if input_data.strip() == "-":
             try:
-                return sys.stdin.read().strip()
-            except Exception:
+                content = sys.stdin.read()
+                logfire.debug(f"[INPUT] Read from stdin via --input -: {len(content)} chars")
+                return content.strip()
+            except Exception as e:
+                logfire.warning(f"[INPUT] Failed to read stdin via --input -: {e}")
                 return ""
+        logfire.debug(f"[INPUT] Using explicit --input value: {len(input_data)} chars")
         return input_data
 
     # 2) Environment variable fallback
     try:
         env_val = os.environ.get("FLUJO_INPUT")
         if isinstance(env_val, str) and env_val != "":
+            logfire.debug(f"[INPUT] Using FLUJO_INPUT env var: {len(env_val)} chars")
             return env_val
     except Exception:
         pass
 
-    # 3) Read from stdin if piped (or when isatty is unavailable)
+    # 3) Check if stdin is piped (non-TTY)
+    # CRITICAL: Check BEFORE reading to avoid consuming stdin prematurely
     try:
-        is_tty = getattr(sys.stdin, "isatty", None)
-        if not (callable(is_tty) and bool(is_tty())):
+        is_tty_fn = getattr(sys.stdin, "isatty", None)
+        if is_tty_fn is None:
+            # isatty() not available (e.g., some test environments)
+            # Try reading stdin as fallback
+            logfire.debug("[INPUT] isatty() unavailable, attempting stdin read")
             try:
-                return sys.stdin.read().strip()
+                content = sys.stdin.read()
+                if content.strip():
+                    logfire.debug(f"[INPUT] Read from stdin (no isatty): {len(content)} chars")
+                    return content.strip()
             except Exception:
+                pass
+        elif not is_tty_fn():
+            # Stdin is piped (non-TTY)
+            logfire.debug("[INPUT] stdin is non-TTY, reading piped input")
+            try:
+                content = sys.stdin.read()
+                logfire.debug(f"[INPUT] Read piped input: {len(content)} chars")
+                return content.strip()
+            except Exception as e:
+                logfire.warning(f"[INPUT] Failed to read piped stdin: {e}")
                 return ""
-    except Exception:
-        pass
+    except Exception as e:
+        logfire.warning(f"[INPUT] Error checking stdin: {e}")
 
-    # 4) Safe fallback
+    # 4) Fallback to empty string
+    logfire.debug("[INPUT] No input source found, using empty string")
     return ""
 
 
@@ -862,7 +892,9 @@ def setup_solve_command_environment(
     except ConfigurationError as e:
         from typer import secho
 
-        secho(f"Configuration Error: {e}", err=True)
+        # Use plain message for backward compatibility (tests expect plain message format)
+        error_msg = getattr(e, "message", str(e))
+        secho(f"Configuration Error: {error_msg}", err=True)
         raise Exit(2)
 
 

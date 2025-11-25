@@ -181,7 +181,7 @@ class DefaultAgentStepExecutor:
                 _fallback_depth,
             )
         except PausedException as e:
-            return Paused(message=str(e))
+            return Paused(message=getattr(e, "message", ""))
         # ✅ FLUJO BEST PRACTICE: Early Mock Detection and Fallback Chain Protection
         # Critical architectural fix: Detect Mock objects early to prevent infinite fallback chains
         if hasattr(step, "_mock_name"):

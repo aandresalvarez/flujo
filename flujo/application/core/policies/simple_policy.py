@@ -70,7 +70,7 @@ class DefaultSimpleStepExecutor:
             return cast(StepOutcome[StepResult], outcome)
         except PausedException as e:
             # Surface as Paused outcome to maintain control-flow semantics
-            return Paused(message=str(e))
+            return Paused(message=getattr(e, "message", ""))
 
 
 async def _execute_simple_step_policy_impl(
@@ -102,4 +102,4 @@ async def _execute_simple_step_policy_impl(
             ),
         )
     except PausedException as e:
-        return Paused(message=str(e))
+        return Paused(message=getattr(e, "message", ""))

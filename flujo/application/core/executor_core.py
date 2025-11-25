@@ -1059,7 +1059,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # Persist managed state before pausing (critical for HITL flows that prepare state)
             await self._persist_context(getattr(frame, "context", None))
             if called_with_frame:
-                return Paused(message=str(e))
+                # Use plain message for backward compatibility (tests expect plain message)
+                return Paused(message=getattr(e, "message", ""))
             raise
         except (
             UsageLimitExceededError,
