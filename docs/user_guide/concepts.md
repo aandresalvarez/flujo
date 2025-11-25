@@ -399,7 +399,8 @@ Lifecycle hooks let you run custom code before and after key events such as
 async def log_hook(**kwargs):
     print("event", kwargs.get("event_name"))
 
-runner = Flujo(pipeline, hooks=[log_hook])
+pipeline = Pipeline(steps=[...], hooks=[log_hook], on_finish=[janitor_hook])
+runner = Flujo(pipeline)  # pipeline-level hooks are applied automatically
 ```
 
 Raise `PipelineAbortSignal` from a hook to stop execution.

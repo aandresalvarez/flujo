@@ -3735,6 +3735,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 # even when there was only a single attempt. This ensures context
                 # mutations made by the agent (e.g., signature injection) are
                 # visible to subsequent steps and in the final context.
+                merge_succeeded = False
                 try:
                     if (
                         context is not None
@@ -3744,8 +3745,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         from .context_manager import ContextManager as _CM
 
                         _CM.merge(context, attempt_context)
+                        merge_succeeded = True
                 except Exception:
-                    pass
+                    # Merge failed - we'll use attempt_context as branch_context
+                    # to preserve mutations (ExecutionManager will merge it)
+                    merge_succeeded = False
 
                 # Detect mock objects in final output and raise
                 def _is_mock(obj: Any) -> bool:
@@ -3829,10 +3833,27 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     except Exception:
                         pass
                     # Ensure the branch_context reflects the up-to-date main context
-                    result.branch_context = context
+                    # If we had an isolated attempt_context and merge succeeded, use context.
+                    # If merge failed but attempt_context was isolated, use attempt_context
+                    # to preserve mutations (ExecutionManager will merge it into live context).
+                    # If no isolation occurred (attempt_context is context), use context.
+                    if (
+                        attempt_context is not None
+                        and attempt_context is not context
+                        and not merge_succeeded
+                    ):
+                        # Merge failed - preserve mutations by using attempt_context
+                        result.branch_context = attempt_context
+                    else:
+                        # Merge succeeded or no isolation - use merged context
+                        result.branch_context = context
                 except Exception:
                     # Do not fail success path due to scratchpad/merge issues
-                    result.branch_context = context
+                    # Preserve mutations if we had an isolated attempt_context
+                    if attempt_context is not None and attempt_context is not context:
+                        result.branch_context = attempt_context
+                    else:
+                        result.branch_context = context
                 return Success(step_result=result)
 
             except BaseException as exc:

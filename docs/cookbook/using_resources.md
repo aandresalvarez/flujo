@@ -6,7 +6,7 @@ Your pipeline steps need to interact with a shared, long-lived resource like a d
 
 ## The Solution
 
-The `Flujo` runner accepts a `resources` object that it will pass to every agent and plugin in the pipeline. You define the shape of this object by inheriting from `AppResources`.
+The `Flujo` runner accepts a `resources` object that it will pass to every agent and plugin in the pipeline. You define the shape of this object by inheriting from `AppResources`. If your resource implements `__enter__/__aenter__`, Flujo will enter and exit it **per step attempt** (retries and parallel branches included) so you can tie transactions or ephemeral handles to one attempt.
 
 ```python
 from unittest.mock import MagicMock
@@ -54,3 +54,30 @@ print(f"\n✅ Agent successfully used the database connection to find: {result.s
 5.  The agent can then use the methods on the injected object (e.g., `resources.db_conn.get_user_by_id`).
 
 This dependency injection pattern keeps your agents clean and decoupled from how resources are created, making them much easier to test and maintain.
+
+### Transactional example
+
+For database-backed workloads, make your resources a context manager so each step attempt gets its own transaction/session:
+
+```python
+class DBResources(AppResources):
+    pool: Any
+    session: Any | None = None
+
+    async def __aenter__(self) -> "DBResources":
+        self.session = await self.pool.acquire()
+        await self.session.begin()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        try:
+            if exc_type:
+                await self.session.rollback()
+            else:
+                await self.session.commit()
+        finally:
+            await self.pool.release(self.session)
+            self.session = None
+```
+
+Because Flujo enters the context per attempt, a failed retry or paused HITL step will roll back before the next attempt runs. Ensure your context manager is re-entrant (or hands out per-attempt handles) if you plan to run steps in parallel.
