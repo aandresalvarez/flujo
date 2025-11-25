@@ -54,6 +54,7 @@ from pydantic import TypeAdapter
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend
+from ..domain.interfaces import StateProvider
 from ..state import StateBackend, WorkflowState
 from ..infra.registry import PipelineRegistry
 
@@ -223,6 +224,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         Backend used to persist :class:`WorkflowState` for durable execution.
     delete_on_completion : bool, default False
         If ``True`` remove persisted state once the run finishes.
+    state_providers : Dict[str, StateProvider], optional
+        External state providers for :class:`ContextReference` hydration. Ignored when a
+        custom ``executor_factory`` is supplied; pass providers directly to the factory
+        instead.
     """
 
     _trace_manager: Optional[Any]  # Will be TraceManager when tracing is enabled
@@ -247,6 +252,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         pipeline_name: Optional[str] = None,
         enable_tracing: bool = True,
         pipeline_id: Optional[str] = None,
+        state_providers: Optional[Dict[str, StateProvider]] = None,
     ) -> None:
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
@@ -339,8 +345,30 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             # Defensive fallback: preserve provided limits
             self.usage_limits = usage_limits
 
-        self._executor_factory = executor_factory or ExecutorFactory()
+        # Store state providers for ContextReference hydration
+        self._state_providers = state_providers or {}
+
+        # Handle executor factory creation with state_providers support
+        if executor_factory is not None:
+            self._executor_factory = executor_factory
+            # Warn if user also provided state_providers (they'll be ignored)
+            if self._state_providers:
+                warnings.warn(
+                    "state_providers is ignored when executor_factory is provided. "
+                    "Pass state_providers to your ExecutorFactory instead.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        else:
+            # Create executor factory with state_providers
+            self._executor_factory = ExecutorFactory(state_providers=self._state_providers)
+
+        # Handle backend factory - ensure state_providers propagate even with custom backend_factory
         self._backend_factory = backend_factory or BackendFactory(self._executor_factory)
+        # If a custom backend_factory is supplied, align its executor factory so that any
+        # internally created executors also receive the configured state_providers.
+        if backend_factory is not None and hasattr(self._backend_factory, "_executor_factory"):
+            self._backend_factory._executor_factory = self._executor_factory
 
         combined_hooks: list[HookCallable] = []
         combined_hooks.extend(pipeline_hooks)
@@ -390,8 +418,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         This method acts as the Composition Root, assembling all the
         components needed for optimal execution.
+
+        Note: We explicitly pass an executor created from our _executor_factory
+        to ensure state_providers are honored even when a custom backend_factory
+        is provided.
         """
-        return self._backend_factory.create_execution_backend()
+        # Create executor from our factory (which has state_providers configured)
+        # and pass it to backend_factory to ensure state_providers propagate
+        executor = self._executor_factory.create_executor()
+        return self._backend_factory.create_execution_backend(executor=executor)
 
     def disable_tracing(self) -> None:
         """Disable tracing by removing the TraceManager hook."""
