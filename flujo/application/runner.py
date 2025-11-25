@@ -344,10 +344,22 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         # Store state providers for ContextReference hydration
         self._state_providers = state_providers or {}
 
-        # Pass state_providers to ExecutorFactory for ContextReference support
-        self._executor_factory = executor_factory or ExecutorFactory(
-            state_providers=self._state_providers
-        )
+        # Handle executor factory creation with state_providers support
+        if executor_factory is not None:
+            self._executor_factory = executor_factory
+            # Warn if user also provided state_providers (they'll be ignored)
+            if self._state_providers:
+                warnings.warn(
+                    "state_providers is ignored when executor_factory is provided. "
+                    "Pass state_providers to your ExecutorFactory instead.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        else:
+            # Create executor factory with state_providers
+            self._executor_factory = ExecutorFactory(state_providers=self._state_providers)
+
+        # Handle backend factory - ensure state_providers propagate even with custom backend_factory
         self._backend_factory = backend_factory or BackendFactory(self._executor_factory)
 
         combined_hooks: list[HookCallable] = []
@@ -398,8 +410,15 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         This method acts as the Composition Root, assembling all the
         components needed for optimal execution.
+
+        Note: We explicitly pass an executor created from our _executor_factory
+        to ensure state_providers are honored even when a custom backend_factory
+        is provided.
         """
-        return self._backend_factory.create_execution_backend()
+        # Create executor from our factory (which has state_providers configured)
+        # and pass it to backend_factory to ensure state_providers propagate
+        executor = self._executor_factory.create_executor()
+        return self._backend_factory.create_execution_backend(executor=executor)
 
     def disable_tracing(self) -> None:
         """Disable tracing by removing the TraceManager hook."""

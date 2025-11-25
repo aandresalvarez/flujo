@@ -137,6 +137,50 @@ def test_flujo_respects_custom_executor_factory() -> None:
     assert runner._executor_factory._state_providers == {"custom_provider": provider}
 
 
+def test_flujo_warns_when_executor_factory_and_state_providers() -> None:
+    """Verify Flujo warns when both executor_factory and state_providers are provided."""
+    import warnings
+
+    provider = MockStateProvider()
+    custom_factory = ExecutorFactory()  # No state_providers
+    step = Step.from_callable(lambda x: x, name="test_step")
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        Flujo(
+            pipeline=step,
+            context_model=PipelineContext,
+            executor_factory=custom_factory,
+            state_providers={"provider": provider},  # Should trigger warning
+        )
+
+        # Check warning was issued
+        assert len(w) == 1
+        assert "state_providers is ignored when executor_factory is provided" in str(w[0].message)
+
+
+def test_flujo_propagates_providers_with_custom_backend_factory() -> None:
+    """Verify state_providers are propagated even when custom backend_factory is provided."""
+    provider = MockStateProvider()
+    custom_backend_factory = BackendFactory()  # Default factory, no executor
+    step = Step.from_callable(lambda x: x, name="test_step")
+
+    runner = Flujo(
+        pipeline=step,
+        context_model=ContextWithReference,
+        backend_factory=custom_backend_factory,
+        state_providers={"test_provider": provider},
+    )
+
+    # Our executor factory should have the state_providers
+    assert runner._executor_factory._state_providers == {"test_provider": provider}
+
+    # The backend should use our executor (with state_providers)
+    # This is verified by checking the executor in the backend
+    executor = runner.backend._executor
+    assert executor._state_providers == {"test_provider": provider}
+
+
 # --- Integration Tests: Context Hydration ---
 
 
