@@ -1,52 +1,58 @@
 # Phase 2 Tracking — ExecutorCore Decomposition
 
-Status: **In Progress**  
+Status: **In Progress** (updated 2025-11-26)  
 Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6)
 
 ## Objectives (from FSD)
 - Slim `executor_core.py` to a composition root (~500–600 LOC), delegating to extracted components.
 - Extract/own these modules: `ExecutionDispatcher`, `QuotaManager`, `FallbackHandler`, `BackgroundTaskManager`, `CacheManager`, `HydrationManager`, `StepHistoryTracker`.
 - Route all step execution via dispatcher/policy registry (no `isinstance` logic in `ExecutorCore`).
-- Centralize quota handling via `QuotaManager` (reserve → execute → reconcile); legacy `CURRENT_QUOTA` shim removed from code paths.
+- Centralize quota handling via `QuotaManager` (reserve → execute → reconcile); legacy shims removed.
 - Maintain policy-driven architecture and policy injection.
 
 ## Current Code State (verified 2025-11-26)
-- Extracted modules present: `quota_manager.py`, `fallback_handler.py`, `background_task_manager.py`, `cache_manager.py`, `hydration_manager.py`, `step_history_tracker.py`, `execution_dispatcher.py`, `loop_executor.py` (thin wrapper). Missing: `agent_orchestrator.py`, `validation_orchestrator.py`, `context_update_manager.py`, `policy_invoker.py`, `complex_step_router.py`, `pipeline_orchestrator.py`, `failure_builder.py`.
-- `ExecutorCore` remains a 3,966-line monolith (`wc -l flujo/application/core/executor_core.py`) with background launch, cache lookup/metadata wiring, complex-step branching, and legacy loop logic implemented inline.
-- Dispatcher is wired (`ExecutionDispatcher` + `PolicyRegistry`), but `execute` still branches on `ConditionalStep`/`LoopStep`/routers/HITL via `_execute_complex_step` and handles cache/background orchestration directly instead of delegating to extracted managers/policies.
-- Quota: `QuotaManager` exists but `ExecutorCore.CURRENT_QUOTA` is still exposed and used across policies (`agent_policy`, `parallel_policy`, `router_policy`, `cache_policy`) and `step_coordinator`; reserve → execute → reconcile is not centralized and the contextvar has not been removed.
-- Background/cache: `BackgroundTaskManager`/`CacheManager` exist, yet core performs background task creation and cache get/metadata injection inline; cache hits use `_cache_backend` directly.
-- Agent path: no agent/validation orchestrator extraction; `DefaultAgentStepExecutor` still contains full orchestration, retries, and fallbacks.
-- Testing/architecture: not re-run in this pass; gate status currently unknown.
+- `ExecutorCore` is ~3,402 LOC (`wc -l flujo/application/core/executor_core.py`); background launch, cache, and complex routing are delegated but the composition-root target is still ahead.
+- Delegated components in place: `execution_dispatcher.py`, `background_task_manager.py`, `cache_manager.py`, `complex_step_router.py`, `pipeline_orchestrator.py`, `agent_orchestrator.py`, `conditional_orchestrator.py`, `hitl_orchestrator.py`, `loop_orchestrator.py`, `import_orchestrator.py`, `validation_orchestrator.py`, `context_update_manager.py`, `failure_builder.py`, `quota_manager.py`, `step_history_tracker.py`.
+- Validation orchestration extracted and wired through the agent path; validation fallback now marks `fallback_triggered` and preserves outputs on failure.
+- Quota is unified through `QuotaManager` with a per-instance contextvar; the legacy `CURRENT_QUOTA` shim is gone and tests use `_set_current_quota`.
+- Complex routing flows through `ComplexStepRouter` into loop/conditional/HITL/import orchestrators; context merges/failure normalization are centralized.
+- Latest verification: `make test-fast` (2025-11-26) ✅; loop dispatch and validation fallback targeted tests also ✅.
+
+## Progress Since Last Update
+- Added `_make_execution_frame` helper for orchestrators (import/validation) to build frames with the current quota.
+- Fixed validation handling: outputs are preserved on validation failure, fallback metadata sets `fallback_triggered`/`validation_failure`, and StepOutcome scoping bug is removed.
+- Fully removed legacy `CURRENT_QUOTA` references in favor of `QuotaManager` helpers.
 
 ## Gaps vs Objectives
-1) **Monolith not slimmed**: `ExecutorCore` still ~4k LOC with cache/background/complex-step orchestration inline; far above 500–600 LOC target.
-2) **Missing extractions**: Agent/validation/fallback/pipeline/complex-router/context-update/failure-builder components do not exist despite being claimed; step-specific branching remains in core.
-3) **Quota integration incomplete**: `CURRENT_QUOTA` persists in executor and policies; reserve → execute → reconcile is not standardized through `QuotaManager`.
-4) **Delegation gaps**: Background/cache/context merge handling and complex routing live in core with `isinstance` checks instead of being policy/manager-owned.
-5) **Verification unknown**: Architecture/type/test gate outcomes not validated in this check.
+1) `ExecutorCore` still ~3.4k LOC; agent/pipeline/fallback glue needs further extraction to reach the 500–600 LOC goal.
+2) Inline agent retry/telemetry/fallback logic still lives in core/policies; consolidate into orchestrators for policy-driven execution.
+3) Continue type hardening per `docs/advanced/typing_guide.md` (e.g., prefer `JSONObject`, strict signatures, protocol use) across new orchestrators.
+4) Keep architecture/type gates green after each extraction.
 
-## Execution Plan (robust, typing-safe)
-- Baseline gates: run `make test-fast` and the architecture suite to capture current failures (keep `PYTEST_DISABLE_PLUGIN_AUTOLOAD` unset). Use results to validate each refactor increment.
-- Quota normalization first: remove `CURRENT_QUOTA` usage from executor/policies/step coordinator; pass quotas via `ExecutionFrame.quota` and enforce reserve → execute → reconcile in every policy through `QuotaManager`.
-- Core slimming with extractions:
-  - Create `agent_orchestrator.py` and `validation_orchestrator.py` to own agent retries/fallback/plugins; keep core delegators for compatibility during migration.
-  - Add `pipeline_orchestrator.py` for sequential pipelines and move branch/router/HITL/hydration glue out of core; introduce `complex_step_router.py` to replace `_execute_complex_step` `isinstance` routing.
-  - Add `context_update_manager.py` for context merges (incl. HITL pause updates) and `failure_builder.py` for outcome construction; delete inline equivalents.
-- Cache/background delegation: move cache hit/miss logic from `ExecutorCore.execute` into `CacheManager`/cache policy; move background task creation/tracking into `BackgroundTaskManager` with a policy hook to avoid recursion.
-- Policy routing cleanup: ensure dispatcher registry covers conditional/router/HITL/import/cache/loop; remove remaining `isinstance` branches in `execute`/`_execute_complex_step` after router/policies are wired.
-- Typing discipline (see `docs/advanced/typing_guide.md`): avoid `Dict[str, Any]` for JSON (use `JSONObject`); keep protocols for policy interfaces; ensure return/param annotations and 100-col lines; maintain `TContext_w_Scratch` bounds.
-- Verification cadence: after each extraction milestone, run the targeted tests covering touched areas (e.g., `pytest tests/application/core/test_executor_core_execute_loop.py` for loop changes; `pytest tests/application/core/test_executor_core.py` and `tests/unit/test_parallel_step_policy.py` for dispatcher/quota/parallel edits; architecture suite for policy/routing changes). Only after milestones are stable, run `make test-fast`; reserve `make all` for pre-PR finalization.
+## Robust Approach (typing-guide aligned)
+- Keep the executor as a composition root: no step-specific branching; delegate to orchestrators/dispatcher/policies and use `ContextManager.isolate()` for retries/loops.
+- Control-flow safety: never swallow `PausedException`/`PipelineAbortSignal`; re-raise in orchestrators and policies.
+- Quota discipline: always reserve → execute → reconcile via `QuotaManager`; propagate via `ExecutionFrame.quota`; no `CURRENT_QUOTA` shim usage.
+- Typing: follow `docs/advanced/typing_guide.md` — prefer `JSONObject` over `dict[str, Any]`, keep concrete type hints, and use protocols/generics for orchestrators and policies.
+- Use agent factories (`flujo.agents.*`) and centralized config (`infra.config_manager`) to avoid ad-hoc construction or env reads.
 
-## Immediate Next Steps
-- Stand up missing orchestrator modules and map current inline logic (agent/validation/pipeline/complex routing/failure handling) into them.
-- Extract background launch and cache handling out of `ExecutorCore.execute` to shrink LOC and reduce choke-point risk.
-- Replace `CURRENT_QUOTA` reads/writes with `QuotaManager` flows and propagate quotas through `ExecutionFrame`.
-- Re-run `make test-fast` and architecture suite to validate the above moves, then iterate.
+## Iteration Plan & Required Tests (run these per change)
+1) **Background/cache delegation cleanup**: finish moving background launch/caching decisions out of `ExecutorCore.execute`; ensure `BackgroundTaskManager`/`CacheManager` own lifecycle.  
+   Run: `pytest tests/robustness/test_memory_leak_detection.py` and `pytest tests/application/core/test_executor_core_chokepoint.py -k background`.
+2) **Loop/HITL orchestration**: keep `ComplexStepRouter` → `LoopOrchestrator`/`HitlOrchestrator` isolation with context idempotency.  
+   Run: `pytest tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_execute_loop.py tests/unit/test_loop_step_policy.py`.
+3) **Validation/agent path**: keep `ValidationOrchestrator` authoritative; ensure fallback metadata (`fallback_triggered`, `validation_failure`) and output preservation.  
+   Run: `pytest tests/unit/test_ultra_executor.py::TestExecutorCore::test_validation_failure tests/integration/test_strict_validation.py::test_regular_step_keeps_output_on_validation_failure tests/integration/test_executor_core_fallback_integration.py::TestExecutorCoreFallbackIntegration::test_real_fallback_with_validation_failure tests/application/core/test_executor_core_fallback.py -k validation`.
+4) **Quota normalization**: ensure only `QuotaManager` is used and parallel splits rely on `Quota.split()`.  
+   Run: `pytest tests/unit/test_parallel_step_policy.py tests/unit/test_integration_quota_propagation.py tests/unit/test_agent_step_policy.py tests/unit/test_agent_strict_pricing.py`.
+5) **Router/pipeline delegation**: trim remaining conditional/router/pipeline glue into orchestrators/dispatcher.  
+   Run: `pytest tests/application/core/test_executor_core_conditional_step_dispatch.py tests/application/core/test_executor_core_conditional_step_logic.py tests/regression/test_executor_core_optimization_regression.py`.
+6) **Regression gate after each batch**: run `make test-fast` (fast suite) to validate Phase 2 surfaces; rerun the targeted suites above when their areas are touched.
+
+## Verification Status
+- `make test-fast` (2025-11-26) — **PASS**
+- Targeted validation/loop dispatch checks — **PASS** (`pytest tests/application/core/test_executor_core_loop_step_dispatch.py` plus validation fallback cases)
 
 ## Artifacts/References
-- `flujo/application/core/executor_core.py` — 3,966 LOC; contains background/cache/complex-step orchestration and legacy loop logic.
-- Present helpers: `execution_dispatcher.py`, `quota_manager.py`, `fallback_handler.py`, `background_task_manager.py`, `cache_manager.py`, `hydration_manager.py`, `step_history_tracker.py`, `loop_executor.py` (wrapper to `_execute_loop`).
-- Missing helpers claimed earlier: `agent_orchestrator.py`, `validation_orchestrator.py`, `context_update_manager.py`, `policy_invoker.py`, `complex_step_router.py`, `pipeline_orchestrator.py`, `failure_builder.py`.
-- Quota contextvar still exposed: `CURRENT_QUOTA` in `executor_core.py` and used by `agent_policy.py`, `parallel_policy.py`, `router_policy.py`, `cache_policy.py`, `step_coordinator.py`.
-- Tests/architecture: not executed in this pass; status unknown.
+- Key components: `execution_dispatcher.py`, `background_task_manager.py`, `cache_manager.py`, `complex_step_router.py`, `pipeline_orchestrator.py`, `agent_orchestrator.py`, `conditional_orchestrator.py`, `hitl_orchestrator.py`, `loop_orchestrator.py`, `import_orchestrator.py`, `validation_orchestrator.py`, `context_update_manager.py`, `failure_builder.py`, `quota_manager.py`, `step_history_tracker.py`.
+- Executor size check: `wc -l flujo/application/core/executor_core.py` → ~3,402.

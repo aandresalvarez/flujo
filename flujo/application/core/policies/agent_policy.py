@@ -339,12 +339,31 @@ class DefaultAgentStepExecutor:
                 pass
         except Exception:
             estimate = self._estimate_usage(step, data, context)
-        current_quota: Optional[Quota] = None
-        try:
-            if hasattr(core, "CURRENT_QUOTA"):
-                current_quota = core.CURRENT_QUOTA.get()
-        except Exception:
-            current_quota = None
+
+        def _get_quota() -> Optional[Quota]:
+            try:
+                if hasattr(core, "_get_current_quota"):
+                    return core._get_current_quota()
+            except Exception:
+                return None
+            return None
+
+        def _set_quota(quota: Optional[Quota]) -> Optional[object]:
+            try:
+                if hasattr(core, "_quota_manager"):
+                    return core._set_current_quota(quota)
+            except Exception:
+                return None
+            return None
+
+        def _reset_quota(token: Optional[object]) -> None:
+            try:
+                if token is not None and hasattr(core, "_reset_current_quota"):
+                    core._reset_current_quota(token)
+            except Exception:
+                pass
+
+        current_quota: Optional[Quota] = _get_quota()
         if current_quota is not None:
             # Reserve without masking control-flow or configuration exceptions
             try:
@@ -679,15 +698,10 @@ class DefaultAgentStepExecutor:
                                             # Reserve a sub-quota per sample (best-effort)
                                             quota_token = None
                                             try:
-                                                if (
-                                                    hasattr(core, "CURRENT_QUOTA")
-                                                    and core.CURRENT_QUOTA.get() is not None
-                                                ):
-                                                    try:
-                                                        subq = core.CURRENT_QUOTA.get().split(1)[0]
-                                                        quota_token = core.CURRENT_QUOTA.set(subq)
-                                                    except Exception:
-                                                        quota_token = None
+                                                cq = _get_quota()
+                                                if cq is not None:
+                                                    subq = cq.split(1)[0]
+                                                    quota_token = _set_quota(subq)
                                             except Exception:
                                                 quota_token = None
                                             try:
@@ -702,13 +716,7 @@ class DefaultAgentStepExecutor:
                                                 )
                                             finally:
                                                 # Reconcile quota reservation
-                                                try:
-                                                    if quota_token is not None and hasattr(
-                                                        core, "CURRENT_QUOTA"
-                                                    ):
-                                                        core.CURRENT_QUOTA.reset(quota_token)
-                                                except Exception:
-                                                    pass
+                                                _reset_quota(quota_token)
                                             txt = None
                                             if isinstance(cres, dict):
                                                 txt = cres.get("plan") or cres.get("output") or None

@@ -376,8 +376,16 @@ class DefaultLoopStepExecutor:
         # Extract steps from the loop body pipeline for step-by-step execution
         # CRITICAL FIX: Extract steps for step-by-step execution
         # Use step-by-step for ALL multi-step pipelines to support HITL properly
-        if hasattr(body_pipeline, "steps") and body_pipeline.steps and len(body_pipeline.steps) > 1:
-            loop_body_steps = body_pipeline.steps
+        steps_attr = (
+            getattr(body_pipeline, "steps", None) if hasattr(body_pipeline, "steps") else None
+        )
+        steps_len = 0
+        try:
+            steps_len = len(steps_attr) if steps_attr is not None else 0
+        except Exception:
+            steps_len = 0
+        if steps_attr and steps_len > 1:
+            loop_body_steps = list(steps_attr) if not isinstance(steps_attr, list) else steps_attr
             telemetry.logfire.info(
                 f"LoopStep '{loop_step.name}' using step-by-step execution with {len(loop_body_steps)} steps"
             )
@@ -1302,10 +1310,17 @@ class DefaultLoopStepExecutor:
 
                 is_map_step = isinstance(loop_step, MapStep)
 
-                if not is_map_step and hasattr(body_pipeline, "steps") and body_pipeline.steps:
-                    body_step = body_pipeline.steps[0]
-                    has_loop_fallback = (
-                        hasattr(body_step, "fallback_step") and body_step.fallback_step is not None
+                if not is_map_step and hasattr(body_pipeline, "steps"):
+                    try:
+                        steps_attr = body_pipeline.steps
+                        if steps_attr:
+                            body_step = steps_attr[0]
+                    except Exception:
+                        body_step = None
+                    has_loop_fallback = bool(
+                        body_step is not None
+                        and hasattr(body_step, "fallback_step")
+                        and body_step.fallback_step is not None
                     )
 
                     # If loop will handle fallbacks, temporarily disable step retries

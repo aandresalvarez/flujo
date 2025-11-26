@@ -65,13 +65,20 @@ class DefaultDynamicRouterStepExecutor:
         router_agent_step: Any = Step(
             name=f"{router_step.name}_router", agent=router_step.router_agent
         )
+        quota = None
+        try:
+            if hasattr(core, "_get_current_quota"):
+                quota = core._get_current_quota()
+        except Exception:
+            quota = None
+
         router_frame = ExecutionFrame(
             step=router_agent_step,
             data=data,
             context=context,
             resources=resources,
             limits=limits,
-            quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
+            quota=quota,
             stream=False,
             on_chunk=None,
             context_setter=(
@@ -151,11 +158,11 @@ class DefaultDynamicRouterStepExecutor:
         )
         # Use the DefaultParallelStepExecutor policy directly instead of legacy core method
         parallel_executor = DefaultParallelStepExecutor()
-        # Ensure CURRENT_QUOTA is set for the parallel execution block
+        # Ensure quota is set for the parallel execution block
         quota_token = None
         try:
-            if hasattr(core, "CURRENT_QUOTA"):
-                quota_token = core.CURRENT_QUOTA.set(core.CURRENT_QUOTA.get())
+            if hasattr(core, "_set_current_quota"):
+                quota_token = core._set_current_quota(core._get_current_quota())
         except Exception:
             quota_token = None
         try:
@@ -170,8 +177,8 @@ class DefaultDynamicRouterStepExecutor:
             )
         finally:
             try:
-                if quota_token is not None and hasattr(core, "CURRENT_QUOTA"):
-                    core.CURRENT_QUOTA.reset(quota_token)
+                if quota_token is not None and hasattr(core, "_reset_current_quota"):
+                    core._reset_current_quota(quota_token)
             except Exception:
                 pass
 

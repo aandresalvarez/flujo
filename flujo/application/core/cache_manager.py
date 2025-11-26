@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from typing import Any, Optional
+from ...domain.models import StepResult
 from .default_components import DefaultCacheKeyGenerator, _LRUCache
 
 
@@ -69,6 +70,18 @@ class CacheManager:
 
         return None
 
+    async def fetch_step_result(self, key: str) -> Optional[StepResult]:
+        """Retrieve a cached StepResult and mark it as a cache hit."""
+        cached = await self.get_cached_result(key)
+        if not isinstance(cached, StepResult):
+            return None
+        md = getattr(cached, "metadata_", None)
+        if md is None:
+            cached.metadata_ = {"cache_hit": True}
+        else:
+            md["cache_hit"] = True
+        return cached
+
     async def set_cached_result(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
         """Store a result in cache."""
         if not self._enable_cache or not key:
@@ -90,3 +103,7 @@ class CacheManager:
         if self._internal_cache is not None:
             # _LRUCache manages TTL internally; no ttl kwarg is accepted
             self._internal_cache.set(key, value)
+
+    async def persist_step_result(self, key: str, result: StepResult, ttl_s: int = 3600) -> None:
+        """Persist a successful StepResult to the configured cache layers."""
+        await self.set_cached_result(key, result, ttl=ttl_s)

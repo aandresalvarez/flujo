@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 import warnings
-import uuid
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast
 from pydantic import BaseModel
@@ -24,14 +23,15 @@ from ...domain.dsl.step import HumanInTheLoopStep, Step
 from ...domain.dsl.import_step import ImportStep
 from ...domain.interfaces import StateProvider
 from ...domain.models import (
-    PipelineResult,
-    StepResult,
-    UsageLimits,
-    StepOutcome,
-    Success,
+    BackgroundLaunched,
     Failure,
     Paused,
-    BackgroundLaunched,
+    PipelineResult,
+    Quota,
+    StepOutcome,
+    StepResult,
+    Success,
+    UsageLimits,
 )
 from ...exceptions import (
     InfiniteFallbackError,
@@ -44,12 +44,21 @@ from ...exceptions import (
     PipelineAbortSignal,
 )
 from ...infra import telemetry
-from .quota_manager import CURRENT_QUOTA, QuotaManager
+from .quota_manager import QuotaManager
 from .fallback_handler import FallbackHandler
 from .background_task_manager import BackgroundTaskManager
 from .cache_manager import CacheManager
 from .hydration_manager import HydrationManager
 from .execution_dispatcher import ExecutionDispatcher
+from .agent_orchestrator import AgentOrchestrator
+from .conditional_orchestrator import ConditionalOrchestrator
+from .hitl_orchestrator import HitlOrchestrator
+from .loop_orchestrator import LoopOrchestrator
+from .failure_builder import build_failure_outcome
+from .pipeline_orchestrator import PipelineOrchestrator
+from .complex_step_router import ComplexStepRouter
+from .import_orchestrator import ImportOrchestrator
+from .validation_orchestrator import ValidationOrchestrator
 from .step_history_tracker import StepHistoryTracker
 from ...steps.cache_step import CacheStep
 from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
@@ -83,7 +92,7 @@ from .step_policies import (
 from .policy_primitives import PolicyRegistry
 from .types import TContext_w_Scratch, ExecutionFrame
 from .context_manager import ContextManager
-from .context_adapter import _build_context_update, _inject_context_with_deep_merge
+from .context_update_manager import ContextUpdateManager
 from .estimation import (
     UsageEstimator,
     HeuristicUsageEstimator,
@@ -197,9 +206,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     """
 
     # Context variables moved to respective manager classes
-
-    # Backward compatibility: expose CURRENT_QUOTA as class attribute
-    CURRENT_QUOTA = CURRENT_QUOTA
 
     def __init__(
         self,
@@ -316,6 +322,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._hydration_manager = HydrationManager(state_providers)
         self._hydration_manager.set_telemetry(self._telemetry)
         self._background_task_manager = BackgroundTaskManager()
+        self._context_update_manager = ContextUpdateManager()
+        self._agent_orchestrator = AgentOrchestrator(plugin_runner=self._plugin_runner)
+        self._conditional_orchestrator = ConditionalOrchestrator()
+        self._hitl_orchestrator = HitlOrchestrator()
+        self._loop_orchestrator = LoopOrchestrator()
+        self._pipeline_orchestrator = PipelineOrchestrator()
+        self._complex_step_router = ComplexStepRouter()
+        self._import_orchestrator = ImportOrchestrator(self.import_step_executor)
+        self._validation_orchestrator = ValidationOrchestrator()
+        self._validation_orchestrator = ValidationOrchestrator()
 
         # Backward compatibility properties for tests
         self._state_providers = self._hydration_manager._state_providers
@@ -421,6 +437,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         # Dispatcher delegates to the shared policy registry
         self._dispatcher = ExecutionDispatcher(self.policy_registry)
 
+        # Initialize orchestrators that depend on executors registered above
+
     @property
     def cache(self) -> _LRUCache:
         return self._cache_manager.get_internal_cache()
@@ -432,6 +450,32 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._cache_manager.generate_cache_key(
             frame.step, frame.data, frame.context, getattr(frame, "resources", None)
         )
+
+    def _get_current_quota(self) -> Optional[Quota]:
+        """Best-effort getter for the current quota using the manager first."""
+        try:
+            quota = self._quota_manager.get_current_quota()
+            if quota is not None:
+                return quota
+        except Exception:
+            pass
+        return None
+
+    def _set_current_quota(self, quota: Optional[Quota]) -> Optional[object]:
+        """Best-effort setter for the current quota (returns token when available)."""
+        try:
+            return self._quota_manager.set_current_quota(quota)
+        except Exception:
+            return None
+
+    def _reset_current_quota(self, token: Optional[object]) -> None:
+        """Best-effort reset for quota context tokens."""
+        try:
+            if token is not None and hasattr(token, "old_value"):
+                self._quota_manager.set_current_quota(token.old_value)
+                return
+        except Exception:
+            pass
 
     def _hash_obj(self, obj: Any) -> str:
         if obj is None:
@@ -673,41 +717,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
         _fallback_depth: int = 0,
     ) -> StepResult:
-        # Normalize fallback depth defensively
         try:
             fb_depth = int(_fallback_depth)
         except Exception:
             fb_depth = 0
-        # Route to the appropriate complex handler
-        if isinstance(step, LoopStep):
-            return await self._handle_loop_step(
-                step, data, context, resources, limits, context_setter, fb_depth
-            )
-        if isinstance(step, ConditionalStep):
-            return await self._handle_conditional_step(
-                step, data, context, resources, limits, context_setter, fb_depth
-            )
-        if isinstance(step, DynamicParallelRouterStep):
-            return await self._handle_dynamic_router_step(
-                step, data, context, resources, limits, context_setter
-            )
-        if isinstance(step, HumanInTheLoopStep):
-            return await self._handle_hitl_step(
-                step, data, context, resources, limits, context_setter
-            )
-        # Fallback: delegate to general execute (policy routing will decide)
-        outcome = await self.execute(
-            step,
-            data,
+        return await self._complex_step_router.route(
+            core=self,
+            step=step,
+            data=data,
             context=context,
             resources=resources,
             limits=limits,
             stream=stream,
             on_chunk=on_chunk,
             context_setter=context_setter,
-            _fallback_depth=fb_depth,
+            fallback_depth=fb_depth,
         )
-        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     async def wait_for_background_tasks(self, timeout: float = 5.0) -> None:
         """Wait for all background tasks to complete with a timeout."""
@@ -822,11 +847,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 _fallback_depth=kwargs.get("_fallback_depth", 0),
             )
 
-        # Set CURRENT_QUOTA for this execution context
-        try:
-            self._quota_manager.set_current_quota(getattr(frame, "quota", None))
-        except Exception:
-            pass
+        # Set quota for this execution context (legacy shim retained for compatibility)
+        self._set_current_quota(getattr(frame, "quota", None))
 
         # Hydrate context references (FSD-Managed State)
         await self._hydration_manager.hydrate_context(getattr(frame, "context", None))
@@ -839,28 +861,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             hasattr(step, "config")
             and getattr(step.config, "execution_mode", "sync") == "background"
         ):
-            task_id = f"bg_{uuid.uuid4().hex}"
             step_name = self._safe_step_name(step)
 
-            # Launch detached task
-            task = asyncio.create_task(
-                self._execute_background_task(
+            async def _run_background() -> None:
+                await self._execute_background_task(
                     step,
                     frame.data,
                     frame.context,
                     getattr(frame, "resources", None),
                     getattr(frame, "limits", None),
-                ),
-                name=f"flujo_bg_{step_name}_{task_id}",
-            )
+                )
 
-            # Track task
-            self._background_task_manager.add_task(task)
-
-            telemetry.logfire.info(f"Launched background step '{step_name}' (task_id={task_id})")
-
-            bg_outcome: StepOutcome[StepResult] = BackgroundLaunched(
-                task_id=task_id, step_name=step_name
+            bg_outcome: StepOutcome[
+                StepResult
+            ] = await self._background_task_manager.launch_background_task(
+                step_name=step_name,
+                run_coro=_run_background,
             )
             if called_with_frame:
                 return bg_outcome
@@ -907,16 +923,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             try:
                 cache_key = self._cache_key(frame)
                 if cache_key:
-                    cached_result = await self._cache_backend.get(cache_key)
-                    if cached_result is not None:
-                        cached_step_result = cast(StepResult, cached_result)
-                        # Ensure cache hit metadata is visible to callers with minimal overhead
-                        md = getattr(cached_step_result, "metadata_", None)
-                        if md is None:
-                            cached_step_result.metadata_ = {"cache_hit": True}
-                        else:
-                            md["cache_hit"] = True
-                        # For backend/frame calls return typed outcome; for legacy calls return the StepResult directly
+                    cached_step_result = await self._cache_manager.fetch_step_result(cache_key)
+                    if cached_step_result is not None:
                         if called_with_frame:
                             return Success(step_result=cached_step_result)
                         return cached_step_result
@@ -1018,7 +1026,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 and result.metadata_.get("no_cache")
             )
         ):
-            await self._cache_backend.put(cache_key, result, ttl_s=3600)
+            await self._cache_manager.persist_step_result(cache_key, result, ttl_s=3600)
             telemetry.logfire.debug(f"Cached result for step: {getattr(step, 'name', '<unnamed>')}")
 
     def _log_execution_error(self, step_name: str, exc: Exception) -> None:
@@ -1037,26 +1045,41 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         exc: Exception,
         called_with_frame: bool,
     ) -> Failure[StepResult]:
-        step_name = self._safe_step_name(step)
-        err_type = type(exc).__name__ if hasattr(exc, "__class__") else "Exception"
-        include_branch_context = (
-            called_with_frame and getattr(step, "updates_context", False) and frame is not None
+        return build_failure_outcome(
+            step=step,
+            frame=frame,
+            exc=exc,
+            called_with_frame=called_with_frame,
+            safe_step_name=self._safe_step_name,
         )
-        branch_ctx = frame.context if include_branch_context else None
-        failed_sr = StepResult(
-            name=step_name,
-            output=None,
-            success=False,
-            attempts=1,
-            latency_s=0.0,
-            token_counts=0,
-            cost_usd=0.0,
-            feedback=f"{err_type}: {exc}",
-            branch_context=branch_ctx,
-            metadata_={"error_type": type(exc).__name__},
-            step_history=[],
+
+    def _make_execution_frame(
+        self,
+        step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        *,
+        stream: bool = False,
+        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
+        fallback_depth: int = 0,
+    ) -> ExecutionFrame[Any]:
+        """Create an ExecutionFrame with the current quota context."""
+        return ExecutionFrame(
+            step=step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            quota=self._quota_manager.get_current_quota(),
+            stream=stream,
+            on_chunk=on_chunk,
+            context_setter=context_setter or (lambda _res, _ctx: None),
+            result=None,
+            _fallback_depth=fallback_depth,
         )
-        return Failure[StepResult](error=exc, feedback=failed_sr.feedback, step_result=failed_sr)
 
     # Backward compatibility method for old execute signature
     async def execute_old_signature(
@@ -1193,210 +1216,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         limits: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
     ) -> PipelineResult[Any]:
-        """Execute all steps in a pipeline using policy routing.
-
-        This centralizes the orchestration pattern used by policies when
-        delegating back to the core for sequential pipeline execution.
-        """
-        current_data = data
-        current_context = context
-        # Use the step history tracker
-        history_tracker = StepHistoryTracker()
-
-        telemetry.logfire.info(
-            f"[Core] _execute_pipeline_via_policies starting with {len(pipeline.steps)} steps"
+        return await self._pipeline_orchestrator.execute(
+            core=self,
+            pipeline=pipeline,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            context_setter=context_setter,
         )
-        for step in pipeline.steps:
-            try:
-                telemetry.logfire.info(
-                    f"[Core] _execute_pipeline_via_policies executing step {getattr(step, 'name', 'unnamed')}"
-                )
-
-                frame = ExecutionFrame(
-                    step=step,
-                    data=current_data,
-                    context=current_context,
-                    resources=resources,
-                    limits=limits,
-                    quota=self._quota_manager.get_current_quota(),
-                    stream=False,
-                    on_chunk=None,
-                    context_setter=(context_setter or (lambda _r, _c: None)),
-                    _fallback_depth=0,
-                )
-                outcome = await self.execute(frame)
-                # Normalize StepOutcome to StepResult for aggregation/history
-
-                if isinstance(outcome, Success):
-                    step_result = outcome.step_result
-                    # Guard against missing payloads normalized by Success validator
-                    if not isinstance(step_result, StepResult) or getattr(
-                        step_result, "name", None
-                    ) in (None, "<unknown>", ""):
-                        step_result = StepResult(
-                            name=self._safe_step_name(step),
-                            output=None,
-                            success=False,
-                            feedback="Missing step_result",
-                        )
-                elif isinstance(outcome, Failure):
-                    step_result = (
-                        outcome.step_result
-                        if outcome.step_result is not None
-                        else StepResult(
-                            name=getattr(step, "name", "unknown"),
-                            output=None,
-                            success=False,
-                            feedback=outcome.feedback or str(outcome.error),
-                        )
-                    )
-                elif isinstance(outcome, Paused):
-                    # Propagate pause control flow upward to runner/manager
-                    raise PausedException(outcome.message)
-                else:
-                    # Unknown/Chunk/Aborted: synthesize conservative failure result
-                    step_result = StepResult(
-                        name=getattr(step, "name", "unknown"),
-                        output=None,
-                        success=False,
-                        feedback=f"Unsupported outcome type: {type(outcome).__name__}",
-                    )
-
-                history_tracker.add_step_result(step_result)
-
-                current_data = (
-                    step_result.output if step_result.output is not None else current_data
-                )
-                # Prefer branch_context from complex policies (loops/parallel/etc.)
-                current_context = (
-                    step_result.branch_context
-                    if step_result.branch_context is not None
-                    else current_context
-                )
-                # Apply context updates for simple steps when flagged
-                try:
-                    if getattr(step, "updates_context", False) and current_context is not None:
-                        update_data = _build_context_update(step_result.output)
-                        if update_data:
-                            try:
-                                _before = getattr(current_context, "scratchpad", None)
-                                telemetry.logfire.info(
-                                    f"[ContextUpdate] Before update (step={getattr(step, 'name', '?')}): scratchpad={_before}"
-                                )
-                            except Exception:
-                                pass
-                            # FIX: The original _inject_context performs a shallow update, which is incorrect
-                            # for nested structures like scratchpad. We need to ensure deep merging of nested dicts.
-                            validation_error = _inject_context_with_deep_merge(
-                                current_context, update_data, type(current_context)
-                            )
-                            if validation_error:
-                                # Resilient fallback for nested PipelineResult updates (as_step):
-                                # attempt a best-effort merge from the sub-runner's final context
-                                sub_ctx = None
-                                out = step_result.output
-                                if hasattr(out, "final_pipeline_context"):
-                                    sub_ctx = getattr(out, "final_pipeline_context", None)
-                                if sub_ctx is not None:
-                                    # Field-wise merge with minimal assumptions
-                                    cm = type(current_context)
-                                    for fname in getattr(cm, "model_fields", {}):
-                                        if not hasattr(sub_ctx, fname):
-                                            continue
-                                        new_val = getattr(sub_ctx, fname)
-                                        if new_val is None:
-                                            continue
-                                        cur_val = getattr(current_context, fname, None)
-                                        # Deep-merge dict-like fields such as scratchpad
-                                        if isinstance(cur_val, dict) and isinstance(new_val, dict):
-                                            try:
-                                                cur_val.update(new_val)
-                                            except Exception:
-                                                setattr(current_context, fname, new_val)
-                                        else:
-                                            setattr(current_context, fname, new_val)
-                                    # Clear validation_error to treat as success
-                                    validation_error = None
-                            if validation_error:
-                                # Mirror legacy behavior: mark step failed on validation error
-                                step_result.success = False
-                                step_result.feedback = (
-                                    f"Context validation failed: {validation_error}"
-                                )
-                            try:
-                                _after = getattr(current_context, "scratchpad", None)
-                                telemetry.logfire.info(
-                                    f"[ContextUpdate] After update (step={getattr(step, 'name', '?')}): scratchpad={_after}"
-                                )
-                            except Exception:
-                                pass
-                except Exception:
-                    # Never crash pipeline aggregation due to context update issues
-                    pass
-
-            except PausedException as e:
-                telemetry.logfire.info(
-                    f"[Core] _execute_pipeline_via_policies caught PausedException: {str(e)}"
-                )
-                raise e
-            except UsageLimitExceededError as e:
-                telemetry.logfire.info(
-                    f"[Core] _execute_pipeline_via_policies caught UsageLimitExceededError: {str(e)}"
-                )
-                raise e
-            except Exception as e:
-                telemetry.logfire.error(
-                    f"[Core] _execute_pipeline_via_policies step failed: {str(e)}"
-                )
-                failure_result = StepResult(
-                    name=getattr(step, "name", "unknown"),
-                    output=None,
-                    success=False,
-                    attempts=1,
-                    latency_s=0.0,
-                    token_counts=0,
-                    cost_usd=0.0,
-                    feedback=str(e),
-                    branch_context=current_context,
-                    metadata_={},
-                )
-                history_tracker.add_step_result(failure_result)
-                break
-
-        # Best-effort: ensure YAML fields persist on the final context if produced by any step
-        try:
-            from pydantic import BaseModel as _BM
-
-            if isinstance(current_context, _BM):
-                yt = getattr(current_context, "yaml_text", None)
-                gy = getattr(current_context, "generated_yaml", None)
-                if (
-                    not isinstance(yt, str)
-                    or not yt.strip()
-                    or not isinstance(gy, str)
-                    or not gy.strip()
-                ):
-                    for sr in reversed(history_tracker.get_history()):
-                        out = getattr(sr, "output", None)
-                        if isinstance(out, dict):
-                            cand = out.get("yaml_text") or out.get("generated_yaml")
-                            if isinstance(cand, str) and cand.strip():
-                                try:
-                                    if (not isinstance(yt, str) or not yt.strip()) and hasattr(
-                                        current_context, "yaml_text"
-                                    ):
-                                        setattr(current_context, "yaml_text", cand)
-                                    if (not isinstance(gy, str) or not gy.strip()) and hasattr(
-                                        current_context, "generated_yaml"
-                                    ):
-                                        setattr(current_context, "generated_yaml", cand)
-                                except Exception:
-                                    pass
-                                break
-        except Exception:
-            pass
-
-        return history_tracker.create_pipeline_result(final_context=current_context)
 
     async def _handle_loop_step(
         self,
@@ -1466,27 +1294,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         _fallback_depth: int = 0,
         **kwargs: Any,
     ) -> StepResult:
-        # Backward-compat: ignore streaming args for HITL; delegate to policy but
-        # raise PausedException for control flow, matching legacy behavior.
-        outcome = await self.hitl_step_executor.execute(
-            self, step, data, context, resources, limits, context_setter
-        )
-        if isinstance(outcome, Paused):
-            try:
-                if context is not None and hasattr(context, "scratchpad"):
-                    scratch = getattr(context, "scratchpad")
-                    if isinstance(scratch, dict):
-                        scratch["status"] = "paused"
-                        scratch["pause_message"] = outcome.message
-            except Exception:
-                pass
-            raise PausedException(outcome.message)
-        if isinstance(outcome, Success):
-            return outcome.step_result
-        if isinstance(outcome, Failure):
-            return self._unwrap_outcome_to_step_result(outcome, getattr(step, "name", "<hitl>"))
-        return StepResult(
-            name=getattr(step, "name", "<hitl>"), success=False, feedback="Unsupported HITL outcome"
+        return await self._hitl_orchestrator.execute(
+            core=self,
+            step=step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            context_setter=context_setter,
+            stream=stream,
+            on_chunk=on_chunk,
+            cache_key=cache_key,
+            fallback_depth=_fallback_depth,
         )
 
     # Legacy compatibility wrappers expected by tests
@@ -1500,216 +1319,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         _fallback_depth: int = 0,
     ) -> StepResult:
-        # Back-compat behavior for tests that stub _execute_simple_step and pass
-        # non-DSL loop step objects (e.g., SimpleNamespace). If we detect a real
-        # DSL LoopStep, delegate to the policy; otherwise run a minimal legacy
-        # loop that invokes `_execute_simple_step` for each body step.
-        try:
-            from ...domain.dsl.loop import LoopStep as _DSLLoop
-        except Exception:  # pragma: no cover - defensive import
-            _DSLLoop = None  # type: ignore
-
-        if _DSLLoop is not None and isinstance(loop_step, _DSLLoop):
-            outcome = await self.loop_step_executor.execute(
-                self,
-                loop_step,
-                data,
-                context,
-                resources,
-                limits,
-                False,
-                None,
-                None,
-                _fallback_depth,
-            )
-            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(loop_step))
-
-        # Legacy lightweight loop execution for ad-hoc objects used in unit tests
-        from flujo.domain.models import StepResult
-        from flujo.domain.models import PipelineContext as _PipelineContext
-
-        name = getattr(loop_step, "name", "loop")
-        max_loops = int(getattr(loop_step, "max_loops", 1) or 1)
-        body = getattr(loop_step, "loop_body_pipeline", None)
-        steps = []
-        try:
-            steps = list(getattr(body, "steps", []) or [])
-        except Exception:
-            steps = []
-
-        exit_condition = getattr(loop_step, "exit_condition_callable", None)
-        initial_mapper = getattr(loop_step, "initial_input_to_loop_body_mapper", None)
-        iter_mapper = getattr(loop_step, "iteration_input_mapper", None)
-        output_mapper = getattr(loop_step, "loop_output_mapper", None)
-
-        current_context = context or _PipelineContext(initial_prompt=str(data))
-        main_context = current_context
-        current_input = data
-        attempts = 0
-        step_history_tracker = StepHistoryTracker()
-        last_feedback: Optional[str] = None
-        exit_reason: str = "max_loops"
-        final_output: Any = None
-
-        for i in range(1, max_loops + 1):
-            attempts = i
-            # Apply initial/iteration mappers
-            try:
-                if i == 1 and callable(initial_mapper):
-                    current_input = initial_mapper(current_input, current_context)
-                elif callable(iter_mapper):
-                    try:
-                        current_input = iter_mapper(current_input, current_context, i)
-                    except TypeError:
-                        # Some tests provide 2-arg mapper
-                        current_input = iter_mapper(current_input, current_context)
-            except Exception:
-                # If a mapper fails, treat as failure of the whole loop immediately
-                fb = f"Error in input mapper for LoopStep '{name}'"
-                return StepResult(
-                    name=name,
-                    success=False,
-                    output=None,
-                    attempts=attempts,
-                    latency_s=0.0,
-                    token_counts=0,
-                    cost_usd=0.0,
-                    feedback=fb,
-                    branch_context=current_context,
-                    metadata_={"iterations": i, "exit_reason": "input_mapper_error"},
-                    step_history=step_history_tracker.get_history(),
-                )
-
-            # Prefer executing the body pipeline as a unit to honor overrides
-            # and allow context merge semantics expected by tests.
-            body_output = current_input
-            try:
-                # Isolate per-iteration context when available
-                try:
-                    from .context_manager import ContextManager as _CM
-
-                    iter_context = _CM.isolate(main_context) if main_context is not None else None
-                except Exception:
-                    iter_context = main_context
-
-                pr = await self._execute_pipeline(
-                    body,
-                    body_output,
-                    iter_context,
-                    resources,
-                    limits,
-                    None,
-                )
-                # Append last step result when available
-                try:
-                    if pr.step_history:
-                        step_history_tracker.extend_history(pr.step_history)
-                        body_output = pr.step_history[-1].output
-                except Exception:
-                    pass
-                # Merge iteration context back into main context
-                try:
-                    if (
-                        hasattr(pr, "final_pipeline_context")
-                        and pr.final_pipeline_context is not None
-                        and main_context is not None
-                    ):
-                        from .context_manager import ContextManager as _CM
-
-                        _CM.merge(main_context, pr.final_pipeline_context)
-                        current_context = main_context
-                except Exception:
-                    current_context = main_context
-            except Exception:
-                # Fallback to step-by-step execution for ad-hoc objects
-                for s in steps:
-                    sr = await self._execute_simple_step(
-                        s,
-                        body_output,
-                        current_context,
-                        resources,
-                        limits,
-                        False,
-                        None,
-                        None,
-                        0,
-                        False,
-                    )
-                    step_history_tracker.add_step_result(sr)
-                    if not sr.success:
-                        fb = f"Loop body failed: {sr.feedback or 'Unknown error'}"
-                        return StepResult(
-                            name=name,
-                            success=False,
-                            output=None,
-                            attempts=attempts,
-                            latency_s=0.0,
-                            token_counts=0,
-                            cost_usd=0.0,
-                            feedback=fb,
-                            branch_context=current_context,
-                            metadata_={"iterations": i, "exit_reason": "body_step_error"},
-                            step_history=step_history_tracker.get_history(),
-                        )
-                    body_output = sr.output
-
-            # Check exit condition based on body output
-            try:
-                if callable(exit_condition) and exit_condition(body_output, current_context):
-                    # Apply output mapper if present, then return success
-                    final_output = body_output
-                    if callable(output_mapper):
-                        final_output = output_mapper(final_output, current_context)
-                    exit_reason = "condition"
-                    return StepResult(
-                        name=name,
-                        success=True,
-                        output=final_output,
-                        attempts=attempts,
-                        latency_s=0.0,
-                        token_counts=0,
-                        cost_usd=0.0,
-                        feedback=None,
-                        branch_context=current_context,
-                        metadata_={"iterations": i, "exit_reason": exit_reason},
-                        step_history=step_history_tracker.get_history(),
-                    )
-            except Exception:
-                # Treat exit condition failure as non-matching; continue
-                pass
-
-            # Apply output mapper; if it fails, continue iterations but remember failure
-            final_output = body_output
-            try:
-                if callable(output_mapper):
-                    final_output = output_mapper(final_output, current_context)
-            except Exception as e:
-                last_feedback = str(e)
-                exit_reason = "output_mapper_error"
-                final_output = None
-                continue
-
-            # Update input for next iteration
-            current_input = final_output
-
-        # Finished all iterations without early success
-        success = exit_reason == "condition"
-        return StepResult(
-            name=name,
-            success=success,
-            output=final_output,
-            attempts=attempts,
-            latency_s=0.0,
-            token_counts=0,
-            cost_usd=0.0,
-            feedback=(
-                (f"Output mapper failed: {last_feedback}" if last_feedback else None)
-                if not success
-                else None
-            ),
-            branch_context=current_context,
-            metadata_={"iterations": attempts, "exit_reason": exit_reason},
-            step_history=step_history_tracker.get_history(),
+        return await self._loop_orchestrator.execute(
+            core=self,
+            loop_step=loop_step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            context_setter=context_setter,
+            fallback_depth=_fallback_depth,
         )
 
     async def _handle_cache_step(
@@ -1747,41 +1365,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         _fallback_depth: int = 0,
         **kwargs: Any,
     ) -> StepResult:
-        from ...infra import telemetry as _telemetry
-
-        # Provide an explicit span around conditional execution so span tests
-        # pass even if policy routing changes.
-        with _telemetry.logfire.span(getattr(step, "name", "<unnamed>")) as _span:
-            outcome = await self.conditional_step_executor.execute(
-                self, step, data, context, resources, limits, context_setter, _fallback_depth
-            )
-        sr = self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-        # Best-effort: mirror key telemetry messages here so tests patching
-        # flujo.infra.telemetry.logfire.info can reliably observe calls, even
-        # if policy wiring changes or alternate executors are injected.
-        try:
-            md = getattr(sr, "metadata_", None) or {}
-            branch_key = md.get("executed_branch_key")
-            if branch_key is not None:
-                _telemetry.logfire.info(f"Condition evaluated to branch key '{branch_key}'")
-                _telemetry.logfire.info(f"Executing branch for key '{branch_key}'")
-                try:
-                    _span.set_attribute("executed_branch_key", branch_key)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # Emit warn/error logs for visibility on failures when policy logs are suppressed
-        try:
-            if not getattr(sr, "success", False):
-                fb = (sr.feedback or "") if hasattr(sr, "feedback") else ""
-                if "no branch" in fb.lower():
-                    _telemetry.logfire.warn(fb)
-                elif fb:
-                    _telemetry.logfire.error(fb)
-        except Exception:
-            pass
-        return sr
+        return await self._conditional_orchestrator.execute(
+            core=self,
+            step=step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            context_setter=context_setter,
+            fallback_depth=_fallback_depth,
+        )
 
     async def _handle_dynamic_router_step(
         self,
@@ -1793,10 +1386,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
         **kwargs: Any,
     ) -> StepResult:
-        outcome = await self.dynamic_router_step_executor.execute(
-            self, step, data, context, resources, limits, context_setter
+        return await self._complex_step_router._handle_dynamic_router_step(
+            core=self,
+            step=step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            context_setter=context_setter,
         )
-        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     def _default_set_final_context(
         self, result: PipelineResult[Any], context: Optional[Any]
@@ -1840,43 +1438,28 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     # ------------------------
     async def _policy_cache_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         step = frame.step
-        data = frame.data
-        context = frame.context
-        resources = frame.resources
-        limits = frame.limits
-        context_setter = frame.context_setter
-        outcome = await self.cache_step_executor.execute(
+        return await self.cache_step_executor.execute(
             self,
             cast(CacheStep[Any, Any], step),
-            data,
-            context,
-            resources,
-            limits,
-            context_setter,
+            frame.data,
+            frame.context,
+            frame.resources,
+            frame.limits,
+            frame.context_setter,
             None,
         )
-        return outcome
 
     async def _policy_import_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         step = frame.step
-        data = frame.data
-        context = frame.context
-        resources = frame.resources
-        limits = frame.limits
-        context_setter = frame.context_setter
-        if self.import_step_executor is None:
-            # Fallback: treat as default step (should not happen if executor is present)
-            return await self._policy_default_step(frame)
-        from typing import cast as _cast
-
-        return await self.import_step_executor.execute(
-            self,
-            _cast(ImportStep, step),
-            data,
-            context,
-            resources,
-            limits,
-            context_setter,
+        return await self._import_orchestrator.execute(
+            core=self,
+            step=cast(ImportStep, step),
+            data=frame.data,
+            context=frame.context,
+            resources=frame.resources,
+            limits=frame.limits,
+            context_setter=frame.context_setter,
+            frame=frame,
         )
 
     async def _policy_parallel_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
@@ -2121,21 +1704,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             cache_key,
             fb_depth_norm,
         )
-        # Cache successful outcomes (policy-level, since execute() may unwrap)
-        try:
-            if (
-                isinstance(res_any, Success)
-                and cache_key
-                and self._enable_cache
-                and not isinstance(step, LoopStep)
-                and not (
-                    isinstance(getattr(res_any.step_result, "metadata_", None), dict)
-                    and res_any.step_result.metadata_.get("no_cache")
-                )
-            ):
-                await self._cache_backend.put(cache_key, res_any.step_result, ttl_s=3600)
-        except Exception:
-            pass
+        await self._agent_orchestrator.cache_success_if_applicable(
+            core=self,
+            step=step,
+            cache_key=cache_key,
+            outcome=res_any,
+        )
         return res_any
 
     # --- Orchestrated Simple Agent Step (centralized control flow) ---
@@ -2181,17 +1755,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             pass
 
         # Reset fallback chain at top-level invocation to avoid leakage across runs
-        try:
-            if int(_fallback_depth) == 0:
-                self._fallback_handler.reset()
-        except Exception:
-            pass
+        self._agent_orchestrator.reset_fallback_chain(self, _fallback_depth)
 
         # Fallback loop guard
-        if _fallback_depth > self._fallback_handler.MAX_CHAIN_LENGTH:
-            raise InfiniteFallbackError(
-                f"Fallback chain length exceeded maximum of {self._fallback_handler.MAX_CHAIN_LENGTH}"
-            )
+        self._agent_orchestrator.guard_fallback_loop(self, step, _fallback_depth)
 
         if _fallback_depth > 0:
             try:
@@ -2576,9 +2143,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                                     step_history=[],
                                 ),
                             )
-                        # Type guard for union type handling
-                        from ...domain.models import StepOutcome
-
                         if isinstance(fb_res, StepResult):
                             if fb_res.success:
                                 if fb_res.metadata_ is None:
@@ -3442,128 +3006,29 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                             step_result=result,
                         )
 
-                # Validators (final)
-                if hasattr(step, "validators") and step.validators:
-                    timeout_s = None
-                    try:
-                        cfg = getattr(step, "config", None)
-                        if cfg is not None and getattr(cfg, "timeout_s", None) is not None:
-                            timeout_s = float(cfg.timeout_s)
-                    except Exception:
-                        timeout_s = None
-                    try:
-                        await self.validator_invoker.validate(
-                            processed_output, step, context=attempt_context, timeout_s=timeout_s
-                        )
-                    except Exception as e:
-                        # On validation failure, try fallback with preserved diagnostics
-                        fb_step = getattr(step, "fallback_step", None)
-                        if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
-                            fb_step = None
-                        fb_msg = f"Validation failed: {self._format_feedback(str(e), 'Agent execution failed')}"
-                        if fb_step is not None:
-                            fb_res = await self.execute(
-                                step=fb_step,
-                                data=data,
-                                context=attempt_context,
-                                resources=attempt_resources,
-                                limits=limits,
-                                stream=stream,
-                                on_chunk=on_chunk,
-                                _fallback_depth=_fallback_depth + 1,
-                            )
-                            # Type guard for union type handling
-                            from ...domain.models import StepOutcome
-
-                            if isinstance(fb_res, StepResult):
-                                if fb_res.success:
-                                    if fb_res.metadata_ is None:
-                                        fb_res.metadata_ = {}
-                                    fb_res.metadata_.update(
-                                        {"fallback_triggered": True, "original_error": fb_msg}
-                                    )
-                                    return Success(step_result=fb_res)
-                                tokens_fb = int(getattr(fb_res, "token_counts", 0) or 0)
-                                cost_fb = float(getattr(fb_res, "cost_usd", 0.0) or 0.0)
-                                return Failure(
-                                    error=Exception(
-                                        f"Original error: {fb_msg}; Fallback error: {fb_res.feedback}"
-                                    ),
-                                    feedback=f"Original error: {fb_msg}; Fallback error: {fb_res.feedback}",
-                                    step_result=StepResult(
-                                        name=self._safe_step_name(step),
-                                        output=processed_output,
-                                        success=False,
-                                        attempts=result.attempts,
-                                        latency_s=time_perf_ns_to_seconds(
-                                            time_perf_ns() - start_ns
-                                        ),
-                                        token_counts=int(result.token_counts or 0) + tokens_fb,
-                                        cost_usd=cost_fb,
-                                        feedback=f"Original error: {fb_msg}; Fallback error: {fb_res.feedback}",
-                                        branch_context=None,
-                                        metadata_={
-                                            "fallback_triggered": True,
-                                            "original_error": fb_msg,
-                                        },
-                                        step_history=[],
-                                    ),
-                                )
-                            elif isinstance(fb_res, StepOutcome):
-                                if isinstance(fb_res, Success) and fb_res.step_result is not None:
-                                    if fb_res.step_result.metadata_ is None:
-                                        fb_res.step_result.metadata_ = {}
-                                    fb_res.step_result.metadata_.update(
-                                        {"fallback_triggered": True, "original_error": fb_msg}
-                                    )
-                                    return Success(step_result=fb_res.step_result)
-                                sr_fb = self._unwrap_outcome_to_step_result(
-                                    fb_res, self._safe_step_name(step)
-                                )
-                                tokens_fb = int(getattr(sr_fb, "token_counts", 0) or 0)
-                                cost_fb = float(getattr(sr_fb, "cost_usd", 0.0) or 0.0)
-                                return Failure(
-                                    error=Exception(
-                                        f"Original error: {fb_msg}; Fallback error: {getattr(fb_res, 'feedback', 'Unknown')}"
-                                    ),
-                                    feedback=f"Original error: {fb_msg}; Fallback error: {getattr(fb_res, 'feedback', 'Unknown')}",
-                                    step_result=StepResult(
-                                        name=self._safe_step_name(step),
-                                        output=processed_output,
-                                        success=False,
-                                        attempts=result.attempts,
-                                        latency_s=time_perf_ns_to_seconds(
-                                            time_perf_ns() - start_ns
-                                        ),
-                                        token_counts=int(result.token_counts or 0) + tokens_fb,
-                                        cost_usd=cost_fb,
-                                        feedback=f"Original error: {fb_msg}; Fallback error: {getattr(fb_res, 'feedback', 'Unknown')}",
-                                        branch_context=None,
-                                        metadata_={
-                                            "fallback_triggered": True,
-                                            "original_error": fb_msg,
-                                        },
-                                        step_history=[],
-                                    ),
-                                )
-                        # No fallback configured
-                        return Failure(
-                            error=e,
-                            feedback=fb_msg,
-                            step_result=StepResult(
-                                name=self._safe_step_name(step),
-                                output=processed_output,
-                                success=False,
-                                attempts=result.attempts,
-                                latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
-                                token_counts=result.token_counts,
-                                cost_usd=result.cost_usd,
-                                feedback=fb_msg,
-                                branch_context=None,
-                                metadata_={},
-                                step_history=[],
-                            ),
-                        )
+                validation_result = await self._validation_orchestrator.validate(
+                    core=self,
+                    step=step,
+                    output=processed_output,
+                    context=attempt_context,
+                    limits=limits,
+                    data=data,
+                    attempt_context=attempt_context,
+                    attempt_resources=attempt_resources,
+                    stream=stream,
+                    on_chunk=on_chunk,
+                    fallback_depth=_fallback_depth,
+                )
+                if validation_result is not None:
+                    if isinstance(validation_result, StepResult) and validation_result.success:
+                        return Success(step_result=validation_result)
+                    if isinstance(validation_result, StepOutcome):
+                        return validation_result
+                    return Failure(
+                        error=Exception(validation_result.feedback or "Validation failed"),
+                        feedback=validation_result.feedback,
+                        step_result=validation_result,
+                    )
 
                 # Success
                 result.success = True
@@ -3652,19 +3117,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                         f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object"
                     )
                 # Apply updates_context semantics for simple steps with validation
-                try:
-                    if getattr(step, "updates_context", False) and context is not None:
-                        update_data = _build_context_update(processed_output)
-                        if update_data:
-                            validation_error = _inject_context_with_deep_merge(
-                                context, update_data, type(context)
-                            )
-                            if validation_error:
-                                result.success = False
-                                result.feedback = f"Context validation failed: {validation_error}"
-                except Exception:
-                    # Never crash pipeline on context update failure; treat as best-effort
-                    pass
+                validation_error = self._context_update_manager.apply_updates(
+                    step=step, output=processed_output, context=context
+                )
+                if validation_error:
+                    result.success = False
+                    result.feedback = f"Context validation failed: {validation_error}"
                 result.output = processed_output
                 result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
 

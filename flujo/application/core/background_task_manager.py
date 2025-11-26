@@ -1,8 +1,12 @@
 """Background task lifecycle management."""
 
 from __future__ import annotations
+
 import asyncio
-from typing import Any, Set
+import uuid
+from typing import Any, Callable, Coroutine, Set
+
+from ...domain.models import BackgroundLaunched
 from ...infra import telemetry
 
 
@@ -24,6 +28,19 @@ class BackgroundTaskManager:
     def has_active_tasks(self) -> bool:
         """Check if there are any active background tasks."""
         return bool(self._background_tasks)
+
+    async def launch_background_task(
+        self,
+        *,
+        step_name: str,
+        run_coro: Callable[[], Coroutine[Any, Any, Any]],
+    ) -> BackgroundLaunched[Any]:
+        """Create, track, and return metadata for a background step execution."""
+        task_id = f"bg_{uuid.uuid4().hex}"
+        task = asyncio.create_task(run_coro(), name=f"flujo_bg_{step_name}_{task_id}")
+        self.add_task(task)
+        telemetry.logfire.info(f"Launched background step '{step_name}' (task_id={task_id})")
+        return BackgroundLaunched(task_id=task_id, step_name=step_name)
 
     async def wait_for_completion(self, timeout: float = 5.0) -> None:
         """Wait for all background tasks to complete with a timeout.

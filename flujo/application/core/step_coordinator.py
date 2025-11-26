@@ -74,20 +74,12 @@ class StepCoordinator(Generic[ContextT]):
             Step results or streaming chunks
         """
         # Dispatch pre-step hook
-        # Capture quota snapshot if available on context scratchpad
+        # Capture quota snapshot if available on provided quota
         quota_before_usd = None
         quota_before_tokens = None
         try:
-            # Best effort: some contexts may not have quota info
-            remaining = None
-            from flujo.application.core.executor_core import ExecutorCore as _Exec
-
-            quota_obj = _Exec.CURRENT_QUOTA.get()
-            if isinstance(quota_obj, Quota):
-                remaining = quota_obj.get_remaining()
-            else:
-                remaining = None
-            if remaining is not None:
+            if quota is not None:
+                remaining = quota.get_remaining()
                 quota_before_usd, quota_before_tokens = remaining
         except Exception:
             quota_before_usd = None

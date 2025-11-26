@@ -1,14 +1,11 @@
 """Quota management for proactive resource budgeting."""
 
 from __future__ import annotations
+
 import contextvars
 from typing import Optional, Tuple
-from ...domain.models import Quota, UsageEstimate, UsageLimits
 
-# Propagate quota across async calls
-CURRENT_QUOTA: contextvars.ContextVar[Optional[Quota]] = contextvars.ContextVar(
-    "CURRENT_QUOTA", default=None
-)
+from ...domain.models import Quota, UsageEstimate, UsageLimits
 
 
 class QuotaManager:
@@ -17,6 +14,9 @@ class QuotaManager:
     def __init__(self, limits: Optional[UsageLimits] = None) -> None:
         self._limits = limits
         self._root_quota: Optional[Quota] = None
+        self._current_quota_var: contextvars.ContextVar[Optional[Quota]] = contextvars.ContextVar(
+            "quota_manager_current_quota", default=None
+        )
 
     def create_root_quota(self) -> Quota:
         """Create the root quota from usage limits."""
@@ -34,11 +34,11 @@ class QuotaManager:
 
     def get_current_quota(self) -> Optional[Quota]:
         """Get the quota from the current async context."""
-        return CURRENT_QUOTA.get()
+        return self._current_quota_var.get()
 
     def set_current_quota(self, quota: Optional[Quota]) -> contextvars.Token[Optional[Quota]]:
         """Set the quota for the current async context."""
-        return CURRENT_QUOTA.set(quota)
+        return self._current_quota_var.set(quota)
 
     def reserve(self, estimate: UsageEstimate) -> bool:
         """Reserve resources from current quota. Returns True if successful."""

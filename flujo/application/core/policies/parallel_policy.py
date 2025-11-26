@@ -92,8 +92,8 @@ class DefaultParallelStepExecutor:
         branch_pipelines: List[Any] = [bp for _, bp in branch_items]
         branch_quota_map: Dict[str, Optional[Quota]] = {bn: None for bn in branch_names}
         try:
-            current_quota: Optional[Quota] = (
-                core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None
+            current_quota = (
+                core._get_current_quota() if hasattr(core, "_get_current_quota") else None
             )
         except Exception:
             current_quota = None
@@ -167,8 +167,10 @@ class DefaultParallelStepExecutor:
                 # Set per-branch quota in this task's context
                 quota_token = None
                 try:
-                    if hasattr(core, "CURRENT_QUOTA"):
-                        quota_token = core.CURRENT_QUOTA.set(branch_quota)
+                    if hasattr(core, "_set_current_quota"):
+                        quota_token = core._set_current_quota(branch_quota)
+                    elif hasattr(core, "_quota_manager"):
+                        quota_token = core._quota_manager.set_current_quota(branch_quota)
                 except Exception:
                     quota_token = None
                 # Phase 1: Verify isolation before execution (strict mode)
@@ -376,12 +378,11 @@ class DefaultParallelStepExecutor:
                 return branch_name, failure
             finally:
                 try:
-                    if (
-                        "quota_token" in locals()
-                        and quota_token is not None
-                        and hasattr(core, "CURRENT_QUOTA")
-                    ):
-                        core.CURRENT_QUOTA.reset(quota_token)
+                    if "quota_token" in locals() and quota_token is not None:
+                        if hasattr(core, "_reset_current_quota"):
+                            core._reset_current_quota(quota_token)
+                        elif hasattr(core, "_quota_manager") and hasattr(quota_token, "old_value"):
+                            core._quota_manager.set_current_quota(quota_token.old_value)  # type: ignore[attr-defined]
                 except Exception:
                     pass
 

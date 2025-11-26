@@ -63,7 +63,7 @@ async def test_quota_propagates_conditional_to_nested_parallel_with_costs():
         # Provide sufficient quota on the core
         from flujo.domain.models import Quota
 
-        core.CURRENT_QUOTA.set(Quota(remaining_cost_usd=5.0, remaining_tokens=1000))
+        core._set_current_quota(Quota(remaining_cost_usd=5.0, remaining_tokens=1000))
 
         outcome = await DefaultConditionalStepExecutor().execute(
             core,
@@ -137,7 +137,7 @@ async def test_quota_propagates_router_to_selected_parallel_with_costs():
     try:
         from flujo.domain.models import Quota
 
-        core.CURRENT_QUOTA.set(Quota(remaining_cost_usd=10.0, remaining_tokens=1000))
+        core._set_current_quota(Quota(remaining_cost_usd=10.0, remaining_tokens=1000))
 
         outcome = await DefaultDynamicRouterStepExecutor().execute(
             core,

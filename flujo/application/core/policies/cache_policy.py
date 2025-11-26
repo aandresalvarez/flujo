@@ -108,13 +108,20 @@ class DefaultCacheStepExecutor:
                     telemetry.logfire.error(
                         f"Cache backend GET failed for step '{cache_step.name}': {e}"
                     )
+                quota = None
+                try:
+                    if hasattr(core, "_get_current_quota"):
+                        quota = core._get_current_quota()
+                except Exception:
+                    quota = None
+
                 frame = ExecutionFrame(
                     step=cache_step.wrapped_step,
                     data=data,
                     context=context,
                     resources=resources,
                     limits=limits,
-                    quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
+                    quota=quota,
                     stream=False,
                     on_chunk=None,
                     context_setter=(
@@ -190,7 +197,7 @@ class DefaultCacheStepExecutor:
             context=context,
             resources=resources,
             limits=limits,
-            quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
+            quota=(core._get_current_quota() if hasattr(core, "_get_current_quota") else None),
             stream=False,
             on_chunk=None,
             context_setter=(
