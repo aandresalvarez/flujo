@@ -1,0 +1,448 @@
+"""Architecture tests to ensure type safety compliance.
+
+These tests verify that the codebase maintains strong type safety and follows
+the patterns established in docs/development/type_safety.md and FLUJO_TEAM_GUIDE.md.
+"""
+
+import subprocess
+from pathlib import Path
+from typing import List
+import pytest
+
+
+class TestTypeSafetyCompliance:
+    """Test suite for type safety compliance."""
+
+    @pytest.fixture
+    def flujo_root(self) -> Path:
+        """Get the root directory of the Flujo project."""
+        return Path(__file__).parent.parent.parent
+
+    def _get_python_files(self, root: Path) -> List[Path]:
+        """Get all Python files in the flujo package."""
+        flujo_dir = root / "flujo"
+        return list(flujo_dir.rglob("*.py"))
+
+    def _grep_files(self, files: List[Path], pattern: str) -> List[str]:
+        """Search for pattern in files using grep."""
+        results = []
+        for file_path in files:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                    for i, line in enumerate(lines, 1):
+                        if pattern in line:
+                            results.append(f"{file_path}:{i}:{line.strip()}")
+            except (UnicodeDecodeError, OSError):
+                # Skip binary files or files we can't read
+                continue
+        return results
+
+    def test_no_new_any_types_in_flujo_package(self, flujo_root: Path):
+        """Verify that `Any` types are not introduced in new code.
+
+        This test ensures that the type safety improvements are maintained
+        and no new `Any` types are introduced in the flujo package.
+        """
+        python_files = self._get_python_files(flujo_root)
+        any_occurrences = self._grep_files(python_files, "Any")
+
+        # Filter out acceptable uses of Any
+        acceptable_any_uses = {
+            "from typing import Any",  # Import statements are OK
+            "from typing import Any as",  # Import aliases are OK
+            "import typing",  # typing module imports are OK
+            "typing.Any",  # Explicit typing.Any references are OK
+            "Any,",  # In import lists
+            "Any as",  # Import aliases
+            ": Any",  # Type annotations (these should be evaluated case-by-case)
+            "-> Any",  # Return type annotations (should be evaluated)
+            "[Any]",  # Generic types
+            "Any]",  # End of generic types
+            "Any)",  # End of function signatures
+            "Any,",  # In tuples/lists
+            "Any |",  # Union types
+            "| Any",  # Union types
+        }
+
+        # Known acceptable files and locations (baseline)
+        acceptable_locations = {
+            # Type definition files
+            "flujo/type_definitions/common.py",
+            "flujo/type_definitions/validation.py",
+            "flujo/type_definitions/__init__.py",
+            # Test files for type safety
+            "tests/test_types/",
+            # Domain types (some legacy Any usage)
+            "flujo/domain/types.py",
+            "flujo/domain/models.py",
+            "flujo/domain/dsl/step.py",
+        }
+
+        concerning_any_uses = []
+
+        for occurrence in any_occurrences:
+            file_path, line_num, line_content = occurrence.split(":", 2)
+            file_path = file_path.strip()
+
+            # Skip acceptable import statements
+            if any(acceptable in line_content for acceptable in acceptable_any_uses):
+                continue
+
+            # Skip known acceptable files
+            if any(acceptable in file_path for acceptable in acceptable_locations):
+                continue
+
+            # Flag concerning uses
+            concerning_any_uses.append(occurrence)
+
+        # Allow some baseline Any usage but prevent significant new usage
+        max_allowed_any = 600  # Baseline adjusted to current codebase footprint
+
+        if len(concerning_any_uses) > max_allowed_any:
+            pytest.fail(
+                f"Found {len(concerning_any_uses)} concerning Any type usages, "
+                f"exceeding the allowed baseline of {max_allowed_any}.\n"
+                f"Type safety regression detected. New Any types introduced:\n"
+                + "\n".join(concerning_any_uses[:10])  # Show first 10
+                + (
+                    f"\n... and {len(concerning_any_uses) - 10} more"
+                    if len(concerning_any_uses) > 10
+                    else ""
+                )
+            )
+
+    def test_uses_jsonobject_instead_of_dict_str_any(self, flujo_root: Path):
+        """Verify that JSONObject is used instead of Dict[str, Any] in new code.
+
+        This test ensures that the type safety improvement of using JSONObject
+        aliases is followed in new code.
+        """
+        python_files = self._get_python_files(flujo_root)
+        dict_str_any_occurrences = self._grep_files(python_files, "Dict[str, Any]")
+
+        # Filter out acceptable uses
+        acceptable_files = {
+            # Legacy files that still need migration
+            "flujo/utils/serialization.py",
+            "flujo/domain/blueprint/model_generator.py",
+            "flujo/application/core/type_validator.py",
+            # Test files
+            "tests/",
+        }
+
+        concerning_uses = []
+        for occurrence in dict_str_any_occurrences:
+            file_path = occurrence.split(":", 1)[0]
+
+            # Skip acceptable files
+            if any(acceptable in file_path for acceptable in acceptable_files):
+                continue
+
+            concerning_uses.append(occurrence)
+
+        if concerning_uses:
+            pytest.fail(
+                f"Found {len(concerning_uses)} uses of Dict[str, Any] instead of JSONObject in new code.\n"
+                f"Please use JSONObject from flujo.type_definitions.common instead:\n"
+                + "\n".join(concerning_uses[:5])  # Show first 5
+                + (f"\n... and {len(concerning_uses) - 5} more" if len(concerning_uses) > 5 else "")
+            )
+
+    def test_typed_test_fixtures_are_used(self, flujo_root: Path):
+        """Verify that typed test fixtures are used in test files.
+
+        This test ensures that new test files use the typed fixtures from
+        tests/test_types/ instead of creating ad-hoc test objects.
+        """
+        test_files = list((flujo_root / "tests").rglob("*.py"))
+        new_test_files = []
+
+        # Find test files that might be new (simple heuristic)
+        for test_file in test_files:
+            try:
+                with open(test_file, "r") as f:
+                    content = f.read()
+                    # Skip if it already uses typed fixtures
+                    if (
+                        "tests.test_types.fixtures" in content
+                        or "tests.test_types.mocks" in content
+                    ):
+                        continue
+                    # Flag files that create Step, StepResult, etc. without imports
+                    if (
+                        "Step(" in content or "StepResult(" in content
+                    ) and "test_types" not in content:
+                        new_test_files.append(test_file)
+            except (UnicodeDecodeError, OSError):
+                continue
+
+        if new_test_files:
+            pytest.fail(
+                f"Found {len(new_test_files)} test files that create test objects without using typed fixtures.\n"
+                f"Please use typed fixtures from tests.test_types.fixtures and tests.test_types.mocks:\n"
+                + "\n".join(str(f.relative_to(flujo_root)) for f in new_test_files[:5])
+                + (f"\n... and {len(new_test_files) - 5} more" if len(new_test_files) > 5 else "")
+            )
+
+
+class TestArchitectureCompliance:
+    """Test suite for architectural pattern compliance."""
+
+    @pytest.fixture
+    def flujo_root(self) -> Path:
+        """Get the root directory of the Flujo project."""
+        return Path(__file__).parent.parent.parent
+
+    def _get_python_files(self, flujo_root: Path, package: str = "flujo") -> List[Path]:
+        """Get all Python files in the specified package."""
+        package_dir = flujo_root / package
+        return list(package_dir.rglob("*.py"))
+
+    def _grep_files(self, files: List[Path], pattern: str) -> List[str]:
+        """Search for pattern in files using grep."""
+        results = []
+        for file_path in files:
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                    for i, line in enumerate(lines, 1):
+                        if pattern in line:
+                            results.append(f"{file_path}:{i}:{line.strip()}")
+            except (UnicodeDecodeError, OSError):
+                continue
+        return results
+
+    def test_policy_classes_follow_naming_convention(self, flujo_root: Path):
+        """Verify that policy classes follow the naming convention.
+
+        Policy classes should be named Default{StepType}Executor.
+        """
+        policy_files = list((flujo_root / "flujo/application/core/step_policies.py").glob("*.py"))
+        if not policy_files:  # Single file structure
+            policy_files = [flujo_root / "flujo/application/core/step_policies.py"]
+
+        violations = []
+        for policy_file in policy_files:
+            try:
+                with open(policy_file, "r") as f:
+                    content = f.read()
+
+                    # Find class definitions
+                    lines = content.split("\n")
+                    for i, line in enumerate(lines):
+                        if line.startswith("class ") and "Executor" in line:
+                            class_name = line.split()[1].split("(")[0]
+                            if not (
+                                class_name.startswith("Default") and class_name.endswith("Executor")
+                            ):
+                                violations.append(f"{policy_file}:{i + 1}: {class_name}")
+
+            except (UnicodeDecodeError, OSError):
+                continue
+
+        if violations:
+            pytest.fail(
+                f"Found {len(violations)} policy classes that don't follow naming convention.\n"
+                "Policy classes should be named Default{StepType}Executor:\n"
+                "\n".join(violations)
+            )
+
+    def test_executor_core_uses_policy_injection(self, flujo_root: Path):
+        """Verify that ExecutorCore uses dependency injection for policies.
+
+        The ExecutorCore constructor should accept policy instances as parameters.
+        """
+        executor_file = flujo_root / "flujo/application/core/executor_core.py"
+
+        try:
+            with open(executor_file, "r") as f:
+                content = f.read()
+
+                # Check for policy injection in __init__
+                init_start = content.find("def __init__(")
+                if init_start == -1:
+                    pytest.fail("Could not find ExecutorCore.__init__ method")
+
+                # Look for policy parameters in __init__
+                init_end = content.find("\n    def ", init_start + 1)
+                if init_end == -1:
+                    init_end = len(content)
+
+                init_content = content[init_start:init_end]
+
+                # Check for policy injection patterns
+                policy_patterns = [
+                    "loop_step_executor",
+                    "parallel_step_executor",
+                    "conditional_step_executor",
+                    "agent_step_executor",
+                    "cache_step_executor",
+                    "hitl_step_executor",
+                    "dynamic_router_step_executor",
+                ]
+
+                missing_policies = []
+                for pattern in policy_patterns:
+                    if pattern not in init_content:
+                        missing_policies.append(pattern)
+
+                if missing_policies:
+                    pytest.fail(
+                        f"ExecutorCore.__init__ is missing policy injection for: {missing_policies}\n"
+                        "All policies should be injected via constructor parameters for testability and flexibility."
+                    )
+
+        except (UnicodeDecodeError, OSError) as e:
+            pytest.fail(f"Could not read executor_core.py: {e}")
+
+    def test_exception_handling_follows_patterns(self, flujo_root: Path):
+        """Verify that exception handling follows the established patterns.
+
+        Control flow exceptions should be re-raised, not converted to failures.
+        """
+        policy_files = [flujo_root / "flujo/application/core/step_policies.py"]
+
+        violations = []
+        for policy_file in policy_files:
+            try:
+                with open(policy_file, "r") as f:
+                    content = f.read()
+
+                    # Look for patterns where control flow exceptions are caught and converted
+                    lines = content.split("\n")
+                    for i, line in enumerate(lines):
+                        line_content = line.strip()
+                        # Look for problematic patterns
+                        if (
+                            "except" in line_content
+                            and (
+                                "PausedException" in line_content
+                                or "PipelineAbortSignal" in line_content
+                                or "InfiniteRedirectError" in line_content
+                            )
+                            and "return StepResult" in lines[min(i + 1, len(lines) - 1)]
+                        ):
+                            violations.append(
+                                f"{policy_file}:{i + 1}: Control flow exception converted to failure"
+                            )
+
+            except (UnicodeDecodeError, OSError):
+                continue
+
+        if violations:
+            pytest.fail(
+                f"Found {len(violations)} violations of exception handling patterns.\n"
+                f"Control flow exceptions (PausedException, PipelineAbortSignal, InfiniteRedirectError) "
+                f"should be re-raised, not converted to StepResult failures:\n"
+                + "\n".join(violations)
+            )
+
+    def test_context_isolation_is_used_in_complex_steps(self, flujo_root: Path):
+        """Verify that complex steps (LoopStep, ParallelStep) use context isolation.
+
+        Complex steps should use ContextManager.isolate() for idempotency.
+        """
+        policy_files = [flujo_root / "flujo/application/core/step_policies.py"]
+
+        violations = []
+        for policy_file in policy_files:
+            try:
+                with open(policy_file, "r") as f:
+                    content = f.read()
+
+                    # Check for complex step classes
+                    if "LoopStepExecutor" in content or "ParallelStepExecutor" in content:
+                        if "ContextManager.isolate" not in content:
+                            violations.append(
+                                f"{policy_file}: Complex step executor missing ContextManager.isolate()"
+                            )
+
+            except (UnicodeDecodeError, OSError):
+                continue
+
+        if violations:
+            pytest.fail(
+                f"Found {len(violations)} complex step executors that don't use context isolation.\n"
+                f"LoopStep and ParallelStep executors must use ContextManager.isolate() for idempotency:\n"
+                + "\n".join(violations)
+            )
+
+
+class TestCodeQualityGates:
+    """Test suite for code quality gates."""
+
+    @pytest.fixture
+    def flujo_root(self) -> Path:
+        """Get the root directory of the Flujo project."""
+        return Path(__file__).parent.parent.parent
+
+    def test_make_all_passes(self, flujo_root: Path):
+        """Verify that `make all` passes with zero errors.
+
+        This is the primary quality gate that must pass before any PR is merged.
+        """
+        try:
+            # Run make all from the project root
+            result = subprocess.run(
+                ["make", "all"],
+                cwd=flujo_root,
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5 minute timeout
+            )
+
+            if result.returncode != 0:
+                # Get the last 50 lines of output for context
+                output_lines = (result.stdout + result.stderr).split("\n")
+                recent_output = "\n".join(output_lines[-50:])
+
+                pytest.fail(
+                    f"`make all` failed with exit code {result.returncode}.\n"
+                    f"This is a critical quality gate that must pass before merging.\n"
+                    f"Recent output:\n{recent_output}"
+                )
+
+        except subprocess.TimeoutExpired:
+            pytest.fail("`make all` timed out after 5 minutes")
+        except FileNotFoundError:
+            pytest.fail("`make` command not found. Ensure you're in the correct environment.")
+
+    def test_no_type_ignore_comments_without_justification(self, flujo_root: Path):
+        """Verify that `# type: ignore` comments are justified.
+
+        Type ignore comments should include a brief justification.
+        """
+        python_files = []
+        for pattern in ["flujo/**/*.py", "tests/**/*.py"]:
+            python_files.extend(list(flujo_root.glob(pattern)))
+
+        violations = []
+        for file_path in python_files:
+            try:
+                with open(file_path, "r") as f:
+                    lines = f.readlines()
+                    for i, line in enumerate(lines):
+                        if "# type: ignore" in line:
+                            # Check if there's a justification comment
+                            line_content = line.strip()
+                            if not (
+                                "#" in line_content
+                                and len(line_content.split("# type: ignore")[1].strip()) > 5
+                            ):
+                                violations.append(f"{file_path}:{i + 1}: {line_content}")
+
+            except (UnicodeDecodeError, OSError):
+                continue
+
+        if violations:
+            pytest.fail(
+                f"Found {len(violations)} # type: ignore comments without justification.\n"
+                f"All type ignore comments must include a brief explanation:\n"
+                + "\n".join(violations[:10])  # Show first 10
+                + (f"\n... and {len(violations) - 10} more" if len(violations) > 10 else "")
+            )
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

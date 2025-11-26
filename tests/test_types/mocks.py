@@ -15,6 +15,7 @@ Usage:
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 from flujo.application.core.executor_core import ExecutorCore
+from flujo.domain.models import StepResult
 
 
 def create_mock_executor_core(
@@ -43,7 +44,14 @@ def create_mock_executor_core(
 
     mock_cache_backend = AsyncMock()
     if cache_hit:
-        mock_cache_backend.get = AsyncMock(return_value={"cached": "result"})
+        # Return a proper StepResult object for cache hits
+        cached_result = StepResult(
+            name="cached_step",
+            output={"cached": "result"},
+            success=True,
+            metadata_={"cache_hit": True},
+        )
+        mock_cache_backend.get = AsyncMock(return_value=cached_result)
     else:
         mock_cache_backend.get = AsyncMock(return_value=None)
 

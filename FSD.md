@@ -548,7 +548,7 @@ def __init__(
 
 ---
 
-## 6. Phase 2: ExecutorCore Decomposition (Weeks 4-6)
+ 
 
 ### 6.1 Objective
 Break down the 4,000+ line `executor_core.py` into focused, single-responsibility modules while maintaining the policy-driven architecture.

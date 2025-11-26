@@ -44,11 +44,12 @@ from ...exceptions import (
     PipelineAbortSignal,
 )
 from ...infra import telemetry
-from .quota_manager import CURRENT_QUOTA
+from .quota_manager import CURRENT_QUOTA, QuotaManager
 from .fallback_handler import FallbackHandler
 from .background_task_manager import BackgroundTaskManager
 from .cache_manager import CacheManager
 from .hydration_manager import HydrationManager
+from .execution_dispatcher import ExecutionDispatcher
 from .step_history_tracker import StepHistoryTracker
 from ...steps.cache_step import CacheStep
 from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
@@ -207,6 +208,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         validator_runner: Any = None,
         plugin_runner: Any = None,
         usage_meter: Any = None,
+        quota_manager: Optional[QuotaManager] = None,
         cache_backend: Any = None,
         cache_key_generator: Any = None,
         telemetry: Any = None,
@@ -292,6 +294,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
         self._usage_estimator: UsageEstimator = usage_estimator or HeuristicUsageEstimator()
         self._step_history_tracker = StepHistoryTracker()
+        self._quota_manager = quota_manager or QuotaManager()
         self._concurrency_limit = concurrency_limit
 
         # Backward compatibility properties for tests
@@ -414,6 +417,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         except Exception:
             # Defensive: never break core init due to optional policy wiring
             pass
+
+        # Dispatcher delegates to the shared policy registry
+        self._dispatcher = ExecutionDispatcher(self.policy_registry)
 
     @property
     def cache(self) -> _LRUCache:
@@ -758,7 +764,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 context=isolated_context,
                 resources=resources,
                 limits=limits,
-                quota=CURRENT_QUOTA.get(),
+                quota=self._quota_manager.get_current_quota(),
                 stream=False,
                 on_chunk=None,
                 context_setter=lambda _res, _ctx: None,
@@ -805,7 +811,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 context=kwargs.get("context"),
                 resources=kwargs.get("resources"),
                 limits=kwargs.get("limits"),
-                quota=kwargs.get("quota", CURRENT_QUOTA.get()),
+                quota=kwargs.get("quota", self._quota_manager.get_current_quota()),
                 stream=kwargs.get("stream", False),
                 on_chunk=kwargs.get("on_chunk"),
                 context_setter=kwargs.get(
@@ -818,7 +824,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         # Set CURRENT_QUOTA for this execution context
         try:
-            CURRENT_QUOTA.set(getattr(frame, "quota", None))
+            self._quota_manager.set_current_quota(getattr(frame, "quota", None))
         except Exception:
             pass
 
@@ -860,18 +866,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 return bg_outcome
             return self._unwrap_outcome_to_step_result(bg_outcome, step_name)
 
-        # Hard route critical step subclasses before registry to guarantee policy-specific behavior
-        try:
-            from ...domain.dsl.conditional import ConditionalStep as _Cond
-
-            if isinstance(step, _Cond):
-                outcome = await self._policy_conditional_step(frame)
-                await self._hydration_manager.persist_context(getattr(frame, "context", None))
-                if called_with_frame:
-                    return outcome
-                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-        except Exception:
-            pass
         data = frame.data
         # Normalize mock contexts to None to avoid unnecessary overhead in hot paths
         try:
@@ -933,15 +927,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         try:
             # FSD-010: Registry-based dispatch (inside choke-point try/except)
-            policy = self.policy_registry.get(type(step))
-            if policy is None:
-                policy = self.policy_registry.get(Step)
-            if policy is None:
-                raise NotImplementedError(
-                    f"No policy registered for step type: {type(step).__name__}"
-                )
-
-            outcome = await policy(frame)
+            outcome = await self._dispatcher.dispatch(frame)
             await self._hydration_manager.persist_context(getattr(frame, "context", None))
 
             if called_with_frame:
@@ -975,9 +961,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if self.enable_optimized_error_handling and isinstance(e, MissingAgentError):
                 # Preserve MissingAgentError for real Step objects to satisfy strict tests
                 # while gracefully handling invalid/mocked steps without agents.
-                from flujo.domain.dsl.step import Step as _Step
-
-                if isinstance(step, _Step):
+                if getattr(step.__class__, "__name__", "") == "Step":
                     raise
                 safe_name = self._safe_step_name(step)
                 result = StepResult(
@@ -1234,7 +1218,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                     context=current_context,
                     resources=resources,
                     limits=limits,
-                    quota=CURRENT_QUOTA.get(),
+                    quota=self._quota_manager.get_current_quota(),
                     stream=False,
                     on_chunk=None,
                     context_setter=(context_setter or (lambda _r, _c: None)),
@@ -2454,7 +2438,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
                     _estimate = _UsageEstimate(cost_usd=est_cost, tokens=est_tokens)
                     try:
-                        _current_quota = CURRENT_QUOTA.get()
+                        _current_quota = self._quota_manager.get_current_quota()
                     except Exception:
                         _current_quota = None
                     if _current_quota is not None:

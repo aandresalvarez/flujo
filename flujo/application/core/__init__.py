@@ -13,6 +13,7 @@ from .fallback_handler import FallbackHandler
 from .background_task_manager import BackgroundTaskManager
 from .cache_manager import CacheManager
 from .hydration_manager import HydrationManager
+from .execution_dispatcher import ExecutionDispatcher
 from .step_history_tracker import StepHistoryTracker
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "BackgroundTaskManager",
     "CacheManager",
     "HydrationManager",
+    "ExecutionDispatcher",
     "StepHistoryTracker",
 ]
