@@ -11,7 +11,7 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
 - Maintain policy-driven architecture and policy injection.
 
 ## Current Code State (verified 2025-11-26)
-- `ExecutorCore` is ~3,402 LOC (`wc -l flujo/application/core/executor_core.py`); background launch, cache, and complex routing are delegated but the composition-root target is still ahead.
+- `ExecutorCore` is ~3,402 LOC (`wc -l flujo/application/core/executor_core.py`); the 500–600 LOC composition-root goal is **not yet reached**. Background launch, cache, complex routing, validation, and quota plumbing are delegated.
 - Delegated components in place: `execution_dispatcher.py`, `background_task_manager.py`, `cache_manager.py`, `complex_step_router.py`, `pipeline_orchestrator.py`, `agent_orchestrator.py`, `conditional_orchestrator.py`, `hitl_orchestrator.py`, `loop_orchestrator.py`, `import_orchestrator.py`, `validation_orchestrator.py`, `context_update_manager.py`, `failure_builder.py`, `quota_manager.py`, `step_history_tracker.py`.
 - Validation orchestration extracted and wired through the agent path; validation fallback now marks `fallback_triggered` and preserves outputs on failure.
 - Quota is unified through `QuotaManager` with a per-instance contextvar; the legacy `CURRENT_QUOTA` shim is gone and tests use `_set_current_quota`.
@@ -24,10 +24,10 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
 - Fully removed legacy `CURRENT_QUOTA` references in favor of `QuotaManager` helpers.
 
 ## Gaps vs Objectives
-1) `ExecutorCore` still ~3.4k LOC; agent/pipeline/fallback glue needs further extraction to reach the 500–600 LOC goal.
-2) Inline agent retry/telemetry/fallback logic still lives in core/policies; consolidate into orchestrators for policy-driven execution.
-3) Continue type hardening per `docs/advanced/typing_guide.md` (e.g., prefer `JSONObject`, strict signatures, protocol use) across new orchestrators.
-4) Keep architecture/type gates green after each extraction.
+1) `ExecutorCore` still ~3.4k LOC; significant slimming needed to reach the 500–600 LOC target.
+2) Agent retry/telemetry/fallback logic and some pipeline/fallback glue remain inline; extract into orchestrators/policies.
+3) Continue type hardening per `docs/advanced/typing_guide.md` (prefer `JSONObject`, strict signatures, protocol use) across orchestrators.
+4) Keep architecture/type gates green after each extraction and re-run targeted suites.
 
 ## Robust Approach (typing-guide aligned)
 - Keep the executor as a composition root: no step-specific branching; delegate to orchestrators/dispatcher/policies and use `ContextManager.isolate()` for retries/loops.
@@ -49,10 +49,54 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
    Run: `pytest tests/application/core/test_executor_core_conditional_step_dispatch.py tests/application/core/test_executor_core_conditional_step_logic.py tests/regression/test_executor_core_optimization_regression.py`.
 6) **Regression gate after each batch**: run `make test-fast` (fast suite) to validate Phase 2 surfaces; rerun the targeted suites above when their areas are touched.
 
-## Verification Status
-- `make test-fast` (2025-11-26) — **PASS**
-- Targeted validation/loop dispatch checks — **PASS** (`pytest tests/application/core/test_executor_core_loop_step_dispatch.py` plus validation fallback cases)
+## Kanban (next-action focused)
 
-## Artifacts/References
-- Key components: `execution_dispatcher.py`, `background_task_manager.py`, `cache_manager.py`, `complex_step_router.py`, `pipeline_orchestrator.py`, `agent_orchestrator.py`, `conditional_orchestrator.py`, `hitl_orchestrator.py`, `loop_orchestrator.py`, `import_orchestrator.py`, `validation_orchestrator.py`, `context_update_manager.py`, `failure_builder.py`, `quota_manager.py`, `step_history_tracker.py`.
-- Executor size check: `wc -l flujo/application/core/executor_core.py` → ~3,402.
+### To Do
+
+#### Agent orchestration extraction (milestone series)
+
+  - due: 2025-11-29
+  - tags: [agent, refactor, executor-core, typing]
+  - priority: high
+  - workload: Hard
+  - defaultExpanded: true
+  - steps:
+      - [ ] Copy `_execute_agent_with_orchestration` into `agent_orchestrator.py` unchanged; wire `AgentStepExecutor` to call it (keep ExecutorCore as passthrough).  
+        Run: `pytest tests/unit/test_ultra_executor.py::TestExecutorCore::test_validation_failure tests/integration/test_strict_validation.py::test_regular_step_keeps_output_on_validation_failure tests/integration/test_executor_core_fallback_integration.py::TestExecutorCoreFallbackIntegration::test_real_fallback_with_validation_failure tests/application/core/test_executor_core_fallback.py -k validation`.
+      - [ ] Split telemetry/retry/fallback helpers into small methods inside `AgentOrchestrator`; simplify ExecutorCore to delegate only.  
+        Run: same targeted set + `pytest tests/application/core/test_executor_core.py -k agent`.
+      - [ ] Remove dead inline agent logic from ExecutorCore; ensure Paused/abort re-raise preserved.  
+        Run: `make test-fast`.
+    ```md
+    Goal: incremental extraction so tests stay green while slimming the agent path.
+    ```
+
+#### Pipeline/fallback glue extraction (milestone series)
+
+  - due: 2025-12-02
+  - tags: [pipeline, fallback, executor-core, refactor]
+  - priority: high
+  - workload: Hard
+  - defaultExpanded: true
+  - steps:
+      - [ ] Move pipeline sequencing into `pipeline_orchestrator.py` with current behavior; ExecutorCore delegates.  
+        Run: `pytest tests/application/core/test_executor_core_execute_loop.py tests/application/core/test_step_logic_accounting.py`.
+      - [ ] Extract fallback/result combination into `failure_builder.py` and ensure context merge via `context_update_manager`.  
+        Run: `pytest tests/application/core/test_executor_core_fallback.py tests/regression/test_executor_core_optimization_regression.py`.
+      - [ ] Delete residual pipeline/fallback glue from ExecutorCore; verify executor size drop.  
+        Run: `make test-fast`.
+    ```md
+    Goal: finish slimming ExecutorCore by moving pipeline/fallback orchestration into dedicated modules in small, test-backed steps.
+    ```
+
+### Done
+
+#### Quota shim removal and validation extraction
+
+  - due: 2025-11-26
+  - tags: [quota, validation, typing]
+  - priority: medium
+  - steps:
+      - [x] Removed legacy `CURRENT_QUOTA`; QuotaManager uses per-instance contextvar; tests use `_set_current_quota`.
+      - [x] Added `ValidationOrchestrator`; validation fallback preserves outputs and metadata.
+      - [x] `make test-fast` ✅ plus validation/loop dispatch targeted suites.
