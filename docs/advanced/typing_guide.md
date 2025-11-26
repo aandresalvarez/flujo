@@ -100,4 +100,17 @@ print(result.final_pipeline_context.history)  # ['hello']
 print(result.step_history[-1].output)        # 'HELLO!'
 ```
 
+## JSON Types: Prefer `JSONObject` over `dict[str, Any]`
+
+Architecture checks require new code to avoid `Dict[str, Any]` for unstructured JSON. Use the shared alias instead:
+
+```python
+from flujo.type_definitions.common import JSONObject
+
+def make_payload(user_id: str) -> JSONObject:
+    return {"user_id": user_id, "metadata": {"source": "cli"}}
+```
+
+This keeps JSON shapes consistent across agents, plugins, and steps while satisfying the type-safety gate.
+
 This pipeline records each input in the context while producing an enthusiastic response.

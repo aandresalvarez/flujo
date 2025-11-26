@@ -345,7 +345,7 @@ class StepInvocationError(ExecutionError):
     Use StepInvocationError for new code.
     """
 
-    def __init__(self, step_name: str):
+    def __init__(self, step_name: str) -> None:
         super().__init__(
             f"Step '{step_name}' cannot be invoked directly",
             suggestion="Use Pipeline.from_step() or Step.solution() to wrap the step",
@@ -356,7 +356,7 @@ class StepInvocationError(ExecutionError):
 class ParallelStepError(ExecutionError):
     """Raised when there's an issue with parallel step execution."""
 
-    def __init__(self, step_name: str, branch_name: str, issue: str):
+    def __init__(self, step_name: str, branch_name: str, issue: str) -> None:
         super().__init__(
             f"Parallel step '{step_name}' branch '{branch_name}': {issue}",
             suggestion="Consider using MergeStrategy.CONTEXT_UPDATE with field_mapping",
@@ -367,7 +367,7 @@ class ParallelStepError(ExecutionError):
 class TemplateResolutionError(ValidationError):
     """Raised when a template variable cannot be resolved (strict mode)."""
 
-    def __init__(self, message: str):
+    def __init__(self, message: str) -> None:
         super().__init__(
             message,
             suggestion="Use '{{ previous_step.field }}' or '{{ steps.step_name.output.field }}' for explicit references",

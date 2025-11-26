@@ -220,7 +220,11 @@ async def _execute_background_task(
             step_copy.config.execution_mode = "sync"
         
             # Get quota (prefer splitting from parent if available)
-            parent_quota = self.CURRENT_QUOTA.get() if hasattr(self, 'CURRENT_QUOTA') else None
+            parent_quota = (
+                self.quota_manager.get_current_quota()
+                if hasattr(self, 'quota_manager') and self.quota_manager is not None
+                else None
+            )
             bg_quota = self._get_background_quota(parent_quota=parent_quota)
             
             frame = ExecutionFrame(
@@ -967,7 +971,11 @@ def _get_background_quota(self, parent_quota: Optional[Quota] = None) -> Optiona
 try:
     # Reserve quota before execution (proactive)
     # Get parent quota if available (for splitting)
-    parent_quota = self.CURRENT_QUOTA.get() if hasattr(self, 'CURRENT_QUOTA') else None
+    parent_quota = (
+        self.quota_manager.get_current_quota()
+        if hasattr(self, 'quota_manager') and self.quota_manager is not None
+        else None
+    )
     quota = self._get_background_quota(parent_quota=parent_quota)
     if quota is not None:
         estimate = UsageEstimate(tokens=1000, cost=0.01)  # Conservative estimate
@@ -1633,4 +1641,3 @@ async def my_step(...):
 **Review Date:** 2025-01-XX  
 **Priority:** Medium-High (affects production reliability)  
 **Status:** ✅ APPROVED - Ready for Implementation (Critical fixes applied)
-

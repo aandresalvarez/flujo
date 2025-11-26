@@ -329,7 +329,7 @@ The framework standardizes on proactive quota budgeting. When touching older cod
 
 **Required patterns (always apply):**
 - Reserve → Execute → Reconcile in every policy that consumes resources.
-- Use the active quota from `ExecutorCore.CURRENT_QUOTA`; split deterministically for parallel branches.
+- Use the active quota from `ExecutorCore.quota_manager`; split deterministically for parallel branches.
 - On limit breach, cancel remaining parallel branches and raise with a precise message:
   - Cost: `Cost limit of $<formatted> exceeded`
   - Tokens: `Token limit of <int> exceeded`
