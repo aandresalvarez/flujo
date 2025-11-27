@@ -1,6 +1,6 @@
 # Phase 2 Tracking — ExecutorCore Decomposition
 
-Status: **In Progress** (updated 2025-11-26)  
+Status: **In Progress** (updated 2025-11-26 night)  
 Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6)
 
 ## Objectives (from FSD)
@@ -10,24 +10,33 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
 - Centralize quota handling via `QuotaManager` (reserve → execute → reconcile); legacy shims removed.
 - Maintain policy-driven architecture and policy injection.
 
-## Current Code State (verified 2025-11-26)
-- `ExecutorCore` is ~3,402 LOC (`wc -l flujo/application/core/executor_core.py`); the 500–600 LOC composition-root goal is **not yet reached**. Background launch, cache, complex routing, validation, and quota plumbing are delegated.
-- Delegated components in place: `execution_dispatcher.py`, `background_task_manager.py`, `cache_manager.py`, `complex_step_router.py`, `pipeline_orchestrator.py`, `agent_orchestrator.py`, `conditional_orchestrator.py`, `hitl_orchestrator.py`, `loop_orchestrator.py`, `import_orchestrator.py`, `validation_orchestrator.py`, `context_update_manager.py`, `failure_builder.py`, `quota_manager.py`, `step_history_tracker.py`.
-- Validation orchestration extracted and wired through the agent path; validation fallback now marks `fallback_triggered` and preserves outputs on failure.
-- Quota is unified through `QuotaManager` with a per-instance contextvar; the legacy `CURRENT_QUOTA` shim is gone and tests use `_set_current_quota`.
-- Complex routing flows through `ComplexStepRouter` into loop/conditional/HITL/import orchestrators; context merges/failure normalization are centralized.
-- Latest verification: `make test-fast` (2025-11-26) ✅; loop dispatch and validation fallback targeted tests also ✅.
+## Current Code State (verified 2025-11-26 PM)
+- `ExecutorCore` is ~1,865 LOC (`wc -l flujo/application/core/executor_core.py`); the 500–600 LOC composition-root goal is **not yet reached**. Core agent orchestration now lives in `agent_orchestrator.py`; side-effects (processors/context/costs) are restored and covered by tests.
+- Delegated components exist: `execution_dispatcher.py`, `background_task_manager.py`, `cache_manager.py`, `complex_step_router.py`, `pipeline_orchestrator.py`, `agent_orchestrator.py`, `conditional_orchestrator.py`, `hitl_orchestrator.py`, `loop_orchestrator.py`, `import_orchestrator.py`, `validation_orchestrator.py`, `context_update_manager.py`, `failure_builder.py`, `quota_manager.py`, `step_history_tracker.py`.
+- Latest test status: `make test-fast` **PASS** (508/508) — see `output/controlled_test_run_20251126_213625.log`.
+- Type-checking: `make typecheck` **PASS** (strict) after removing leftover `type: ignore` and Any-return surfaces in orchestrators.
+- Quota is unified through `QuotaManager` with a per-instance contextvar; the legacy `CURRENT_QUOTA` shim is removed.
+- Complex routing flows through `ComplexStepRouter` into loop/conditional/HITL/import orchestrators; validation orchestration is active. Remaining gap is structural slimming (not behavior).
 
 ## Progress Since Last Update
-- Added `_make_execution_frame` helper for orchestrators (import/validation) to build frames with the current quota.
-- Fixed validation handling: outputs are preserved on validation failure, fallback metadata sets `fallback_triggered`/`validation_failure`, and StepOutcome scoping bug is removed.
-- Fully removed legacy `CURRENT_QUOTA` references in favor of `QuotaManager` helpers.
+- Type surface cleanup: removed unused `type: ignore` notes, tightened scratchpad typing, and ensured cache-success path wraps `StepResult` to `StepOutcome` before caching; `make typecheck` now clean.
+- Cache control centralized: `CacheManager` now decides cache skip/persist (loops/adapters/no_cache), removing step-type branching from `ExecutorCore`/`AgentOrchestrator`.
+- Added `maybe_return_cached` to encapsulate cache-hit handling (including called-with-frame Success wrapping); executor now calls the manager instead of branching on step types.
+- Dispatch handling is centralized via `_dispatch_frame`, reducing inlined try/except in `execute` while preserving MissingAgent optimized handling and hydration persistence; context normalization moved to `_normalize_frame_context`.
+- Frame construction is centralized via `_make_execution_frame` to shrink the execute choke-point while keeping quota/result/fallback-depth wiring consistent. Background launch and step-start telemetry also route through helpers, leaving `execute` closer to a composition root.
+- Fallback token accounting now uses defined prompt-token metrics; eliminated undefined locals and ensured usage metering stays accurate during fallback success paths.
+- Re-ran `make test-fast` — **green** (508/508, `output/controlled_test_run_20251126_212714.log`).
+- Targeted runs: `make typecheck`; `pytest tests/unit/test_cache_step.py tests/unit/test_cache_yaml_support.py tests/unit/test_state_manager_cache_key_parsing.py` (pass).
+- Preserved primary vs. fallback feedback precedence: exhausted StubAgent outputs surface `"No more outputs available"` on successful fallback; plugin feedback is preserved when fallback fails. Addresses `test_fallback_with_complex_metadata` and long-feedback regressions.
+- Resource contexts now close on `PausedException`; `_close_resources` is invoked for control-flow paths to satisfy `test_resource_context_manager_handles_paused_exception`.
+- Delegated background launch orchestration to `BackgroundTaskManager` (fire-and-forget with context isolation) and moved cache hit lookup into `CacheManager`; validated with `pytest tests/robustness/test_memory_leak_detection.py::TestMemoryLeakDetection::test_async_task_cleanup_in_background_execution tests/unit/test_cache_step.py tests/unit/test_cache_yaml_support.py tests/unit/test_state_manager_cache_key_parsing.py`.
+- Added cache skip for adapter/output-mapper steps to prevent cross-run cache bleed (fixes `tests/integration/test_refine_until.py::test_refine_until_concurrent_runs_isolated`).
+- Removed inline validation/fallback handling from `DefaultAgentStepExecutor`; validation now flows through `ValidationOrchestrator` with plugin redirect preserved. Validated with `pytest tests/unit/test_validation.py tests/unit/test_agent_step_policy.py` and full fast suite.
 
 ## Gaps vs Objectives
-1) `ExecutorCore` still ~3.4k LOC; significant slimming needed to reach the 500–600 LOC target.
-2) Agent retry/telemetry/fallback logic and some pipeline/fallback glue remain inline; extract into orchestrators/policies.
-3) Continue type hardening per `docs/advanced/typing_guide.md` (prefer `JSONObject`, strict signatures, protocol use) across orchestrators.
-4) Keep architecture/type gates green after each extraction and re-run targeted suites.
+1) `ExecutorCore` still carries ~1.8k LOC; composition-root target (500–600 LOC) requires further delegation/splitting of default policy glue and dispatcher wiring.
+2) Need a structured pass to enforce policy-driven dispatch (no step-specific branching), keep quota enforcement centrally in `QuotaManager`, and continue shrinking the core while retaining extracted orchestrators.
+3) Typing is green now; future refactors must keep orchestration surfaces typed per `docs/advanced/typing_guide.md` as the core is decomposed further.
 
 ## Robust Approach (typing-guide aligned)
 - Keep the executor as a composition root: no step-specific branching; delegate to orchestrators/dispatcher/policies and use `ContextManager.isolate()` for retries/loops.
@@ -37,61 +46,93 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
 - Use agent factories (`flujo.agents.*`) and centralized config (`infra.config_manager`) to avoid ad-hoc construction or env reads.
 
 ## Iteration Plan & Required Tests (run these per change)
-1) **Background/cache delegation cleanup**: finish moving background launch/caching decisions out of `ExecutorCore.execute`; ensure `BackgroundTaskManager`/`CacheManager` own lifecycle.  
-   Run: `pytest tests/robustness/test_memory_leak_detection.py` and `pytest tests/application/core/test_executor_core_chokepoint.py -k background`.
-2) **Loop/HITL orchestration**: keep `ComplexStepRouter` → `LoopOrchestrator`/`HitlOrchestrator` isolation with context idempotency.  
-   Run: `pytest tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_execute_loop.py tests/unit/test_loop_step_policy.py`.
-3) **Validation/agent path**: keep `ValidationOrchestrator` authoritative; ensure fallback metadata (`fallback_triggered`, `validation_failure`) and output preservation.  
-   Run: `pytest tests/unit/test_ultra_executor.py::TestExecutorCore::test_validation_failure tests/integration/test_strict_validation.py::test_regular_step_keeps_output_on_validation_failure tests/integration/test_executor_core_fallback_integration.py::TestExecutorCoreFallbackIntegration::test_real_fallback_with_validation_failure tests/application/core/test_executor_core_fallback.py -k validation`.
-4) **Quota normalization**: ensure only `QuotaManager` is used and parallel splits rely on `Quota.split()`.  
-   Run: `pytest tests/unit/test_parallel_step_policy.py tests/unit/test_integration_quota_propagation.py tests/unit/test_agent_step_policy.py tests/unit/test_agent_strict_pricing.py`.
-5) **Router/pipeline delegation**: trim remaining conditional/router/pipeline glue into orchestrators/dispatcher.  
-   Run: `pytest tests/application/core/test_executor_core_conditional_step_dispatch.py tests/application/core/test_executor_core_conditional_step_logic.py tests/regression/test_executor_core_optimization_regression.py`.
-6) **Regression gate after each batch**: run `make test-fast` (fast suite) to validate Phase 2 surfaces; rerun the targeted suites above when their areas are touched.
+1) **Background & cache delegation**  
+   Run: `pytest tests/robustness/test_memory_leak_detection.py::TestMemoryLeakDetection::test_async_task_cleanup_in_background_execution tests/unit/test_cache_step.py tests/unit/test_cache_yaml_support.py tests/unit/test_state_manager_cache_key_parsing.py`.
+2) **Validation & agent policy cleanup**  
+   Run: `pytest tests/unit/test_validation.py tests/application/core/test_executor_core_fallback_edgecases.py::test_validation_fallback_integration tests/unit/test_fallback_edge_cases.py::test_fallback_with_complex_metadata tests/unit/test_fallback.py::test_fallback_failure_propagates`.
+3) **ExecutorCore slimming & dispatcher audit**  
+   Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_fallback.py tests/application/core/test_executor_core_fallback_core.py tests/regression/test_executor_core_optimization_regression.py`.
+4) **Typing compliance**  
+   Run: `make typecheck`.
+5) **Regression gate after each batch**  
+   Run: `make test-fast`.
 
 ## Kanban (next-action focused)
 
-### To Do
+## To Do
 
-#### Agent orchestration extraction (milestone series)
+### Background & cache delegation
+
+  - due: 2025-11-28
+  - tags: [background, cache, executor-core]
+  - priority: high
+  - workload: Medium
+  - defaultExpanded: true
+  - steps:
+      - [x] Move background launch/resume orchestration into `BackgroundTaskManager`/policy wiring; ensure cleanup on control-flow exits.  
+        Run: `pytest tests/robustness/test_memory_leak_detection.py::TestMemoryLeakDetection::test_async_task_cleanup_in_background_execution`
+      - [x] Route cache lookup/persist/hydration through `CacheManager`/`CachePolicy` (no executor glue); keep TTL handling intact.  
+        Run: `pytest tests/unit/test_cache_step.py tests/unit/test_cache_yaml_support.py tests/unit/test_state_manager_cache_key_parsing.py`
+    ```md
+    Goal: slim executor by delegating background and cache orchestration to dedicated components.
+    ```
+
+### Validation & agent policy cleanup
 
   - due: 2025-11-29
-  - tags: [agent, refactor, executor-core, typing]
+  - tags: [validation, agent, typing]
   - priority: high
-  - workload: Hard
-  - defaultExpanded: true
+  - workload: Medium
   - steps:
-      - [ ] Copy `_execute_agent_with_orchestration` into `agent_orchestrator.py` unchanged; wire `AgentStepExecutor` to call it (keep ExecutorCore as passthrough).  
-        Run: `pytest tests/unit/test_ultra_executor.py::TestExecutorCore::test_validation_failure tests/integration/test_strict_validation.py::test_regular_step_keeps_output_on_validation_failure tests/integration/test_executor_core_fallback_integration.py::TestExecutorCoreFallbackIntegration::test_real_fallback_with_validation_failure tests/application/core/test_executor_core_fallback.py -k validation`.
-      - [ ] Split telemetry/retry/fallback helpers into small methods inside `AgentOrchestrator`; simplify ExecutorCore to delegate only.  
-        Run: same targeted set + `pytest tests/application/core/test_executor_core.py -k agent`.
-      - [ ] Remove dead inline agent logic from ExecutorCore; ensure Paused/abort re-raise preserved.  
-        Run: `make test-fast`.
+      - [x] Finish extracting validation orchestration (no validation logic in `ExecutorCore`/agent policy); keep strict vs. soft feedback paths.  
+        Run: `pytest tests/unit/test_validation.py tests/application/core/test_executor_core_fallback_edgecases.py::test_validation_fallback_integration`
+      - [x] Normalize feedback/metadata across fallback + validation paths with typed `StepOutcome[StepResult]` surfaces.  
+        Run: `pytest tests/unit/test_fallback_edge_cases.py::test_fallback_with_complex_metadata tests/unit/test_fallback.py::test_fallback_failure_propagates`
     ```md
-    Goal: incremental extraction so tests stay green while slimming the agent path.
+    Goal: keep agent policy thin and rely on orchestrators with clear typing per docs/advanced/typing_guide.md.
     ```
 
-#### Pipeline/fallback glue extraction (milestone series)
+### ExecutorCore slimming & dispatcher audit
+
+  - due: 2025-12-01
+  - tags: [executor-core, dispatcher, routing]
+  - priority: high
+  - workload: Hard
+  - steps:
+      - [ ] Remove remaining step-specific branching; route via `ComplexStepRouter`/policy registry; target first cut ~1,300 LOC.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/application/core/test_executor_core_loop_step_dispatch.py`
+      - [ ] Final composition-root pass to reach 500–600 LOC; background/cache/validation orchestration stays in extracted modules.  
+        Run: `pytest tests/application/core/test_executor_core_fallback.py tests/application/core/test_executor_core_fallback_core.py tests/regression/test_executor_core_optimization_regression.py`
+    ```md
+    Goal: make ExecutorCore a composition root with policy-driven dispatch only.
+    ```
+
+### Typing compliance
 
   - due: 2025-12-02
-  - tags: [pipeline, fallback, executor-core, refactor]
-  - priority: high
-  - workload: Hard
-  - defaultExpanded: true
+  - tags: [typing, mypy, orchestrators]
+  - priority: medium
+  - workload: Medium
   - steps:
-      - [ ] Move pipeline sequencing into `pipeline_orchestrator.py` with current behavior; ExecutorCore delegates.  
-        Run: `pytest tests/application/core/test_executor_core_execute_loop.py tests/application/core/test_step_logic_accounting.py`.
-      - [ ] Extract fallback/result combination into `failure_builder.py` and ensure context merge via `context_update_manager`.  
-        Run: `pytest tests/application/core/test_executor_core_fallback.py tests/regression/test_executor_core_optimization_regression.py`.
-      - [ ] Delete residual pipeline/fallback glue from ExecutorCore; verify executor size drop.  
-        Run: `make test-fast`.
+      - [ ] Remove remaining `Any` returns in orchestrators/policies; align with `docs/advanced/typing_guide.md`.  
+        Run: `make typecheck`
     ```md
-    Goal: finish slimming ExecutorCore by moving pipeline/fallback orchestration into dedicated modules in small, test-backed steps.
+    Goal: enforce strict typing on orchestration surfaces while continuing executor slimming.
     ```
 
-### Done
+### Regression gate
 
-#### Quota shim removal and validation extraction
+  - due: 2025-12-04
+  - tags: [regression, fast-suite]
+  - priority: medium
+  - workload: Medium
+    ```md
+    Run `make test-fast` once the above clusters are green to verify Phase 2 surfaces end-to-end. Last run: PASS (`output/controlled_test_run_20251126_205933.log`).
+    ```
+
+## Done
+
+### Quota shim removal and initial validation extraction
 
   - due: 2025-11-26
   - tags: [quota, validation, typing]
@@ -99,4 +140,15 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
   - steps:
       - [x] Removed legacy `CURRENT_QUOTA`; QuotaManager uses per-instance contextvar; tests use `_set_current_quota`.
       - [x] Added `ValidationOrchestrator`; validation fallback preserves outputs and metadata.
-      - [x] `make test-fast` ✅ plus validation/loop dispatch targeted suites.
+      - [x] Lifted `_execute_agent_with_orchestration` into `agent_orchestrator.py` and shrank `ExecutorCore` footprint (regressions tracked above).
+
+### Fallback/resource robustness and metrics guards
+
+  - due: 2025-11-26
+  - tags: [fallback, resources, metrics]
+  - priority: medium
+  - steps:
+      - [x] Preserved plugin vs. exhaustion feedback precedence; kept fallback metadata accurate for success/failure paths.
+      - [x] Ensured resource contexts close on `PausedException` via per-attempt `_close_resources`.
+      - [x] Guarded usage extraction to avoid token double-counting when unpacking wrapped agent results.
+      - [x] Verified with `pytest tests/unit/test_fallback_edge_cases.py::test_fallback_with_complex_metadata tests/unit/test_fallback_edge_cases.py::test_fallback_with_very_long_feedback tests/unit/test_fallback.py::test_fallback_failure_propagates tests/unit/test_resource_context_management.py::test_resource_context_manager_handles_paused_exception tests/integration/test_pipeline_runner.py::test_runner_unpacks_agent_result` and `make test-fast`.

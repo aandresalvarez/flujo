@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import Any, Callable, Coroutine, Set
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Set
 
 from ...domain.models import BackgroundLaunched
 from ...infra import telemetry
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .executor_core import ExecutorCore
+    from .types import ExecutionFrame
+    from ...domain.models import StepOutcome, StepResult
 
 
 class BackgroundTaskManager:
@@ -41,6 +46,73 @@ class BackgroundTaskManager:
         self.add_task(task)
         telemetry.logfire.info(f"Launched background step '{step_name}' (task_id={task_id})")
         return BackgroundLaunched(task_id=task_id, step_name=step_name)
+
+    async def maybe_launch_background_step(
+        self,
+        *,
+        core: "ExecutorCore[Any]",
+        frame: "ExecutionFrame[Any]",
+    ) -> "StepOutcome[StepResult] | None":
+        """Launch the given frame in background mode if requested."""
+        step = frame.step
+        try:
+            if not (
+                hasattr(step, "config")
+                and getattr(step.config, "execution_mode", "sync") == "background"
+            ):
+                return None
+        except Exception:
+            return None
+
+        async def _run_background() -> None:
+            await self._execute_background_step(core=core, frame=frame)
+
+        return await self.launch_background_task(
+            step_name=core._safe_step_name(step), run_coro=_run_background
+        )
+
+    async def _execute_background_step(
+        self,
+        *,
+        core: "ExecutorCore[Any]",
+        frame: "ExecutionFrame[Any]",
+    ) -> None:
+        """Execute a background frame fire-and-forget with isolated context."""
+        try:
+            from ...exceptions import PausedException, PipelineAbortSignal
+            from .types import ExecutionFrame  # local import to avoid cycles
+
+            isolated_context = core._isolate_context(getattr(frame, "context", None))
+            step_copy = getattr(frame, "step")
+            try:
+                step_copy = step_copy.model_copy(deep=True)
+                if hasattr(step_copy, "config"):
+                    step_copy.config.execution_mode = "sync"
+            except Exception:
+                pass
+
+            bg_frame = ExecutionFrame(
+                step=step_copy,
+                data=getattr(frame, "data", None),
+                context=isolated_context,
+                resources=getattr(frame, "resources", None),
+                limits=getattr(frame, "limits", None),
+                quota=core._quota_manager.get_current_quota(),
+                stream=False,
+                on_chunk=None,
+                context_setter=lambda _res, _ctx: None,
+                result=None,
+                _fallback_depth=0,
+            )
+            await core.execute(bg_frame)
+        except (PausedException, PipelineAbortSignal) as control_flow_err:
+            telemetry.logfire.warning(
+                f"Background task '{getattr(frame.step, 'name', 'unknown')}' raised control-flow signal: {control_flow_err}"
+            )
+        except Exception as e:
+            telemetry.logfire.error(
+                f"Background task failed for step '{getattr(frame.step, 'name', 'unknown')}': {e}"
+            )
 
     async def wait_for_completion(self, timeout: float = 5.0) -> None:
         """Wait for all background tasks to complete with a timeout.

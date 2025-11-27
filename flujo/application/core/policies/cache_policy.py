@@ -190,6 +190,14 @@ class DefaultCacheStepExecutor:
                                     continue
                     except Exception:
                         pass
+                # Increment operation count on context when present (even on failure)
+                try:
+                    if context is not None and hasattr(context, "operation_count"):
+                        current_ops = int(getattr(context, "operation_count") or 0)
+                        if current_ops < 1:
+                            context.operation_count = current_ops + 1
+                except Exception:
+                    pass
                 return to_outcome(result)
         frame = ExecutionFrame(
             step=cache_step.wrapped_step,

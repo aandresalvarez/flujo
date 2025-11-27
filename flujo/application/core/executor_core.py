@@ -9,7 +9,6 @@ Concrete defaults live in `default_components.py`; protocols in
 from __future__ import annotations
 
 import asyncio
-import inspect
 import warnings
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast
@@ -41,7 +40,6 @@ from ...exceptions import (
     MockDetectionError,
     PricingNotConfiguredError,
     InfiniteRedirectError,
-    PipelineAbortSignal,
 )
 from ...infra import telemetry
 from .quota_manager import QuotaManager
@@ -61,8 +59,6 @@ from .import_orchestrator import ImportOrchestrator
 from .validation_orchestrator import ValidationOrchestrator
 from .step_history_tracker import StepHistoryTracker
 from ...steps.cache_step import CacheStep
-from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
-from ...cost import extract_usage_metrics
 from .step_policies import (
     AgentResultUnpacker,
     AgentStepExecutor,
@@ -329,7 +325,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._loop_orchestrator = LoopOrchestrator()
         self._pipeline_orchestrator = PipelineOrchestrator()
         self._complex_step_router = ComplexStepRouter()
-        self._import_orchestrator = ImportOrchestrator(self.import_step_executor)
         self._validation_orchestrator = ValidationOrchestrator()
         self._validation_orchestrator = ValidationOrchestrator()
 
@@ -369,6 +364,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             self.import_step_executor = _DefaultImportStepExecutor()
         except Exception:  # pragma: no cover - defensive
             self.import_step_executor = None
+        self._import_orchestrator = ImportOrchestrator(self.import_step_executor)
 
         # FSD-010: Initialize and populate the policy registry used for dispatch
         self.policy_registry = PolicyRegistry()
@@ -450,6 +446,53 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._cache_manager.generate_cache_key(
             frame.step, frame.data, frame.context, getattr(frame, "resources", None)
         )
+
+    def _normalize_frame_context(self, frame: ExecutionFrame[Any]) -> None:
+        """Strip mock contexts and retain hot-path accessors on the frame."""
+        try:
+            from unittest.mock import Mock as _Mock, MagicMock as _MagicMock
+
+            try:
+                from unittest.mock import AsyncMock as _AsyncMock
+
+                _mock_types_ctx: tuple[type[Any], ...] = (_Mock, _MagicMock, _AsyncMock)
+            except Exception:
+                _mock_types_ctx = (_Mock, _MagicMock)
+            ctx_attr = getattr(frame, "context", None)
+            if isinstance(ctx_attr, _mock_types_ctx):
+                setattr(frame, "context", None)
+        except Exception:
+            pass
+        # Accessors kept for completeness; policies pull from frame directly
+        _ = getattr(frame, "context", None)
+        _ = getattr(frame, "resources", None)
+        _ = getattr(frame, "limits", None)
+        _ = getattr(frame, "on_chunk", None)
+
+    def _log_step_start(self, step: Any, *, stream: bool, fallback_depth: int) -> None:
+        try:
+            telemetry.logfire.debug(
+                f"Executing step: {self._safe_step_name(step)} "
+                f"type={type(step).__name__} stream={stream} depth={fallback_depth}"
+            )
+        except Exception:
+            pass
+
+    async def _maybe_launch_background(
+        self, frame: ExecutionFrame[Any], *, called_with_frame: bool
+    ) -> Optional[StepOutcome[StepResult] | StepResult]:
+        """Launch background step if applicable and return outcome."""
+        try:
+            bg_outcome = await self._background_task_manager.maybe_launch_background_step(
+                core=self, frame=frame
+            )
+        except Exception:
+            return None
+        if bg_outcome is None:
+            return None
+        if called_with_frame:
+            return bg_outcome
+        return self._unwrap_outcome_to_step_result(bg_outcome, self._safe_step_name(frame.step))
 
     def _get_current_quota(self) -> Optional[Quota]:
         """Best-effort getter for the current quota using the manager first."""
@@ -704,6 +747,52 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             feedback=f"Unsupported outcome type: {type(outcome).__name__}",
         )
 
+    async def _dispatch_frame(
+        self, frame: ExecutionFrame[Any], *, called_with_frame: bool
+    ) -> StepOutcome[StepResult] | StepResult:
+        """Dispatch via policy registry and handle control-flow outcomes."""
+        step = frame.step
+        step_name = self._safe_step_name(step)
+        try:
+            outcome = await self._dispatcher.dispatch(frame)
+            await self._hydration_manager.persist_context(getattr(frame, "context", None))
+            if called_with_frame:
+                return cast(StepOutcome[StepResult], outcome)
+            if isinstance(outcome, Success):
+                return self._unwrap_outcome_to_step_result(outcome.step_result, step_name)
+            if isinstance(outcome, Failure):
+                return self._unwrap_outcome_to_step_result(outcome, step_name)
+            if isinstance(outcome, Paused):
+                raise PausedException(outcome.message)
+            return self._unwrap_outcome_to_step_result(outcome, step_name)
+        except InfiniteFallbackError:
+            raise
+        except PausedException as e:
+            await self._hydration_manager.persist_context(getattr(frame, "context", None))
+            if called_with_frame:
+                return Paused(message=getattr(e, "message", ""))
+            raise
+        except (
+            UsageLimitExceededError,
+            PricingNotConfiguredError,
+            MissingAgentError,
+            MockDetectionError,
+            InfiniteRedirectError,
+        ) as e:
+            raise e
+        except Exception as e:
+            if not self.enable_optimized_error_handling:
+                self._log_execution_error(step_name, e)
+            failure_outcome = self._build_failure_outcome(
+                step=step,
+                frame=frame,
+                exc=e,
+                called_with_frame=called_with_frame,
+            )
+            if called_with_frame:
+                return failure_outcome
+            return self._unwrap_outcome_to_step_result(failure_outcome, step_name)
+
     async def _execute_complex_step(
         self,
         *,
@@ -738,80 +827,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         """Wait for all background tasks to complete with a timeout."""
         await self._background_task_manager.wait_for_completion(timeout)
 
-    async def _execute_background_task(
-        self,
-        step: Step[Any, Any],
-        data: Any,
-        context: Optional[TContext_w_Scratch],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-    ) -> None:
-        """Execute a step in the background, logging any errors."""
-        try:
-            # Create a deep copy of context for isolation if possible
-            # This is critical to avoid race conditions with the main pipeline
-            isolated_context = self._isolate_context(context)
-
-            # Execute the step using the simple executor (or policy routing)
-            # We use _execute_simple_step directly for now as most background tasks are simple agents
-            # If we need full policy routing, we could call self.execute recursively,
-            # but we'd need to be careful about infinite recursion if not handled right.
-            # Ideally, we route via policy registry but force sync mode to avoid recursion.
-
-            # For now, let's use the policy registry dispatch but ensure we don't loop on background mode
-            # We can do this by creating a new frame with modified config if needed,
-            # but since we are already inside the background task, the 'execute' call
-            # will see it's running and just execute.
-            # However, to be safe and explicit, let's use _execute_simple_step
-            # or the appropriate executor for the step type.
-
-            # Simplest approach: delegate to execute() but ensure we handle the result
-            # We pass a flag or just rely on the fact that we are in a separate task.
-            # But wait, if we call execute() again with the same step, it might try to launch background again
-            # if we don't distinguish.
-            # The check in execute() will look at step.config.execution_mode.
-            # We should probably temporarily override it or use a lower-level executor.
-
-            # Better: Use the policy registry to get the bound method, but we need to ensure
-            # we don't trigger the background launch logic again.
-            # The background launch logic will be in `execute`.
-            # If we call `execute` again, we need to make sure we don't hit that block.
-            # We can clone the step and set execution_mode="sync" for the actual execution.
-
-            step_copy = step.model_copy(deep=True)
-            if hasattr(step_copy, "config"):
-                step_copy.config.execution_mode = "sync"
-
-            # Create a new frame
-            frame = ExecutionFrame(
-                step=step_copy,
-                data=data,
-                context=isolated_context,
-                resources=resources,
-                limits=limits,
-                quota=self._quota_manager.get_current_quota(),
-                stream=False,
-                on_chunk=None,
-                context_setter=lambda _res, _ctx: None,
-                result=None,
-                _fallback_depth=0,
-            )
-
-            # Execute
-            await self.execute(frame)
-
-        except (PausedException, PipelineAbortSignal) as control_flow_err:
-            # Control-flow exceptions from background tasks are logged but don't propagate
-            # since the main pipeline has moved on. This is intentional for background mode.
-            telemetry.logfire.warning(
-                f"Background task '{getattr(step, 'name', 'unknown')}' raised control-flow signal: {control_flow_err}"
-            )
-        except Exception as e:
-            # Log all other errors but don't propagate - background tasks are fire-and-forget
-            telemetry.logfire.error(
-                f"Background task failed for step '{getattr(step, 'name', 'unknown')}': {e}"
-            )
-
     async def execute(
         self,
         frame_or_step: Any | None = None,
@@ -830,21 +845,23 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             if step_obj is None:
                 raise ValueError("ExecutorCore.execute requires a Step or ExecutionFrame")
             payload = data if data is not None else kwargs.get("data")
-            frame = ExecutionFrame(
-                step=cast(Step[Any, Any], step_obj),
-                data=payload,
-                context=kwargs.get("context"),
-                resources=kwargs.get("resources"),
-                limits=kwargs.get("limits"),
-                quota=kwargs.get("quota", self._quota_manager.get_current_quota()),
+            fb_depth_raw = kwargs.get("_fallback_depth", 0)
+            try:
+                fb_depth_norm = int(fb_depth_raw)
+            except Exception:
+                fb_depth_norm = 0
+            frame = self._make_execution_frame(
+                cast(Step[Any, Any], step_obj),
+                payload,
+                kwargs.get("context"),
+                kwargs.get("resources"),
+                kwargs.get("limits"),
+                kwargs.get("context_setter"),
                 stream=kwargs.get("stream", False),
                 on_chunk=kwargs.get("on_chunk"),
-                context_setter=kwargs.get(
-                    "context_setter",
-                    lambda _res, _ctx: None,  # default no-op setter
-                ),
+                fallback_depth=fb_depth_norm,
+                quota=kwargs.get("quota"),
                 result=kwargs.get("result"),
-                _fallback_depth=kwargs.get("_fallback_depth", 0),
             )
 
         # Set quota for this execution context (legacy shim retained for compatibility)
@@ -855,120 +872,38 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         step = frame.step
 
-        # Check for background execution mode
-        # We do this before policy dispatch to intercept any step type
-        if (
-            hasattr(step, "config")
-            and getattr(step.config, "execution_mode", "sync") == "background"
-        ):
-            step_name = self._safe_step_name(step)
+        # Check for background execution mode before dispatch (delegated to manager)
+        bg_outcome = await self._maybe_launch_background(frame, called_with_frame=called_with_frame)
+        if bg_outcome is not None:
+            return bg_outcome
 
-            async def _run_background() -> None:
-                await self._execute_background_task(
-                    step,
-                    frame.data,
-                    frame.context,
-                    getattr(frame, "resources", None),
-                    getattr(frame, "limits", None),
-                )
-
-            bg_outcome: StepOutcome[
-                StepResult
-            ] = await self._background_task_manager.launch_background_task(
-                step_name=step_name,
-                run_coro=_run_background,
-            )
-            if called_with_frame:
-                return bg_outcome
-            return self._unwrap_outcome_to_step_result(bg_outcome, step_name)
-
-        data = frame.data
-        # Normalize mock contexts to None to avoid unnecessary overhead in hot paths
-        try:
-            from unittest.mock import Mock as _Mock, MagicMock as _MagicMock
-
-            try:
-                from unittest.mock import AsyncMock as _AsyncMock
-
-                _mock_types_ctx: tuple[type[Any], ...] = (_Mock, _MagicMock, _AsyncMock)
-            except Exception:
-                _mock_types_ctx = (_Mock, _MagicMock)
-            ctx_attr = getattr(frame, "context", None)
-            if isinstance(ctx_attr, _mock_types_ctx):
-                setattr(frame, "context", None)
-        except Exception:
-            pass
-        # Accessors kept for completeness; policies pull from frame directly
-        _ = getattr(frame, "context", None)
-        _ = getattr(frame, "resources", None)
-        _ = getattr(frame, "limits", None)
+        self._normalize_frame_context(frame)
         stream = getattr(frame, "stream", False)
-        # Accessors kept for completeness; policies pull from frame directly
-        _ = getattr(frame, "on_chunk", None)
-        # context_setter is consumed by policy callables; keep available on frame
-        result = getattr(frame, "result", None)
         _fallback_depth = getattr(frame, "_fallback_depth", 0)
 
-        step_name = getattr(step, "name", "<unnamed>")
-        step_type = type(step).__name__
-        telemetry.logfire.debug(
-            f"Executing step: {step_name} type={step_type} stream={stream} depth={_fallback_depth}"
-        )
+        self._log_step_start(step, stream=stream, fallback_depth=_fallback_depth)
 
         # FSD-009: Remove reactive post-step usage checks from non-parallel codepaths.
         # Preemptive quota reservations are enforced in policies; no reactive governor path remains.
 
-        cache_key = None
-        if self._enable_cache and not isinstance(step, LoopStep):
-            try:
+        cache_key: Optional[str] = None
+        try:
+            cached_outcome = await self._cache_manager.maybe_return_cached(
+                frame, called_with_frame=called_with_frame
+            )
+            if cached_outcome is not None:
+                return cached_outcome
+            if self._enable_cache:
                 cache_key = self._cache_key(frame)
-                if cache_key:
-                    cached_step_result = await self._cache_manager.fetch_step_result(cache_key)
-                    if cached_step_result is not None:
-                        if called_with_frame:
-                            return Success(step_result=cached_step_result)
-                        return cached_step_result
-            except Exception as e:
-                telemetry.logfire.warning(
-                    f"Cache error for step {getattr(step, 'name', '<unnamed>')}: {e}"
-                )
+        except Exception as e:
+            telemetry.logfire.warning(
+                f"Cache error for step {getattr(step, 'name', '<unnamed>')}: {e}"
+            )
 
         try:
-            # FSD-010: Registry-based dispatch (inside choke-point try/except)
-            outcome = await self._dispatcher.dispatch(frame)
-            await self._hydration_manager.persist_context(getattr(frame, "context", None))
-
-            if called_with_frame:
-                return cast(StepOutcome[StepResult], outcome)
-            if isinstance(outcome, Success):
-                return self._unwrap_outcome_to_step_result(
-                    outcome.step_result, self._safe_step_name(step)
-                )
-            if isinstance(outcome, Failure):
-                return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-            if isinstance(outcome, Paused):
-                raise PausedException(outcome.message)
-            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
-        except InfiniteFallbackError as e:
-            # Propagate control-flow exception (tests expect it to be raised)
-            raise e
-        except PausedException as e:
-            # Persist managed state before pausing (critical for HITL flows that prepare state)
-            await self._hydration_manager.persist_context(getattr(frame, "context", None))
-            if called_with_frame:
-                # Use plain message for backward compatibility (tests expect plain message)
-                return Paused(message=getattr(e, "message", ""))
-            raise
-        except (
-            UsageLimitExceededError,
-            MissingAgentError,
-            PricingNotConfiguredError,
-            MockDetectionError,
-            InfiniteRedirectError,
-        ) as e:
-            if self.enable_optimized_error_handling and isinstance(e, MissingAgentError):
-                # Preserve MissingAgentError for real Step objects to satisfy strict tests
-                # while gracefully handling invalid/mocked steps without agents.
+            result_outcome = await self._dispatch_frame(frame, called_with_frame=called_with_frame)
+        except MissingAgentError as e:
+            if self.enable_optimized_error_handling:
                 if getattr(step.__class__, "__name__", "") == "Step":
                     raise
                 safe_name = self._safe_step_name(step)
@@ -997,37 +932,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 if called_with_frame:
                     return Failure(error=e, feedback=result.feedback, step_result=result)
                 return result
-            # Re-raise well-known control/config exceptions to satisfy legacy tests and semantics
             raise
-        except InfiniteFallbackError:
-            # Critical control-flow: re-raise for callers that expect exceptions
-            raise
-        except Exception as e:
-            if not self.enable_optimized_error_handling:
-                self._log_execution_error(step_name, e)
-            failure_outcome = self._build_failure_outcome(
-                step=step,
-                frame=frame,
-                exc=e,
-                called_with_frame=called_with_frame,
-            )
-            if called_with_frame:
-                return failure_outcome
-            return self._unwrap_outcome_to_step_result(failure_outcome, self._safe_step_name(step))
 
-        if (
-            cache_key
-            and self._enable_cache
-            and result is not None
-            and result.success
-            and not isinstance(step, LoopStep)
-            and not (
-                isinstance(getattr(result, "metadata_", None), dict)
-                and result.metadata_.get("no_cache")
-            )
-        ):
-            await self._cache_manager.persist_step_result(cache_key, result, ttl_s=3600)
-            telemetry.logfire.debug(f"Cached result for step: {getattr(step, 'name', '<unnamed>')}")
+        if isinstance(result_outcome, StepOutcome):
+            return result_outcome
+        result = result_outcome
+
+        await self._cache_manager.maybe_persist_step_result(step, result, cache_key, ttl_s=3600)
+        if called_with_frame:
+            return Success(step_result=result)
+        return result
 
     def _log_execution_error(self, step_name: str, exc: Exception) -> None:
         try:
@@ -1065,6 +979,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
         fallback_depth: int = 0,
+        quota: Optional[Quota] = None,
+        result: Optional[StepResult] = None,
     ) -> ExecutionFrame[Any]:
         """Create an ExecutionFrame with the current quota context."""
         return ExecutionFrame(
@@ -1073,11 +989,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             context=context,
             resources=resources,
             limits=limits,
-            quota=self._quota_manager.get_current_quota(),
+            quota=quota if quota is not None else self._quota_manager.get_current_quota(),
             stream=stream,
             on_chunk=on_chunk,
             context_setter=context_setter or (lambda _res, _ctx: None),
-            result=None,
+            result=result,
             _fallback_depth=fallback_depth,
         )
 
@@ -1671,46 +1587,53 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context = frame.context
         resources = frame.resources
         limits = frame.limits
-        # Defensive routing: if a ConditionalStep slipped through registry resolution,
-        # delegate to the conditional policy to ensure expected spans/logs.
-        from ...domain.dsl.conditional import ConditionalStep as _ConditionalStep
-
-        if isinstance(step, _ConditionalStep):
-            return await self._policy_conditional_step(frame)
         stream = frame.stream
         on_chunk = frame.on_chunk
         cache_key = self._cache_key(frame) if self._enable_cache else None
-        _fallback_depth = frame._fallback_depth
-        # Preserve legacy routing semantics for validation/streaming/fallback cases
-        try:
-            fb_depth_norm = int(_fallback_depth)
-        except Exception:
-            fb_depth_norm = 0
+        fb_depth_norm = int(getattr(frame, "_fallback_depth", 0) or 0)
 
-        # Note: validation routing is handled within orchestration; no pre-routing needed here
+        # Allow override of agent executor for policy-level tests/hooks.
+        res_any: StepOutcome[StepResult] | StepResult
+        override_executor = getattr(self, "agent_step_executor", None)
+        from .policies.agent_policy import DefaultAgentStepExecutor as _DefaultASE
 
-        # Route via AgentStepExecutor so tests can override it at the choke‑point
-        # and to honor policy behavior (quota, validators, plugins). The default
-        # agent policy delegates to core orchestration for correctness.
-        res_any = await self.agent_step_executor.execute(
-            self,
-            step,
-            data,
-            context,
-            resources,
-            limits,
-            stream,
-            on_chunk,
-            cache_key,
-            fb_depth_norm,
-        )
+        if override_executor is not None and not isinstance(override_executor, _DefaultASE):
+            res_any = await override_executor.execute(
+                self,
+                step,
+                data,
+                context,
+                resources,
+                limits,
+                stream,
+                on_chunk,
+                cache_key,
+                fb_depth_norm,
+            )
+        else:
+            # Route via AgentOrchestrator to run retries/validation/plugins/fallback.
+            res_any = await self._agent_orchestrator.execute(
+                core=self,
+                step=step,
+                data=data,
+                context=context,
+                resources=resources,
+                limits=limits,
+                stream=stream,
+                on_chunk=on_chunk,
+                cache_key=cache_key,
+                fallback_depth=fb_depth_norm,
+            )
+        res_outcome = res_any if isinstance(res_any, StepOutcome) else Success(step_result=res_any)
         await self._agent_orchestrator.cache_success_if_applicable(
             core=self,
             step=step,
             cache_key=cache_key,
-            outcome=res_any,
+            outcome=res_outcome,
         )
-        return res_any
+        return res_outcome
+
+    # --- Orchestrated Simple Agent Step (centralized control flow) ---
 
     # --- Orchestrated Simple Agent Step (centralized control flow) ---
     async def _execute_agent_with_orchestration(
@@ -1725,1506 +1648,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         cache_key: Optional[str],
         _fallback_depth: int,
     ) -> StepOutcome[StepResult]:
-        """Centralizes retries, validation, plugins, and fallback orchestration.
-
-        The actual agent invocation is delegated to policies/utilities already
-        registered on the core (agent runner, processors, validators, redirector).
-        """
-        # Local imports to avoid import-time cycles
-        from unittest.mock import Mock, MagicMock
-
-        try:
-            from unittest.mock import AsyncMock
-        except Exception:  # pragma: no cover - Python <3.8 fallback
-            AsyncMock = type("_NoAsyncMock", (), {})  # type: ignore[misc,assignment]
-        from .hybrid_check import run_hybrid_check
-
-        telemetry.logfire.debug(
-            f"[Core] Orchestrate simple agent step: {getattr(step, 'name', '<unnamed>')} depth={_fallback_depth}"
-        )
-
-        # Early mock fallback chain detection
-        try:
-            if hasattr(step, "_mock_name"):
-                mock_name = str(getattr(step, "_mock_name", ""))
-                if "fallback_step" in mock_name and mock_name.count("fallback_step") > 1:
-                    raise InfiniteFallbackError(
-                        f"Infinite Mock fallback chain detected early: {mock_name[:100]}..."
-                    )
-        except Exception:
-            pass
-
-        # Reset fallback chain at top-level invocation to avoid leakage across runs
-        self._agent_orchestrator.reset_fallback_chain(self, _fallback_depth)
-
-        # Fallback loop guard
-        self._agent_orchestrator.guard_fallback_loop(self, step, _fallback_depth)
-
-        if _fallback_depth > 0:
-            try:
-                if self._fallback_handler.is_step_in_chain(step):
-                    # Gracefully surface loop detection as a failure outcome
-                    current_name = getattr(step, "name", "<unnamed>")
-                    fb_txt = (
-                        f"Fallback loop detected: step '{current_name}' already in fallback chain"
-                    )
-                    failure_sr = StepResult(
-                        name=self._safe_step_name(step),
-                        output=None,
-                        success=False,
-                        attempts=1,
-                        latency_s=0.0,
-                        token_counts=0,
-                        cost_usd=0.0,
-                        feedback=fb_txt,
-                        branch_context=None,
-                        metadata_={"fallback_triggered": True},
-                        step_history=[],
-                    )
-                    return Failure(
-                        error=InfiniteFallbackError(fb_txt), feedback=fb_txt, step_result=failure_sr
-                    )
-                self._fallback_handler.push_to_chain(step)
-            except Exception:
-                pass
-
-        # Agent presence check
-        if getattr(step, "agent", None) is None:
-            raise MissingAgentError(
-                f"Step '{getattr(step, 'name', '<unnamed>')}' has no agent configured"
-            )
-
-        # Initialize result accumulator for this step
-        result: StepResult = StepResult(
-            name=self._safe_step_name(step),
-            output=None,
-            success=False,
-            attempts=1,
-            latency_s=0.0,
-            token_counts=0,
-            cost_usd=0.0,
-            feedback=None,
-            branch_context=None,
-            metadata_={},
-            step_history=[],
-        )
-
-        # retries config semantics: number of retries; attempts = 1 + retries
-        # Default to 1 retry to match legacy/test semantics (2 attempts total)
-        retries_config = 1
-        try:
-            if hasattr(step, "config") and hasattr(step.config, "max_retries"):
-                retries_config = int(getattr(step.config, "max_retries"))
-            elif hasattr(step, "max_retries"):
-                retries_config = int(getattr(step, "max_retries"))
-        except Exception:
-            retries_config = 0
-        # Guard mocked max_retries values
-        if hasattr(retries_config, "_mock_name") or isinstance(
-            retries_config, (Mock, MagicMock, AsyncMock)
-        ):
-            retries_config = 2
-        total_attempts = max(1, retries_config + 1)
-        # Allow retries even when plugins are present (tests expect agent retry before fallback)
-        telemetry.logfire.debug(f"[Core] SimpleStep max_retries (total attempts): {total_attempts}")
-
-        # Track pre-fallback primary usage for aggregation
-        primary_tokens_total: int = 0
-        primary_tokens_known: bool = False
-        primary_latency_total: float = 0.0
-        had_primary_output: bool = False
-        # Preserve best primary metrics across attempts (for final failure without fallback)
-        best_primary_tokens: int = 0
-        best_primary_cost_usd: float = 0.0
-
-        # Last plugin failure text to surface if needed
-        last_plugin_failure_feedback: Optional[str] = None
-
-        # Snapshot context for retry isolation
-        pre_attempt_context = None
-        if context is not None:
-            try:
-                # Isolate once and clone per attempt to prevent leaking partial updates
-                pre_attempt_context = ContextManager.isolate(context)
-            except Exception:
-                pre_attempt_context = None
-
-        # Attempt loop
-        for attempt in range(1, total_attempts + 1):
-            result.attempts = attempt
-            attempt_context = context
-            if pre_attempt_context is not None:
-                try:
-                    attempt_context = ContextManager.isolate(pre_attempt_context)
-                except Exception:
-                    attempt_context = pre_attempt_context
-
-            attempt_resources = resources
-            exit_cm = None
-            try:
-                if resources is not None:
-                    if hasattr(resources, "__aenter__"):
-                        attempt_resources = await cast(Any, resources).__aenter__()
-                        exit_cm = getattr(resources, "__aexit__", None)
-                    elif hasattr(resources, "__enter__"):
-                        attempt_resources = cast(Any, resources).__enter__()
-                        exit_cm = getattr(resources, "__exit__", None)
-            except Exception:
-                raise
-
-            attempt_exc: BaseException | None = None
-            try:
-                start_ns = time_perf_ns()
-
-                # Dynamic input templating per attempt
-                try:
-                    templ_spec = None
-                    if hasattr(step, "meta") and isinstance(step.meta, dict):
-                        templ_spec = step.meta.get("templated_input")
-                    if templ_spec is not None:
-                        # Align templating behavior with step policies using proxies and steps map
-                        from flujo.utils.prompting import AdvancedPromptFormatter
-                        from flujo.utils.template_vars import (
-                            get_steps_map_from_context,
-                            TemplateContextProxy,
-                            StepValueProxy,
-                        )
-
-                        steps_map = get_steps_map_from_context(attempt_context)
-                        steps_wrapped: Dict[str, Any] = {
-                            k: v if isinstance(v, StepValueProxy) else StepValueProxy(v)
-                            for k, v in steps_map.items()
-                        }
-                        fmt_context: Dict[str, Any] = {
-                            "context": TemplateContextProxy(attempt_context, steps=steps_wrapped),
-                            "previous_step": data,
-                            "steps": steps_wrapped,
-                        }
-                        # Add resume_input if HITL history exists
-                        try:
-                            if (
-                                attempt_context
-                                and hasattr(attempt_context, "hitl_history")
-                                and attempt_context.hitl_history
-                            ):
-                                fmt_context["resume_input"] = attempt_context.hitl_history[
-                                    -1
-                                ].human_response
-                        except Exception:
-                            pass  # resume_input will be undefined if no HITL history
-
-                        if isinstance(templ_spec, str) and (
-                            "{{" in templ_spec and "}}" in templ_spec
-                        ):
-                            data = AdvancedPromptFormatter(templ_spec).format(**fmt_context)
-                        else:
-                            data = templ_spec
-                except Exception:
-                    pass
-
-                # Input processors
-                processed_data = data
-                if hasattr(step, "processors") and step.processors:
-                    try:
-                        processed_data = await self._processor_pipeline.apply_prompt(
-                            step.processors, processed_data, context=attempt_context
-                        )
-                    except Exception as e:
-                        result.success = False
-                        result.feedback = f"Processor failed: {str(e)}"
-                        result.output = None
-                        result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                        telemetry.logfire.error(
-                            f"Step '{getattr(step, 'name', '<unnamed>')}' processor failed: {e}"
-                        )
-                        return Failure(error=e, feedback=result.feedback, step_result=result)
-
-                # Detect validation step; evaluation happens post-agent
-                is_validation_step = False
-                strict_flag = False
-                try:
-                    meta = getattr(step, "meta", None)
-                    is_validation_step = bool(
-                        isinstance(meta, dict) and meta.get("is_validation_step", False)
-                    )
-                    if is_validation_step:
-                        strict_flag = bool(
-                            meta.get("strict_validation", False) if meta is not None else False
-                        )
-                except Exception:
-                    is_validation_step = False
-                processed_output = processed_data
-
-                # Quota reservation (estimate + reserve) prior to agent invocation
-                try:
-                    from ...domain.models import UsageEstimate as _UsageEstimate
-
-                    # Prefer injected estimator, then factory, then config hints
-                    est_cost = 0.0
-                    est_tokens = 0
-                    estimate_obj = None
-                    try:
-                        est = getattr(self, "_usage_estimator", None)
-                        if est is not None and hasattr(est, "estimate"):
-                            estimate_obj = est.estimate(step, data, context)
-                    except Exception:
-                        estimate_obj = None
-                    if estimate_obj is None:
-                        try:
-                            factory = getattr(self, "_estimator_factory", None)
-                            if factory is not None and hasattr(factory, "select"):
-                                sel = factory.select(step)
-                                if sel is not None and hasattr(sel, "estimate"):
-                                    estimate_obj = sel.estimate(step, data, context)
-                        except Exception:
-                            estimate_obj = None
-                    if estimate_obj is not None:
-                        try:
-                            est_cost = float(getattr(estimate_obj, "cost_usd", 0.0) or 0.0)
-                        except Exception:
-                            est_cost = 0.0
-                        try:
-                            est_tokens = int(getattr(estimate_obj, "tokens", 0) or 0)
-                        except Exception:
-                            est_tokens = 0
-                    else:
-                        cfg_est = getattr(step, "config", None)
-                        if cfg_est is not None:
-                            try:
-                                cval = getattr(cfg_est, "expected_cost_usd", None)
-                                if cval is not None:
-                                    est_cost = float(cval)
-                            except Exception:
-                                est_cost = 0.0
-                            try:
-                                tval = getattr(cfg_est, "expected_tokens", None)
-                                if tval is not None:
-                                    est_tokens = int(tval)
-                            except Exception:
-                                est_tokens = 0
-
-                    _estimate = _UsageEstimate(cost_usd=est_cost, tokens=est_tokens)
-                    try:
-                        _current_quota = self._quota_manager.get_current_quota()
-                    except Exception:
-                        _current_quota = None
-                    if _current_quota is not None:
-                        if not _current_quota.reserve(_estimate):
-                            try:
-                                from .usage_messages import format_reservation_denial as _fmt_denial
-                            except Exception:
-                                from flujo.application.core.usage_messages import (
-                                    format_reservation_denial as _fmt_denial,
-                                )
-                            denial = _fmt_denial(_estimate, limits)
-                            raise UsageLimitExceededError(denial.human)
-                except UsageLimitExceededError:
-                    raise
-                except Exception:
-                    # Non-fatal estimation issues should not block execution
-                    pass
-
-                # NOTE: Plugins run after agent/output processing; failures can trigger retries
-
-                # Agent run via agent policy (processors/validators handled below)
-                try:
-                    # Respect optional step-level timeout for agent invocation
-                    timeout_s = None
-                    try:
-                        cfg = getattr(step, "config", None)
-                        if cfg is not None and getattr(cfg, "timeout_s", None) is not None:
-                            timeout_s = float(cfg.timeout_s)
-                    except Exception:
-                        timeout_s = None
-                    # Build options from config when available
-                    options: Dict[str, Any] = {}
-                    try:
-                        cfg2 = getattr(step, "config", None)
-                        if cfg2 is not None:
-                            if getattr(cfg2, "temperature", None) is not None:
-                                options["temperature"] = cfg2.temperature
-                            if getattr(cfg2, "top_k", None) is not None:
-                                options["top_k"] = cfg2.top_k
-                            if getattr(cfg2, "top_p", None) is not None:
-                                options["top_p"] = cfg2.top_p
-                    except Exception:
-                        pass
-                    agent_coro = self._agent_runner.run(
-                        step.agent,
-                        processed_output,
-                        context=attempt_context,
-                        resources=attempt_resources,
-                        options=options,
-                        stream=stream,
-                        on_chunk=on_chunk,
-                    )
-                    agent_output = await self.timeout_runner.run_with_timeout(agent_coro, timeout_s)
-
-                    # Detect mock objects immediately after agent execution
-                    def _is_mock(obj: Any) -> bool:
-                        try:
-                            from unittest.mock import Mock as _M, MagicMock as _MM
-
-                            try:
-                                from unittest.mock import AsyncMock as _AM
-
-                                if isinstance(obj, (_M, _MM, _AM)):
-                                    return True
-                            except Exception:
-                                if isinstance(obj, (_M, _MM)):
-                                    return True
-                        except Exception:
-                            pass
-                        return bool(
-                            getattr(obj, "_is_mock", False) or hasattr(obj, "assert_called")
-                        )
-
-                    if _is_mock(agent_output):
-                        from ...exceptions import MockDetectionError as _MDE
-
-                        raise _MDE(
-                            f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object"
-                        )
-                except PausedException:
-                    # Propagate control-flow
-                    raise
-                except InfiniteFallbackError:
-                    # Propagate control-flow in streaming/non-streaming agent execution
-                    raise
-                except asyncio.TimeoutError as e:
-                    # Treat timeout as retryable agent error
-                    if attempt < total_attempts:
-                        primary_latency_total += time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                        continue
-                    config = getattr(step, "config", None)
-                    timeout_s = getattr(config, "timeout_s", None) if config is not None else None
-                    timeout_str = f"{timeout_s}s" if timeout_s is not None else "configured"
-                    primary_fb = self._format_feedback(
-                        f"Agent timed out after {timeout_str}s",
-                        "Agent execution failed",
-                    )
-                    fb_candidate = getattr(step, "fallback_step", None)
-                    if hasattr(fb_candidate, "_mock_name") and not hasattr(fb_candidate, "agent"):
-                        fb_candidate = None
-                    if fb_candidate is not None:
-                        try:
-                            fb_res = await self.execute(
-                                step=fb_candidate,
-                                data=data,
-                                context=attempt_context,
-                                resources=attempt_resources,
-                                limits=limits,
-                                stream=stream,
-                                on_chunk=on_chunk,
-                                _fallback_depth=_fallback_depth + 1,
-                            )
-                        except Exception as fb_exc:
-                            return Failure(
-                                error=fb_exc,
-                                feedback=f"Fallback execution failed: {fb_exc}",
-                                step_result=StepResult(
-                                    name=self._safe_step_name(step),
-                                    output=None,
-                                    success=False,
-                                    attempts=result.attempts,
-                                    latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
-                                    token_counts=result.token_counts,
-                                    cost_usd=result.cost_usd,
-                                    feedback=f"Fallback execution failed: {fb_exc}",
-                                    branch_context=(
-                                        attempt_context
-                                        if getattr(step, "updates_context", False)
-                                        else None
-                                    ),
-                                    metadata_={
-                                        "fallback_triggered": True,
-                                        "original_error": primary_fb,
-                                    },
-                                    step_history=[],
-                                ),
-                            )
-                        if isinstance(fb_res, StepResult):
-                            if fb_res.success:
-                                if fb_res.metadata_ is None:
-                                    fb_res.metadata_ = {}
-                                fb_res.metadata_.update(
-                                    {"fallback_triggered": True, "original_error": primary_fb}
-                                )
-                                return Success(step_result=fb_res)
-                            # Failed fallback: aggregate metrics from fallback result
-                            return Failure(
-                                error=e,
-                                feedback=f"Original error: {primary_fb}; Fallback error: {fb_res.feedback}",
-                                step_result=StepResult(
-                                    name=self._safe_step_name(step),
-                                    output=None,
-                                    success=False,
-                                    attempts=result.attempts,
-                                    latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
-                                    token_counts=int(result.token_counts or 0)
-                                    + int(getattr(fb_res, "token_counts", 0) or 0),
-                                    cost_usd=float(getattr(fb_res, "cost_usd", 0.0) or 0.0),
-                                    feedback=f"Fallback execution failed: {e}",
-                                    branch_context=None,
-                                    metadata_={
-                                        "fallback_triggered": True,
-                                        "original_error": primary_fb,
-                                    },
-                                    step_history=[],
-                                ),
-                            )
-                        elif isinstance(fb_res, StepOutcome):
-                            if isinstance(fb_res, Success) and fb_res.step_result is not None:
-                                if fb_res.step_result.metadata_ is None:
-                                    fb_res.step_result.metadata_ = {}
-                                fb_res.step_result.metadata_.update(
-                                    {"fallback_triggered": True, "original_error": primary_fb}
-                                )
-                                return Success(step_result=fb_res.step_result)
-                            # Failed fallback outcome: unwrap for metrics
-                            sr_fb = self._unwrap_outcome_to_step_result(
-                                fb_res, self._safe_step_name(step)
-                            )
-                            return Failure(
-                                error=e,
-                                feedback=f"Original error: {primary_fb}; Fallback error: {getattr(fb_res, 'feedback', 'Unknown')}",
-                                step_result=StepResult(
-                                    name=self._safe_step_name(step),
-                                    output=None,
-                                    success=False,
-                                    attempts=result.attempts,
-                                    latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
-                                    token_counts=int(result.token_counts or 0)
-                                    + int(getattr(sr_fb, "token_counts", 0) or 0),
-                                    cost_usd=float(getattr(sr_fb, "cost_usd", 0.0) or 0.0),
-                                    feedback=f"Fallback execution failed: {e}",
-                                    branch_context=None,
-                                    metadata_={
-                                        "fallback_triggered": True,
-                                        "original_error": primary_fb,
-                                    },
-                                    step_history=[],
-                                ),
-                            )
-                    return Failure(
-                        error=e,
-                        feedback=primary_fb,
-                        step_result=StepResult(
-                            name=self._safe_step_name(step),
-                            output=None,
-                            success=False,
-                            attempts=result.attempts,
-                            latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
-                            token_counts=result.token_counts,
-                            cost_usd=result.cost_usd,
-                            feedback=primary_fb,
-                            branch_context=None,
-                            metadata_={},
-                            step_history=[],
-                        ),
-                    )
-                except PricingNotConfiguredError:
-                    # Propagate strict pricing errors (tests expect raise)
-                    raise
-                except UsageLimitExceededError:
-                    # Critical quota error: propagate without fallback
-                    raise
-                except MockDetectionError:
-                    # Mock outputs must stop the pipeline immediately
-                    raise
-                except Exception as agent_error:
-                    # Re-raise critical control-flow exceptions (unified error handling contract)
-                    try:
-                        if isinstance(agent_error, InfiniteFallbackError):
-                            raise
-                    except Exception:
-                        pass
-                    # Optionally allow retry; on final attempt, try fallback
-                    if attempt < total_attempts:
-                        primary_latency_total += time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                        continue
-                    # Primary error message is derived from agent error (include type name)
-                    try:
-                        _etype = type(agent_error).__name__
-                    except Exception:
-                        _etype = "Exception"
-                    primary_fb = self._format_feedback(
-                        f"{_etype}: {str(agent_error)}", "Agent execution failed"
-                    )
-                    if f"Agent execution failed with {_etype}" not in (primary_fb or ""):
-                        primary_fb = f"{primary_fb}; Agent execution failed with {_etype}"
-                    fb_candidate = getattr(step, "fallback_step", None)
-                    if hasattr(fb_candidate, "_mock_name") and not hasattr(fb_candidate, "agent"):
-                        fb_candidate = None
-                    if fb_candidate is not None:
-                        try:
-                            fb_res = await self.execute(
-                                step=fb_candidate,
-                                data=data,
-                                context=attempt_context,
-                                resources=attempt_resources,
-                                limits=limits,
-                                stream=stream,
-                                on_chunk=on_chunk,
-                                _fallback_depth=_fallback_depth + 1,
-                            )
-                        except (
-                            UsageLimitExceededError,
-                            PausedException,
-                            InfiniteFallbackError,
-                            InfiniteRedirectError,
-                            PricingNotConfiguredError,
-                        ):
-                            # Re-raise critical/control exceptions per contract
-                            raise
-                        except Exception as fb_exc:
-                            # Gracefully surface fallback execution failure as Failure outcome
-                            return Failure(
-                                error=fb_exc,
-                                feedback=f"Fallback execution failed: {fb_exc}",
-                                step_result=StepResult(
-                                    name=self._safe_step_name(step),
-                                    output=None,
-                                    success=False,
-                                    attempts=result.attempts,
-                                    latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
-                                    token_counts=result.token_counts,
-                                    cost_usd=result.cost_usd,
-                                    feedback=f"Fallback execution failed: {fb_exc}",
-                                    branch_context=None,
-                                    metadata_={
-                                        "fallback_triggered": True,
-                                        "original_error": primary_fb,
-                                    },
-                                    step_history=[],
-                                ),
-                            )
-                        # Normalize nested outcome to a StepResult
-                        fb_res = self._unwrap_outcome_to_step_result(
-                            fb_res, self._safe_step_name(fb_candidate)
-                        )
-                        # Combine usage and metadata
-                        result.metadata_["fallback_triggered"] = True
-                        # Store raw original error message in metadata for precise assertions
-                        try:
-                            result.metadata_["original_error"] = str(agent_error)
-                        except Exception:
-                            result.metadata_["original_error"] = primary_fb
-                        if fb_res.success:
-                            if fb_res.metadata_ is None:
-                                fb_res.metadata_ = {}
-                            fb_res.metadata_.update(result.metadata_)
-                            # Aggregate primary attempt usage/latency into fallback success
-                            # Prefer explicit token metrics if known; otherwise count 1 if we had any output
-                            # Re-evaluate presence of primary output just before aggregation
-                            try:
-                                if isinstance(agent_output, str):
-                                    had_primary_output = had_primary_output or (
-                                        len(agent_output) > 0
-                                    )
-                                else:
-                                    had_primary_output = had_primary_output or (
-                                        agent_output is not None
-                                    )
-                            except Exception:
-                                pass
-
-                            _effective_known = primary_tokens_known or (
-                                getattr(result, "token_counts", None) is not None
-                            )
-                            # Aggregate only executed primary attempts
-                            if primary_tokens_known:
-                                add_primary = int(primary_tokens_total)
-                            else:
-                                add_primary = (
-                                    int(getattr(result, "token_counts", 0) or 0)
-                                    if _effective_known
-                                    else (1 if had_primary_output else 0)
-                                )
-                            # Modify in-place on the StepResult from fallback
-                            try:
-                                fb_tokens = int(getattr(fb_res, "token_counts", 0) or 0)
-                                if fb_tokens == 0:
-                                    # Try nested token_counts on output wrapper
-                                    fb_tokens = int(
-                                        getattr(getattr(fb_res, "output", None), "token_counts", 0)
-                                        or 0
-                                    )
-                                fb_res.token_counts = fb_tokens + add_primary
-                            except Exception:
-                                pass
-                            try:
-                                fb_res.latency_s = float(
-                                    getattr(fb_res, "latency_s", 0.0) or 0.0
-                                ) + float(primary_latency_total + result.latency_s)
-                            except Exception:
-                                pass
-                            try:
-                                fb_res.attempts = int(getattr(fb_res, "attempts", 0) or 0) + int(
-                                    result.attempts or 0
-                                )
-                            except Exception:
-                                pass
-                            return Success(step_result=fb_res)
-                        else:
-                            # Adopt fallback metrics only on failure, but aggregate primary tokens heuristically
-                            try:
-                                if isinstance(agent_output, str):
-                                    had_primary_output = had_primary_output or (
-                                        len(agent_output) > 0
-                                    )
-                                else:
-                                    had_primary_output = had_primary_output or (
-                                        agent_output is not None
-                                    )
-                            except Exception:
-                                pass
-                            _effective_known = primary_tokens_known or (
-                                getattr(result, "token_counts", None) is not None
-                            )
-                            add_primary = (
-                                int(primary_tokens_total)
-                                if primary_tokens_known
-                                else (
-                                    int(getattr(result, "token_counts", 0) or 0)
-                                    if _effective_known
-                                    else (1 if had_primary_output else 0)
-                                )
-                            )
-
-                            # Compose feedback including any prior plugin failure for context
-                            tail = (
-                                f"; Previous plugin failure: {last_plugin_failure_feedback}"
-                                if last_plugin_failure_feedback
-                                else ""
-                            )
-                            # fb_res is already a StepResult (normalized above); use its metrics
-                            try:
-                                token_counts_fb = int(getattr(fb_res, "token_counts", 0) or 0)
-                            except Exception:
-                                token_counts_fb = 0
-                            try:
-                                cost_usd_fb = float(getattr(fb_res, "cost_usd", 0.0) or 0.0)
-                            except Exception:
-                                cost_usd_fb = 0.0
-
-                            failure_sr = StepResult(
-                                name=self._safe_step_name(step),
-                                output=None,
-                                success=False,
-                                attempts=result.attempts,
-                                latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
-                                token_counts=int(token_counts_fb) + int(add_primary or 0),
-                                cost_usd=cost_usd_fb,
-                                feedback=f"Original error: {primary_fb}{tail}; Fallback error: {fb_res.feedback}",
-                                branch_context=(
-                                    attempt_context
-                                    if getattr(step, "updates_context", False)
-                                    else None
-                                ),
-                                metadata_=result.metadata_,
-                                step_history=[],
-                            )
-                            return Failure(
-                                error=Exception(failure_sr.feedback or "step failed"),
-                                feedback=failure_sr.feedback,
-                                step_result=failure_sr,
-                            )
-                    # No fallback
-                    # Include any prior plugin failure in feedback for richer diagnostics
-                    try:
-                        tail = (
-                            f"; Previous plugin failure: {last_plugin_failure_feedback}"
-                            if last_plugin_failure_feedback
-                            else ""
-                        )
-                    except Exception:
-                        tail = ""
-                    return Failure(
-                        error=agent_error,
-                        feedback=f"{primary_fb}{tail}",
-                        step_result=StepResult(
-                            name=self._safe_step_name(step),
-                            output=None,
-                            success=False,
-                            attempts=result.attempts,
-                            latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
-                            token_counts=result.token_counts,
-                            cost_usd=result.cost_usd,
-                            feedback=f"{primary_fb}{tail}",
-                            branch_context=(
-                                attempt_context if getattr(step, "updates_context", False) else None
-                            ),
-                            metadata_=result.metadata_,
-                            step_history=[],
-                        ),
-                    )
-
-                # Measure usage from agent output (prefer policy-level hook to honor test monkeypatches)
-                try:
-                    try:
-                        from . import step_policies as _sp
-
-                        _extract = getattr(_sp, "extract_usage_metrics", extract_usage_metrics)
-                    except Exception:
-                        _extract = extract_usage_metrics
-                    prompt_tokens, completion_tokens, cost_usd = _extract(
-                        raw_output=agent_output, agent=step.agent, step_name=step.name
-                    )
-                    result.cost_usd = cost_usd
-                    result.token_counts = prompt_tokens + completion_tokens
-                    try:
-                        telemetry.logfire.info(
-                            f"[Core] Primary usage extracted: tokens={result.token_counts} attempt={attempt}"
-                        )
-                    except Exception:
-                        pass
-                    # Track best-known primary metrics across attempts
-                    try:
-                        cur_tokens = int(result.token_counts or 0)
-                        cur_cost = float(result.cost_usd or 0.0)
-                        if cur_cost > best_primary_cost_usd or (
-                            cur_cost == best_primary_cost_usd and cur_tokens > best_primary_tokens
-                        ):
-                            best_primary_cost_usd = cur_cost
-                            best_primary_tokens = cur_tokens
-                    except Exception:
-                        pass
-                    try:
-                        await self._usage_meter.add(
-                            float(cost_usd or 0.0),
-                            int(prompt_tokens or 0),
-                            int(completion_tokens or 0),
-                        )
-                    except Exception:
-                        pass
-                except PricingNotConfiguredError:
-                    # Strict pricing must propagate to satisfy tests
-                    raise
-                except MockDetectionError:
-                    # Propagate mock detection from usage extraction
-                    raise
-                except Exception as e_usage:
-                    # Treat unknown extraction failures as step failure so feedback surfaces (e.g., strict pricing)
-                    result.success = False
-                    result.feedback = str(e_usage)
-                    result.output = agent_output
-                    result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                    return Failure(
-                        error=e_usage,
-                        feedback=result.feedback,
-                        step_result=result,
-                    )
-                else:
-                    try:
-                        primary_tokens_total += int(result.token_counts or 0)
-                    except Exception:
-                        pass
-                    primary_tokens_known = True
-                    had_primary_output = True
-
-                # Output processors / AROS Phase 2: structured finalize path
-                processed_output = agent_output
-                try:
-                    # Best-effort: if step declares structured_output (auto/openai_json),
-                    # normalize/repair to JSON object before processors, then minimally validate.
-                    pmeta = getattr(step, "meta", {}) or {}
-                    proc = pmeta.get("processing") if isinstance(pmeta, dict) else None
-                    so_on = isinstance(proc, dict) and str(
-                        proc.get("structured_output", "")
-                    ).strip().lower() in {"auto", "openai_json"}
-                    if so_on:
-                        from flujo.utils.json_normalizer import normalize_to_json_obj as _norm
-                        from flujo.agents.repair import DeterministicRepairProcessor as _DR
-
-                        # Normalize strings into JSON when possible
-                        if isinstance(processed_output, str):
-                            maybe_obj = _norm(processed_output)
-                            if isinstance(maybe_obj, (dict, list)):
-                                processed_output = maybe_obj
-                            else:
-                                try:
-                                    cleaned = await _DR().process(processed_output)
-                                except Exception:
-                                    cleaned = None
-                                if isinstance(cleaned, str):
-                                    import json as _json
-
-                                    try:
-                                        repaired = _json.loads(cleaned)
-                                        if isinstance(repaired, (dict, list)):
-                                            processed_output = repaired
-                                    except Exception:
-                                        pass
-
-                        # Minimal schema validation and auto-wrap for simple cases
-                        schema = proc.get("schema") if isinstance(proc, dict) else None
-                        if isinstance(schema, dict) and schema.get("type") == "object":
-                            required = schema.get("required") or []
-                            props = schema.get("properties") or {}
-                            # Auto-wrap string into the single required string field
-                            if isinstance(processed_output, str) and len(required) == 1:
-                                key = required[0]
-                                if (
-                                    isinstance(props.get(key), dict)
-                                    and props.get(key, {}).get("type") == "string"
-                                ):
-                                    processed_output = {key: processed_output}
-                except Exception:
-                    # Never block success path due to normalization/repair advice
-                    pass
-                if hasattr(step, "processors") and step.processors:
-                    try:
-                        processed_output = await self._processor_pipeline.apply_output(
-                            step.processors, processed_output, context=attempt_context
-                        )
-                    except Exception as e:
-                        # On processor failure, attempt fallback if configured
-                        result.success = False
-                        proc_fb = f"Processor failed: {str(e)}"
-                        result.feedback = proc_fb
-                        result.output = processed_output
-                        result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                        telemetry.logfire.error(
-                            f"Step '{getattr(step, 'name', '<unnamed>')}' processor failed: {e}"
-                        )
-                        fb_step = getattr(step, "fallback_step", None)
-                        if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
-                            fb_step = None
-                        if fb_step is not None:
-                            try:
-                                fb_res = await self.execute(
-                                    step=fb_step,
-                                    data=data,
-                                    context=attempt_context,
-                                    resources=attempt_resources,
-                                    limits=limits,
-                                    stream=stream,
-                                    on_chunk=on_chunk,
-                                    _fallback_depth=_fallback_depth + 1,
-                                )
-                            except (
-                                UsageLimitExceededError,
-                                PausedException,
-                                InfiniteFallbackError,
-                                InfiniteRedirectError,
-                                PricingNotConfiguredError,
-                            ):
-                                raise
-                            except Exception as fb_exc:
-                                # No fallback result available here; just return a Failure preserving diagnostics
-                                return Failure(
-                                    error=fb_exc,
-                                    feedback=f"Original error: {proc_fb}; Fallback error: {str(fb_exc)}",
-                                    step_result=StepResult(
-                                        name=self._safe_step_name(step),
-                                        output=processed_output,
-                                        success=False,
-                                        attempts=result.attempts,
-                                        latency_s=result.latency_s,
-                                        token_counts=result.token_counts,
-                                        cost_usd=result.cost_usd,
-                                        feedback=f"Original error: {proc_fb}; Fallback error: {str(fb_exc)}",
-                                        branch_context=None,
-                                        metadata_={
-                                            "fallback_triggered": True,
-                                            "original_error": proc_fb,
-                                        },
-                                        step_history=[],
-                                    ),
-                                )
-                            # Normalize
-                            if isinstance(fb_res, Success):
-                                sr = fb_res.step_result
-                            elif isinstance(fb_res, Failure):
-                                sr = (
-                                    fb_res.step_result
-                                    if fb_res.step_result is not None
-                                    else StepResult(
-                                        name=self._safe_step_name(step),
-                                        success=False,
-                                        feedback=fb_res.feedback,
-                                    )
-                                )
-                            else:
-                                sr = self._unwrap_outcome_to_step_result(
-                                    fb_res, self._safe_step_name(fb_step)
-                                )
-                            if sr.success:
-                                if sr.metadata_ is None:
-                                    sr.metadata_ = {}
-                                sr.metadata_.update(
-                                    {"fallback_triggered": True, "original_error": proc_fb}
-                                )
-                                return Success(step_result=sr)
-                            # Fallback failed: compose Failure
-                            # Semantics: on fallback failure, report fallback cost only,
-                            # and aggregate token counts as primary + fallback when available.
-                            try:
-                                fb_tokens = int(getattr(sr, "token_counts", 0) or 0)
-                            except Exception:
-                                fb_tokens = 0
-                            try:
-                                primary_tokens = int(getattr(result, "token_counts", 0) or 0)
-                            except Exception:
-                                primary_tokens = 0
-                            try:
-                                fb_cost = float(getattr(sr, "cost_usd", 0.0) or 0.0)
-                            except Exception:
-                                fb_cost = 0.0
-                            return Failure(
-                                error=Exception(
-                                    f"Original error: {proc_fb}; Fallback error: {sr.feedback}"
-                                ),
-                                feedback=f"Original error: {proc_fb}; Fallback error: {sr.feedback}",
-                                step_result=StepResult(
-                                    name=self._safe_step_name(step),
-                                    output=processed_output,
-                                    success=False,
-                                    attempts=result.attempts,
-                                    latency_s=result.latency_s,
-                                    token_counts=primary_tokens + fb_tokens,
-                                    cost_usd=fb_cost,
-                                    feedback=f"Original error: {proc_fb}; Fallback error: {sr.feedback}",
-                                    branch_context=None,
-                                    metadata_={
-                                        "fallback_triggered": True,
-                                        "original_error": proc_fb,
-                                    },
-                                    step_history=[],
-                                ),
-                            )
-                        # No fallback configured
-                        return Failure(error=e, feedback=result.feedback, step_result=result)
-
-                # Validation steps: run hybrid validation over the agent output
-                if is_validation_step:
-                    checked_output, hybrid_feedback = await run_hybrid_check(
-                        processed_output,
-                        getattr(step, "plugins", []),
-                        getattr(step, "validators", []),
-                        context=attempt_context,
-                        resources=attempt_resources,
-                    )
-                    result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                    if hybrid_feedback:
-                        if strict_flag:
-                            result.success = False
-                            result.feedback = hybrid_feedback
-                            result.output = None
-                            if result.metadata_ is None:
-                                result.metadata_ = {}
-                            result.metadata_["validation_passed"] = False
-                            return Failure(
-                                error=Exception(hybrid_feedback),
-                                feedback=hybrid_feedback,
-                                step_result=result,
-                            )
-                        # non-strict: pass through with flag
-                        result.success = True
-                        result.feedback = None
-                        result.output = checked_output
-                        if result.metadata_ is None:
-                            result.metadata_ = {}
-                        result.metadata_["validation_passed"] = False
-                        return Success(step_result=result)
-                    # no failures -> success
-                    result.success = True
-                    result.output = checked_output
-                    if result.metadata_ is None:
-                        result.metadata_ = {}
-                    result.metadata_["validation_passed"] = True
-                    return Success(step_result=result)
-
-                # Plugins with redirect orchestration (post-agent)
-                if hasattr(step, "plugins") and step.plugins:
-                    telemetry.logfire.info(
-                        f"[Core] Running plugins for step '{getattr(step, 'name', '<unnamed>')}'"
-                    )
-                    timeout_s = None
-                    try:
-                        cfg = getattr(step, "config", None)
-                        if cfg is not None and getattr(cfg, "timeout_s", None) is not None:
-                            timeout_s = float(cfg.timeout_s)
-                    except Exception:
-                        timeout_s = None
-                    try:
-                        processed_output = await self.plugin_redirector.run(
-                            initial=processed_output,
-                            step=step,
-                            data=data,
-                            context=attempt_context,
-                            resources=attempt_resources,
-                            timeout_s=timeout_s,
-                        )
-                        telemetry.logfire.info(
-                            f"[Core] Plugins completed for step '{getattr(step, 'name', '<unnamed>')}'"
-                        )
-                    except Exception as e:
-                        if e.__class__.__name__ == "InfiniteRedirectError":
-                            raise
-                        try:
-                            from ...exceptions import InfiniteRedirectError as _IRE
-
-                            if isinstance(e, _IRE):
-                                raise
-                        except Exception:
-                            pass
-                        if isinstance(e, asyncio.TimeoutError):
-                            raise
-                        # Retry plugin failures only when a fallback is configured and at top-level
-                        fb_present = getattr(step, "fallback_step", None) is not None
-                        if attempt < total_attempts and int(_fallback_depth) == 0 and fb_present:
-                            telemetry.logfire.warning(
-                                f"Step '{getattr(step, 'name', '<unnamed>')}' plugin attempt {attempt}/{total_attempts} failed: {e}"
-                            )
-                            try:
-                                last_plugin_failure_feedback = str(e)
-                            except Exception:
-                                last_plugin_failure_feedback = None
-                            primary_latency_total += time_perf_ns_to_seconds(
-                                time_perf_ns() - start_ns
-                            )
-                            continue
-                        try:
-                            last_plugin_failure_feedback = str(e)
-                        except Exception:
-                            last_plugin_failure_feedback = None
-                        primary_latency_total += time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                        # Final plugin failure: fallback handling
-                        result.success = False
-                        result.feedback = f"Plugin execution failed after max retries: {str(e)}"
-                        result.output = None
-                        result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                        # Preserve best primary metrics across attempts for final failure
-                        try:
-                            if best_primary_tokens > 0:
-                                result.token_counts = max(
-                                    int(result.token_counts or 0), best_primary_tokens
-                                )
-                            if best_primary_cost_usd > 0.0:
-                                result.cost_usd = max(
-                                    float(result.cost_usd or 0.0), best_primary_cost_usd
-                                )
-                        except Exception:
-                            pass
-                        telemetry.logfire.error(
-                            f"Step '{getattr(step, 'name', '<unnamed>')}' plugin failed after {result.attempts} attempts"
-                        )
-                        fb_step = getattr(step, "fallback_step", None)
-                        if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
-                            fb_step = None
-                        if fb_step is not None:
-                            if self._fallback_handler.is_step_in_chain(fb_step):
-                                # Graceful handling: return Failure with informative feedback
-                                fb_txt = f"Fallback loop detected: step '{getattr(fb_step, 'name', '<unnamed>')}' already in fallback chain"
-                                loop_sr = StepResult(
-                                    name=self._safe_step_name(step),
-                                    output=None,
-                                    success=False,
-                                    attempts=result.attempts,
-                                    latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
-                                    token_counts=result.token_counts,
-                                    cost_usd=result.cost_usd,
-                                    feedback=fb_txt,
-                                    branch_context=None,
-                                    metadata_=result.metadata_,
-                                    step_history=[],
-                                )
-                                if (
-                                    getattr(step, "updates_context", False)
-                                    and attempt_context is not None
-                                ):
-                                    sr_fb.branch_context = attempt_context
-                                return Failure(
-                                    error=InfiniteFallbackError(fb_txt),
-                                    feedback=fb_txt,
-                                    step_result=loop_sr,
-                                )
-                            fallback_result_sr = await self.execute(
-                                step=fb_step,
-                                data=data,
-                                context=attempt_context,
-                                resources=attempt_resources,
-                                limits=limits,
-                                stream=stream,
-                                on_chunk=on_chunk,
-                                _fallback_depth=_fallback_depth + 1,
-                            )
-                            # Normalize nested outcome to a StepResult
-                            fallback_result_sr = self._unwrap_outcome_to_step_result(
-                                fallback_result_sr, self._safe_step_name(fb_step)
-                            )
-                            if fallback_result_sr.metadata_ is None:
-                                fallback_result_sr.metadata_ = {}
-                            fallback_result_sr.metadata_["fallback_triggered"] = True
-                            # Prefer a previously recorded, more specific original_error when available
-                            try:
-                                prev_orig = (
-                                    result.metadata_.get("original_error")
-                                    if isinstance(result.metadata_, dict)
-                                    else None
-                                )
-                            except Exception:
-                                prev_orig = None
-                            # Heuristic: StubAgent-style exhaustion (outputs list shorter than intended attempts)
-                            try:
-                                cfg_obj = getattr(step, "config", None)
-                                intended_attempts = int(getattr(cfg_obj, "max_retries", 0) or 0) + 1
-                            except Exception:
-                                intended_attempts = 1
-                            exhausted = False
-                            try:
-                                outs = getattr(getattr(step, "agent", None), "outputs", None)
-                                if isinstance(outs, list) and len(outs) < intended_attempts:
-                                    exhausted = True
-                            except Exception:
-                                exhausted = False
-                            # Prefer the most accurate root-cause message:
-                            # 1) StubAgent exhaustion when outputs < intended attempts
-                            # 2) Previously recorded original_error from earlier phases
-                            # 3) Plugin failure feedback (redirector message)
-                            # 4) Exception text as a last resort
-                            if exhausted:
-                                orig_text = "No more outputs available"
-                            elif prev_orig:
-                                orig_text = prev_orig
-                            elif last_plugin_failure_feedback:
-                                orig_text = last_plugin_failure_feedback
-                            else:
-                                orig_text = str(e)
-                            fallback_result_sr.metadata_["original_error"] = orig_text
-                            # Aggregate primary usage with fallback tokens (ensure at least 1 token for string outputs)
-                            # Prefer explicit token metrics if known; otherwise count 1 if we had any output
-                            # Re-evaluate presence of primary output just before aggregation
-                            try:
-                                if isinstance(agent_output, str):
-                                    had_primary_output = had_primary_output or (
-                                        len(agent_output) > 0
-                                    )
-                                else:
-                                    had_primary_output = had_primary_output or (
-                                        agent_output is not None
-                                    )
-                            except Exception:
-                                pass
-
-                            _effective_known = primary_tokens_known or (
-                                getattr(result, "token_counts", None) is not None
-                            )
-                            # Estimate primary tokens across ALL intended attempts
-                            if primary_tokens_known:
-                                primary_tokens = int(primary_tokens_total)
-                            else:
-                                primary_tokens = (
-                                    int(getattr(result, "token_counts", 0) or 0)
-                                    if _effective_known
-                                    else (1 if had_primary_output else 0)
-                                )
-                            telemetry.logfire.info(
-                                f"[Core] Aggregating primary tokens={primary_tokens} (known={primary_tokens_known}, had={had_primary_output}) with fallback tokens={fallback_result_sr.token_counts or 0}"
-                            )
-                            # Ensure we account for fallback tokens even when the nested step didn't populate token_counts
-                            try:
-                                fb_tokens = int(getattr(fallback_result_sr, "token_counts", 0) or 0)
-                                if fb_tokens == 0:
-                                    # Try nested token_counts on output wrapper
-                                    fb_tokens = int(
-                                        getattr(
-                                            getattr(fallback_result_sr, "output", None),
-                                            "token_counts",
-                                            0,
-                                        )
-                                        or 0
-                                    )
-                            except Exception:
-                                fb_tokens = int(getattr(fallback_result_sr, "token_counts", 0) or 0)
-                            fallback_result_sr.token_counts = fb_tokens + primary_tokens
-                            # Do not force-add tokens when explicit zero was reported
-                            fallback_result_sr.latency_s = (
-                                (fallback_result_sr.latency_s or 0.0)
-                                + primary_latency_total
-                                + result.latency_s
-                            )
-                            try:
-                                cfg_obj = getattr(step, "config", None)
-                                intended_attempts = int(getattr(cfg_obj, "max_retries", 0) or 0) + 1
-                                if intended_attempts <= 0:
-                                    intended_attempts = 1
-                            except Exception:
-                                intended_attempts = max(1, int(getattr(result, "attempts", 1) or 1))
-                            fallback_result_sr.attempts = intended_attempts + (
-                                fallback_result_sr.attempts or 0
-                            )
-                            if fallback_result_sr.success:
-                                return Success(step_result=fallback_result_sr)
-                            # Build combined feedback including original error and fallback error
-                            try:
-                                orig_err = None
-                                md = getattr(fallback_result_sr, "metadata_", None)
-                                if isinstance(md, dict):
-                                    orig_err = md.get("original_error")
-                                fb_text = fallback_result_sr.feedback or "step failed"
-                                # Enrich original error with any prior plugin failure feedback for context/length
-                                if orig_err:
-                                    try:
-                                        if last_plugin_failure_feedback and (
-                                            last_plugin_failure_feedback not in str(orig_err)
-                                        ):
-                                            orig_err = f"{orig_err}; Previous plugin failure: {last_plugin_failure_feedback}"
-                                    except Exception:
-                                        pass
-                                combo = (
-                                    f"Original error: {orig_err}; Fallback error: {fb_text}"
-                                    if orig_err
-                                    else f"Fallback error: {fb_text}"
-                                )
-                            except Exception:
-                                combo = fallback_result_sr.feedback or "step failed"
-                            return Failure(
-                                error=Exception(combo),
-                                feedback=combo,
-                                step_result=StepResult(
-                                    name=self._safe_step_name(step),
-                                    output=None,
-                                    success=False,
-                                    attempts=result.attempts,
-                                    latency_s=fallback_result_sr.latency_s,
-                                    token_counts=fallback_result_sr.token_counts,
-                                    cost_usd=fallback_result_sr.cost_usd,
-                                    feedback=combo,
-                                    branch_context=None,
-                                    metadata_=fallback_result_sr.metadata_,
-                                    step_history=[],
-                                ),
-                            )
-                        if getattr(step, "updates_context", False) and attempt_context is not None:
-                            result.branch_context = attempt_context
-                        return Failure(
-                            error=Exception(result.feedback or "step failed"),
-                            feedback=result.feedback,
-                            step_result=result,
-                        )
-
-                validation_result = await self._validation_orchestrator.validate(
-                    core=self,
-                    step=step,
-                    output=processed_output,
-                    context=attempt_context,
-                    limits=limits,
-                    data=data,
-                    attempt_context=attempt_context,
-                    attempt_resources=attempt_resources,
-                    stream=stream,
-                    on_chunk=on_chunk,
-                    fallback_depth=_fallback_depth,
-                )
-                if validation_result is not None:
-                    if isinstance(validation_result, StepResult) and validation_result.success:
-                        return Success(step_result=validation_result)
-                    if isinstance(validation_result, StepOutcome):
-                        return validation_result
-                    return Failure(
-                        error=Exception(validation_result.feedback or "Validation failed"),
-                        feedback=validation_result.feedback,
-                        step_result=validation_result,
-                    )
-
-                # Success
-                result.success = True
-                # Unpack common agent wrappers (align with DefaultAgentStepExecutor)
-                try:
-                    processed_output = self.unpacker.unpack(processed_output)
-                except Exception:
-                    pass
-
-                # Optional sink_to support for simple steps: store scalar or structured outputs
-                # into a specific context path (e.g., "scratchpad.counter").
-                # This enables scalar iteration counters to persist across iterations.
-                try:
-                    sink_path = getattr(step, "sink_to", None)
-                    if sink_path and attempt_context is not None:
-                        from ...utils.context import set_nested_context_field as _set_field
-
-                        try:
-                            _set_field(attempt_context, str(sink_path), processed_output)
-                            telemetry.logfire.info(
-                                f"Step '{getattr(step, 'name', '')}' sink_to stored output to {sink_path}"
-                            )
-                        except Exception as _sink_err:
-                            # Fallback: allow top-level attribute assignment for BaseModel contexts
-                            try:
-                                if "." not in str(sink_path):
-                                    object.__setattr__(
-                                        attempt_context, str(sink_path), processed_output
-                                    )
-                                    telemetry.logfire.info(
-                                        f"Step '{getattr(step, 'name', '')}' sink_to stored output to {sink_path} (fallback)"
-                                    )
-                                else:
-                                    telemetry.logfire.warning(
-                                        f"Failed to sink step output to {sink_path}: {_sink_err}"
-                                    )
-                            except Exception:
-                                telemetry.logfire.warning(
-                                    f"Failed to sink step output to {sink_path}: {_sink_err}"
-                                )
-                except Exception:
-                    # Never fail a step due to sink_to application errors
-                    pass
-
-                # Merge any per-attempt context mutations back into the main context
-                # even when there was only a single attempt. This ensures context
-                # mutations made by the agent (e.g., signature injection) are
-                # visible to subsequent steps and in the final context.
-                merge_succeeded = False
-                try:
-                    if (
-                        context is not None
-                        and attempt_context is not None
-                        and attempt_context is not context
-                    ):
-                        from .context_manager import ContextManager as _CM
-
-                        _CM.merge(context, attempt_context)
-                        merge_succeeded = True
-                except Exception:
-                    # Merge failed - we'll use attempt_context as branch_context
-                    # to preserve mutations (ExecutionManager will merge it)
-                    merge_succeeded = False
-
-                # Detect mock objects in final output and raise
-                def _is_mock(obj: Any) -> bool:
-                    try:
-                        from unittest.mock import Mock as _M, MagicMock as _MM
-
-                        try:
-                            from unittest.mock import AsyncMock as _AM
-
-                            if isinstance(obj, (_M, _MM, _AM)):
-                                return True
-                        except Exception:
-                            if isinstance(obj, (_M, _MM)):
-                                return True
-                    except Exception:
-                        pass
-                    return bool(getattr(obj, "_is_mock", False) or hasattr(obj, "assert_called"))
-
-                if _is_mock(processed_output):
-                    from ...exceptions import MockDetectionError as _MDE
-
-                    raise _MDE(
-                        f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object"
-                    )
-                # Apply updates_context semantics for simple steps with validation
-                validation_error = self._context_update_manager.apply_updates(
-                    step=step, output=processed_output, context=context
-                )
-                if validation_error:
-                    result.success = False
-                    result.feedback = f"Context validation failed: {validation_error}"
-                result.output = processed_output
-                result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-
-                # Post-success bookkeeping: record step output for templating and finalize branch_context
-                try:
-                    # Record successful step output into context.scratchpad['steps'] for {{ steps.<name> }} templating
-                    if context is not None:
-                        sp = getattr(context, "scratchpad", None)
-                        if sp is None:
-                            try:
-                                setattr(context, "scratchpad", {"steps": {}})
-                                sp = getattr(context, "scratchpad", None)
-                            except Exception:
-                                sp = None
-                        if isinstance(sp, dict):
-                            from typing import Dict as _Dict, Any as _Any
-
-                            _cur = sp.get("steps")
-                            if isinstance(_cur, dict):
-                                steps_map_sc: _Dict[str, _Any] = _cur
-                            else:
-                                steps_map_sc = {}
-                                sp["steps"] = steps_map_sc
-                            steps_map_sc[getattr(step, "name", "")] = result.output
-                    # Adapter attempts alignment for refine_until and output mappers
-                    try:
-                        step_name = getattr(step, "name", "")
-                        is_adapter = False
-                        try:
-                            is_adapter = isinstance(
-                                getattr(step, "meta", None), dict
-                            ) and step.meta.get("is_adapter")
-                        except Exception:
-                            is_adapter = False
-                        if (
-                            is_adapter or str(step_name).endswith("_output_mapper")
-                        ) and context is not None:
-                            if hasattr(context, "_last_loop_iterations"):
-                                try:
-                                    result.attempts = int(getattr(context, "_last_loop_iterations"))
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
-                    # Ensure the branch_context reflects the up-to-date main context
-                    # If we had an isolated attempt_context and merge succeeded, use context.
-                    # If merge failed but attempt_context was isolated, use attempt_context
-                    # to preserve mutations (ExecutionManager will merge it into live context).
-                    # If no isolation occurred (attempt_context is context), use context.
-                    if (
-                        attempt_context is not None
-                        and attempt_context is not context
-                        and not merge_succeeded
-                    ):
-                        # Merge failed - preserve mutations by using attempt_context
-                        result.branch_context = attempt_context
-                    else:
-                        # Merge succeeded or no isolation - use merged context
-                        result.branch_context = context
-                except Exception:
-                    # Do not fail success path due to scratchpad/merge issues
-                    # Preserve mutations if we had an isolated attempt_context
-                    if attempt_context is not None and attempt_context is not context:
-                        result.branch_context = attempt_context
-                    else:
-                        result.branch_context = context
-                return Success(step_result=result)
-
-            except BaseException as exc:
-                attempt_exc = exc
-                raise
-            finally:
-                if exit_cm is not None:
-                    try:
-                        exc_for_exit = attempt_exc
-                        try:
-                            if exc_for_exit is None and result.success is False:
-                                exc_for_exit = RuntimeError("step attempt failed")
-                        except Exception:
-                            pass
-                        exit_result = exit_cm(
-                            type(exc_for_exit) if exc_for_exit is not None else None,
-                            exc_for_exit,
-                            getattr(exc_for_exit, "__traceback__", None)
-                            if exc_for_exit is not None
-                            else None,
-                        )
-                        if inspect.isawaitable(exit_result):
-                            await exit_result
-                    except Exception:
-                        pass
-        # Should not reach here; treat as failure
-        result.success = False
-        result.feedback = "Unexpected execution path"
-        try:
-            telemetry.logfire.error(
-                f"[Core] Unexpected fallthrough in _execute_agent_with_orchestration for step='{getattr(step, 'name', '<unnamed>')}'"
-            )
-        except Exception:
-            pass
-        return Failure(
-            error=Exception(result.feedback), feedback=result.feedback, step_result=result
+        """Compatibility wrapper: agent orchestration now lives in AgentOrchestrator."""
+        return await self._agent_orchestrator.execute(
+            core=self,
+            step=step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            stream=stream,
+            on_chunk=on_chunk,
+            cache_key=cache_key,
+            fallback_depth=_fallback_depth,
         )
 
     def _coerce_optimization_config(self, config: Any) -> OptimizationConfig:

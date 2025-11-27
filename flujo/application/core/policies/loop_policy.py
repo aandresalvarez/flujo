@@ -1303,6 +1303,7 @@ class DefaultLoopStepExecutor:
                 # BUT: Skip this for MapSteps - they handle errors differently
                 has_loop_fallback = False
                 original_max_retries = None
+                original_fallback_step = None
                 body_step = None
 
                 # Check if this is a MapStep (which shouldn't have retry disabling)
@@ -1326,6 +1327,8 @@ class DefaultLoopStepExecutor:
                     # If loop will handle fallbacks, temporarily disable step retries
                     # This ensures first failure triggers loop's fallback logic immediately
                     if has_loop_fallback and hasattr(body_step, "config"):
+                        original_fallback_step = body_step.fallback_step
+                        body_step.fallback_step = None
                         original_max_retries = body_step.config.max_retries
                         body_step.config.max_retries = 0
 
@@ -1351,6 +1354,8 @@ class DefaultLoopStepExecutor:
                         and hasattr(body_step, "config")
                     ):
                         body_step.config.max_retries = original_max_retries
+                    if original_fallback_step is not None and body_step is not None:
+                        body_step.fallback_step = original_fallback_step
             if any(not sr.success for sr in pipeline_result.step_history):
                 body_step = body_pipeline.steps[0]
                 if hasattr(body_step, "fallback_step") and body_step.fallback_step is not None:
@@ -1377,6 +1382,14 @@ class DefaultLoopStepExecutor:
                 failed = next(sr for sr in pipeline_result.step_history if not sr.success)
                 # MapStep continuation on failure: continue mapping remaining items
                 if hasattr(loop_step, "iterable_input"):
+                    try:
+                        if getattr(failed, "branch_context", None) is not None:
+                            merged_ctx = ContextManager.merge(
+                                current_context, failed.branch_context
+                            )
+                            current_context = merged_ctx or failed.branch_context
+                    except Exception:
+                        pass
                     iteration_results.extend(pipeline_result.step_history)
                     if (
                         pipeline_result.final_pipeline_context is not None
@@ -1386,6 +1399,17 @@ class DefaultLoopStepExecutor:
                             current_context, pipeline_result.final_pipeline_context
                         )
                         current_context = merged_ctx or pipeline_result.final_pipeline_context
+                    try:
+                        if current_context is not None and hasattr(
+                            current_context, "processing_history"
+                        ):
+                            hist = getattr(current_context, "processing_history")
+                            if isinstance(hist, list):
+                                entry = f"attempted_{current_data}"
+                                if entry not in hist:
+                                    hist.append(entry)
+                    except Exception:
+                        pass
                     iter_mapper = (
                         loop_step.get_iteration_input_mapper()
                         if hasattr(loop_step, "get_iteration_input_mapper")

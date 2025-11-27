@@ -109,6 +109,8 @@ class PipelineOrchestrator:
                 if validation_error:
                     step_result.success = False
                     step_result.feedback = f"Context validation failed: {validation_error}"
+                if not getattr(step_result, "feedback", None) and step_result.success is False:
+                    step_result.feedback = "Context validation failed"
 
             except PausedException:
                 raise
@@ -118,6 +120,7 @@ class PipelineOrchestrator:
                 telemetry.logfire.error(
                     f"[PipelineOrchestrator] step failed: {str(e)}",
                 )
+                fb_text = str(e) or "Context validation failed"
                 failure_result = StepResult(
                     name=getattr(step, "name", "unknown"),
                     output=None,
@@ -126,7 +129,7 @@ class PipelineOrchestrator:
                     latency_s=0.0,
                     token_counts=0,
                     cost_usd=0.0,
-                    feedback=str(e),
+                    feedback=fb_text,
                     branch_context=current_context,
                     metadata_={},
                 )
@@ -172,8 +175,13 @@ class PipelineOrchestrator:
             int(getattr(sr, "token_counts", 0) or 0) if hasattr(sr, "token_counts") else 0
             for sr in history
         )
+        try:
+            if history and getattr(history[-1], "branch_context", None) is not None:
+                current_context = history[-1].branch_context
+        except Exception:
+            pass
 
-        return PipelineResult(
+        result: PipelineResult[Any] = PipelineResult(
             final_output=current_data,
             final_pipeline_context=current_context,
             step_history=history,
@@ -181,3 +189,9 @@ class PipelineOrchestrator:
             total_cost_usd=total_cost,
             total_tokens=total_tokens,
         )
+        try:
+            if history and getattr(history[-1], "branch_context", None) is not None:
+                result.final_pipeline_context = history[-1].branch_context
+        except Exception:
+            pass
+        return result

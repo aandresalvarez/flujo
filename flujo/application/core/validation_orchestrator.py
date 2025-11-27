@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional
 
 from ...domain.models import StepResult
 from ...exceptions import PausedException
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .executor_core import ExecutorCore
+    from ...domain.dsl.step import Step
 
 
 class ValidationOrchestrator:
@@ -14,8 +18,8 @@ class ValidationOrchestrator:
     async def validate(
         self,
         *,
-        core: Any,
-        step: Any,
+        core: "ExecutorCore[Any]",
+        step: "Step[Any, Any]",
         output: Any,
         context: Optional[Any],
         limits: Optional[Any],
@@ -61,9 +65,8 @@ class ValidationOrchestrator:
                     on_chunk=on_chunk,
                     _fallback_depth=fallback_depth + 1,
                 )
-                fb_res_sr = cast(
-                    StepResult,
-                    core._unwrap_outcome_to_step_result(fb_res, core._safe_step_name(fb_step)),
+                fb_res_sr = core._unwrap_outcome_to_step_result(
+                    fb_res, core._safe_step_name(fb_step)
                 )
                 if fb_res_sr.metadata_ is None:
                     fb_res_sr.metadata_ = {}

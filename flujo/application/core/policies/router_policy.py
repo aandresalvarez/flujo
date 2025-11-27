@@ -105,6 +105,14 @@ class DefaultDynamicRouterStepExecutor:
                     feedback="Unsupported outcome",
                 )
 
+        # Merge router context updates back to parent when available
+        try:
+            if getattr(router_result, "branch_context", None) is not None and context is not None:
+                merged_ctx = ContextManager.merge(context, router_result.branch_context)
+                router_result.branch_context = merged_ctx
+        except Exception:
+            pass
+
         # Handle router failure
         if not router_result.success:
             result = StepResult(

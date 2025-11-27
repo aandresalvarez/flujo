@@ -1037,242 +1037,69 @@ class DefaultAgentStepExecutor:
                         telemetry.logfire.error(f"Step '{step.name}' processor failed: {e}")
                         return to_outcome(result)
 
-                    validation_passed = True
+                    validation_result = await core._validation_orchestrator.validate(
+                        core=core,
+                        step=step,
+                        output=processed_output,
+                        context=attempt_context,
+                        limits=limits,
+                        data=data,
+                        attempt_context=attempt_context,
+                        attempt_resources=attempt_resources,
+                        stream=stream,
+                        on_chunk=on_chunk,
+                        fallback_depth=_fallback_depth,
+                    )
+                    if validation_result is not None:
+                        return (
+                            to_outcome(validation_result)
+                            if isinstance(validation_result, StepResult)
+                            else validation_result
+                        )
+
                     try:
-                        try:
-                            telemetry.logfire.info(
-                                f"[AgentPolicy] entering validators (method-local) for step='{getattr(step, 'name', '<unnamed>')}'"
-                            )
-                        except Exception:
-                            pass
-                        if hasattr(step, "validators") and step.validators:
-                            validation_results = await core._validator_runner.validate(
-                                step.validators, processed_output, context=attempt_context
-                            )
-                            failed_validations = [
-                                r for r in validation_results if not getattr(r, "is_valid", False)
-                            ]
-                            if failed_validations:
-                                validation_passed = False
-
-                                # ✅ CRITICAL FIX: Never retry agent execution on validation failure
-                                # Validation failures should preserve output and proceed to fallback handling
-                                # Final validation failure: attempt fallback if present
-                                def _format_validation_feedback() -> str:
-                                    return f"Validation failed: {core._format_feedback(failed_validations[0].feedback, 'Agent execution failed')}"
-
-                                fb_msg = _format_validation_feedback()
-                                # Try fallback if configured
-                                fb_step = getattr(step, "fallback_step", None)
-                                if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
-                                    fb_step = None
-                                if fb_step is not None:
-                                    try:
-                                        fb_res = await core.execute(
-                                            step=fb_step,
-                                            data=data,
-                                            context=attempt_context,
-                                            resources=attempt_resources,
-                                            limits=limits,
-                                            stream=stream,
-                                            on_chunk=on_chunk,
-                                            cache_key=None,
-                                            _fallback_depth=_fallback_depth + 1,
-                                        )
-                                        # Accumulate metrics
-                                        result.cost_usd = (result.cost_usd or 0.0) + (
-                                            fb_res.cost_usd or 0.0
-                                        )
-                                        result.token_counts = (result.token_counts or 0) + (
-                                            fb_res.token_counts or 0
-                                        )
-                                        result.metadata_["fallback_triggered"] = True
-                                        result.metadata_["original_error"] = fb_msg
-                                        if fb_res.success:
-                                            # Adopt fallback success output but preserve original validation failure in feedback
-                                            fb_res.metadata_ = {
-                                                **(fb_res.metadata_ or {}),
-                                                **result.metadata_,
-                                            }
-                                            # Context-aware feedback preservation: preserve diagnostics if configured
-                                            preserve_diagnostics = (
-                                                hasattr(step, "config")
-                                                and step.config is not None
-                                                and hasattr(
-                                                    step.config, "preserve_fallback_diagnostics"
-                                                )
-                                                and step.config.preserve_fallback_diagnostics
-                                                is True
-                                            )
-                                            fb_res.feedback = (
-                                                fb_msg
-                                                if preserve_diagnostics
-                                                else (fb_res.feedback or "Primary agent failed")
-                                            )
-                                            return to_outcome(fb_res)
-                                        else:
-                                            # Compose failure feedback
-                                            result.success = False
-                                            result.feedback = f"Original error: {fb_msg}; Fallback error: {fb_res.feedback}"
-                                            result.output = processed_output
-                                            result.latency_s = time_perf_ns_to_seconds(
-                                                time_perf_ns() - start_ns
-                                            )
-                                            telemetry.logfire.error(
-                                                f"Step '{step.name}' validation failed and fallback failed"
-                                            )
-                                            return to_outcome(result)
-                                    except Exception as fb_e:
-                                        result.success = False
-                                        result.feedback = f"Original error: {fb_msg}; Fallback execution failed: {fb_e}"
-                                        result.output = processed_output
-                                        result.latency_s = time_perf_ns_to_seconds(
-                                            time_perf_ns() - start_ns
-                                        )
-                                        telemetry.logfire.error(
-                                            f"Step '{step.name}' validation failed and fallback raised: {fb_e}"
-                                        )
-                                        return to_outcome(result)
-                                else:
-                                    # No fallback configured
-                                    result.success = False
-                                    result.feedback = fb_msg
-                                    result.output = processed_output
-                                    result.latency_s = time_perf_ns_to_seconds(
-                                        time_perf_ns() - start_ns
-                                    )
-                                    telemetry.logfire.error(
-                                        f"Step '{step.name}' validation failed after {result.attempts} attempts"
-                                    )
-                                    return to_outcome(result)
-                    except Exception as e:
-                        validation_passed = False
-                        # ✅ CRITICAL FIX: Never retry agent execution on validation failure
-                        # Validation failures should preserve output and fail immediately
-                        fb_msg = f"Validation failed: {str(e)}"
-                        fb_step = getattr(step, "fallback_step", None)
-                        if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
-                            fb_step = None
-                        if fb_step is not None:
+                        if hasattr(step, "plugins") and step.plugins:
+                            # Use policy plugin redirector with loop detection and timeouts
+                            timeout_s = None
                             try:
-                                fb_res = await core.execute(
-                                    step=fb_step,
-                                    data=data,
-                                    context=attempt_context,
-                                    resources=attempt_resources,
-                                    limits=limits,
-                                    stream=stream,
-                                    on_chunk=on_chunk,
-                                    cache_key=None,
-                                    _fallback_depth=_fallback_depth + 1,
-                                )
-                                result.cost_usd = (result.cost_usd or 0.0) + (
-                                    fb_res.cost_usd or 0.0
-                                )
-                                result.token_counts = (result.token_counts or 0) + (
-                                    fb_res.token_counts or 0
-                                )
-                                result.metadata_["fallback_triggered"] = True
-                                result.metadata_["original_error"] = fb_msg
-                                if fb_res.success:
-                                    fb_res.metadata_ = {
-                                        **(fb_res.metadata_ or {}),
-                                        **result.metadata_,
-                                    }
-                                    # Context-aware feedback preservation: preserve diagnostics if configured
-                                    preserve_diagnostics = (
-                                        hasattr(step, "config")
-                                        and step.config is not None
-                                        and hasattr(step.config, "preserve_fallback_diagnostics")
-                                        and step.config.preserve_fallback_diagnostics is True
-                                    )
-                                    fb_res.feedback = fb_msg if preserve_diagnostics else None
-                                    return to_outcome(fb_res)
-                                else:
-                                    result.success = False
-                                    result.feedback = f"Original error: {fb_msg}; Fallback error: {fb_res.feedback}"
-                                    result.output = processed_output
-                                    result.latency_s = time_perf_ns_to_seconds(
-                                        time_perf_ns() - start_ns
-                                    )
-                                    telemetry.logfire.error(
-                                        f"Step '{step.name}' validation failed and fallback failed"
-                                    )
-                                    return to_outcome(result)
-                            except Exception as fb_e:
-                                result.success = False
-                                result.feedback = (
-                                    f"Original error: {fb_msg}; Fallback execution failed: {fb_e}"
-                                )
-                                result.output = processed_output
-                                result.latency_s = time_perf_ns_to_seconds(
-                                    time_perf_ns() - start_ns
-                                )
-                                telemetry.logfire.error(
-                                    f"Step '{step.name}' validation failed and fallback raised: {fb_e}"
-                                )
-                                return to_outcome(result)
-                        else:
-                            # No fallback configured, preserve output and fail
-                            result.success = False
-                            result.feedback = fb_msg
-                            result.output = processed_output
-                            result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                            telemetry.logfire.error(
-                                f"Step '{step.name}' validation failed after {result.attempts} attempts"
-                            )
-                            return to_outcome(result)
-
-                    if validation_passed:
-                        try:
-                            if hasattr(step, "plugins") and step.plugins:
-                                # Use policy plugin redirector with loop detection and timeouts
+                                cfg = getattr(step, "config", None)
+                                if cfg is not None and getattr(cfg, "timeout_s", None) is not None:
+                                    timeout_s = float(cfg.timeout_s)
+                            except Exception:
                                 timeout_s = None
-                                try:
-                                    cfg = getattr(step, "config", None)
-                                    if (
-                                        cfg is not None
-                                        and getattr(cfg, "timeout_s", None) is not None
-                                    ):
-                                        timeout_s = float(cfg.timeout_s)
-                                except Exception:
-                                    timeout_s = None
-                                processed_output = await core.plugin_redirector.run(
-                                    initial=processed_output,
-                                    step=step,
-                                    data=data,
-                                    context=context,
-                                    resources=attempt_resources,
-                                    timeout_s=timeout_s,
-                                )
-                                # Normalize dict-based outputs from plugins
-                                if (
-                                    isinstance(processed_output, dict)
-                                    and "output" in processed_output
-                                ):
-                                    processed_output = processed_output["output"]
-                        except Exception as e:
-                            # Preserve critical errors
-                            if isinstance(e, InfiniteRedirectError):
-                                raise
-                            result.success = False
-                            result.feedback = f"Plugin failed: {str(e)}"
-                            result.output = processed_output
-                            result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                            telemetry.logfire.error(f"Step '{step.name}' plugin failed: {e}")
-                            return to_outcome(result)
-
-                        result.output = _unpack_agent_result(processed_output)
-                        _detect_mock_objects(result.output)
-                        result.success = True
-                        result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
-                        result.feedback = None
-                        try:
-                            telemetry.logfire.info(
-                                f"[AgentPolicy] Success return for step='{getattr(step, 'name', '<unnamed>')}'"
+                            processed_output = await core.plugin_redirector.run(
+                                initial=processed_output,
+                                step=step,
+                                data=data,
+                                context=context,
+                                resources=attempt_resources,
+                                timeout_s=timeout_s,
                             )
-                        except Exception:
-                            pass
+                            # Normalize dict-based outputs from plugins
+                            if isinstance(processed_output, dict) and "output" in processed_output:
+                                processed_output = processed_output["output"]
+                    except Exception as e:
+                        # Preserve critical errors
+                        if isinstance(e, InfiniteRedirectError):
+                            raise
+                        result.success = False
+                        result.feedback = f"Plugin failed: {str(e)}"
+                        result.output = processed_output
+                        result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                        telemetry.logfire.error(f"Step '{step.name}' plugin failed: {e}")
+                        return to_outcome(result)
+
+                    result.output = _unpack_agent_result(processed_output)
+                    _detect_mock_objects(result.output)
+                    result.success = True
+                    result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                    result.feedback = None
+                    try:
+                        telemetry.logfire.info(
+                            f"[AgentPolicy] Success return for step='{getattr(step, 'name', '<unnamed>')}'"
+                        )
+                    except Exception:
+                        pass
 
                         # FSD-003: Post-success context merge
                         # Only commit context changes if the step succeeds

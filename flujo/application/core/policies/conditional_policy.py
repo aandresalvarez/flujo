@@ -56,6 +56,15 @@ class DefaultConditionalStepExecutor:
         )
         telemetry.logfire.debug(f"Conditional step name: {conditional_step.name}")
 
+        # Defensive name helper to avoid attr errors on lightweight cores
+        def _safe_name(obj: Any) -> str:
+            try:
+                if hasattr(core, "_safe_step_name"):
+                    return str(core._safe_step_name(obj))
+            except Exception:
+                pass
+            return str(getattr(obj, "name", "<unnamed>"))
+
         # Initialize result
         result = StepResult(
             name=conditional_step.name,
@@ -181,6 +190,8 @@ class DefaultConditionalStepExecutor:
                     total_tokens = 0
                     total_latency = 0.0
                     step_history = []
+                    step_result: Optional[StepResult] = None
+                    res_any = None
                     for pipeline_step in (
                         branch_to_execute.steps
                         if isinstance(branch_to_execute, Pipeline)
@@ -240,14 +251,14 @@ class DefaultConditionalStepExecutor:
                                     step_result, "name", None
                                 ) in (None, "<unknown>", ""):
                                     step_result = StepResult(
-                                        name=core._safe_step_name(pipeline_step),
+                                        name=_safe_name(pipeline_step),
                                         output=None,
                                         success=False,
                                         feedback="Missing step_result",
                                     )
                             elif isinstance(res_any, Failure):
                                 step_result = res_any.step_result or StepResult(
-                                    name=core._safe_step_name(pipeline_step),
+                                    name=_safe_name(pipeline_step),
                                     success=False,
                                     feedback=res_any.feedback,
                                 )
@@ -278,26 +289,76 @@ class DefaultConditionalStepExecutor:
                                 return res_any
                             else:
                                 step_result = StepResult(
-                                    name=core._safe_step_name(pipeline_step),
+                                    name=_safe_name(pipeline_step),
                                     success=False,
                                     feedback="Unsupported outcome",
                                 )
                         else:
                             step_result = res_any
-                        total_cost += step_result.cost_usd
-                        total_tokens += step_result.token_counts
-                        total_latency += getattr(step_result, "latency_s", 0.0)
-                        branch_data = step_result.output
-                        if not step_result.success:
-                            # Propagate branch failure details in feedback
-                            msg = step_result.feedback or "Step execution failed"
-                            result.feedback = f"Failure in branch '{branch_key}': {msg}"
-                            result.success = False
-                            result.latency_s = total_latency
-                            result.token_counts = total_tokens
-                            result.cost_usd = total_cost
-                            return to_outcome(result)
+                        if step_result is None:
+                            continue
+                    if step_result is None:
+                        step_result = StepResult(
+                            name=_safe_name(branch_to_execute),
+                            output=branch_data,
+                            success=True,
+                            attempts=1,
+                            latency_s=total_latency,
+                            token_counts=total_tokens,
+                            cost_usd=total_cost,
+                            branch_context=branch_context,
+                            metadata_={"executed_branch_key": branch_key},
+                        )
+                    try:
+                        if getattr(step_result, "branch_context", None) is not None:
+                            branch_context = step_result.branch_context
+                    except Exception:
+                        pass
+                    total_cost += step_result.cost_usd
+                    total_tokens += step_result.token_counts
+                    total_latency += getattr(step_result, "latency_s", 0.0)
+                    branch_data = step_result.output
+                    if not step_result.success:
+                        # Propagate branch failure details in feedback
+                        msg = step_result.feedback or "Step execution failed"
+                        result.feedback = f"Failure in branch '{branch_key}': {msg}"
+                        result.success = False
+                        result.latency_s = total_latency
+                        result.token_counts = total_tokens
+                        result.cost_usd = total_cost
+                        return to_outcome(result)
+                    step_history.append(step_result)
+                    res_any = step_result
+                    # Handle empty branch pipelines by short-circuiting success
+                    if not step_history and (
+                        isinstance(branch_to_execute, Pipeline)
+                        and not getattr(branch_to_execute, "steps", None)
+                    ):
+                        step_result = StepResult(
+                            name=_safe_name(branch_to_execute),
+                            success=True,
+                            output=branch_data,
+                            attempts=1,
+                            latency_s=total_latency,
+                            token_counts=total_tokens,
+                            cost_usd=total_cost,
+                            branch_context=branch_context,
+                            metadata_={"executed_branch_key": branch_key},
+                        )
                         step_history.append(step_result)
+                    # If branch had no executable steps, treat as no-op success
+                    if (step_result is None or not step_history) and isinstance(
+                        branch_to_execute, Pipeline
+                    ):
+                        result.success = True
+                        result.output = branch_data
+                        result.latency_s = total_latency
+                        result.token_counts = total_tokens
+                        result.cost_usd = total_cost
+                        result.branch_context = branch_context
+                        result.metadata_["executed_branch_key"] = branch_key
+                        return to_outcome(result)
+
                     # Apply optional branch_output_mapper
                     final_output = branch_data
                     if getattr(conditional_step, "branch_output_mapper", None):

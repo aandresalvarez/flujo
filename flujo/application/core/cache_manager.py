@@ -1,9 +1,13 @@
 """Cache management for step execution results."""
 
 from __future__ import annotations
-from typing import Any, Optional
-from ...domain.models import StepResult
+from typing import TYPE_CHECKING, Any, Optional
+from ...domain.models import StepOutcome, StepResult, Success
+from ...infra import telemetry
 from .default_components import DefaultCacheKeyGenerator, _LRUCache
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .types import ExecutionFrame
 
 
 class CacheManager:
@@ -107,3 +111,84 @@ class CacheManager:
     async def persist_step_result(self, key: str, result: StepResult, ttl_s: int = 3600) -> None:
         """Persist a successful StepResult to the configured cache layers."""
         await self.set_cached_result(key, result, ttl=ttl_s)
+
+    def _should_cache_step_result(self, step: Any, result: Optional[StepResult]) -> bool:
+        """Determine if a result should be cached for the given step."""
+        if not self._enable_cache or result is None or not getattr(result, "success", False):
+            return False
+        try:
+            from ...domain.dsl.loop import LoopStep
+
+            if isinstance(step, LoopStep):
+                return False
+        except Exception:
+            pass
+        try:
+            meta_obj = getattr(step, "meta", None)
+            is_adapter_step = (
+                bool(meta_obj.get("is_adapter")) if isinstance(meta_obj, dict) else False
+            )
+            if is_adapter_step:
+                return False
+        except Exception:
+            pass
+        metadata = getattr(result, "metadata_", None)
+        if isinstance(metadata, dict) and metadata.get("no_cache"):
+            return False
+        return True
+
+    async def maybe_persist_step_result(
+        self, step: Any, result: Optional[StepResult], key: Optional[str], ttl_s: int = 3600
+    ) -> None:
+        """Persist a StepResult when caching is enabled and allowed for the step/result."""
+        if not key or not self._should_cache_step_result(step, result):
+            return
+        if result is None:
+            return
+        await self.persist_step_result(key, result, ttl_s=ttl_s)
+        try:
+            telemetry.logfire.debug(f"Cached result for step: {getattr(step, 'name', '<unnamed>')}")
+        except Exception:
+            pass
+
+    async def maybe_fetch_step_result(self, frame: "ExecutionFrame[Any]") -> Optional[StepResult]:
+        """Return a cached StepResult for the frame when enabled (skips loops/adapters)."""
+        if not self._enable_cache:
+            return None
+        step = getattr(frame, "step", None)
+        try:
+            from ...domain.dsl.loop import LoopStep
+
+            if isinstance(step, LoopStep):
+                return None
+        except Exception:
+            pass
+        try:
+            meta_obj = getattr(step, "meta", None)
+            is_adapter_step = (
+                bool(meta_obj.get("is_adapter")) if isinstance(meta_obj, dict) else False
+            )
+            if is_adapter_step:
+                return None
+        except Exception:
+            pass
+        key = self.generate_cache_key(
+            step,
+            getattr(frame, "data", None),
+            getattr(frame, "context", None),
+            getattr(frame, "resources", None),
+        )
+        if not key:
+            return None
+        return await self.fetch_step_result(key)
+
+    async def maybe_return_cached(
+        self, frame: "ExecutionFrame[Any]", *, called_with_frame: bool
+    ) -> Optional[StepOutcome[StepResult] | StepResult]:
+        """Return cached outcome or StepResult if present."""
+        cached = await self.maybe_fetch_step_result(frame)
+        if cached is None:
+            return None
+        if called_with_frame:
+            return Success(step_result=cached)
+        return cached

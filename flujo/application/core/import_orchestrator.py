@@ -48,4 +48,30 @@ class ImportOrchestrator:
             limits,
             context_setter,
         )
+        # ImportStep semantics: if the child run returned no output but the child context
+        # carries scratchpad updates, merge them back to the parent context to preserve
+        # side effects (e.g., computed SQL or state machine transitions).
+        if (
+            isinstance(executor_result, StepOutcome)
+            and hasattr(executor_result, "step_result")
+            and executor_result.step_result is not None
+        ):
+            sr = executor_result.step_result
+            try:
+                merge_child_ctx = (
+                    sr.output is None
+                    and getattr(step, "outputs", None) is None
+                    and context is not None
+                    and hasattr(context, "scratchpad")
+                )
+                if merge_child_ctx:
+                    child_ctx = getattr(sr, "branch_context", None)
+                    if child_ctx is not None and hasattr(child_ctx, "scratchpad"):
+                        child_sp = getattr(child_ctx, "scratchpad", None)
+                        parent_sp = getattr(context, "scratchpad", None)
+                        if isinstance(child_sp, dict) and isinstance(parent_sp, dict):
+                            parent_sp.update(child_sp)
+                            setattr(context, "scratchpad", parent_sp)
+            except Exception:
+                pass
         return executor_result

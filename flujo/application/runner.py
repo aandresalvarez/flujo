@@ -604,6 +604,13 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         async for item in session.run_async(
             initial_input, run_id=run_id, initial_context_data=initial_context_data
         ):
+            if isinstance(item, PipelineResult) and getattr(item, "step_history", None):
+                try:
+                    last_ctx = getattr(item.step_history[-1], "branch_context", None)
+                    if last_ctx is not None:
+                        item.final_pipeline_context = last_ctx
+                except Exception:
+                    pass
             yield item
 
     def run_async(
@@ -661,6 +668,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                             step_result=item,
                         )
                 elif isinstance(item, PipelineResult):
+                    if (
+                        getattr(item, "step_history", None)
+                        and getattr(item.step_history[-1], "branch_context", None) is not None
+                    ):
+                        try:
+                            item.final_pipeline_context = item.step_history[-1].branch_context
+                        except Exception:
+                            pass
                     pipeline_result_obj = item
                 else:
                     # Streaming chunk (legacy); wrap into Chunk outcome
@@ -811,6 +826,27 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             ):
                 result.trace_tree = self._trace_manager._root_span
             assert result is not None
+            try:
+                if (
+                    getattr(result, "step_history", None)
+                    and getattr(result.step_history[-1], "success", False)
+                    and getattr(result.step_history[-1], "branch_context", None) is not None
+                ):
+                    result.final_pipeline_context = result.step_history[-1].branch_context
+            except Exception:
+                pass
+            # Ensure runner-level resources are properly closed
+            try:
+                if getattr(self, "resources", None):
+                    res_cm = None
+                    if hasattr(self.resources, "__aexit__"):
+                        res_cm = self.resources.__aexit__(None, None, None)
+                    elif hasattr(self.resources, "__exit__"):
+                        res_cm = self.resources.__exit__(None, None, None)
+                    if inspect.isawaitable(res_cm):
+                        await res_cm
+            except Exception:
+                pass
             return result
 
         return asyncio.run(_consume())
@@ -1268,6 +1304,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 final_result = await self.resume_async(final_result, cast(Any, None))
             except Exception:
                 break
+        try:
+            if (
+                final_result is not None
+                and getattr(final_result, "step_history", None)
+                and getattr(final_result.step_history[-1], "success", False)
+                and getattr(final_result.step_history[-1], "branch_context", None) is not None
+            ):
+                final_result.final_pipeline_context = final_result.step_history[-1].branch_context
+        except Exception:
+            pass
         return final_result
 
     def as_step(

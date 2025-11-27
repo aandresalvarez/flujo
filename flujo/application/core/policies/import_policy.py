@@ -203,6 +203,7 @@ class DefaultImportStepExecutor:
             pass
 
         # Execute the child pipeline directly via core orchestration to preserve control-flow semantics
+        child_final_ctx = sub_context
         try:
             pipeline_result: PipelineResult[Any] = await core._execute_pipeline_via_policies(
                 step.pipeline,
@@ -341,10 +342,14 @@ class DefaultImportStepExecutor:
             token_counts=int(getattr(pipeline_result, "total_tokens", 0) or 0),
             cost_usd=float(getattr(pipeline_result, "total_cost_usd", 0.0) or 0.0),
             feedback=None,
-            branch_context=context,
+            branch_context=(
+                child_final_ctx if step.inherit_context and child_final_ctx is not None else context
+            ),
             metadata_={},
             step_history=([inner_sr] if inner_sr is not None else []),
         )
+        if getattr(step, "outputs", None) == []:
+            parent_sr.branch_context = context
 
         # Attach traceable metadata for diagnostics and tests
         try:
@@ -385,6 +390,13 @@ class DefaultImportStepExecutor:
 
         # Determine child's final context for default-merge behavior
         child_final_ctx = getattr(pipeline_result, "final_pipeline_context", sub_context)
+        try:
+            if getattr(pipeline_result, "step_history", None):
+                last_ctx = getattr(pipeline_result.step_history[-1], "branch_context", None)
+                if last_ctx is not None:
+                    child_final_ctx = last_ctx
+        except Exception:
+            pass
 
         if inner_sr is not None and not getattr(inner_sr, "success", True):
             # Honor on_failure behavior for explicit child failure
