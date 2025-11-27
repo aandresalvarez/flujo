@@ -169,16 +169,16 @@ class DefaultAgentStepExecutor:
 
         # Delegate to the core's orchestration for retries, validation, plugins, and fallback.
         try:
-            return await core._execute_agent_with_orchestration(
-                step,
-                data,
-                context,
-                resources,
-                limits,
-                stream,
-                on_chunk,
-                cache_key,
-                _fallback_depth,
+            return await core._agent_handler.execute(
+                step=step,
+                data=data,
+                context=context,
+                resources=resources,
+                limits=limits,
+                stream=stream,
+                on_chunk=on_chunk,
+                cache_key=cache_key,
+                fallback_depth=_fallback_depth,
             )
         except PausedException as e:
             return Paused(message=getattr(e, "message", ""))

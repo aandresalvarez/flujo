@@ -44,7 +44,7 @@ class DefaultSimpleStepExecutor:
             f"[Policy] SimpleStep: delegating to core orchestration for '{getattr(step, 'name', '<unnamed>')}'"
         )
         try:
-            outcome = await core._execute_agent_with_orchestration(
+            outcome = await core._agent_handler.execute(
                 step,
                 data,
                 context,

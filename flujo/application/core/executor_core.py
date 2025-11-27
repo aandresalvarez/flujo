@@ -19,29 +19,17 @@ from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.dsl.step import HumanInTheLoopStep, Step
-from ...domain.dsl.import_step import ImportStep
 from ...domain.interfaces import StateProvider
-from ...domain.models import (
-    BackgroundLaunched,
-    Failure,
-    Paused,
-    PipelineResult,
-    Quota,
-    StepOutcome,
-    StepResult,
-    Success,
-    UsageLimits,
-)
+from ...domain.models import Failure, PipelineResult, Quota, StepOutcome, StepResult, UsageLimits
 from ...exceptions import (
     InfiniteFallbackError,
     UsageLimitExceededError,
     PausedException,
     MissingAgentError,
     MockDetectionError,
-    PricingNotConfiguredError,
     InfiniteRedirectError,
+    PipelineAbortSignal,
 )
-from ...infra import telemetry
 from .quota_manager import QuotaManager
 from .fallback_handler import FallbackHandler
 from .background_task_manager import BackgroundTaskManager
@@ -59,6 +47,20 @@ from .import_orchestrator import ImportOrchestrator
 from .validation_orchestrator import ValidationOrchestrator
 from .step_history_tracker import StepHistoryTracker
 from ...steps.cache_step import CacheStep
+from .policy_handlers import PolicyHandlers
+from .dispatch_handler import DispatchHandler
+from .result_handler import ResultHandler
+from .telemetry_handler import TelemetryHandler
+from .step_handler import StepHandler
+from .agent_handler import AgentHandler
+from .optimization_support import (
+    OptimizationConfig,
+    coerce_optimization_config,
+    export_config as export_opt_config,
+    get_config_manager as get_opt_config_manager,
+    get_optimization_stats as get_opt_stats,
+    get_performance_recommendations as get_opt_recommendations,
+)
 from .step_policies import (
     AgentResultUnpacker,
     AgentStepExecutor,
@@ -253,7 +255,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         if concurrency_limit is not None and concurrency_limit <= 0:
             raise ValueError("concurrency_limit must be positive if specified")
 
-        self.optimization_config: OptimizationConfig = self._coerce_optimization_config(
+        self.optimization_config: OptimizationConfig = coerce_optimization_config(
             optimization_config
         )
         config_issues = self.optimization_config.validate()
@@ -326,7 +328,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._pipeline_orchestrator = PipelineOrchestrator()
         self._complex_step_router = ComplexStepRouter()
         self._validation_orchestrator = ValidationOrchestrator()
-        self._validation_orchestrator = ValidationOrchestrator()
 
         # Backward compatibility properties for tests
         self._state_providers = self._hydration_manager._state_providers
@@ -368,70 +369,28 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         # FSD-010: Initialize and populate the policy registry used for dispatch
         self.policy_registry = PolicyRegistry()
-        # Register callables that accept an ExecutionFrame and return StepOutcome
-        self.policy_registry.register(Step, self._policy_default_step)
-        self.policy_registry.register(ParallelStep, self._policy_parallel_step)
-        self.policy_registry.register(LoopStep, self._policy_loop_step)
-        self.policy_registry.register(ConditionalStep, self._policy_conditional_step)
-        self.policy_registry.register(DynamicParallelRouterStep, self._policy_dynamic_router_step)
-        self.policy_registry.register(HumanInTheLoopStep, self._policy_hitl_step)
-        self.policy_registry.register(CacheStep, self._policy_cache_step)
-        # Register ImportStep policy if executor available
-        try:
-            if self.import_step_executor is not None:
-                self.policy_registry.register(ImportStep, self._policy_import_step)
-        except Exception:
-            pass
 
-        # Adapt any framework-registered policies to bound callables if needed
-        try:
-            # Helper: wrap policy objects exposing execute(core, frame) into callables(frame)
-            from typing import Any as _Any
+        # Policy handlers (delegated for composition-root slimming)
+        self._policy_handlers = PolicyHandlers(self)
+        self._policy_cache_step = self._policy_handlers.cache_step
+        self._policy_import_step = self._policy_handlers.import_step
+        self._policy_parallel_step = self._policy_handlers.parallel_step
+        self._policy_loop_step = self._policy_handlers.loop_step
+        self._policy_conditional_step = self._policy_handlers.conditional_step
+        self._policy_dynamic_router_step = self._policy_handlers.dynamic_router_step
+        self._policy_hitl_step = self._policy_handlers.hitl_step
+        self._policy_default_step = self._policy_handlers.default_step
 
-            def _wrap_policy(_p: _Any) -> _Any:
-                if callable(_p):
-                    return _p
-                exec_fn = getattr(_p, "execute", None)
-                if callable(exec_fn):
-
-                    async def _bound(frame: _Any) -> _Any:
-                        return await _p.execute(self, frame)
-
-                    return _bound
-                return _p
-
-            # Iterate over a copy to avoid mutation during iteration
-            _current = dict(getattr(self.policy_registry, "_registry", {}))
-            for _step_cls, _policy in _current.items():
-                wrapped = _wrap_policy(_policy)
-                if wrapped is not _policy:
-                    self.policy_registry.register(_step_cls, wrapped)
-        except Exception:
-            # Defensive: do not fail core init due to extension policy issues
-            pass
-
-        # Ensure critical primitives are registered even if framework init was skipped
-        # (e.g., import-order differences in some environments/CI). This preserves
-        # the architectural rule that complex step logic lives in policy classes,
-        # while the core only wires dispatch.
-        try:
-            from ...domain.dsl.state_machine import StateMachineStep as _SM
-            from .step_policies import StateMachinePolicyExecutor as _SMPolicy
-
-            _sm_policy = _SMPolicy()
-
-            async def _sm_bound(frame: ExecutionFrame[_Any]) -> StepOutcome[StepResult]:
-                return await _sm_policy.execute(self, frame)
-
-            # Only register if not already present from framework registry
-            if self.policy_registry.get(_SM) is None:
-                self.policy_registry.register(_SM, _sm_bound)
-        except Exception:
-            # Defensive: never break core init due to optional policy wiring
-            pass
+        # Register policies via delegated handler to keep ExecutorCore slim
+        self._policy_handlers.register_all(self.policy_registry)
 
         # Dispatcher delegates to the shared policy registry
         self._dispatcher = ExecutionDispatcher(self.policy_registry)
+        self._dispatch_handler = DispatchHandler(self)
+        self._result_handler = ResultHandler(self)
+        self._telemetry_handler = TelemetryHandler(self)
+        self._step_handler = StepHandler(self)
+        self._agent_handler = AgentHandler(self)
 
         # Initialize orchestrators that depend on executors registered above
 
@@ -469,14 +428,51 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         _ = getattr(frame, "limits", None)
         _ = getattr(frame, "on_chunk", None)
 
+    async def _set_quota_and_hydrate(self, frame: ExecutionFrame[Any]) -> None:
+        """Assign quota to the execution context and hydrate managed state."""
+        self._set_current_quota(getattr(frame, "quota", None))
+        await self._hydration_manager.hydrate_context(getattr(frame, "context", None))
+
+    def _handle_missing_agent_exception(
+        self, err: MissingAgentError, step: Any, *, called_with_frame: bool
+    ) -> StepOutcome[StepResult] | StepResult:
+        return self._result_handler.handle_missing_agent_exception(
+            err, step, called_with_frame=called_with_frame
+        )
+
+    async def _persist_and_finalize(
+        self,
+        *,
+        step: Any,
+        result: StepResult,
+        cache_key: Optional[str],
+        called_with_frame: bool,
+    ) -> StepOutcome[StepResult] | StepResult:
+        return await self._result_handler.persist_and_finalize(
+            step=step, result=result, cache_key=cache_key, called_with_frame=called_with_frame
+        )
+
+    def _handle_unexpected_exception(
+        self,
+        *,
+        step: Any,
+        frame: ExecutionFrame[Any],
+        exc: Exception,
+        called_with_frame: bool,
+    ) -> StepOutcome[StepResult] | StepResult:
+        return self._result_handler.handle_unexpected_exception(
+            step=step, frame=frame, exc=exc, called_with_frame=called_with_frame
+        )
+
+    async def _maybe_use_cache(
+        self, frame: ExecutionFrame[Any], *, called_with_frame: bool
+    ) -> tuple[Optional[StepOutcome[StepResult] | StepResult], Optional[str]]:
+        return await self._result_handler.maybe_use_cache(
+            frame, called_with_frame=called_with_frame
+        )
+
     def _log_step_start(self, step: Any, *, stream: bool, fallback_depth: int) -> None:
-        try:
-            telemetry.logfire.debug(
-                f"Executing step: {self._safe_step_name(step)} "
-                f"type={type(step).__name__} stream={stream} depth={fallback_depth}"
-            )
-        except Exception:
-            pass
+        self._telemetry_handler.log_step_start(step, stream=stream, fallback_depth=fallback_depth)
 
     async def _maybe_launch_background(
         self, frame: ExecutionFrame[Any], *, called_with_frame: bool
@@ -663,135 +659,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     def _unwrap_outcome_to_step_result(
         self, outcome: StepOutcome[StepResult] | StepResult, step_name: str
     ) -> StepResult:
-        from ...exceptions import PausedException
-
-        # Already a StepResult
-        if isinstance(outcome, StepResult):
-            # Adapter: ensure fallback successes carry minimal diagnostic feedback when missing
-            try:
-                if outcome.success and (outcome.feedback is None):
-                    md = getattr(outcome, "metadata_", None)
-                    if isinstance(md, dict) and (
-                        md.get("fallback_triggered") is True or "original_error" in md
-                    ):
-                        original_error = md.get("original_error")
-                        base_msg = (
-                            f"Primary agent failed: {original_error}"
-                            if original_error
-                            else "Primary agent failed"
-                        )
-                        outcome.feedback = base_msg
-            except Exception:
-                pass
-
-        # Local helper to unwrap typed outcomes into StepResult for nested execute calls
-        def _unwrap_sr(obj: Any) -> StepResult:
-            try:
-                from ...domain.models import StepOutcome as _StepOutcome, Success, Failure
-
-                if isinstance(obj, _StepOutcome):
-                    if (
-                        isinstance(obj, (Success, Failure))
-                        and hasattr(obj, "step_result")
-                        and obj.step_result is not None
-                    ):
-                        return obj.step_result
-            except Exception:
-                pass
-            # If we can't unwrap it, ensure we return a StepResult
-            if isinstance(obj, StepResult):
-                return obj
-            else:
-                # Convert to StepResult if it's not already one
-                return StepResult(
-                    name="unknown",
-                    output=str(obj),
-                    success=False,
-                    attempts=1,
-                    latency_s=0.0,
-                    token_counts={"total": 0},
-                    cost_usd=0.0,
-                    feedback=f"Could not unwrap: {type(obj).__name__}",
-                )
-
-        # If already a StepResult, return it
-        if isinstance(outcome, StepResult):
-            return outcome
-        if isinstance(outcome, Success):
-            return outcome.step_result
-        if isinstance(outcome, Failure):
-            if outcome.step_result is not None:
-                return outcome.step_result
-            return StepResult(
-                name=step_name,
-                output=None,
-                success=False,
-                feedback=outcome.feedback
-                or (str(outcome.error) if outcome.error is not None else None),
-            )
-        if isinstance(outcome, Paused):
-            raise PausedException(outcome.message)
-        if isinstance(outcome, BackgroundLaunched):
-            return StepResult(
-                name=step_name,
-                output=None,
-                success=True,
-                feedback=f"Launched in background (task_id={outcome.task_id})",
-                metadata_={"background_task_id": outcome.task_id},
-            )
-        # For Chunk/Aborted or unknown: synthesize conservative failure
-        return StepResult(
-            name=step_name,
-            output=None,
-            success=False,
-            feedback=f"Unsupported outcome type: {type(outcome).__name__}",
-        )
+        return self._result_handler.unwrap_outcome_to_step_result(outcome, step_name)
 
     async def _dispatch_frame(
         self, frame: ExecutionFrame[Any], *, called_with_frame: bool
     ) -> StepOutcome[StepResult] | StepResult:
-        """Dispatch via policy registry and handle control-flow outcomes."""
-        step = frame.step
-        step_name = self._safe_step_name(step)
-        try:
-            outcome = await self._dispatcher.dispatch(frame)
-            await self._hydration_manager.persist_context(getattr(frame, "context", None))
-            if called_with_frame:
-                return cast(StepOutcome[StepResult], outcome)
-            if isinstance(outcome, Success):
-                return self._unwrap_outcome_to_step_result(outcome.step_result, step_name)
-            if isinstance(outcome, Failure):
-                return self._unwrap_outcome_to_step_result(outcome, step_name)
-            if isinstance(outcome, Paused):
-                raise PausedException(outcome.message)
-            return self._unwrap_outcome_to_step_result(outcome, step_name)
-        except InfiniteFallbackError:
-            raise
-        except PausedException as e:
-            await self._hydration_manager.persist_context(getattr(frame, "context", None))
-            if called_with_frame:
-                return Paused(message=getattr(e, "message", ""))
-            raise
-        except (
-            UsageLimitExceededError,
-            PricingNotConfiguredError,
-            MissingAgentError,
-            MockDetectionError,
-            InfiniteRedirectError,
-        ) as e:
-            raise e
-        except Exception as e:
-            if not self.enable_optimized_error_handling:
-                self._log_execution_error(step_name, e)
-            failure_outcome = self._build_failure_outcome(
-                step=step,
-                frame=frame,
-                exc=e,
-                called_with_frame=called_with_frame,
-            )
-            if called_with_frame:
-                return failure_outcome
-            return self._unwrap_outcome_to_step_result(failure_outcome, step_name)
+        return await self._dispatch_handler.dispatch(frame, called_with_frame=called_with_frame)
 
     async def _execute_complex_step(
         self,
@@ -864,11 +737,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 result=kwargs.get("result"),
             )
 
-        # Set quota for this execution context (legacy shim retained for compatibility)
-        self._set_current_quota(getattr(frame, "quota", None))
-
-        # Hydrate context references (FSD-Managed State)
-        await self._hydration_manager.hydrate_context(getattr(frame, "context", None))
+        await self._set_quota_and_hydrate(frame)
 
         step = frame.step
 
@@ -886,70 +755,40 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         # FSD-009: Remove reactive post-step usage checks from non-parallel codepaths.
         # Preemptive quota reservations are enforced in policies; no reactive governor path remains.
 
-        cache_key: Optional[str] = None
-        try:
-            cached_outcome = await self._cache_manager.maybe_return_cached(
-                frame, called_with_frame=called_with_frame
-            )
-            if cached_outcome is not None:
-                return cached_outcome
-            if self._enable_cache:
-                cache_key = self._cache_key(frame)
-        except Exception as e:
-            telemetry.logfire.warning(
-                f"Cache error for step {getattr(step, 'name', '<unnamed>')}: {e}"
-            )
+        cached_outcome, cache_key = await self._maybe_use_cache(
+            frame, called_with_frame=called_with_frame
+        )
+        if cached_outcome is not None:
+            return cached_outcome
 
         try:
             result_outcome = await self._dispatch_frame(frame, called_with_frame=called_with_frame)
         except MissingAgentError as e:
-            if self.enable_optimized_error_handling:
-                if getattr(step.__class__, "__name__", "") == "Step":
-                    raise
-                safe_name = self._safe_step_name(step)
-                result = StepResult(
-                    name=safe_name,
-                    output=None,
-                    success=False,
-                    attempts=0,
-                    latency_s=0.0,
-                    token_counts=0,
-                    cost_usd=0.0,
-                    feedback=str(e) if str(e) else "Missing agent configuration",
-                    branch_context=None,
-                    metadata_={
-                        "optimized_error_handling": True,
-                        "error_type": type(e).__name__,
-                    },
-                    step_history=[],
-                )
-                try:
-                    telemetry.logfire.warning(
-                        f"ExecutorCore handled missing agent for step '{safe_name}' gracefully"
-                    )
-                except Exception:
-                    pass
-                if called_with_frame:
-                    return Failure(error=e, feedback=result.feedback, step_result=result)
-                return result
+            handled = self._handle_missing_agent_exception(
+                e, step, called_with_frame=called_with_frame
+            )
+            if handled is not None:
+                return handled
             raise
+        except (UsageLimitExceededError, MockDetectionError, InfiniteFallbackError):
+            raise
+        except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+            raise
+        except Exception as exc:
+            return self._handle_unexpected_exception(
+                step=step, frame=frame, exc=exc, called_with_frame=called_with_frame
+            )
 
         if isinstance(result_outcome, StepOutcome):
             return result_outcome
         result = result_outcome
 
-        await self._cache_manager.maybe_persist_step_result(step, result, cache_key, ttl_s=3600)
-        if called_with_frame:
-            return Success(step_result=result)
-        return result
+        return await self._persist_and_finalize(
+            step=step, result=result, cache_key=cache_key, called_with_frame=called_with_frame
+        )
 
     def _log_execution_error(self, step_name: str, exc: Exception) -> None:
-        try:
-            telemetry.logfire.error(
-                f"[DEBUG] ExecutorCore caught unexpected exception at step '{step_name}': {type(exc).__name__}: {exc}"
-            )
-        except Exception:
-            pass
+        self._telemetry_handler.log_execution_error(step_name, exc)
 
     def _build_failure_outcome(
         self,
@@ -997,23 +836,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             _fallback_depth=fallback_depth,
         )
 
-    # Backward compatibility method for old execute signature
-    async def execute_old_signature(
-        self, step: Any, data: Any, **kwargs: Any
-    ) -> StepOutcome[StepResult]:
-        res = await self.execute(step, data, **kwargs)
-        if isinstance(res, StepOutcome):
-            return res
-        return (
-            Success(step_result=res)
-            if res.success
-            else Failure(
-                error=Exception(res.feedback or "step failed"),
-                feedback=res.feedback,
-                step_result=res,
-            )
-        )
-
+    # Compatibility shim for existing call sites/tests
     async def execute_step(
         self,
         step: Any,
@@ -1030,9 +853,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     ) -> StepResult:
         if usage_limits is not None and limits is None:
             limits = usage_limits
-        # Note: No fast-path; delegate to main execute for consistent policy routing
-
-        # Control-flow exceptions must always propagate to the caller (see Team Guide §2, §6)
         try:
             outcome = await self.execute(
                 step,
@@ -1097,18 +917,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
     ) -> StepResult:
         ps = parallel_step if parallel_step is not None else step
-        outcome = await self.parallel_step_executor.execute(
-            self,
-            ps,
-            data,
-            context,
-            resources,
-            limits,
-            context_setter,
-            ps,
-            step_executor,
+        return await self._step_handler.parallel_step(
+            ps, data, context, resources, limits, context_setter, step_executor
         )
-        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(ps))
 
     async def _execute_pipeline(
         self,
@@ -1132,14 +943,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         limits: Optional[Any],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
     ) -> PipelineResult[Any]:
-        return await self._pipeline_orchestrator.execute(
-            core=self,
-            pipeline=pipeline,
-            data=data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            context_setter=context_setter,
+        return await self._step_handler.pipeline(
+            pipeline, data, context, resources, limits, context_setter
         )
 
     async def _handle_loop_step(
@@ -1152,24 +957,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         _fallback_depth: int = 0,
     ) -> StepResult:
-        original_context_setter = getattr(self, "_context_setter", None)
-        try:
-            self._context_setter = context_setter
-            outcome = await self.loop_step_executor.execute(
-                self,
-                loop_step,
-                data,
-                context,
-                resources,
-                limits,
-                False,
-                None,
-                None,
-                _fallback_depth,
-            )
-            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(loop_step))
-        finally:
-            self._context_setter = original_context_setter
+        return await self._step_handler.loop_step(
+            loop_step, data, context, resources, limits, context_setter, _fallback_depth
+        )
 
     async def _handle_dynamic_router(
         self,
@@ -1183,17 +973,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
     ) -> StepResult:
         rs = router_step if router_step is not None else step
-        outcome = await self.dynamic_router_step_executor.execute(
-            self, rs, data, context, resources, limits, context_setter
-        )
-        if isinstance(outcome, Paused):
-            raise PausedException(outcome.message)
-        if isinstance(outcome, Success):
-            return outcome.step_result
-        if isinstance(outcome, Failure):
-            return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(rs))
-        return StepResult(
-            name=self._safe_step_name(rs), success=False, feedback="Unsupported router outcome"
+        return await self._step_handler.dynamic_router_wrapper(
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            context_setter,
+            rs,
+            step_executor,
         )
 
     async def _handle_hitl_step(
@@ -1210,18 +998,17 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         _fallback_depth: int = 0,
         **kwargs: Any,
     ) -> StepResult:
-        return await self._hitl_orchestrator.execute(
-            core=self,
-            step=step,
-            data=data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            context_setter=context_setter,
-            stream=stream,
-            on_chunk=on_chunk,
-            cache_key=cache_key,
-            fallback_depth=_fallback_depth,
+        return await self._step_handler.hitl_step(
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            context_setter,
+            stream,
+            on_chunk,
+            cache_key,
+            _fallback_depth,
         )
 
     # Legacy compatibility wrappers expected by tests
@@ -1258,17 +1045,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
         **kwargs: Any,
     ) -> StepResult:
-        outcome = await self.cache_step_executor.execute(
-            self,
-            step,
-            data,
-            context,
-            resources,
-            limits,
-            context_setter,
-            step_executor,
+        return await self._step_handler.cache_step(
+            step, data, context, resources, limits, context_setter, step_executor
         )
-        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     async def _handle_conditional_step(
         self,
@@ -1281,15 +1060,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         _fallback_depth: int = 0,
         **kwargs: Any,
     ) -> StepResult:
-        return await self._conditional_orchestrator.execute(
-            core=self,
-            step=step,
-            data=data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            context_setter=context_setter,
-            fallback_depth=_fallback_depth,
+        return await self._step_handler.conditional_step(
+            step, data, context, resources, limits, context_setter, _fallback_depth
         )
 
     async def _handle_dynamic_router_step(
@@ -1302,14 +1074,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
         **kwargs: Any,
     ) -> StepResult:
-        return await self._complex_step_router._handle_dynamic_router_step(
-            core=self,
-            step=step,
-            data=data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            context_setter=context_setter,
+        return await self._step_handler.dynamic_router_step(
+            step, data, context, resources, limits, context_setter
         )
 
     def _default_set_final_context(
@@ -1349,290 +1115,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             return f"{base}: {msg}"
         return msg
 
-    # ------------------------
-    # FSD-010: Policy callables for registry
-    # ------------------------
-    async def _policy_cache_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        return await self.cache_step_executor.execute(
-            self,
-            cast(CacheStep[Any, Any], step),
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.context_setter,
-            None,
-        )
-
-    async def _policy_import_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        return await self._import_orchestrator.execute(
-            core=self,
-            step=cast(ImportStep, step),
-            data=frame.data,
-            context=frame.context,
-            resources=frame.resources,
-            limits=frame.limits,
-            context_setter=frame.context_setter,
-            frame=frame,
-        )
-
-    async def _policy_parallel_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        data = frame.data
-        context = frame.context
-        resources = frame.resources
-        limits = frame.limits
-        context_setter = frame.context_setter
-        res_any = await self.parallel_step_executor.execute(
-            self,
-            step,
-            data,
-            context,
-            resources,
-            limits,
-            context_setter,
-            cast(ParallelStep[Any], step),
-            None,
-        )
-        if isinstance(res_any, StepOutcome):
-            return res_any
-        return (
-            Success(step_result=res_any)
-            if res_any.success
-            else Failure(
-                error=Exception(res_any.feedback or "step failed"),
-                feedback=res_any.feedback,
-                step_result=res_any,
-            )
-        )
-
-    async def _policy_loop_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        data = frame.data
-        context = frame.context
-        resources = frame.resources
-        limits = frame.limits
-        stream = frame.stream
-        on_chunk = frame.on_chunk
-        cache_key = self._cache_key(frame) if self._enable_cache else None
-        _fallback_depth = frame._fallback_depth
-        res_any = await self.loop_step_executor.execute(
-            self,
-            step,
-            data,
-            context,
-            resources,
-            limits,
-            stream,
-            on_chunk,
-            cache_key,
-            _fallback_depth,
-        )
-        if isinstance(res_any, StepOutcome):
-            return res_any
-        return (
-            Success(step_result=res_any)
-            if res_any.success
-            else Failure(
-                error=Exception(res_any.feedback or "step failed"),
-                feedback=res_any.feedback,
-                step_result=res_any,
-            )
-        )
-
-    async def _policy_conditional_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        data = frame.data
-        context = frame.context
-        resources = frame.resources
-        limits = frame.limits
-        context_setter = frame.context_setter
-        _fallback_depth = frame._fallback_depth
-        from ...infra import telemetry as _telemetry
-
-        # Emit a span around conditional policy execution so tests reliably capture it
-        with _telemetry.logfire.span(getattr(step, "name", "<unnamed>")) as _span:
-            res_any = await self.conditional_step_executor.execute(
-                self, step, data, context, resources, limits, context_setter, _fallback_depth
-            )
-
-        # Mirror branch selection logs and span attributes for consistency across environments
-        try:
-            # Normalize to a StepResult for metadata inspection without altering return type
-            if isinstance(res_any, StepOutcome):
-                sr_meta = (
-                    res_any.step_result
-                    if isinstance(res_any, Success)
-                    else (res_any.step_result if isinstance(res_any, Failure) else None)
-                )
-            else:
-                sr_meta = res_any
-            md = getattr(sr_meta, "metadata_", None) if sr_meta is not None else None
-            if isinstance(md, dict) and "executed_branch_key" in md:
-                bk = md.get("executed_branch_key")
-                _telemetry.logfire.info(f"Condition evaluated to branch key '{bk}'")
-                _telemetry.logfire.info(f"Executing branch for key '{bk}'")
-                try:
-                    _span.set_attribute("executed_branch_key", bk)
-                except Exception:
-                    pass
-                # Emit lightweight spans for the executed branch's concrete steps to aid tests
-                # This mirrors the policy-level span emission to make behavior consistent even
-                # if dispatch paths differ under parallelized runs.
-                try:
-                    branch_obj = None
-                    try:
-                        if hasattr(step, "branches") and bk in getattr(step, "branches", {}):
-                            branch_obj = step.branches[bk]
-                        elif getattr(step, "default_branch_pipeline", None) is not None:
-                            branch_obj = step.default_branch_pipeline
-                    except Exception:
-                        branch_obj = None
-                    if branch_obj is not None:
-                        from ...domain.dsl.pipeline import Pipeline as _Pipeline
-
-                        steps_iter = (
-                            branch_obj.steps if isinstance(branch_obj, _Pipeline) else [branch_obj]
-                        )
-                        for _st in steps_iter:
-                            try:
-                                with _telemetry.logfire.span(getattr(_st, "name", str(_st))):
-                                    pass
-                            except Exception:
-                                continue
-                except Exception:
-                    # Never let test-only spans interfere with execution
-                    pass
-            # Emit warn/error on failure for visibility under parallel runs
-            try:
-                sr_for_fb = None
-                if isinstance(res_any, StepOutcome):
-                    if isinstance(res_any, Failure):
-                        sr_for_fb = res_any.step_result
-                else:
-                    sr_for_fb = res_any if not getattr(res_any, "success", True) else None
-                fb = getattr(sr_for_fb, "feedback", None)
-                if isinstance(fb, str) and fb:
-                    if "no branch" in fb.lower():
-                        _telemetry.logfire.warn(fb)
-                    else:
-                        _telemetry.logfire.error(fb)
-            except Exception:
-                pass
-        except Exception:
-            pass
-        if isinstance(res_any, StepOutcome):
-            return res_any
-        return (
-            Success(step_result=res_any)
-            if res_any.success
-            else Failure(
-                error=Exception(res_any.feedback or "step failed"),
-                feedback=res_any.feedback,
-                step_result=res_any,
-            )
-        )
-
-    async def _policy_dynamic_router_step(
-        self, frame: ExecutionFrame[Any]
-    ) -> StepOutcome[StepResult]:
-        step = frame.step
-        data = frame.data
-        context = frame.context
-        resources = frame.resources
-        limits = frame.limits
-        context_setter = frame.context_setter
-        res_any = await self.dynamic_router_step_executor.execute(
-            self, step, data, context, resources, limits, context_setter
-        )
-        if isinstance(res_any, StepOutcome):
-            return res_any
-        return (
-            Success(step_result=res_any)
-            if res_any.success
-            else Failure(
-                error=Exception(res_any.feedback or "step failed"),
-                feedback=res_any.feedback,
-                step_result=res_any,
-            )
-        )
-
-    async def _policy_hitl_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        data = frame.data
-        context = frame.context
-        resources = frame.resources
-        limits = frame.limits
-        context_setter = frame.context_setter
-        res_any = await self.hitl_step_executor.execute(
-            self, cast(HumanInTheLoopStep, step), data, context, resources, limits, context_setter
-        )
-        if isinstance(res_any, StepOutcome):
-            return res_any
-        return (
-            Success(step_result=res_any)
-            if res_any.success
-            else Failure(
-                error=Exception(res_any.feedback or "step failed"),
-                feedback=res_any.feedback,
-                step_result=res_any,
-            )
-        )
-
-    async def _policy_default_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        data = frame.data
-        context = frame.context
-        resources = frame.resources
-        limits = frame.limits
-        stream = frame.stream
-        on_chunk = frame.on_chunk
-        cache_key = self._cache_key(frame) if self._enable_cache else None
-        fb_depth_norm = int(getattr(frame, "_fallback_depth", 0) or 0)
-
-        # Allow override of agent executor for policy-level tests/hooks.
-        res_any: StepOutcome[StepResult] | StepResult
-        override_executor = getattr(self, "agent_step_executor", None)
-        from .policies.agent_policy import DefaultAgentStepExecutor as _DefaultASE
-
-        if override_executor is not None and not isinstance(override_executor, _DefaultASE):
-            res_any = await override_executor.execute(
-                self,
-                step,
-                data,
-                context,
-                resources,
-                limits,
-                stream,
-                on_chunk,
-                cache_key,
-                fb_depth_norm,
-            )
-        else:
-            # Route via AgentOrchestrator to run retries/validation/plugins/fallback.
-            res_any = await self._agent_orchestrator.execute(
-                core=self,
-                step=step,
-                data=data,
-                context=context,
-                resources=resources,
-                limits=limits,
-                stream=stream,
-                on_chunk=on_chunk,
-                cache_key=cache_key,
-                fallback_depth=fb_depth_norm,
-            )
-        res_outcome = res_any if isinstance(res_any, StepOutcome) else Success(step_result=res_any)
-        await self._agent_orchestrator.cache_success_if_applicable(
-            core=self,
-            step=step,
-            cache_key=cache_key,
-            outcome=res_outcome,
-        )
-        return res_outcome
-
     # --- Orchestrated Simple Agent Step (centralized control flow) ---
 
     # --- Orchestrated Simple Agent Step (centralized control flow) ---
@@ -1649,8 +1131,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         _fallback_depth: int,
     ) -> StepOutcome[StepResult]:
         """Compatibility wrapper: agent orchestration now lives in AgentOrchestrator."""
-        return await self._agent_orchestrator.execute(
-            core=self,
+        return await self._agent_handler.execute(
             step=step,
             data=data,
             context=context,
@@ -1662,86 +1143,17 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             fallback_depth=_fallback_depth,
         )
 
-    def _coerce_optimization_config(self, config: Any) -> OptimizationConfig:
-        if config is None:
-            return OptimizationConfig()
-        if isinstance(config, OptimizationConfig):
-            return config
-        if isinstance(config, dict):
-            return OptimizationConfig.from_dict(config)
-        warnings.warn(
-            "Unsupported optimization_config type; using defaults.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        return OptimizationConfig()
-
     def get_optimization_stats(self) -> dict[str, Any]:
-        return {
-            "cache_hits": 0,
-            "cache_misses": 0,
-            "optimization_enabled": True,
-            "performance_score": 95.0,
-            "execution_stats": {
-                "total_steps": 0,
-                "successful_steps": 0,
-                "failed_steps": 0,
-                "average_execution_time": 0.0,
-            },
-            "optimization_config": self.optimization_config.to_dict(),
-        }
+        return get_opt_stats(self.optimization_config)
 
     def get_config_manager(self) -> Any:
-        class ConfigManager:
-            def __init__(self, current_config: OptimizationConfig) -> None:
-                self.current_config = current_config
-                self.available_configs = [
-                    "default",
-                    "high_performance",
-                    "memory_efficient",
-                ]
-
-            def get_current_config(self) -> OptimizationConfig:
-                return self.current_config
-
-        return ConfigManager(self.optimization_config)
+        return get_opt_config_manager(self.optimization_config)
 
     def get_performance_recommendations(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "type": "cache_optimization",
-                "priority": "medium",
-                "description": "Consider increasing cache size for better performance",
-            },
-            {
-                "type": "memory_optimization",
-                "priority": "high",
-                "description": "Enable object pooling for memory optimization",
-            },
-            {
-                "type": "batch_processing",
-                "priority": "low",
-                "description": "Use batch processing for multiple steps",
-            },
-        ]
+        return get_opt_recommendations()
 
     def export_config(self, format_type: str = "dict") -> dict[str, Any]:
-        if format_type == "dict":
-            return {
-                "optimization_config": self.optimization_config.to_dict(),
-                "executor_type": "ExecutorCore",
-                "version": "1.0.0",
-                "features": {
-                    "object_pool": True,
-                    "context_optimization": True,
-                    "memory_optimization": True,
-                    "optimized_telemetry": True,
-                    "performance_monitoring": True,
-                    "optimized_error_handling": True,
-                    "circuit_breaker": True,
-                },
-            }
-        raise ValueError(f"Unsupported format type: {format_type}")
+        return export_opt_config(self.optimization_config, format_type)
 
 
 # Backward compatibility: lightweight usage tracker used by some tests
@@ -1776,53 +1188,6 @@ class _UsageTracker:
         async with self._lock:
             total_tokens = self.prompt_tokens + self.completion_tokens
             return self.total_cost_usd, total_tokens
-
-
-class OptimizationConfig:
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.enable_object_pool = kwargs.get("enable_object_pool", True)
-        self.enable_context_optimization = kwargs.get("enable_context_optimization", True)
-        self.enable_memory_optimization = kwargs.get("enable_memory_optimization", True)
-        self.enable_optimized_telemetry = kwargs.get("enable_optimized_telemetry", True)
-        self.enable_performance_monitoring = kwargs.get("enable_performance_monitoring", True)
-        self.enable_optimized_error_handling = kwargs.get("enable_optimized_error_handling", True)
-        self.enable_circuit_breaker = kwargs.get("enable_circuit_breaker", True)
-        self.maintain_backward_compatibility = kwargs.get("maintain_backward_compatibility", True)
-        self.object_pool_max_size = kwargs.get("object_pool_max_size", 1000)
-        self.telemetry_batch_size = kwargs.get("telemetry_batch_size", 100)
-        self.cpu_usage_threshold_percent = kwargs.get("cpu_usage_threshold_percent", 80.0)
-        for key, value in kwargs.items():
-            if not hasattr(self, key):
-                setattr(self, key, value)
-
-    def validate(self) -> list[str]:
-        issues: list[str] = []
-        if self.object_pool_max_size <= 0:
-            issues.append("object_pool_max_size must be positive")
-        if self.telemetry_batch_size <= 0:
-            issues.append("telemetry_batch_size must be positive")
-        if not (0.0 <= self.cpu_usage_threshold_percent <= 100.0):
-            issues.append("cpu_usage_threshold_percent must be between 0.0 and 100.0")
-        return issues
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "enable_object_pool": self.enable_object_pool,
-            "enable_context_optimization": self.enable_context_optimization,
-            "enable_memory_optimization": self.enable_memory_optimization,
-            "enable_optimized_telemetry": self.enable_optimized_telemetry,
-            "enable_performance_monitoring": self.enable_performance_monitoring,
-            "enable_optimized_error_handling": self.enable_optimized_error_handling,
-            "enable_circuit_breaker": self.enable_circuit_breaker,
-            "maintain_backward_compatibility": self.maintain_backward_compatibility,
-            "object_pool_max_size": self.object_pool_max_size,
-            "telemetry_batch_size": self.telemetry_batch_size,
-            "cpu_usage_threshold_percent": self.cpu_usage_threshold_percent,
-        }
-
-    @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "OptimizationConfig":
-        return cls(**config_dict)
 
 
 class OptimizedExecutorCore(ExecutorCore[Any]):

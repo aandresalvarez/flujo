@@ -1,6 +1,6 @@
 # Phase 2 Tracking — ExecutorCore Decomposition
 
-Status: **In Progress** (updated 2025-11-26 night)  
+Status: **In Progress** (updated 2025-11-26 late, post optimization-support delegation)
 Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6)
 
 ## Objectives (from FSD)
@@ -10,15 +10,20 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
 - Centralize quota handling via `QuotaManager` (reserve → execute → reconcile); legacy shims removed.
 - Maintain policy-driven architecture and policy injection.
 
-## Current Code State (verified 2025-11-26 PM)
-- `ExecutorCore` is ~1,865 LOC (`wc -l flujo/application/core/executor_core.py`); the 500–600 LOC composition-root goal is **not yet reached**. Core agent orchestration now lives in `agent_orchestrator.py`; side-effects (processors/context/costs) are restored and covered by tests.
+## Current Code State (verified 2025-11-26 late)
+- `ExecutorCore` is ~1,222 LOC (`wc -l flujo/application/core/executor_core.py`) after moving policy callables/registry wiring into `policy_handlers.py` (~354 LOC), dispatch handling into `dispatch_handler.py` (~71 LOC), result/cache/exception/outcome handling into `result_handler.py` (~194 LOC), telemetry/error logging into `telemetry_handler.py` (~32 LOC), delegating parallel/pipeline/loop/dynamic/HITL/cache/conditional handlers into `step_handler.py` (~212 LOC), routing agent orchestration calls via `agent_handler.py` (~40 LOC), and moving optimization config helpers into `optimization_support.py` (~133 LOC). A minimal `_execute_simple_step` shim and `_execute_loop` wrapper remain for compatibility. The 500–600 LOC composition-root goal is **not yet reached**. Core agent orchestration now lives in `agent_orchestrator.py`; side-effects (processors/context/costs) are restored and covered by tests.
 - Delegated components exist: `execution_dispatcher.py`, `background_task_manager.py`, `cache_manager.py`, `complex_step_router.py`, `pipeline_orchestrator.py`, `agent_orchestrator.py`, `conditional_orchestrator.py`, `hitl_orchestrator.py`, `loop_orchestrator.py`, `import_orchestrator.py`, `validation_orchestrator.py`, `context_update_manager.py`, `failure_builder.py`, `quota_manager.py`, `step_history_tracker.py`.
-- Latest test status: `make test-fast` **PASS** (508/508) — see `output/controlled_test_run_20251126_213625.log`.
+- Latest test status: `make test-fast` **PASS** (508/508) — see `output/controlled_test_run_20251126_220905.log`. After policy/dispatch/result/telemetry extractions, targeted executor-core tests **PASS**: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/application/core/test_executor_core_loop_step_dispatch.py`.
 - Type-checking: `make typecheck` **PASS** (strict) after removing leftover `type: ignore` and Any-return surfaces in orchestrators.
 - Quota is unified through `QuotaManager` with a per-instance contextvar; the legacy `CURRENT_QUOTA` shim is removed.
 - Complex routing flows through `ComplexStepRouter` into loop/conditional/HITL/import orchestrators; validation orchestration is active. Remaining gap is structural slimming (not behavior).
 
-## Progress Since Last Update
+- Extracted registry policy callables and registry wiring into `policy_handlers.py`, trimming `executor_core.py` by ~330 LOC while preserving dispatcher compatibility, import orchestrator hooks, and conditional spans/telemetry. Registry binding and state-machine fallback registration now live in `PolicyHandlers.register_all`.
+- Extracted dispatch/error persistence into `dispatch_handler.py`, further slimming `executor_core.py` while keeping hydration persistence and control-flow handling identical.
+- Extracted cache persistence, missing-agent/exception wrapping, and outcome unwrapping into `result_handler.py`, removing ~140 lines from `executor_core.py` while retaining optimized error handling semantics.
+- Extracted telemetry/error logging into `telemetry_handler.py` to keep the core wiring-only.
+- Added a `step_handler` and delegated parallel/pipeline/loop/dynamic/HITL handlers to it, shaving core LOC toward the 1,300 target.
+- Removed legacy execute shims, retaining a minimal `execute_step` delegating to `execute` to satisfy accounting tests.
 - Type surface cleanup: removed unused `type: ignore` notes, tightened scratchpad typing, and ensured cache-success path wraps `StepResult` to `StepOutcome` before caching; `make typecheck` now clean.
 - Cache control centralized: `CacheManager` now decides cache skip/persist (loops/adapters/no_cache), removing step-type branching from `ExecutorCore`/`AgentOrchestrator`.
 - Added `maybe_return_cached` to encapsulate cache-hit handling (including called-with-frame Success wrapping); executor now calls the manager instead of branching on step types.
@@ -34,7 +39,7 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
 - Removed inline validation/fallback handling from `DefaultAgentStepExecutor`; validation now flows through `ValidationOrchestrator` with plugin redirect preserved. Validated with `pytest tests/unit/test_validation.py tests/unit/test_agent_step_policy.py` and full fast suite.
 
 ## Gaps vs Objectives
-1) `ExecutorCore` still carries ~1.8k LOC; composition-root target (500–600 LOC) requires further delegation/splitting of default policy glue and dispatcher wiring.
+1) `ExecutorCore` still carries ~1.4k LOC; composition-root target (500–600 LOC) requires further delegation/splitting of default policy glue and dispatcher wiring.
 2) Need a structured pass to enforce policy-driven dispatch (no step-specific branching), keep quota enforcement centrally in `QuotaManager`, and continue shrinking the core while retaining extracted orchestrators.
 3) Typing is green now; future refactors must keep orchestration surfaces typed per `docs/advanced/typing_guide.md` as the core is decomposed further.
 
@@ -99,7 +104,7 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
   - priority: high
   - workload: Hard
   - steps:
-      - [ ] Remove remaining step-specific branching; route via `ComplexStepRouter`/policy registry; target first cut ~1,300 LOC.  
+      - [ ] Remove remaining step-specific branching; route via `ComplexStepRouter`/policy registry; target first cut ~1,300 LOC (currently ~1,658 LOC after policy-handler extraction).  
         Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/application/core/test_executor_core_loop_step_dispatch.py`
       - [ ] Final composition-root pass to reach 500–600 LOC; background/cache/validation orchestration stays in extracted modules.  
         Run: `pytest tests/application/core/test_executor_core_fallback.py tests/application/core/test_executor_core_fallback_core.py tests/regression/test_executor_core_optimization_regression.py`
@@ -127,7 +132,7 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
   - priority: medium
   - workload: Medium
     ```md
-    Run `make test-fast` once the above clusters are green to verify Phase 2 surfaces end-to-end. Last run: PASS (`output/controlled_test_run_20251126_205933.log`).
+    Run `make test-fast` once the above clusters are green to verify Phase 2 surfaces end-to-end. Last run: PASS (`output/controlled_test_run_20251126_220905.log`).
     ```
 
 ## Done
