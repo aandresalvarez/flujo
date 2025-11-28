@@ -9,6 +9,7 @@ from ...domain.models import StepOutcome, StepResult, Success
 from ...exceptions import InfiniteFallbackError
 from ...infra import telemetry
 from .default_components import DefaultPluginRunner
+from .executor_helpers import run_validation
 
 if TYPE_CHECKING:  # pragma: no cover
     from .executor_core import ExecutorCore
@@ -903,7 +904,7 @@ class AgentOrchestrator:
                             ),
                         )
 
-                validation_result = await core._validation_orchestrator.validate(
+                validation_result = await run_validation(
                     core=core,
                     step=step,
                     output=processed_output,
@@ -917,17 +918,11 @@ class AgentOrchestrator:
                     fallback_depth=fallback_depth,
                 )
                 if validation_result is not None:
-                    if isinstance(validation_result, StepResult) and validation_result.success:
+                    if isinstance(validation_result, Success):
                         await _close_resources(None)
                         exit_cm = None
-                        return Success(step_result=validation_result)
-                    if isinstance(validation_result, _StepOutcome):
                         return validation_result
-                    return Failure(
-                        error=Exception(validation_result.feedback or "Validation failed"),
-                        feedback=validation_result.feedback,
-                        step_result=validation_result,
-                    )
+                    return validation_result
 
                 try:
                     from . import step_policies as _step_policies

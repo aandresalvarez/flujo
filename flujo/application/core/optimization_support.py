@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .executor_core import ExecutorCore
 
 
 class OptimizationConfig:
@@ -133,3 +136,24 @@ def export_config(config: OptimizationConfig, format_type: str = "dict") -> dict
             },
         }
     raise ValueError(f"Unsupported format type: {format_type}")
+
+
+class OptimizedExecutorCore:
+    """
+    Deprecated shim preserved for compatibility.
+
+    Re-exported from `executor_core` to avoid breaking legacy imports.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        from .executor_core import ExecutorCore
+
+        warnings.warn(
+            "OptimizedExecutorCore is deprecated; use ExecutorCore with OptimizationConfig.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self._delegate: "ExecutorCore[Any]" = ExecutorCore(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:  # pragma: no cover - pass-through
+        return getattr(self._delegate, name)

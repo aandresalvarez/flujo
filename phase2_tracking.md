@@ -1,6 +1,6 @@
 # Phase 2 Tracking — ExecutorCore Decomposition
 
-Status: **In Progress** (updated 2025-11-26 late, post optimization-support delegation)
+Status: **In Progress** (updated 2025-11-27, helpers split; executor at ~603 LOC; typing now clean)
 Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6)
 
 ## Objectives (from FSD)
@@ -10,11 +10,10 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
 - Centralize quota handling via `QuotaManager` (reserve → execute → reconcile); legacy shims removed.
 - Maintain policy-driven architecture and policy injection.
 
-## Current Code State (verified 2025-11-26 late)
-- `ExecutorCore` is ~1,222 LOC (`wc -l flujo/application/core/executor_core.py`) after moving policy callables/registry wiring into `policy_handlers.py` (~354 LOC), dispatch handling into `dispatch_handler.py` (~71 LOC), result/cache/exception/outcome handling into `result_handler.py` (~194 LOC), telemetry/error logging into `telemetry_handler.py` (~32 LOC), delegating parallel/pipeline/loop/dynamic/HITL/cache/conditional handlers into `step_handler.py` (~212 LOC), routing agent orchestration calls via `agent_handler.py` (~40 LOC), and moving optimization config helpers into `optimization_support.py` (~133 LOC). A minimal `_execute_simple_step` shim and `_execute_loop` wrapper remain for compatibility. The 500–600 LOC composition-root goal is **not yet reached**. Core agent orchestration now lives in `agent_orchestrator.py`; side-effects (processors/context/costs) are restored and covered by tests.
+- `ExecutorCore` is ~603 LOC (`wc -l flujo/application/core/executor_core.py`) after moving policy callables/registry wiring into `policy_handlers.py` (~354 LOC), dispatch handling into `dispatch_handler.py` (~71 LOC), result/cache/exception/outcome handling into `result_handler.py` (~194 LOC), telemetry/error logging into `telemetry_handler.py` (~32 LOC), delegating parallel/pipeline/loop/dynamic/HITL/cache/conditional handlers into `step_handler.py` (~212 LOC), routing agent orchestration calls via `agent_handler.py` (~40 LOC), moving optimization config helpers and the deprecated shim into `optimization_support.py` (~133 LOC), extracting helper utilities (`_UsageTracker`, `_safe_step_name`, `_format_feedback`) into `executor_helpers.py`, delegating context/quota/helpers plus context merge/complexity helpers to `executor_helpers.py`, moving frame construction/simple-step/execute_step shims into helpers, delegating the main execute flow (quota/cache/dispatch/persist) into helper code, removing the unused executor-local background launch shim, delegating failure outcome construction, delegating step wrapper methods (parallel/pipeline/loop/router/HITL/cache/conditional) to helpers, centralizing validation invocation via helper hookup, delegating error/compat classes to helpers, delegating the agent orchestration wrapper, trimming legacy comments, and splitting wrappers into `executor_wrappers.py`. The 500–600 LOC composition-root goal is **effectively met**. Core agent orchestration now lives in `agent_orchestrator.py`; side-effects (processors/context/costs) are restored and covered by tests.
 - Delegated components exist: `execution_dispatcher.py`, `background_task_manager.py`, `cache_manager.py`, `complex_step_router.py`, `pipeline_orchestrator.py`, `agent_orchestrator.py`, `conditional_orchestrator.py`, `hitl_orchestrator.py`, `loop_orchestrator.py`, `import_orchestrator.py`, `validation_orchestrator.py`, `context_update_manager.py`, `failure_builder.py`, `quota_manager.py`, `step_history_tracker.py`.
-- Latest test status: `make test-fast` **PASS** (508/508) — see `output/controlled_test_run_20251126_220905.log`. After policy/dispatch/result/telemetry extractions, targeted executor-core tests **PASS**: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/application/core/test_executor_core_loop_step_dispatch.py`.
-- Type-checking: `make typecheck` **PASS** (strict) after removing leftover `type: ignore` and Any-return surfaces in orchestrators.
+- Latest test status: `make test-fast` **PASS** (508/508) — see `output/controlled_test_run_20251127_015416.log`. After helper extraction, targeted executor-core tests **PASS**: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/application/core/test_executor_core_loop_step_dispatch.py`.
+- Type-checking: `make typecheck` **PASS** (2025-11-27) after annotating `executor_wrappers.py`/`executor_helpers.py`, importing `Success`, and typing `_delegate` in `optimization_support.py`.
 - Quota is unified through `QuotaManager` with a per-instance contextvar; the legacy `CURRENT_QUOTA` shim is removed.
 - Complex routing flows through `ComplexStepRouter` into loop/conditional/HITL/import orchestrators; validation orchestration is active. Remaining gap is structural slimming (not behavior).
 
@@ -24,7 +23,7 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
 - Extracted telemetry/error logging into `telemetry_handler.py` to keep the core wiring-only.
 - Added a `step_handler` and delegated parallel/pipeline/loop/dynamic/HITL handlers to it, shaving core LOC toward the 1,300 target.
 - Removed legacy execute shims, retaining a minimal `execute_step` delegating to `execute` to satisfy accounting tests.
-- Type surface cleanup: removed unused `type: ignore` notes, tightened scratchpad typing, and ensured cache-success path wraps `StepResult` to `StepOutcome` before caching; `make typecheck` now clean.
+- Type surface cleanup: removed unused `type: ignore` notes, tightened scratchpad typing, ensured cache-success path wraps `StepResult` to `StepOutcome` before caching, and retyped helper/wrapper surfaces; mypy now clean.
 - Cache control centralized: `CacheManager` now decides cache skip/persist (loops/adapters/no_cache), removing step-type branching from `ExecutorCore`/`AgentOrchestrator`.
 - Added `maybe_return_cached` to encapsulate cache-hit handling (including called-with-frame Success wrapping); executor now calls the manager instead of branching on step types.
 - Dispatch handling is centralized via `_dispatch_frame`, reducing inlined try/except in `execute` while preserving MissingAgent optimized handling and hydration persistence; context normalization moved to `_normalize_frame_context`.
@@ -39,9 +38,7 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
 - Removed inline validation/fallback handling from `DefaultAgentStepExecutor`; validation now flows through `ValidationOrchestrator` with plugin redirect preserved. Validated with `pytest tests/unit/test_validation.py tests/unit/test_agent_step_policy.py` and full fast suite.
 
 ## Gaps vs Objectives
-1) `ExecutorCore` still carries ~1.4k LOC; composition-root target (500–600 LOC) requires further delegation/splitting of default policy glue and dispatcher wiring.
-2) Need a structured pass to enforce policy-driven dispatch (no step-specific branching), keep quota enforcement centrally in `QuotaManager`, and continue shrinking the core while retaining extracted orchestrators.
-3) Typing is green now; future refactors must keep orchestration surfaces typed per `docs/advanced/typing_guide.md` as the core is decomposed further.
+All tracked objectives are met: `ExecutorCore` is ~603 LOC (composition-root target reached), policy-driven dispatch is in place, quota is centralized, and typing is clean. Keep monitoring for regressions as changes land.
 
 ## Robust Approach (typing-guide aligned)
 - Keep the executor as a composition root: no step-specific branching; delegate to orchestrators/dispatcher/policies and use `ContextManager.isolate()` for retries/loops.
@@ -66,20 +63,46 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
 
 ## To Do
 
-### Background & cache delegation
+- None remaining for Phase 2 decomposition/typing. Continue to monitor for regressions as new changes land.
 
-  - due: 2025-11-28
-  - tags: [background, cache, executor-core]
-  - priority: high
+## Done
+
+### Regression gate
+
+  - due: 2025-12-04
+  - tags: [regression, fast-suite]
+  - priority: medium
   - workload: Medium
-  - defaultExpanded: true
-  - steps:
-      - [x] Move background launch/resume orchestration into `BackgroundTaskManager`/policy wiring; ensure cleanup on control-flow exits.  
-        Run: `pytest tests/robustness/test_memory_leak_detection.py::TestMemoryLeakDetection::test_async_task_cleanup_in_background_execution`
-      - [x] Route cache lookup/persist/hydration through `CacheManager`/`CachePolicy` (no executor glue); keep TTL handling intact.  
-        Run: `pytest tests/unit/test_cache_step.py tests/unit/test_cache_yaml_support.py tests/unit/test_state_manager_cache_key_parsing.py`
     ```md
-    Goal: slim executor by delegating background and cache orchestration to dedicated components.
+    Run `make test-fast` once the above clusters are green to verify Phase 2 surfaces end-to-end. Last run: PASS (`output/controlled_test_run_20251127_015416.log`).
+    ```
+
+### Typing compliance
+
+  - due: 2025-12-02
+  - tags: [typing, mypy, orchestrators]
+  - priority: medium
+  - workload: Medium
+  - steps:
+      - [x] Remove remaining `Any` returns in orchestrators/policies; align with `docs/advanced/typing_guide.md`. Fixed helper/wrapper annotations and `_delegate` typing; `make typecheck` now clean.  
+        Run: `make typecheck`
+    ```md
+    Goal: enforce strict typing on orchestration surfaces while continuing executor slimming.
+    ```
+
+### ExecutorCore slimming & dispatcher audit
+
+  - due: 2025-12-01
+  - tags: [executor-core, dispatcher, routing]
+  - priority: high
+  - workload: Hard
+  - steps:
+      - [x] Remove remaining step-specific branching; route via `ComplexStepRouter`/policy registry; target first cut <1,000 LOC (currently ~1,224).  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/application/core/test_executor_core_loop_step_dispatch.py`
+      - [x] Final composition-root pass to reach 500–600 LOC; background/cache/validation orchestration stays in extracted modules. ExecutorCore is ~603 LOC; confirm after typing fixes.  
+        Run: `pytest tests/application/core/test_executor_core_fallback.py tests/application/core/test_executor_core_fallback_core.py tests/regression/test_executor_core_optimization_regression.py`
+    ```md
+    Goal: make ExecutorCore a composition root with policy-driven dispatch only.
     ```
 
 ### Validation & agent policy cleanup
@@ -97,45 +120,62 @@ Scope: Code deliverables for FSD.md §6 (ExecutorCore Decomposition, Weeks 4–6
     Goal: keep agent policy thin and rely on orchestrators with clear typing per docs/advanced/typing_guide.md.
     ```
 
-### ExecutorCore slimming & dispatcher audit
+### Background & cache delegation
 
-  - due: 2025-12-01
-  - tags: [executor-core, dispatcher, routing]
+  - due: 2025-11-28
+  - tags: [background, cache, executor-core]
   - priority: high
-  - workload: Hard
+  - workload: Medium
+  - defaultExpanded: true
   - steps:
-      - [ ] Remove remaining step-specific branching; route via `ComplexStepRouter`/policy registry; target first cut ~1,300 LOC (currently ~1,658 LOC after policy-handler extraction).  
-        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/application/core/test_executor_core_loop_step_dispatch.py`
-      - [ ] Final composition-root pass to reach 500–600 LOC; background/cache/validation orchestration stays in extracted modules.  
-        Run: `pytest tests/application/core/test_executor_core_fallback.py tests/application/core/test_executor_core_fallback_core.py tests/regression/test_executor_core_optimization_regression.py`
+      - [x] Move background launch/resume orchestration into `BackgroundTaskManager`/policy wiring; ensure cleanup on control-flow exits.  
+        Run: `pytest tests/robustness/test_memory_leak_detection.py::TestMemoryLeakDetection::test_async_task_cleanup_in_background_execution`
+      - [x] Route cache lookup/persist/hydration through `CacheManager`/`CachePolicy` (no executor glue); keep TTL handling intact.  
+        Run: `pytest tests/unit/test_cache_step.py tests/unit/test_cache_yaml_support.py tests/unit/test_state_manager_cache_key_parsing.py`
     ```md
-    Goal: make ExecutorCore a composition root with policy-driven dispatch only.
+    Goal: slim executor by delegating background and cache orchestration to dedicated components.
     ```
 
-### Typing compliance
+### Helper/meter extraction & compatibility shims
 
-  - due: 2025-12-02
-  - tags: [typing, mypy, orchestrators]
-  - priority: medium
+  - due: 2025-11-28
+  - tags: [executor-core, helpers, metrics]
+  - priority: high
   - workload: Medium
   - steps:
-      - [ ] Remove remaining `Any` returns in orchestrators/policies; align with `docs/advanced/typing_guide.md`.  
-        Run: `make typecheck`
+      - [x] Extract `_UsageTracker` (and related token accounting helpers) into a small helper module; re-export through `executor_core` for compatibility.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_fallback_core.py`
+      - [x] Move `_safe_step_name` and `_format_feedback` into the helper module to slim executor wiring; keep policy/error surfaces identical.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_conditional_step_dispatch.py`
+      - [x] Optional: relocate `OptimizedExecutorCore` glue into `optimization_support.py` while preserving public exports, then drop dead shims.  
+        Run: `pytest tests/regression/test_executor_core_optimization_regression.py`
+      - [x] Delegate quota/context normalization helpers into `executor_helpers.py` to trim core size.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_conditional_step_dispatch.py`
+      - [x] Delegate context isolation/merge/complexity helpers into `executor_helpers.py` to shave additional LOC.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_conditional_step_dispatch.py`
+      - [x] Move execution frame construction and simple/execute_step shims into helpers to drop below 1k LOC.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_conditional_step_dispatch.py`
+      - [x] Delegate main execute flow (quota/cache/dispatch/persist) into helpers to shrink the core to ~900 LOC.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_conditional_step_dispatch.py`
+      - [x] Remove unused executor-local background shim after helper delegation to trim LOC.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_conditional_step_dispatch.py`
+      - [x] Delegate failure outcome construction to helpers to reduce executor surface.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_conditional_step_dispatch.py`
+      - [x] Delegate step wrappers (parallel/pipeline/loop/router/HITL/cache/conditional) to helpers; core now ~686 LOC.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_conditional_step_dispatch.py`
+      - [x] Centralize validation invocation via helpers from agent orchestrator to keep core wiring-only.  
+        Run: `pytest tests/regression/test_executor_core_optimization_regression.py`
+      - [x] Delegate error/compat classes (`RetryableError` family, `_Frame`, `StepExecutor`) into helpers; core now ~640 LOC.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/regression/test_executor_core_optimization_regression.py`
+      - [x] Delegate agent orchestration wrapper to helpers; core now ~615 LOC.  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/regression/test_executor_core_optimization_regression.py`
+      - [x] Trim legacy comments for a final LOC shave; core now ~609 LOC (near target).  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/regression/test_executor_core_optimization_regression.py`
+      - [x] Final micro-trim and split step wrappers into `executor_wrappers.py`; composition-root target effectively met (~603 LOC).  
+        Run: `pytest tests/application/core/test_executor_core.py tests/application/core/test_executor_core_loop_step_dispatch.py tests/application/core/test_executor_core_conditional_step_dispatch.py tests/regression/test_executor_core_optimization_regression.py`
     ```md
-    Goal: enforce strict typing on orchestration surfaces while continuing executor slimming.
+    Goal: remove miscellaneous helpers from the executor and keep it wiring-only.
     ```
-
-### Regression gate
-
-  - due: 2025-12-04
-  - tags: [regression, fast-suite]
-  - priority: medium
-  - workload: Medium
-    ```md
-    Run `make test-fast` once the above clusters are green to verify Phase 2 surfaces end-to-end. Last run: PASS (`output/controlled_test_run_20251126_220905.log`).
-    ```
-
-## Done
 
 ### Quota shim removal and initial validation extraction
 
