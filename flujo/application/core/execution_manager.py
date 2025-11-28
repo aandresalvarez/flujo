@@ -38,6 +38,7 @@ from .context_manager import ContextManager
 from .step_coordinator import StepCoordinator
 from .state_manager import StateManager
 from .type_validator import TypeValidator
+from .execution_manager_finalization import ExecutionFinalizationMixin
 from flujo.domain.models import UsageLimits
 
 # from flujo.domain.dsl import LoopStep  # Commented to avoid circular import
@@ -45,7 +46,7 @@ from flujo.domain.models import UsageLimits
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
 
-class ExecutionManager(Generic[ContextT]):
+class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
     """Main execution manager that orchestrates all execution components.
 
     This class coordinates step execution, state management, usage governance,
@@ -1151,101 +1152,3 @@ class ExecutionManager(Generic[ContextT]):
 
         # Set final context after all steps complete
         self.set_final_context(result, context)
-
-    def _should_add_step_result_to_pipeline(
-        self,
-        step_result: Optional[StepResult],
-        should_add_step_result: bool,
-        result: PipelineResult[ContextT],
-    ) -> bool:
-        """Determine if a step result should be added to the pipeline result.
-
-        This method encapsulates the logic for deciding whether to add a step result
-        to the pipeline result, taking into account various edge cases and conditions.
-
-        Args:
-            step_result: The step result to consider adding
-            should_add_step_result: Whether the step result should be added (from caller)
-            result: The pipeline result to potentially add to
-
-        Returns:
-            True if the step result should be added, False otherwise
-        """
-        # Don't add if step_result is None
-        if step_result is None:
-            return False
-
-        # Don't add if explicitly prevented
-        if not should_add_step_result:
-            return False
-
-        # Don't add if already present (defensive programming)
-        if step_result in result.step_history:
-            return False
-
-        # Add the step result
-        return True
-
-    def set_final_context(
-        self,
-        result: PipelineResult[ContextT],
-        context: Optional[ContextT],
-    ) -> None:
-        """Set the final context in the pipeline result."""
-        if context is not None:
-            result.final_pipeline_context = context
-
-    async def persist_final_state(
-        self,
-        *,
-        run_id: str | None,
-        context: Optional[ContextT],
-        result: PipelineResult[ContextT],
-        start_idx: int,
-        state_created_at: datetime | None,
-        final_status: str,
-    ) -> None:
-        """Persist the final state to the backend."""
-        if run_id is not None:
-            # For completed scenarios, use len(pipeline.steps)
-            # For paused scenarios, use the current step index where pause occurred
-            if final_status == "completed":
-                # Check if this is an HITL resumption scenario
-                is_hitl_resumption = (
-                    start_idx > 0
-                    and context is not None
-                    and hasattr(context, "hitl_history")
-                    and len(getattr(context, "hitl_history", [])) > 0
-                )
-
-                # Check if this is a crash recovery scenario (state existed before execution)
-                # In crash recovery, all steps are re-executed from the beginning
-                is_crash_recovery = state_created_at is not None and len(
-                    result.step_history
-                ) == len(self.pipeline.steps)
-
-                if is_hitl_resumption:
-                    # For HITL resumption scenarios, use double the pipeline length
-                    final_step_index = len(self.pipeline.steps) * 2
-                elif is_crash_recovery:
-                    # For crash recovery scenarios, increment by 1 (legacy expectation)
-                    final_step_index = len(self.pipeline.steps) + 1
-                else:
-                    # For normal completion
-                    final_step_index = len(self.pipeline.steps)
-            else:
-                # For paused or failed scenarios, use the current step index
-                final_step_index = len(result.step_history)
-
-            # Persist final snapshot (full context via StateManager) to ensure correctness
-            await self.state_manager.persist_workflow_state(
-                run_id=run_id,
-                context=context,
-                current_step_index=final_step_index,
-                last_step_output=result.step_history[-1].output if result.step_history else None,
-                status=final_status,
-                state_created_at=state_created_at,
-                step_history=result.step_history,
-            )
-            # Record run end for tracking and cleanup
-            await self.state_manager.record_run_end(run_id, result)

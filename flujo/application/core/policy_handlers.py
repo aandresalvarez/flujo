@@ -11,7 +11,7 @@ from ...domain.dsl.step import HumanInTheLoopStep, Step
 from ...domain.models import Failure, StepOutcome, StepResult, Success
 from ...infra import telemetry as _telemetry
 from ...steps.cache_step import CacheStep
-from .policy_primitives import PolicyRegistry
+from .policy_registry import PolicyRegistry, StepPolicy
 from .types import ExecutionFrame
 
 if TYPE_CHECKING:
@@ -294,27 +294,42 @@ class PolicyHandlers:
 
     def register_all(self, registry: PolicyRegistry) -> None:
         """Register policy callables and adapt any framework-provided policies."""
-        registry.register(Step, self.default_step)
-        registry.register(ParallelStep, self.parallel_step)
-        registry.register(LoopStep, self.loop_step)
-        registry.register(ConditionalStep, self.conditional_step)
-        registry.register(DynamicParallelRouterStep, self.dynamic_router_step)
-        registry.register(HumanInTheLoopStep, self.hitl_step)
-        registry.register(CacheStep, self.cache_step)
+        if not registry.has_exact(Step):
+            registry.register_callable(Step, self.default_step)
+        if not registry.has_exact(ParallelStep):
+            registry.register_callable(ParallelStep, self.parallel_step)
+        if not registry.has_exact(LoopStep):
+            registry.register_callable(LoopStep, self.loop_step)
+        if not registry.has_exact(ConditionalStep):
+            registry.register_callable(ConditionalStep, self.conditional_step)
+        if not registry.has_exact(DynamicParallelRouterStep):
+            registry.register_callable(DynamicParallelRouterStep, self.dynamic_router_step)
+        if not registry.has_exact(HumanInTheLoopStep):
+            registry.register_callable(HumanInTheLoopStep, self.hitl_step)
+        if not registry.has_exact(CacheStep):
+            registry.register_callable(CacheStep, self.cache_step)
         try:
-            if self._core.import_step_executor is not None:
-                registry.register(ImportStep, self.import_step)
+            if self._core.import_step_executor is not None and not registry.has_exact(ImportStep):
+                registry.register_callable(ImportStep, self.import_step)
         except Exception:
             pass
 
         self._adapt_existing_policies(registry)
         self._ensure_state_machine_policy(registry)
+        # Ensure a fallback exists; default to simple policy when not provided
+        try:
+            if registry._fallback_policy is None:  # noqa: SLF001
+                registry.register_fallback(cast(StepPolicy[Any], self._core.simple_step_executor))
+        except Exception:
+            pass
 
     def _adapt_existing_policies(self, registry: PolicyRegistry) -> None:
         try:
             from typing import Any as _Any
 
             def _wrap_policy(_p: _Any) -> _Any:
+                if isinstance(_p, StepPolicy):
+                    return _p
                 if callable(_p):
                     return _p
                 exec_fn = getattr(_p, "execute", None)

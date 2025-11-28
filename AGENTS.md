@@ -61,6 +61,7 @@ Adherence to these patterns is mandatory for all contributions.
 
 ### ✅ **1. Policy-Driven Execution**
 - **The Rule**: All step execution logic belongs in a dedicated **policy** class in `flujo/application/core/step_policies.py`.
+- **Registry Use**: Register policies via `create_default_registry(core)`; each policy must implement `StepPolicy.handles_type` and accept an `ExecutionFrame` (or unpack it) so `ExecutionDispatcher` can route without `isinstance` checks. Prefer `StepPolicy` instances over raw callables.
 - **The Anti-Pattern**: **Never** add step-specific logic (`if isinstance(step, ...):`) to `ExecutorCore`. The core is a dispatcher only.
 
 ### ✅ **2. Control Flow Exception Safety**

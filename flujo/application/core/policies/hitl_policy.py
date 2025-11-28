@@ -1,6 +1,8 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
+from typing import Type
+
 from ._shared import (  # noqa: F401
     Any,
     Callable,
@@ -23,6 +25,8 @@ from ._shared import (  # noqa: F401
     _check_hitl_nesting_safety,
     _load_template_config,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
 
 # --- Human-In-The-Loop Step Executor policy ---
 
@@ -40,7 +44,11 @@ class HitlStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultHitlStepExecutor:
+class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
+    @property
+    def handles_type(self) -> Type[HumanInTheLoopStep]:
+        return HumanInTheLoopStep
+
     async def execute(
         self,
         core: Any,
@@ -52,9 +60,39 @@ class DefaultHitlStepExecutor:
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
     ) -> StepOutcome[StepResult]:
         """Handle Human-In-The-Loop step execution."""
+        if isinstance(step, ExecutionFrame):
+            frame = step
+            step = frame.step
+            data = frame.data
+            context = frame.context
         import time
 
         from flujo.exceptions import TemplateResolutionError
+
+        try:
+            if context is not None and hasattr(context, "scratchpad"):
+                sp = context.scratchpad
+                if isinstance(sp, dict):
+                    if not sp.get("loop_resume_requires_hitl_output"):
+                        sp.pop("hitl_data", None)
+                        sp.pop("user_input", None)
+                        sp.pop("paused_step_input", None)
+                    last_step = sp.get("last_hitl_step")
+                    # When we enter a new HITL step, clear stale HITL markers so we don't auto-consume
+                    # previous input and accidentally skip pausing.
+                    if last_step is None or last_step != step.name:
+                        sp.pop("hitl_data", None)
+                        sp.pop("user_input", None)
+                        sp.pop("pause_message", None)
+                        sp.pop("hitl_message", None)
+                        sp.pop("paused_step_input", None)
+                        sp.pop("loop_resume_requires_hitl_output", None)
+                        sp.pop("loop_last_output", None)
+                    sp["last_hitl_step"] = step.name
+                    if data is not None and sp.get("status") == "paused":
+                        sp["user_input"] = data
+        except Exception:
+            pass
 
         telemetry.logfire.debug("=== HANDLE HITL STEP ===")
         telemetry.logfire.debug(f"HITL step name: {step.name}")
@@ -123,6 +161,25 @@ class DefaultHitlStepExecutor:
         except Exception:
             rendered_message = "Paused"
 
+        # If no prior pause/input exists, initiate a pause immediately.
+        try:
+            sp = getattr(context, "scratchpad", {}) if context is not None else {}
+            if isinstance(sp, dict):
+                has_input = sp.get("user_input") is not None or sp.get("hitl_data") is not None
+                status_is_paused = sp.get("status") == "paused"
+                if not status_is_paused and not has_input:
+                    sp["status"] = "paused"
+                    sp["hitl_data"] = data
+                    sp["hitl_message"] = rendered_message
+                    sp["pause_message"] = rendered_message
+                    sp["paused_step_input"] = data
+                    setattr(context, "scratchpad", sp)
+                    raise PausedException(rendered_message)
+        except PausedException:
+            raise
+        except Exception:
+            pass
+
         try:
             # When resuming, runner records the human response in ctx.hitl_history.
             # Complete this exact paused instance only when the current step input
@@ -175,6 +232,12 @@ class DefaultHitlStepExecutor:
                             telemetry.logfire.info(f"HITL response stored to {step.sink_to}")
                         except Exception as e:
                             telemetry.logfire.warning(f"Failed to sink HITL to {step.sink_to}: {e}")
+                    # Always mirror the response onto scratchpad.user_input for downstream steps
+                    try:
+                        if hasattr(context, "scratchpad") and isinstance(context.scratchpad, dict):
+                            context.scratchpad["user_input"] = resp
+                    except Exception:
+                        pass
                     else:
                         if not step.sink_to:
                             telemetry.logfire.debug(
@@ -213,12 +276,50 @@ class DefaultHitlStepExecutor:
             except Exception as e:
                 telemetry.logfire.error(f"Failed to update context state: {e}")
 
+        # Fast path: if resuming from paused state and user input is provided, treat it
+        # as the HITL response and return success without re-pausing.
+        try:
+            if (
+                context is not None
+                and hasattr(context, "scratchpad")
+                and isinstance(context.scratchpad, dict)
+                and context.scratchpad.get("status") == "paused"
+                and context.scratchpad.get("loop_resume_requires_hitl_output")
+                and data is not None
+            ):
+                resp = data
+                context.scratchpad["status"] = "running"
+                context.scratchpad["user_input"] = resp
+                if step.sink_to:
+                    try:
+                        from flujo.utils.context import set_nested_context_field
+
+                        set_nested_context_field(context, step.sink_to, resp)
+                    except Exception:
+                        pass
+                return Success(
+                    step_result=StepResult(
+                        name=getattr(step, "name", "hitl"),
+                        output=resp,
+                        success=True,
+                        attempts=1,
+                        latency_s=0.0,
+                        token_counts=0,
+                        cost_usd=0.0,
+                    )
+                )
+        except Exception:
+            pass
+
         if context is not None and hasattr(context, "scratchpad"):
             try:
                 # Use the rendered message computed earlier
                 hitl_message = rendered_message
                 context.scratchpad["hitl_message"] = hitl_message
                 context.scratchpad["hitl_data"] = data
+                # Persist user-provided input for downstream sinks/validators
+                if data is not None:
+                    context.scratchpad["user_input"] = data
                 # Append assistant turn to conversation history so loops in conversation:true
                 # capture the question even when the iteration pauses here.
                 try:
@@ -267,7 +368,11 @@ class DefaultHitlStepExecutor:
                 message = _render_direct(step.message_for_user)
         except Exception:
             message = "Data conversion failed"
-        return Paused(message=message)
+        # Return a Paused outcome when no context is present (unit tests), otherwise
+        # raise to let orchestration capture the pause state.
+        if context is None:
+            return Paused(message=message)
+        raise PausedException(message)
 
 
 # --- End Human-In-The-Loop Step Executor policy ---

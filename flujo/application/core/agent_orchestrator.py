@@ -604,9 +604,35 @@ class AgentOrchestrator:
                     result.feedback = f"Processor failed: {proc_err}"
                     if getattr(step, "updates_context", False) and attempt_context is not None:
                         result.branch_context = attempt_context
+                    is_loop_context = False
+                    try:
+                        is_loop_context = bool(
+                            getattr(attempt_context, "_last_loop_iterations", None) is not None
+                            or getattr(attempt_context, "_loop_iteration_active", False)
+                            or getattr(core, "_inside_loop_iteration", False)
+                            or getattr(step, "_force_loop_fallback", False)
+                            or (
+                                isinstance(getattr(attempt_context, "scratchpad", None), dict)
+                                and getattr(attempt_context, "scratchpad", {}).get(
+                                    "_loop_iteration_active", False
+                                )
+                            )
+                        )
+                    except Exception:
+                        is_loop_context = False
                     fb_step = getattr(step, "fallback_step", None)
                     if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
                         fb_step = None
+                    if fb_step is None and attempt < total_attempts:
+                        telemetry.logfire.warning(
+                            f"Step '{getattr(step, 'name', '<unnamed>')}' processor attempt {attempt}/{total_attempts} failed: {proc_err}"
+                        )
+                        continue
+                    if fb_step is not None and attempt < total_attempts and not is_loop_context:
+                        telemetry.logfire.warning(
+                            f"Step '{getattr(step, 'name', '<unnamed>')}' processor attempt {attempt}/{total_attempts} failed; retrying primary before fallback"
+                        )
+                        continue
                     if fb_step is None:
                         return Failure(
                             error=proc_err,
@@ -724,14 +750,35 @@ class AgentOrchestrator:
                             primary_latency_total += float(result.latency_s or 0.0)
                         except Exception:
                             pass
-                        if attempt < total_attempts:
+                        is_loop_context = False
+                        try:
+                            is_loop_context = bool(
+                                getattr(attempt_context, "_last_loop_iterations", None) is not None
+                                or getattr(attempt_context, "_loop_iteration_active", False)
+                                or getattr(core, "_inside_loop_iteration", False)
+                                or getattr(step, "_force_loop_fallback", False)
+                                or (
+                                    isinstance(getattr(attempt_context, "scratchpad", None), dict)
+                                    and getattr(attempt_context, "scratchpad", {}).get(
+                                        "_loop_iteration_active", False
+                                    )
+                                )
+                            )
+                        except Exception:
+                            is_loop_context = False
+                        fb_step = getattr(step, "fallback_step", None)
+                        if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
+                            fb_step = None
+                        if fb_step is None and attempt < total_attempts:
                             telemetry.logfire.warning(
                                 f"Step '{getattr(step, 'name', '<unnamed>')}' plugin attempt {attempt}/{total_attempts} failed: {e}"
                             )
                             continue
-                        fb_step = getattr(step, "fallback_step", None)
-                        if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
-                            fb_step = None
+                        if fb_step is not None and attempt < total_attempts and not is_loop_context:
+                            telemetry.logfire.warning(
+                                f"Step '{getattr(step, 'name', '<unnamed>')}' plugin attempt {attempt}/{total_attempts} failed; retrying primary before fallback"
+                            )
+                            continue
                         if fb_step is None:
                             if (
                                 getattr(step, "updates_context", False)

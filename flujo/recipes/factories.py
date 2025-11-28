@@ -197,6 +197,13 @@ def make_agentic_loop_pipeline(
             from pydantic import ValidationError
 
             turn = len(getattr(context, "command_log", [])) + 1 if context is not None else 1
+            # If we already have an ExecutedCommandLog, treat it as terminal and avoid revalidating.
+            try:
+                if isinstance(data, ExecutedCommandLog):
+                    _log_if_new(data, context)
+                    return data
+            except Exception:
+                pass
             try:
                 cmd = _command_adapter.validate_python(data)
             except ValidationError as e:  # pragma: no cover - planner bug
@@ -222,6 +229,20 @@ def make_agentic_loop_pipeline(
                         exec_result = await agent.run(cmd.input_data, **agent_kwargs)
                 elif cmd.type == "ask_human":
                     if isinstance(context, PipelineContext):
+                        # If we already have HITL data (resume path), consume it and continue.
+                        hitl_data = context.scratchpad.get("hitl_data")
+                        if hitl_data is not None:
+                            exec_result = hitl_data
+                            log_entry = ExecutedCommandLog(
+                                turn=turn,
+                                generated_command=cmd,
+                                execution_result=exec_result,
+                            )
+                            _log_if_new(log_entry, context)
+                            # Clear resume marker now that we've consumed the payload.
+                            context.scratchpad.pop("loop_resume_requires_hitl_output", None)
+                            context.scratchpad["status"] = "running"
+                            return log_entry
                         context.scratchpad["paused_step_input"] = cmd
                         context.scratchpad["loop_resume_requires_hitl_output"] = True
                     # Do NOT create or append a log entry here; only log on resume

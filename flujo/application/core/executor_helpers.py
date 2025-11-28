@@ -247,6 +247,9 @@ async def execute_flow(
         result_outcome = cast(
             Outcome, await core._dispatch_frame(frame, called_with_frame=called_with_frame)
         )
+    except asyncio.CancelledError:
+        # Preserve cancellation semantics for signal handling tests and callers.
+        raise
     except MissingAgentError as e:
         handled = core._handle_missing_agent_exception(e, step, called_with_frame=called_with_frame)
         if handled is not None:
@@ -362,6 +365,11 @@ async def execute_entrypoint(
     if called_with_frame:
         frame = cast(ExecutionFrame[Any], frame_or_step)
     else:
+        # New run: reset per-run history to avoid unbounded growth across executions.
+        try:
+            core._step_history_tracker.clear_history()
+        except Exception:
+            pass
         step_obj = frame_or_step if frame_or_step is not None else kwargs.get("step")
         if step_obj is None:
             raise ValueError("ExecutorCore.execute requires a Step or ExecutionFrame")

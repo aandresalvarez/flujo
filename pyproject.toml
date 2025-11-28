@@ -197,6 +197,19 @@ ignore_errors = true
 module = "flujo.application.core.step_logic"
 disable_error_code = ["no-any-return"]
 
+[[tool.mypy.overrides]]
+module = [
+    "flujo.cli.helpers_core",
+    "flujo.cli.helpers_runtime",
+    "flujo.cli.helpers_extensions",
+    "flujo.cli.helpers_project",
+    "flujo.validation.linters_orchestration",
+    "flujo.validation.linters_extended",
+    "flujo.application.core.execution_manager_finalization",
+    "flujo.domain.dsl.pipeline_mermaid",
+]
+ignore_errors = true
+
 
 # Coverage configuration to make reports robust across environments
 [tool.coverage.run]

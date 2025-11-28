@@ -1,0 +1,96 @@
+
+            # Plugins with redirect orchestration (post-agent)
+            if hasattr(step, "plugins") and step.plugins:
+                telemetry.logfire.info(
+                    f"[AgentOrchestrator] Running plugins for step '{getattr(step, 'name', '<unnamed>')}'"
+                )
+                timeout_s = None
+                try:
+                    cfg = getattr(step, "config", None)
+                    if cfg is not None and getattr(cfg, "timeout_s", None) is not None:
+                        timeout_s = float(cfg.timeout_s)
+                except Exception:
+                    timeout_s = None
+                try:
+                    processed_output = await core.plugin_redirector.run(
+                        initial=processed_output,
+                        step=step,
+                        data=data,
+                        context=attempt_context,
+                        resources=attempt_resources,
+                        timeout_s=timeout_s,
+                    )
+                    telemetry.logfire.info(
+                        f"[AgentOrchestrator] Plugins completed for step '{getattr(step, 'name', '<unnamed>')}'"
+                    )
+                except Exception as e:
+                    if e.__class__.__name__ == "InfiniteRedirectError":
+                        raise
+                    try:
+                        from ...exceptions import InfiniteRedirectError as _IRE
+
+                        if isinstance(e, _IRE):
+                            raise
+                    except Exception:
+                        pass
+                    if isinstance(e, asyncio.TimeoutError):
+                        raise
+                    attempt_exc = e
+                    result.success = False
+                    result.feedback = f"Plugin execution failed: {str(e)}"
+                    last_plugin_failure_feedback = result.feedback
+                    result.output = None
+                    result.latency_s = time_perf_ns_to_seconds(time_perf_ns() - start_ns)
+                    if getattr(step, "updates_context", False) and attempt_context is not None:
+                        result.branch_context = attempt_context
+                    try:
+                        if primary_tokens_known:
+                            best_primary_tokens = max(
+                                best_primary_tokens, int(result.token_counts or 0)
+                            )
+                    except Exception:
+                        pass
+                    try:
+                        primary_latency_total += float(result.latency_s or 0.0)
+                    except Exception:
+                        pass
+                    if attempt < total_attempts:
+                        telemetry.logfire.warning(
+                            f"Step '{getattr(step, 'name', '<unnamed>')}' plugin attempt {attempt}/{total_attempts} failed: {e}"
+                        )
+                        continue
+                    fb_step = getattr(step, "fallback_step", None)
+                    if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
+                        fb_step = None
+                    if fb_step is None:
+                        if (
+                            getattr(step, "updates_context", False)
+                            and attempt_context is not None
+                        ):
+                            result.branch_context = attempt_context
+                        try:
+                            if not result.token_counts and primary_tokens_known:
+                                result.token_counts = best_primary_tokens
+                            if not result.cost_usd:
+                                result.cost_usd = best_primary_cost_usd
+                        except Exception:
+                            pass
+                        try:
+                            if (
+                                context is not None
+                                and pre_attempt_context is not None
+                                and getattr(step, "updates_context", False)
+                            ):
+                                from .context_manager import ContextManager as _CM
+
+                                _CM.merge(context, pre_attempt_context)
+                        except Exception:
+                            pass
+                        await _close_resources(e)
+                        exit_cm = None
+                        return Failure(error=e, feedback=result.feedback, step_result=result)
+                    primary_fb = result.feedback or "Plugin execution failed"
+                    try:
+                        telemetry.logfire.debug(
+                            f"[AgentOrchestrator] Invoking fallback step '{getattr(fb_step, 'name', '<unnamed>')}' after plugin failure for '{getattr(step, 'name', '<unnamed>')}' attempt={attempt}/{total_attempts}"
+                        )

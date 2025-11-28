@@ -14,6 +14,7 @@ from .background_task_manager import BackgroundTaskManager
 from .cache_manager import CacheManager
 from .hydration_manager import HydrationManager
 from .execution_dispatcher import ExecutionDispatcher
+from .policy_registry import PolicyRegistry, StepPolicy, create_default_registry
 from .step_history_tracker import StepHistoryTracker
 
 __all__ = [
@@ -27,5 +28,8 @@ __all__ = [
     "CacheManager",
     "HydrationManager",
     "ExecutionDispatcher",
+    "PolicyRegistry",
+    "StepPolicy",
+    "create_default_registry",
     "StepHistoryTracker",
 ]

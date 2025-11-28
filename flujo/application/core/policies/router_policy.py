@@ -1,6 +1,8 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
+from typing import Type
+
 from .parallel_policy import DefaultParallelStepExecutor
 from ._shared import (  # noqa: F401
     Any,
@@ -8,7 +10,6 @@ from ._shared import (  # noqa: F401
     Callable,
     ContextManager,
     Dict,
-    ExecutionFrame,
     Failure,
     List,
     Optional,
@@ -25,6 +26,9 @@ from ._shared import (  # noqa: F401
     telemetry,
     to_outcome,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
+from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
 
 # --- Dynamic Router Step Executor policy ---
 
@@ -44,7 +48,11 @@ class DynamicRouterStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultDynamicRouterStepExecutor:
+class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
+    @property
+    def handles_type(self) -> Type[DynamicParallelRouterStep]:
+        return DynamicParallelRouterStep
+
     async def execute(
         self,
         core: Any,
@@ -54,9 +62,19 @@ class DefaultDynamicRouterStepExecutor:
         resources: Optional[Any],
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        # Backward-compat: expose 'step' in signature for legacy inspection
         step: Optional[Any] = None,
     ) -> StepOutcome[StepResult]:
         """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
+        if isinstance(router_step, ExecutionFrame):
+            frame = router_step
+            router_step = frame.step
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            context_setter = getattr(frame, "context_setter", None)
+            step = step or router_step
 
         telemetry.logfire.debug("=== HANDLE DYNAMIC ROUTER STEP ===")
         telemetry.logfire.debug(f"Dynamic router step name: {router_step.name}")

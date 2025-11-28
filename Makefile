@@ -114,6 +114,11 @@ test-architecture: .uv ## Run architecture and type-safety compliance tests
 	@echo "🏛️ Running architecture compliance tests..."
 	CI=1 uv run pytest tests/architecture -vv --tb=short --durations=0 --color=yes
 
+.PHONY: test-srp
+test-srp: .uv ## Run Single Responsibility Principle compliance tests
+	@echo "📏 Running SRP compliance tests..."
+	CI=1 uv run pytest tests/architecture/test_srp_compliance.py tests/architecture/test_srp_semantic_analysis.py -vv --tb=short --color=yes
+
 .PHONY: test-fast
 test-fast: .uv ## Run fast tests in parallel with hang guards (excludes slow, veryslow, serial, and benchmark tests)
 	@echo "⚡ Running fast tests (enhanced runner)..."
@@ -424,7 +429,7 @@ endif
 ifdef SKIP_ARCHITECTURE_TESTS
 ALL_QUALITY_TARGETS := format lint typecheck $(TEST_GATE_TARGET)
 else
-ALL_QUALITY_TARGETS := format lint typecheck $(TEST_GATE_TARGET) test-architecture
+ALL_QUALITY_TARGETS := format lint typecheck $(TEST_GATE_TARGET) test-architecture test-srp
 endif
 
 .PHONY: all

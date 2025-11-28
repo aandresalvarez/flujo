@@ -2,7 +2,7 @@ from __future__ import annotations
 # mypy: ignore-errors
 
 import inspect
-from typing import cast
+from typing import cast, Type
 
 from ._shared import (  # noqa: F401
     Any,
@@ -35,6 +35,9 @@ from ._shared import (  # noqa: F401
     _load_template_config,
     _normalize_plugin_feedback,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
+from ....domain.dsl.step import Step
 
 
 # --- Agent Step Executor policy ---
@@ -54,7 +57,11 @@ class AgentStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultAgentStepExecutor:
+class DefaultAgentStepExecutor(StepPolicy[Step[Any, Any]]):
+    @property
+    def handles_type(self) -> Type[Step[Any, Any]]:
+        return Step
+
     async def execute(
         self,
         core: Any,
@@ -68,6 +75,23 @@ class DefaultAgentStepExecutor:
         cache_key: Optional[str],
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]:
+        if isinstance(step, ExecutionFrame):
+            frame = step
+            step = frame.step
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            stream = frame.stream
+            on_chunk = frame.on_chunk
+            cache_key = cache_key or (
+                core._cache_key(frame) if getattr(core, "_enable_cache", False) else None
+            )
+            try:
+                _fallback_depth = int(getattr(frame, "_fallback_depth", _fallback_depth) or 0)
+            except Exception:
+                _fallback_depth = _fallback_depth
+
         # Pre-execution AROS instrumentation expected by some unit/integration tests.
         # Emit grammar.applied and run optional reasoning precheck validator.
         try:

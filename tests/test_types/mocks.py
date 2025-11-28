@@ -15,7 +15,7 @@ Usage:
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 from flujo.application.core.executor_core import ExecutorCore
-from flujo.domain.models import StepResult
+from flujo.domain.models import StepResult, UsageLimits
 
 
 def create_mock_executor_core(
@@ -55,6 +55,23 @@ def create_mock_executor_core(
     else:
         mock_cache_backend.get = AsyncMock(return_value=None)
 
+    class _FastAgentStepExecutor:
+        async def execute(
+            self,
+            core: Any,
+            step: Any,
+            data: Any,
+            context: Any,
+            resources: Any,
+            limits: UsageLimits | None,
+            stream: bool,
+            on_chunk: Any,
+            cache_key: Any,
+            _fallback_depth: int = 0,
+        ) -> StepResult:
+            output = await step.agent.run(data, context=context, resources=resources)
+            return StepResult(name=getattr(step, "name", "step"), output=output, success=True)
+
     return ExecutorCore(
         agent_runner=mock_agent_runner,
         processor_pipeline=mock_processor,
@@ -63,6 +80,8 @@ def create_mock_executor_core(
         usage_meter=AsyncMock(),
         cache_backend=mock_cache_backend,
         telemetry=Mock(),
+        agent_step_executor=_FastAgentStepExecutor(),
+        concurrency_limit=overrides.pop("concurrency_limit", 256),
         **overrides,
     )
 

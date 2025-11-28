@@ -1,6 +1,8 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
+from typing import Type
+
 from ._shared import (  # noqa: F401
     Any,
     Awaitable,
@@ -35,6 +37,8 @@ from ._shared import (  # noqa: F401
     time,
     to_outcome,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
 
 
 # --- Parallel Step Executor policy ---
@@ -53,7 +57,11 @@ class ParallelStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultParallelStepExecutor:
+class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
+    @property
+    def handles_type(self) -> Type[ParallelStep]:
+        return ParallelStep
+
     async def execute(
         self,
         core: Any,
@@ -66,6 +74,15 @@ class DefaultParallelStepExecutor:
         parallel_step: Optional[ParallelStep[Any]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
     ) -> StepOutcome[StepResult]:
+        if isinstance(step, ExecutionFrame):
+            frame = step
+            step = frame.step
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            context_setter = getattr(frame, "context_setter", None)
+
         # Actual parallel-step execution logic extracted from legacy `_handle_parallel_step`
         if parallel_step is not None:
             step = parallel_step

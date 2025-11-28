@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Type
+
 from ._shared import (  # noqa: F401
     Any,
     Callable,
@@ -20,6 +22,9 @@ from ._shared import (  # noqa: F401
     time,
     to_outcome,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
+from flujo.domain.dsl.conditional import ConditionalStep
 
 
 class ConditionalStepExecutor(Protocol):
@@ -36,7 +41,11 @@ class ConditionalStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultConditionalStepExecutor:
+class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
+    @property
+    def handles_type(self) -> Type[ConditionalStep[Any]]:
+        return ConditionalStep
+
     async def execute(
         self,
         core: Any,
@@ -49,6 +58,18 @@ class DefaultConditionalStepExecutor:
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]:
         """Handle ConditionalStep execution with proper context isolation and merging."""
+        if isinstance(conditional_step, ExecutionFrame):
+            frame = conditional_step
+            conditional_step = frame.step
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            context_setter = frame.context_setter
+            try:
+                _fallback_depth = int(getattr(frame, "_fallback_depth", _fallback_depth) or 0)
+            except Exception:
+                _fallback_depth = _fallback_depth
 
         telemetry.logfire.debug("=== HANDLE CONDITIONAL STEP ===")
         telemetry.logfire.debug(
@@ -161,6 +182,17 @@ class DefaultConditionalStepExecutor:
                 elif conditional_step.default_branch_pipeline is not None:
                     branch_to_execute = conditional_step.default_branch_pipeline
                 else:
+                    # Attempt stringified key lookup for bool/int keys common in YAML
+                    try:
+                        key_str = str(branch_key).lower()
+                        for k, v in (conditional_step.branches or {}).items():
+                            if str(k).lower() == key_str:
+                                branch_to_execute = v
+                                resolved_key = k
+                                break
+                    except Exception:
+                        pass
+                if branch_to_execute is None:
                     telemetry.logfire.warn(
                         f"No branch found for key '{branch_key}' and no default branch provided"
                     )
@@ -176,11 +208,55 @@ class DefaultConditionalStepExecutor:
                 if resolved_key is not None and resolved_key is not branch_key:
                     result.metadata_["resolved_branch_key"] = resolved_key
                 telemetry.logfire.info(f"Executing branch for key '{branch_key}'")
+                branch_data = data
+                # Detect HITL branches: pause only when no human input is available yet
+                try:
+                    from flujo.domain.dsl.step import HumanInTheLoopStep as _HITLStep
+
+                    branch_steps = (
+                        branch_to_execute.steps
+                        if isinstance(branch_to_execute, Pipeline)
+                        else [branch_to_execute]
+                    )
+                    has_hitl = any(isinstance(_s, _HITLStep) for _s in branch_steps)
+                    if has_hitl:
+                        sp = getattr(context, "scratchpad", {}) if context is not None else {}
+                        has_input = False
+                        if isinstance(sp, dict):
+                            has_input = (
+                                sp.get("user_input") is not None or sp.get("hitl_data") is not None
+                            )
+                        if not has_input:
+                            msg = None
+                            for _s in branch_steps:
+                                if isinstance(_s, _HITLStep):
+                                    msg = getattr(_s, "message", None) or getattr(
+                                        _s, "message_for_user", None
+                                    )
+                                    break
+                            if context is not None and isinstance(sp, dict):
+                                sp["status"] = "paused"
+                                if data is not None:
+                                    sp["hitl_data"] = data
+                                if msg:
+                                    sp["hitl_message"] = msg
+                                setattr(context, "scratchpad", sp)
+                            raise PausedException(msg or "Awaiting human input")
+                        else:
+                            # If we have user_input from resume, feed it into branch_data for HITL step
+                            try:
+                                branch_data = sp.get("user_input", branch_data)
+                            except Exception:
+                                pass
+                except PausedException:
+                    raise
+                except Exception:
+                    pass
+
                 # Execute selected branch
                 if branch_to_execute:
-                    branch_data = data
                     if conditional_step.branch_input_mapper:
-                        branch_data = conditional_step.branch_input_mapper(data, context)
+                        branch_data = conditional_step.branch_input_mapper(branch_data, context)
                     # Use ContextManager for proper deep isolation
                     branch_context = (
                         ContextManager.isolate(context) if context is not None else None
@@ -378,12 +454,31 @@ class DefaultConditionalStepExecutor:
                     result.latency_s = total_latency
                     result.token_counts = total_tokens
                     result.cost_usd = total_cost
-                    # Update branch context using ContextManager
-                    result.branch_context = (
+                    # Update branch context using ContextManager and propagate into parent
+                    merged_ctx = (
                         ContextManager.merge(context, branch_context)
                         if context is not None
                         else branch_context
                     )
+                    result.branch_context = merged_ctx
+                    if merged_ctx is not None and context is not None and merged_ctx is not context:
+                        try:
+                            # Ensure parent context reflects merged scratchpad (including HITL user_input)
+                            ContextManager.merge(context, merged_ctx)
+                        except Exception:
+                            pass
+                    # Ensure HITL user input set on parent context when available in branch
+                    try:
+                        bc_sp = getattr(branch_context, "scratchpad", None)
+                        ctx_sp = getattr(context, "scratchpad", None)
+                        if (
+                            isinstance(bc_sp, dict)
+                            and "user_input" in bc_sp
+                            and isinstance(ctx_sp, dict)
+                        ):
+                            ctx_sp.setdefault("user_input", bc_sp.get("user_input"))
+                    except Exception:
+                        pass
                     # Invoke context setter on success when provided
                     if context_setter is not None:
                         try:

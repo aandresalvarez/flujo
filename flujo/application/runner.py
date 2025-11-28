@@ -876,7 +876,28 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 raise OrchestratorError("Pipeline is not paused")
             self._ensure_pipeline()
             assert self.pipeline is not None
+            try:
+                pause_msg = scratch.get("pause_message")
+                hist = getattr(ctx, "conversation_history", None)
+                if isinstance(hist, list) and pause_msg:
+                    last_content = hist[-1].content if hist else None
+                    if last_content != pause_msg:
+                        from flujo.domain.models import ConversationTurn, ConversationRole
+
+                        hist.append(
+                            ConversationTurn(
+                                role=ConversationRole.assistant, content=str(pause_msg)
+                            )
+                        )
+                        setattr(ctx, "conversation_history", hist)
+            except Exception:
+                pass
             start_idx = len(paused_result.step_history)
+            if scratch.get("status") == "paused":
+                # Resume from the next pipeline step after the last recorded step.
+                start_idx = min(len(self.pipeline.steps) - 1, len(paused_result.step_history))
+                scratch["hitl_data"] = human_input
+                scratch["user_input"] = human_input
             if start_idx >= len(self.pipeline.steps):
                 raise OrchestratorError("No steps remaining to resume")
             paused_step = self.pipeline.steps[start_idx]

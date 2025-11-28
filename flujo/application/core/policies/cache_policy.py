@@ -1,11 +1,12 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
+from typing import Type
+
 from ._shared import (  # noqa: F401
     Any,
     Awaitable,
     Callable,
-    ExecutionFrame,
     Failure,
     Paused,
     Optional,
@@ -23,6 +24,8 @@ from ._shared import (  # noqa: F401
     telemetry,
     to_outcome,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
 
 # --- Cache Step Executor policy ---
 
@@ -41,7 +44,11 @@ class CacheStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultCacheStepExecutor:
+class DefaultCacheStepExecutor(StepPolicy[CacheStep]):
+    @property
+    def handles_type(self) -> Type[CacheStep]:
+        return CacheStep
+
     async def execute(
         self,
         core: Any,
@@ -56,6 +63,15 @@ class DefaultCacheStepExecutor:
         step: Optional[Any] = None,
     ) -> StepOutcome[StepResult]:
         """Handle CacheStep execution with concurrency control and resilience."""
+        if isinstance(cache_step, ExecutionFrame):
+            frame = cache_step
+            cache_step = frame.step  # type: ignore[assignment]
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            context_setter = getattr(frame, "context_setter", None)
+
         try:
             cache_key = _generate_cache_key(cache_step.wrapped_step, data, context, resources)
         except Exception as e:

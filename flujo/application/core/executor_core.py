@@ -107,7 +107,7 @@ from .step_policies import (
     TimeoutRunner,
     ValidatorInvoker,
 )
-from .policy_primitives import PolicyRegistry
+from .policy_registry import PolicyRegistry, create_default_registry
 from .types import TContext_w_Scratch, ExecutionFrame
 from .context_update_manager import ContextUpdateManager
 from .estimation import (
@@ -205,6 +205,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         cache_step_executor: Optional[CacheStepExecutor] = None,
         usage_estimator: Optional[UsageEstimator] = None,
         estimator_factory: Optional[UsageEstimatorFactory] = None,
+        policy_registry: Optional[PolicyRegistry] = None,
         # Strict behavior toggles (robust defaults with optional enforcement)
         strict_context_isolation: bool = False,
         strict_context_merge: bool = False,
@@ -326,7 +327,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._import_orchestrator = ImportOrchestrator(self.import_step_executor)
 
         # FSD-010: Initialize and populate the policy registry used for dispatch
-        self.policy_registry = PolicyRegistry()
+        self.policy_registry = policy_registry or create_default_registry(self)
 
         # Policy handlers (delegated for composition-root slimming)
         self._policy_handlers = PolicyHandlers(self)
@@ -343,7 +344,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._policy_handlers.register_all(self.policy_registry)
 
         # Dispatcher delegates to the shared policy registry
-        self._dispatcher = ExecutionDispatcher(self.policy_registry)
+        self._dispatcher = ExecutionDispatcher(self.policy_registry, core=self)
         self._dispatch_handler = DispatchHandler(self)
         self._result_handler = ResultHandler(self)
         self._telemetry_handler = TelemetryHandler(self)
@@ -505,7 +506,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         """Wait for all background tasks to complete with a timeout."""
         await self._background_task_manager.wait_for_completion(timeout)
 
-    execute = execute_entrypoint
+    async def execute(
+        self,
+        frame_or_step: ExecutionFrame[Any] | Any | None = None,
+        data: Any | None = None,
+        **kwargs: Any,
+    ) -> StepOutcome[StepResult] | StepResult:
+        """Public entrypoint that delegates to the shared execution flow."""
+        return await execute_entrypoint(self, frame_or_step, data, **kwargs)
 
     def _log_execution_error(self, step_name: str, exc: Exception) -> None:
         log_execution_error(self, step_name, exc)

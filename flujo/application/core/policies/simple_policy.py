@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Optional, Protocol, cast
+from typing import Any, Awaitable, Callable, Optional, Protocol, cast, Type
 
 from flujo.domain.models import Paused, StepOutcome, StepResult, UsageLimits
 from flujo.exceptions import PausedException
 from flujo.infra import telemetry
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
+from ....domain.dsl.step import Step
 
 # Backward compatibility: alias kept for consumers/tests expecting this symbol
 SimpleStepExecutorOutcomes = StepOutcome[StepResult]
@@ -26,7 +29,11 @@ class SimpleStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultSimpleStepExecutor:
+class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
+    @property
+    def handles_type(self) -> Type[Step[Any, Any]]:
+        return Step
+
     async def execute(
         self,
         core: Any,
@@ -40,6 +47,24 @@ class DefaultSimpleStepExecutor:
         cache_key: Optional[str],
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]:
+        # Allow ExecutionDispatcher to pass an ExecutionFrame directly
+        if isinstance(step, ExecutionFrame):
+            frame = step
+            step = frame.step
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            stream = frame.stream
+            on_chunk = frame.on_chunk
+            cache_key = cache_key or (
+                core._cache_key(frame) if getattr(core, "_enable_cache", False) else None
+            )
+            try:
+                _fallback_depth = int(getattr(frame, "_fallback_depth", _fallback_depth) or 0)
+            except Exception:
+                _fallback_depth = _fallback_depth
+
         telemetry.logfire.debug(
             f"[Policy] SimpleStep: delegating to core orchestration for '{getattr(step, 'name', '<unnamed>')}'"
         )

@@ -554,6 +554,33 @@ class TestQualityGates:
                 + "\n\nAll quality gates must pass before PR merge."
             )
 
+    def test_srp_compliance_basic_metrics(self, flujo_root: Path):
+        """Verify basic SRP compliance through size and complexity metrics."""
+        # Import SRP test classes
+        try:
+            from test_srp_compliance import TestSRPCompliance
+            from test_srp_semantic_analysis import TestSRPSemanticCompliance
+        except ImportError:
+            # Fallback for when running as part of architecture tests
+            import sys
+            import os
+
+            sys.path.insert(0, os.path.dirname(__file__))
+            from test_srp_compliance import TestSRPCompliance
+            from test_srp_semantic_analysis import TestSRPSemanticCompliance
+
+        # Run SRP tests as part of architecture compliance
+        srp_tester = TestSRPCompliance()
+        semantic_tester = TestSRPSemanticCompliance()
+
+        try:
+            srp_tester.test_classes_follow_srp_method_count_limits(flujo_root)
+            srp_tester.test_no_god_classes_by_method_count(flujo_root)
+            semantic_tester.test_classes_have_focused_responsibilities(flujo_root)
+            print("✓ SRP compliance checks passed")
+        except Exception as e:
+            pytest.fail(f"SRP compliance failed: {e}")
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

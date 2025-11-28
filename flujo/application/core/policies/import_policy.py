@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Type, cast
+
 from ._shared import (
     Any,
     Callable,
@@ -22,6 +24,8 @@ from ._shared import (
     UsageLimitExceededError,
     telemetry,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
 
 # --- Import Step Executor policy ---
 
@@ -39,7 +43,11 @@ class ImportStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultImportStepExecutor:
+class DefaultImportStepExecutor(StepPolicy[ImportStep]):
+    @property
+    def handles_type(self) -> Type[ImportStep]:
+        return ImportStep
+
     async def execute(
         self,
         core: Any,
@@ -50,6 +58,14 @@ class DefaultImportStepExecutor:
         limits: Optional[UsageLimits],
         context_setter: Callable[[PipelineResult[Any], Optional[Any]], None],
     ) -> StepOutcome[StepResult]:
+        if isinstance(step, ExecutionFrame):
+            frame = step
+            step = cast(ImportStep, frame.step)
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            context_setter = frame.context_setter
         from ..context_manager import ContextManager
         import json
         import copy
@@ -235,6 +251,27 @@ class DefaultImportStepExecutor:
                                 context = merged_ctx
                         except Exception:
                             pass
+                # Ensure parent scratchpad reflects child pause markers
+                try:
+                    if (
+                        context is not None
+                        and hasattr(context, "scratchpad")
+                        and isinstance(context.scratchpad, dict)
+                        and sub_context is not None
+                        and hasattr(sub_context, "scratchpad")
+                        and isinstance(sub_context.scratchpad, dict)
+                    ):
+                        for key in (
+                            "status",
+                            "pause_message",
+                            "hitl_message",
+                            "hitl_data",
+                            "paused_step_input",
+                        ):
+                            if key in sub_context.scratchpad:
+                                context.scratchpad[key] = sub_context.scratchpad[key]
+                except Exception:
+                    pass
                 # Default to propagating unless explicitly disabled on the step
                 try:
                     propagate = bool(getattr(step, "propagate_hitl", True))
@@ -252,8 +289,25 @@ class DefaultImportStepExecutor:
                                 sp["pause_message"] = (
                                     msg if isinstance(msg, str) else getattr(e, "message", "")
                                 )
+                                sp.setdefault("hitl_message", sp.get("pause_message"))
                         except Exception:
                             pass
+                    # Also preserve assistant turn so resume later has both roles
+                    try:
+                        if context is not None:
+                            from flujo.domain.models import ConversationTurn, ConversationRole
+
+                            hist = getattr(context, "conversation_history", None)
+                            if not isinstance(hist, list):
+                                hist = []
+                            msg = getattr(e, "message", None) or ""
+                            if msg and (not hist or getattr(hist[-1], "content", None) != msg):
+                                hist.append(
+                                    ConversationTurn(role=ConversationRole.assistant, content=msg)
+                                )
+                            setattr(context, "conversation_history", hist)
+                    except Exception:
+                        pass
                 else:
                     # Ensure status remains running when not propagating
                     if context is not None and hasattr(context, "scratchpad"):
