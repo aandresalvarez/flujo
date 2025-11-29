@@ -1,0 +1,459 @@
+from __future__ import annotations
+
+import asyncio
+import copy
+import inspect
+from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, Optional, Type, TypeVar, Generic, cast
+
+from pydantic import TypeAdapter, ValidationError
+
+from ..exceptions import (
+    ContextInheritanceError,
+    PipelineAbortSignal,
+    PipelineContextInitializationError,
+)
+from ..domain.commands import AgentCommand
+from ..domain.dsl.step import Step
+from ..domain.models import (
+    BaseModel,
+    Chunk,
+    Failure,
+    Paused,
+    PipelineContext,
+    PipelineResult,
+    StepOutcome,
+    StepResult,
+    Success,
+)
+from ..domain.resources import AppResources
+from .core.context_manager import _extract_missing_fields
+from .runner_execution import resume_async_inner
+from .run_session import RunSession
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .runner import Flujo
+    from ..domain.backends import ExecutionBackend
+
+_agent_command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
+
+RunnerInT = TypeVar("RunnerInT")
+RunnerOutT = TypeVar("RunnerOutT")
+ContextT = TypeVar("ContextT", bound=PipelineContext)
+
+
+class _RunAsyncHandle(Generic[ContextT]):
+    """Async iterable that is also awaitable (returns final PipelineResult)."""
+
+    def __init__(self, factory: Any) -> None:
+        self._factory = factory
+
+    def __aiter__(self) -> AsyncIterator[PipelineResult[ContextT]]:
+        return cast(AsyncIterator[PipelineResult[ContextT]], self._factory())
+
+    def __await__(self) -> Any:
+        async def _consume() -> PipelineResult[ContextT]:
+            agen = self._factory()
+            last_pr: PipelineResult[ContextT] | None = None
+            try:
+                async for item in agen:
+                    if isinstance(item, PipelineResult):
+                        last_pr = item
+                    elif isinstance(item, StepResult):
+                        pr = PipelineResult[ContextT](step_history=[item])
+                        last_pr = pr
+                if last_pr is None:
+                    return PipelineResult()
+                return last_pr
+            finally:
+                try:
+                    await agen.aclose()
+                except Exception:
+                    pass
+
+        return _consume().__await__()
+
+
+async def run_outcomes_async(
+    self: Flujo[RunnerInT, RunnerOutT, ContextT],
+    initial_input: RunnerInT,
+    *,
+    run_id: str | None = None,
+    initial_context_data: Optional[Dict[str, Any]] = None,
+) -> AsyncIterator[StepOutcome[StepResult]]:
+    """Run the pipeline and yield typed StepOutcome events."""
+    pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
+    last_step_result: StepResult | None = None
+    try:
+        async for item in self.run_async(
+            initial_input, run_id=run_id, initial_context_data=initial_context_data
+        ):
+            if isinstance(item, StepOutcome):
+                if isinstance(item, Success):
+                    last_step_result = item.step_result
+                yield item
+            elif isinstance(item, StepResult):
+                last_step_result = item
+                if item.success:
+                    yield Success(step_result=item)
+                else:
+                    yield Failure(
+                        error=Exception(item.feedback or "step failed"),
+                        feedback=item.feedback,
+                        step_result=item,
+                    )
+            elif isinstance(item, PipelineResult):
+                if (
+                    getattr(item, "step_history", None)
+                    and getattr(item.step_history[-1], "branch_context", None) is not None
+                ):
+                    try:
+                        item.final_pipeline_context = item.step_history[-1].branch_context
+                    except Exception:
+                        pass
+                pipeline_result_obj = item
+            else:
+                yield Chunk(data=item)
+    except PipelineAbortSignal:
+        try:
+            ctx = pipeline_result_obj.final_pipeline_context
+            msg = None
+            if isinstance(ctx, PipelineContext):
+                msg = ctx.scratchpad.get("pause_message")
+        except Exception:
+            msg = None
+        yield Paused(message=msg or "Paused for HITL")
+        return
+
+    try:
+        if isinstance(pipeline_result_obj, PipelineResult):
+            ctx = pipeline_result_obj.final_pipeline_context
+            if isinstance(ctx, PipelineContext):
+                status = ctx.scratchpad.get("status") if hasattr(ctx, "scratchpad") else None
+                if status == "paused":
+                    msg = ctx.scratchpad.get("pause_message")
+                    yield Paused(message=msg or "Paused for HITL")
+                    return
+    except Exception:
+        pass
+
+    if pipeline_result_obj.step_history:
+        last = pipeline_result_obj.step_history[-1]
+        if last.success:
+            yield Success(step_result=last)
+        else:
+            yield Failure(
+                error=Exception(last.feedback or "step failed"),
+                feedback=last.feedback,
+                step_result=last,
+            )
+    elif last_step_result is not None:
+        if last_step_result.success:
+            yield Success(step_result=last_step_result)
+        else:
+            yield Failure(
+                error=Exception(last_step_result.feedback or "step failed"),
+                feedback=last_step_result.feedback,
+                step_result=last_step_result,
+            )
+    else:
+        try:
+            ctx = pipeline_result_obj.final_pipeline_context
+            if isinstance(ctx, PipelineContext):
+                status = ctx.scratchpad.get("status") if hasattr(ctx, "scratchpad") else None
+                if status == "paused":
+                    msg = ctx.scratchpad.get("pause_message")
+                    yield Paused(message=msg or "Paused for HITL")
+                    return
+        except Exception:
+            pass
+        yield Success(step_result=StepResult(name="<no-steps>", success=True))
+
+
+async def stream_async(
+    self: Flujo[RunnerInT, RunnerOutT, ContextT],
+    initial_input: RunnerInT,
+    *,
+    initial_context_data: Optional[Dict[str, Any]] = None,
+) -> AsyncIterator[Any]:
+    pipeline = self._ensure_pipeline()
+    last_step = pipeline.steps[-1]
+    has_stream = hasattr(last_step.agent, "stream")
+    if not has_stream:
+        final_result: PipelineResult[ContextT] | None = None
+        async for item in self.run_async(initial_input, initial_context_data=initial_context_data):
+            final_result = item
+        if final_result is not None:
+            yield final_result
+    else:
+        seen_chunks: set[str] = set()
+        async for item in self.run_async(initial_input, initial_context_data=initial_context_data):
+            from ..domain.models import Chunk as _Chunk
+            from ..domain.models import StepOutcome as _StepOutcome
+
+            if isinstance(item, _Chunk):
+                try:
+                    k = str(item.data)
+                    if k in seen_chunks:
+                        continue
+                    seen_chunks.add(k)
+                except Exception:
+                    pass
+                yield item.data
+            elif isinstance(item, _StepOutcome):
+                continue
+            else:
+                yield item
+
+
+def run_sync(
+    self: Flujo[RunnerInT, RunnerOutT, ContextT],
+    initial_input: RunnerInT,
+    *,
+    run_id: str | None = None,
+    initial_context_data: Optional[Dict[str, Any]] = None,
+) -> PipelineResult[ContextT]:
+    try:
+        asyncio.get_running_loop()
+        raise TypeError(
+            "Flujo.run() cannot be called from a running event loop. "
+            "If you are in an async environment (like Jupyter, FastAPI, or an "
+            "`async def` function), you must use the `run_async()` method."
+        )
+    except RuntimeError:
+        pass
+
+    async def _consume() -> PipelineResult[ContextT]:
+        result: PipelineResult[ContextT] | None = None
+        async for r in self.run_async(
+            initial_input,
+            run_id=run_id,
+            initial_context_data=initial_context_data,
+        ):
+            result = r
+        if result is not None and self._tracing_manager is not None:
+            if getattr(self._tracing_manager, "root_span", None) is not None:
+                result.trace_tree = self._tracing_manager.root_span
+        assert result is not None
+        try:
+            if (
+                getattr(result, "step_history", None)
+                and getattr(result.step_history[-1], "success", False)
+                and getattr(result.step_history[-1], "branch_context", None) is not None
+            ):
+                result.final_pipeline_context = result.step_history[-1].branch_context
+        except Exception:
+            pass
+        try:
+            res = getattr(self, "resources", None)
+            if res is not None:
+                res_cm: Any | None = None
+                if hasattr(res, "__aexit__"):
+                    res_cm = res.__aexit__(None, None, None)
+                elif hasattr(res, "__exit__"):
+                    res_cm = res.__exit__(None, None, None)
+                if inspect.isawaitable(res_cm):
+                    await res_cm
+        except Exception:
+            pass
+        return result
+
+    return asyncio.run(_consume())
+
+
+def as_step(
+    self: Flujo[RunnerInT, RunnerOutT, ContextT],
+    name: str,
+    *,
+    inherit_context: bool = True,
+    **kwargs: Any,
+) -> Step[RunnerInT, PipelineResult[ContextT]]:
+    async def _runner(
+        initial_input: Any,
+        *,
+        context: BaseModel | None = None,
+        resources: AppResources | None = None,
+    ) -> PipelineResult[ContextT]:
+        initial_sub_context_data: Dict[str, Any] = {}
+        if inherit_context and context is not None:
+            initial_sub_context_data = copy.deepcopy(context.model_dump())
+            initial_sub_context_data.pop("run_id", None)
+            initial_sub_context_data.pop("pipeline_name", None)
+            initial_sub_context_data.pop("pipeline_version", None)
+        else:
+            initial_sub_context_data = copy.deepcopy(self.initial_context_data)
+
+        if "initial_prompt" not in initial_sub_context_data:
+            initial_sub_context_data["initial_prompt"] = str(initial_input)
+
+        try:
+            runner_cls: Type[Flujo[Any, Any, Any]] = type(self)
+            self._ensure_pipeline()
+
+            if self.context_model is not None and inherit_context and context is not None:
+                try:
+                    test_data = copy.deepcopy(initial_sub_context_data)
+                    test_data.pop("run_id", None)
+                    test_data.pop("pipeline_name", None)
+                    test_data.pop("pipeline_version", None)
+                    self.context_model(**test_data)
+                except ValidationError as e:
+                    missing_fields = _extract_missing_fields(e)
+                    context_inheritance_error = ContextInheritanceError(
+                        missing_fields=missing_fields,
+                        parent_context_keys=(list(context.model_dump().keys()) if context else []),
+                        child_model_name=(
+                            self.context_model.__name__ if self.context_model else "Unknown"
+                        ),
+                    )
+                    raise context_inheritance_error
+
+            sub_runner = runner_cls(
+                self.pipeline,
+                context_model=self.context_model,
+                initial_context_data=initial_sub_context_data,
+                resources=resources or self.resources,
+                usage_limits=self.usage_limits,
+                hooks=self.hooks,
+                backend=self.backend,
+                state_backend=self.state_backend,
+                delete_on_completion=self.delete_on_completion,
+                registry=self.registry,
+                pipeline_name=self.pipeline_name,
+                pipeline_version=self.pipeline_version,
+            )
+
+            async for result in sub_runner.run_async(
+                initial_input,
+                initial_context_data=initial_sub_context_data,
+            ):
+                pass
+            try:
+                if (
+                    inherit_context
+                    and context is not None
+                    and hasattr(result, "final_pipeline_context")
+                ):
+                    sub_ctx = getattr(result, "final_pipeline_context", None)
+                    if sub_ctx is not None:
+                        cm = type(context)
+                        for fname in getattr(cm, "model_fields", {}):
+                            if not hasattr(sub_ctx, fname):
+                                continue
+                            new_val = getattr(sub_ctx, fname)
+                            if new_val is None:
+                                continue
+                            cur_val = getattr(context, fname, None)
+                            if isinstance(cur_val, dict) and isinstance(new_val, dict):
+                                try:
+                                    cur_val.update(new_val)
+                                except Exception:
+                                    setattr(context, fname, new_val)
+                            elif isinstance(cur_val, list) and isinstance(new_val, list):
+                                setattr(context, fname, new_val)
+                            else:
+                                setattr(context, fname, new_val)
+            except Exception:
+                pass
+            return result
+        except PipelineContextInitializationError as e:
+            cause = getattr(e, "__cause__", None)
+            if isinstance(cause, ValidationError):
+                try:
+                    type_errors = [err for err in cause.errors() if err.get("type") == "type_error"]
+                    if type_errors:
+                        field = type_errors[0].get("loc", ("unknown",))[0]
+                        expected = type_errors[0].get("ctx", {}).get("expected_type", "unknown")
+                        from ..exceptions import ConfigurationError as _CfgErr
+
+                        raise _CfgErr(
+                            f"Context inheritance failed: type mismatch for field '{field}'. "
+                            f"Expected a type compatible with '{expected}'."
+                        ) from e
+                except Exception:
+                    pass
+            missing_fields = _extract_missing_fields(cause)
+            context_inheritance_error = ContextInheritanceError(
+                missing_fields=missing_fields,
+                parent_context_keys=(list(context.model_dump().keys()) if context else []),
+                child_model_name=(self.context_model.__name__ if self.context_model else "Unknown"),
+            )
+            raise context_inheritance_error
+
+    return Step.from_callable(_runner, name=name, updates_context=inherit_context, **kwargs)
+
+
+def create_default_backend(self: Flujo[Any, Any, Any]) -> "ExecutionBackend":
+    """Create a default LocalBackend with properly wired ExecutorCore."""
+    executor = self._executor_factory.create_executor()
+    return self._backend_factory.create_execution_backend(executor=executor)
+
+
+def close_runner(self: Flujo[Any, Any, Any]) -> None:
+    """Synchronously release runner-owned resources (best-effort in async contexts)."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(self.aclose())
+        return
+
+    task = loop.create_task(self.aclose())
+    self._pending_close_tasks.append(task)
+
+    def _on_done(t: asyncio.Task[Any]) -> None:
+        try:
+            self._pending_close_tasks.remove(t)
+        except ValueError:
+            pass
+        try:
+            exc = t.exception()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            return
+        if exc is not None:
+            try:
+                from ..infra import telemetry as _telemetry
+
+                _telemetry.logfire.warning(f"Runner close task raised: {exc}")
+            except Exception:
+                pass
+
+    task.add_done_callback(_on_done)
+
+
+def make_session(
+    self: Flujo[RunnerInT, RunnerOutT, ContextT],
+) -> RunSession[RunnerInT, RunnerOutT, ContextT]:
+    """Factory for a per-run session composed from the resolver and backends."""
+    return RunSession(
+        pipeline=self.pipeline,
+        pipeline_name=self.pipeline_name,
+        pipeline_version=self.pipeline_version,
+        pipeline_id=self.pipeline_id,
+        context_model=self.context_model,
+        initial_context_data=self.initial_context_data,
+        resources=self.resources,
+        usage_limits=self.usage_limits,
+        hooks=self.hooks,
+        backend=self.backend,
+        state_backend=self.state_backend,
+        delete_on_completion=self.delete_on_completion,
+        trace_manager=self._trace_manager,
+        ensure_pipeline=self._ensure_pipeline,
+        refresh_pipeline_meta=self._get_pipeline_meta,
+        dispatch_hook=self._dispatch_hook,
+        shutdown_state_backend=self._shutdown_state_backend,
+        set_pipeline_meta=self._set_pipeline_meta,
+        reset_pipeline_cache=lambda: setattr(self._plan_resolver, "pipeline", None),
+    )
+
+
+async def resume_async(
+    self: Flujo[RunnerInT, RunnerOutT, ContextT],
+    paused_result: PipelineResult[ContextT],
+    human_input: Any,
+) -> PipelineResult[ContextT]:
+    try:
+        return await resume_async_inner(self, paused_result, human_input, _agent_command_adapter)
+    finally:
+        await self._shutdown_state_backend()
