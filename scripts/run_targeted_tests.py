@@ -166,7 +166,44 @@ def _safe_decode(buf: bytes | str | None) -> str:
     return buf
 
 
-def _env_with_options(disable_autoload: bool) -> dict:
+def _detect_problematic_pytest_addopts() -> Optional[str]:
+    """
+    Detect if PYTEST_ADDOPTS contains filters that could interfere with test discovery.
+
+    Returns the problematic value if found, None otherwise.
+    Filters that interfere include:
+    - File paths (e.g., "tests/integration/test_background_execution.py")
+    - -k expressions (e.g., "-k background_execution")
+    - -m markers that conflict with discovery markers
+    """
+    addopts = os.environ.get("PYTEST_ADDOPTS", "").strip()
+    if not addopts:
+        return None
+
+    # Check for file paths (common pattern: ends with .py or contains tests/)
+    if ".py" in addopts or "tests/" in addopts:
+        return addopts
+
+    # Check for -k filter expressions
+    if "-k" in addopts:
+        return addopts
+
+    # Check for -m marker filters (less common but possible)
+    # Note: We allow -m if it's just for plugin configuration
+    if "-m" in addopts and ("slow" in addopts or "veryslow" in addopts or "benchmark" in addopts):
+        return addopts
+
+    return None
+
+
+def _env_with_options(disable_autoload: bool, sanitize_pytest_addopts: bool = False) -> dict:
+    """
+    Create environment dict with test runner options.
+
+    Args:
+        disable_autoload: Whether to disable pytest plugin autoloading
+        sanitize_pytest_addopts: If True, remove PYTEST_ADDOPTS to prevent discovery interference
+    """
     env = dict(os.environ)
     if disable_autoload:
         env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
@@ -182,6 +219,14 @@ def _env_with_options(disable_autoload: bool) -> dict:
             env["PYTHONPATH"] = repo_root + (os.pathsep + existing if existing else "")
     except Exception:
         pass
+
+    # Sanitize PYTEST_ADDOPTS if requested (for discovery operations)
+    if sanitize_pytest_addopts:
+        problematic = _detect_problematic_pytest_addopts()
+        if problematic:
+            # Remove PYTEST_ADDOPTS to prevent interference
+            env.pop("PYTEST_ADDOPTS", None)
+
     return env
 
 
@@ -358,8 +403,27 @@ def discover_tests(
     pytest_args: Sequence[str],
     disable_autoload: bool,
     collect_timeout: int = 180,
+    sanitize_pytest_addopts: bool = False,
 ) -> List[str]:
-    """Return all collected nodeids honoring -m and -k filters."""
+    """
+    Return all collected nodeids honoring -m and -k filters.
+
+    Args:
+        markers: Marker expression to filter tests
+        kexpr: Keyword expression to filter tests
+        pytest_args: Additional pytest arguments
+        disable_autoload: Whether to disable plugin autoloading
+        collect_timeout: Timeout for test collection
+        sanitize_pytest_addopts: If True, remove PYTEST_ADDOPTS to prevent interference
+    """
+    # Check for problematic PYTEST_ADDOPTS and warn if found
+    problematic_addopts = _detect_problematic_pytest_addopts()
+    if problematic_addopts and sanitize_pytest_addopts:
+        print(
+            f"⚠️  Warning: PYTEST_ADDOPTS='{problematic_addopts}' detected. "
+            "This may interfere with test discovery. Clearing it for discovery operations."
+        )
+
     cmd = [sys.executable, "-m", "pytest", "--collect-only", "-q"]
     if disable_autoload:
         # Ensure required plugins are available during collection and relax required_plugins
@@ -376,7 +440,7 @@ def discover_tests(
     if pytest_args:
         cmd += list(pytest_args)
 
-    env = _env_with_options(disable_autoload)
+    env = _env_with_options(disable_autoload, sanitize_pytest_addopts=sanitize_pytest_addopts)
     try:
         res = sp.run(cmd, capture_output=True, text=True, timeout=collect_timeout, env=env)
     except sp.TimeoutExpired:
@@ -479,11 +543,37 @@ def write_json(results: List[TestResult], path: Path) -> None:
 
 
 def _auto_workers() -> int:
+    """
+    Calculate optimal worker count based on system resources.
+
+    In CI environments, uses a fixed conservative count for stability.
+    In local development, adapts to CPU count but caps at 8 to avoid overload.
+    """
+    # Check if we're in CI environment
+    is_ci = os.environ.get("CI", "").lower() in ("true", "1", "yes")
+
+    if is_ci:
+        # CI environments typically have:
+        # - Shared/limited CPU resources
+        # - Need for consistent, reproducible runs
+        # - Lower tolerance for resource contention
+        # Use a fixed conservative count that matches CI workflow expectations
+        ci_workers = os.environ.get("CI_TEST_WORKERS")
+        if ci_workers:
+            try:
+                return max(1, int(ci_workers))
+            except (ValueError, TypeError):
+                pass
+        # Default CI worker count (matches GitHub Actions -n 2)
+        return 2
+
+    # Local development: adapt to CPU count
     try:
         n = os.cpu_count() or 4
     except Exception:
         n = 4
     # Keep it conservative to avoid overloading local dev
+    # Formula: (CPU_count + 1) // 2, capped at 8
     return max(1, min(8, (n + 1) // 2))
 
 
@@ -725,9 +815,42 @@ def main() -> int:
     )
 
     # Determine tests to run
+    # Check if we should use split-slow (only if markers don't exclude slow tests)
+    should_use_split_slow = False
     if args.full_suite and args.split_slow:
-        print("🔍 Discovering tests (non-slow and slow phases)...")
         base_markers = (args.markers or "").strip()
+
+        # Check if base markers explicitly exclude slow tests
+        # If so, disable split-slow to avoid contradictory marker expressions
+        markers_lower = base_markers.lower()
+        excludes_slow = (
+            "not slow" in markers_lower
+            or "not veryslow" in markers_lower
+            or (markers_lower and "slow" in markers_lower and "not" in markers_lower)
+        )
+
+        if excludes_slow:
+            # Markers exclude slow tests, so skip split-slow phase
+            # This avoids contradictory expressions like "(not slow) and (slow or veryslow)"
+            print("🔍 Discovering tests (slow tests excluded by markers, skipping slow phase)...")
+            should_use_split_slow = False
+        else:
+            should_use_split_slow = True
+
+    if args.full_suite and should_use_split_slow:
+        base_markers = (args.markers or "").strip()
+        print("🔍 Discovering tests (non-slow and slow phases)...")
+        # Check for problematic PYTEST_ADDOPTS and warn
+        problematic_addopts = _detect_problematic_pytest_addopts()
+        if problematic_addopts:
+            print(
+                f"⚠️  Warning: PYTEST_ADDOPTS='{problematic_addopts}' detected. "
+                "This may interfere with test discovery. It will be cleared for discovery operations."
+            )
+            print(
+                "   To avoid this warning, unset PYTEST_ADDOPTS before running: "
+                "PYTEST_ADDOPTS= make test-fast"
+            )
 
         def _and(expr: str) -> str:
             if not expr:
@@ -736,11 +859,22 @@ def main() -> int:
                 return expr
             return f"({base_markers}) and {expr}"
 
+        fast_marker_expr = _and("not slow and not veryslow and not serial and not benchmark")
+        slow_marker_expr = _and("(slow or veryslow or serial or benchmark)")
+
         nodeids_fast = discover_tests(
-            _and("not slow"), args.kexpr, pytest_args, args.disable_plugin_autoload
+            fast_marker_expr,
+            args.kexpr,
+            pytest_args,
+            args.disable_plugin_autoload,
+            sanitize_pytest_addopts=True,
         )
         nodeids_slow = discover_tests(
-            _and("(slow or veryslow)"), args.kexpr, pytest_args, args.disable_plugin_autoload
+            slow_marker_expr,
+            args.kexpr,
+            pytest_args,
+            args.disable_plugin_autoload,
+            sanitize_pytest_addopts=True,
         )
         # Apply sampling limit to fast group only (for quick smoke runs)
         if args.limit:
@@ -773,7 +907,7 @@ def main() -> int:
                     args.disable_plugin_autoload,
                     args.fail_fast,
                     fh_timeout,
-                    _and("not slow"),
+                    fast_marker_expr,
                     args.kexpr,
                 )
             else:
@@ -786,7 +920,7 @@ def main() -> int:
                     args.disable_plugin_autoload,
                     args.fail_fast,
                     fh_timeout,
-                    _and("not slow"),
+                    fast_marker_expr,
                     args.kexpr,
                 )
         else:
@@ -829,7 +963,7 @@ def main() -> int:
                         args.disable_plugin_autoload,
                         args.fail_fast,
                         fh_timeout,
-                        _and("(slow or veryslow)"),
+                        slow_marker_expr,
                         args.kexpr,
                     )
                 else:
@@ -842,7 +976,7 @@ def main() -> int:
                         args.disable_plugin_autoload,
                         args.fail_fast,
                         fh_timeout,
-                        _and("(slow or veryslow)"),
+                        slow_marker_expr,
                         args.kexpr,
                     )
             else:
@@ -853,8 +987,23 @@ def main() -> int:
             first_failure = first_failure_fast or first_failure_slow
     elif args.full_suite:
         print("🔍 Discovering tests...")
+        # Check for problematic PYTEST_ADDOPTS and warn
+        problematic_addopts = _detect_problematic_pytest_addopts()
+        if problematic_addopts:
+            print(
+                f"⚠️  Warning: PYTEST_ADDOPTS='{problematic_addopts}' detected. "
+                "This may interfere with test discovery. It will be cleared for discovery operations."
+            )
+            print(
+                "   To avoid this warning, unset PYTEST_ADDOPTS before running: "
+                "PYTEST_ADDOPTS= make test"
+            )
         nodeids = discover_tests(
-            args.markers, args.kexpr, pytest_args, args.disable_plugin_autoload
+            args.markers,
+            args.kexpr,
+            pytest_args,
+            args.disable_plugin_autoload,
+            sanitize_pytest_addopts=True,
         )
         if not nodeids:
             print("❌ No tests discovered. Check your markers / -k and pytest arguments.")

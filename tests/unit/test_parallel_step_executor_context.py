@@ -22,7 +22,9 @@ async def test_parallel_executor_isolates_context_per_branch(
     base_context = _Ctx()
     called: Dict[str, int] = {"isolate": 0}
 
-    def fake_isolate(ctx: Any, include_keys: Optional[list[str]] = None) -> Any:
+    def fake_isolate(
+        ctx: Any, include_keys: Optional[list[str]] = None, *, purpose: str = "unknown"
+    ) -> Any:
         called["isolate"] += 1
         # Return a shallow copy-like namespace for visibility
         return _Ctx(**getattr(ctx, "__dict__", {}))

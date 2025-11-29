@@ -1,6 +1,8 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
+from typing import Type
+
 from ._shared import (  # noqa: F401
     Any,
     Awaitable,
@@ -35,6 +37,8 @@ from ._shared import (  # noqa: F401
     time,
     to_outcome,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
 
 
 # --- Parallel Step Executor policy ---
@@ -53,7 +57,11 @@ class ParallelStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultParallelStepExecutor:
+class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
+    @property
+    def handles_type(self) -> Type[ParallelStep]:
+        return ParallelStep
+
     async def execute(
         self,
         core: Any,
@@ -66,6 +74,15 @@ class DefaultParallelStepExecutor:
         parallel_step: Optional[ParallelStep[Any]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
     ) -> StepOutcome[StepResult]:
+        if isinstance(step, ExecutionFrame):
+            frame = step
+            step = frame.step
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            context_setter = getattr(frame, "context_setter", None)
+
         # Actual parallel-step execution logic extracted from legacy `_handle_parallel_step`
         if parallel_step is not None:
             step = parallel_step
@@ -92,8 +109,8 @@ class DefaultParallelStepExecutor:
         branch_pipelines: List[Any] = [bp for _, bp in branch_items]
         branch_quota_map: Dict[str, Optional[Quota]] = {bn: None for bn in branch_names}
         try:
-            current_quota: Optional[Quota] = (
-                core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None
+            current_quota = (
+                core._get_current_quota() if hasattr(core, "_get_current_quota") else None
             )
         except Exception:
             current_quota = None
@@ -113,13 +130,23 @@ class DefaultParallelStepExecutor:
         all_successful = True
         failure_messages: List[str] = []
         # Prepare branch contexts with proper isolation
+        # Phase 1: Mandatory isolation for parallel branches with verification
         for branch_name, branch_pipeline in parallel_step.branches.items():
-            # Use ContextManager for proper deep isolation
+            # Use ContextManager for proper deep isolation with purpose tracking
             branch_context = (
-                ContextManager.isolate(context, include_keys=parallel_step.context_include_keys)
+                ContextManager.isolate(
+                    context,
+                    include_keys=parallel_step.context_include_keys,
+                    purpose=f"parallel_branch:{branch_name}",
+                )
                 if context is not None
                 else None
             )
+
+            # Phase 1: Verify isolation before execution (strict mode)
+            if context is not None and branch_context is not None:
+                ContextManager.verify_isolation(context, branch_context)
+
             branch_contexts[branch_name] = branch_context
 
         def _merge_branch_context_into_parent(branch_ctx: Any) -> None:
@@ -157,10 +184,16 @@ class DefaultParallelStepExecutor:
                 # Set per-branch quota in this task's context
                 quota_token = None
                 try:
-                    if hasattr(core, "CURRENT_QUOTA"):
-                        quota_token = core.CURRENT_QUOTA.set(branch_quota)
+                    if hasattr(core, "_set_current_quota"):
+                        quota_token = core._set_current_quota(branch_quota)
+                    elif hasattr(core, "_quota_manager"):
+                        quota_token = core._quota_manager.set_current_quota(branch_quota)
                 except Exception:
                     quota_token = None
+                # Phase 1: Verify isolation before execution (strict mode)
+                if context is not None and branch_context is not None:
+                    ContextManager.verify_isolation(context, branch_context)
+
                 if step_executor is not None:
                     target = branch_pipeline
                     try:
@@ -362,12 +395,11 @@ class DefaultParallelStepExecutor:
                 return branch_name, failure
             finally:
                 try:
-                    if (
-                        "quota_token" in locals()
-                        and quota_token is not None
-                        and hasattr(core, "CURRENT_QUOTA")
-                    ):
-                        core.CURRENT_QUOTA.reset(quota_token)
+                    if "quota_token" in locals() and quota_token is not None:
+                        if hasattr(core, "_reset_current_quota"):
+                            core._reset_current_quota(quota_token)
+                        elif hasattr(core, "_quota_manager") and hasattr(quota_token, "old_value"):
+                            core._quota_manager.set_current_quota(quota_token.old_value)  # type: ignore[attr-defined]
                 except Exception:
                     pass
 
@@ -461,7 +493,7 @@ class DefaultParallelStepExecutor:
                 try:
                     res = d.result()
                 except PausedException as paused_exc:
-                    pause_message = str(paused_exc)
+                    pause_message = getattr(paused_exc, "message", "")
                     pause_branch = branch_hint
                     break
                 except PipelineAbortSignal as abort_exc:

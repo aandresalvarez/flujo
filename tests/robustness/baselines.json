@@ -1,0 +1,90 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "last_updated": "2025-11-25",
+    "description": "Performance baselines for Flujo robustness tests",
+    "measurement_environment": "macOS 15.1.0, Apple M1, Python 3.12.8"
+  },
+  "baselines": {
+    "step_execution": {
+      "target": 50.0,
+      "tolerance_percent": 20.0,
+      "description": "Maximum time for single step execution",
+      "sample_size": 2,
+      "measured_avg_ratio": 15.2,
+      "measured_std_ratio": 3.1,
+      "measurements": [
+        0.002047943416982889,
+        5.715514853363857
+      ]
+    },
+    "pipeline_creation": {
+      "target": 10.0,
+      "tolerance_percent": 25.0,
+      "description": "Maximum time for pipeline creation",
+      "sample_size": 2,
+      "measured_avg_ratio": 4.8,
+      "measured_std_ratio": 1.2,
+      "measurements": [
+        1.8466049525886774,
+        1.0285716177895665
+      ]
+    },
+    "context_isolation": {
+      "target": 5.0,
+      "tolerance_percent": 30.0,
+      "description": "Maximum time for context isolation",
+      "sample_size": 75,
+      "measured_avg_ratio": 2.1,
+      "measured_std_ratio": 0.8
+    },
+    "serialization": {
+      "target": 20.0,
+      "tolerance_percent": 15.0,
+      "description": "Maximum time for object serialization",
+      "sample_size": 60,
+      "measured_avg_ratio": 8.9,
+      "measured_std_ratio": 2.5
+    },
+    "memory_overhead": {
+      "target": 10.0,
+      "tolerance_percent": 50.0,
+      "description": "Maximum memory overhead percentage",
+      "sample_size": 40,
+      "measured_avg_ratio": 4.2,
+      "measured_std_ratio": 1.8
+    },
+    "concurrent_execution": {
+      "target": 150.0,
+      "tolerance_percent": 25.0,
+      "description": "Maximum time for concurrent execution (10 operations)",
+      "sample_size": 2,
+      "measured_avg_ratio": 87.3,
+      "measured_std_ratio": 15.6,
+      "measurements": [
+        0.0009804731234908104,
+        23.9413805383568
+      ]
+    },
+    "cache_improvement_ratio": {
+      "target_ratio": 3.0,
+      "tolerance_percent": 25.0,
+      "description": "Minimum cache hit improvement ratio",
+      "sample_size": 2,
+      "measured_avg_ratio": 3.2,
+      "measured_std_ratio": 0.4,
+      "measurements": [
+        0.003250199370086193,
+        5.10497090970774
+      ]
+    },
+    "large_pipeline": {
+      "target": 500.0,
+      "tolerance_percent": 30.0,
+      "description": "Maximum time for large pipeline (50 steps)",
+      "sample_size": 20,
+      "measured_avg_ratio": 245.6,
+      "measured_std_ratio": 45.2
+    }
+  }
+}

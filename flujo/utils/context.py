@@ -243,11 +243,53 @@ def safe_merge_context_updates(
         We intentionally avoid per-item membership checks which can be O(N*M) and
         unreliable for unhashable/nested structures. Deduplication, if desired, should
         be implemented by callers with explicit domain rules.
+
+        Phase 1 Fix: Preserve pause_message from target if it exists (recipe sets it correctly).
         """
         result = target_dict.copy()
+        # Phase 1: Preserve pause_message from target if it exists (recipe sets it correctly)
+        # This handles both top-level pause_message and nested scratchpad["pause_message"]
+        preserved_pause_message = None
+        if isinstance(result, dict):
+            preserved_pause_message = result.get("pause_message")
+            # Also check nested scratchpad
+            if preserved_pause_message is None and "scratchpad" in result:
+                scratchpad = result.get("scratchpad")
+                if isinstance(scratchpad, dict):
+                    preserved_pause_message = scratchpad.get("pause_message")
+
         for key, source_value in source_dict.items():
             if key in result and isinstance(result[key], dict) and isinstance(source_value, dict):
-                result[key] = deep_merge_dict(result[key], source_value)
+                # Phase 1: Special handling for scratchpad to preserve pause_message
+                if key == "scratchpad":
+                    # Preserve pause_message from target scratchpad before merging
+                    target_scratchpad = result[key]
+                    source_scratchpad = source_value
+                    preserved_scratchpad_pause_message = None
+                    if isinstance(target_scratchpad, dict):
+                        preserved_scratchpad_pause_message = target_scratchpad.get("pause_message")
+                    # Remove formatted pause_message from source to prevent overwrite
+                    # If source has pause_message and it's different from target's, it might be formatted
+                    if isinstance(source_scratchpad, dict) and "pause_message" in source_scratchpad:
+                        source_pause_msg = source_scratchpad.get("pause_message")
+                        # If source has pause_message but target doesn't, or if they're different,
+                        # remove source's to avoid overwriting target's plain message
+                        if (
+                            preserved_scratchpad_pause_message is None
+                            or source_pause_msg != preserved_scratchpad_pause_message
+                        ):
+                            # Source might have formatted message, remove it before merge
+                            source_scratchpad = source_scratchpad.copy()
+                            source_scratchpad.pop("pause_message", None)
+                    # Merge scratchpad dictionaries
+                    result[key] = deep_merge_dict(target_scratchpad, source_scratchpad)
+                    # Restore preserved pause_message if it was set (recipe set it correctly)
+                    if preserved_scratchpad_pause_message is not None and isinstance(
+                        result[key], dict
+                    ):
+                        result[key]["pause_message"] = preserved_scratchpad_pause_message
+                else:
+                    result[key] = deep_merge_dict(result[key], source_value)
             elif key in result and isinstance(result[key], list) and isinstance(source_value, list):
                 # Robust de-duplication using stable content hashing to avoid false matches
                 import json as _json
@@ -281,6 +323,11 @@ def safe_merge_context_updates(
                         result[key].append(item)
             else:
                 result[key] = source_value
+
+        # Phase 1: Restore preserved pause_message if it was set (recipe set it correctly)
+        if preserved_pause_message is not None and isinstance(result, dict):
+            result["pause_message"] = preserved_pause_message
+
         return result
 
     try:

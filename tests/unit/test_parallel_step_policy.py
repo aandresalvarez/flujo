@@ -127,7 +127,7 @@ async def test_parallel_policy_deterministic_quota_split_and_accounting():
     from flujo.domain.models import Quota
 
     parent_quota = Quota(remaining_cost_usd=10.0, remaining_tokens=1000)
-    core.CURRENT_QUOTA.set(parent_quota)
+    core._set_current_quota(parent_quota)
 
     # Monkeypatch extract_usage_metrics to return configured costs and zero tokens
     import flujo.cost as cost_mod
@@ -224,7 +224,7 @@ async def test_parallel_policy_quota_splitting_zero_parent_after_split():
     from flujo.domain.models import Quota
 
     parent_quota = Quota(remaining_cost_usd=9.0, remaining_tokens=9)
-    core.CURRENT_QUOTA.set(parent_quota)
+    core._set_current_quota(parent_quota)
 
     outcome = await DefaultParallelStepExecutor().execute(
         core,

@@ -32,7 +32,20 @@ from flujo.application.self_improvement import (
 from flujo.recipes.factories import run_default_pipeline as _run_default_pipeline
 from flujo.utils.serialization import safe_deserialize as _safe_deserialize
 
-from . import dev_commands
+from .dev_commands_experimental import (
+    add_eval_case_cmd as _add_eval_case_cmd,
+    bench as _bench_cmd,
+    improve as _improve_cmd,
+    solve as _solve_cmd,
+)
+from .dev_commands_dev import (
+    compile as _compile_cmd,
+    pipeline_mermaid_cmd as _pipeline_mermaid_cmd,
+    show_config_cmd as _show_config_cmd,
+    version_cmd as _version_cmd,
+)
+from .dev_commands_budgets import budgets_show as _budgets_show
+from .dev_commands_health import dev_health_check as _dev_health_check
 from .app_registration import create_cli_app, register_all_commands
 from .architect_command import create as _create_cmd
 from .bootstrap import bootstrap_cli_runtime, configure_cli_logging
@@ -93,16 +106,16 @@ register_all_commands(app)
 logfire = telemetry.logfire
 
 # Expose developer commands for tests that import from flujo.cli.main
-dev_health_check = getattr(dev_commands, "dev_health_check", None)
-solve = getattr(dev_commands, "solve", None)
-bench = getattr(dev_commands, "bench", None)
-version_cmd = getattr(dev_commands, "version_cmd", None)
-show_config_cmd = getattr(dev_commands, "show_config_cmd", None)
-add_eval_case_cmd = getattr(dev_commands, "add_eval_case_cmd", None)
-improve = getattr(dev_commands, "improve", None)
-compile = getattr(dev_commands, "compile", None)  # type: ignore[assignment]
-pipeline_mermaid_cmd = getattr(dev_commands, "pipeline_mermaid_cmd", None)
-budgets_show = getattr(dev_commands, "budgets_show", None)
+dev_health_check = _dev_health_check
+solve = _solve_cmd
+bench = _bench_cmd
+version_cmd = _version_cmd
+show_config_cmd = _show_config_cmd
+add_eval_case_cmd = _add_eval_case_cmd
+improve = _improve_cmd
+compile = _compile_cmd  # type: ignore[assignment]
+pipeline_mermaid_cmd = _pipeline_mermaid_cmd
+budgets_show = _budgets_show
 
 
 @app.callback()

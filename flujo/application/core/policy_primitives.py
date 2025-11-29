@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple
 
-from flujo.domain.dsl.step import Step
 from flujo.exceptions import MockDetectionError
 from flujo.infra import telemetry
+from .policy_registry import PolicyRegistry, StepPolicy
 
 __all__ = [
     "LoopResumeState",
     "PolicyRegistry",
+    "StepPolicy",
     "_unpack_agent_result",
     "_detect_mock_objects",
     "_load_template_config",
@@ -97,59 +98,6 @@ class LoopResumeState:
             scratch.pop("loop_last_output", None)
             scratch.pop("loop_paused_step_name", None)
             scratch.pop("loop_resume_requires_hitl_output", None)
-
-
-# --- Policy Registry (FSD-010) ---
-
-
-class PolicyRegistry:
-    """Registry that maps `Step` subclasses to their execution policy instances."""
-
-    def __init__(self) -> None:
-        # Type-safe mapping: Step subclass → policy instance (opaque type)
-        self._registry: Dict[Type[Step[Any, Any]], Any] = {}
-        # Preload any globally registered policies from framework registry
-        try:
-            # Ensure core primitives/policies are registered by importing the framework
-            # module which performs registration at import time.
-            try:  # pragma: no cover - import side-effect
-                import flujo.framework  # noqa: F401
-            except Exception:
-                # Defensive: if import fails, continue with whatever was registered explicitly
-                pass
-            from ...framework.registry import get_registered_policies
-
-            for step_cls, policy_instance in get_registered_policies().items():
-                # Defer binding to executor core; raw policy instances are kept here
-                self._registry[step_cls] = policy_instance
-        except Exception:
-            # Framework registry may not be initialized yet; ignore
-            pass
-
-    def register(self, step_type: Type[Step[Any, Any]], policy: Any) -> None:
-        """Register a policy for a given `Step` subclass."""
-
-        # Local import to avoid circulars during module import time
-        from flujo.domain.dsl.step import Step as _BaseStep
-
-        if not isinstance(step_type, type) or not issubclass(step_type, _BaseStep):
-            raise TypeError("step_type must be a subclass of Step")
-        self._registry[step_type] = policy
-
-    def get(self, step_type: Type[Step[Any, Any]]) -> Optional[Any]:
-        """Return the policy for `step_type` or its nearest registered ancestor."""
-
-        # Exact match fast-path
-        policy = self._registry.get(step_type)
-        if policy is not None:
-            return policy
-        try:
-            for base in step_type.__mro__[1:]:  # skip the class itself
-                if base in self._registry:
-                    return self._registry[base]
-        except Exception:
-            pass
-        return None
 
 
 # Shared utilities -----------------------------------------------------------

@@ -25,7 +25,7 @@ async def test_parallel_quota_split_with_infinite_cost_propagates_inf_to_childre
     from flujo.domain.models import Quota
 
     parent_quota = Quota(remaining_cost_usd=float("inf"), remaining_tokens=10)
-    core.CURRENT_QUOTA.set(parent_quota)
+    core._set_current_quota(parent_quota)
 
     outcome = await DefaultParallelStepExecutor().execute(
         core,

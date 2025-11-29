@@ -4,6 +4,7 @@ from flujo.cost import extract_usage_metrics
 from .policy_primitives import (
     LoopResumeState,
     PolicyRegistry,
+    StepPolicy,
     _check_hitl_nesting_safety,
     _detect_mock_objects,
     _load_template_config,
@@ -54,6 +55,7 @@ __all__ = [
     "extract_usage_metrics",
     "LoopResumeState",
     "PolicyRegistry",
+    "StepPolicy",
     "_check_hitl_nesting_safety",
     "_detect_mock_objects",
     "_load_template_config",

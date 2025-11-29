@@ -1,11 +1,12 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
+from typing import Type
+
 from ._shared import (  # noqa: F401
     Any,
     Awaitable,
     Callable,
-    ExecutionFrame,
     Failure,
     Paused,
     Optional,
@@ -23,6 +24,8 @@ from ._shared import (  # noqa: F401
     telemetry,
     to_outcome,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
 
 # --- Cache Step Executor policy ---
 
@@ -41,7 +44,11 @@ class CacheStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultCacheStepExecutor:
+class DefaultCacheStepExecutor(StepPolicy[CacheStep]):
+    @property
+    def handles_type(self) -> Type[CacheStep]:
+        return CacheStep
+
     async def execute(
         self,
         core: Any,
@@ -56,6 +63,15 @@ class DefaultCacheStepExecutor:
         step: Optional[Any] = None,
     ) -> StepOutcome[StepResult]:
         """Handle CacheStep execution with concurrency control and resilience."""
+        if isinstance(cache_step, ExecutionFrame):
+            frame = cache_step
+            cache_step = frame.step  # type: ignore[assignment]
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            context_setter = getattr(frame, "context_setter", None)
+
         try:
             cache_key = _generate_cache_key(cache_step.wrapped_step, data, context, resources)
         except Exception as e:
@@ -108,13 +124,20 @@ class DefaultCacheStepExecutor:
                     telemetry.logfire.error(
                         f"Cache backend GET failed for step '{cache_step.name}': {e}"
                     )
+                quota = None
+                try:
+                    if hasattr(core, "_get_current_quota"):
+                        quota = core._get_current_quota()
+                except Exception:
+                    quota = None
+
                 frame = ExecutionFrame(
                     step=cache_step.wrapped_step,
                     data=data,
                     context=context,
                     resources=resources,
                     limits=limits,
-                    quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
+                    quota=quota,
                     stream=False,
                     on_chunk=None,
                     context_setter=(
@@ -183,6 +206,14 @@ class DefaultCacheStepExecutor:
                                     continue
                     except Exception:
                         pass
+                # Increment operation count on context when present (even on failure)
+                try:
+                    if context is not None and hasattr(context, "operation_count"):
+                        current_ops = int(getattr(context, "operation_count") or 0)
+                        if current_ops < 1:
+                            context.operation_count = current_ops + 1
+                except Exception:
+                    pass
                 return to_outcome(result)
         frame = ExecutionFrame(
             step=cache_step.wrapped_step,
@@ -190,7 +221,7 @@ class DefaultCacheStepExecutor:
             context=context,
             resources=resources,
             limits=limits,
-            quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
+            quota=(core._get_current_quota() if hasattr(core, "_get_current_quota") else None),
             stream=False,
             on_chunk=None,
             context_setter=(

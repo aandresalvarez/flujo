@@ -527,6 +527,13 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         except Exception:
                             pass
                         pipeline_result_obj = chunk
+                        try:
+                            if chunk.final_pipeline_context is not None:
+                                current_context_instance = cast(
+                                    Optional[ContextT], chunk.final_pipeline_context
+                                )
+                        except Exception:
+                            pass
                         _yielded_pipeline_result = True
                     yield chunk
                 if not _yielded_pipeline_result:
@@ -564,10 +571,11 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                     execution_manager: ExecutionManager[ContextT] = ExecutionManager[ContextT](
                         self.pipeline
                     )
-                    execution_manager.set_final_context(
-                        pipeline_result_obj,
-                        cast(Optional[ContextT], current_context_instance),
-                    )
+                    if pipeline_result_obj.final_pipeline_context is None:
+                        execution_manager.set_final_context(
+                            pipeline_result_obj,
+                            cast(Optional[ContextT], current_context_instance),
+                        )
                     if isinstance(e, UsageLimitExceededError):
                         if e.result is None:
                             e.result = pipeline_result_obj
@@ -589,10 +597,11 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         self.pipeline,
                         state_manager=state_manager,
                     )
-                    exec_manager.set_final_context(
-                        pipeline_result_obj,
-                        cast(Optional[ContextT], current_context_instance),
-                    )
+                    if pipeline_result_obj.final_pipeline_context is None:
+                        exec_manager.set_final_context(
+                            pipeline_result_obj,
+                            cast(Optional[ContextT], current_context_instance),
+                        )
                     try:
                         if (
                             not paused

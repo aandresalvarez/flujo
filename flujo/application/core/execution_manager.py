@@ -38,6 +38,7 @@ from .context_manager import ContextManager
 from .step_coordinator import StepCoordinator
 from .state_manager import StateManager
 from .type_validator import TypeValidator
+from .execution_manager_finalization import ExecutionFinalizationMixin
 from flujo.domain.models import UsageLimits
 
 # from flujo.domain.dsl import LoopStep  # Commented to avoid circular import
@@ -45,7 +46,7 @@ from flujo.domain.models import UsageLimits
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
 
-class ExecutionManager(Generic[ContextT]):
+class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
     """Main execution manager that orchestrates all execution components.
 
     This class coordinates step execution, state management, usage governance,
@@ -181,6 +182,11 @@ class ExecutionManager(Generic[ContextT]):
             )
 
             try:
+                context_before_step = None
+                try:
+                    context_before_step = ContextManager.isolate(context)
+                except Exception:
+                    context_before_step = context
                 try:
                     # Respect caller-provided step_executor when given; otherwise
                     # delegate to the configured backend. Streaming for the last
@@ -689,75 +695,81 @@ class ExecutionManager(Generic[ContextT]):
                             if meta.get("exit_reason") == "max_loops":
                                 pass  # allow mapper to run
                             else:
-                                self.set_final_context(result, context)
+                                self.set_final_context(result, context_before_step or context)
                                 yield result
                                 return
                         except Exception:
-                            self.set_final_context(result, context)
+                            self.set_final_context(result, context_before_step or context)
                             yield result
                             return
 
                     # Pass output to next step
                     if step_result:
-                        # Merge branch context from complex step handlers
-                        if step_result.branch_context is not None and context is not None:
-                            # Merge with explicit cast to satisfy generic ContextT
-                            from typing import cast
+                        if step_result.success:
+                            # Merge branch context from complex step handlers
+                            if step_result.branch_context is not None and context is not None:
+                                # Merge with explicit cast to satisfy generic ContextT
+                                from typing import cast
 
-                            merged = ContextManager.merge(
-                                context, cast(Any, step_result.branch_context)
-                            )
-                            context = cast(Optional[ContextT], merged)
-                        # For context-updating simple steps, prefer the branch_context snapshot
-                        try:
-                            if (
-                                hasattr(step, "updates_context")
-                                and bool(getattr(step, "updates_context"))
-                                and step_result.branch_context is not None
-                            ):
-                                from typing import cast as _cast
-
-                                context = _cast(Optional[ContextT], step_result.branch_context)
-                        except Exception:
-                            pass
-                        # --- CONTEXT UPDATE PATCH (deep merge + resilient fallback) ---
-                        if getattr(step, "updates_context", False) and context is not None:
-                            update_data = _build_context_update(step_result.output)
-                            if update_data:
-                                from .context_adapter import (
-                                    _inject_context_with_deep_merge as _inject_deep,
+                                merged = ContextManager.merge(
+                                    context, cast(Any, step_result.branch_context)
                                 )
+                                context = cast(Optional[ContextT], merged)
+                            # For context-updating simple steps, prefer the branch_context snapshot
+                            try:
+                                if (
+                                    hasattr(step, "updates_context")
+                                    and bool(getattr(step, "updates_context"))
+                                    and step_result.branch_context is not None
+                                ):
+                                    from typing import cast as _cast
 
-                                validation_error = _inject_deep(context, update_data, type(context))
-                                if validation_error:
-                                    # Try a resilient best-effort merge when the output carries a
-                                    # nested PipelineResult (e.g., runner.as_step composition)
-                                    sub_ctx = None
-                                    out = step_result.output
-                                    if hasattr(out, "final_pipeline_context"):
-                                        sub_ctx = getattr(out, "final_pipeline_context", None)
-                                    if sub_ctx is not None:
-                                        cm = type(context)
-                                        for fname in getattr(cm, "model_fields", {}):
-                                            if not hasattr(sub_ctx, fname):
-                                                continue
-                                            new_val = getattr(sub_ctx, fname)
-                                            if new_val is None:
-                                                continue
-                                            cur_val = getattr(context, fname, None)
-                                            if isinstance(cur_val, dict) and isinstance(
-                                                new_val, dict
-                                            ):
-                                                try:
-                                                    cur_val.update(new_val)
-                                                except Exception:
-                                                    setattr(context, fname, new_val)
-                                            else:
-                                                setattr(context, fname, new_val)
-                                        validation_error = None
+                                    context = _cast(Optional[ContextT], step_result.branch_context)
+                            except Exception:
+                                pass
+                            # --- CONTEXT UPDATE PATCH (deep merge + resilient fallback) ---
+                            if getattr(step, "updates_context", False) and context is not None:
+                                update_data = _build_context_update(step_result.output)
+                                if update_data:
+                                    from .context_adapter import (
+                                        _inject_context_with_deep_merge as _inject_deep,
+                                    )
+
+                                    validation_error = _inject_deep(
+                                        context, update_data, type(context)
+                                    )
                                     if validation_error:
-                                        # Context validation failed, mark step as failed
-                                        step_result.success = False
+                                        # Try a resilient best-effort merge when the output carries a
+                                        # nested PipelineResult (e.g., runner.as_step composition)
+                                        sub_ctx = None
+                                        out = step_result.output
+                                        if hasattr(out, "final_pipeline_context"):
+                                            sub_ctx = getattr(out, "final_pipeline_context", None)
+                                        if sub_ctx is not None:
+                                            cm = type(context)
+                                            for fname in getattr(cm, "model_fields", {}):
+                                                if not hasattr(sub_ctx, fname):
+                                                    continue
+                                                new_val = getattr(sub_ctx, fname)
+                                                if new_val is None:
+                                                    continue
+                                                cur_val = getattr(context, fname, None)
+                                                if isinstance(cur_val, dict) and isinstance(
+                                                    new_val, dict
+                                                ):
+                                                    try:
+                                                        cur_val.update(new_val)
+                                                    except Exception:
+                                                        setattr(context, fname, new_val)
+                                                else:
+                                                    setattr(context, fname, new_val)
+                                            validation_error = None
+                                        if validation_error:
+                                            # Context validation failed, mark step as failed
+                                            step_result.success = False
+                                            step_result.feedback = (
+                                                f"Context validation failed: {validation_error}"
+                                            )
                                 # Post-merge heuristic: infer review_status from summary fields if still pending
                                 try:
                                     if (
@@ -871,6 +883,8 @@ class ExecutionManager(Generic[ContextT]):
                             # Create appropriate error message based on the feedback
                             error_msg = step_result.feedback
                             raise UsageLimitExceededError(error_msg, result)
+                        if (not step_result.success) and not getattr(step_result, "feedback", None):
+                            step_result.feedback = "Context validation failed"
                         telemetry.logfire.warning(
                             f"Step '{step.name}' failed. Halting pipeline execution."
                         )
@@ -981,7 +995,11 @@ class ExecutionManager(Generic[ContextT]):
                     if context is not None:
                         if hasattr(context, "scratchpad"):
                             context.scratchpad["status"] = "paused"
-                            context.scratchpad["pause_message"] = str(e)
+                            # Use plain message for backward compatibility (tests expect plain message)
+                            # Only set if not already set (loop policy or recipe may have set it already)
+                            if "pause_message" not in context.scratchpad:
+                                context.scratchpad["pause_message"] = getattr(e, "message", "")
+                            # If already set, preserve it (loop policy/recipe already set it correctly)
                     # Do not append the in‑flight step_result for pauses to keep
                     # history aligned with completed steps only.
                     # Best-effort: record latest step result for pause diagnostics
@@ -1134,101 +1152,3 @@ class ExecutionManager(Generic[ContextT]):
 
         # Set final context after all steps complete
         self.set_final_context(result, context)
-
-    def _should_add_step_result_to_pipeline(
-        self,
-        step_result: Optional[StepResult],
-        should_add_step_result: bool,
-        result: PipelineResult[ContextT],
-    ) -> bool:
-        """Determine if a step result should be added to the pipeline result.
-
-        This method encapsulates the logic for deciding whether to add a step result
-        to the pipeline result, taking into account various edge cases and conditions.
-
-        Args:
-            step_result: The step result to consider adding
-            should_add_step_result: Whether the step result should be added (from caller)
-            result: The pipeline result to potentially add to
-
-        Returns:
-            True if the step result should be added, False otherwise
-        """
-        # Don't add if step_result is None
-        if step_result is None:
-            return False
-
-        # Don't add if explicitly prevented
-        if not should_add_step_result:
-            return False
-
-        # Don't add if already present (defensive programming)
-        if step_result in result.step_history:
-            return False
-
-        # Add the step result
-        return True
-
-    def set_final_context(
-        self,
-        result: PipelineResult[ContextT],
-        context: Optional[ContextT],
-    ) -> None:
-        """Set the final context in the pipeline result."""
-        if context is not None:
-            result.final_pipeline_context = context
-
-    async def persist_final_state(
-        self,
-        *,
-        run_id: str | None,
-        context: Optional[ContextT],
-        result: PipelineResult[ContextT],
-        start_idx: int,
-        state_created_at: datetime | None,
-        final_status: str,
-    ) -> None:
-        """Persist the final state to the backend."""
-        if run_id is not None:
-            # For completed scenarios, use len(pipeline.steps)
-            # For paused scenarios, use the current step index where pause occurred
-            if final_status == "completed":
-                # Check if this is an HITL resumption scenario
-                is_hitl_resumption = (
-                    start_idx > 0
-                    and context is not None
-                    and hasattr(context, "hitl_history")
-                    and len(getattr(context, "hitl_history", [])) > 0
-                )
-
-                # Check if this is a crash recovery scenario (state existed before execution)
-                # In crash recovery, all steps are re-executed from the beginning
-                is_crash_recovery = state_created_at is not None and len(
-                    result.step_history
-                ) == len(self.pipeline.steps)
-
-                if is_hitl_resumption:
-                    # For HITL resumption scenarios, use double the pipeline length
-                    final_step_index = len(self.pipeline.steps) * 2
-                elif is_crash_recovery:
-                    # For crash recovery scenarios, increment by 1 (legacy expectation)
-                    final_step_index = len(self.pipeline.steps) + 1
-                else:
-                    # For normal completion
-                    final_step_index = len(self.pipeline.steps)
-            else:
-                # For paused or failed scenarios, use the current step index
-                final_step_index = len(result.step_history)
-
-            # Persist final snapshot (full context via StateManager) to ensure correctness
-            await self.state_manager.persist_workflow_state(
-                run_id=run_id,
-                context=context,
-                current_step_index=final_step_index,
-                last_step_output=result.step_history[-1].output if result.step_history else None,
-                status=final_status,
-                state_created_at=state_created_at,
-                step_history=result.step_history,
-            )
-            # Record run end for tracking and cleanup
-            await self.state_manager.record_run_end(run_id, result)
