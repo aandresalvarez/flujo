@@ -8,12 +8,12 @@
   - priority: medium
   - workload: Large
   - steps:
-      - [ ] Slim `flujo/application/core/agent_orchestrator.py` (1489 LOC) and `flujo/application/runner.py` (1497 LOC) (<1200 LOC each) aligned with Phase 4 plan.  
+      - [x] Slim `flujo/application/core/agent_orchestrator.py` (1489 LOC) and `flujo/application/runner.py` (1497 LOC) (<1200 LOC each) aligned with Phase 4 plan.  
         Sub-steps (agent orchestrator):
-          - [ ] Extract the retry/fallback attempt loop into `agent_execution_runner.py` (<1200 LOC) and keep the orchestrator wrapper thin. **Status: design only; implementation not started.**
-          - [ ] Extract plugin handling into a small helper (e.g., `agent_plugin_runner.py`) so runner stays lean. **Status: design pending; strong coupling to attempt loop and telemetry makes this tricky.**
+          - [x] Extract the retry/fallback attempt loop into `agent_execution_runner.py` (<1200 LOC) and keep the orchestrator wrapper thin.  
+          - [x] Extract plugin handling into a small helper (e.g., `agent_plugin_runner.py`) so runner stays lean.  
         Sub-steps (runner):
-          - [ ] Split runner orchestration into execution/telemetry helpers (e.g., `runner_execution.py`, `runner_telemetry.py`) to drop main file under the gate. **Status: not started.**
+          - [x] Split runner orchestration into execution/telemetry helpers (e.g., `runner_execution.py`, `runner_telemetry.py`) to drop main file under the gate. *(execution/resume/replay moved to `runner_execution.py`; telemetry remains inline but file now 1041 LOC)*  
         Challenges:
           - High coupling between agent orchestrator and retry/fallback state (attempt counters, token/cost tracking, telemetry hooks) increases extraction risk.
           - Plugin dispatch relies on inline mutation of `processed_output` and primary token accounting; needs clear return types per `docs/advanced/typing_guide.md` (no `Any`).

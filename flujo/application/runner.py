@@ -15,7 +15,6 @@ from typing import (
     TypeVar,
     AsyncIterator,
     Union,
-    cast,
     get_type_hints,
     Literal,
 )
@@ -25,7 +24,6 @@ from typing import (
 from pydantic import ValidationError
 
 from ..exceptions import (
-    OrchestratorError,
     PipelineContextInitializationError,
     PipelineAbortSignal,
     ContextInheritanceError,
@@ -34,15 +32,12 @@ from ..exceptions import (
 )
 from ..domain.dsl.step import Step
 from ..domain.dsl.pipeline import Pipeline
-from ..domain.dsl.step import HumanInTheLoopStep
 from ..domain.models import (
     BaseModel,
     PipelineResult,
     StepResult,
     UsageLimits,
     PipelineContext,
-    HumanInteraction,
-    ExecutedCommandLog,
     StepOutcome,
     Success,
     Failure,
@@ -55,7 +50,7 @@ from ..domain.resources import AppResources
 from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend
 from ..domain.interfaces import StateProvider
-from ..state import StateBackend, WorkflowState
+from ..state import StateBackend
 from ..infra.registry import PipelineRegistry
 
 from .core.context_manager import (
@@ -65,12 +60,11 @@ from .core.context_manager import (
 
 
 from .core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
-from .core.execution_manager import ExecutionManager
 from .core.factories import BackendFactory, ExecutorFactory
-from .core.state_manager import StateManager
 from .run_plan_resolver import RunPlanResolver
 from .run_session import RunSession
 from .tracer_resolver import setup_tracing
+from .runner_execution import resume_async_inner, replay_from_trace
 
 import uuid
 import warnings
@@ -863,479 +857,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     async def _resume_async_inner(
         self, paused_result: PipelineResult[ContextT], human_input: Any
     ) -> PipelineResult[ContextT]:
-        try:
-            """Resume a paused pipeline with human input."""
-            ctx: ContextT | None = paused_result.final_pipeline_context
-            # The ``scratchpad`` on the context stores bookkeeping information about
-            # paused pipelines.  If the context is missing or the status flag is not
-            # ``"paused"`` we cannot safely resume.
-            if ctx is None:
-                raise OrchestratorError("Cannot resume pipeline without context")
-            scratch = getattr(ctx, "scratchpad", {})
-            if scratch.get("status") != "paused":
-                raise OrchestratorError("Pipeline is not paused")
-            self._ensure_pipeline()
-            assert self.pipeline is not None
-            try:
-                pause_msg = scratch.get("pause_message")
-                hist = getattr(ctx, "conversation_history", None)
-                if isinstance(hist, list) and pause_msg:
-                    last_content = hist[-1].content if hist else None
-                    if last_content != pause_msg:
-                        from flujo.domain.models import ConversationTurn, ConversationRole
-
-                        hist.append(
-                            ConversationTurn(
-                                role=ConversationRole.assistant, content=str(pause_msg)
-                            )
-                        )
-                        setattr(ctx, "conversation_history", hist)
-            except Exception:
-                pass
-            start_idx = len(paused_result.step_history)
-            if scratch.get("status") == "paused":
-                # Resume from the next pipeline step after the last recorded step.
-                start_idx = min(len(self.pipeline.steps) - 1, len(paused_result.step_history))
-                scratch["hitl_data"] = human_input
-                scratch["user_input"] = human_input
-            if start_idx >= len(self.pipeline.steps):
-                raise OrchestratorError("No steps remaining to resume")
-            paused_step = self.pipeline.steps[start_idx]
-
-            if isinstance(paused_step, HumanInTheLoopStep) and paused_step.input_schema is not None:
-                human_input = paused_step.input_schema.model_validate(human_input)
-
-            if isinstance(ctx, PipelineContext):
-                ctx.hitl_history.append(
-                    HumanInteraction(
-                        message_to_human=scratch.get("pause_message", ""),
-                        human_response=human_input,
-                    )
-                )
-                ctx.scratchpad["status"] = "running"
-
-            # Ensure conversational history captures the user's resume input when present.
-            # This complements loop policy handling, which may not see the HITL step in
-            # step_history on resume (since we inject a synthetic paused_step_result).
-            try:
-                if isinstance(ctx, PipelineContext):
-                    # Ensure list container exists
-                    if not isinstance(getattr(ctx, "conversation_history", None), list):
-                        setattr(ctx, "conversation_history", [])
-                    from flujo.domain.models import ConversationTurn, ConversationRole
-
-                    # Append user turn if not a duplicate of the last entry
-                    hist = ctx.conversation_history
-                    last_content = hist[-1].content if hist else None
-                    text = str(human_input)
-                    if text and text != last_content:
-                        hist.append(ConversationTurn(role=ConversationRole.user, content=text))
-            except Exception:
-                pass
-
-            paused_step_result = StepResult(
-                name=paused_step.name,
-                output=human_input,
-                success=True,
-                attempts=1,
-            )
-
-            # Apply sink_to to context
-            # NOTE: This is applied here (in runner) rather than in the HITL executor
-            # because the executor works with forked contexts (in conditionals/loops),
-            # while the runner has access to the main context that gets persisted.
-            if hasattr(paused_step, "sink_to") and paused_step.sink_to and ctx is not None:
-                try:
-                    from flujo.utils.context import set_nested_context_field
-
-                    set_nested_context_field(ctx, paused_step.sink_to, human_input)
-                except Exception:
-                    # Sink failure is graceful - just skip it
-                    pass
-
-            # Ensure the last HITL output is accessible to subsequent steps via
-            # context.scratchpad['steps'][<step_name>] so templates like
-            # {{ steps.ask_user_for_clarification.output }} resolve after resume.
-            try:
-                if isinstance(ctx, PipelineContext):
-                    sp = getattr(ctx, "scratchpad", None)
-                    if not isinstance(sp, dict):
-                        setattr(ctx, "scratchpad", {"steps": {}})
-                        sp = getattr(ctx, "scratchpad", None)
-                    if isinstance(sp, dict):
-                        steps_map = sp.get("steps")
-                        if not isinstance(steps_map, dict):
-                            steps_map = {}
-                            sp["steps"] = steps_map
-                        # Compact snapshot: stringify and cap size
-                        try:
-                            val = human_input
-                            if isinstance(val, bytes):
-                                try:
-                                    val = val.decode("utf-8", errors="ignore")
-                                except Exception:
-                                    val = str(val)
-                            else:
-                                val = str(val)
-                            if len(val) > 1024:
-                                val = val[:1024]
-                            steps_map[getattr(paused_step, "name", "")] = val
-                        except Exception:
-                            steps_map[getattr(paused_step, "name", "")] = ""
-            except Exception:
-                pass
-            if isinstance(ctx, PipelineContext):
-                pending = ctx.scratchpad.pop("paused_step_input", None)
-                if pending is not None:
-                    # If we already have a concrete AgentCommand instance, use it directly
-                    try:
-                        from flujo.domain.commands import (
-                            RunAgentCommand as _Run,
-                            AskHumanCommand as _Ask,
-                            FinishCommand as _Fin,
-                        )
-
-                        if isinstance(pending, (_Run, _Ask, _Fin)):
-                            pending_cmd = pending
-                        else:
-                            pending_cmd = _agent_command_adapter.validate_python(pending)
-                    except ValidationError:
-                        pending_cmd = None
-                    except Exception:
-                        pending_cmd = None
-                    if pending_cmd is not None:
-                        log_entry = ExecutedCommandLog(
-                            turn=len(ctx.command_log) + 1,
-                            generated_command=pending_cmd,
-                            execution_result=human_input,
-                        )
-                        ctx.command_log.append(log_entry)
-                        try:
-                            if isinstance(ctx.scratchpad, dict):
-                                ctx.scratchpad["loop_last_output"] = log_entry
-                        except Exception:
-                            pass
-                    else:
-                        # If we cannot reconstruct the command, still record an AskHuman with the pause message
-                        try:
-                            from flujo.domain.commands import AskHumanCommand as _Ask
-
-                            log_entry = ExecutedCommandLog(
-                                turn=len(ctx.command_log) + 1,
-                                generated_command=_Ask(
-                                    question=scratch.get("pause_message", "Paused")
-                                ),
-                                execution_result=human_input,
-                            )
-                            ctx.command_log.append(log_entry)
-                            try:
-                                if isinstance(ctx.scratchpad, dict):
-                                    ctx.scratchpad["loop_last_output"] = log_entry
-                            except Exception:
-                                pass
-                        except Exception:
-                            pass
-            # Resume semantics:
-            # - If the paused step is an explicit HumanInTheLoopStep, mark it successful and continue to next.
-            # - Otherwise (e.g., loop or generic agent step that paused internally), re-run the same step
-            #   with the human_input as data so the step can consume it appropriately.
-            from ..domain.dsl.step import HumanInTheLoopStep as _HITL
-
-            try:
-                if self._trace_manager is not None:
-                    summary = str(human_input)
-                    if isinstance(summary, str) and len(summary) > 500:
-                        summary = summary[:500] + "..."
-                    self._trace_manager.add_event("flujo.resumed", {"human_input": summary})
-            except Exception:
-                pass
-
-            if isinstance(paused_step, _HITL):
-                # Replace the prior paused-failure record for this HITL step, if present
-                if paused_result.step_history:
-                    last = paused_result.step_history[-1]
-                    if last.name == paused_step.name and not last.success:
-                        paused_result.step_history[-1] = paused_step_result
-                    else:
-                        paused_result.step_history.append(paused_step_result)
-                else:
-                    paused_result.step_history.append(paused_step_result)
-                # If the paused step updates context, merge the human_input output into context before next step
-                try:
-                    if getattr(paused_step, "updates_context", False) and isinstance(
-                        ctx, PipelineContext
-                    ):
-                        from .core.context_adapter import _build_context_update, _inject_context
-
-                        update_data = _build_context_update(human_input)
-                        if update_data:
-                            validation_error = _inject_context(ctx, update_data, type(ctx))
-                            if validation_error:
-                                raise OrchestratorError(
-                                    f"Failed to merge human input into context: {validation_error}"
-                                )
-                except Exception as _merge_err:
-                    # Defensive: log but continue; downstream may still succeed without context merge
-                    try:
-                        from ..infra import telemetry as _telemetry
-
-                        _telemetry.logfire.warning(
-                            f"Resume context merge warning for step '{paused_step.name}': {_merge_err}"
-                        )
-                    except Exception:
-                        pass
-                # Finalize the lingering HITL step span so subsequent steps are siblings, not children.
-                # This mirrors normal success flow and ensures TraceManager pops the pre_step span.
-                try:
-                    await self._dispatch_hook(
-                        "post_step",
-                        step_result=paused_step_result,
-                        context=ctx,
-                        resources=self.resources,
-                    )
-                except Exception:
-                    # Never let tracing break resume semantics
-                    pass
-                data = human_input
-                resume_start_idx = start_idx + 1
-            else:
-                # Do not append synthetic success for non-HITL steps; allow the step to handle input
-                data = human_input
-                resume_start_idx = start_idx
-
-            run_id_for_state = getattr(ctx, "run_id", None)
-            state_created_at: datetime | None = None
-            if self.state_backend is not None and run_id_for_state is not None:
-                loaded = await self.state_backend.load_state(run_id_for_state)
-                if loaded is not None:
-                    wf_state_loaded = WorkflowState.model_validate(loaded)
-                    state_created_at = wf_state_loaded.created_at
-            from ..exceptions import PipelineAbortSignal as _Abort
-
-            try:
-                async for _ in self._execute_steps(
-                    resume_start_idx,
-                    data,
-                    cast(Optional[ContextT], ctx),
-                    paused_result,
-                    stream_last=False,
-                    run_id=run_id_for_state,
-                    state_backend=self.state_backend,
-                    state_created_at=state_created_at,
-                ):
-                    pass
-            except _Abort:
-                # Swallow pause during resume and return the partial result as paused
-                if isinstance(ctx, PipelineContext):
-                    ctx.scratchpad["status"] = "paused"
-
-            final_status: Literal[
-                "running",
-                "paused",
-                "completed",
-                "failed",
-                "cancelled",
-            ]
-            if paused_result.step_history:
-                final_status = (
-                    "completed" if all(s.success for s in paused_result.step_history) else "failed"
-                )
-            else:
-                final_status = "failed"
-            if isinstance(ctx, PipelineContext):
-                if ctx.scratchpad.get("status") == "paused":
-                    final_status = "paused"
-                ctx.scratchpad["status"] = final_status
-
-            # Use execution manager to persist final state
-            state_manager: StateManager[ContextT] = StateManager[ContextT](self.state_backend)
-            assert self.pipeline is not None
-            execution_manager: ExecutionManager[ContextT] = ExecutionManager[ContextT](
-                self.pipeline,
-                state_manager=state_manager,
-            )
-            await execution_manager.persist_final_state(
-                run_id=run_id_for_state,
-                context=ctx,
-                result=paused_result,
-                start_idx=len(paused_result.step_history),
-                state_created_at=state_created_at,
-                final_status=final_status,
-            )
-
-            # Reflect final status on PipelineResult.success for back-compat
-            try:
-                paused_result.success = final_status == "completed"
-            except Exception:
-                pass
-
-            # Delete state if delete_on_completion is True and pipeline completed successfully
-            if (
-                self.delete_on_completion
-                and final_status == "completed"
-                and run_id_for_state is not None
-            ):
-                # Remove persisted workflow state via StateManager
-                await state_manager.delete_workflow_state(run_id_for_state)
-                # Explicitly delete raw state entry from backend to ensure cleanup
-                try:
-                    if self.state_backend is not None:
-                        await self.state_backend.delete_state(run_id_for_state)
-                except Exception:
-                    # Ignore errors during deletion to avoid breaking flow
-                    pass
-                # Final fallback: completely clear backend store to remove any residual state
-                try:
-                    if self.state_backend is not None:
-                        store = getattr(self.state_backend, "_store", None)
-                        if isinstance(store, dict):
-                            store.clear()
-                except Exception:
-                    pass
-
-            execution_manager.set_final_context(paused_result, cast(Optional[ContextT], ctx))
-            # Emit a post_run event to allow tracers (e.g., ConsoleTracer) to render the final
-            # completion panel after a resume completes. The initial run already emitted a
-            # post_run reflecting the paused state; this second event represents the true end.
-            try:
-                await self._dispatch_hook(
-                    "post_run",
-                    pipeline_result=paused_result,
-                    context=ctx,
-                )
-            except Exception as e:  # noqa: BLE001
-                # Never let tracing/hooks break control flow; record for diagnostics
-                try:
-                    from ..infra import telemetry as _telemetry
-
-                    _telemetry.logfire.debug(f"post_run hook after resume failed: {e}")
-                except Exception:
-                    pass
-            return paused_result
-
-        finally:
-            # Legacy compatibility: helper should not manage backend lifecycle directly.
-            pass
+        return await resume_async_inner(self, paused_result, human_input, _agent_command_adapter)
 
     async def replay_from_trace(self, run_id: str) -> PipelineResult[ContextT]:
         """Replay a prior run deterministically using recorded trace and responses (FSD-013)."""
-        # 1) Load trace and step history
-        if self.state_backend is None:
-            raise OrchestratorError("Replay requires a state_backend with trace support")
-        stored = await self.state_backend.get_run_details(run_id)
-        steps = await self.state_backend.list_run_steps(run_id)
-        trace = await self.state_backend.get_trace(run_id)
-
-        if stored is None:
-            raise OrchestratorError(f"No stored run metadata for run_id={run_id}")
-        if steps is None:
-            steps = []
-
-        # 2) Prepare initial input/context
-        initial_input: Any = None
-        initial_context_data: Dict[str, Any] = {}
-        try:
-            # Prefer trace root attributes for input when available
-            if isinstance(trace, dict):
-                attrs = trace.get("attributes", {}) if trace else {}
-                initial_input = attrs.get("flujo.input", None)
-        except Exception:
-            initial_input = None
-        # Fallback to stored state snapshot
-        try:
-            loaded_state = await self.state_backend.load_state(run_id)
-            if loaded_state is not None:
-                initial_context_data = loaded_state.get("pipeline_context") or {}
-        except Exception:
-            initial_context_data = {}
-
-        # 3) Build map of recorded raw responses keyed by step name and attempt
-        response_map: Dict[str, Any] = {}
-        for s in steps:
-            step_name = s.get("step_name", "")
-            key = f"{step_name}:attempt_1"
-            raw_resp = s.get("raw_response")
-            if raw_resp is None:
-                # As a fallback, use the output (best-effort) if raw not present
-                raw_resp = s.get("output")
-            response_map[key] = raw_resp
-
-        # 4) Extract ordered human inputs from trace events
-        human_inputs: list[Any] = []
-
-        def _collect_events(span: Dict[str, Any]) -> None:
-            try:
-                for ev in span.get("events", []) or []:
-                    if ev.get("name") == "flujo.resumed":
-                        human_inputs.append(ev.get("attributes", {}).get("human_input"))
-                for ch in span.get("children", []) or []:
-                    _collect_events(ch)
-            except Exception:
-                pass
-
-        if isinstance(trace, dict):
-            _collect_events(trace)
-
-        # 5) Create ReplayAgent
-        from ..testing.replay import ReplayAgent
-
-        replay_agent = ReplayAgent(response_map)
-
-        # 6) Override all step agents with the ReplayAgent in-memory
-        self._ensure_pipeline()
-        assert self.pipeline is not None
-        for st in self.pipeline.steps:
-            try:
-                setattr(st, "agent", replay_agent)
-            except Exception:
-                pass
-
-        # 7) Patch resume_async to feed human inputs without external IO
-        original_resume = self.resume_async
-
-        async def _resume_patched(
-            paused_result: PipelineResult[ContextT], human_input: Any
-        ) -> PipelineResult[ContextT]:
-            # Pull next recorded input
-            if not human_inputs:
-                raise OrchestratorError("ReplayError: no recorded human input available for resume")
-            next_input = human_inputs.pop(0)
-            return await original_resume(paused_result, next_input)
-
-        self.resume_async = _resume_patched
-
-        # 8) Execute run with restored input/context
-        final_result: PipelineResult[ContextT] | None = None
-        async for item in self.run_async(initial_input, initial_context_data=initial_context_data):
-            final_result = item
-        assert final_result is not None
-
-        # If the pipeline paused, automatically resume using recorded inputs until completion
-        from ..domain.models import PipelineContext as _PipelineContext
-
-        while True:
-            try:
-                ctx = getattr(final_result, "final_pipeline_context", None)
-                is_paused = False
-                if _PipelineContext is not None and isinstance(ctx, _PipelineContext):
-                    is_paused = ctx.scratchpad.get("status") == "paused"
-                if not is_paused:
-                    break
-                # Resume with the patched method (ignores provided human_input and pops from queue)
-                final_result = await self.resume_async(final_result, cast(Any, None))
-            except Exception:
-                break
-        try:
-            if (
-                final_result is not None
-                and getattr(final_result, "step_history", None)
-                and getattr(final_result.step_history[-1], "success", False)
-                and getattr(final_result.step_history[-1], "branch_context", None) is not None
-            ):
-                final_result.final_pipeline_context = final_result.step_history[-1].branch_context
-        except Exception:
-            pass
-        return final_result
+        return await replay_from_trace(self, run_id)
 
     def as_step(
         self, name: str, *, inherit_context: bool = True, **kwargs: Any
