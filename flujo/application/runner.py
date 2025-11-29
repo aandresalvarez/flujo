@@ -465,6 +465,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         """Replay a prior run deterministically using recorded trace and responses (FSD-013)."""
         return await replay_from_trace(self, run_id)
 
+    async def run_with_events(
+        self,
+        initial_input: RunnerInT,
+        *,
+        run_id: str | None = None,
+        initial_context_data: Optional[Dict[str, Any]] = None,
+    ) -> AsyncIterator[Any]:
+        """Run pipeline yielding lifecycle events (StepOutcome/Chunk) and final PipelineResult."""
+        async for item in self.run_async(
+            initial_input, run_id=run_id, initial_context_data=initial_context_data
+        ):
+            yield item
+
     def as_step(
         self, name: str, *, inherit_context: bool = True, **kwargs: Any
     ) -> Step[RunnerInT, PipelineResult[ContextT]]:
