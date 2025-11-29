@@ -2,24 +2,9 @@
 
 ## To Do
 
-### Monolith refactors (architecture gate)
-  - due: 2025-12-12
-  - tags: [architecture, monolith, refactor]
-  - priority: medium
-  - workload: Large
-  - steps:
-      - [x] Slim `flujo/application/core/agent_orchestrator.py` (1489 LOC) and `flujo/application/runner.py` (1497 LOC) (<1200 LOC each) aligned with Phase 4 plan.  
-        Sub-steps (agent orchestrator):
-          - [x] Extract the retry/fallback attempt loop into `agent_execution_runner.py` (<1200 LOC) and keep the orchestrator wrapper thin.  
-          - [x] Extract plugin handling into a small helper (e.g., `agent_plugin_runner.py`) so runner stays lean.  
-        Sub-steps (runner):
-          - [x] Split runner orchestration into execution/telemetry helpers (e.g., `runner_execution.py`, `runner_telemetry.py`) to drop main file under the gate. *(execution/resume/replay moved to `runner_execution.py`; telemetry remains inline but file now 1041 LOC)*  
-        Challenges:
-          - High coupling between agent orchestrator and retry/fallback state (attempt counters, token/cost tracking, telemetry hooks) increases extraction risk.
-          - Plugin dispatch relies on inline mutation of `processed_output` and primary token accounting; needs clear return types per `docs/advanced/typing_guide.md` (no `Any`).
-          - Limited targeted tests for agent orchestrator: rely on `tests/application/test_runner.py` and integration flows, so we need incremental, small extractions with frequent runs.
-        Run: `pytest tests/application/test_runner.py`
-      - [ ] Plan/phase refactors for remaining monoliths: `flujo/cli/helpers.py`, `flujo/cli/dev_commands.py`, `flujo/domain/blueprint/loader.py`, `flujo/builtins.py`, `flujo/validation/linters.py`, `flujo/state/backends/sqlite.py`, `flujo/domain/dsl/pipeline.py`.  
+      - [ ] Plan/phase refactors for remaining monoliths: `flujo/domain/blueprint/loader.py` (2941 LOC), `flujo/builtins.py` (2692 LOC), `flujo/state/backends/sqlite.py` (2159 LOC), `flujo/application/core/policies/agent_policy.py` (1455 LOC).  
+        - Progress: split `cli/helpers.py` (99 LOC), `cli/dev_commands.py` (19 LOC + helper modules), `validation/linters.py` (65 LOC + helper modules), `domain/dsl/pipeline.py` (1181 LOC).  
+        - Current gate run fails on the four monoliths above.  
         Run: `pytest tests/architecture/test_type_safety_compliance.py::TestArchitectureCompliance::test_no_monolith_files`
     ```md
     Goal: clear monolith gate (<1200 LOC) for all flagged files.
@@ -69,3 +54,21 @@
       - [ ] (optional) Extract HITL handling/resume state into a `loop_hitl_orchestrator.py` helper.
       - [ ] (optional) Extract iteration mappers/output mappers into a `loop_mapper.py` module.
     Run: `pytest tests/unit/test_loop_step_policy.py tests/application/core/test_executor_core_execute_loop.py`
+
+### Monolith refactors (architecture gate)
+  - due: 2025-12-12
+  - tags: [architecture, monolith, refactor]
+  - priority: medium
+  - workload: Large
+  - steps:
+      - [x] Slim `flujo/application/core/agent_orchestrator.py` (1489 LOC) and `flujo/application/runner.py` (1497 LOC) (<1200 LOC each) aligned with Phase 4 plan.  
+        Sub-steps (agent orchestrator):
+          - [x] Extract the retry/fallback attempt loop into `agent_execution_runner.py` (<1200 LOC) and keep the orchestrator wrapper thin.  
+          - [x] Extract plugin handling into a small helper (e.g., `agent_plugin_runner.py`) so runner stays lean.  
+        Sub-steps (runner):
+          - [x] Split runner orchestration into execution/telemetry helpers (e.g., `runner_execution.py`, `runner_telemetry.py`) to drop main file under the gate. *(execution/resume/replay moved to `runner_execution.py`; telemetry remains inline but file now 1041 LOC)*  
+        Challenges:
+          - High coupling between agent orchestrator and retry/fallback state (attempt counters, token/cost tracking, telemetry hooks) increases extraction risk.
+          - Plugin dispatch relies on inline mutation of `processed_output` and primary token accounting; needs clear return types per `docs/advanced/typing_guide.md` (no `Any`).
+          - Limited targeted tests for agent orchestrator: rely on `tests/application/test_runner.py` and integration flows, so we need incremental, small extractions with frequent runs.
+        Run: `pytest tests/application/test_runner.py`
