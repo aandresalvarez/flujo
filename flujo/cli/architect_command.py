@@ -681,6 +681,8 @@ def create(  # <--- REVERT BACK TO SYNC
                     print_rich_or_typer(
                         "[red]Non-interactive mode: re-run with --allow-side-effects to proceed."
                     )
+                    # Also emit the flag hint to stdout so Typer tests can assert on it deterministically.
+                    typer.echo("--allow-side-effects")
                     raise typer.Exit(1)
                 confirm = typer.confirm(
                     "Proceed anyway? This may perform external actions (e.g., Slack posts).",

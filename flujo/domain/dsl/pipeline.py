@@ -17,7 +17,6 @@ from ..models import BaseModel
 from flujo.domain.models import PipelineResult
 from ...exceptions import ConfigurationError
 from .step import Step
-from . import pipeline_mermaid
 from typing import TYPE_CHECKING
 from ..types import HookCallable
 
@@ -1133,30 +1132,44 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
     def to_mermaid(self) -> str:  # noqa: D401
         """Generate a Mermaid graph definition for visualizing this pipeline."""
+        from . import pipeline_mermaid
+
         return pipeline_mermaid.to_mermaid(self)
 
     def to_mermaid_with_detail_level(self, detail_level: str = "auto") -> str:  # noqa: D401
         """Generate a Mermaid graph definition with configurable detail levels."""
+        from . import pipeline_mermaid
+
         return pipeline_mermaid.to_mermaid_with_detail_level(self, detail_level)
 
     # ---------------------- internal visualization utils --------------------
 
     def _determine_optimal_detail_level(self) -> str:
         """Heuristic to pick a detail level based on pipeline complexity."""
+        from . import pipeline_mermaid
+
         return pipeline_mermaid._determine_optimal_detail_level(self)
 
     def _calculate_complexity_score(self) -> int:
+        from . import pipeline_mermaid
+
         return pipeline_mermaid._calculate_complexity_score(self)
 
     # High / medium / low detail graph generators – directly migrated from legacy
 
     def _generate_high_detail_mermaid(self) -> str:  # noqa: C901 – complexity inherited
+        from . import pipeline_mermaid
+
         return pipeline_mermaid._generate_high_detail_mermaid(self)
 
     def _generate_medium_detail_mermaid(self) -> str:
+        from . import pipeline_mermaid
+
         return pipeline_mermaid._generate_medium_detail_mermaid(self)
 
     def _generate_low_detail_mermaid(self) -> str:
+        from . import pipeline_mermaid
+
         return pipeline_mermaid._generate_low_detail_mermaid(self)
 
     def as_step(

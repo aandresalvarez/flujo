@@ -515,6 +515,18 @@ agents:
       If the input is empty or contains no results, say "I couldn't find any information on that topic."
     output_schema:
       type: string
+steps:
+  - kind: step
+    name: perform_web_search
+    agent: {{ id: "flujo.builtins.web_search" }}
+    input:
+      query: "{{ initial_prompt }}"
+  - kind: step
+    name: summarize_results
+    agent: {{ id: "agents.result_formatter" }}
+    input:
+      results: "{{ previous_step }}"  # web search output
+    sink_to: final_result
             """.strip()
         ).format(demo_name=demo_name)
 

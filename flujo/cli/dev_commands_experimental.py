@@ -231,7 +231,13 @@ def add_eval_case_cmd(
         case_parts.append(f'expected_output="""{expected_output}"""')
     if metadata_json:
         try:
-            parsed = safe_deserialize(json.loads(metadata_json))
+            try:
+                from flujo.cli import dev_commands as _dev
+
+                _sd = getattr(_dev, "safe_deserialize", safe_deserialize)
+            except Exception:
+                _sd = safe_deserialize
+            parsed = _sd(json.loads(metadata_json))
             case_parts.append(f"metadata={parsed}")
         except json.JSONDecodeError:
             typer.secho(

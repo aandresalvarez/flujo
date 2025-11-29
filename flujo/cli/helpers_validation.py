@@ -352,7 +352,12 @@ def find_side_effect_skills_in_yaml(yaml_text: str, *, base_dir: Optional[str] =
                 skill_id = agent_info.get("id")
                 if isinstance(skill_id, str):
                     skill = skill_registry.get(skill_id)
-                    if skill and getattr(skill, "side_effects", False):
+                    is_side_effect = False
+                    if isinstance(skill, dict):
+                        is_side_effect = bool(skill.get("side_effects"))
+                    elif skill is not None:
+                        is_side_effect = bool(getattr(skill, "side_effects", False))
+                    if is_side_effect:
                         side_effect_skills.append(skill_id)
             for value in node.values():
                 _walk(value)
@@ -371,10 +376,10 @@ def enrich_yaml_with_required_params(
     try:
         data = yaml.safe_load(yaml_text)
     except Exception:
-        return yaml_text, {}
+        return yaml_text
 
     if not isinstance(data, dict):
-        return yaml_text, {}
+        return yaml_text
 
     if base_dir:
         load_skills_catalog(base_dir)
@@ -390,12 +395,16 @@ def enrich_yaml_with_required_params(
                 skill_id = agent_info.get("id")
                 if isinstance(skill_id, str):
                     skill = skill_registry.get(skill_id)
-                    if skill and skill.required_params:
+                    if isinstance(skill, dict):
+                        required_params = skill.get("required_params")
+                    else:
+                        required_params = getattr(skill, "required_params", None) if skill else None
+                    if required_params:
                         params = agent_info.get("params")
                         if not isinstance(params, dict):
                             params = {}
                         added: Dict[str, Any] = {}
-                        for key, default in skill.required_params.items():
+                        for key, default in required_params.items():
                             if key not in params:
                                 params[key] = default
                                 added[key] = default

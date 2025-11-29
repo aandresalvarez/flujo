@@ -2,9 +2,8 @@
 
 ## To Do
 
-      - [ ] Plan/phase refactors for remaining monoliths: `flujo/domain/blueprint/loader.py` (2941 LOC), `flujo/builtins.py` (2692 LOC), `flujo/state/backends/sqlite.py` (2159 LOC), `flujo/application/core/policies/agent_policy.py` (1455 LOC).  
-        - Progress: split `cli/helpers.py` (99 LOC), `cli/dev_commands.py` (19 LOC + helper modules), `validation/linters.py` (65 LOC + helper modules), `domain/dsl/pipeline.py` (1181 LOC).  
-        - Current gate run fails on the four monoliths above.  
+      - [x] Finish monolith refactors to clear the gate (<1200 LOC each).  
+        - Completed splits: `domain/blueprint/loader.py` → loader_models/parser/resolution/templates/steps/*; `cli/helpers.py`; `cli/dev_commands.py`; `validation/linters.py`; `domain/dsl/pipeline.py`; `builtins.py` → core/architect/support/extras modules; `state/backends/sqlite.py` → sqlite_core.py/sqlite_ops.py/sqlite_trace.py facade; `application/core/policies/agent_policy.py` → agent_policy_execution.py/agent_policy_run.py facade.  
         Run: `pytest tests/architecture/test_type_safety_compliance.py::TestArchitectureCompliance::test_no_monolith_files`
     ```md
     Goal: clear monolith gate (<1200 LOC) for all flagged files.

@@ -10,7 +10,7 @@ import typer
 from typing_extensions import Annotated
 
 from flujo.infra import telemetry
-from .config import load_backend_from_config
+from .config import load_backend_from_config as _load_backend_from_config
 from .helpers import ensure_project_root_on_sys_path, get_version_string
 
 logfire = telemetry.logfire
@@ -77,7 +77,13 @@ def dev_health_check(
         except Exception:
             pass
     try:
-        backend = load_backend_from_config()
+        try:
+            from flujo.cli import dev_commands as _dev
+
+            backend_factory = getattr(_dev, "load_backend_from_config", _load_backend_from_config)
+        except Exception:
+            backend_factory = _load_backend_from_config
+        backend = backend_factory()
     except Exception as e:
         from .helpers import print_rich_or_typer
 
