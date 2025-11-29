@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 from typing import Any, Callable, Dict, Optional, Union, cast
 import os
 
@@ -506,12 +507,36 @@ class ConfigManager:
         return config.state_uri
 
 
-# Configuration manager instance - stateless approach for multiprocessing safety
+_CONFIG_MANAGER_LOCK = threading.Lock()
+_CONFIG_MANAGER_CACHE: Dict[int, ConfigManager] = {}
+
+
 def get_config_manager(force_reload: bool = False) -> ConfigManager:
-    """Get a config manager instance. Always creates a new instance for multiprocessing safety."""
-    # Always create a new instance to avoid multiprocessing issues
-    # This ensures each process gets its own config manager
-    return ConfigManager()
+    """Get a process-local ConfigManager instance with optional cache refresh."""
+    pid = os.getpid()
+    current_env_path = os.environ.get("FLUJO_CONFIG_PATH")
+
+    def _needs_refresh(cached: ConfigManager) -> bool:
+        """Refresh when env-provided config path changes or is cleared."""
+        if current_env_path:
+            env_path = Path(current_env_path)
+            if cached._config_source != "env":
+                return True
+            return cached.config_path != env_path
+        # No env path set: drop cached env-sourced manager to allow search/defaults
+        return cached._config_source == "env"
+
+    with _CONFIG_MANAGER_LOCK:
+        cached = _CONFIG_MANAGER_CACHE.get(pid)
+        if force_reload or cached is None or _needs_refresh(cached):
+            _CONFIG_MANAGER_CACHE[pid] = ConfigManager()
+        return _CONFIG_MANAGER_CACHE[pid]
+
+
+def invalidate_config_cache() -> None:
+    """Clear the process-local ConfigManager cache (useful in tests)."""
+    with _CONFIG_MANAGER_LOCK:
+        _CONFIG_MANAGER_CACHE.clear()
 
 
 def load_settings(force_reload: bool = False) -> Any:

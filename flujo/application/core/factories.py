@@ -35,7 +35,7 @@ class ExecutorFactory:
         telemetry: ITelemetry | None = None,
         cache_backend: ICacheBackend | None = None,
         optimization_config: OptimizationConfig | None = None,
-        state_providers: Optional[Dict[str, StateProvider]] = None,
+        state_providers: Optional[Dict[str, StateProvider[Any]]] = None,
     ) -> None:
         self._telemetry = telemetry
         self._cache_backend = cache_backend

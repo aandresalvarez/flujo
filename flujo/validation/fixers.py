@@ -4,6 +4,8 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Tuple, Callable, Any, Dict, List, Optional, Union
 
+from flujo.type_definitions.common import JSONObject
+
 
 # --- Fixer registry primitives ---
 
@@ -391,7 +393,7 @@ register_fixer(
 # --- Dry-run / patch preview ---
 def build_fix_patch(
     path: str, report: Any, rules: Optional[List[str]] = None
-) -> Tuple[str, Dict[str, Any]]:
+) -> Tuple[str, JSONObject]:
     """Construct a unified diff preview of changes without writing files.
 
     Returns (patch_text, metrics)
@@ -459,9 +461,7 @@ def build_fix_patch(
     return "\n".join(diff), {"applied": per_rule, "total_applied": total}
 
 
-def plan_fixes(
-    path: str, report: object, *, rules: Optional[List[str]] = None
-) -> List[Dict[str, Any]]:
+def plan_fixes(path: str, report: object, *, rules: Optional[List[str]] = None) -> list[JSONObject]:
     """Return a preview plan of fixable changes per rule.
 
     rules: optional allow-list of rule ids/globs (e.g., ["V-T1"]).
@@ -480,7 +480,7 @@ def plan_fixes(
                 continue
         return False
 
-    plan: List[Dict[str, Any]] = []
+    plan: list[JSONObject] = []
     for rid, fx in get_registered_fixers().items():
         if not _allowed(rid):
             continue
@@ -495,13 +495,13 @@ def plan_fixes(
 
 def apply_fixes_to_file(
     path: str, report: object, *, assume_yes: bool = False, rules: Optional[List[str]] = None
-) -> tuple[bool, Optional[str], Dict[str, Any]]:
+) -> tuple[bool, Optional[str], JSONObject]:
     """Apply registered auto-fixes for the given file based on the report.
 
     Returns (applied_any, first_backup_path, metrics)
     metrics includes per-rule counts and total_applied.
     """
-    metrics: Dict[str, Any] = {"applied": {}, "total_applied": 0}
+    metrics: JSONObject = {"applied": {}, "total_applied": 0}
     backup_first: Optional[str] = None
     applied_any = False
 
@@ -527,7 +527,7 @@ def apply_fixes_to_file(
             backup_first = backup
         if changed > 0:
             applied_any = True
-            # mypy: metrics['applied'] is a Dict[str, Any]
+            # mypy: metrics['applied'] is a dict[str, Any]
             prev = metrics["applied"].get(rid, 0)
             try:
                 prev_int = int(prev)

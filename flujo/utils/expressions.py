@@ -24,6 +24,10 @@ class _SafeEvaluator(ast.NodeVisitor):
         return self.visit(node.body)
 
     def visit_Name(self, node: ast.Name) -> Any:
+        if node.id in {"true", "True"}:
+            return True
+        if node.id in {"false", "False"}:
+            return False
         if node.id not in {"previous_step", "output", "context", "steps", "resume_input"}:
             raise ValueError(f"Unknown name: {node.id}")
         return self.names.get(node.id)
@@ -133,24 +137,41 @@ class _SafeEvaluator(ast.NodeVisitor):
         result = True
         for op, comparator in zip(node.ops, node.comparators):
             right = self.visit(comparator)
-            if isinstance(op, ast.In):
-                ok = left in right if right is not None else False
-            elif isinstance(op, ast.NotIn):
-                ok = left not in right if right is not None else True
-            elif isinstance(op, ast.Eq):
-                ok = left == right
-            elif isinstance(op, ast.NotEq):
-                ok = left != right
-            elif isinstance(op, ast.Lt):
-                ok = left < right
-            elif isinstance(op, ast.LtE):
-                ok = left <= right
-            elif isinstance(op, ast.Gt):
-                ok = left > right
-            elif isinstance(op, ast.GtE):
-                ok = left >= right
-            else:
-                raise ValueError("Unsupported comparison operator")
+            try:
+
+                def _coerce_number(val: Any) -> Any:
+                    if isinstance(val, str):
+                        try:
+                            return int(val)
+                        except Exception:
+                            try:
+                                return float(val)
+                            except Exception:
+                                return val
+                    return val
+
+                left_cmp = _coerce_number(left)
+                right_cmp = _coerce_number(right)
+                if isinstance(op, ast.In):
+                    ok = left_cmp in right_cmp if right_cmp is not None else False
+                elif isinstance(op, ast.NotIn):
+                    ok = left_cmp not in right_cmp if right_cmp is not None else True
+                elif isinstance(op, ast.Eq):
+                    ok = left_cmp == right_cmp
+                elif isinstance(op, ast.NotEq):
+                    ok = left_cmp != right_cmp
+                elif isinstance(op, ast.Lt):
+                    ok = left_cmp < right_cmp
+                elif isinstance(op, ast.LtE):
+                    ok = left_cmp <= right_cmp
+                elif isinstance(op, ast.Gt):
+                    ok = left_cmp > right_cmp
+                elif isinstance(op, ast.GtE):
+                    ok = left_cmp >= right_cmp
+                else:
+                    raise ValueError("Unsupported comparison operator")
+            except Exception:
+                ok = False
             if not ok:
                 result = False
                 break

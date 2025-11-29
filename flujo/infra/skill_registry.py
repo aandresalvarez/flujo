@@ -26,7 +26,6 @@ class SkillRegistry(SkillRegistryProtocol):
     """Versioned, scoped registry for resolving skills/agents by ID."""
 
     def __init__(self) -> None:
-        # scope -> id -> entry
         self._entries: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
     def register(
@@ -77,13 +76,15 @@ class SkillRegistry(SkillRegistryProtocol):
         scoped = self._entries.get(scope_key, {})
         versions = scoped.get(id)
         if versions is None and id.startswith("flujo.builtins."):
-            # Lazy-load builtins if the registry has not been primed yet.
+            # Force a fresh registration for any builtin miss to avoid flakiness.
             try:
                 from flujo.builtins import _register_builtins as _reg
 
+                # Reset only the default scope to keep tenant scopes isolated
+                self._entries["default"] = {}
                 _reg()
-                scoped = self._entries.get(scope_key, {})
-                versions = scoped.get(id)
+                scoped_default = self._entries.get("default", {})
+                versions = scoped_default.get(id) if scope_key == "default" else scoped.get(id)
             except Exception:
                 versions = None
         if versions is None:

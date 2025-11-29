@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel as PydanticBaseModel
 
 from flujo.domain.models import BaseModel as DomainBaseModel
+from flujo.type_definitions.common import JSONObject
 
 _ruamel_yaml: Any = None
 try:
@@ -24,7 +25,7 @@ async def passthrough(x: Any) -> Any:
     return x
 
 
-async def repair_yaml_ruamel(yaml_text: str) -> Dict[str, Any]:
+async def repair_yaml_ruamel(yaml_text: str) -> JSONObject:
     """Conservatively attempt to repair malformed pipeline YAML text.
 
     Strategy:
@@ -149,7 +150,7 @@ async def context_set(
     value: Any,
     *,
     context: Optional[DomainBaseModel] = None,
-) -> Dict[str, Any]:
+) -> JSONObject:
     """Set a context field at the specified dot-separated path.
 
     This is a built-in skill that provides type-safe context manipulation,
@@ -191,10 +192,10 @@ async def context_set(
 
 async def context_merge(
     path: str,
-    value: Dict[str, Any],
+    value: JSONObject,
     *,
     context: Optional[DomainBaseModel] = None,
-) -> Dict[str, Any]:
+) -> JSONObject:
     """Merge a dictionary into the context at the specified path.
 
     This is useful for updating nested context objects with multiple fields at once.
@@ -313,9 +314,9 @@ async def context_get(
 
 async def extract_decomposed_steps(
     decomposition: Any, *, output_key: str = "prepared_steps_for_mapping"
-) -> Dict[str, Any]:
+) -> JSONObject:
     """Extract a list of step dicts from a decomposer output structure."""
-    steps: List[Dict[str, Any]] = []
+    steps: list[JSONObject] = []
     try:
         if isinstance(decomposition, PydanticBaseModel):
             raw = decomposition.model_dump()
@@ -376,7 +377,7 @@ async def extract_yaml_text(writer_output: Any) -> Dict[str, str]:
     return {"yaml_text": text or "", "generated_yaml": text or ""}
 
 
-async def capture_validation_report(report: Any) -> Dict[str, Any]:
+async def capture_validation_report(report: Any) -> JSONObject:
     """Capture ValidationReport-like payload into context-friendly dict."""
     try:
         if hasattr(report, "model_dump"):
@@ -432,7 +433,7 @@ def always_valid_key(_out: Any = None, ctx: DomainBaseModel | None = None) -> st
 # --- In-memory YAML validation skill ---
 
 
-async def validation_report_to_flag(report: Any) -> Dict[str, Any]:
+async def validation_report_to_flag(report: Any) -> JSONObject:
     """Return a dict with yaml_is_valid based on a ValidationReport-like input."""
     try:
         if isinstance(report, dict):
@@ -447,7 +448,7 @@ async def validation_report_to_flag(report: Any) -> Dict[str, Any]:
 
 async def extract_validation_errors(
     report: Any, *, context: DomainBaseModel | None = None
-) -> Dict[str, Any]:
+) -> JSONObject:
     """Extract error messages from a ValidationReport-like input for repair loops.
 
     Also returns the current yaml_is_valid flag (when available) so that the
@@ -465,7 +466,7 @@ async def extract_validation_errors(
         else:
             report_source = report
 
-        report_dict: Dict[str, Any]
+        report_dict: JSONObject
         if isinstance(report_source, dict):
             report_dict = report_source
         elif (
@@ -491,7 +492,7 @@ async def extract_validation_errors(
     except Exception:
         is_valid = False
 
-    result: Dict[str, Any] = {
+    result: JSONObject = {
         "validation_errors": _json.dumps(errors),
         "yaml_is_valid": is_valid,
     }
@@ -691,7 +692,7 @@ def select_by_yaml_shape(
     return "valid"
 
 
-async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> Dict[str, Any]:
+async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> JSONObject:
     """Return {'yaml_is_valid': bool} based on a quick YAML shape heuristic.
 
     - False only when the 'steps:' line contains an opening '[' without a closing ']'.
@@ -708,7 +709,7 @@ async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> D
         except Exception:
             line = ""
         if "[" in line and "]" not in line:
-            _out: Dict[str, Any] = {"yaml_is_valid": False, "yaml_text": yt}
+            _out: JSONObject = {"yaml_is_valid": False, "yaml_text": yt}
             try:
                 gy = getattr(context, "generated_yaml", None)
                 if isinstance(gy, str):
@@ -726,7 +727,7 @@ async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> D
                 or ("[" in first and "]" in first)
                 or not ("[" in first and "]" not in first)
             ):
-                _out2: Dict[str, Any] = {"yaml_is_valid": True, "yaml_text": yt}
+                _out2: JSONObject = {"yaml_is_valid": True, "yaml_text": yt}
                 try:
                     gy = getattr(context, "generated_yaml", None)
                     if isinstance(gy, str):
@@ -736,7 +737,7 @@ async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> D
                 return _out2
         except Exception:
             pass
-    _out3: Dict[str, Any] = {"yaml_is_valid": True}
+    _out3: JSONObject = {"yaml_is_valid": True}
     if isinstance(yt, str):
         _out3["yaml_text"] = yt
     try:

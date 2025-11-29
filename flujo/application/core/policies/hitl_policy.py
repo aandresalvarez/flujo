@@ -79,18 +79,43 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
                         sp.pop("paused_step_input", None)
                     last_step = sp.get("last_hitl_step")
                     # When we enter a new HITL step, clear stale HITL markers so we don't auto-consume
-                    # previous input and accidentally skip pausing.
+                    # previous input and accidentally skip pausing, except when we are resuming and
+                    # intentionally feeding the pending user input to this step.
                     if last_step is None or last_step != step.name:
                         sp.pop("hitl_data", None)
                         sp.pop("user_input", None)
                         sp.pop("pause_message", None)
                         sp.pop("hitl_message", None)
                         sp.pop("paused_step_input", None)
-                        sp.pop("loop_resume_requires_hitl_output", None)
+                        if not sp.get("loop_resume_requires_hitl_output"):
+                            sp.pop("loop_resume_requires_hitl_output", None)
                         sp.pop("loop_last_output", None)
                     sp["last_hitl_step"] = step.name
                     if data is not None and sp.get("status") == "paused":
-                        sp["user_input"] = data
+                        # Hydrate user_input when resuming into the same HITL or when the resume flag is set.
+                        if sp.get("loop_resume_requires_hitl_output") and "user_input" in sp:
+                            # Preserve human resume payload; do not overwrite with loop data.
+                            pass
+                        elif last_step == step.name or sp.get("loop_resume_requires_hitl_output"):
+                            sp["user_input"] = data
+                        else:
+                            sp.pop("user_input", None)
+                    # Hard fast-path: if we already have a resume payload, consume it immediately.
+                    if sp.get("loop_resume_requires_hitl_output") and "user_input" in sp:
+                        resume_payload = sp.get("user_input")
+                        sp["status"] = "running"
+                        sp.pop("loop_resume_requires_hitl_output", None)
+                        return Success(
+                            step_result=StepResult(
+                                name=getattr(step, "name", "hitl"),
+                                output=resume_payload,
+                                success=True,
+                                attempts=1,
+                                latency_s=0.0,
+                                token_counts=0,
+                                cost_usd=0.0,
+                            )
+                        )
         except Exception:
             pass
 
@@ -288,8 +313,9 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
                 and data is not None
             ):
                 resp = data
-                context.scratchpad["status"] = "running"
-                context.scratchpad["user_input"] = resp
+                sp = context.scratchpad
+                sp["status"] = "running"
+                sp["user_input"] = resp
                 if step.sink_to:
                     try:
                         from flujo.utils.context import set_nested_context_field
@@ -297,6 +323,9 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
                         set_nested_context_field(context, step.sink_to, resp)
                     except Exception:
                         pass
+                # Consume the resume marker so subsequent HITLs will pause again.
+                sp.pop("loop_resume_requires_hitl_output", None)
+                sp.pop("hitl_data", None)
                 return Success(
                     step_result=StepResult(
                         name=getattr(step, "name", "hitl"),

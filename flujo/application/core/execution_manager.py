@@ -254,19 +254,33 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                         step_result.name = getattr(step, "name", "<unnamed>")
                                 except Exception:
                                     pass
-                                # Call step-level failure handlers before we mutate state
-                                if hasattr(step, "failure_handlers") and step.failure_handlers:
-                                    for handler in step.failure_handlers:
-                                        # Let exceptions bubble to the runner/tests
-                                        handler() if hasattr(handler, "__call__") else None
                                 # Dispatch failure hook if available and allow PipelineAbortSignal to bubble
-                                if hasattr(self.step_coordinator, "_dispatch_hook"):
+                                already_dispatched = False
+                                try:
+                                    meta = getattr(step_result, "metadata_", None)
+                                    already_dispatched = isinstance(meta, dict) and meta.get(
+                                        "on_step_failure_dispatched", False
+                                    )
+                                except Exception:
+                                    already_dispatched = False
+                                if not already_dispatched and hasattr(
+                                    self.step_coordinator, "_dispatch_hook"
+                                ):
                                     await self.step_coordinator._dispatch_hook(
                                         "on_step_failure",
                                         step_result=step_result,
                                         context=context,
                                         resources=self.step_coordinator.resources,
                                     )
+                                    try:
+                                        if isinstance(step_result, StepResult):
+                                            meta = getattr(step_result, "metadata_", None)
+                                            if not isinstance(meta, dict):
+                                                step_result.metadata_ = {}
+                                                meta = step_result.metadata_
+                                            meta["on_step_failure_dispatched"] = True
+                                    except Exception:
+                                        pass
                                 # Sanitize feedback if the partial result captured an internal attribute error
                                 try:
                                     fb_lower = (step_result.feedback or "").lower()
@@ -305,7 +319,6 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                 except _PNC:
                                     # Let runner handle persistence and re-raise
                                     raise
-                                except Exception:
                                     pass
                                 # Attempt recovery when failure is due to missing terminal outcome
                                 try:
@@ -346,43 +359,10 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                     self.step_coordinator.update_pipeline_result(
                                         result, step_result
                                     )
-                                # Tail synthesis only for missing-outcome failures
-                                try:
-                                    fbtxt = (step_result.feedback or "").lower()
-                                    if "no terminal outcome" in fbtxt:
-                                        expected = len(self.pipeline.steps)
-                                        have = len(result.step_history)
-                                        if have < expected:
-                                            from flujo.domain.models import StepResult as _SR
-
-                                            for j in range(have, expected):
-                                                try:
-                                                    missing_name = getattr(
-                                                        self.pipeline.steps[j], "name", f"step_{j}"
-                                                    )
-                                                except Exception:
-                                                    missing_name = f"step_{j}"
-                                                synthesized = _SR(
-                                                    name=str(missing_name),
-                                                    success=False,
-                                                    output=None,
-                                                    attempts=0,
-                                                    latency_s=0.0,
-                                                    token_counts=0,
-                                                    cost_usd=0.0,
-                                                    feedback="Agent produced no terminal outcome",
-                                                    branch_context=None,
-                                                    metadata_={},
-                                                    step_history=[],
-                                                )
-                                                self.step_coordinator.update_pipeline_result(
-                                                    result, synthesized
-                                                )
-                                except Exception:
-                                    pass
                                 self.set_final_context(result, context)
                                 yield result
-                                return
+                                # Do not return early; allow remaining steps to execute.
+                                continue
                             elif isinstance(item, Paused):
                                 # Update context scratchpad and raise abort to halt
                                 if context is not None and hasattr(context, "scratchpad"):
@@ -645,35 +625,11 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                             output=None,
                             feedback="Agent produced no terminal outcome",
                         )
+                        # Add to history and continue; remaining steps handled downstream.
+                        self.step_coordinator.update_pipeline_result(result, step_result)
+                        continue
                         # Add to history and halt the pipeline
                         self.step_coordinator.update_pipeline_result(result, step_result)
-                        # Synthesize missing tail steps
-                        try:
-                            expected = len(self.pipeline.steps)
-                            # idx is the index of the current step; synthesize for subsequent steps
-                            for j in range(idx + 1, expected):
-                                try:
-                                    missing_name = getattr(
-                                        self.pipeline.steps[j], "name", f"step_{j}"
-                                    )
-                                except Exception:
-                                    missing_name = f"step_{j}"
-                                synthesized = _SR(
-                                    name=str(missing_name),
-                                    success=False,
-                                    output=None,
-                                    attempts=0,
-                                    latency_s=0.0,
-                                    token_counts=0,
-                                    cost_usd=0.0,
-                                    feedback="Agent produced no terminal outcome",
-                                    branch_context=None,
-                                    metadata_={},
-                                    step_history=[],
-                                )
-                                self.step_coordinator.update_pipeline_result(result, synthesized)
-                        except Exception:
-                            pass
                         self.set_final_context(result, context)
                         yield result
                         return
@@ -695,11 +651,11 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                             if meta.get("exit_reason") == "max_loops":
                                 pass  # allow mapper to run
                             else:
-                                self.set_final_context(result, context_before_step or context)
+                                self.set_final_context(result, context or context_before_step)
                                 yield result
                                 return
                         except Exception:
-                            self.set_final_context(result, context_before_step or context)
+                            self.set_final_context(result, context or context_before_step)
                             yield result
                             return
 
@@ -1077,20 +1033,30 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         all_ok = False
 
                     # Determine final status. For resumed runs (start_idx > 0), treat
-                    # success of the executed tail as overall completion.
+                    # success of the executed tail as overall completion **only when we actually
+                    # executed steps**. If no new steps ran (e.g., immediate HITL pause), keep paused.
                     if start_idx > 0:
-                        resumed_all_ok = bool(result.step_history) and all(
-                            sr.success for sr in result.step_history
-                        )
-                        final_status = (
-                            "completed"
-                            if (resumed_all_ok and not usage_limit_exceeded)
-                            else "failed"
-                        )
+                        if result.step_history:
+                            resumed_all_ok = all(sr.success for sr in result.step_history)
+                            final_status = (
+                                "completed"
+                                if (resumed_all_ok and not usage_limit_exceeded)
+                                else "failed"
+                            )
+                        else:
+                            # No steps executed in the resumed tail; keep paused so caller can supply more HITL input.
+                            final_status = "paused"
                     else:
                         final_status = (
                             "completed" if (all_ok and not usage_limit_exceeded) else "failed"
                         )
+                    # If this was a resumed run and we haven't covered all steps, force paused.
+                    try:
+                        if start_idx > 0 and len(result.step_history) < len(self.pipeline.steps):
+                            final_status = "paused"
+                    except Exception:
+                        pass
+
                     await self.persist_final_state(
                         run_id=run_id,
                         context=context,
@@ -1102,53 +1068,6 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
 
         # Do not synthesize placeholder results for unexecuted steps.
         # History should only include steps that actually ran.
-
-        # Finalization safety: if fewer results were recorded than pipeline steps,
-        # synthesize placeholder failures for the remaining tail steps so the
-        # history length matches the pipeline length — but only when we detected a
-        # missing-outcome scenario. This avoids padding when steps were legitimately
-        # skipped (e.g., conditional branches).
-        try:
-            expected = len(self.pipeline.steps)
-            have = len(result.step_history)
-            if start_idx == 0 and have < expected:
-                missing_outcome_detected = any(
-                    isinstance(getattr(sr, "feedback", None), str)
-                    and "no terminal outcome" in sr.feedback.lower()
-                    for sr in result.step_history
-                )
-                if missing_outcome_detected:
-                    try:
-                        from ...infra import telemetry as _tm
-
-                        _tm.logfire.debug(
-                            f"[ExecutionManager] Finalization padding: have={have} expected={expected}."
-                        )
-                    except Exception:
-                        pass
-                    from flujo.domain.models import StepResult as _SR
-
-                    for j in range(have, expected):
-                        try:
-                            missing_name = getattr(self.pipeline.steps[j], "name", f"step_{j}")
-                        except Exception:
-                            missing_name = f"step_{j}"
-                        synthesized = _SR(
-                            name=str(missing_name),
-                            success=False,
-                            output=None,
-                            attempts=0,
-                            latency_s=0.0,
-                            token_counts=0,
-                            cost_usd=0.0,
-                            feedback="Agent produced no terminal outcome",
-                            branch_context=None,
-                            metadata_={},
-                            step_history=[],
-                        )
-                        self.step_coordinator.update_pipeline_result(result, synthesized)
-        except Exception:
-            pass
 
         # Set final context after all steps complete
         self.set_final_context(result, context)

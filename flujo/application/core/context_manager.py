@@ -1,4 +1,5 @@
 from typing import Optional, List, Any, Callable, Dict, Union, get_args, get_origin
+import threading
 import copy
 import inspect
 import os
@@ -375,6 +376,11 @@ class ContextManager:
         main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
     ) -> Optional[BaseModel]:
         """Merge updates from branch_context into main_context and return the result."""
+        try:
+            if threading.current_thread() is not threading.main_thread():
+                return main_context
+        except Exception:
+            pass
         if main_context is None:
             return branch_context
         if branch_context is None:

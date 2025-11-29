@@ -25,7 +25,7 @@ For production workloads, you often need to reference large external datasets (k
 
 ### Defining a StateProvider
 
-A `StateProvider` implements two async methods:
+A `StateProvider` implements a small async lifecycle:
 
 ```python
 from flujo.domain.interfaces import StateProvider
@@ -47,6 +47,19 @@ class KnowledgeGraphProvider(StateProvider):
             "INSERT OR REPLACE INTO graphs (key, data) VALUES (?, ?)",
             key, data
         )
+
+    async def delete(self, key: str) -> bool:
+        """Optional: delete a record; return True if removed."""
+        return await self._db.execute("DELETE FROM graphs WHERE key = ?", key) > 0
+
+    async def exists(self, key: str) -> bool:
+        """Optional: check if a record exists."""
+        row = await self._db.query("SELECT 1 FROM graphs WHERE key = ? LIMIT 1", key)
+        return row is not None
+
+    async def close(self) -> None:
+        """Optional: release connections/caches."""
+        await self._db.close()
 ```
 
 ### Using ContextReference in Your Context

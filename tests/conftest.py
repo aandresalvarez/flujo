@@ -257,6 +257,41 @@ def _clear_project_root_env(monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_validation_overrides(monkeypatch):
+    """Reset validation rule overrides and caches for deterministic warnings."""
+
+    for key in ("FLUJO_RULES_JSON", "FLUJO_RULES_FILE", "FLUJO_RULES_PROFILE"):
+        monkeypatch.delenv(key, raising=False)
+    try:
+        import flujo.validation.linters_base as _lb
+
+        _lb._OVERRIDE_CACHE = None  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_skill_registry_defaults():
+    """Ensure builtin skills are deterministically registered before every test."""
+
+    try:
+        from flujo.infra.skill_registry import get_skill_registry_provider
+        from flujo.builtins import _register_builtins
+
+        reg = get_skill_registry_provider().get_registry()
+        try:
+            reg._entries["default"] = {}  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        _register_builtins()
+    except Exception:
+        # Keep tests running even if optional deps for extras are unavailable
+        pass
+    yield
+
+
 def create_test_flujo(
     pipeline: Pipeline[Any, Any] | Step[Any, Any],
     *,
@@ -353,7 +388,21 @@ def get_registered_factory(skill_id: str):
 
     reg = get_skill_registry_provider().get_registry()
     entry = reg.get(skill_id)
+    if entry is None:
+        # Retry once after forcing a fresh builtin registration (registry may have been mutated by tests)
+        _register_builtins()
+        entry = reg.get(skill_id)
+    if entry is None:
+        # Hard reset default registry and re-bootstrap builtins, then retry once more
+        try:
+            reg._entries["default"] = {}  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        _register_builtins()
+        entry = reg.get(skill_id)
+
     if entry is None and skill_id in {"flujo.builtins.wrap_dict", "flujo.builtins.ensure_object"}:
+        # Legacy fallback for helper skills used in a few tests
         _register_builtins()
         entry = reg.get(skill_id)
         if entry is None:

@@ -113,7 +113,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         pipeline_name: Optional[str] = None,
         enable_tracing: bool = True,
         pipeline_id: Optional[str] = None,
-        state_providers: Optional[Dict[str, StateProvider]] = None,
+        state_providers: Optional[Dict[str, StateProvider[Any]]] = None,
     ) -> None:
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)

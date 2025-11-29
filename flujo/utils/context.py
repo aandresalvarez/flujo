@@ -322,7 +322,22 @@ def safe_merge_context_updates(
                         existing.add(h)
                         result[key].append(item)
             else:
-                result[key] = source_value
+                # Merge primitives with preservation semantics:
+                # - booleans: logical OR to avoid losing a True flag
+                # - numbers: take the max to retain increments from successful branches
+                # - all other types: overwrite with the latest value
+                if key in result:
+                    target_value = result[key]
+                    if isinstance(target_value, bool) and isinstance(source_value, bool):
+                        result[key] = target_value or source_value
+                    elif isinstance(target_value, (int, float)) and isinstance(
+                        source_value, (int, float)
+                    ):
+                        result[key] = source_value if source_value > target_value else target_value
+                    else:
+                        result[key] = source_value
+                else:
+                    result[key] = source_value
 
         # Phase 1: Restore preserved pause_message if it was set (recipe set it correctly)
         if preserved_pause_message is not None and isinstance(result, dict):
@@ -859,11 +874,26 @@ def set_nested_context_field(context: Any, path: str, value: Any) -> bool:
     # Set the final field
     final_field = parts[-1]
     try:
-        # Try dict assignment first (more common for scratchpad)
+        # If there is an existing numeric value, preserve numeric type when value is a numeric string.
+        def _coerce_numeric(existing: Any, incoming: Any) -> Any:
+            if isinstance(incoming, str) and isinstance(existing, (int, float)):
+                try:
+                    return type(existing)(incoming)
+                except Exception:
+                    return incoming
+            return incoming
+
         if isinstance(target, dict):
+            if final_field in target:
+                value = _coerce_numeric(target.get(final_field), value)
             target[final_field] = value
             return True
         else:
+            try:
+                existing_val = getattr(target, final_field)
+            except Exception:
+                existing_val = None
+            value = _coerce_numeric(existing_val, value)
             # Fall back to attribute assignment
             _force_setattr(target, final_field, value)
             return True

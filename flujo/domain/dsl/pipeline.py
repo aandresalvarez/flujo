@@ -148,6 +148,13 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         - V-A5: Unbound output warning when a step's output is unused and it does not update context
         - V-F1: Incompatible fallback signature between step and fallback_step
         """
+        # Reset rule override cache to honor current environment/profile for each validation pass.
+        try:
+            import flujo.validation.linters_base as _lb
+
+            _lb._OVERRIDE_CACHE = None
+        except Exception:
+            pass
         from typing import Any, get_origin, get_args, Union as TypingUnion
         import types as _types
 

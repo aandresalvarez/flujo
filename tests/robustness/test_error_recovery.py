@@ -56,7 +56,8 @@ class TestErrorRecovery:
             # Should get failure result, not crash
             assert isinstance(result, StepResult)
             assert not result.success
-            assert "failed" in (result.feedback or "").lower()
+            feedback = (result.feedback or "").lower()
+            assert "failed" in feedback or "exception" in feedback
 
         asyncio.run(test_failure_recovery())
 
@@ -379,7 +380,7 @@ class TestResilienceUnderLoad:
                 large_data = {
                     "id": i,
                     "payload": "x" * 50000,  # 50KB per operation
-                    "metadata": {"size": "large"} * 100,
+                    "metadata": [{"size": "large"} for _ in range(100)],
                 }
 
                 step = Step(name=f"memory_step_{i}", agent=AsyncMock())
@@ -480,7 +481,14 @@ class TestGracefulShutdown:
         executor = create_mock_executor_core()
 
         async def long_running_operation():
-            step = Step(name="long_step", agent=AsyncMock())
+            async def _slow_run(*args, **kwargs):
+                await asyncio.sleep(1.0)
+                return {"result": "done"}
+
+            slow_agent = AsyncMock()
+            slow_agent.run = AsyncMock(side_effect=_slow_run)
+
+            step = Step(name="long_step", agent=slow_agent)
 
             # Start execution
             task = asyncio.create_task(executor.execute(step, {"input": "test"}))

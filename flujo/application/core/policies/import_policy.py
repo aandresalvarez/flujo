@@ -451,6 +451,23 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                     child_final_ctx = last_ctx
         except Exception:
             pass
+        # Proactively merge child scratchpad into parent context to avoid state leakage
+        # when upstream merge strategies or exclusions skip scratchpad fields.
+        try:
+            if getattr(step, "outputs", None) != []:
+                if (
+                    context is not None
+                    and child_final_ctx is not None
+                    and hasattr(context, "scratchpad")
+                    and hasattr(child_final_ctx, "scratchpad")
+                    and isinstance(context.scratchpad, dict)
+                    and isinstance(child_final_ctx.scratchpad, dict)
+                ):
+                    context.scratchpad.update(child_final_ctx.scratchpad)
+                    # Keep branch_context aligned with parent after merge to simplify callers
+                    child_final_ctx = context
+        except Exception:
+            pass
 
         if inner_sr is not None and not getattr(inner_sr, "success", True):
             # Honor on_failure behavior for explicit child failure

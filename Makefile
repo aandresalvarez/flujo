@@ -422,14 +422,16 @@ docs-ci: docs-build docs-check ## Build docs and run link checks
 
 ifdef FAST_ALL
 TEST_GATE_TARGET := test-fast
+TYPECHECK_TARGET := typecheck-fast
 else
 TEST_GATE_TARGET := test
+TYPECHECK_TARGET := typecheck
 endif
 
 ifdef SKIP_ARCHITECTURE_TESTS
-ALL_QUALITY_TARGETS := format lint typecheck $(TEST_GATE_TARGET)
+ALL_QUALITY_TARGETS := format lint $(TYPECHECK_TARGET) $(TEST_GATE_TARGET)
 else
-ALL_QUALITY_TARGETS := format lint typecheck $(TEST_GATE_TARGET) test-architecture test-srp
+ALL_QUALITY_TARGETS := format lint $(TYPECHECK_TARGET) $(TEST_GATE_TARGET) test-architecture test-srp
 endif
 
 .PHONY: all

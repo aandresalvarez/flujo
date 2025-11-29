@@ -6,21 +6,40 @@ import json
 import logging
 import sqlite3
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING, Callable, Awaitable
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING, Callable, Awaitable, Protocol
 
 from .sqlite_core import _fast_json_dumps
+from ...type_definitions.common import JSONObject
 
 if TYPE_CHECKING:  # pragma: no cover
-    pass
+    from aiosqlite import Connection
+
+    class _SQLiteBackendDeps(Protocol):
+        _lock: Any
+
+        async def _ensure_init(self) -> None: ...
+
+        async def _create_connection(self) -> "Connection": ...
+
+        async def _with_retries(
+            self, coro_func: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any
+        ) -> Any: ...
+
+        def _extract_spans_from_tree(
+            self,
+            trace: JSONObject,
+            run_id: str,
+            max_depth: int = 100,
+        ) -> List[Tuple[str, str, Optional[str], str, float, Optional[float], str, str]]: ...
+
+        def _reconstruct_trace_tree(
+            self,
+            spans_data: List[Tuple[str, Optional[str], str, float, Optional[float], str, str]],
+        ) -> Optional[JSONObject]: ...
 
 
 class SQLiteTraceMixin:
-    _ensure_init: Callable[[], Awaitable[None]]
-    _lock: Any
-    _create_connection: Callable[[], Awaitable[Any]]
-    _with_retries: Callable[[Callable[[], Awaitable[Any]]], Awaitable[Any]]
-
-    async def save_trace(self, run_id: str, trace: Dict[str, Any]) -> None:
+    async def save_trace(self: "_SQLiteBackendDeps", run_id: str, trace: JSONObject) -> None:
         """Persist a trace tree as normalized spans for a given run_id."""
         await self._ensure_init()
         async with self._lock:
@@ -72,7 +91,7 @@ class SQLiteTraceMixin:
             await self._with_retries(_save)
 
     def _extract_spans_from_tree(
-        self, trace: Dict[str, Any], run_id: str, max_depth: int = 100
+        self: "_SQLiteBackendDeps", trace: JSONObject, run_id: str, max_depth: int = 100
     ) -> List[Tuple[str, str, Optional[str], str, float, Optional[float], str, str]]:
         """Extract all spans from a trace tree for batch insertion."""
         spans: List[Tuple[str, str, Optional[str], str, float, Optional[float], str, str]] = []
@@ -82,7 +101,7 @@ class SQLiteTraceMixin:
             return spans
 
         def extract_span_recursive(
-            span_data: Dict[str, Any],
+            span_data: JSONObject,
             parent_span_id: Optional[str] = None,
             depth: int = 0,
         ) -> None:
@@ -142,12 +161,12 @@ class SQLiteTraceMixin:
         return spans
 
     def _reconstruct_trace_tree(
-        self,
+        self: "_SQLiteBackendDeps",
         spans_data: List[Tuple[str, Optional[str], str, float, Optional[float], str, str]],
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[JSONObject]:
         """Reconstruct a hierarchical trace tree from flat spans data."""
-        spans_map: Dict[str, Dict[str, Any]] = {}
-        root_spans: List[Dict[str, Any]] = []
+        spans_map: Dict[str, JSONObject] = {}
+        root_spans: List[JSONObject] = []
 
         # First pass: create a map of all spans by ID
         for row in spans_data:
@@ -160,7 +179,7 @@ class SQLiteTraceMixin:
                 status,
                 attributes,
             ) = row
-            span_data: Dict[str, Any] = {
+            span_data: JSONObject = {
                 "span_id": span_id,
                 "parent_span_id": parent_span_id,
                 "name": name,
@@ -189,7 +208,7 @@ class SQLiteTraceMixin:
 
         return root_spans[0] if root_spans else None
 
-    async def get_trace(self, run_id: str) -> Optional[Dict[str, Any]]:
+    async def get_trace(self: "_SQLiteBackendDeps", run_id: str) -> Optional[JSONObject]:
         """Retrieve and reconstruct the trace tree for a given run_id. Audit log access."""
         await self._ensure_init()
         async with self._lock:
@@ -234,8 +253,11 @@ class SQLiteTraceMixin:
                 await conn.close()
 
     async def get_spans(
-        self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self: "_SQLiteBackendDeps",
+        run_id: str,
+        status: Optional[str] = None,
+        name: Optional[str] = None,
+    ) -> List[JSONObject]:
         """Get individual spans with optional filtering. Audit log export."""
         await self._ensure_init()
         async with self._lock:
@@ -264,7 +286,7 @@ class SQLiteTraceMixin:
                 query += " ORDER BY start_time"
                 async with db.execute(query, params) as cursor:
                     rows = await cursor.fetchall()
-                    results: List[Dict[str, Any]] = []
+                    results: List[JSONObject] = []
                     for r in rows:
                         (
                             span_id,
@@ -293,10 +315,10 @@ class SQLiteTraceMixin:
                 await conn.close()
 
     async def get_span_statistics(
-        self,
+        self: "_SQLiteBackendDeps",
         pipeline_name: Optional[str] = None,
         time_range: Optional[Tuple[float, float]] = None,
-    ) -> Dict[str, Any]:
+    ) -> JSONObject:
         """Get aggregated span statistics."""
         await self._ensure_init()
         async with self._lock:
@@ -321,7 +343,7 @@ class SQLiteTraceMixin:
                     params.extend([start_time, end_time])
                 async with db.execute(query, params) as cursor:
                     rows = list(await cursor.fetchall())
-                    stats: Dict[str, Any] = {
+                    stats: JSONObject = {
                         "total_spans": len(rows),
                         "by_name": {},
                         "by_status": {},

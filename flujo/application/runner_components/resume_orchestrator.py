@@ -59,16 +59,30 @@ class ResumeOrchestrator(Generic[_CtxT]):
             scratch = {}
             ctx.scratchpad = scratch
 
+        # Heuristic: if the scratchpad tracks executed top-level steps, resume after the last one.
         start_idx = len(paused_result.step_history)
-        if scratch.get("status") == "paused":
-            start_idx = min(len(pipeline.steps) - 1, len(paused_result.step_history))
-            scratch["hitl_data"] = human_input
-            scratch["user_input"] = human_input
+        try:
+            executed_steps = scratch.get("steps") if isinstance(scratch, dict) else None
+            if isinstance(executed_steps, dict) and executed_steps:
+                last_executed = list(executed_steps.keys())[-1]
+                for idx, st in enumerate(getattr(pipeline, "steps", []) or []):
+                    if getattr(st, "name", None) == last_executed:
+                        start_idx = min(idx + 1, len(pipeline.steps) - 1)
+                        break
+        except Exception:
+            pass
 
         if start_idx >= len(pipeline.steps):
             raise OrchestratorError("No steps remaining to resume")
 
-        return start_idx, pipeline.steps[start_idx]
+        paused_step = pipeline.steps[start_idx]
+        from ...domain.dsl.step import HumanInTheLoopStep  # local to avoid import cycles
+
+        if scratch.get("status") == "paused" and isinstance(paused_step, HumanInTheLoopStep):
+            scratch["hitl_data"] = human_input
+            scratch["user_input"] = human_input
+
+        return start_idx, paused_step
 
     def coerce_human_input(self, paused_step: Step[Any, Any], human_input: Any) -> Any:
         if isinstance(paused_step, HumanInTheLoopStep) and paused_step.input_schema is not None:

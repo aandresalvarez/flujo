@@ -117,7 +117,7 @@ def propagate_pause_state(
     if isinstance(scratchpad_iter, dict):
         scratchpad_iter["status"] = "paused"
         scratchpad_iter["loop_iteration"] = iteration_count
-        scratchpad_iter["loop_step_index"] = current_step_index
+        scratchpad_iter["loop_step_index"] = current_step_index + 1
         scratchpad_iter["loop_last_output"] = current_data
         scratchpad_iter["loop_resume_requires_hitl_output"] = True
         scratchpad_iter["loop_paused_step_name"] = paused_step_name

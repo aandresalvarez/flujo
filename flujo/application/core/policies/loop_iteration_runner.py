@@ -96,9 +96,9 @@ async def run_loop_iterations(
             current_step_index = total_steps
         if saved_last_output is not None:
             current_data = saved_last_output
-        if resume_requires_hitl_output and current_step_index >= total_steps:
-            if resume_payload is not None:
-                current_data = resume_payload
+        # When resuming to feed HITL, prefer the resume payload (human input) as the current data.
+        if resume_requires_hitl_output and resume_payload is not None:
+            current_data = resume_payload
     prev_current_context = current_context
     prev_cumulative_cost = 0.0
     prev_cumulative_tokens = 0
@@ -351,6 +351,27 @@ async def run_loop_iterations(
             current_step_list = (
                 loop_body_steps if not stashed_exec_lists else stashed_exec_lists[-1]
             )
+            # If resuming with a pending HITL payload, resume from the saved step index using
+            # that payload as current data and clear the resume markers.
+            if resume_requires_hitl_output:
+                current_data = resume_payload
+                resume_requires_hitl_output = False
+                try:
+                    if isinstance(getattr(iteration_context, "scratchpad", None), dict):
+                        iteration_context.scratchpad.pop("loop_resume_requires_hitl_output", None)
+                        iteration_context.scratchpad.pop("paused_step_input", None)
+                        iteration_context.scratchpad.pop("hitl_data", None)
+                        iteration_context.scratchpad["status"] = "running"
+                except Exception:
+                    pass
+                try:
+                    if isinstance(getattr(current_context, "scratchpad", None), dict):
+                        current_context.scratchpad.pop("loop_resume_requires_hitl_output", None)
+                        current_context.scratchpad.pop("paused_step_input", None)
+                        current_context.scratchpad.pop("hitl_data", None)
+                        current_context.scratchpad["status"] = "running"
+                except Exception:
+                    pass
             while current_step_index < len(current_step_list):
                 body_step = current_step_list[current_step_index]
                 step_name = getattr(body_step, "name", f"loop_step_{current_step_index}")
@@ -437,7 +458,7 @@ async def run_loop_iterations(
                                 if isinstance(scratchpad, dict):
                                     scratchpad["status"] = "paused"
                                     scratchpad["loop_iteration"] = iteration_count
-                                    scratchpad["loop_step_index"] = current_step_index
+                                    scratchpad["loop_step_index"] = current_step_index + 1
                                     scratchpad["loop_last_output"] = current_data
                                     scratchpad["loop_resume_requires_hitl_output"] = True
                                     scratchpad["loop_paused_step_name"] = step_name

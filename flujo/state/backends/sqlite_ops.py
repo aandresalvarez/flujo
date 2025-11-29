@@ -16,7 +16,7 @@ from .sqlite_core import SQLiteBackendBase, _fast_json_dumps
 from .sqlite_trace import SQLiteTraceMixin
 
 
-class SQLiteBackend(SQLiteBackendBase, SQLiteTraceMixin):
+class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     async def save_trace(self, run_id: str, trace: Dict[str, Any]) -> None:
         return await SQLiteTraceMixin.save_trace(self, run_id, trace)
 

@@ -22,7 +22,6 @@ from pydantic import ValidationError
 
 from ..domain.backends import ExecutionBackend
 from ..domain.dsl.pipeline import Pipeline
-from ..domain.dsl.step import HumanInTheLoopStep
 from ..domain.models import (
     PipelineContext,
     PipelineResult,
@@ -289,9 +288,9 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
             if isinstance(current_context_instance, PipelineContext):
                 current_context_instance.scratchpad["status"] = "running"
 
+            start_idx = 0
             data: Any = initial_input
             pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
-            start_idx = 0
             state_created_at: datetime | None = None
             state_manager: StateManager[ContextT] = StateManager[ContextT](self.state_backend)
             run_id_for_state = run_id or getattr(current_context_instance, "run_id", None)
@@ -311,11 +310,13 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                 ) = await state_manager.load_workflow_state(run_id_for_state, self.context_model)
                 if context is not None:
                     current_context_instance = context
-                    start_idx = current_idx
+                    start_idx = max(start_idx, current_idx)
                     state_created_at = created_at
-                    if start_idx > 0:
+                    if current_idx > 0:
                         data = last_output
-                        pipeline_result_obj.step_history = step_history
+                        # When resuming, keep existing history but do not overwrite if already populated
+                        if not pipeline_result_obj.step_history:
+                            pipeline_result_obj.step_history = step_history
 
                     if pipeline_version is not None:
                         self.pipeline_version = pipeline_version
@@ -418,6 +419,11 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                         )
                                     except Exception:
                                         missing_name = f"step_{j}"
+                                    if any(
+                                        getattr(sr, "name", None) == str(missing_name)
+                                        for sr in pipeline_result_obj.step_history
+                                    ):
+                                        continue
                                     synthesized = _SR(
                                         name=str(missing_name),
                                         success=False,
@@ -481,6 +487,11 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                         )
                                     except Exception:
                                         missing_name = f"step_{j}"
+                                    if any(
+                                        getattr(sr, "name", None) == str(missing_name)
+                                        for sr in chunk.step_history
+                                    ):
+                                        continue
                                     synthesized = _SR(
                                         name=str(missing_name),
                                         success=False,
@@ -602,24 +613,18 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                             pipeline_result_obj,
                             cast(Optional[ContextT], current_context_instance),
                         )
-                    try:
-                        if (
-                            not paused
-                            and self.pipeline is not None
-                            and any(isinstance(s, HumanInTheLoopStep) for s in self.pipeline.steps)
-                            and len(pipeline_result_obj.step_history) < len(self.pipeline.steps)
-                        ):
-                            paused = True
-                            try:
-                                if isinstance(current_context_instance, PipelineContext):
-                                    current_context_instance.scratchpad["status"] = "paused"
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
+                    # If we resumed and did not execute any new steps (empty history), force paused so HITL can continue
+                    if start_idx > 0 and not pipeline_result_obj.step_history:
+                        paused = True
+                        try:
+                            if isinstance(current_context_instance, PipelineContext):
+                                current_context_instance.scratchpad["status"] = "paused"
+                        except Exception:
+                            pass
                     final_status: Literal[
                         "running", "paused", "completed", "failed", "cancelled"
                     ] = "failed"
+                    # Resume semantics: keep paused unless we actually executed remaining steps
                     if cancelled:
                         final_status = "failed"
                     elif paused or (
@@ -627,12 +632,19 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         and current_context_instance.scratchpad.get("status") == "paused"
                     ):
                         final_status = "paused"
+                    elif start_idx > 0:
+                        expected_steps = len(pipeline.steps)
+                        executed = len(pipeline_result_obj.step_history)
+                        executed_success = all(s.success for s in pipeline_result_obj.step_history)
+                        # On resume, require full coverage to call it completed
+                        if executed_success and executed >= expected_steps:
+                            final_status = "completed"
+                        else:
+                            final_status = "paused"
                     elif pipeline_result_obj.step_history:
                         expected: int | None = len(pipeline.steps)
                         executed_success = all(s.success for s in pipeline_result_obj.step_history)
-                        if start_idx > 0:
-                            final_status = "completed" if executed_success else "failed"
-                        elif (
+                        if (
                             expected is not None
                             and len(pipeline_result_obj.step_history) == expected
                             and executed_success
@@ -654,7 +666,12 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         final_status=final_status,
                     )
                     try:
-                        pipeline_result_obj.success = final_status == "completed"
+                        # Require full pipeline coverage to mark success on resume.
+                        expected_len = len(pipeline.steps)
+                        pipeline_result_obj.success = (
+                            final_status == "completed"
+                            and len(pipeline_result_obj.step_history) >= expected_len
+                        )
                     except Exception:
                         pass
                     if (

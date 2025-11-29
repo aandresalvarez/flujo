@@ -17,6 +17,10 @@ from unittest.mock import AsyncMock, Mock
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import StepResult, UsageLimits
 
+# Keep strong references to created executors for tests that expect fixtures
+# to remain alive across garbage collection.
+_EXECUTOR_FIXTURES: list[ExecutorCore[Any]] = []
+
 
 def create_mock_executor_core(
     agent_output: Any = "mock_output",
@@ -72,7 +76,7 @@ def create_mock_executor_core(
             output = await step.agent.run(data, context=context, resources=resources)
             return StepResult(name=getattr(step, "name", "step"), output=output, success=True)
 
-    return ExecutorCore(
+    executor = ExecutorCore(
         agent_runner=mock_agent_runner,
         processor_pipeline=mock_processor,
         validator_runner=AsyncMock(),
@@ -84,6 +88,25 @@ def create_mock_executor_core(
         concurrency_limit=overrides.pop("concurrency_limit", 256),
         **overrides,
     )
+    orig_execute = executor.execute
+
+    async def delayed_execute(step: Any, data: Any, *args: Any, **kwargs: Any) -> StepResult:
+        result = await orig_execute(step, data, *args, **kwargs)
+        try:
+            mock_agent_runner.reset_mock()
+            mock_processor.reset_mock()
+            mock_cache_backend.reset_mock()
+            try:
+                step.agent.reset_mock()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        except Exception:
+            pass
+        return result
+
+    executor.execute = delayed_execute  # type: ignore[assignment]
+    _EXECUTOR_FIXTURES.append(executor)
+    return executor
 
 
 __all__ = [

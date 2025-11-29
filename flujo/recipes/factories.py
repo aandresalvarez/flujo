@@ -326,6 +326,11 @@ def make_agentic_loop_pipeline(
             # Nothing to do if there is no context or the log entry is None.
             return
 
+        # Ignore unexpected payloads (e.g., raw strings injected during resume) to
+        # prevent polluting command_log and downstream attribute access errors.
+        if not isinstance(log, ExecutedCommandLog):
+            return
+
         from flujo.domain.commands import (
             RunAgentCommand,
             AskHumanCommand,
@@ -348,7 +353,7 @@ def make_agentic_loop_pipeline(
             ctx.command_log.append(log)
 
     def _iter_mapper(
-        log: ExecutedCommandLog, ctx: PipelineContext | None, _i: int
+        log: ExecutedCommandLog | Any, ctx: PipelineContext | None, _i: int
     ) -> dict[str, Any]:
         """Transformation function that logs commands if not already present."""
         # Skip logging and return a default mapping if `log` is None to avoid
@@ -364,6 +369,16 @@ def make_agentic_loop_pipeline(
             )
             goal = ctx.initial_prompt if ctx is not None else ""
             return {"last_command_result": None, "goal": goal}
+
+        # If we got a non-ExecutedCommandLog (e.g., resume payload), avoid logging it
+        # and just pass through a lightweight mapping for the next iteration.
+        if not isinstance(log, ExecutedCommandLog):
+            goal = ctx.initial_prompt if ctx is not None else ""
+            try:
+                result_val = getattr(log, "execution_result", log)
+            except Exception:
+                result_val = log
+            return {"last_command_result": result_val, "goal": goal}
 
         # If this is an AskHuman command, mark paused and store pending input so resume can log it
         try:
@@ -389,7 +404,7 @@ def make_agentic_loop_pipeline(
         goal = ctx.initial_prompt if ctx is not None else ""
         return {"last_command_result": log.execution_result, "goal": goal}
 
-    def _output_mapper(log: ExecutedCommandLog, ctx: PipelineContext | None) -> Any:
+    def _output_mapper(log: ExecutedCommandLog | Any, ctx: PipelineContext | None) -> Any:
         """Transformation function that logs commands if not already present.
         Ensures the final output is always logged, even if the loop ends due to max_loops or error.
         """
@@ -400,6 +415,13 @@ def make_agentic_loop_pipeline(
             if ctx is not None and ctx.command_log:
                 return ctx.command_log[-1]
             return None
+
+        # If the loop hands us a resume payload or other unexpected type, avoid mutating
+        # the log list and return the last known command entry when available.
+        if not isinstance(log, ExecutedCommandLog):
+            if ctx is not None and ctx.command_log:
+                return ctx.command_log[-1]
+            return log
 
         _log_if_new(log, ctx)
         return log  # Return the full log instead of just the execution result

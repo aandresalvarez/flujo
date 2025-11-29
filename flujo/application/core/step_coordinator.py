@@ -566,23 +566,46 @@ class StepCoordinator(Generic[ContextT]):
                     for handler in step.failure_handlers:
                         try:
                             handler() if hasattr(handler, "__call__") else None
+                            try:
+                                if isinstance(step_result, StepResult):
+                                    meta = getattr(step_result, "metadata_", None)
+                                    if not isinstance(meta, dict):
+                                        step_result.metadata_ = {}
+                                        meta = step_result.metadata_
+                                    meta["failure_handlers_ran"] = True
+                            except Exception:
+                                pass
                         except Exception as e:
                             telemetry.logfire.error(
                                 f"Failure handler {handler} raised exception: {e}"
                             )
                             raise
-
+                dispatch_needed = True
                 try:
-                    await self._dispatch_hook(
-                        "on_step_failure",
-                        step_result=step_result,
-                        context=context,
-                        resources=self.resources,
-                    )
-                except PipelineAbortSignal:
-                    # Yield the failed step result before aborting
-                    yield step_result
-                    raise
+                    if isinstance(step_result, StepResult):
+                        meta = getattr(step_result, "metadata_", None)
+                        if not isinstance(meta, dict):
+                            step_result.metadata_ = {}
+                            meta = step_result.metadata_
+                        if meta.get("on_step_failure_dispatched"):
+                            dispatch_needed = False
+                        else:
+                            meta["on_step_failure_dispatched"] = True
+                except Exception:
+                    dispatch_needed = True
+
+                if dispatch_needed:
+                    try:
+                        await self._dispatch_hook(
+                            "on_step_failure",
+                            step_result=step_result,
+                            context=context,
+                            resources=self.resources,
+                        )
+                    except PipelineAbortSignal:
+                        # Yield the failed step result before aborting
+                        yield step_result
+                        raise
         else:
             # Safety net: ensure every step yields a terminal outcome
             try:
@@ -631,8 +654,27 @@ class StepCoordinator(Generic[ContextT]):
         step_result: StepResult,
     ) -> None:
         """Update the pipeline result with a step result."""
-        # Append the step result first
-        result.step_history.append(step_result)
+        replaced = False
+        try:
+            # Avoid duplicating synthesized "no terminal outcome" failures when padding
+            # histories in multiple layers (ExecutionManager and run_session).
+            if result.step_history:
+                last = result.step_history[-1]
+                if (
+                    getattr(last, "name", None) == getattr(step_result, "name", None)
+                    and getattr(last, "feedback", None) == getattr(step_result, "feedback", None)
+                    and getattr(last, "success", True) is False
+                ):
+                    result.step_history[-1] = step_result
+                    # Refresh cost/token aggregates for replacement
+                    result.total_cost_usd -= getattr(last, "cost_usd", 0.0)
+                    result.total_tokens -= getattr(last, "token_counts", 0)
+                    replaced = True
+        except Exception:
+            replaced = False
+        # Append the step result first unless we replaced the last entry
+        if not replaced:
+            result.step_history.append(step_result)
 
         # Base accumulation from the step itself
         result.total_cost_usd += step_result.cost_usd

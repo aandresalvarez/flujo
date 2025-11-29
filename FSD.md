@@ -1835,6 +1835,13 @@ class Flujo:
 - [ ] All changes are backward compatible
 - [ ] `make all` passes
 
+**Progress (2025-11-29):**
+- Async helpers added (`run_with_events`) and documented in runner APIs; `StepConfig` now top-level export and decorator accepts `config`.
+- StateProvider protocol expanded with full lifecycle and adapter; background-step validation now uses input type to avoid false positives.
+- Config manager now caches per-process with `force_reload` / `invalidate_config_cache` escape hatches; configuration docs updated.
+- Runner trimmed under 500 LOC with extracted helpers; lint/type gates green locally (`make precommit`).
+- Remaining: run full `make all` before release.
+
 ---
 
 ## 10. Phase 6: Cleanup & Documentation (Week 13)

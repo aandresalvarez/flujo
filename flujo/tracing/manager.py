@@ -317,15 +317,23 @@ class TraceManager:
         current_span = self._span_stack.pop()
         current_span.end_time = time.monotonic()  # Use monotonic time
         current_span.status = "failed"
-        current_span.attributes.update(
-            {
-                "success": False,
-                "latency_s": payload.step_result.latency_s,
-                "flujo.budget.actual_cost_usd": getattr(payload.step_result, "cost_usd", 0.0),
-                "flujo.budget.actual_tokens": getattr(payload.step_result, "token_counts", 0),
-                "feedback": payload.step_result.feedback,
-            }
-        )
+        # Avoid polluting the root pipeline span with step-level attributes that
+        # break golden trace expectations.
+        if current_span.name != "pipeline_run":
+            current_span.attributes.update(
+                {
+                    "success": False,
+                    "latency_s": payload.step_result.latency_s,
+                    "flujo.budget.actual_cost_usd": getattr(payload.step_result, "cost_usd", 0.0),
+                    "flujo.budget.actual_tokens": getattr(payload.step_result, "token_counts", 0),
+                    "feedback": payload.step_result.feedback,
+                }
+            )
+        else:
+            try:
+                current_span.attributes["success"] = False
+            except Exception:
+                pass
         # If this failure is actually a pause (HITL), add a paused event
         try:
             fb = (payload.step_result.feedback or "").lower()

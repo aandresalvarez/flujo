@@ -52,6 +52,33 @@ async for event in runner.run_outcomes_async("hi"):
         persist_for_hitl(event.message)
 ```
 
+#### run_with_events helper (FSD-009)
+
+`run_with_events` streams both lifecycle events **and** the final `PipelineResult`. Use it
+when you need to know exactly when a background task was launched or to react to streaming
+chunks while still receiving the final result in one pass.
+
+```python
+from flujo import Flujo
+from flujo.domain.models import BackgroundLaunched, Chunk, PipelineResult
+
+runner = Flujo(pipeline=my_pipeline)
+
+async for event in runner.run_with_events("doc to process"):
+    if isinstance(event, BackgroundLaunched):
+        print(f"Background task {event.task_id} launched by {event.step_name}")
+    elif isinstance(event, Chunk):
+        handle_chunk(event.data)
+    elif isinstance(event, PipelineResult):
+        print(f"Pipeline finished with {len(event.step_history)} steps")
+```
+
+Notes:
+- `run_async` still yields only the final `PipelineResult` (legacy shape).
+- `run_outcomes_async` yields only `StepOutcome` events (no `PipelineResult`).
+- `run_with_events` is the ergonomic bridge when you want both streams without juggling
+  two APIs.
+
 Policy contract
 
 - All policy `execute(...)` methods must return `StepOutcome[StepResult]`.
@@ -88,5 +115,4 @@ Extending to new policies:
 1. Implement the policy to return `StepOutcome[StepResult]`.
 2. Build internal `StepResult` instances and wrap with `Success` or `Failure`.
 3. Do not introduce adapters; route directly through `ExecutorCore`.
-
 

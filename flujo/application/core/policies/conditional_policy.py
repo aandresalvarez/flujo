@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Type
 
+from flujo.domain.models import PipelineContext
 from ._shared import (  # noqa: F401
     Any,
     Callable,
@@ -210,6 +211,8 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                 telemetry.logfire.info(f"Executing branch for key '{branch_key}'")
                 branch_data = data
                 # Detect HITL branches: pause only when no human input is available yet
+                force_repause_after_branch = False
+                resume_requires_hitl = False
                 try:
                     from flujo.domain.dsl.step import HumanInTheLoopStep as _HITLStep
 
@@ -226,6 +229,7 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                             has_input = (
                                 sp.get("user_input") is not None or sp.get("hitl_data") is not None
                             )
+                            resume_requires_hitl = bool(sp.get("loop_resume_requires_hitl_output"))
                         if not has_input:
                             msg = None
                             for _s in branch_steps:
@@ -246,6 +250,44 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                             # If we have user_input from resume, feed it into branch_data for HITL step
                             try:
                                 branch_data = sp.get("user_input", branch_data)
+                                if resume_requires_hitl:
+                                    # Preserve paused status and input so the HITL policy can auto-consume it.
+                                    sp["status"] = "paused"
+                                    sp.setdefault("user_input", branch_data)
+                                    if branch_data is not None and "hitl_data" not in sp:
+                                        sp["hitl_data"] = branch_data
+                                else:
+                                    # Consume the user_input so subsequent HITL steps in later branches pause again.
+                                    sp.pop("user_input", None)
+                                    sp.pop("hitl_data", None)
+                                    try:
+                                        sp["status"] = "running"
+                                    except Exception:
+                                        pass
+                                # Apply sink_to for the first HITL in this branch
+                                try:
+                                    first_hitl = next(
+                                        _s for _s in branch_steps if isinstance(_s, _HITLStep)
+                                    )
+                                    sink_target = getattr(first_hitl, "sink_to", None)
+                                    if isinstance(sink_target, str) and context is not None:
+                                        from flujo.utils.context import set_nested_context_field
+
+                                        set_nested_context_field(context, sink_target, branch_data)
+                                except Exception:
+                                    pass
+                                # Force a re-pause if more HITLs remain in this branch
+                                remaining_hitl_count = sum(
+                                    1 for _s in branch_steps if isinstance(_s, _HITLStep)
+                                )
+                                if remaining_hitl_count > 1:
+                                    sp["status"] = "paused"
+                                    sp.setdefault(
+                                        "pause_message",
+                                        getattr(first_hitl, "message", None)
+                                        or getattr(first_hitl, "message_for_user", "Paused"),
+                                    )
+                                    raise PausedException("Awaiting next HITL input")
                             except Exception:
                                 pass
                 except PausedException:
@@ -373,6 +415,17 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                             step_result = res_any
                         if step_result is None:
                             continue
+                    if force_repause_after_branch and isinstance(context, PipelineContext):
+                        try:
+                            sp = getattr(context, "scratchpad", None)
+                            if isinstance(sp, dict):
+                                sp["status"] = "paused"
+                                sp.setdefault(
+                                    "pause_message", getattr(conditional_step, "name", "")
+                                )
+                        except Exception:
+                            pass
+                        raise PausedException("Awaiting next HITL input")
                     if step_result is None:
                         step_result = StepResult(
                             name=_safe_name(branch_to_execute),
@@ -454,6 +507,15 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                     result.latency_s = total_latency
                     result.token_counts = total_tokens
                     result.cost_usd = total_cost
+                    if resume_requires_hitl and isinstance(context, PipelineContext):
+                        try:
+                            sp_parent = getattr(context, "scratchpad", None)
+                            if isinstance(sp_parent, dict):
+                                sp_parent.pop("loop_resume_requires_hitl_output", None)
+                                sp_parent.pop("user_input", None)
+                                sp_parent.pop("hitl_data", None)
+                        except Exception:
+                            pass
                     # Update branch context using ContextManager and propagate into parent
                     merged_ctx = (
                         ContextManager.merge(context, branch_context)

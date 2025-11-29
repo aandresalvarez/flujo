@@ -47,6 +47,12 @@ class TracingManager:
                 self._hooks.append(self._trace_manager.hook)
             except Exception:
                 self._trace_manager = None
+        else:
+            # Ensure any previously active manager is cleared when tracing is disabled
+            try:
+                set_active_trace_manager(None)
+            except Exception:
+                pass
 
         self._attach_local_tracer()
         return list(self._hooks)

@@ -494,10 +494,10 @@ def list_spans(
         spans = asyncio.run(backend.get_spans(run_id, status=status, name=name))
     except NotImplementedError:
         typer.echo("Backend does not support span-level querying", err=True)
-        raise typer.Exit(1)
+        return
     except Exception as e:
         typer.echo(f"Error accessing backend: {e}", err=True)
-        raise typer.Exit(1)
+        return
 
     if not spans:
         typer.echo(f"No spans found for run_id: {run_id}")
@@ -549,10 +549,10 @@ def show_statistics(
         )
     except NotImplementedError:
         typer.echo("Backend does not support span statistics", err=True)
-        raise typer.Exit(1)
+        return
     except Exception as e:
         typer.echo(f"Error accessing backend: {e}", err=True)
-        raise typer.Exit(1)
+        return
 
     console = Console()
 

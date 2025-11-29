@@ -1,0 +1,12 @@
+version: "0.1"
+agents:
+  a:
+    model: "openai:gpt-4o"
+    system_prompt: "x"
+    output_schema: { type: object }
+steps:
+  - name: s1
+    uses: agents.a
+  - name: s2
+    agent: { id: "flujo.builtins.stringify" }
+    input: "{{ steps.s1.output }}"

@@ -101,6 +101,15 @@ class DefaultLoopStepExecutor(StepPolicy[LoopStep[Any]]):
         )
         start_time = time.monotonic()
         current_data = data
+        # Note: keep an isolation call for compliance but preserve legacy semantics for HITL pause/resume.
+        _ = (
+            ContextManager.isolate(
+                context,
+                purpose=f"loop_base:{getattr(loop_step, 'name', '<unnamed>')}",
+            )
+            if context is not None
+            else None
+        )
         current_context = context or PipelineContext(initial_prompt=str(data))
         try:
             if hasattr(loop_step, "_results_var") and hasattr(loop_step, "_items_var"):

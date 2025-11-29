@@ -210,7 +210,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         strict_context_isolation: bool = False,
         strict_context_merge: bool = False,
         enable_optimized_error_handling: bool = True,
-        state_providers: Optional[Dict[str, StateProvider]] = None,
+        state_providers: Optional[Dict[str, StateProvider[Any]]] = None,
     ) -> None:
         # Validate parameters for compatibility
         if cache_size <= 0:

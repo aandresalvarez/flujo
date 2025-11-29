@@ -11,7 +11,7 @@ from ...domain.interfaces import StateProvider
 class HydrationManager:
     """Manages hydration and persistence of ContextReference fields using StateProviders."""
 
-    def __init__(self, state_providers: Optional[Dict[str, StateProvider]] = None) -> None:
+    def __init__(self, state_providers: Optional[Dict[str, StateProvider[Any]]] = None) -> None:
         self._state_providers = state_providers or {}
         self._telemetry: Optional[Any] = None
 
@@ -19,11 +19,11 @@ class HydrationManager:
         """Set telemetry instance for logging warnings."""
         self._telemetry = telemetry
 
-    def add_state_provider(self, provider_id: str, provider: StateProvider) -> None:
+    def add_state_provider(self, provider_id: str, provider: StateProvider[Any]) -> None:
         """Add a state provider."""
         self._state_providers[provider_id] = provider
 
-    def get_state_provider(self, provider_id: str) -> Optional[StateProvider]:
+    def get_state_provider(self, provider_id: str) -> Optional[StateProvider[Any]]:
         """Get a state provider by ID."""
         return self._state_providers.get(provider_id)
 
@@ -77,7 +77,7 @@ class HydrationManager:
                                     if warning_fn:
                                         warning_fn(f"Failed to persist reference {field_name}: {e}")
 
-    def get_state_providers(self) -> Dict[str, StateProvider]:
+    def get_state_providers(self) -> Dict[str, StateProvider[Any]]:
         """Get all registered state providers."""
         return self._state_providers.copy()
 

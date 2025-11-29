@@ -27,6 +27,28 @@ async def to_upper(text: str) -> str:
 
 Here `to_upper` is already a `Step[str, str]` ready to be composed with other steps.
 
+### Background steps and validation
+
+Steps configured with `execution_mode="background"` pass their **input** through to downstream steps. The type validator accounts for this by using the step's input type when checking compatibility, avoiding false mismatches when the background step's declared output differs from the pass-through value.
+
+```python
+from flujo import step, StepConfig
+
+bg_cfg = StepConfig(execution_mode="background")
+
+@step(config=bg_cfg)
+async def enqueue(task: str) -> dict:
+    # Runs in background; downstream receives the original string
+    return {"scheduled": task}
+
+@step
+async def consume(task: str) -> str:
+    return task.upper()
+
+# Valid: background step passes its input type (str) to consume()
+pipeline = enqueue >> consume
+```
+
 ## Type Safety in Pipelines
 
 Pipelines are strongly typed. If you try to chain incompatible steps, static analyzers such as `mypy` will flag an error.

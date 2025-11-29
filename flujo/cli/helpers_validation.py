@@ -45,6 +45,13 @@ def get_pipeline_explanation(path: str) -> list[str]:
 
 def validate_pipeline_file(path: str, *, include_imports: bool = True) -> ValidationReport:
     """Return the validation report for a pipeline file."""
+    # Reset rule override cache so each validation respects current env/profile settings.
+    try:
+        import flujo.validation.linters_base as _lb
+
+        _lb._OVERRIDE_CACHE = None  # type: ignore[attr-defined]
+    except Exception:
+        pass
     if path.endswith((".yaml", ".yml")):
         with open(path, "r") as f:
             yaml_text = f.read()

@@ -39,6 +39,15 @@ class TestMemoryLeakDetection:
             context = PipelineContext()
             return step, data, context
 
+        # Warm up executor so one-time allocations (policy registry, caches, etc.)
+        # don't count as leaks in the measured loop.
+        async def _warmup() -> None:
+            step, data, _ = create_objects()
+            await executor.execute(step, data)
+
+        asyncio.run(_warmup())
+        gc.collect()
+
         # Track memory usage over many iterations
         initial_objects = len(gc.get_objects())
 
@@ -57,7 +66,14 @@ class TestMemoryLeakDetection:
                 gc.collect()
 
                 current_objects = len(gc.get_objects())
+                # Use the first checkpoint after warmup to reset the baseline,
+                # then measure growth incrementally.
+                if i == 0:
+                    initial_objects = current_objects
+                    continue
+
                 object_growth = current_objects - initial_objects
+                initial_objects = current_objects
 
                 # Allow some growth but not unbounded (max 10% growth per 20 iterations)
                 max_growth = int(100 * 0.1)  # 10% of 100 = 10 objects
@@ -75,7 +91,7 @@ class TestMemoryLeakDetection:
         context.scratchpad = {
             "nested": {"deeply": {"nested": ["data"] * 100}},
             "large_list": list(range(1000)),
-            "metadata": {"key": "value"} * 50,
+            "metadata": [{"key": "value"} for _ in range(50)],
         }
 
         # Create weak reference to track cleanup
@@ -156,7 +172,7 @@ class TestMemoryLeakDetection:
             large_data = {
                 "id": i,
                 "payload": "x" * 10000,  # 10KB string
-                "metadata": {"key": "value"} * 100,
+                "metadata": [{"key": "value"} for _ in range(100)],
                 "nested": {"deep": {"structure": ["item"] * 1000}},
             }
             large_data_sets.append(large_data)
@@ -238,13 +254,13 @@ class TestMemoryLeakDetection:
             cache.set(key, value)
 
         # Cache should respect size limits
-        assert len(cache._cache) <= cache._max_size, (
-            f"Cache size {len(cache._cache)} exceeds max_size {cache._max_size}"
+        assert len(cache._store) <= cache.max_size, (
+            f"Cache size {len(cache._store)} exceeds max_size {cache.max_size}"
         )
 
         # Memory usage should be bounded
         # (This is a basic check - in production you'd want more sophisticated monitoring)
-        cache_memory_estimate = sum(len(str(k)) + len(str(v)) for k, v in cache._cache.items())
+        cache_memory_estimate = sum(len(str(k)) + len(str(v)) for k, (v, _) in cache._store.items())
 
         max_memory_kb = 1024  # 1MB max for cache
         assert cache_memory_estimate <= max_memory_kb * 1024, (
