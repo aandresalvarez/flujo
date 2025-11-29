@@ -2,12 +2,8 @@
 
 ## To Do
 
-      - [x] Finish monolith refactors to clear the gate (<1200 LOC each).  
-        - Completed splits: `domain/blueprint/loader.py` → loader_models/parser/resolution/templates/steps/*; `cli/helpers.py`; `cli/dev_commands.py`; `validation/linters.py`; `domain/dsl/pipeline.py`; `builtins.py` → core/architect/support/extras modules; `state/backends/sqlite.py` → sqlite_core.py/sqlite_ops.py/sqlite_trace.py facade; `application/core/policies/agent_policy.py` → agent_policy_execution.py/agent_policy_run.py facade.  
-        Run: `pytest tests/architecture/test_type_safety_compliance.py::TestArchitectureCompliance::test_no_monolith_files`
-    ```md
-    Goal: clear monolith gate (<1200 LOC) for all flagged files.
-    ```
+      - [x] Optional loop helpers: extract HITL handling/resume state into `loop_hitl_orchestrator.py` and iteration/output mappers into `loop_mapper.py`.  
+        Run: `pytest tests/application/core/test_executor_core_execute_loop.py tests/unit/test_loop_step_policy.py`
 
 ## Done
 
@@ -50,8 +46,8 @@
   - steps:
       - [x] Extract while-loop runner into `loop_iteration_runner.py`.
       - [x] Extract conversation/history handling into `loop_history.py`.
-      - [ ] (optional) Extract HITL handling/resume state into a `loop_hitl_orchestrator.py` helper.
-      - [ ] (optional) Extract iteration mappers/output mappers into a `loop_mapper.py` module.
+      - [x] (optional) Extract HITL handling/resume state into a `loop_hitl_orchestrator.py` helper.
+      - [x] (optional) Extract iteration mappers/output mappers into a `loop_mapper.py` module.
     Run: `pytest tests/unit/test_loop_step_policy.py tests/application/core/test_executor_core_execute_loop.py`
 
 ### Monolith refactors (architecture gate)
@@ -60,6 +56,12 @@
   - priority: medium
   - workload: Large
   - steps:
+      - [x] Clear monolith gate (<1200 LOC) for all flagged files.  
+        - Completed splits: `application/core/agent_orchestrator.py` → agent_execution_runner.py/agent_plugin_runner.py facade; `application/runner.py` → runner_execution.py/runner_telemetry.py facade; `domain/blueprint/loader.py` → loader_models/parser/resolution/templates/steps/*; `cli/helpers.py`; `cli/dev_commands.py`; `validation/linters.py`; `domain/dsl/pipeline.py`; `builtins.py` → core/architect/support/extras modules; `state/backends/sqlite.py` → sqlite_core.py/sqlite_ops.py/sqlite_trace.py facade; `application/core/policies/agent_policy.py` → agent_policy_execution.py/agent_policy_run.py facade.  
+        Run: `pytest tests/architecture/test_type_safety_compliance.py::TestArchitectureCompliance::test_no_monolith_files`
+    ```md
+    Goal: clear monolith gate (<1200 LOC) for all flagged files.
+    ```
       - [x] Slim `flujo/application/core/agent_orchestrator.py` (1489 LOC) and `flujo/application/runner.py` (1497 LOC) (<1200 LOC each) aligned with Phase 4 plan.  
         Sub-steps (agent orchestrator):
           - [x] Extract the retry/fallback attempt loop into `agent_execution_runner.py` (<1200 LOC) and keep the orchestrator wrapper thin.  

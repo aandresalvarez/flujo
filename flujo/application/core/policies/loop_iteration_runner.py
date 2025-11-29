@@ -25,12 +25,13 @@ from ._shared import (
     to_outcome,
 )
 from flujo.exceptions import PipelineAbortSignal
-from .common import DefaultAgentResultUnpacker
+from .loop_hitl_orchestrator import clear_hitl_markers, propagate_pause_state
 from .loop_history import (
     collect_step_name_sources,
     seed_conversation_history,
     sync_conversation_history,
 )
+from .loop_mapper import apply_iteration_input_mapper, finalize_loop_output
 from ._shared import HumanInTheLoopStep  # noqa: F401  # used via isinstance checks
 
 
@@ -205,12 +206,6 @@ async def run_loop_iterations(
             # instrumented_pipeline = body_pipeline  # Not used in step-by-step execution
             pass
 
-        def _clear_hitl_markers(ctx: Any) -> None:
-            scratch = getattr(ctx, "scratchpad", None)
-            if isinstance(scratch, dict):
-                scratch.pop("hitl_data", None)
-                scratch.pop("paused_step_input", None)
-
         if not loop_body_steps:
             telemetry.logfire.info(
                 f"LoopStep '{loop_step.name}' using standard pipeline execution (no step slicing)"
@@ -293,75 +288,15 @@ async def run_loop_iterations(
                     except Exception:
                         pass
             except (PausedException, PipelineAbortSignal):
-                if iteration_context is not None and isinstance(
-                    getattr(iteration_context, "scratchpad", None), dict
-                ):
-                    _clear_hitl_markers(iteration_context)
-                    scratchpad = iteration_context.scratchpad
-                    scratchpad["status"] = "paused"
-                    scratchpad["loop_iteration"] = iteration_count
-                    scratchpad["loop_step_index"] = current_step_index
-                    scratchpad["loop_last_output"] = current_data
-                    scratchpad["loop_resume_requires_hitl_output"] = True
-                    scratchpad["loop_paused_step_name"] = paused_step_name
-                    try:
-                        from flujo.domain.models import ConversationTurn, ConversationRole
-
-                        hist_iter = getattr(iteration_context, "conversation_history", None)
-                        if isinstance(hist_iter, list):
-                            pause_msg = scratchpad.get("pause_message", "")
-                            if pause_msg and (
-                                not hist_iter
-                                or getattr(hist_iter[-1], "content", None) != pause_msg
-                            ):
-                                hist_iter.append(
-                                    ConversationTurn(
-                                        role=ConversationRole.assistant, content=str(pause_msg)
-                                    )
-                                )
-                    except Exception:
-                        pass
-                if current_context is not None and isinstance(
-                    getattr(current_context, "scratchpad", None), dict
-                ):
-                    current_context.scratchpad.update(iteration_context.scratchpad)
-                    try:
-                        from flujo.domain.models import ConversationTurn, ConversationRole
-
-                        hist = getattr(current_context, "conversation_history", None)
-                        if isinstance(hist, list):
-                            pause_msg = current_context.scratchpad.get("pause_message", "")
-                            if pause_msg and (
-                                not hist or getattr(hist[-1], "content", None) != pause_msg
-                            ):
-                                hist.append(
-                                    ConversationTurn(
-                                        role=ConversationRole.assistant, content=str(pause_msg)
-                                    )
-                                )
-                    except Exception:
-                        pass
-                    try:
-                        from flujo.domain.models import ConversationTurn, ConversationRole
-
-                        hist = getattr(current_context, "conversation_history", None)
-                        if isinstance(hist, list):
-                            pause_msg = current_context.scratchpad.get("pause_message", "")
-                            if pause_msg and (
-                                not hist or getattr(hist[-1], "content", None) != pause_msg
-                            ):
-                                hist.append(
-                                    ConversationTurn(
-                                        role=ConversationRole.assistant, content=str(pause_msg)
-                                    )
-                                )
-                    except Exception:
-                        pass
-                # Merge iteration context (including conversation history) back into parent before pausing
-                try:
-                    ContextManager.merge(current_context, iteration_context)
-                except Exception:
-                    pass
+                clear_hitl_markers(iteration_context)
+                propagate_pause_state(
+                    iteration_context=iteration_context,
+                    current_context=current_context,
+                    iteration_count=iteration_count,
+                    current_step_index=current_step_index,
+                    current_data=current_data,
+                    paused_step_name=paused_step_name,
+                )
                 raise
             except UsageLimitExceededError:
                 # Propagate quota breaches to caller
@@ -492,7 +427,7 @@ async def run_loop_iterations(
                     iteration_results.append(sr)
                     pipeline_result.step_history.append(sr)
                     try:
-                        _clear_hitl_markers(iteration_context)
+                        clear_hitl_markers(iteration_context)
                     except Exception:
                         pass
                     if not sr.success:
@@ -571,59 +506,20 @@ async def run_loop_iterations(
                         current_step_list = stashed_exec_lists.pop()
                         continue
                 except (PausedException, PipelineAbortSignal):
-                    if iteration_context is not None and isinstance(
-                        getattr(iteration_context, "scratchpad", None), dict
-                    ):
-                        scratchpad = iteration_context.scratchpad
-                        scratchpad["status"] = "paused"
-                        scratchpad["loop_iteration"] = iteration_count
-                        scratchpad["loop_step_index"] = current_step_index
-                        scratchpad["loop_last_output"] = current_data
-                        scratchpad["loop_resume_requires_hitl_output"] = True
-                        scratchpad["loop_paused_step_name"] = step_name
-                        try:
-                            from flujo.domain.models import ConversationTurn, ConversationRole
-
-                            hist_iter = getattr(iteration_context, "conversation_history", None)
-                            if isinstance(hist_iter, list):
-                                pause_msg = scratchpad.get("pause_message", "")
-                                if pause_msg and (
-                                    not hist_iter
-                                    or getattr(hist_iter[-1], "content", None) != pause_msg
-                                ):
-                                    hist_iter.append(
-                                        ConversationTurn(
-                                            role=ConversationRole.assistant, content=str(pause_msg)
-                                        )
-                                    )
-                        except Exception:
-                            pass
-                    if current_context is not None and isinstance(
-                        getattr(current_context, "scratchpad", None), dict
-                    ):
-                        current_context.scratchpad.update(iteration_context.scratchpad)
-                        try:
-                            from flujo.domain.models import ConversationTurn, ConversationRole
-
-                            hist = getattr(current_context, "conversation_history", None)
-                            if isinstance(hist, list):
-                                pause_msg = current_context.scratchpad.get("pause_message", "")
-                                if pause_msg and (
-                                    not hist or getattr(hist[-1], "content", None) != pause_msg
-                                ):
-                                    hist.append(
-                                        ConversationTurn(
-                                            role=ConversationRole.assistant,
-                                            content=str(pause_msg),
-                                        )
-                                    )
-                        except Exception:
-                            pass
-                    # Merge conversation/history from paused branch into parent before bubbling pause
+                    hitl_output = None
                     try:
-                        ContextManager.merge(current_context, iteration_context)
+                        hitl_output = sr.output  # type: ignore[name-defined]
                     except Exception:
-                        pass
+                        hitl_output = None
+                    propagate_pause_state(
+                        iteration_context=iteration_context,
+                        current_context=current_context,
+                        iteration_count=iteration_count,
+                        current_step_index=current_step_index,
+                        current_data=current_data,
+                        paused_step_name=step_name,
+                        hitl_output=hitl_output,
+                    )
                     raise
                 except Exception as e:
                     telemetry.logfire.error(
@@ -856,110 +752,37 @@ async def run_loop_iterations(
             telemetry.logfire.info(
                 f"LoopStep '{loop_step.name}' completed iteration {iteration_count - 1}, starting iteration {iteration_count}"
             )
-        iter_mapper = (
-            loop_step.get_iteration_input_mapper()
-            if hasattr(loop_step, "get_iteration_input_mapper")
-            else getattr(loop_step, "iteration_input_mapper", None)
+        current_data, iter_mapper_outcome = apply_iteration_input_mapper(
+            loop_step=loop_step,
+            current_data=current_data,
+            current_context=current_context,
+            iteration_count=iteration_count,
+            max_loops=max_loops,
+            start_time=start_time,
+            cumulative_tokens=cumulative_tokens,
+            cumulative_cost=cumulative_cost,
+            iteration_results_all=iteration_results_all,
+            iteration_results=iteration_results,
         )
-        if iter_mapper and iteration_count <= max_loops:
-            try:
-                current_data = iter_mapper(current_data, current_context, iteration_count - 1)
-            except Exception as e:
-                telemetry.logfire.error(
-                    f"Error in iteration_input_mapper for LoopStep '{loop_step.name}' at iteration {iteration_count}: {e}"
-                )
-                completed_before_mapper_error = iteration_count - 1
-                return to_outcome(
-                    StepResult(
-                        name=loop_step.name,
-                        success=False,
-                        output=None,
-                        attempts=completed_before_mapper_error,
-                        latency_s=time.monotonic() - start_time,
-                        token_counts=cumulative_tokens,
-                        cost_usd=cumulative_cost,
-                        feedback=f"Error in iteration_input_mapper for LoopStep '{loop_step.name}': {e}",
-                        branch_context=current_context,
-                        metadata_={
-                            "iterations": completed_before_mapper_error,
-                            "exit_reason": "iteration_input_mapper_error",
-                        },
-                        step_history=iteration_results_all + iteration_results,
-                    )
-                )
+        if iter_mapper_outcome:
+            return iter_mapper_outcome
     final_output = current_data
     is_map_step = hasattr(loop_step, "iterable_input")
-    output_mapper = (
-        loop_step.get_loop_output_mapper()
-        if hasattr(loop_step, "get_loop_output_mapper")
-        else getattr(loop_step, "loop_output_mapper", None)
+    final_output, output_mapper_outcome = finalize_loop_output(
+        loop_step=loop_step,
+        core=core,
+        current_data=current_data,
+        final_output=final_output,
+        current_context=current_context,
+        iteration_count=iteration_count,
+        cumulative_tokens=cumulative_tokens,
+        cumulative_cost=cumulative_cost,
+        iteration_results_all=iteration_results_all + iteration_results,
+        is_map_step=is_map_step,
+        start_time=start_time,
     )
-    if is_map_step:
-        try:
-            if hasattr(loop_step, "_results_var"):
-                results = list(getattr(loop_step, "_results_var").get())
-            else:
-                results = list(getattr(loop_step, "results", []) or [])
-        except Exception:
-            results = list(getattr(loop_step, "results", []) or [])
-        if current_data is not None:
-            results.append(current_data)
-        final_output = results
-        output_mapper = None
-        try:
-            meta = getattr(loop_step, "meta", {})
-            if isinstance(meta, dict):
-                candidate = meta.get("map_finalize_mapper")
-                if callable(candidate):
-                    output_mapper = candidate
-        except Exception:
-            output_mapper = None
-    if output_mapper:
-        try:
-            try:
-                unpacker = getattr(core, "unpacker", DefaultAgentResultUnpacker())
-            except Exception:
-                unpacker = DefaultAgentResultUnpacker()
-            try:
-                meta = getattr(loop_step, "meta", {})
-                use_final = bool(
-                    is_map_step
-                    and isinstance(meta, dict)
-                    and meta.get("map_finalize_mapper") is not None
-                )
-            except Exception:
-                use_final = False
-            unpacked_data = unpacker.unpack(final_output if use_final else current_data)
-            mapped = output_mapper(unpacked_data, current_context)
-            try:
-                if current_context is not None:
-                    try:
-                        object.__setattr__(
-                            current_context, "_last_loop_iterations", iteration_count
-                        )
-                    except Exception:
-                        setattr(current_context, "_last_loop_iterations", iteration_count)
-            except Exception:
-                pass
-            final_output = mapped
-        except Exception as e:
-            sr = StepResult(
-                name=loop_step.name,
-                success=False,
-                output=None,
-                attempts=iteration_count,
-                latency_s=time.monotonic() - start_time,
-                token_counts=cumulative_tokens,
-                cost_usd=cumulative_cost,
-                feedback=str(e),
-                branch_context=current_context,
-                metadata_={
-                    "iterations": iteration_count,
-                    "exit_reason": "loop_output_mapper_error",
-                },
-                step_history=iteration_results_all + iteration_results,
-            )
-            return to_outcome(sr)
+    if output_mapper_outcome:
+        return output_mapper_outcome
     any_failure = any(not sr.success for sr in iteration_results_all)
     try:
         if current_context is not None:

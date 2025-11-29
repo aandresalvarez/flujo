@@ -31,7 +31,9 @@ from ._shared import (  # noqa: F401
     time,
     to_outcome,
 )
+from .loop_hitl_orchestrator import LoopResumeConfig, prepare_resume_config
 from .loop_iteration_runner import run_loop_iterations
+from .loop_mapper import map_initial_input
 
 
 class LoopStepExecutor(Protocol):
@@ -116,29 +118,14 @@ class DefaultLoopStepExecutor(StepPolicy[LoopStep[Any]]):
                 getattr(loop_step, "_max_loops_var").set(configured_max_loops)
         except Exception:
             pass
-        initial_mapper = (
-            loop_step.get_initial_input_to_loop_body_mapper()
-            if hasattr(loop_step, "get_initial_input_to_loop_body_mapper")
-            else getattr(loop_step, "initial_input_to_loop_body_mapper", None)
+        current_data, initial_mapper_outcome = map_initial_input(
+            loop_step=loop_step,
+            current_data=current_data,
+            current_context=current_context,
+            start_time=start_time,
         )
-        if initial_mapper:
-            try:
-                current_data = initial_mapper(current_data, current_context)
-            except Exception as e:
-                sr = StepResult(
-                    name=loop_step.name,
-                    success=False,
-                    output=None,
-                    attempts=0,
-                    latency_s=time.monotonic() - start_time,
-                    token_counts=0,
-                    cost_usd=0.0,
-                    feedback=f"Error in initial_input_to_loop_body_mapper for LoopStep '{loop_step.name}': {e}",
-                    branch_context=current_context,
-                    metadata_={"iterations": 0, "exit_reason": "initial_input_mapper_error"},
-                    step_history=[],
-                )
-                return to_outcome(sr)
+        if initial_mapper_outcome:
+            return initial_mapper_outcome
         body_pipeline = (
             loop_step.get_loop_body_pipeline()
             if hasattr(loop_step, "get_loop_body_pipeline")
@@ -241,86 +228,11 @@ class DefaultLoopStepExecutor(StepPolicy[LoopStep[Any]]):
                 telemetry.logfire.debug(f"[POLICY] Opened overall loop span for '{loop_step.name}'")
         except Exception:
             pass
-        saved_iteration = 1
-        saved_step_index = 0
-        is_resuming = False  # Track if this is a resume call
-        saved_last_output = None  # Track last output before pause
-        resume_requires_hitl_output = False
-        resume_payload = data
-        paused_step_name: str | None = None
-        scratchpad_ref = getattr(current_context, "scratchpad", None)
-        resume_state = LoopResumeState.from_context(current_context) if current_context else None
-        if resume_state is not None:
-            saved_iteration = resume_state.iteration
-            saved_step_index = resume_state.step_index
-            is_resuming = True
-            saved_last_output = resume_state.last_output
-            resume_requires_hitl_output = resume_state.requires_hitl_payload
-            paused_step_name = resume_state.paused_step_name
-            LoopResumeState.clear(current_context)
-            if isinstance(scratchpad_ref, dict):
-                scratchpad_ref["status"] = "paused" if resume_requires_hitl_output else "running"
-            telemetry.logfire.info(
-                f"LoopStep '{loop_step.name}' RESUMING from iteration {saved_iteration}, step {saved_step_index}"
-            )
-        elif isinstance(scratchpad_ref, dict):
-            maybe_iteration = scratchpad_ref.get("loop_iteration")
-            maybe_index = scratchpad_ref.get("loop_step_index")
-            maybe_status = scratchpad_ref.get("status")
-            maybe_last_output = scratchpad_ref.get("loop_last_output")
-            resume_flag = scratchpad_ref.get("loop_resume_requires_hitl_output")
-            paused_step_name_raw = scratchpad_ref.get("loop_paused_step_name")
-            if isinstance(paused_step_name_raw, str) and paused_step_name_raw:
-                paused_step_name = paused_step_name_raw
-            if (
-                isinstance(maybe_iteration, int)
-                and maybe_iteration >= 1
-                and isinstance(maybe_index, int)
-                and maybe_index >= 0
-                and (maybe_status in {"paused", "running", None})
-            ):
-                saved_iteration = maybe_iteration
-                saved_step_index = maybe_index
-                is_resuming = True
-                saved_last_output = maybe_last_output
-                resume_requires_hitl_output = bool(resume_flag)
-                telemetry.logfire.info(
-                    f"LoopStep '{loop_step.name}' RESUMING from iteration {saved_iteration}, step {saved_step_index} (status={maybe_status})"
-                )
-                scratchpad_ref["status"] = "paused" if resume_requires_hitl_output else "running"
-        if resume_requires_hitl_output:
-            try:
-                hitl_history = getattr(current_context, "hitl_history", None)
-                if isinstance(hitl_history, list) and hitl_history:
-                    latest_resp = getattr(hitl_history[-1], "human_response", None)
-                    if latest_resp is not None:
-                        resume_payload = latest_resp
-            except Exception:
-                pass
-            if resume_payload is None and isinstance(scratchpad_ref, dict):
-                try:
-                    steps_snap = scratchpad_ref.get("steps")
-                    if (
-                        isinstance(steps_snap, dict)
-                        and isinstance(paused_step_name, str)
-                        and paused_step_name in steps_snap
-                    ):
-                        resume_payload = steps_snap.get(paused_step_name)
-                except Exception:
-                    pass
-        else:
-            resume_payload = data
-        iteration_count = saved_iteration if saved_iteration >= 1 else 1
-        try:
-            if current_context is not None and hasattr(current_context, "scratchpad"):
-                sp_main = getattr(current_context, "scratchpad")
-                if isinstance(sp_main, dict):
-                    if is_resuming and resume_requires_hitl_output:
-                        sp_main["status"] = "paused"
-                    sp_main["loop_iteration"] = iteration_count - 1
-        except Exception:
-            pass
-        current_step_index = saved_step_index
+        resume_config: LoopResumeConfig = prepare_resume_config(
+            loop_step=loop_step,
+            current_context=current_context,
+            data=data,
+        )
         return await run_loop_iterations(
             core=core,
             loop_step=loop_step,
@@ -339,15 +251,15 @@ class DefaultLoopStepExecutor(StepPolicy[LoopStep[Any]]):
             user_src=user_src,
             named_steps_set=named_steps_set,
             max_loops=max_loops,
-            saved_iteration=saved_iteration,
-            saved_step_index=saved_step_index,
-            is_resuming=is_resuming,
-            resume_requires_hitl_output=resume_requires_hitl_output,
-            resume_payload=resume_payload,
-            saved_last_output=saved_last_output,
-            paused_step_name=paused_step_name,
-            iteration_count=iteration_count,
-            current_step_index=current_step_index,
+            saved_iteration=resume_config.saved_iteration,
+            saved_step_index=resume_config.saved_step_index,
+            is_resuming=resume_config.is_resuming,
+            resume_requires_hitl_output=resume_config.resume_requires_hitl_output,
+            resume_payload=resume_config.resume_payload,
+            saved_last_output=resume_config.saved_last_output,
+            paused_step_name=resume_config.paused_step_name,
+            iteration_count=resume_config.iteration_count,
+            current_step_index=resume_config.current_step_index,
             start_time=start_time,
             context_setter=context_setter,
             _fallback_depth=_fallback_depth,
