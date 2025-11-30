@@ -11,6 +11,9 @@ from typing import List
 import pytest
 
 
+MAKE_ALL_TIMEOUT_SECONDS = 900
+
+
 class TestTypeSafetyCompliance:
     """Test suite for type safety compliance."""
 
@@ -463,7 +466,7 @@ class TestCodeQualityGates:
         """Get the root directory of the Flujo project."""
         return Path(__file__).parent.parent.parent
 
-    @pytest.mark.timeout(300)
+    @pytest.mark.timeout(MAKE_ALL_TIMEOUT_SECONDS)
     def test_make_all_passes(self, flujo_root: Path):
         """Verify that `make all` passes with zero errors.
 
@@ -479,7 +482,7 @@ class TestCodeQualityGates:
                 cwd=flujo_root,
                 capture_output=True,
                 text=True,
-                timeout=900,  # Allow full quality gate run (format/lint/typecheck/test)
+                timeout=MAKE_ALL_TIMEOUT_SECONDS,
                 env=env,
             )
 
@@ -495,7 +498,7 @@ class TestCodeQualityGates:
                 )
 
         except subprocess.TimeoutExpired:
-            pytest.fail("`make all` timed out after 5 minutes")
+            pytest.fail("`make all` timed out after 15 minutes")
         except FileNotFoundError:
             pytest.fail("`make` command not found. Ensure you're in the correct environment.")
 

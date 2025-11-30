@@ -186,6 +186,28 @@ uv run flujo run pipeline.yaml
 
 ---
 
+### Sink-to Pattern
+
+Use `sink_to` when a step returns a scalar or small object that you want stored at a predictable
+context path without writing a custom processor.
+
+```yaml
+- kind: hitl
+  name: ask_user
+  message: "Name?"
+  sink_to: "scratchpad.user_name"
+
+- kind: step
+  name: greet
+  input: "Hello {{ context.scratchpad.user_name }}"
+```
+
+- Paths are dotted (e.g., `scratchpad.user_name`) and are created automatically.
+- Works alongside `updates_context: true`; `sink_to` just controls the destination.
+- Useful for HITL prompts or guardrail steps that capture simple fields.
+
+---
+
 ## Common Mistakes
 
 ### ❌ Mistake 1: Direct Context Field Access
@@ -499,4 +521,3 @@ log_resolution = true            # See what's happening
 ---
 
 **Questions or issues?** Check the [troubleshooting guide](../guides/troubleshooting_hitl.md) or enable strict mode to get clear error messages.
-
