@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from flujo.type_definitions.common import JSONObject
+
 # Ensure framework primitives (like StateMachine) are registered when builtins load
 try:  # pragma: no cover - best-effort for import order
     import flujo.framework as _framework  # noqa: F401
@@ -42,7 +44,7 @@ def _register_builtins() -> None:
     register_context_builtins()
     register_optional_builtins()
 
-    async def _stringify(x: Any) -> Dict[str, Any] | str:
+    async def _stringify(x: Any) -> str:
         try:
             if isinstance(x, (str, bytes)):
                 return x.decode() if isinstance(x, bytes) else x
@@ -205,7 +207,7 @@ def _register_builtins() -> None:
         import csv
         import io
 
-        norm: List[Dict[str, Any]]
+        norm: List[JSONObject]
         if isinstance(rows, dict):
             norm = [rows]
         elif isinstance(rows, list) and all(isinstance(x, dict) for x in rows):
@@ -253,7 +255,7 @@ def _register_builtins() -> None:
 
     async def aggregate(data: Any, *, operation: str, field: Optional[str] = None) -> float | int:
         op = (operation or "").strip().lower()
-        items: List[Dict[str, Any]]
+        items: List[JSONObject]
         if isinstance(data, list) and all(isinstance(x, dict) for x in data):
             items = data
         elif isinstance(data, dict):
@@ -315,10 +317,10 @@ def _register_builtins() -> None:
         includes = list(include) if include else None
         ren = dict(rename) if rename else {}
 
-        def _project(obj: Dict[str, Any]) -> Dict[str, Any]:
+        def _project(obj: JSONObject) -> JSONObject:
             try:
                 keys = list(obj.keys()) if includes is None else [k for k in includes]
-                out: Dict[str, Any] = {}
+                out: JSONObject = {}
                 for k in keys:
                     if k in obj:
                         out[ren.get(k, k)] = obj.get(k)
@@ -383,7 +385,7 @@ def _register_builtins() -> None:
         description="Return YAML in the format that the CLI expects to find (with generated_yaml and yaml_text keys).",
     )
 
-    async def web_search(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
+    async def web_search(query: str, max_results: int = 3) -> List[JSONObject]:
         # Allow tests to monkeypatch the facade module while keeping lazy optional deps.
         try:
             import importlib
@@ -394,7 +396,7 @@ def _register_builtins() -> None:
         except Exception:
             ddgs_async = _DDGSAsync
             ddgs_class = _DDGS_CLASS
-        results: List[Dict[str, Any]] = []
+        results: List[JSONObject] = []
         try:
             if ddgs_async is None and ddgs_class is None:
                 return []

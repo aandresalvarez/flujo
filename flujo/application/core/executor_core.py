@@ -1,13 +1,14 @@
 from __future__ import annotations
 import asyncio
 import warnings
-from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast
+from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast, TYPE_CHECKING
 
 from ...domain.interfaces import StateProvider
 from ...domain.models import PipelineResult, Quota, StepOutcome, StepResult, UsageLimits
 from ...exceptions import (
     MissingAgentError,
 )
+from ...infra.settings import get_settings
 from .quota_manager import QuotaManager
 from .fallback_handler import FallbackHandler
 from .background_task_manager import BackgroundTaskManager
@@ -156,6 +157,10 @@ except Exception:
     _DEFAULT_STRICT_CONTEXT_ISOLATION = False
     _DEFAULT_STRICT_CONTEXT_MERGE = False
 
+if TYPE_CHECKING:
+    from .state_manager import StateManager
+    from ...type_definitions.common import JSONObject
+
 
 class ExecutorCore(Generic[TContext_w_Scratch]):
     """
@@ -211,6 +216,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         strict_context_merge: bool = False,
         enable_optimized_error_handling: bool = True,
         state_providers: Optional[Dict[str, StateProvider[Any]]] = None,
+        state_manager: Optional["StateManager[Any]"] = None,
     ) -> None:
         # Validate parameters for compatibility
         if cache_size <= 0:
@@ -280,6 +286,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._hydration_manager = HydrationManager(state_providers)
         self._hydration_manager.set_telemetry(self._telemetry)
         self._background_task_manager = BackgroundTaskManager()
+        self.state_manager = state_manager
         self._context_update_manager = ContextUpdateManager()
         self._agent_orchestrator = AgentOrchestrator(plugin_runner=self._plugin_runner)
         self._conditional_orchestrator = ConditionalOrchestrator()
@@ -416,6 +423,182 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     def _reset_current_quota(self, token: Optional[object]) -> None:
         """Best-effort reset for quota context tokens."""
         reset_current_quota(self._quota_manager, token)
+
+    def _get_background_quota(self, parent_quota: Optional[Quota] = None) -> Optional[Quota]:
+        """Compute quota for background tasks with parent-first split."""
+        settings = get_settings()
+        bg_settings = getattr(settings, "background_tasks", None)
+        if bg_settings is None or not bool(getattr(bg_settings, "enable_quota", False)):
+            return parent_quota
+
+        if parent_quota is not None:
+            try:
+                return parent_quota.split(1)[0]
+            except Exception:
+                try:
+                    from ...infra import telemetry as _telemetry
+
+                    _telemetry.logfire.warning(
+                        "Cannot split parent quota for background task; quota disabled for task"
+                    )
+                except Exception:
+                    pass
+                return None
+
+        try:
+            return Quota(
+                float(getattr(bg_settings, "max_cost_per_task", 0.0)),
+                int(getattr(bg_settings, "max_tokens_per_task", 0)),
+            )
+        except Exception:
+            return None
+
+    async def _register_background_task(
+        self,
+        *,
+        task_id: str,
+        bg_run_id: str,
+        parent_run_id: Optional[str],
+        step_name: str,
+        data: Any,
+        context: Optional[TContext_w_Scratch],
+        metadata: Optional["JSONObject"] = None,
+    ) -> None:
+        """Persist initial state for a background task."""
+        if self.state_manager is None:
+            return
+
+        meta = dict(metadata or {})
+        meta.setdefault("is_background_task", True)
+        meta.setdefault("task_id", task_id)
+        meta.setdefault("parent_run_id", parent_run_id)
+        meta.setdefault("step_name", step_name)
+        meta.setdefault("input_data", data)
+
+        await self.state_manager.persist_workflow_state(
+            run_id=bg_run_id,
+            context=context,
+            current_step_index=0,
+            last_step_output=None,
+            status="running",
+            metadata=meta,
+        )
+
+    async def _mark_background_task_completed(
+        self,
+        *,
+        task_id: str,
+        context: Optional[TContext_w_Scratch],
+        metadata: Optional["JSONObject"] = None,
+    ) -> None:
+        """Mark a background task as completed."""
+        if self.state_manager is None:
+            return
+
+        run_id = getattr(context, "run_id", None) if context is not None else None
+        if run_id is None:
+            return
+
+        meta = dict(metadata or {})
+        meta.setdefault("task_id", task_id)
+        meta.setdefault("is_background_task", True)
+
+        await self.state_manager.persist_workflow_state(
+            run_id=run_id,
+            context=context,
+            current_step_index=1,
+            last_step_output=None,
+            status="completed",
+            metadata=meta,
+        )
+        try:
+            from ...infra import telemetry as _telemetry
+
+            _telemetry.logfire.info(f"Background task '{task_id}' completed successfully")
+        except Exception:
+            pass
+
+    async def _mark_background_task_failed(
+        self,
+        *,
+        task_id: str,
+        context: Optional[TContext_w_Scratch],
+        error: Exception,
+        metadata: Optional["JSONObject"] = None,
+    ) -> None:
+        """Mark a background task as failed."""
+        if self.state_manager is None:
+            return
+
+        run_id = getattr(context, "run_id", None) if context is not None else None
+        if run_id is None:
+            return
+
+        meta = dict(metadata or {})
+        meta.setdefault("task_id", task_id)
+        meta.setdefault("is_background_task", True)
+        meta["background_error"] = meta.get("background_error") or str(error)
+
+        if context is not None and hasattr(context, "scratchpad"):
+            try:
+                context.scratchpad["background_error"] = str(error)
+            except Exception:
+                pass
+
+        await self.state_manager.persist_workflow_state(
+            run_id=run_id,
+            context=context,
+            current_step_index=0,
+            last_step_output=None,
+            status="failed",
+            metadata=meta,
+        )
+        try:
+            from ...infra import telemetry as _telemetry
+
+            _telemetry.logfire.error(
+                f"Background task '{task_id}' failed", extra={"error": str(error)}
+            )
+        except Exception:
+            pass
+
+    async def _mark_background_task_paused(
+        self,
+        *,
+        task_id: str,
+        context: Optional[TContext_w_Scratch],
+        error: Exception,
+        metadata: Optional["JSONObject"] = None,
+    ) -> None:
+        """Mark a background task as paused (control-flow signal)."""
+        if self.state_manager is None:
+            return
+
+        run_id = getattr(context, "run_id", None) if context is not None else None
+        if run_id is None:
+            return
+
+        meta = dict(metadata or {})
+        meta.setdefault("task_id", task_id)
+        meta.setdefault("is_background_task", True)
+        meta["background_error"] = meta.get("background_error") or str(error)
+
+        await self.state_manager.persist_workflow_state(
+            run_id=run_id,
+            context=context,
+            current_step_index=0,
+            last_step_output=None,
+            status="paused",
+            metadata=meta,
+        )
+        try:
+            from ...infra import telemetry as _telemetry
+
+            _telemetry.logfire.info(
+                f"Background task '{task_id}' paused", extra={"reason": str(error)}
+            )
+        except Exception:
+            pass
 
     def _hash_obj(self, obj: Any) -> str:
         return hash_obj(obj, self._serializer, self._hasher)

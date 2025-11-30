@@ -3,12 +3,15 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Generic, Optional, TypeVar, Tuple
+from typing import Any, Dict, Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
 
 from flujo.domain.models import StepResult, BaseModel, PipelineResult
 from flujo.state.backends import StateBackend
 from flujo.state.models import WorkflowState
 from .state_serializer import StateSerializer
+
+if TYPE_CHECKING:
+    from flujo.type_definitions.common import JSONObject
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +236,7 @@ class StateManager(Generic[ContextT]):
         status: str,
         state_created_at: datetime | None = None,
         step_history: Optional[list[StepResult]] = None,
+        metadata: Optional["JSONObject"] = None,
     ) -> None:
         """Persist current workflow state with intelligent caching and delta detection."""
         # Persist state even in test mode so unit tests that inspect workflow_state succeed.
@@ -273,6 +277,7 @@ class StateManager(Generic[ContextT]):
         # Serialize step history with error handling
         # Use minimal representation to avoid expensive deep serialization on large runs
         serialized_step_history = self._serializer.serialize_step_history_minimal(step_history)
+        metadata_dict: Dict[str, Any] = metadata or {}
 
         state_data = {
             "run_id": run_id,
@@ -290,6 +295,11 @@ class StateManager(Generic[ContextT]):
             "error_message": getattr(context, "error_message", None),
             "execution_time_ms": execution_time_ms,
             "memory_usage_mb": memory_usage_mb,
+            "metadata": metadata_dict,
+            "is_background_task": bool(metadata_dict.get("is_background_task", False)),
+            "parent_run_id": metadata_dict.get("parent_run_id"),
+            "task_id": metadata_dict.get("task_id"),
+            "background_error": metadata_dict.get("background_error"),
         }
 
         await self.state_backend.save_state(run_id, state_data)
@@ -304,6 +314,7 @@ class StateManager(Generic[ContextT]):
         status: str,
         state_created_at: datetime | None = None,
         step_history: Optional[list[StepResult]] = None,
+        metadata: Optional["JSONObject"] = None,
     ) -> None:
         """Optimized persistence with minimal overhead for performance-critical scenarios."""
         if self.state_backend is None or run_id is None:
@@ -350,6 +361,8 @@ class StateManager(Generic[ContextT]):
         else:
             serialized_step_history = []
 
+        metadata_dict: Dict[str, Any] = metadata or {}
+
         # OPTIMIZATION: Use minimal state data structure
         state_data = {
             "run_id": run_id,
@@ -363,6 +376,11 @@ class StateManager(Generic[ContextT]):
             "last_step_output": last_step_output,
             "status": status,
             "step_history": serialized_step_history,
+            "metadata": metadata_dict,
+            "is_background_task": bool(metadata_dict.get("is_background_task", False)),
+            "parent_run_id": metadata_dict.get("parent_run_id"),
+            "task_id": metadata_dict.get("task_id"),
+            "background_error": metadata_dict.get("background_error"),
         }
 
         if state_created_at is not None:

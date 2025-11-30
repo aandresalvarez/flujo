@@ -11,7 +11,9 @@ from typing import (
     Dict,
     TypeVar,
     Callable,
+    overload,
 )
+from types import FunctionType, BuiltinFunctionType, MethodType
 import flujo.infra.config
 from flujo.exceptions import PricingNotConfiguredError
 
@@ -20,6 +22,16 @@ _model_cache: dict[str, tuple[Optional[str], str]] = {}
 
 # Type variable for generic callable resolution
 T = TypeVar("T")
+# Fast-path callable types for micro-optimized resolution in tight loops
+_FAST_CALLABLE_TYPES: tuple[type[Any], ...] = (FunctionType, BuiltinFunctionType, MethodType)
+
+
+@overload
+def resolve_callable(value: Callable[[], T]) -> T: ...
+
+
+@overload
+def resolve_callable(value: T) -> T: ...
 
 
 def resolve_callable(value: T | Callable[[], T]) -> T:
@@ -35,7 +47,12 @@ def resolve_callable(value: T | Callable[[], T]) -> T:
     Returns:
         The resolved value of type T
     """
-    # Fast path: avoid attribute lookups in the hot loop
+    fast_types = _FAST_CALLABLE_TYPES
+    value_type = type(value)
+    if value_type in fast_types:
+        value_callable: Callable[[], T] = value  # type: ignore[assignment]
+        return value_callable()
+
     if callable(value):
         return value()
     return value

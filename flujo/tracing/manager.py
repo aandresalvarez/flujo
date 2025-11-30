@@ -103,6 +103,8 @@ class TraceManager:
         root_attrs: Dict[str, Any] = {
             "flujo.input": str(payload.initial_input),
         }
+        if getattr(payload, "is_background", False):
+            root_attrs["flujo.is_background"] = True
         # Optional enriched fields
         if getattr(payload, "run_id", None) is not None:
             root_attrs["flujo.run_id"] = payload.run_id
@@ -170,6 +172,8 @@ class TraceManager:
             "flujo.step.type": type(step_obj).__name__ if step_obj is not None else "UnknownStep",
             "step_input": str(getattr(payload, "step_input", "")),
         }
+        if getattr(payload, "is_background", False):
+            step_attrs["flujo.is_background"] = True
         # Attach policy name based on step type mapping (registry parity)
         try:
             if step_obj is not None:

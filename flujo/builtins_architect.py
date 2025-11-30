@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from flujo.type_definitions.common import JSONObject
+
 from pydantic import BaseModel as PydanticBaseModel
 from flujo.domain.models import BaseModel as DomainBaseModel
 from flujo.infra.skills_catalog import load_skills_catalog, load_skills_entry_points
@@ -20,7 +22,7 @@ def _register_architect_agents() -> None:
     reg = get_skill_registry()
 
     # Planner Agent: decomposes user goal into high-level steps
-    async def _planner_agent(payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def _planner_agent(payload: JSONObject) -> JSONObject:
         goal = str(payload.get("user_goal") or "").strip()
         g = goal.lower()
         steps: List[Dict[str, str]] = []
@@ -100,7 +102,7 @@ def _register_architect_agents() -> None:
         )
 
     # Tool Matcher Agent: select a skill for each planned step
-    async def _tool_matcher_agent(payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def _tool_matcher_agent(payload: JSONObject) -> JSONObject:
         step_name = payload.get("step_name") or "Step"
         purpose = (payload.get("purpose") or "").lower()
         available = payload.get("available_skills") or []
@@ -123,7 +125,7 @@ def _register_architect_agents() -> None:
                 if _is_avail("flujo.builtins.http_get")
                 else "flujo.builtins.stringify"
             )
-            params: Dict[str, Any] = {}
+            params: JSONObject = {}
         elif any(k in purpose for k in ["search", "find", "lookup", "discover"]):
             sid = (
                 "flujo.builtins.web_search"
@@ -171,7 +173,7 @@ def _register_architect_agents() -> None:
         )
 
     # YAML Writer Agent: assemble final pipeline.yaml
-    async def _yaml_writer_agent(payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def _yaml_writer_agent(payload: JSONObject) -> JSONObject:
         goal = payload.get("user_goal")
         selections = payload.get("tool_selections") or []
         # schema = payload.get("flujo_schema") or {}  # Unused variable removed
@@ -197,7 +199,7 @@ def _register_architect_agents() -> None:
 
         if wants_parallel:
             # Build a single ParallelStep with each selection as its own branch
-            branches: Dict[str, List[Dict[str, Any]]] = {}
+            branches: Dict[str, List[JSONObject]] = {}
             for idx, sel in enumerate(selections, start=1):
                 if not isinstance(sel, dict):
                     continue

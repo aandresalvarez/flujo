@@ -22,6 +22,7 @@ class PreRunPayload(BaseModel):
     initial_input: Any
     context: Optional[BaseModel] = None
     resources: Optional[AppResources] = None
+    is_background: bool = False
     # Trace Contract enrichment (optional for backward compatibility)
     run_id: Optional[str] = None
     pipeline_name: Optional[str] = None
@@ -41,6 +42,7 @@ class PostRunPayload(BaseModel):
     pipeline_result: PipelineResult[Any]
     context: Optional[BaseModel] = None
     resources: Optional[AppResources] = None
+    is_background: bool = False
 
 
 class PreStepPayload(BaseModel):
@@ -55,6 +57,7 @@ class PreStepPayload(BaseModel):
     step_input: Any
     context: Optional[BaseModel] = None
     resources: Optional[AppResources] = None
+    is_background: bool = False
     # Trace Contract enrichment (optional for backward compatibility)
     attempt_number: Optional[int] = None
     quota_before_usd: Optional[float] = None
@@ -83,6 +86,7 @@ class PostStepPayload(BaseModel):
     step_result: StepResult
     context: Optional[BaseModel] = None
     resources: Optional[AppResources] = None
+    is_background: bool = False
 
 
 class OnStepFailurePayload(BaseModel):
@@ -96,6 +100,7 @@ class OnStepFailurePayload(BaseModel):
     step_result: StepResult
     context: Optional[BaseModel] = None
     resources: Optional[AppResources] = None
+    is_background: bool = False
 
 
 class OnPauseRequestedPayload(BaseModel):
@@ -109,6 +114,7 @@ class OnPauseRequestedPayload(BaseModel):
     pause_message: str
     context: Optional[BaseModel] = None
     resources: Optional[AppResources] = None
+    is_background: bool = False
 
 
 HookPayload = Union[

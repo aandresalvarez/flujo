@@ -58,6 +58,9 @@ class OpenTelemetryHook:
         self._mono_start: Dict[str, float] = {}
 
     async def hook(self, payload: HookPayload) -> None:
+        if getattr(payload, "is_background", False):
+            # Skip background runs/steps to reduce telemetry noise; consumers can add a separate hook if needed.
+            return
         handler_map: Dict[str, Callable[[HookPayload], Awaitable[None]]] = {
             "pre_run": cast(Callable[[HookPayload], Awaitable[None]], self._handle_pre_run),
             "post_run": cast(Callable[[HookPayload], Awaitable[None]], self._handle_post_run),

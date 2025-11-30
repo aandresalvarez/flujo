@@ -91,6 +91,12 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
         else:
             self.backend = backend
         self.state_manager = state_manager or StateManager()
+        try:
+            executor = getattr(self.backend, "_executor", None)
+            if executor is not None:
+                executor.state_manager = self.state_manager
+        except Exception:
+            pass
         self.usage_limits = usage_limits
         self.step_coordinator = step_coordinator or StepCoordinator()
         self.type_validator = type_validator or TypeValidator()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, cast
 
 import aiosqlite
@@ -75,6 +75,13 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
                     # Get execution_time_ms directly from state
                     execution_time_ms = state.get("execution_time_ms")
+                    metadata_json = None
+                    metadata = state.get("metadata")
+                    if metadata is not None:
+                        if isinstance(metadata, dict):
+                            metadata_json = _fast_json_dumps(metadata)
+                        else:
+                            metadata_json = _fast_json_dumps(robust_serialize(metadata))
 
                     await db.execute(
                         """
@@ -82,8 +89,9 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                             run_id, pipeline_id, pipeline_name, pipeline_version,
                             current_step_index, pipeline_context, last_step_output, step_history,
                             status, created_at, updated_at, total_steps,
-                            error_message, execution_time_ms, memory_usage_mb
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            error_message, execution_time_ms, memory_usage_mb,
+                            metadata, is_background_task, parent_run_id, task_id, background_error
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             run_id,
@@ -101,6 +109,11 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                             state.get("error_message"),
                             execution_time_ms,
                             state.get("memory_usage_mb"),
+                            metadata_json,
+                            1 if state.get("is_background_task") else 0,
+                            state.get("parent_run_id"),
+                            state.get("task_id"),
+                            state.get("background_error"),
                         ),
                     )
                     await db.commit()
@@ -122,7 +135,8 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                         """
                         SELECT run_id, pipeline_id, pipeline_name, pipeline_version, current_step_index,
                                pipeline_context, last_step_output, step_history, status, created_at, updated_at,
-                               total_steps, error_message, execution_time_ms, memory_usage_mb
+                               total_steps, error_message, execution_time_ms, memory_usage_mb,
+                               metadata, is_background_task, parent_run_id, task_id, background_error
                         FROM workflow_state WHERE run_id = ?
                         """,
                         (run_id,),
@@ -140,6 +154,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     safe_deserialize(json.loads(row[6])) if row[6] is not None else None
                 )
                 step_history = safe_deserialize(json.loads(row[7])) if row[7] is not None else []
+                metadata = safe_deserialize(json.loads(row[15])) if row[15] is not None else {}
                 return {
                     "run_id": row[0],
                     "pipeline_id": row[1],
@@ -156,6 +171,11 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     "error_message": row[12],
                     "execution_time_ms": row[13],
                     "memory_usage_mb": row[14],
+                    "metadata": metadata,
+                    "is_background_task": bool(row[16]) if row[16] is not None else False,
+                    "parent_run_id": row[17],
+                    "task_id": row[18],
+                    "background_error": row[19],
                 }
 
             result = await self._with_retries(_load)
@@ -218,6 +238,154 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     except Exception:
                         pass
 
+    async def list_background_tasks(
+        self,
+        parent_run_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """List background tasks with optional filtering."""
+        await self._ensure_init()
+        async with self._lock:
+            db = self._connection_pool
+            _temp_conn = False
+            if db is None:
+                db = await self._create_connection()
+                _temp_conn = True
+
+            try:
+                query = """
+                    SELECT run_id, status, created_at, updated_at, metadata, parent_run_id,
+                           task_id, background_error
+                    FROM workflow_state
+                    WHERE is_background_task = 1
+                """
+                params: List[Any] = []
+                if parent_run_id is not None:
+                    query += " AND parent_run_id = ?"
+                    params.append(parent_run_id)
+                if status is not None:
+                    query += " AND status = ?"
+                    params.append(status)
+                query += " ORDER BY updated_at DESC"
+                if limit is not None:
+                    query += " LIMIT ?"
+                    params.append(limit)
+                    query += " OFFSET ?"
+                    params.append(offset)
+
+                async with db.execute(query, params) as cursor:
+                    rows = await cursor.fetchall()
+
+                tasks: List[Dict[str, Any]] = []
+                for row in rows:
+                    metadata_raw = safe_deserialize(json.loads(row[4])) if row[4] else {}
+                    tasks.append(
+                        {
+                            "run_id": row[0],
+                            "status": row[1],
+                            "created_at": row[2],
+                            "updated_at": row[3],
+                            "metadata": metadata_raw,
+                            "parent_run_id": row[5],
+                            "task_id": row[6],
+                            "background_error": row[7],
+                        }
+                    )
+                return tasks
+            finally:
+                if _temp_conn:
+                    try:
+                        await db.close()
+                    except Exception:
+                        pass
+
+    async def get_failed_background_tasks(
+        self,
+        parent_run_id: Optional[str] = None,
+        hours_back: int = 24,
+    ) -> List[Dict[str, Any]]:
+        """Return failed background tasks within a time window."""
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+        tasks = await self.list_background_tasks(parent_run_id=parent_run_id, status="failed")
+        filtered: List[Dict[str, Any]] = []
+
+        def _normalize_ts(value: Any) -> Optional[datetime]:
+            dt: Optional[datetime] = None
+            if isinstance(value, datetime):
+                dt = value
+            elif isinstance(value, str):
+                try:
+                    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except Exception:
+                    return None
+            if dt is None:
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+            return dt
+
+        for task in tasks:
+            updated_at = task.get("updated_at")
+            updated_dt = _normalize_ts(updated_at)
+            if updated_dt is None or updated_dt < cutoff:
+                continue
+            filtered.append(task)
+        return filtered
+
+    async def cleanup_stale_background_tasks(self, stale_hours: int = 24) -> int:
+        """Mark running background tasks older than the cutoff as failed."""
+        await self._ensure_init()
+        async with self._lock:
+            db = self._connection_pool
+            _temp_conn = False
+            if db is None:
+                db = await self._create_connection()
+                _temp_conn = True
+
+            try:
+                cutoff = datetime.now() - timedelta(hours=stale_hours)
+                async with db.execute(
+                    """
+                    SELECT run_id, updated_at FROM workflow_state
+                    WHERE is_background_task = 1
+                      AND status = 'running'
+                      AND updated_at < ?
+                    """,
+                    (cutoff.isoformat(),),
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                if not rows:
+                    return 0
+
+                count = 0
+                for run_id, _updated_at in rows:
+                    await db.execute(
+                        """
+                        UPDATE workflow_state
+                        SET status = 'failed',
+                            background_error = 'Task timeout: process likely crashed',
+                            updated_at = ?
+                        WHERE run_id = ?
+                        """,
+                        (datetime.now().isoformat(), run_id),
+                    )
+                    count += 1
+                await db.commit()
+                telemetry.logfire.warning(
+                    f"Cleaned up {count} stale background tasks (older than {stale_hours} hours)"
+                )
+                return count
+            finally:
+                if _temp_conn:
+                    try:
+                        await db.close()
+                    except Exception:
+                        pass
+
     async def list_workflows(
         self,
         status: Optional[str] = None,
@@ -243,7 +411,8 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 query = """
                     SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
                            current_step_index, status, created_at, updated_at,
-                           total_steps, error_message, execution_time_ms, memory_usage_mb
+                           total_steps, error_message, execution_time_ms, memory_usage_mb,
+                           metadata, is_background_task, parent_run_id, task_id, background_error
                     FROM workflow_state
                     WHERE 1=1
                 """
@@ -273,6 +442,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 for row in rows:
                     if row is None:
                         continue
+                    metadata = safe_deserialize(json.loads(row[12])) if row[12] else {}
                     result.append(
                         {
                             "run_id": row[0],
@@ -287,6 +457,11 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                             "error_message": row[9],
                             "execution_time_ms": row[10],
                             "memory_usage_mb": row[11],
+                            "metadata": metadata,
+                            "is_background_task": bool(row[13]) if row[13] is not None else False,
+                            "parent_run_id": row[14],
+                            "task_id": row[15],
+                            "background_error": row[16],
                         }
                     )
                 return result
@@ -447,11 +622,26 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 avg_exec_time = avg_exec_time_row[0] if avg_exec_time_row else 0
                 await cursor.close()
 
+                # Background task breakdown
+                cursor = await db.execute(
+                    """
+                    SELECT status, COUNT(*) FROM workflow_state
+                    WHERE is_background_task = 1
+                    GROUP BY status
+                    """
+                )
+                bg_counts_rows = await cursor.fetchall()
+                bg_status_counts: Dict[str, int] = {
+                    row[0]: row[1] for row in bg_counts_rows if row is not None
+                }
+                await cursor.close()
+
                 return {
                     "total_workflows": total_workflows,
                     "status_counts": status_counts,
                     "recent_workflows_24h": recent_workflows_24h,
                     "average_execution_time_ms": avg_exec_time or 0,
+                    "background_status_counts": bg_status_counts,
                 }
             finally:
                 await conn.close()

@@ -70,7 +70,15 @@ ALLOWED_COLUMNS = {
     "execution_time_ms": "INTEGER",
     "memory_usage_mb": "REAL",
     "step_history": "TEXT",
+    "metadata": "TEXT",
+    "is_background_task": "INTEGER DEFAULT 0",
+    "parent_run_id": "TEXT",
+    "task_id": "TEXT",
+    "background_error": "TEXT",
 }
+
+# Pre-compute allowed column definitions for fast membership checks
+ALLOWED_COLUMN_DEFS = {f"{k} {v}" for k, v in ALLOWED_COLUMNS.items()}
 
 # Compiled regex pattern for column definition validation
 COLUMN_DEF_PATTERN = re.compile(
@@ -251,6 +259,12 @@ def _validate_column_definition(column_def: str) -> bool:
             raise ValueError(f"Unsafe column definition: invalid DEFAULT value: {val}")
 
     return True
+
+
+def validate_column_definition_or_raise(column_def: str) -> None:
+    """Validate and raise on invalid column definitions."""
+    if not _validate_column_definition(column_def):
+        raise ValueError(f"Invalid column definition: {column_def}")
 
 
 def _run_coro_sync(coro: "Coroutine[Any, Any, Any]") -> Any:
@@ -457,7 +471,12 @@ class SQLiteBackendBase(StateBackend):
                         total_steps INTEGER DEFAULT 0,
                         error_message TEXT,
                         execution_time_ms INTEGER,
-                        memory_usage_mb REAL
+                        memory_usage_mb REAL,
+                        metadata TEXT,
+                        is_background_task INTEGER DEFAULT 0,
+                        parent_run_id TEXT,
+                        task_id TEXT,
+                        background_error TEXT
                     )
                     """
                 )
@@ -733,18 +752,23 @@ class SQLiteBackendBase(StateBackend):
             ("execution_time_ms", "INTEGER"),
             ("memory_usage_mb", "REAL"),
             ("step_history", "TEXT"),
+            ("metadata", "TEXT"),
+            ("is_background_task", "INTEGER DEFAULT 0"),
+            ("parent_run_id", "TEXT"),
+            ("task_id", "TEXT"),
+            ("background_error", "TEXT"),
         ]
 
         for column_name, column_def in new_columns:
             if column_name not in existing_columns:
                 # Validate column name and definition against the whitelist
-                if column_name not in ALLOWED_COLUMNS or ALLOWED_COLUMNS[column_name] != column_def:
-                    telemetry.logfire.error(
-                        f"Invalid column definition: {column_name} {column_def}"
-                    )
+                col_def = f"{column_name} {column_def}"
+                if col_def not in ALLOWED_COLUMN_DEFS:
+                    telemetry.logfire.error(f"Invalid column definition: {col_def}")
                     raise ValueError(
-                        f"Schema migration failed due to invalid column definition: {column_name} {column_def}"
+                        f"Schema migration failed due to invalid column definition: {col_def}"
                     )
+                validate_column_definition_or_raise(column_def)
 
                 # Use proper SQLite quoting to prevent SQL injection
                 escaped_name = column_name.replace('"', '""')
@@ -806,6 +830,10 @@ class SQLiteBackendBase(StateBackend):
             if "pipeline_id" in existing_columns:
                 await db.execute(
                     "CREATE INDEX IF NOT EXISTS idx_workflow_state_pipeline_id ON workflow_state(pipeline_id)"
+                )
+            if "parent_run_id" in existing_columns:
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_workflow_state_parent_run_id ON workflow_state(parent_run_id)"
                 )
             if "created_at" in existing_columns:
                 await db.execute(
