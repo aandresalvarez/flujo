@@ -12,6 +12,7 @@ import pytest
 
 
 MAKE_ALL_TIMEOUT_SECONDS = 900
+FAILURE_SUMMARY_GLOB = "failure_summary_*.txt"
 
 
 class TestTypeSafetyCompliance:
@@ -477,6 +478,7 @@ class TestCodeQualityGates:
             env = os.environ.copy()
             env["SKIP_ARCHITECTURE_TESTS"] = "1"
             env["FAST_ALL"] = "1"
+            summaries_before = set((flujo_root / "output").glob(FAILURE_SUMMARY_GLOB))
             result = subprocess.run(
                 ["make", "all"],
                 cwd=flujo_root,
@@ -491,10 +493,37 @@ class TestCodeQualityGates:
                 output_lines = (result.stdout + result.stderr).split("\n")
                 recent_output = "\n".join(output_lines[-50:])
 
+                # Capture the freshest failure summary if available
+                latest_summary = None
+                try:
+                    summaries_after = set((flujo_root / "output").glob(FAILURE_SUMMARY_GLOB))
+                    new_summaries = summaries_after - summaries_before
+                    candidates = sorted(
+                        new_summaries or summaries_after,
+                        key=lambda path: path.stat().st_mtime,
+                        reverse=True,
+                    )
+                    latest_summary = candidates[0] if candidates else None
+                except Exception:
+                    latest_summary = None
+
+                summary_excerpt = ""
+                if latest_summary:
+                    try:
+                        summary_excerpt = (
+                            f"\nLatest failure summary ({latest_summary}):\n"
+                            f"{latest_summary.read_text()[:2000]}"
+                        )
+                    except Exception:
+                        summary_excerpt = (
+                            f"\nLatest failure summary ({latest_summary}) could not be read."
+                        )
+
                 pytest.fail(
                     f"`make all` failed with exit code {result.returncode}.\n"
                     f"This is a critical quality gate that must pass before merging.\n"
                     f"Recent output:\n{recent_output}"
+                    f"{summary_excerpt}"
                 )
 
         except subprocess.TimeoutExpired:
