@@ -370,20 +370,38 @@ def guard_unraisable_hook() -> None:
     """
 
     original_hook = sys.unraisablehook
+    handling = False
 
     def _safe_hook(unraisable) -> None:  # type: ignore[no-untyped-def]
+        nonlocal handling
+        if handling:
+            _log_minimal(unraisable, recursion_guard=True)
+            return
+        handling = True
         try:
             original_hook(unraisable)
             return
-        except Exception as exc:  # noqa: BLE001
-            # Fall back to a minimal, recursion-safe log; avoid traceback formatting entirely.
-            try:
-                msg = getattr(unraisable, "err_msg", "") or "Unraisable exception"
-                sys.__stderr__.write(f"[unraisable-guard] {msg}: {exc!r}\n")
-                sys.__stderr__.flush()
-            except Exception:
-                # If even this fails, swallow to avoid infinite recursion.
-                pass
+        except BaseException as exc:  # noqa: BLE001
+            _log_minimal(unraisable, exc=exc)
+        finally:
+            handling = False
+
+    def _log_minimal(
+        unraisable,  # type: ignore[no-untyped-def]
+        *,
+        exc: BaseException | None = None,
+        recursion_guard: bool = False,
+    ) -> None:
+        # Fall back to a minimal, recursion-safe log; avoid traceback formatting entirely.
+        try:
+            msg = getattr(unraisable, "err_msg", "") or "Unraisable exception"
+            suffix = " (guarded)" if recursion_guard else ""
+            detail = f": {exc!r}" if exc is not None else ""
+            sys.__stderr__.write(f"[unraisable-guard{suffix}] {msg}{detail}\n")
+            sys.__stderr__.flush()
+        except BaseException:
+            # If even this fails, swallow to avoid infinite recursion.
+            pass
 
     sys.unraisablehook = _safe_hook
     try:

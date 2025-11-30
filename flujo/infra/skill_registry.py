@@ -93,11 +93,25 @@ class SkillRegistry(SkillRegistryProtocol):
         if versions is None:
             return None
         if version is None or version == "latest":
+            # Prefer an explicitly registered "latest" entry when present to avoid
+            # parsing arbitrary version strings.
+            if "latest" in versions:
+                return versions["latest"]
             # Return the latest registered version by lexical order
             try:
                 from packaging.version import Version
 
-                latest_key = max(versions.keys(), key=Version)
+                candidates: list[tuple[Version, str]] = []
+                for key in versions.keys():
+                    try:
+                        candidates.append((Version(key), key))
+                    except Exception:
+                        continue
+                if candidates:
+                    candidates.sort()
+                    latest_key = candidates[-1][1]
+                else:
+                    latest_key = max(versions.keys())
             except Exception:
                 latest_key = max(versions.keys())
             return versions.get(latest_key)
