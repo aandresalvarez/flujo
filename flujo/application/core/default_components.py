@@ -359,10 +359,11 @@ class ThreadSafeMeter:
     _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
 
     async def add(self, cost_usd: float, prompt_tokens: int, completion_tokens: int) -> None:
-        async with self._lock:
-            self.total_cost_usd += cost_usd
-            self.prompt_tokens += prompt_tokens
-            self.completion_tokens += completion_tokens
+        # Fast path: this meter is primarily used in single-threaded async contexts.
+        # We avoid lock/await overhead here for performance-sensitive checks.
+        self.total_cost_usd += cost_usd
+        self.prompt_tokens += prompt_tokens
+        self.completion_tokens += completion_tokens
 
     async def guard(self, limits: UsageLimits, step_history: Optional[List[Any]] = None) -> None:
         # Compatibility no-op: enforcement now happens via proactive quota reservations.
@@ -370,8 +371,7 @@ class ThreadSafeMeter:
         return None
 
     async def snapshot(self) -> tuple[float, int, int]:
-        async with self._lock:
-            return self.total_cost_usd, self.prompt_tokens, self.completion_tokens
+        return self.total_cost_usd, self.prompt_tokens, self.completion_tokens
 
 
 # -----------------------------
