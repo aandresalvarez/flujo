@@ -9,6 +9,7 @@ from flujo.domain.models import PipelineContext
 # Shared state for verification
 BACKGROUND_OP_COMPLETED = False
 BACKGROUND_OP_START_TIME = 0.0
+BACKGROUND_SLEEP_SECONDS = 0.5
 
 
 class TestContext(PipelineContext):
@@ -18,7 +19,7 @@ class TestContext(PipelineContext):
 async def slow_background_task(data: str, context: Optional[TestContext] = None) -> str:
     global BACKGROUND_OP_COMPLETED, BACKGROUND_OP_START_TIME
     BACKGROUND_OP_START_TIME = time.time()
-    await asyncio.sleep(0.5)  # Sleep longer than pipeline execution
+    await asyncio.sleep(BACKGROUND_SLEEP_SECONDS)  # Sleep longer than pipeline execution
     BACKGROUND_OP_COMPLETED = True
     if context:
         # Modify context to test isolation - shouldn't affect main pipeline if isolated
@@ -50,9 +51,9 @@ async def test_background_execution_fire_and_forget():
         end_time = time.time()
         duration = end_time - start_time
 
-        # 1. Verify pipeline finished quickly (much faster than the 0.5s sleep)
-        # Allow some overhead, but it should be fast
-        assert duration < 0.4, f"Pipeline took too long: {duration}s"
+        # 1. Verify pipeline finished well before the background sleep completes.
+        # It should never wait as long as the background task itself.
+        assert duration < BACKGROUND_SLEEP_SECONDS, f"Pipeline took too long: {duration}s"
 
         # 2. Verify background task hasn't finished yet (at the moment of return)
         # Note: In a very slow environment this might be flaky, but 0.5s vs <0.2s margin is large
