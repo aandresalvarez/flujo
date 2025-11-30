@@ -127,10 +127,11 @@ class ContextLinter(BaseLinter):
         try:
             from typing import get_origin as _go
 
+            _PR: type[Any] | None = None
             try:
                 from ..domain.models import PipelineResult as _PR
             except Exception:  # pragma: no cover - defensive
-                _PR = None  # type: ignore
+                _PR = None
 
             for i, step in enumerate(steps):
                 prev_step = steps[i - 1] if i > 0 else None

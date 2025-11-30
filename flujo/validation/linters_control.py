@@ -20,6 +20,12 @@ class ExceptionLinter(BaseLinter):
         out: list[ValidationFinding] = []
         steps = getattr(pipeline, "steps", []) or []
 
+        _HITLStep: type[Any] | None = None
+        try:
+            from ..domain.dsl.step import HumanInTheLoopStep as _HITLStep
+        except Exception:
+            _HITLStep = None
+
         for idx, step in enumerate(steps):
             try:
                 meta = getattr(step, "meta", None)

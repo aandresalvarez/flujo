@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Dict, Generic, List, TypeVar
 
 from ...domain.models import PipelineContext, PipelineResult
-from ...exceptions import OrchestratorError
+from ...exceptions import ReplayError
 from ...testing.replay import ReplayAgent
 
 _CtxT = TypeVar("_CtxT", bound=PipelineContext)
@@ -18,14 +18,14 @@ class ReplayExecutor(Generic[_CtxT]):
     async def replay_from_trace(self, run_id: str) -> PipelineResult[_CtxT]:
         runner = self._runner
         if runner.state_backend is None:
-            raise OrchestratorError("Replay requires a state_backend with trace support")
+            raise ReplayError("Replay requires a state_backend with trace support")
 
         stored = await runner.state_backend.get_run_details(run_id)
         steps = await runner.state_backend.list_run_steps(run_id)
         trace = await runner.state_backend.get_trace(run_id)
 
         if stored is None:
-            raise OrchestratorError(f"No stored run metadata for run_id={run_id}")
+            raise ReplayError(f"No stored run metadata for run_id={run_id}")
         if steps is None:
             steps = []
 
@@ -107,7 +107,7 @@ class ReplayExecutor(Generic[_CtxT]):
             paused_result: PipelineResult[_CtxT], human_input: Any
         ) -> PipelineResult[_CtxT]:
             if not human_inputs:
-                raise OrchestratorError("ReplayError: no recorded human input available for resume")
+                raise ReplayError("ReplayError: no recorded human input available for resume")
             next_input = human_inputs.pop(0)
             return await original_resume(paused_result, next_input)
 
@@ -125,7 +125,7 @@ class ReplayExecutor(Generic[_CtxT]):
         ):
             final_result = item
         if final_result is None:
-            raise OrchestratorError("ReplayError: run_async produced no result")
+            raise ReplayError("ReplayError: run_async produced no result")
         return final_result
 
     async def _drain_pauses(
@@ -146,7 +146,7 @@ class ReplayExecutor(Generic[_CtxT]):
             if not is_paused:
                 break
             if not human_inputs:
-                raise OrchestratorError("ReplayError: no recorded human input available for resume")
+                raise ReplayError("ReplayError: no recorded human input available for resume")
             next_human_input = human_inputs.pop(0)
             final_result = await original_resume(final_result, next_human_input)
         return final_result

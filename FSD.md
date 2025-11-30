@@ -1862,6 +1862,12 @@ Remove legacy code, update documentation, and ensure long-term maintainability.
 3. Remove commented-out code blocks
 4. Clean up `# type: ignore` comments where possible
 
+**Progress (2025-12-02):**
+- Removed deprecated `OrchestratorError`/`FlujoFrameworkError` shims; migrated caller code to typed exceptions (`HitlPolicyError`, `ResumeError`, `ReplayError`, `AgentIOValidationError`, `ContextMergeError`, `ExecutionError`).
+- Updated runner resume/replay paths, agent wrapper validation paths, and associated tests to reflect the new exception surfaces.
+- Reduced stray `# type: ignore` in runtime modules (tracing manager, validation linters, CLI lens); remaining ignores are isolated to test scaffolding and intentional fallbacks.
+- MkDocs build runs clean (`uv run mkdocs build`) after adding ADR pages.
+
 #### 10.2.2 Update FLUJO_TEAM_GUIDE.md
 
 Add sections for:
@@ -1883,6 +1889,8 @@ Document key decisions:
 - Update docstrings for all public classes
 - Generate API reference from docstrings
 - Add usage examples to key modules
+
+**Progress:** Team guide refreshed with runner/policy usage examples; mkdocs build validated. Full docstring sweep/API reference generation still pending if desired.
 
 ### 10.3 Acceptance Criteria
 

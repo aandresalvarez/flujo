@@ -428,24 +428,22 @@ class TestCodeQualityStandards:
             )
 
     def test_legacy_warnings_are_enabled_in_ci(self, flujo_root: Path):
-        """Verify that legacy compatibility warnings are enabled in CI.
+        """Verify legacy shims have been removed now that Phase 6 cleanup is underway."""
 
-        FLUJO_WARN_LEGACY should be enabled to catch regressions.
-        """
-        # This is more of a CI configuration test
-        # In a real implementation, this would check CI configuration files
-        # For now, we'll check that the warning system exists
         warning_file = flujo_root / "flujo/exceptions.py"
 
         try:
-            with open(warning_file, "r") as f:
-                content = f.read()
-
-                if "FlujoError" not in content or "DeprecationWarning" not in content:
-                    pytest.fail("Legacy warning system not properly implemented")
-
+            content = warning_file.read_text()
         except (UnicodeDecodeError, OSError):
             pytest.fail("Could not check legacy warning system")
+
+        if "OrchestratorError" in content or "FlujoFrameworkError" in content:
+            pytest.fail("Deprecated exception shims must be removed from flujo.exceptions")
+        if "DeprecationWarning" in content:
+            pytest.fail("Legacy deprecation warnings should not remain in flujo.exceptions")
+        assert "FlujoError" in content, (
+            "exceptions module should define FlujoError as the base type"
+        )
 
     def test_serialization_is_unified(self, flujo_root: Path):
         """Verify that all models use unified serialization.

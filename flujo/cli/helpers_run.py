@@ -672,15 +672,16 @@ def execute_improve(
         )
         from flujo.exceptions import ConfigurationError
 
+        agent: Any
         try:
             _agent = make_self_improvement_agent(model=improvement_agent_model)
-            agent: SelfImprovementAgent = SelfImprovementAgent(_agent)
+            agent = SelfImprovementAgent(_agent)
         except ConfigurationError:
 
             class _Dummy:
                 pass
 
-            agent = _Dummy()  # type: ignore
+            agent = _Dummy()
         with open("output/trace_improve.txt", "a") as f:
             f.write("stage:run_eval\n")
         report = asyncio.run(

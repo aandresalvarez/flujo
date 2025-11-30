@@ -13,18 +13,21 @@ class OrchestrationLinter(BaseLinter):
         out: list[ValidationFinding] = []
         steps = getattr(pipeline, "steps", []) or []
 
+        _ParallelStep: type[Any] | None = None
+        _ImportStep: type[Any] | None = None
+        _LoopStep: type[Any] | None = None
         try:
             from ..domain.dsl.parallel import ParallelStep as _ParallelStep
         except Exception:
-            _ParallelStep = None  # type: ignore
+            _ParallelStep = None
         try:
             from ..domain.dsl.import_step import ImportStep as _ImportStep
         except Exception:
-            _ImportStep = None  # type: ignore
+            _ImportStep = None
         try:
             from ..domain.dsl.loop import LoopStep as _LoopStep
         except Exception:
-            _LoopStep = None  # type: ignore
+            _LoopStep = None
 
         if _ParallelStep is not None:
             for st in steps:
@@ -341,10 +344,11 @@ class OrchestrationLinter(BaseLinter):
 
         self._check_context_isolation(steps, _LoopStep, _ParallelStep, out)
 
+        _SM: type[Any] | None = None
         try:
             from ..domain.dsl.state_machine import StateMachineStep as _SM
         except Exception:
-            _SM = None  # type: ignore
+            _SM = None
         if _SM is not None:
             for idx, st in enumerate(steps):
                 try:

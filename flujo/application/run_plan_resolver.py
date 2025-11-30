@@ -12,7 +12,7 @@ from ..domain.dsl.parallel import ParallelStep
 from ..domain.dsl.conditional import ConditionalStep
 from ..domain.dsl.import_step import ImportStep
 from ..domain.dsl.dynamic_router import DynamicParallelRouterStep
-from ..exceptions import OrchestratorError
+from ..exceptions import ConfigurationError, HitlPolicyError
 from ..infra.registry import PipelineRegistry
 
 RunnerInT = TypeVar("RunnerInT")
@@ -38,7 +38,7 @@ class HitlPolicy:
         if self.allow_hitl:
             return
         if _pipeline_contains_hitl(pipeline):
-            raise OrchestratorError(
+            raise HitlPolicyError(
                 "HITL steps are disabled by policy (set FLUJO_ALLOW_HITL=1 to enable)."
             )
 
@@ -90,17 +90,19 @@ class RunPlanResolver(Generic[RunnerInT, RunnerOutT]):
             self.hitl_policy.enforce(self.pipeline)
             return self.pipeline
         if self.registry is None or self.pipeline_name is None:
-            raise OrchestratorError("Pipeline not provided and registry missing")
+            raise ConfigurationError("Pipeline not provided and registry missing")
         if self.pipeline_version == "latest":
             version = self.registry.get_latest_version(self.pipeline_name)
             if version is None:
-                raise OrchestratorError(f"No pipeline registered under name '{self.pipeline_name}'")
+                raise ConfigurationError(
+                    f"No pipeline registered under name '{self.pipeline_name}'"
+                )
             self.pipeline_version = version
             pipe = self.registry.get(self.pipeline_name, version)
         else:
             pipe = self.registry.get(self.pipeline_name, self.pipeline_version)
         if pipe is None:
-            raise OrchestratorError(
+            raise ConfigurationError(
                 f"Pipeline '{self.pipeline_name}' version '{self.pipeline_version}' not found"
             )
         self.hitl_policy.enforce(pipe)

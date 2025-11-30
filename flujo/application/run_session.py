@@ -31,7 +31,7 @@ from ..domain.models import (
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
 from ..exceptions import (
-    OrchestratorError,
+    ExecutionError,
     PipelineAbortSignal,
     PipelineContextInitializationError,
     PricingNotConfiguredError,
@@ -334,7 +334,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
 
                     assert self.pipeline is not None
                     if start_idx > len(self.pipeline.steps):
-                        raise OrchestratorError(
+                        raise ExecutionError(
                             f"Invalid persisted step index {start_idx} for pipeline with {len(self.pipeline.steps)} steps"
                         )
                 else:

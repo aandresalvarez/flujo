@@ -10,11 +10,12 @@ from ...domain.models import ConversationTurn, ConversationRole
 # and defaults will be used.
 try:  # pragma: no cover - exercised indirectly via tests
     from ...infra.config_manager import get_config_manager as _cfg_getter
-except Exception:  # pragma: no cover
-    _cfg_getter = None  # type: ignore[assignment]
 
-# Expose a hookable symbol for tests (monkeypatch on this module).
-get_config_manager: Optional[Callable[[bool], Any]] = _cfg_getter
+    get_config_manager: Callable[[bool], Any] = _cfg_getter
+except Exception:  # pragma: no cover
+    # Fallback: no config manager available (tests can monkeypatch)
+    def get_config_manager(_force_reload: bool = False) -> Any:
+        return None
 
 
 @dataclass

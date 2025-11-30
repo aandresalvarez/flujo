@@ -7,7 +7,7 @@ import pytest
 
 from flujo.application.runner_components import ReplayExecutor
 from flujo.domain.models import PipelineContext, PipelineResult
-from flujo.exceptions import OrchestratorError
+from flujo.exceptions import ReplayError
 
 
 class _FakeStateBackend:
@@ -77,7 +77,7 @@ class _Runner:
 def test_replay_executor_requires_state_backend() -> None:
     runner = _Runner(state_backend=None)
     executor = ReplayExecutor(runner)
-    with pytest.raises(OrchestratorError):
+    with pytest.raises(ReplayError):
         asyncio.run(executor.replay_from_trace("run-1"))
 
 

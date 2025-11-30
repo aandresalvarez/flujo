@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import Any, TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -106,33 +105,6 @@ class ValidationError(FlujoError):
     """Errors related to validation (types, templates, schemas)."""
 
     pass
-
-
-# ============================================================================
-# Legacy Exception Base (DEPRECATED)
-# ============================================================================
-
-
-class OrchestratorError(FlujoError):
-    """DEPRECATED: Base exception for the application.
-
-    This class is deprecated. Use FlujoError instead.
-
-    .. deprecated:: 2.0
-        Use :class:`FlujoError` instead.
-    """
-
-    def __init__(self, message: str = "", *args: Any, **kwargs: Any) -> None:
-        # Emit deprecation warning
-        warnings.warn(
-            "OrchestratorError is deprecated, use FlujoError instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        # Convert to FlujoError format
-        if not message and args:
-            message = str(args[0]) if args else ""
-        super().__init__(message, **kwargs)
 
 
 class SettingsError(ConfigurationError):
@@ -303,25 +275,22 @@ class MockDetectionError(NonRetryableError):
     pass
 
 
-class FlujoFrameworkError(FlujoError):
-    """DEPRECATED: Base exception for Flujo framework with enhanced error messages.
+class HitlPolicyError(ConfigurationError):
+    """Raised when HITL steps are disabled by policy or configuration."""
 
-    This class is deprecated. Use FlujoError instead.
+    pass
 
-    .. deprecated:: 2.0
-        Use :class:`FlujoError` instead.
-    """
 
-    def __init__(
-        self, message: str, suggestion: str | None = None, code: str | None = None
-    ) -> None:
-        # Emit deprecation warning
-        warnings.warn(
-            "FlujoFrameworkError is deprecated, use FlujoError instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(message, suggestion=suggestion, code=code)
+class ResumeError(ExecutionError):
+    """Raised when a pipeline cannot be resumed due to invalid state."""
+
+    pass
+
+
+class ReplayError(ExecutionError):
+    """Raised when a replay attempt cannot proceed."""
+
+    pass
 
 
 class ContextFieldError(ContextError):

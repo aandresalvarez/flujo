@@ -3,8 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, Optional, TYPE_CHECKING, TypeVar, cast
 
-
-from ..exceptions import OrchestratorError, PipelineAbortSignal, PausedException
+from ..exceptions import ContextMergeError, PipelineAbortSignal, PausedException
 from ..domain.models import PipelineContext, PipelineResult
 from ..domain.commands import AgentCommand
 from ..state import WorkflowState
@@ -83,7 +82,7 @@ async def resume_async_inner(
                     if update_data:
                         validation_error = _inject_context(ctx, update_data, type(ctx))
                         if validation_error:
-                            raise OrchestratorError(
+                            raise ContextMergeError(
                                 f"Failed to merge human input into context: {validation_error}"
                             )
             except Exception as _merge_err:

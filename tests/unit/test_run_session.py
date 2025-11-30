@@ -4,7 +4,7 @@ from flujo import Flujo, Pipeline, Step
 from flujo.application.run_plan_resolver import RunPlanResolver
 from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.domain.models import PipelineResult
-from flujo.exceptions import OrchestratorError
+from flujo.exceptions import HitlPolicyError
 from flujo.infra.registry import PipelineRegistry
 from flujo.testing.utils import StubAgent
 
@@ -44,5 +44,5 @@ def test_run_plan_resolver_enforces_hitl_policy(monkeypatch: pytest.MonkeyPatch)
         pipeline_version="1.0.0",
     )
 
-    with pytest.raises(OrchestratorError):
+    with pytest.raises(HitlPolicyError):
         resolver.ensure_pipeline()

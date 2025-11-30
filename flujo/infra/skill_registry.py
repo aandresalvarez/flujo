@@ -1,25 +1,28 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional, List
+from typing import Any, Callable, Dict, Optional, List, TYPE_CHECKING
 
 # Domain interface adapter to avoid leaking infra into domain logic
-set_default_skill_registry_provider_fn: Optional[Callable[[Any], None]]
-set_default_skill_resolver_fn: Optional[Callable[[Any], None]]
-try:  # pragma: no cover - import guard
+if TYPE_CHECKING:
     from flujo.domain.interfaces import (
         SkillRegistry as SkillRegistryProtocol,
         SkillRegistryProvider as SkillRegistryProviderProtocol,
-        set_default_skill_registry_provider as _set_default_skill_registry_provider_fn,
-        set_default_skill_resolver as _set_default_skill_resolver_fn,
+        set_default_skill_registry_provider as set_default_skill_registry_provider_fn,
+        set_default_skill_resolver as set_default_skill_resolver_fn,
     )
-
-    set_default_skill_registry_provider_fn = _set_default_skill_registry_provider_fn
-    set_default_skill_resolver_fn = _set_default_skill_resolver_fn
-except Exception:  # pragma: no cover - defensive fallback
-    SkillRegistryProtocol = Any  # type: ignore
-    SkillRegistryProviderProtocol = Any  # type: ignore
-    set_default_skill_registry_provider_fn = None
-    set_default_skill_resolver_fn = None
+else:  # pragma: no cover - runtime import guard
+    try:
+        from flujo.domain.interfaces import (
+            SkillRegistry as SkillRegistryProtocol,
+            SkillRegistryProvider as SkillRegistryProviderProtocol,
+            set_default_skill_registry_provider as set_default_skill_registry_provider_fn,
+            set_default_skill_resolver as set_default_skill_resolver_fn,
+        )
+    except Exception:
+        SkillRegistryProtocol = object  # type: ignore[assignment]
+        SkillRegistryProviderProtocol = object  # type: ignore[assignment]
+        set_default_skill_registry_provider_fn = None
+        set_default_skill_resolver_fn = None
 
 
 class SkillRegistry(SkillRegistryProtocol):

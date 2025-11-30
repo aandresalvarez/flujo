@@ -24,6 +24,32 @@ Notes:
 - Always access configuration through `ConfigManager`; do not read `flujo.toml` directly.
 - Integration tests set `FLUJO_ARCHITECT_STATE_MACHINE=1`; unit tests run with `FLUJO_TEST_MODE=1`.
 
+## **Current Module Map (post-monolith cleanup)**
+
+- **Executor**: `executor_core.py` as composition root plus managers/handlers under `flujo/application/core/` (quota, fallback, background tasks, caching, validation, routing, policy registry).
+- **Policies**: `step_policies.py` contains all step execution logic; register via `create_default_registry(core)`. No `isinstance` branching in ExecutorCore.
+- **Runner**: `runner.py` facade delegates to `runner_methods.py` (sync/async helpers), `runner_execution.py` (resume orchestration), and `runner_components/` (tracing manager, state backend manager, resume/replay orchestrators).
+- **Agent wrapper**: `flujo/agents/wrapper.py` handles retries, timeouts, repairs; returns `AgentIOValidationError` for validation failures and `ExecutionError` for execution issues.
+
+## **Policy Registration Pattern**
+
+- Implement `StepPolicy` subclasses with `handles_type` and `__call__`/`execute` taking an `ExecutionFrame`.
+- Register via `create_default_registry(core)` or inject a custom registry into ExecutorCore; prefer policy instances over callables.
+- **Anti-pattern:** never add step-specific logic to ExecutorCore or runners; routing must happen through the registry.
+
+## **Context Isolation Requirements**
+
+- Complex steps (loop, parallel, conditional) must run in isolated copies: use `ContextManager.isolate()` and merge back only on success.
+- Strict mode (`FLUJO_STRICT_CONTEXT=1`) enables mutation detection; violations surface as `ContextMutationError`/`ContextMergeError`.
+- Control-flow exceptions (`PausedException`, `PipelineAbortSignal`, `InfiniteRedirectError`) must be re-raised; do not wrap them in `StepResult`.
+
+## **Runner API Usage (examples)**
+
+- Final result (async): `result = await runner.run_result_async(input_data, initial_context_data={...})`
+- Streaming outcomes: `async for outcome in runner.run_outcomes(input_data): ...`
+- Events + final result: `async for event in runner.run_with_events(input_data): ...`
+- Resume HITL: `resumed = await runner.resume_async(paused_result, human_input)`
+
 ## **CLI I/O Semantics (Team Standard)**
 
 - `flujo run` must support standard Unix piping and non-interactive usage.

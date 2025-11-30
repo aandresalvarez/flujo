@@ -8,7 +8,7 @@ from flujo.application.runner_components import ResumeOrchestrator
 from flujo.domain.commands import AgentCommand, AskHumanCommand
 from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.domain.models import PipelineContext, PipelineResult
-from flujo.exceptions import OrchestratorError
+from flujo.exceptions import ResumeError
 
 
 class _Schema(BaseModel):
@@ -94,6 +94,6 @@ def test_validate_resume_raises_when_not_paused() -> None:
 
     try:
         orch.validate_resume(paused_result)
-    except OrchestratorError:
+    except ResumeError:
         return
-    assert False, "Expected OrchestratorError when status is not paused"
+    assert False, "Expected ResumeError when status is not paused"

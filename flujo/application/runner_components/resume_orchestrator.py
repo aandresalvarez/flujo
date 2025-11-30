@@ -15,7 +15,7 @@ from ...domain.models import (
     PipelineResult,
     StepResult,
 )
-from ...exceptions import OrchestratorError
+from ...exceptions import ResumeError
 from ...utils.context import set_nested_context_field
 
 _CtxT = TypeVar("_CtxT", bound=PipelineContext)
@@ -38,10 +38,10 @@ class ResumeOrchestrator(Generic[_CtxT]):
     def validate_resume(self, paused_result: PipelineResult[_CtxT]) -> PipelineContext:
         ctx = paused_result.final_pipeline_context
         if ctx is None:
-            raise OrchestratorError("Cannot resume pipeline without context")
+            raise ResumeError("Cannot resume pipeline without context")
         scratch = getattr(ctx, "scratchpad", {})
         if not isinstance(scratch, dict) or scratch.get("status") != "paused":
-            raise OrchestratorError("Pipeline is not paused")
+            raise ResumeError("Pipeline is not paused")
         return ctx
 
     def resolve_paused_step(
@@ -52,7 +52,7 @@ class ResumeOrchestrator(Generic[_CtxT]):
     ) -> tuple[int, Step[Any, Any]]:
         pipeline = self._pipeline
         if pipeline is None or not getattr(pipeline, "steps", None):
-            raise OrchestratorError("No steps remaining to resume")
+            raise ResumeError("No steps remaining to resume")
 
         scratch = getattr(ctx, "scratchpad", {})
         if not isinstance(scratch, dict):
@@ -73,7 +73,7 @@ class ResumeOrchestrator(Generic[_CtxT]):
             pass
 
         if start_idx >= len(pipeline.steps):
-            raise OrchestratorError("No steps remaining to resume")
+            raise ResumeError("No steps remaining to resume")
 
         paused_step = pipeline.steps[start_idx]
         from ...domain.dsl.step import HumanInTheLoopStep  # local to avoid import cycles

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from flujo.domain import Step
 from flujo.domain.models import BaseModel, PipelineContext
-from flujo.exceptions import OrchestratorError
+from flujo.exceptions import ResumeError
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
@@ -91,7 +91,7 @@ async def test_stateful_hitl_resume(tmp_path: Path) -> None:
     assert saved2["status"] == "completed"
     assert saved2["current_step_index"] == 6
 
-    with pytest.raises(OrchestratorError):
+    with pytest.raises(ResumeError):
         await new_runner.resume_async(resumed, "again")
 
 
