@@ -12,7 +12,6 @@ from typing import (
     TypeVar,
     Callable,
     overload,
-    cast,
 )
 from types import FunctionType, BuiltinFunctionType, MethodType
 import flujo.infra.config
@@ -48,10 +47,11 @@ def resolve_callable(value: T | Callable[[], T]) -> T:
     Returns:
         The resolved value of type T
     """
-    # Fast path for common callable types to avoid callable() overhead in hot loops
-    # Avoid getattr/cast overhead in the hot path.
-    if isinstance(value, _FAST_CALLABLE_TYPES):
-        return cast(T, value())
+    fast_types = _FAST_CALLABLE_TYPES
+    value_type = type(value)
+    if value_type in fast_types:
+        value_callable: Callable[[], T] = value  # type: ignore[assignment]
+        return value_callable()
 
     if callable(value):
         return value()

@@ -751,6 +751,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     results.append(result)
                     break
                 except Exception as exc:
+                    if isinstance(
+                        exc, (PausedException, PipelineAbortSignal, InfiniteRedirectError)
+                    ):
+                        raise
                     if attempt == max_retries - 1:
                         failures.append((task.task_id, exc))
                         break
