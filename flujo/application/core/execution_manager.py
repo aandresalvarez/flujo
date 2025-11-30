@@ -199,6 +199,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     # Execute steps via the configured backend (default path).
                     chosen_step_executor = step_executor
 
+                    last_item: Any | None = None
                     async for item in self.step_coordinator.execute_step(
                         step=step,
                         data=data,
@@ -209,6 +210,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         usage_limits=self.usage_limits,
                         quota=self.root_quota,
                     ):
+                        last_item = item
                         # Accept both StepOutcome and legacy values
                         if isinstance(item, StepOutcome):
                             if isinstance(item, Success):
@@ -401,6 +403,8 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                 yield result
                                 return
                             elif isinstance(item, BackgroundLaunched):
+                                # Surface lifecycle event to callers before synthesizing the step result
+                                yield item
                                 step_result = StepResult(
                                     name=getattr(step, "name", "<unnamed>"),
                                     success=True,
@@ -411,12 +415,13 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                             else:
                                 # Unknown outcome: ignore
                                 pass
-                        elif isinstance(item, StepResult):
+                    if last_item is not None and not isinstance(last_item, StepOutcome):
+                        if isinstance(last_item, StepResult):
                             # Legacy path: just capture for later bookkeeping; do not forward paused records
-                            step_result = item
+                            step_result = last_item
                         else:
                             # Legacy streaming chunk; forward as-is
-                            yield item
+                            yield last_item
 
                     # ✅ TASK 7.1: FIX ORDER OF OPERATIONS
                     # ✅ 2. Update pipeline result with step result FIRST

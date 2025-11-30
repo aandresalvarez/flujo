@@ -573,6 +573,75 @@ class WrongLoopStepExecutor:
 *   **Never** read `flujo.toml` directly from any module other than `ConfigManager`.
 *   **Never** check environment variables directly for settings; rely on the `pydantic-settings` behavior within the `Settings` class, which is then managed by `ConfigManager`.
 
+### **❌ Anti-Pattern: Full Dependency Injection Container**
+
+Flujo uses **constructor injection for specific components** (policies, runners) but does **not** use a global DI container. This is intentional.
+
+**Why This Is Forbidden:**
+*   Flujo's architecture relies on **global access patterns** for configuration (`get_settings()`, `ConfigManager`) which provide predictable, centralized behavior.
+*   A full DI container would conflict with these established patterns and introduce unnecessary complexity.
+*   The existing factory pattern (`ExecutorFactory`, `BackendFactory`) already provides composition without the overhead of a DI framework.
+
+**What To Do Instead:**
+*   Use **constructor injection** for policies and step executors (as shown in Section 5, Step 3).
+*   Use **factory patterns** (`ExecutorFactory`, `BackendFactory`) for component composition.
+*   Use **global access** (`get_settings()`, `ConfigManager`) for configuration.
+
+```python
+# ❌ NEVER introduce a global DI container
+class DIContainer:
+    def resolve(self, interface: Type[T]) -> T: ...
+
+container = DIContainer()  # ❌ Global container anti-pattern
+
+# ✅ CORRECT: Use constructor injection for specific components
+class ExecutorCore:
+    def __init__(
+        self,
+        agent_runner: IAgentRunner,
+        loop_step_executor: Optional[DefaultLoopStepExecutor] = None,
+    ) -> None:
+        self.agent_runner = agent_runner
+        self.loop_step_executor = loop_step_executor or DefaultLoopStepExecutor()
+```
+
+### **❌ Anti-Pattern: Configuration Service Injection**
+
+Configuration must be accessed through the **global `ConfigManager`** pattern, not injected as a dependency.
+
+**Why This Is Forbidden:**
+*   The guide mandates that `ConfigManager` is the "single source of truth" for all configuration.
+*   Injecting configuration would create multiple configuration access paths, violating the centralized pattern.
+*   Global access ensures consistent configuration state across all components.
+
+**What To Do Instead:**
+*   Access configuration via `get_settings()` from `flujo.infra.settings`.
+*   Access CLI/TOML values via `get_cli_defaults()` and `get_state_uri()` from `flujo.infra.config_manager`.
+*   If you need configuration caching or validation, add it **within** `ConfigManager`, not as a separate service.
+
+```python
+# ❌ NEVER inject configuration as a dependency
+class MyPolicy:
+    def __init__(self, config: ConfigurationService) -> None:  # ❌ WRONG
+        self._config = config
+
+# ✅ CORRECT: Use global access pattern
+from flujo.utils.config import get_settings
+
+class MyPolicy:
+    async def execute(self, ...) -> StepResult:
+        settings = get_settings()  # ✅ Global access as mandated
+        if settings.some_option:
+            ...
+```
+
+### **✅ Runner Composition (Phase 4)**
+
+*   **Composition root only:** `flujo/application/runner.py` stays slim (<500 LOC) and wires collaborators; avoid adding orchestration logic there.
+*   **Execution helpers:** Shared run/resume helpers live in `runner_methods.py` and `runner_execution.py`; per-run state remains in `run_session.py`.
+*   **Lifecycle components:** Tracing, state backend lifecycle, resume orchestration, and replay execution live in `runner_components/` (`tracing_manager.py`, `state_backend_manager.py`, `resume_orchestrator.py`, `replay_executor.py`). Extend behavior by adding/updating these focused components with tests instead of inflating `runner.py`.
+*   **Guardrails:** New runner features must respect control-flow rules (no swallowing `PausedException`/`PipelineAbortSignal`) and configuration centralization (`infra.config_manager` only).
+
 ---
 
 ## **5. Adding New Step Types: The Complete Pattern**

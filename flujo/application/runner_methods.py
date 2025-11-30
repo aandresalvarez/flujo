@@ -169,6 +169,56 @@ async def run_outcomes_async(
         yield Success(step_result=StepResult(name="<no-steps>", success=True))
 
 
+async def _consume_run_async_to_result(
+    self: Flujo[RunnerInT, RunnerOutT, ContextT],
+    initial_input: RunnerInT,
+    *,
+    run_id: str | None = None,
+    initial_context_data: Optional[Dict[str, Any]] = None,
+) -> PipelineResult[ContextT]:
+    """Consume run_async and return the final PipelineResult."""
+    result: PipelineResult[ContextT] | None = None
+    async for r in self.run_async(
+        initial_input,
+        run_id=run_id,
+        initial_context_data=initial_context_data,
+    ):
+        result = r
+    if result is None:
+        return PipelineResult()
+
+    if self._tracing_manager is not None and getattr(self._tracing_manager, "root_span", None):
+        try:
+            result.trace_tree = self._tracing_manager.root_span
+        except Exception:
+            pass
+
+    try:
+        if (
+            getattr(result, "step_history", None)
+            and getattr(result.step_history[-1], "success", False)
+            and getattr(result.step_history[-1], "branch_context", None) is not None
+        ):
+            result.final_pipeline_context = result.step_history[-1].branch_context
+    except Exception:
+        pass
+
+    try:
+        res = getattr(self, "resources", None)
+        if res is not None:
+            res_cm: Any | None = None
+            if hasattr(res, "__aexit__"):
+                res_cm = res.__aexit__(None, None, None)
+            elif hasattr(res, "__exit__"):
+                res_cm = res.__exit__(None, None, None)
+            if inspect.isawaitable(res_cm):
+                await res_cm
+    except Exception:
+        pass
+
+    return result
+
+
 async def stream_async(
     self: Flujo[RunnerInT, RunnerOutT, ContextT],
     initial_input: RunnerInT,
@@ -222,42 +272,14 @@ def run_sync(
     except RuntimeError:
         pass
 
-    async def _consume() -> PipelineResult[ContextT]:
-        result: PipelineResult[ContextT] | None = None
-        async for r in self.run_async(
+    return asyncio.run(
+        _consume_run_async_to_result(
+            self,
             initial_input,
             run_id=run_id,
             initial_context_data=initial_context_data,
-        ):
-            result = r
-        if result is not None and self._tracing_manager is not None:
-            if getattr(self._tracing_manager, "root_span", None) is not None:
-                result.trace_tree = self._tracing_manager.root_span
-        assert result is not None
-        try:
-            if (
-                getattr(result, "step_history", None)
-                and getattr(result.step_history[-1], "success", False)
-                and getattr(result.step_history[-1], "branch_context", None) is not None
-            ):
-                result.final_pipeline_context = result.step_history[-1].branch_context
-        except Exception:
-            pass
-        try:
-            res = getattr(self, "resources", None)
-            if res is not None:
-                res_cm: Any | None = None
-                if hasattr(res, "__aexit__"):
-                    res_cm = res.__aexit__(None, None, None)
-                elif hasattr(res, "__exit__"):
-                    res_cm = res.__exit__(None, None, None)
-                if inspect.isawaitable(res_cm):
-                    await res_cm
-        except Exception:
-            pass
-        return result
-
-    return asyncio.run(_consume())
+        )
+    )
 
 
 def as_step(

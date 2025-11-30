@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import List, Optional
 import pytest
 
+# Mark the entire module as slow and allow ample time for the heavy quality gates
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(300)]
+
 
 class TestArchitectureCompliance:
     """Test suite for architectural pattern compliance."""

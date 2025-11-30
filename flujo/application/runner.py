@@ -46,6 +46,7 @@ from .runner_methods import (
     make_session as _make_session,
     resume_async as _resume_async,
     run_outcomes_async as _run_outcomes_async,
+    _consume_run_async_to_result as _consume_run_async_to_result,
     run_sync as _run_sync,
     stream_async as _stream_async,
 )
@@ -414,6 +415,21 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             )
         )
 
+    async def run_result_async(
+        self,
+        initial_input: RunnerInT,
+        *,
+        run_id: str | None = None,
+        initial_context_data: Optional[Dict[str, Any]] = None,
+    ) -> PipelineResult[ContextT]:
+        """Run the pipeline asynchronously and return the final PipelineResult."""
+        return await _consume_run_async_to_result(
+            self,
+            initial_input,
+            run_id=run_id,
+            initial_context_data=initial_context_data,
+        )
+
     async def run_outcomes_async(
         self,
         initial_input: RunnerInT,
@@ -423,6 +439,36 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     ) -> AsyncIterator[StepOutcome[StepResult]]:
         async for outcome in _run_outcomes_async(
             self,
+            initial_input,
+            run_id=run_id,
+            initial_context_data=initial_context_data,
+        ):
+            yield outcome
+
+    async def run_stream(
+        self,
+        initial_input: RunnerInT,
+        *,
+        run_id: str | None = None,
+        initial_context_data: Optional[Dict[str, Any]] = None,
+    ) -> AsyncIterator[StepOutcome[StepResult]]:
+        """Run the pipeline and stream StepOutcome events as they complete."""
+        async for outcome in self.run_outcomes_async(
+            initial_input,
+            run_id=run_id,
+            initial_context_data=initial_context_data,
+        ):
+            yield outcome
+
+    async def run_outcomes(
+        self,
+        initial_input: RunnerInT,
+        *,
+        run_id: str | None = None,
+        initial_context_data: Optional[Dict[str, Any]] = None,
+    ) -> AsyncIterator[StepOutcome[StepResult]]:
+        """Alias for run_stream() with clearer naming."""
+        async for outcome in self.run_stream(
             initial_input,
             run_id=run_id,
             initial_context_data=initial_context_data,

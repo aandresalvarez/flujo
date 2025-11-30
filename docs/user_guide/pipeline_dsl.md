@@ -73,6 +73,14 @@ async for event in runner.run_with_events(1):
 Prefer `run_async` if you only care about the final result, or `run_outcomes_async`
 if you want only `StepOutcome` events without the final `PipelineResult`.
 
+### Runner entrypoints (choose the right one)
+
+- `run_result_async(input)`: return the final `PipelineResult` (async, no events).
+- `run_async(input)`: legacy awaitable/async-iterable; yields events + final result.
+- `run_outcomes_async(input)`: yield only `StepOutcome` events (Success/Failure/Paused/Chunk).
+- `run_stream(input)` / `run_outcomes(input)`: explicit streaming aliases.
+- `run_with_events(input)`: yield lifecycle events (e.g., `BackgroundLaunched`, `Chunk`) plus the final `PipelineResult`.
+
 ### Pipeline Composition
 
 The `>>` operator chains steps together:
