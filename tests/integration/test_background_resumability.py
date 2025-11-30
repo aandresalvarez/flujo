@@ -149,6 +149,11 @@ async def test_background_quota_reserve_and_reclaim(tmp_path: Path) -> None:
         context_model=BgContext,
         state_backend=backend,
         hooks=[recorder],
+        settings_override={
+            "background_tasks": {
+                "enable_quota": True,
+            },
+        },
     ) as runner:
         executor = runner.backend._executor  # type: ignore[attr-defined]
         executor._get_background_quota = lambda parent_quota=None: quota_holder  # type: ignore[assignment]

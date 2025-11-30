@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Type
+from typing import Any, Optional, Type
+
+from flujo.type_definitions.common import JSONObject
 
 from flujo.infra.skill_registry import get_skill_registry
 
@@ -118,7 +120,7 @@ def register_optional_builtins() -> None:
             side_effects=False,
         )
 
-    async def render_jinja_template(template: str, variables: Dict[str, Any] | None = None) -> str:
+    async def render_jinja_template(template: str, variables: JSONObject | None = None) -> str:
         if _jinja2 is None:
             return template
         try:

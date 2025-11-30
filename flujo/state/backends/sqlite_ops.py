@@ -307,19 +307,30 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         hours_back: int = 24,
     ) -> List[Dict[str, Any]]:
         """Return failed background tasks within a time window."""
-        cutoff = datetime.now() - timedelta(hours=hours_back)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
         tasks = await self.list_background_tasks(parent_run_id=parent_run_id, status="failed")
         filtered: List[Dict[str, Any]] = []
+
+        def _normalize_ts(value: Any) -> Optional[datetime]:
+            dt: Optional[datetime] = None
+            if isinstance(value, datetime):
+                dt = value
+            elif isinstance(value, str):
+                try:
+                    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except Exception:
+                    return None
+            if dt is None:
+                return None
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+            return dt
+
         for task in tasks:
             updated_at = task.get("updated_at")
-            try:
-                updated_dt = (
-                    datetime.fromisoformat(updated_at)
-                    if isinstance(updated_at, str)
-                    else updated_at
-                )
-            except Exception:
-                updated_dt = None
+            updated_dt = _normalize_ts(updated_at)
             if updated_dt is None or updated_dt < cutoff:
                 continue
             filtered.append(task)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from datetime import datetime
 from dataclasses import dataclass
@@ -16,7 +17,12 @@ from typing import (
     Literal,
 )
 
-from ..exceptions import InfiniteFallbackError, InfiniteRedirectError as _InfiniteRedirectError
+from ..exceptions import (
+    InfiniteFallbackError,
+    InfiniteRedirectError as _InfiniteRedirectError,
+    PausedException,
+    PipelineAbortSignal,
+)
 from ..domain.dsl.step import Step
 from ..domain.dsl.pipeline import Pipeline
 from ..domain.models import PipelineResult, StepResult, UsageLimits, PipelineContext, StepOutcome
@@ -28,7 +34,6 @@ from ..domain.backends import ExecutionBackend
 from ..domain.interfaces import StateProvider
 from ..state import StateBackend
 from ..infra.registry import PipelineRegistry
-
 from .core.context_manager import (
     _accepts_param,
     _extract_missing_fields,
@@ -56,6 +61,8 @@ from .runner_methods import (
 import uuid
 import warnings
 from ..utils.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 _agent_command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
 
@@ -659,7 +666,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             try:
                 step_copy.config.execution_mode = "sync"
             except Exception:
-                pass
+                logger.exception(
+                    "Failed to force sync execution_mode when resuming background step",
+                    extra={"step_name": step_name},
+                )
 
         final_context = context
 
@@ -711,6 +721,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 success=bool(getattr(step_result, "success", False)),
             )
         except Exception as exc:
+            if isinstance(exc, (PausedException, PipelineAbortSignal, InfiniteRedirectError)):
+                raise
             meta_for_persist["background_error"] = str(exc)
             await state_manager.persist_workflow_state(
                 run_id=bg_run_id,
@@ -730,6 +742,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     ) -> list[PipelineResult[ContextT]]:
         """Retry failed background tasks for a given parent run."""
         results: list[PipelineResult[ContextT]] = []
+        failures: list[tuple[str, Exception]] = []
         tasks = await self.get_failed_background_tasks(parent_run_id=parent_run_id)
         for task in tasks:
             for attempt in range(max_retries):
@@ -737,10 +750,16 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                     result = await self.resume_background_task(task.task_id)
                     results.append(result)
                     break
-                except Exception:
+                except Exception as exc:
                     if attempt == max_retries - 1:
-                        raise
+                        failures.append((task.task_id, exc))
+                        break
                     await asyncio.sleep(2**attempt)
+        if failures:
+            failure_summary = "; ".join(f"{task_id}: {failure}" for task_id, failure in failures)
+            raise RuntimeError(
+                f"Retry failed for {len(failures)} background task(s): {failure_summary}"
+            )
         return results
 
     async def cleanup_stale_background_tasks(self, stale_hours: int = 24) -> int:
@@ -751,7 +770,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             try:
                 return await self.state_backend.cleanup_stale_background_tasks(stale_hours)
             except Exception:
-                return 0
+                logger.exception(
+                    "Failed to cleanup stale background tasks",
+                    extra={"stale_hours": stale_hours},
+                )
+                raise
         return 0
 
     async def run_with_events(

@@ -1,6 +1,7 @@
 """Base classes for state backends."""
 
 from abc import ABC, abstractmethod
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, List, Tuple
 
 from ...utils.serialization import safe_serialize
@@ -116,7 +117,32 @@ class StateBackend(ABC):
     ) -> List[Dict[str, Any]]:
         """Get failed background tasks within a time window."""
         tasks = await self.list_background_tasks(parent_run_id=parent_run_id, status="failed")
-        return tasks
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
+
+        def _parse_timestamp(value: Any) -> Optional[datetime]:
+            if isinstance(value, datetime):
+                dt = value
+            elif isinstance(value, str):
+                try:
+                    dt = datetime.fromisoformat(value)
+                except Exception:
+                    return None
+            else:
+                return None
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+
+        filtered: List[Dict[str, Any]] = []
+        for task in tasks:
+            ts_raw = task.get("created_at") or task.get("started_at")
+            parsed_ts = _parse_timestamp(ts_raw)
+            if parsed_ts is None:
+                continue
+            if parsed_ts >= cutoff:
+                filtered.append(task)
+
+        return filtered
 
     @abstractmethod
     async def get_trace(self, run_id: str) -> Any:

@@ -139,12 +139,20 @@ class BackgroundTaskManager:
 
             try:
                 step_copy = getattr(frame, "step")
+                copy_error: Optional[Exception] = None
                 try:
                     step_copy = step_copy.model_copy(deep=True)
-                    if hasattr(step_copy, "config"):
-                        step_copy.config.execution_mode = "sync"
-                except Exception:
-                    pass
+                except Exception as exc:  # best-effort defensive copy
+                    copy_error = exc
+                if hasattr(step_copy, "config"):
+                    step_copy.config.execution_mode = "sync"
+                elif hasattr(getattr(frame, "step", None), "config"):
+                    frame.step.config.execution_mode = "sync"
+                if copy_error is not None:
+                    telemetry.logfire.debug(
+                        "Background task step copy failed; using original step instance",
+                        extra={"error": str(copy_error)},
+                    )
 
                 parent_quota = None
                 try:
@@ -294,11 +302,23 @@ class BackgroundTaskManager:
                 )
         except Exception as e:
             telemetry.logfire.error(f"Error during background task cleanup: {e}")
-            # Continue with best-effort cleanup
+            # Only cancel tasks that are already completed with exceptions to avoid
+            # impacting unrelated background tasks.
             for task in list(self._background_tasks):
                 try:
-                    task.cancel()
-                    self._background_tasks.discard(task)
+                    if task.done() and not task.cancelled():
+                        task_exc = task.exception()
+                        if task_exc is not None:
+                            telemetry.logfire.error(
+                                "Cancelling background task after cleanup error",
+                                extra={
+                                    "task": repr(task),
+                                    "task_name": task.get_name(),
+                                    "error": str(task_exc),
+                                },
+                            )
+                            task.cancel()
+                            self._background_tasks.discard(task)
                 except Exception:
                     pass
 
