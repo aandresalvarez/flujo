@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional, List, TYPE_CHECKING
+from typing import Any, Callable, Dict, Optional, List, TYPE_CHECKING, cast
 
 # Domain interface adapter to avoid leaking infra into domain logic
 if TYPE_CHECKING:
@@ -96,7 +96,9 @@ class SkillRegistry(SkillRegistryProtocol):
             # Prefer an explicitly registered "latest" entry when present to avoid
             # parsing arbitrary version strings.
             if "latest" in versions:
-                return versions["latest"]
+                latest_entry = versions.get("latest")
+                if latest_entry is not None:
+                    return cast(dict[str, Any], latest_entry)
             # Return the latest registered version by lexical order
             try:
                 from packaging.version import Version
