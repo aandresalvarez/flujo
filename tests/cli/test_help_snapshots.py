@@ -8,11 +8,14 @@ from flujo.cli.main import app
 
 def _clean(text: str) -> str:
     # Drop telemetry lines and trailing spaces; retain content for semantic checks
+    ansi_re = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
     lines: list[str] = []
     for ln in text.splitlines():
         if re.match(r"\d{4}-\d{2}-\d{2}.*Logfire telemetry", ln):
             continue
-        lines.append(ln.rstrip())
+        # Strip ANSI color codes and trailing whitespace
+        ln = ansi_re.sub("", ln).rstrip()
+        lines.append(ln)
     return "\n".join(lines)
 
 
