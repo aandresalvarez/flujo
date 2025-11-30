@@ -379,10 +379,9 @@ def guard_unraisable_hook() -> None:
             return
         handling = True
         try:
-            original_hook(unraisable)
-            return
-        except BaseException as exc:  # noqa: BLE001
-            _log_minimal(unraisable, exc=exc)
+            # Avoid delegating to pytest's collector hook, which can itself raise or
+            # store errors that fail the run. Log minimally and swallow.
+            _log_minimal(unraisable)
         finally:
             handling = False
 
