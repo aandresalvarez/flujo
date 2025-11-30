@@ -12,6 +12,10 @@ class DummyStep(Step[str, str]):
     pass
 
 
+class ChildStep(DummyStep):
+    pass
+
+
 @pytest.mark.asyncio
 async def test_custom_policy_injection_with_executor_core() -> None:
     registry = PolicyRegistry()
@@ -71,3 +75,23 @@ async def test_fallback_policy_is_used_for_unregistered_step() -> None:
 
     assert isinstance(result, StepResult)
     assert result.output == "fallback"
+
+
+def test_policy_lookup_cache_invalidation_on_register() -> None:
+    registry = PolicyRegistry()
+
+    async def fallback(frame: ExecutionFrame[object]) -> Success[StepResult]:
+        return Success(
+            step_result=StepResult(name=frame.step.name, success=True, output="fallback")
+        )
+
+    async def parent_policy(frame: ExecutionFrame[object]) -> Success[StepResult]:
+        return Success(step_result=StepResult(name=frame.step.name, success=True, output="parent"))
+
+    registry.register_fallback(fallback)
+
+    assert registry.get(ChildStep) is fallback
+
+    registry.register(DummyStep, parent_policy)
+
+    assert registry.get(ChildStep) is parent_policy

@@ -50,6 +50,7 @@ class PolicyRegistry:
     def __init__(self) -> None:
         self._registry: Dict[Type[Step[Any, Any]], PolicyCallable | StepPolicy[Any]] = {}
         self._fallback_policy: PolicyCallable | StepPolicy[Any] | None = None
+        self._lookup_cache: Dict[Type[Step[Any, Any]], PolicyCallable | StepPolicy[Any] | None] = {}
 
         # Preload any globally registered policies from framework registry (best-effort).
         try:
@@ -61,9 +62,13 @@ class PolicyRegistry:
 
             for step_cls, policy_instance in get_registered_policies().items():
                 self._registry[step_cls] = policy_instance
+            self._invalidate_cache()
         except Exception:
             # Framework registry may not be initialized yet; ignore.
             pass
+
+    def _invalidate_cache(self) -> None:
+        self._lookup_cache.clear()
 
     def register(
         self,
@@ -77,6 +82,7 @@ class PolicyRegistry:
             policy_obj = step_type
             step_cls: Type[Step[Any, Any]] = policy_obj.handles_type
             self._registry[step_cls] = policy_obj
+            self._invalidate_cache()
             return
 
         if not isinstance(step_type, type) or not issubclass(step_type, _BaseStep):
@@ -84,26 +90,36 @@ class PolicyRegistry:
         if policy is None:
             raise TypeError("policy is required when registering by step type")
         self._registry[step_type] = policy
+        self._invalidate_cache()
 
     def register_callable(self, step_type: Type[Step[Any, Any]], policy: PolicyCallable) -> None:
         """Register a frame-callable policy without wrapping."""
         self._registry[step_type] = policy
+        self._invalidate_cache()
 
     def register_fallback(self, policy: PolicyCallable | StepPolicy[Any]) -> None:
         """Register a fallback policy for unhandled step types."""
         self._fallback_policy = policy
+        self._invalidate_cache()
 
     def get(self, step_type: Type[Step[Any, Any]]) -> Optional[PolicyCallable | StepPolicy[Any]]:
         """Return the policy for `step_type` (or nearest ancestor) or fallback."""
+        if step_type in self._lookup_cache:
+            return self._lookup_cache[step_type]
+
         policy = self._registry.get(step_type)
         if policy is not None:
+            self._lookup_cache[step_type] = policy
             return policy
         try:
             for base in step_type.__mro__[1:]:
                 if base in self._registry:
-                    return self._registry[base]
+                    resolved = self._registry[base]
+                    self._lookup_cache[step_type] = resolved
+                    return resolved
         except Exception:
             pass
+        self._lookup_cache[step_type] = self._fallback_policy
         return self._fallback_policy
 
     def list_registered(self) -> list[Type[Step[Any, Any]]]:
