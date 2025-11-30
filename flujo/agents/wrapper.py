@@ -27,7 +27,7 @@ from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponen
 
 from ..domain.agent_protocol import AsyncAgentProtocol, AgentInT, AgentOutT
 from ..domain.processors import AgentProcessors
-from ..exceptions import OrchestratorError, OrchestratorRetryError
+from ..exceptions import AgentIOValidationError, ExecutionError, OrchestratorRetryError
 from ..utils.serialization import safe_serialize
 from .repair import DeterministicRepairProcessor
 from ..infra.telemetry import logfire
@@ -469,7 +469,9 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         ):
                             reasoning = repair_response.get("reasoning", "No reasoning provided")
                             logfire.warn(f"Repair agent cannot fix output: {reasoning}")
-                            raise OrchestratorError(f"Repair agent cannot fix output: {reasoning}")
+                            raise AgentIOValidationError(
+                                f"Repair agent cannot fix output: {reasoning}"
+                            )
 
                         # If not a repair error, validate against the target type
                         validated = TypeAdapter(
@@ -481,18 +483,19 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         logfire.error(
                             f"LLM repair failed: Invalid JSON returned by repair agent: {decode_exc}\nRaw output: {repaired_str}"
                         )
-                        raise OrchestratorError(
+                        raise AgentIOValidationError(
                             f"Agent validation failed: repair agent returned invalid JSON: {decode_exc}\nRaw output: {repaired_str}"
                         )
                     except (ValidationError, ValueError, TypeError) as repair_exc:
                         logfire.warn(f"LLM repair failed: {repair_exc}\nRaw output: {repaired_str}")
-                        raise OrchestratorError(
+                        raise AgentIOValidationError(
                             f"Agent validation failed: schema validation error: {repair_exc}\nRaw output: {repaired_str}"
                         )
                 except Exception as repair_agent_exc:
                     logfire.warn(f"Repair agent failed: {repair_agent_exc}")
-                    # Raise OrchestratorError for repair agent failures
-                    raise OrchestratorError(f"Repair agent execution failed: {repair_agent_exc}")
+                    raise AgentIOValidationError(
+                        f"Repair agent execution failed: {repair_agent_exc}"
+                    ) from repair_agent_exc
             else:
                 # FR-36: Enhanced error reporting with actual error type and message
                 error_type = type(last_exc).__name__
@@ -509,6 +512,9 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     raise OrchestratorRetryError(
                         f"Agent failed after {self._max_retries} attempts. Last error: {error_type}({error_message})"
                     )
+        except AgentIOValidationError:
+            # Allow validation errors to propagate without re-wrapping so callers can classify them.
+            raise
         except Exception as e:
             # FR-36: Enhanced error reporting for non-retry errors
             error_type = type(e).__name__
@@ -520,7 +526,7 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
             if isinstance(e, (TimeoutError, asyncio.TimeoutError)):
                 raise OrchestratorRetryError(f"Agent timed out: {error_message}")
             else:
-                raise OrchestratorError(
+                raise ExecutionError(
                     f"Agent '{self._model_name}' execution failed: {error_type}({error_message})"
                 )
 

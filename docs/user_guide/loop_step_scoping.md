@@ -180,7 +180,9 @@ If your loop isn't working:
 
 ## Validation Warnings
 
-### LOOP-001: Step Reference in Loop Body
+### Validation Rule LOOP-001
+
+Step reference in loop body (`steps['name']`) is invalid because loop iterations are isolated.
 
 **Warning message:**
 ```
@@ -285,4 +287,3 @@ steps:
 - [Template System Reference](./template_system_reference.md) - Template syntax and limitations
 - [Loop Step Documentation](../advanced/loop_step.md) - Full loop step reference
 - [Expression Language](../expression_language.md) - Expression syntax for conditions
-

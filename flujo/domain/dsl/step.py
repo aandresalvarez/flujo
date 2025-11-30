@@ -21,17 +21,12 @@ from typing import (
     cast,
     TYPE_CHECKING,
     Literal,
+    ParamSpec,
+    Concatenate,
 )
-
-try:
-    from typing import ParamSpec, Concatenate
-except ImportError:
-    from typing_extensions import ParamSpec, Concatenate
-
-# contextvars import removed; using context-scoped storage for refine_until
+import contextvars
 import inspect
 from enum import Enum
-import contextvars
 
 from flujo.domain.base_model import BaseModel
 from flujo.domain.models import RefinementCheck, UsageLimits  # noqa: F401
@@ -43,6 +38,8 @@ from ..validation import Validator
 
 from ..processors import AgentProcessors
 from ...exceptions import StepInvocationError
+
+ExecutionMode = Literal["sync", "background"]
 
 if TYPE_CHECKING:  # pragma: no cover
     from flujo.infra.caching import CacheBackend
@@ -117,7 +114,7 @@ class StepConfig(BaseModel):
     top_k: int | None = None
     top_p: float | None = None
     preserve_fallback_diagnostics: bool = False
-    execution_mode: Literal["sync", "background"] = "sync"
+    execution_mode: ExecutionMode = "sync"
 
 
 class Step(BaseModel, Generic[StepInT, StepOutT]):
@@ -514,7 +511,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         persist_feedback_to_context: Optional[str] = None,
         persist_validation_results_to: Optional[str] = None,
         is_adapter: bool = False,
-        **config: Any,
+        config: StepConfig | None = None,
+        **config_kwargs: Any,
     ) -> "Step[StepInT, StepOutT]":
         """Create a Step from an async callable."""
 
@@ -580,6 +578,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         input_type = sig_info.input_type if hasattr(sig_info, "input_type") else Any
         output_type = sig_info.output_type if hasattr(sig_info, "output_type") else Any
 
+        merged_config: dict[str, Any] = {}
+        if config is not None:
+            merged_config.update(config.model_dump())
+        merged_config.update(config_kwargs)
+
         step_instance = cls.model_validate(
             {
                 "name": name,
@@ -593,7 +596,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "validate_fields": validate_fields,
                 "sink_to": sink_to,
                 "meta": {"is_adapter": True} if is_adapter else {},
-                "config": StepConfig(**config),
+                "config": StepConfig(**merged_config),
             }
         )
         # Set type info for pipeline validation
@@ -965,6 +968,10 @@ def step(
     validate_fields: bool = False,  # New parameter for field validation
     sink_to: str | None = None,  # Scalar output destination
     name: Optional[str] = None,
+    config: Optional[StepConfig] = None,
+    execution_mode: ExecutionMode | None = None,
+    max_retries: int | None = None,
+    timeout_s: float | None = None,
     **config_kwargs: Any,
 ) -> Callable[
     [Callable[Concatenate[Any, P], Coroutine[Any, Any, Any]]],
@@ -979,6 +986,10 @@ def step(
     updates_context: bool = False,
     validate_fields: bool = False,  # New parameter for field validation
     sink_to: str | None = None,  # Scalar output destination
+    config: StepConfig | None = None,
+    execution_mode: ExecutionMode | None = None,
+    max_retries: int | None = None,
+    timeout_s: float | None = None,
     processors: Optional[AgentProcessors] = None,
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
@@ -990,6 +1001,34 @@ def step(
     def decorator(
         fn: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
     ) -> "Step[StepInT, StepOutT]":
+        if config is not None and (
+            execution_mode is not None
+            or max_retries is not None
+            or timeout_s is not None
+            or config_kwargs
+        ):
+            import warnings as _warnings
+
+            _warnings.warn(
+                "Both `config` and additional config parameters were provided to @step; "
+                "explicit parameters will override the StepConfig values.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        merged_config_kwargs: dict[str, Any] = {}
+        if config is not None:
+            merged_config_kwargs.update(config.model_dump())
+        merged_config_kwargs.update(config_kwargs)
+        if execution_mode is not None:
+            merged_config_kwargs["execution_mode"] = execution_mode
+        if max_retries is not None:
+            merged_config_kwargs["max_retries"] = max_retries
+        if timeout_s is not None:
+            merged_config_kwargs["timeout_s"] = timeout_s
+
+        final_config = StepConfig(**merged_config_kwargs)
+
         return Step.from_callable(
             fn,
             name=name or fn.__name__,
@@ -1000,7 +1039,7 @@ def step(
             persist_feedback_to_context=persist_feedback_to_context,
             persist_validation_results_to=persist_validation_results_to,
             is_adapter=is_adapter,
-            **config_kwargs,
+            config=final_config,
         )
 
     # If used without parentheses, func is the callable

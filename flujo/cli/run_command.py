@@ -176,6 +176,13 @@ def run(
             from .helpers import resolve_initial_input as _resolve_initial_input
 
             input_data = _resolve_initial_input(input_data)
+
+            # CRITICAL FIX: Ensure initial_prompt is set in context for YAML files
+            # This enables ask_user and other skills to access piped input
+            if initial_context_data is None:
+                initial_context_data = {}
+            if "initial_prompt" not in initial_context_data:
+                initial_context_data["initial_prompt"] = input_data
         else:
             pipeline_obj, pipeline_name, input_data, initial_context_data, context_model_class = (
                 setup_run_command_environment(

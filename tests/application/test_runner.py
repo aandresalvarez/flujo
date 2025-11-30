@@ -5,7 +5,7 @@ from flujo.domain.dsl.step import HumanInTheLoopStep, Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.conditional import ConditionalStep
 from flujo.domain.dsl.loop import LoopStep
-from flujo.domain.models import Success, Chunk, Paused
+from flujo.domain.models import Success, Chunk, Paused, PipelineResult, BackgroundLaunched
 
 
 class _EchoAgent:
@@ -48,6 +48,64 @@ async def test_runner_run_outcomes_streaming_yields_chunks_then_success():
     assert chunks == ["a", "b"]
     assert isinstance(final, Success)
     assert final.step_result.success is True
+
+
+@pytest.mark.asyncio
+async def test_runner_run_async_return_result():
+    step = Step(name="echo", agent=_EchoAgent())
+    pipe = Pipeline.from_step(step)
+    f = Flujo(pipe)
+
+    result = await f.run_result_async("hi")
+
+    assert isinstance(result, PipelineResult)
+    assert result.step_history[-1].success is True
+    assert result.step_history[-1].name == "echo"
+
+
+@pytest.mark.asyncio
+async def test_runner_run_stream_and_run_outcomes_alias():
+    step = Step(name="stream", agent=_StreamAgent())
+    pipe = Pipeline.from_step(step)
+    f = Flujo(pipe)
+
+    stream_items = []
+    async for outcome in f.run_stream("hi"):
+        stream_items.append(outcome)
+
+    alias_items = []
+    async for outcome in f.run_outcomes("hi"):
+        alias_items.append(outcome)
+
+    assert any(isinstance(item, Success) for item in stream_items)
+    assert any(isinstance(item, Success) for item in alias_items)
+    # run_stream should surface streaming chunks; alias may be used for readability
+    assert any(isinstance(item, Chunk) for item in stream_items)
+
+
+@pytest.mark.asyncio
+async def test_runner_run_with_events_background_emits_launch():
+    async def bg_task(data: str) -> str:
+        return f"bg:{data}"
+
+    async def fg_task(data: str) -> str:
+        return f"fg:{data}"
+
+    bg_step = Step.from_callable(bg_task, name="bg", execution_mode="background")
+    fg_step = Step.from_callable(fg_task, name="fg")
+    pipe = bg_step >> fg_step
+    f = Flujo(pipe)
+
+    events = []
+    async for ev in f.run_with_events("hi"):
+        events.append(ev)
+
+    assert any(isinstance(ev, BackgroundLaunched) for ev in events)
+    final = next(ev for ev in events if isinstance(ev, PipelineResult))
+    assert final.success
+    assert final.step_history[0].name == "bg"
+    assert "background" in (final.step_history[0].feedback or "").lower()
+    assert final.step_history[-1].output == "fg:hi"
 
 
 class _HitlAgent:

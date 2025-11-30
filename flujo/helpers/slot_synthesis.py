@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Optional, Tuple, List
+from typing import Any, Optional, Tuple, List
 from flujo.domain.models import PipelineContext
+from flujo.type_definitions.common import JSONObject
 
 
 def _extract_years(text: str) -> Tuple[Optional[int], Optional[int]]:
@@ -100,7 +101,7 @@ def _extract_filters(text: str) -> Optional[str]:
 
 async def synthesize_slots(
     _: Any = None, *, context: Optional[PipelineContext] = None, **kwargs: Any
-) -> Dict[str, Any]:
+) -> JSONObject:
     """Synthesize structured clarification slots from HITL transcript.
 
     - Reads context.hitl_history (list of {message_to_human, human_response}).
@@ -110,7 +111,7 @@ async def synthesize_slots(
     Returns a dict suitable for updates_context merging:
       { "scratchpad": { "slots": { ... }, "slots_filled": [...], "slots_missing": [...], "slots_text_summary": "..." } }
     """
-    slots: Dict[str, Any] = {
+    slots: JSONObject = {
         "metric": None,
         "cohort": {"sex": None, "age_min": None, "age_max": None},
         "time_window": {"start_year": None, "end_year": None},

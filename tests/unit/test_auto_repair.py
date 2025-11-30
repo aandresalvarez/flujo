@@ -2,7 +2,7 @@ import pytest
 from pydantic import BaseModel, TypeAdapter
 from flujo.agents.repair import DeterministicRepairProcessor
 from flujo.agents import AsyncAgentWrapper
-from flujo.exceptions import OrchestratorError
+from flujo.exceptions import AgentIOValidationError
 
 
 class Model(BaseModel):
@@ -112,7 +112,7 @@ async def test_async_agent_wrapper_llm_repair_invalid_json(monkeypatch) -> None:
 
     monkeypatch.setattr(repair_mod, "get_repair_agent", lambda: DummyRepairAgent())
 
-    with pytest.raises(OrchestratorError, match="invalid JSON"):
+    with pytest.raises(AgentIOValidationError, match="invalid JSON"):
         await wrapper.run_async("prompt")
 
 

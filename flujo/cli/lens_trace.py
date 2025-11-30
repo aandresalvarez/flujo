@@ -107,17 +107,19 @@ def trace_command(run_id: str, *, prompt_preview_len: int = 200) -> None:
     def _print_trace_summary(
         trace: Dict[str, Any], run_details: Optional[Dict[str, Any]] = None
     ) -> None:
+        console: Any | None = None
+        panel_cls: Any | None = None
+        text_cls: Any | None = None
         try:
             from rich.console import Console
-            from rich.panel import Panel
-            from rich.text import Text
+            from rich.panel import Panel as RichPanel
+            from rich.text import Text as RichText
 
             console = Console()
+            panel_cls = RichPanel
+            text_cls = RichText
         except ModuleNotFoundError:
-            Console = None  # type: ignore
-            Panel = None  # type: ignore
-            Text = None  # type: ignore
-            console = None
+            pass
         run_id = run_details.get("run_id") if run_details else trace.get("run_id")
         pipeline = run_details.get("pipeline_name") if run_details else trace.get("name")
         status = run_details.get("status") if run_details else trace.get("status")
@@ -145,8 +147,8 @@ def trace_command(run_id: str, *, prompt_preview_len: int = 200) -> None:
         status_color = {"completed": "green", "failed": "red", "running": "yellow"}.get(
             str(status).lower(), "white"
         )
-        if console is not None and Panel is not None and Text is not None:
-            summary = Text()
+        if console is not None and panel_cls is not None and text_cls is not None:
+            summary = text_cls()
             summary.append(f"Run ID: {run_id}\n", style="bold")
             if pipeline:
                 summary.append(f"Pipeline: {pipeline}\n")
@@ -160,7 +162,9 @@ def trace_command(run_id: str, *, prompt_preview_len: int = 200) -> None:
                 summary.append(f"Duration: {duration}\n")
             if steps:
                 summary.append(f"Steps: {steps}\n")
-            console.print(Panel(summary, title="[bold cyan]Run Summary[/bold cyan]", expand=False))
+            console.print(
+                panel_cls(summary, title="[bold cyan]Run Summary[/bold cyan]", expand=False)
+            )
         else:
             typer.echo(f"Run ID: {run_id}")
             if pipeline:

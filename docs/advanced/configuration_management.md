@@ -147,6 +147,25 @@ cli_defaults = config_manager.get_cli_defaults("solve")
 state_uri = config_manager.get_state_uri()
 ```
 
+### Process-Local Caching and Test Hygiene
+
+`get_config_manager()` now returns a cached instance per process. This avoids re-reading
+`flujo.toml` on every call. When you change `FLUJO_CONFIG_PATH` or mutate the environment
+within a test, either force a refresh or clear the cache:
+
+```python
+from flujo.infra.config_manager import (
+    get_config_manager,
+    invalidate_config_cache,
+)
+
+# Respect a new FLUJO_CONFIG_PATH for this process
+cfg_mgr = get_config_manager(force_reload=True)
+
+# Or clear the cache entirely (useful in test teardown)
+invalidate_config_cache()
+```
+
 ### Custom Configuration Path
 
 ```python

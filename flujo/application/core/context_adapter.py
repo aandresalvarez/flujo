@@ -622,11 +622,32 @@ def _inject_context_with_deep_merge(
                     return f"Field '{key}' type check failed: {type_check_error}"
 
             # Apply the validated value to the specific field
+            if key == "steps":
+                # Map steps updates into scratchpad['steps'] to avoid assigning to
+                # the read-only PipelineContext.steps property.
+                try:
+                    current_scratchpad = getattr(context, "scratchpad", {}) or {}
+                    if not isinstance(current_scratchpad, dict):
+                        current_scratchpad = {}
+                    steps_map = current_scratchpad.get("steps", {})
+                    if not isinstance(steps_map, dict):
+                        steps_map = {}
+                    if isinstance(value, dict):
+                        steps_map = _deep_merge_dicts(steps_map, value)
+                        current_scratchpad["steps"] = steps_map
+                        setattr(context, "scratchpad", current_scratchpad)
+                        continue
+                except Exception:
+                    # Fall back to normal assignment below if anything goes wrong
+                    pass
+
             if key == "scratchpad" and isinstance(value, dict) and hasattr(context, "scratchpad"):
                 # Special handling for scratchpad: deep merge nested dicts
                 current_scratchpad = getattr(context, "scratchpad", {})
                 if isinstance(current_scratchpad, dict):
                     merged_scratchpad = _deep_merge_dicts(current_scratchpad, value)
+                    if "user_input" not in merged_scratchpad and "hitl_data" in merged_scratchpad:
+                        merged_scratchpad["user_input"] = merged_scratchpad.get("hitl_data")
                     setattr(context, key, merged_scratchpad)
                 else:
                     setattr(context, key, value)
@@ -645,6 +666,24 @@ def _inject_context_with_deep_merge(
                 setattr(context, key, value)
         else:
             # Allow dynamic or previously-added attributes (Pydantic BaseModel blocks setattr)
+            if key == "steps":
+                try:
+                    current_scratchpad = getattr(context, "scratchpad", {}) or {}
+                    if not isinstance(current_scratchpad, dict):
+                        current_scratchpad = {}
+                    steps_map = current_scratchpad.get("steps", {})
+                    if not isinstance(steps_map, dict):
+                        steps_map = {} if isinstance(value, dict) else {"value": value}
+                    if isinstance(value, dict):
+                        steps_map = _deep_merge_dicts(steps_map, value)
+                    else:
+                        steps_map["value"] = value
+                    current_scratchpad["steps"] = steps_map
+                    setattr(context, "scratchpad", current_scratchpad)
+                except Exception:
+                    pass
+                # Always skip setting context.steps directly
+                continue
             try:
                 object.__setattr__(context, key, value)
             except Exception:

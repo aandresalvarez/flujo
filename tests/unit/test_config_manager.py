@@ -7,6 +7,8 @@ from pathlib import Path
 from flujo.infra.config_manager import (
     ConfigManager,
     FlujoConfig,
+    get_config_manager,
+    invalidate_config_cache,
     SolveConfig,
     BenchConfig,
     SettingsOverrides,
@@ -358,6 +360,29 @@ env_file = ".does-not-exist"
             else:
                 os.environ.pop("FLUJO_STATE_URI", None)
             os.unlink(config_path)
+
+    def test_config_manager_process_cache(self, tmp_path, monkeypatch):
+        """get_config_manager caches per-process and honors force_reload/invalidate."""
+        cfg_one = tmp_path / "one.toml"
+        cfg_two = tmp_path / "two.toml"
+        cfg_one.write_text('state_uri = "sqlite:///one.db"\n')
+        cfg_two.write_text('state_uri = "sqlite:///two.db"\n')
+
+        monkeypatch.delenv("FLUJO_STATE_URI", raising=False)
+        invalidate_config_cache()
+
+        try:
+            monkeypatch.setenv("FLUJO_CONFIG_PATH", cfg_one.as_posix())
+            mgr_one = get_config_manager()
+            assert mgr_one.get_state_uri(force_reload=True) == "sqlite:///one.db"
+
+            # Env change should automatically refresh the cached manager
+            monkeypatch.setenv("FLUJO_CONFIG_PATH", cfg_two.as_posix())
+            mgr_two = get_config_manager()
+            assert mgr_two is not mgr_one
+            assert mgr_two.get_state_uri(force_reload=True) == "sqlite:///two.db"
+        finally:
+            invalidate_config_cache()
 
     def test_settings_integration(self):
         """Test integration with the settings system."""

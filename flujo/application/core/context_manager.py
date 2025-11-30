@@ -1,10 +1,13 @@
 from typing import Optional, List, Any, Callable, Dict, Union, get_args, get_origin
+import threading
 import copy
 import inspect
+import os
 import weakref
 import types
 from pydantic import BaseModel
 from ...utils.context import safe_merge_context_updates
+from ...exceptions import ContextMutationError
 from .context_strategies import (
     ContextIsolationStrategy,
     LenientIsolation,
@@ -21,7 +24,14 @@ except Exception:
 
 
 class ContextManager:
-    """Centralized context isolation and merging."""
+    """Centralized context isolation and merging.
+
+    Phase 1 Enhancement: Added strict mode for mutation detection.
+    Set FLUJO_STRICT_CONTEXT=1 to enable runtime mutation verification.
+    """
+
+    # Module-level flag for strict context mutation detection (Phase 1)
+    ENFORCE_ISOLATION: bool = os.environ.get("FLUJO_STRICT_CONTEXT", "0") == "1"
 
     class ContextIsolationError(Exception):
         """Raised when context isolation fails under strict settings."""
@@ -209,11 +219,35 @@ class ContextManager:
 
     @staticmethod
     def isolate(
-        context: Optional[BaseModel], include_keys: Optional[List[str]] = None
+        context: Optional[BaseModel],
+        include_keys: Optional[List[str]] = None,
+        *,
+        purpose: str = "unknown",
     ) -> Optional[BaseModel]:
-        """Isolate context using the configured strategy."""
+        """Isolate context using the configured strategy.
+
+        Args:
+            context: The context to isolate
+            include_keys: Optional list of keys to include in isolation
+            purpose: Purpose of isolation (for debugging in strict mode)
+
+        Returns:
+            Isolated context copy
+        """
         strategy = ContextManager._resolve_strategy(include_keys)
-        return strategy.isolate(context, include_keys)
+        isolated = strategy.isolate(context, include_keys)
+
+        # Phase 1: Track isolation for mutation detection (strict mode)
+        if ContextManager.ENFORCE_ISOLATION and isolated is not None and context is not None:
+            # Track original for mutation detection
+            try:
+                object.__setattr__(isolated, "_original_context_id", id(context))
+                object.__setattr__(isolated, "_isolation_purpose", purpose)
+            except Exception:
+                # If we can't set attributes (e.g., frozen model), skip tracking
+                pass
+
+        return isolated
 
     @staticmethod
     def _isolate_strict_impl(
@@ -275,6 +309,54 @@ class ContextManager:
             return cast(Optional[BaseModel], copy.deepcopy(context))
 
     @staticmethod
+    def verify_isolation(
+        original: Optional[BaseModel],
+        isolated: Optional[BaseModel],
+    ) -> None:
+        """Verify that isolated context hasn't mutated original (strict mode).
+
+        This method checks for shared references, particularly in scratchpad,
+        which is the most common mutation point.
+
+        Args:
+            original: The original context
+            isolated: The isolated context to verify
+
+        Raises:
+            ContextMutationError: If mutation violation is detected
+        """
+        if not ContextManager.ENFORCE_ISOLATION:
+            return
+        if original is None or isolated is None:
+            return
+
+        # Deep comparison of scratchpad (most common mutation point)
+        orig_scratch = getattr(original, "scratchpad", None)
+        iso_scratch = getattr(isolated, "scratchpad", None)
+
+        # Check if scratchpad references are shared (mutation risk)
+        if orig_scratch is iso_scratch and orig_scratch is not None:
+            purpose = getattr(isolated, "_isolation_purpose", "unknown")
+            raise ContextMutationError(
+                f"Isolated context shares scratchpad reference with original. "
+                f"Isolation purpose: {purpose}",
+                suggestion="Ensure context isolation creates deep copies of mutable fields",
+                code="CONTEXT_MUTATION_VIOLATION",
+            )
+
+        # Additional check: verify context IDs match tracking
+        if hasattr(isolated, "_original_context_id"):
+            tracked_id = getattr(isolated, "_original_context_id")
+            if tracked_id != id(original):
+                purpose = getattr(isolated, "_isolation_purpose", "unknown")
+                raise ContextMutationError(
+                    f"Isolated context tracking mismatch. Expected original id {id(original)}, "
+                    f"got {tracked_id}. Isolation purpose: {purpose}",
+                    suggestion="Context may have been replaced or recreated",
+                    code="CONTEXT_TRACKING_MISMATCH",
+                )
+
+    @staticmethod
     def merge(
         main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
     ) -> Optional[BaseModel]:
@@ -294,6 +376,11 @@ class ContextManager:
         main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
     ) -> Optional[BaseModel]:
         """Merge updates from branch_context into main_context and return the result."""
+        try:
+            if threading.current_thread() is not threading.main_thread():
+                return main_context
+        except Exception:
+            pass
         if main_context is None:
             return branch_context
         if branch_context is None:

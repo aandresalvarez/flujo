@@ -34,10 +34,18 @@ class TypeValidator:
             return
 
         expected = cast(Type[Any], getattr(next_step, "__step_input_type__", Any))
-        actual_type = type(step_result)
+        is_background = (
+            getattr(getattr(step, "config", None), "execution_mode", None) == "background"
+        )
+
+        if is_background:
+            # Background steps pass their input through to downstream steps
+            actual_type = TypeValidator.get_step_input_type(step)
+        else:
+            actual_type = type(step_result)
 
         # Only allow None if the expected type is compatible with None
-        if step_result is None:
+        if step_result is None and not is_background:
             import types
 
             origin = get_origin(expected)

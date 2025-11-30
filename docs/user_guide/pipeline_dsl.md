@@ -53,6 +53,34 @@ result = runner.run(1)
 The `@step` decorator infers the input and output types from the
 function's signature so the pipeline is typed as `Step[int, int]`.
 
+### Streaming lifecycle events
+
+Use `run_with_events` when you need lifecycle visibility (e.g., background launches or
+streaming chunks) and still want the final `PipelineResult` without a second call:
+
+```python
+from flujo.domain.models import BackgroundLaunched, Chunk, PipelineResult
+
+async for event in runner.run_with_events(1):
+    if isinstance(event, BackgroundLaunched):
+        print(f"Background step launched: {event.step_name} ({event.task_id})")
+    elif isinstance(event, Chunk):
+        print("stream chunk:", event.data)
+    elif isinstance(event, PipelineResult):
+        print("done:", event.step_history[-1].output)
+```
+
+Prefer `run_async` if you only care about the final result, or `run_outcomes_async`
+if you want only `StepOutcome` events without the final `PipelineResult`.
+
+### Runner entrypoints (choose the right one)
+
+- `run_result_async(input)`: return the final `PipelineResult` (async, no events).
+- `run_async(input)`: legacy awaitable/async-iterable; yields events + final result.
+- `run_outcomes_async(input)`: yield only `StepOutcome` events (Success/Failure/Paused/Chunk).
+- `run_stream(input)` / `run_outcomes(input)`: explicit streaming aliases.
+- `run_with_events(input)`: yield lifecycle events (e.g., `BackgroundLaunched`, `Chunk`) plus the final `PipelineResult`.
+
 ### Pipeline Composition
 
 The `>>` operator chains steps together:
@@ -553,13 +581,27 @@ Steps are the basic building blocks of pipelines. Each step has a name and an ag
 ### Creating Steps
 
 ```python
-from flujo import Step
+from flujo import Step, StepConfig, step
 
 # Create a step with an agent
 step = Step("my_step", my_agent)
 
 # Create a step with configuration
 step = Step("my_step", my_agent, max_retries=3, timeout_s=30.0)
+
+# Use StepConfig for reuse or clarity
+cfg = StepConfig(max_retries=2, timeout_s=10, execution_mode="background")
+bg_step = Step("bg", my_agent, config=cfg)
+
+# Decorator form (preferred for functions)
+@step(name="compute", config=cfg)
+async def compute(x: int) -> int:
+    return x + 1
+
+# You can override specific fields even when passing config; overrides win
+@step(config=cfg, timeout_s=5)
+async def compute_fast(x: int) -> int:
+    return x + 1
 ```
 
 ### Step Configuration

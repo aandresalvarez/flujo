@@ -33,7 +33,7 @@ async def test_agent_quota_reservation_failure_raises_usage_limit_no_fallback():
     core._usage_estimator = _HighEstimator()  # type: ignore[attr-defined]
 
     # Set a very small parent quota
-    core.CURRENT_QUOTA.set(Quota(remaining_cost_usd=1.0, remaining_tokens=1000))
+    core._set_current_quota(Quota(remaining_cost_usd=1.0, remaining_tokens=1000))
 
     from flujo.exceptions import UsageLimitExceededError
 
@@ -79,7 +79,7 @@ async def test_agent_primary_failure_fallback_success_with_quota_present():
 
     core._usage_estimator = _LowEstimator()  # type: ignore[attr-defined]
     # Provide ample quota
-    core.CURRENT_QUOTA.set(Quota(remaining_cost_usd=10.0, remaining_tokens=1000))
+    core._set_current_quota(Quota(remaining_cost_usd=10.0, remaining_tokens=1000))
 
     outcome = await execu.execute(
         core=core,
@@ -117,7 +117,7 @@ async def test_agent_quota_denial_uses_legacy_message_with_limits():
             return UsageEstimate(cost_usd=100.0, tokens=5_000_000)
 
     core._usage_estimator = _HighEstimator()  # type: ignore[attr-defined]
-    core.CURRENT_QUOTA.set(Quota(remaining_cost_usd=1.0, remaining_tokens=1))
+    core._set_current_quota(Quota(remaining_cost_usd=1.0, remaining_tokens=1))
     limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=1)
 
     from flujo.exceptions import UsageLimitExceededError

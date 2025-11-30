@@ -27,7 +27,7 @@ async def test_agent_strict_pricing_error_surfaces_post_reservation():
         return UsageEstimate(cost_usd=0.0, tokens=0)
 
     execu._estimate_usage = _fake_estimate  # type: ignore[attr-defined]
-    core.CURRENT_QUOTA.set(Quota(remaining_cost_usd=1.0, remaining_tokens=1000))
+    core._set_current_quota(Quota(remaining_cost_usd=1.0, remaining_tokens=1000))
 
     # Patch extract_usage_metrics to raise strict pricing error
     import flujo.application.core.step_policies as policies_mod

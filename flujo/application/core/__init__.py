@@ -8,10 +8,28 @@ from .execution_manager import ExecutionManager
 from .state_manager import StateManager
 from .step_coordinator import StepCoordinator
 from .type_validator import TypeValidator
+from .quota_manager import QuotaManager
+from .fallback_handler import FallbackHandler
+from .background_task_manager import BackgroundTaskManager
+from .cache_manager import CacheManager
+from .hydration_manager import HydrationManager
+from .execution_dispatcher import ExecutionDispatcher
+from .policy_registry import PolicyRegistry, StepPolicy, create_default_registry
+from .step_history_tracker import StepHistoryTracker
 
 __all__ = [
     "ExecutionManager",
     "StateManager",
     "StepCoordinator",
     "TypeValidator",
+    "QuotaManager",
+    "FallbackHandler",
+    "BackgroundTaskManager",
+    "CacheManager",
+    "HydrationManager",
+    "ExecutionDispatcher",
+    "PolicyRegistry",
+    "StepPolicy",
+    "create_default_registry",
+    "StepHistoryTracker",
 ]

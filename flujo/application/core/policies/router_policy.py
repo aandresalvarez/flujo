@@ -1,6 +1,8 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
+from typing import Type
+
 from .parallel_policy import DefaultParallelStepExecutor
 from ._shared import (  # noqa: F401
     Any,
@@ -8,7 +10,6 @@ from ._shared import (  # noqa: F401
     Callable,
     ContextManager,
     Dict,
-    ExecutionFrame,
     Failure,
     List,
     Optional,
@@ -25,6 +26,9 @@ from ._shared import (  # noqa: F401
     telemetry,
     to_outcome,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
+from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
 
 # --- Dynamic Router Step Executor policy ---
 
@@ -44,7 +48,11 @@ class DynamicRouterStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultDynamicRouterStepExecutor:
+class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
+    @property
+    def handles_type(self) -> Type[DynamicParallelRouterStep]:
+        return DynamicParallelRouterStep
+
     async def execute(
         self,
         core: Any,
@@ -54,9 +62,19 @@ class DefaultDynamicRouterStepExecutor:
         resources: Optional[Any],
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        # Backward-compat: expose 'step' in signature for legacy inspection
         step: Optional[Any] = None,
     ) -> StepOutcome[StepResult]:
         """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
+        if isinstance(router_step, ExecutionFrame):
+            frame = router_step
+            router_step = frame.step
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            context_setter = getattr(frame, "context_setter", None)
+            step = step or router_step
 
         telemetry.logfire.debug("=== HANDLE DYNAMIC ROUTER STEP ===")
         telemetry.logfire.debug(f"Dynamic router step name: {router_step.name}")
@@ -65,13 +83,20 @@ class DefaultDynamicRouterStepExecutor:
         router_agent_step: Any = Step(
             name=f"{router_step.name}_router", agent=router_step.router_agent
         )
+        quota = None
+        try:
+            if hasattr(core, "_get_current_quota"):
+                quota = core._get_current_quota()
+        except Exception:
+            quota = None
+
         router_frame = ExecutionFrame(
             step=router_agent_step,
             data=data,
             context=context,
             resources=resources,
             limits=limits,
-            quota=(core.CURRENT_QUOTA.get() if hasattr(core, "CURRENT_QUOTA") else None),
+            quota=quota,
             stream=False,
             on_chunk=None,
             context_setter=(
@@ -97,6 +122,14 @@ class DefaultDynamicRouterStepExecutor:
                     success=False,
                     feedback="Unsupported outcome",
                 )
+
+        # Merge router context updates back to parent when available
+        try:
+            if getattr(router_result, "branch_context", None) is not None and context is not None:
+                merged_ctx = ContextManager.merge(context, router_result.branch_context)
+                router_result.branch_context = merged_ctx
+        except Exception:
+            pass
 
         # Handle router failure
         if not router_result.success:
@@ -151,11 +184,11 @@ class DefaultDynamicRouterStepExecutor:
         )
         # Use the DefaultParallelStepExecutor policy directly instead of legacy core method
         parallel_executor = DefaultParallelStepExecutor()
-        # Ensure CURRENT_QUOTA is set for the parallel execution block
+        # Ensure quota is set for the parallel execution block
         quota_token = None
         try:
-            if hasattr(core, "CURRENT_QUOTA"):
-                quota_token = core.CURRENT_QUOTA.set(core.CURRENT_QUOTA.get())
+            if hasattr(core, "_set_current_quota"):
+                quota_token = core._set_current_quota(core._get_current_quota())
         except Exception:
             quota_token = None
         try:
@@ -170,8 +203,8 @@ class DefaultDynamicRouterStepExecutor:
             )
         finally:
             try:
-                if quota_token is not None and hasattr(core, "CURRENT_QUOTA"):
-                    core.CURRENT_QUOTA.reset(quota_token)
+                if quota_token is not None and hasattr(core, "_reset_current_quota"):
+                    core._reset_current_quota(quota_token)
             except Exception:
                 pass
 

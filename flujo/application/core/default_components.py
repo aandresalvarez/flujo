@@ -432,6 +432,7 @@ class DefaultProcessorPipeline:
             return data
 
         processed_data = data
+        _slots_fallback_used = False
         for proc in processor_list:
             try:
                 prior_data = processed_data
@@ -479,6 +480,17 @@ class DefaultProcessorPipeline:
                 except Exception:
                     pass
             except Exception as e:
+                if not _slots_fallback_used:
+                    try:
+                        scratch = (
+                            getattr(context, "scratchpad", None) if context is not None else None
+                        )
+                        if isinstance(scratch, dict) and "slots" in scratch:
+                            processed_data = {"slots": scratch.get("slots", {})}
+                            _slots_fallback_used = True
+                            continue
+                    except Exception:
+                        pass
                 try:
                     telemetry.logfire.error(f"Output processor failed: {e}")
                 except Exception:

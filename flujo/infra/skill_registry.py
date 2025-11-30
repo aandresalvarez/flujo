@@ -1,32 +1,34 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional, List
+from typing import Any, Callable, Dict, Optional, List, TYPE_CHECKING, cast
 
 # Domain interface adapter to avoid leaking infra into domain logic
-set_default_skill_registry_provider_fn: Optional[Callable[[Any], None]]
-set_default_skill_resolver_fn: Optional[Callable[[Any], None]]
-try:  # pragma: no cover - import guard
+if TYPE_CHECKING:
     from flujo.domain.interfaces import (
         SkillRegistry as SkillRegistryProtocol,
         SkillRegistryProvider as SkillRegistryProviderProtocol,
-        set_default_skill_registry_provider as _set_default_skill_registry_provider_fn,
-        set_default_skill_resolver as _set_default_skill_resolver_fn,
+        set_default_skill_registry_provider as set_default_skill_registry_provider_fn,
+        set_default_skill_resolver as set_default_skill_resolver_fn,
     )
-
-    set_default_skill_registry_provider_fn = _set_default_skill_registry_provider_fn
-    set_default_skill_resolver_fn = _set_default_skill_resolver_fn
-except Exception:  # pragma: no cover - defensive fallback
-    SkillRegistryProtocol = Any  # type: ignore
-    SkillRegistryProviderProtocol = Any  # type: ignore
-    set_default_skill_registry_provider_fn = None
-    set_default_skill_resolver_fn = None
+else:  # pragma: no cover - runtime import guard
+    try:
+        from flujo.domain.interfaces import (
+            SkillRegistry as SkillRegistryProtocol,
+            SkillRegistryProvider as SkillRegistryProviderProtocol,
+            set_default_skill_registry_provider as set_default_skill_registry_provider_fn,
+            set_default_skill_resolver as set_default_skill_resolver_fn,
+        )
+    except Exception:
+        SkillRegistryProtocol = object  # type: ignore[assignment]
+        SkillRegistryProviderProtocol = object  # type: ignore[assignment]
+        set_default_skill_registry_provider_fn = None
+        set_default_skill_resolver_fn = None
 
 
 class SkillRegistry(SkillRegistryProtocol):
     """Versioned, scoped registry for resolving skills/agents by ID."""
 
     def __init__(self) -> None:
-        # scope -> id -> entry
         self._entries: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
     def register(
@@ -77,23 +79,41 @@ class SkillRegistry(SkillRegistryProtocol):
         scoped = self._entries.get(scope_key, {})
         versions = scoped.get(id)
         if versions is None and id.startswith("flujo.builtins."):
-            # Lazy-load builtins if the registry has not been primed yet.
+            # Force a fresh registration for any builtin miss to avoid flakiness.
             try:
                 from flujo.builtins import _register_builtins as _reg
 
+                # Reset only the default scope to keep tenant scopes isolated
+                self._entries["default"] = {}
                 _reg()
-                scoped = self._entries.get(scope_key, {})
-                versions = scoped.get(id)
+                scoped_default = self._entries.get("default", {})
+                versions = scoped_default.get(id) if scope_key == "default" else scoped.get(id)
             except Exception:
                 versions = None
         if versions is None:
             return None
         if version is None or version == "latest":
+            # Prefer an explicitly registered "latest" entry when present to avoid
+            # parsing arbitrary version strings.
+            if "latest" in versions:
+                latest_entry = versions.get("latest")
+                if latest_entry is not None:
+                    return cast(dict[str, Any], latest_entry)
             # Return the latest registered version by lexical order
             try:
                 from packaging.version import Version
 
-                latest_key = max(versions.keys(), key=Version)
+                candidates: list[tuple[Version, str]] = []
+                for key in versions.keys():
+                    try:
+                        candidates.append((Version(key), key))
+                    except Exception:
+                        continue
+                if candidates:
+                    candidates.sort()
+                    latest_key = candidates[-1][1]
+                else:
+                    latest_key = max(versions.keys())
             except Exception:
                 latest_key = max(versions.keys())
             return versions.get(latest_key)

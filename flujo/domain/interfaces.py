@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol
+from typing import Any, Optional, Protocol, TypeVar, Generic, cast
 
 
 class SkillResolver(Protocol):
@@ -78,16 +78,64 @@ class SkillRegistryProvider(Protocol):
     def get_registry(self, *, scope: str | None = None) -> SkillRegistry: ...
 
 
-class StateProvider(Protocol):
-    """Protocol for external state providers that manage data persistence."""
+T = TypeVar("T")
 
-    async def load(self, key: str) -> Any:
-        """Fetch data from external storage."""
-        ...
 
-    async def save(self, key: str, data: Any) -> None:
-        """Commit data to external storage."""
-        ...
+class StateProvider(Protocol, Generic[T]):
+    """Protocol for external state providers with a complete lifecycle."""
+
+    async def load(self, key: str) -> Optional[T]:
+        """Load data from storage. Returns None if not found."""
+
+    async def save(self, key: str, data: T) -> None:
+        """Save data to storage."""
+
+    async def delete(self, key: str) -> bool:
+        """Delete data from storage. Returns True if deleted."""
+
+    async def exists(self, key: str) -> bool:
+        """Check if key exists in storage."""
+
+    async def close(self) -> None:
+        """Release any resources held by the provider."""
+
+
+class StateProviderAdapter(StateProvider[T]):
+    """Adapter for legacy providers that only implement load/save."""
+
+    def __init__(self, legacy_provider: Any) -> None:
+        self._legacy = legacy_provider
+
+    async def load(self, key: str) -> Optional[T]:
+        val = await self._legacy.load(key)
+        return cast(Optional[T], val)
+
+    async def save(self, key: str, data: T) -> None:
+        await self._legacy.save(key, data)
+
+    async def delete(self, key: str) -> bool:
+        delete_fn = getattr(self._legacy, "delete", None)
+        if delete_fn is None:
+            return False
+        result = delete_fn(key)
+        if hasattr(result, "__await__"):
+            result = await result
+        return bool(result)
+
+    async def exists(self, key: str) -> bool:
+        try:
+            val: Optional[T] = await self.load(key)
+            return val is not None
+        except Exception:
+            return False
+
+    async def close(self) -> None:
+        close_fn = getattr(self._legacy, "close", None)
+        if close_fn is None:
+            return
+        result = close_fn()
+        if hasattr(result, "__await__"):
+            await result
 
 
 @dataclass
@@ -318,4 +366,5 @@ __all__ = [
     "get_skill_registry_provider",
     "set_default_skill_registry_provider",
     "StateProvider",
+    "StateProviderAdapter",
 ]

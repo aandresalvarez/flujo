@@ -97,35 +97,52 @@ typecheck-profile: .uv ## Profile mypy to locate hotspots (writes .mypy.cprof)
 # For now, let's enable autoload to ensure pytest-asyncio works
 # export PYTEST_DISABLE_PLUGIN_AUTOLOAD ?= 1
 
+FAST_KEXPR := not bug_reports and not manual_testing and not scripts
+# Architecture/type-safety compliance tests run via `make test-architecture`
+# and are excluded from the fast subset by default. Set INCLUDE_ARCHITECTURE_IN_FAST=1 to opt in.
+ifndef INCLUDE_ARCHITECTURE_IN_FAST
+FAST_KEXPR := $(FAST_KEXPR) and not architecture
+endif
+
 .PHONY: test
 test: .uv ## Run all tests via enhanced runner (robust, two-phase)
 	@echo "🧪 Running full test suite (enhanced runner)..."
 	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers auto --timeout 60 --split-slow --slow-workers 1 --slow-timeout 120
 
+.PHONY: test-architecture
+test-architecture: .uv ## Run architecture and type-safety compliance tests
+	@echo "🏛️ Running architecture compliance tests..."
+	CI=1 uv run pytest tests/architecture -vv --tb=short --durations=0 --color=yes
+
+.PHONY: test-srp
+test-srp: .uv ## Run Single Responsibility Principle compliance tests
+	@echo "📏 Running SRP compliance tests..."
+	CI=1 uv run pytest tests/architecture/test_srp_compliance.py tests/architecture/test_srp_semantic_analysis.py -vv --tb=short --color=yes
+
 .PHONY: test-fast
 test-fast: .uv ## Run fast tests in parallel with hang guards (excludes slow, veryslow, serial, and benchmark tests)
 	@echo "⚡ Running fast tests (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers 8 --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
 
 .PHONY: test-fast-verbose
 test-fast-verbose: .uv ## Run fast tests with verbose output for debugging
 	@echo "🔍 Running fast tests with verbose output (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 --tb --pytest-args "-vv"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers 8 --timeout 90 --tb --pytest-args "-vv"
 
 .PHONY: test-fast-serial
 test-fast-serial: .uv ## Run fast tests serially with hang guard (debug parallel issues)
 	@echo "🔧 Running fast tests serially (enhanced runner)..."
-	CI=1 FLUJO_TEST_FORCE_EXIT=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 1 --timeout 90 --faulthandler-timeout 60
+	CI=1 FLUJO_TEST_FORCE_EXIT=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers 1 --timeout 90 --faulthandler-timeout 60
 
 .PHONY: test-fast-conservative
 test-fast-conservative: .uv ## Run fast tests with conservative parallelism (2 workers + hang guard)
 	@echo "🐌 Running fast tests with conservative parallelism (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 2 --timeout 90 --faulthandler-timeout 60
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers 2 --timeout 90 --faulthandler-timeout 60
 
 .PHONY: test-robust
 test-robust: .uv ## Run tests with enhanced robustness and monitoring
 	@echo "🛡️ Running robust test suite (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts" --workers 4 --timeout 90 --pytest-args "--maxfail=5 -q"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers 8 --timeout 90 --pytest-args "--maxfail=5 -q"
 
 .PHONY: test-stress
 test-stress: .uv ## Run stress tests to identify resource issues
@@ -231,6 +248,10 @@ test-analyze: .uv ## Analyze test collection and categorization
 	@echo "  • Integration tests: $(shell find tests/integration -name "*.py" | wc -l | tr -d ' ') files"
 	@echo "  • Benchmark tests: $(shell find tests/benchmarks -name "*.py" | wc -l | tr -d ' ') files"
 	@echo "  • E2E tests: $(shell find tests/e2e -name "*.py" | wc -l | tr -d ' ') files"
+
+.PHONY: test-workers
+test-workers: .uv ## Show optimal worker count recommendations for your system
+	@uv run python scripts/check_optimal_workers.py
 
 .PHONY: test-failing
 test-failing: .uv ## Run only failing tests to identify issues
@@ -399,9 +420,23 @@ docs-ci: docs-build docs-check ## Build docs and run link checks
 # All-in-one & Help
 # ------------------------------------------------------------------------------
 
+ifdef FAST_ALL
+TEST_GATE_TARGET := test-fast
+TYPECHECK_TARGET := typecheck-fast
+else
+TEST_GATE_TARGET := test
+TYPECHECK_TARGET := typecheck
+endif
+
+ifdef SKIP_ARCHITECTURE_TESTS
+ALL_QUALITY_TARGETS := format lint $(TYPECHECK_TARGET) $(TEST_GATE_TARGET)
+else
+ALL_QUALITY_TARGETS := format lint $(TYPECHECK_TARGET) $(TEST_GATE_TARGET) test-architecture test-srp
+endif
+
 .PHONY: all
-all: format lint typecheck test ## Run all quality checks (format, lint, typecheck, test)
-	@echo "\n✅ All local checks passed! You are ready to push."
+all: $(ALL_QUALITY_TARGETS) ## Run all quality checks (format, lint, typecheck, test, test-architecture)
+	@echo "\n✅ make all completed (format, lint, typecheck, $(TEST_GATE_TARGET), test-architecture). Ready to push."
 
 .PHONY: help
 help: ## ✨ Show this help message

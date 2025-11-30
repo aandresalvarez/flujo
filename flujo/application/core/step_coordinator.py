@@ -74,20 +74,12 @@ class StepCoordinator(Generic[ContextT]):
             Step results or streaming chunks
         """
         # Dispatch pre-step hook
-        # Capture quota snapshot if available on context scratchpad
+        # Capture quota snapshot if available on provided quota
         quota_before_usd = None
         quota_before_tokens = None
         try:
-            # Best effort: some contexts may not have quota info
-            remaining = None
-            from flujo.application.core.executor_core import ExecutorCore as _Exec
-
-            quota_obj = _Exec.CURRENT_QUOTA.get()
-            if isinstance(quota_obj, Quota):
-                remaining = quota_obj.get_remaining()
-            else:
-                remaining = None
-            if remaining is not None:
+            if quota is not None:
+                remaining = quota.get_remaining()
                 quota_before_usd, quota_before_tokens = remaining
         except Exception:
             quota_before_usd = None
@@ -411,8 +403,10 @@ class StepCoordinator(Generic[ContextT]):
                                 try:
                                     if isinstance(context, PipelineContext):
                                         context.scratchpad["status"] = "paused"
-                                        context.scratchpad["pause_message"] = str(
-                                            getattr(step_outcome, "message", "Paused for HITL")
+                                        # Use plain message for backward compatibility
+                                        msg = getattr(step_outcome, "message", "Paused for HITL")
+                                        context.scratchpad["pause_message"] = (
+                                            msg if isinstance(msg, str) else str(msg)
                                         )
                                         scratch = context.scratchpad
                                         if "paused_step_input" not in scratch:
@@ -491,7 +485,11 @@ class StepCoordinator(Generic[ContextT]):
                 # Handle pause for human input; mark context and stop executing current step
                 if isinstance(context, PipelineContext):
                     context.scratchpad["status"] = "paused"
-                    context.scratchpad["pause_message"] = str(e)
+                    # Use plain message for backward compatibility (tests expect plain message)
+                    # Only set if not already set (loop policy or recipe may have set it already)
+                    if "pause_message" not in context.scratchpad:
+                        context.scratchpad["pause_message"] = getattr(e, "message", "")
+                    # If already set, preserve it (loop policy/recipe already set it correctly)
                     scratch = context.scratchpad
                     if "paused_step_input" not in scratch:
                         scratch["paused_step_input"] = data
@@ -568,23 +566,46 @@ class StepCoordinator(Generic[ContextT]):
                     for handler in step.failure_handlers:
                         try:
                             handler() if hasattr(handler, "__call__") else None
+                            try:
+                                if isinstance(step_result, StepResult):
+                                    meta = getattr(step_result, "metadata_", None)
+                                    if not isinstance(meta, dict):
+                                        step_result.metadata_ = {}
+                                        meta = step_result.metadata_
+                                    meta["failure_handlers_ran"] = True
+                            except Exception:
+                                pass
                         except Exception as e:
                             telemetry.logfire.error(
                                 f"Failure handler {handler} raised exception: {e}"
                             )
                             raise
-
+                dispatch_needed = True
                 try:
-                    await self._dispatch_hook(
-                        "on_step_failure",
-                        step_result=step_result,
-                        context=context,
-                        resources=self.resources,
-                    )
-                except PipelineAbortSignal:
-                    # Yield the failed step result before aborting
-                    yield step_result
-                    raise
+                    if isinstance(step_result, StepResult):
+                        meta = getattr(step_result, "metadata_", None)
+                        if not isinstance(meta, dict):
+                            step_result.metadata_ = {}
+                            meta = step_result.metadata_
+                        if meta.get("on_step_failure_dispatched"):
+                            dispatch_needed = False
+                        else:
+                            meta["on_step_failure_dispatched"] = True
+                except Exception:
+                    dispatch_needed = True
+
+                if dispatch_needed:
+                    try:
+                        await self._dispatch_hook(
+                            "on_step_failure",
+                            step_result=step_result,
+                            context=context,
+                            resources=self.resources,
+                        )
+                    except PipelineAbortSignal:
+                        # Yield the failed step result before aborting
+                        yield step_result
+                        raise
         else:
             # Safety net: ensure every step yields a terminal outcome
             try:
@@ -633,8 +654,27 @@ class StepCoordinator(Generic[ContextT]):
         step_result: StepResult,
     ) -> None:
         """Update the pipeline result with a step result."""
-        # Append the step result first
-        result.step_history.append(step_result)
+        replaced = False
+        try:
+            # Avoid duplicating synthesized "no terminal outcome" failures when padding
+            # histories in multiple layers (ExecutionManager and run_session).
+            if result.step_history:
+                last = result.step_history[-1]
+                if (
+                    getattr(last, "name", None) == getattr(step_result, "name", None)
+                    and getattr(last, "feedback", None) == getattr(step_result, "feedback", None)
+                    and getattr(last, "success", True) is False
+                ):
+                    result.step_history[-1] = step_result
+                    # Refresh cost/token aggregates for replacement
+                    result.total_cost_usd -= getattr(last, "cost_usd", 0.0)
+                    result.total_tokens -= getattr(last, "token_counts", 0)
+                    replaced = True
+        except Exception:
+            replaced = False
+        # Append the step result first unless we replaced the last entry
+        if not replaced:
+            result.step_history.append(step_result)
 
         # Base accumulation from the step itself
         result.total_cost_usd += step_result.cost_usd

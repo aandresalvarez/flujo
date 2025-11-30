@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Type
+
+from flujo.domain.models import PipelineContext
 from ._shared import (  # noqa: F401
     Any,
     Callable,
@@ -20,6 +23,9 @@ from ._shared import (  # noqa: F401
     time,
     to_outcome,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
+from flujo.domain.dsl.conditional import ConditionalStep
 
 
 class ConditionalStepExecutor(Protocol):
@@ -36,7 +42,11 @@ class ConditionalStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultConditionalStepExecutor:
+class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
+    @property
+    def handles_type(self) -> Type[ConditionalStep[Any]]:
+        return ConditionalStep
+
     async def execute(
         self,
         core: Any,
@@ -49,12 +59,33 @@ class DefaultConditionalStepExecutor:
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]:
         """Handle ConditionalStep execution with proper context isolation and merging."""
+        if isinstance(conditional_step, ExecutionFrame):
+            frame = conditional_step
+            conditional_step = frame.step
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            context_setter = frame.context_setter
+            try:
+                _fallback_depth = int(getattr(frame, "_fallback_depth", _fallback_depth) or 0)
+            except Exception:
+                _fallback_depth = _fallback_depth
 
         telemetry.logfire.debug("=== HANDLE CONDITIONAL STEP ===")
         telemetry.logfire.debug(
             f"Handling ConditionalStep '{getattr(conditional_step, 'name', '<unnamed>')}'"
         )
         telemetry.logfire.debug(f"Conditional step name: {conditional_step.name}")
+
+        # Defensive name helper to avoid attr errors on lightweight cores
+        def _safe_name(obj: Any) -> str:
+            try:
+                if hasattr(core, "_safe_step_name"):
+                    return str(core._safe_step_name(obj))
+            except Exception:
+                pass
+            return str(getattr(obj, "name", "<unnamed>"))
 
         # Initialize result
         result = StepResult(
@@ -152,6 +183,17 @@ class DefaultConditionalStepExecutor:
                 elif conditional_step.default_branch_pipeline is not None:
                     branch_to_execute = conditional_step.default_branch_pipeline
                 else:
+                    # Attempt stringified key lookup for bool/int keys common in YAML
+                    try:
+                        key_str = str(branch_key).lower()
+                        for k, v in (conditional_step.branches or {}).items():
+                            if str(k).lower() == key_str:
+                                branch_to_execute = v
+                                resolved_key = k
+                                break
+                    except Exception:
+                        pass
+                if branch_to_execute is None:
                     telemetry.logfire.warn(
                         f"No branch found for key '{branch_key}' and no default branch provided"
                     )
@@ -167,11 +209,96 @@ class DefaultConditionalStepExecutor:
                 if resolved_key is not None and resolved_key is not branch_key:
                     result.metadata_["resolved_branch_key"] = resolved_key
                 telemetry.logfire.info(f"Executing branch for key '{branch_key}'")
+                branch_data = data
+                # Detect HITL branches: pause only when no human input is available yet
+                force_repause_after_branch = False
+                resume_requires_hitl = False
+                try:
+                    from flujo.domain.dsl.step import HumanInTheLoopStep as _HITLStep
+
+                    branch_steps = (
+                        branch_to_execute.steps
+                        if isinstance(branch_to_execute, Pipeline)
+                        else [branch_to_execute]
+                    )
+                    has_hitl = any(isinstance(_s, _HITLStep) for _s in branch_steps)
+                    if has_hitl:
+                        sp = getattr(context, "scratchpad", {}) if context is not None else {}
+                        has_input = False
+                        if isinstance(sp, dict):
+                            has_input = (
+                                sp.get("user_input") is not None or sp.get("hitl_data") is not None
+                            )
+                            resume_requires_hitl = bool(sp.get("loop_resume_requires_hitl_output"))
+                        if not has_input:
+                            msg = None
+                            for _s in branch_steps:
+                                if isinstance(_s, _HITLStep):
+                                    msg = getattr(_s, "message", None) or getattr(
+                                        _s, "message_for_user", None
+                                    )
+                                    break
+                            if context is not None and isinstance(sp, dict):
+                                sp["status"] = "paused"
+                                if data is not None:
+                                    sp["hitl_data"] = data
+                                if msg:
+                                    sp["hitl_message"] = msg
+                                setattr(context, "scratchpad", sp)
+                            raise PausedException(msg or "Awaiting human input")
+                        else:
+                            # If we have user_input from resume, feed it into branch_data for HITL step
+                            try:
+                                branch_data = sp.get("user_input", branch_data)
+                                if resume_requires_hitl:
+                                    # Preserve paused status and input so the HITL policy can auto-consume it.
+                                    sp["status"] = "paused"
+                                    sp.setdefault("user_input", branch_data)
+                                    if branch_data is not None and "hitl_data" not in sp:
+                                        sp["hitl_data"] = branch_data
+                                else:
+                                    # Consume the user_input so subsequent HITL steps in later branches pause again.
+                                    sp.pop("user_input", None)
+                                    sp.pop("hitl_data", None)
+                                    try:
+                                        sp["status"] = "running"
+                                    except Exception:
+                                        pass
+                                # Apply sink_to for the first HITL in this branch
+                                try:
+                                    first_hitl = next(
+                                        _s for _s in branch_steps if isinstance(_s, _HITLStep)
+                                    )
+                                    sink_target = getattr(first_hitl, "sink_to", None)
+                                    if isinstance(sink_target, str) and context is not None:
+                                        from flujo.utils.context import set_nested_context_field
+
+                                        set_nested_context_field(context, sink_target, branch_data)
+                                except Exception:
+                                    pass
+                                # Force a re-pause if more HITLs remain in this branch
+                                remaining_hitl_count = sum(
+                                    1 for _s in branch_steps if isinstance(_s, _HITLStep)
+                                )
+                                if remaining_hitl_count > 1:
+                                    sp["status"] = "paused"
+                                    sp.setdefault(
+                                        "pause_message",
+                                        getattr(first_hitl, "message", None)
+                                        or getattr(first_hitl, "message_for_user", "Paused"),
+                                    )
+                                    raise PausedException("Awaiting next HITL input")
+                            except Exception:
+                                pass
+                except PausedException:
+                    raise
+                except Exception:
+                    pass
+
                 # Execute selected branch
                 if branch_to_execute:
-                    branch_data = data
                     if conditional_step.branch_input_mapper:
-                        branch_data = conditional_step.branch_input_mapper(data, context)
+                        branch_data = conditional_step.branch_input_mapper(branch_data, context)
                     # Use ContextManager for proper deep isolation
                     branch_context = (
                         ContextManager.isolate(context) if context is not None else None
@@ -181,6 +308,8 @@ class DefaultConditionalStepExecutor:
                     total_tokens = 0
                     total_latency = 0.0
                     step_history = []
+                    step_result: Optional[StepResult] = None
+                    res_any = None
                     for pipeline_step in (
                         branch_to_execute.steps
                         if isinstance(branch_to_execute, Pipeline)
@@ -240,14 +369,14 @@ class DefaultConditionalStepExecutor:
                                     step_result, "name", None
                                 ) in (None, "<unknown>", ""):
                                     step_result = StepResult(
-                                        name=core._safe_step_name(pipeline_step),
+                                        name=_safe_name(pipeline_step),
                                         output=None,
                                         success=False,
                                         feedback="Missing step_result",
                                     )
                             elif isinstance(res_any, Failure):
                                 step_result = res_any.step_result or StepResult(
-                                    name=core._safe_step_name(pipeline_step),
+                                    name=_safe_name(pipeline_step),
                                     success=False,
                                     feedback=res_any.feedback,
                                 )
@@ -278,26 +407,87 @@ class DefaultConditionalStepExecutor:
                                 return res_any
                             else:
                                 step_result = StepResult(
-                                    name=core._safe_step_name(pipeline_step),
+                                    name=_safe_name(pipeline_step),
                                     success=False,
                                     feedback="Unsupported outcome",
                                 )
                         else:
                             step_result = res_any
-                        total_cost += step_result.cost_usd
-                        total_tokens += step_result.token_counts
-                        total_latency += getattr(step_result, "latency_s", 0.0)
-                        branch_data = step_result.output
-                        if not step_result.success:
-                            # Propagate branch failure details in feedback
-                            msg = step_result.feedback or "Step execution failed"
-                            result.feedback = f"Failure in branch '{branch_key}': {msg}"
-                            result.success = False
-                            result.latency_s = total_latency
-                            result.token_counts = total_tokens
-                            result.cost_usd = total_cost
-                            return to_outcome(result)
+                        if step_result is None:
+                            continue
+                    if force_repause_after_branch and isinstance(context, PipelineContext):
+                        try:
+                            sp = getattr(context, "scratchpad", None)
+                            if isinstance(sp, dict):
+                                sp["status"] = "paused"
+                                sp.setdefault(
+                                    "pause_message", getattr(conditional_step, "name", "")
+                                )
+                        except Exception:
+                            pass
+                        raise PausedException("Awaiting next HITL input")
+                    if step_result is None:
+                        step_result = StepResult(
+                            name=_safe_name(branch_to_execute),
+                            output=branch_data,
+                            success=True,
+                            attempts=1,
+                            latency_s=total_latency,
+                            token_counts=total_tokens,
+                            cost_usd=total_cost,
+                            branch_context=branch_context,
+                            metadata_={"executed_branch_key": branch_key},
+                        )
+                    try:
+                        if getattr(step_result, "branch_context", None) is not None:
+                            branch_context = step_result.branch_context
+                    except Exception:
+                        pass
+                    total_cost += step_result.cost_usd
+                    total_tokens += step_result.token_counts
+                    total_latency += getattr(step_result, "latency_s", 0.0)
+                    branch_data = step_result.output
+                    if not step_result.success:
+                        # Propagate branch failure details in feedback
+                        msg = step_result.feedback or "Step execution failed"
+                        result.feedback = f"Failure in branch '{branch_key}': {msg}"
+                        result.success = False
+                        result.latency_s = total_latency
+                        result.token_counts = total_tokens
+                        result.cost_usd = total_cost
+                        return to_outcome(result)
+                    step_history.append(step_result)
+                    res_any = step_result
+                    # Handle empty branch pipelines by short-circuiting success
+                    if not step_history and (
+                        isinstance(branch_to_execute, Pipeline)
+                        and not getattr(branch_to_execute, "steps", None)
+                    ):
+                        step_result = StepResult(
+                            name=_safe_name(branch_to_execute),
+                            success=True,
+                            output=branch_data,
+                            attempts=1,
+                            latency_s=total_latency,
+                            token_counts=total_tokens,
+                            cost_usd=total_cost,
+                            branch_context=branch_context,
+                            metadata_={"executed_branch_key": branch_key},
+                        )
                         step_history.append(step_result)
+                    # If branch had no executable steps, treat as no-op success
+                    if (step_result is None or not step_history) and isinstance(
+                        branch_to_execute, Pipeline
+                    ):
+                        result.success = True
+                        result.output = branch_data
+                        result.latency_s = total_latency
+                        result.token_counts = total_tokens
+                        result.cost_usd = total_cost
+                        result.branch_context = branch_context
+                        result.metadata_["executed_branch_key"] = branch_key
+                        return to_outcome(result)
+
                     # Apply optional branch_output_mapper
                     final_output = branch_data
                     if getattr(conditional_step, "branch_output_mapper", None):
@@ -317,12 +507,40 @@ class DefaultConditionalStepExecutor:
                     result.latency_s = total_latency
                     result.token_counts = total_tokens
                     result.cost_usd = total_cost
-                    # Update branch context using ContextManager
-                    result.branch_context = (
+                    if resume_requires_hitl and isinstance(context, PipelineContext):
+                        try:
+                            sp_parent = getattr(context, "scratchpad", None)
+                            if isinstance(sp_parent, dict):
+                                sp_parent.pop("loop_resume_requires_hitl_output", None)
+                                sp_parent.pop("user_input", None)
+                                sp_parent.pop("hitl_data", None)
+                        except Exception:
+                            pass
+                    # Update branch context using ContextManager and propagate into parent
+                    merged_ctx = (
                         ContextManager.merge(context, branch_context)
                         if context is not None
                         else branch_context
                     )
+                    result.branch_context = merged_ctx
+                    if merged_ctx is not None and context is not None and merged_ctx is not context:
+                        try:
+                            # Ensure parent context reflects merged scratchpad (including HITL user_input)
+                            ContextManager.merge(context, merged_ctx)
+                        except Exception:
+                            pass
+                    # Ensure HITL user input set on parent context when available in branch
+                    try:
+                        bc_sp = getattr(branch_context, "scratchpad", None)
+                        ctx_sp = getattr(context, "scratchpad", None)
+                        if (
+                            isinstance(bc_sp, dict)
+                            and "user_input" in bc_sp
+                            and isinstance(ctx_sp, dict)
+                        ):
+                            ctx_sp.setdefault("user_input", bc_sp.get("user_input"))
+                    except Exception:
+                        pass
                     # Invoke context setter on success when provided
                     if context_setter is not None:
                         try:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Type, cast
+
 from ._shared import (
     Any,
     Callable,
@@ -22,6 +24,8 @@ from ._shared import (
     UsageLimitExceededError,
     telemetry,
 )
+from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
 
 # --- Import Step Executor policy ---
 
@@ -39,7 +43,11 @@ class ImportStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultImportStepExecutor:
+class DefaultImportStepExecutor(StepPolicy[ImportStep]):
+    @property
+    def handles_type(self) -> Type[ImportStep]:
+        return ImportStep
+
     async def execute(
         self,
         core: Any,
@@ -50,6 +58,14 @@ class DefaultImportStepExecutor:
         limits: Optional[UsageLimits],
         context_setter: Callable[[PipelineResult[Any], Optional[Any]], None],
     ) -> StepOutcome[StepResult]:
+        if isinstance(step, ExecutionFrame):
+            frame = step
+            step = cast(ImportStep, frame.step)
+            data = frame.data
+            context = frame.context
+            resources = frame.resources
+            limits = frame.limits
+            context_setter = frame.context_setter
         from ..context_manager import ContextManager
         import json
         import copy
@@ -203,6 +219,7 @@ class DefaultImportStepExecutor:
             pass
 
         # Execute the child pipeline directly via core orchestration to preserve control-flow semantics
+        child_final_ctx = sub_context
         try:
             pipeline_result: PipelineResult[Any] = await core._execute_pipeline_via_policies(
                 step.pipeline,
@@ -234,6 +251,27 @@ class DefaultImportStepExecutor:
                                 context = merged_ctx
                         except Exception:
                             pass
+                # Ensure parent scratchpad reflects child pause markers
+                try:
+                    if (
+                        context is not None
+                        and hasattr(context, "scratchpad")
+                        and isinstance(context.scratchpad, dict)
+                        and sub_context is not None
+                        and hasattr(sub_context, "scratchpad")
+                        and isinstance(sub_context.scratchpad, dict)
+                    ):
+                        for key in (
+                            "status",
+                            "pause_message",
+                            "hitl_message",
+                            "hitl_data",
+                            "paused_step_input",
+                        ):
+                            if key in sub_context.scratchpad:
+                                context.scratchpad[key] = sub_context.scratchpad[key]
+                except Exception:
+                    pass
                 # Default to propagating unless explicitly disabled on the step
                 try:
                     propagate = bool(getattr(step, "propagate_hitl", True))
@@ -247,9 +285,29 @@ class DefaultImportStepExecutor:
                             if isinstance(sp, dict):
                                 sp["status"] = "paused"
                                 msg = getattr(e, "message", None)
-                                sp["pause_message"] = msg if isinstance(msg, str) else str(e)
+                                # Use plain message for backward compatibility
+                                sp["pause_message"] = (
+                                    msg if isinstance(msg, str) else getattr(e, "message", "")
+                                )
+                                sp.setdefault("hitl_message", sp.get("pause_message"))
                         except Exception:
                             pass
+                    # Also preserve assistant turn so resume later has both roles
+                    try:
+                        if context is not None:
+                            from flujo.domain.models import ConversationTurn, ConversationRole
+
+                            hist = getattr(context, "conversation_history", None)
+                            if not isinstance(hist, list):
+                                hist = []
+                            msg = getattr(e, "message", None) or ""
+                            if msg and (not hist or getattr(hist[-1], "content", None) != msg):
+                                hist.append(
+                                    ConversationTurn(role=ConversationRole.assistant, content=msg)
+                                )
+                            setattr(context, "conversation_history", hist)
+                    except Exception:
+                        pass
                 else:
                     # Ensure status remains running when not propagating
                     if context is not None and hasattr(context, "scratchpad"):
@@ -267,7 +325,7 @@ class DefaultImportStepExecutor:
 
             # Proxy child HITL to parent when requested
             if propagate:
-                return Paused(message=str(e))
+                return Paused(message=getattr(e, "message", ""))
             # Legacy/opt-out: do not pause parent; return empty success result
             parent_sr = StepResult(
                 name=step.name,
@@ -338,10 +396,14 @@ class DefaultImportStepExecutor:
             token_counts=int(getattr(pipeline_result, "total_tokens", 0) or 0),
             cost_usd=float(getattr(pipeline_result, "total_cost_usd", 0.0) or 0.0),
             feedback=None,
-            branch_context=context,
+            branch_context=(
+                child_final_ctx if step.inherit_context and child_final_ctx is not None else context
+            ),
             metadata_={},
             step_history=([inner_sr] if inner_sr is not None else []),
         )
+        if getattr(step, "outputs", None) == []:
+            parent_sr.branch_context = context
 
         # Attach traceable metadata for diagnostics and tests
         try:
@@ -382,6 +444,30 @@ class DefaultImportStepExecutor:
 
         # Determine child's final context for default-merge behavior
         child_final_ctx = getattr(pipeline_result, "final_pipeline_context", sub_context)
+        try:
+            if getattr(pipeline_result, "step_history", None):
+                last_ctx = getattr(pipeline_result.step_history[-1], "branch_context", None)
+                if last_ctx is not None:
+                    child_final_ctx = last_ctx
+        except Exception:
+            pass
+        # Proactively merge child scratchpad into parent context to avoid state leakage
+        # when upstream merge strategies or exclusions skip scratchpad fields.
+        try:
+            if getattr(step, "outputs", None) != []:
+                if (
+                    context is not None
+                    and child_final_ctx is not None
+                    and hasattr(context, "scratchpad")
+                    and hasattr(child_final_ctx, "scratchpad")
+                    and isinstance(context.scratchpad, dict)
+                    and isinstance(child_final_ctx.scratchpad, dict)
+                ):
+                    context.scratchpad.update(child_final_ctx.scratchpad)
+                    # Keep branch_context aligned with parent after merge to simplify callers
+                    child_final_ctx = context
+        except Exception:
+            pass
 
         if inner_sr is not None and not getattr(inner_sr, "success", True):
             # Honor on_failure behavior for explicit child failure

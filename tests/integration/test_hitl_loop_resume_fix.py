@@ -570,7 +570,10 @@ async def test_hitl_in_loop_resume_at_correct_step():
     def track(step_name: str):
         def tracker(x):
             # Get current iteration from context if available
-            executed_steps.append((len([s for s in executed_steps if s[1] == "step0"]), step_name))
+            base_iter = len([s for s in executed_steps if s[1] == "step0"])
+            if step_name != "step0":
+                base_iter = max(0, base_iter - 1)
+            executed_steps.append((base_iter, step_name))
             return f"{step_name}_done"
 
         return tracker

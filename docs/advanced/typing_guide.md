@@ -27,6 +27,28 @@ async def to_upper(text: str) -> str:
 
 Here `to_upper` is already a `Step[str, str]` ready to be composed with other steps.
 
+### Background steps and validation
+
+Steps configured with `execution_mode="background"` pass their **input** through to downstream steps. The type validator accounts for this by using the step's input type when checking compatibility, avoiding false mismatches when the background step's declared output differs from the pass-through value.
+
+```python
+from flujo import step, StepConfig
+
+bg_cfg = StepConfig(execution_mode="background")
+
+@step(config=bg_cfg)
+async def enqueue(task: str) -> dict:
+    # Runs in background; downstream receives the original string
+    return {"scheduled": task}
+
+@step
+async def consume(task: str) -> str:
+    return task.upper()
+
+# Valid: background step passes its input type (str) to consume()
+pipeline = enqueue >> consume
+```
+
 ## Type Safety in Pipelines
 
 Pipelines are strongly typed. If you try to chain incompatible steps, static analyzers such as `mypy` will flag an error.
@@ -99,5 +121,18 @@ result: PipelineResult[str] = runner.run("hello")
 print(result.final_pipeline_context.history)  # ['hello']
 print(result.step_history[-1].output)        # 'HELLO!'
 ```
+
+## JSON Types: Prefer `JSONObject` over `dict[str, Any]`
+
+Architecture checks require new code to avoid `Dict[str, Any]` for unstructured JSON. Use the shared alias instead:
+
+```python
+from flujo.type_definitions.common import JSONObject
+
+def make_payload(user_id: str) -> JSONObject:
+    return {"user_id": user_id, "metadata": {"source": "cli"}}
+```
+
+This keeps JSON shapes consistent across agents, plugins, and steps while satisfying the type-safety gate.
 
 This pipeline records each input in the context while producing an enthusiastic response.

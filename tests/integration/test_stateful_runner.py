@@ -3,8 +3,7 @@ from datetime import datetime
 import asyncio
 import pytest
 
-from flujo.exceptions import OrchestratorError
-
+from flujo.exceptions import ExecutionError
 from flujo.state import WorkflowState
 from flujo.state.backends.memory import InMemoryBackend
 from flujo.domain import Step
@@ -125,7 +124,7 @@ async def test_invalid_step_index_raises() -> None:
         initial_context_data={"run_id": run_id},
     )
     with pytest.raises(
-        OrchestratorError,
+        ExecutionError,
         match=r"Invalid persisted step index 3 for pipeline with 2 steps",
     ):
         async for _ in runner.run_async(

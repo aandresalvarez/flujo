@@ -8,17 +8,20 @@ from flujo.cli.main import app
 
 def _clean(text: str) -> str:
     # Drop telemetry lines and trailing spaces; retain content for semantic checks
+    ansi_re = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
     lines: list[str] = []
     for ln in text.splitlines():
         if re.match(r"\d{4}-\d{2}-\d{2}.*Logfire telemetry", ln):
             continue
-        lines.append(ln.rstrip())
+        # Strip ANSI color codes and trailing whitespace
+        ln = ansi_re.sub("", ln).rstrip()
+        lines.append(ln)
     return "\n".join(lines)
 
 
 def test_top_level_help_semantics() -> None:
     runner = CliRunner()
-    out = _clean(runner.invoke(app, ["--help"]).stdout)
+    out = _clean(runner.invoke(app, ["--help"], color=False).stdout)
 
     # Usage and description present
     assert "Usage: root" in out
@@ -38,7 +41,7 @@ def test_top_level_help_semantics() -> None:
 
 def test_lens_help_semantics() -> None:
     runner = CliRunner()
-    out = _clean(runner.invoke(app, ["lens", "--help"]).stdout)
+    out = _clean(runner.invoke(app, ["lens", "--help"], color=False).stdout)
 
     # Usage and description
     assert "Usage: root lens" in out
@@ -51,7 +54,7 @@ def test_lens_help_semantics() -> None:
 
 def test_dev_help_semantics() -> None:
     runner = CliRunner()
-    out = _clean(runner.invoke(app, ["dev", "--help"]).stdout)
+    out = _clean(runner.invoke(app, ["dev", "--help"], color=False).stdout)
 
     # Usage and description
     assert "Usage: root dev" in out

@@ -32,6 +32,7 @@ Quick Start:
 
 from .application.runner import Flujo
 from .domain.dsl import Pipeline, Step
+from .domain.dsl.step import StepConfig
 from .domain.dsl.step import step  # Add back the step decorator
 from .domain.models import PipelineResult
 from .infra import init_telemetry
@@ -52,6 +53,7 @@ __all__ = [
     "Flujo",
     "Pipeline",
     "Step",
+    "StepConfig",
     "step",  # Add step decorator
     "PipelineResult",
     "make_agent_async",  # Add agent factory

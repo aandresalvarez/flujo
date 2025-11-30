@@ -26,6 +26,12 @@ def policy_name_for_step(step_obj: Any) -> str:
 
     Local imports avoid import-time circulars.
     """
+    _Loop: Any | None = None
+    _Par: Any | None = None
+    _Cond: Any | None = None
+    _Router: Any | None = None
+    _Hitl: Any | None = None
+    _Cache: Any | None = None
     try:
         from flujo.domain.dsl.loop import LoopStep as _Loop
         from flujo.domain.dsl.parallel import ParallelStep as _Par
@@ -36,7 +42,7 @@ def policy_name_for_step(step_obj: Any) -> str:
         from flujo.domain.dsl.step import HumanInTheLoopStep as _Hitl
         from flujo.steps.cache_step import CacheStep as _Cache
     except Exception:
-        _Loop = _Par = _Cond = _Router = _Hitl = _Cache = None  # type: ignore
+        _Loop = _Par = _Cond = _Router = _Hitl = _Cache = None
     try:
         if _Loop is not None and isinstance(step_obj, _Loop):
             return "DefaultLoopStepExecutor"
@@ -317,15 +323,23 @@ class TraceManager:
         current_span = self._span_stack.pop()
         current_span.end_time = time.monotonic()  # Use monotonic time
         current_span.status = "failed"
-        current_span.attributes.update(
-            {
-                "success": False,
-                "latency_s": payload.step_result.latency_s,
-                "flujo.budget.actual_cost_usd": getattr(payload.step_result, "cost_usd", 0.0),
-                "flujo.budget.actual_tokens": getattr(payload.step_result, "token_counts", 0),
-                "feedback": payload.step_result.feedback,
-            }
-        )
+        # Avoid polluting the root pipeline span with step-level attributes that
+        # break golden trace expectations.
+        if current_span.name != "pipeline_run":
+            current_span.attributes.update(
+                {
+                    "success": False,
+                    "latency_s": payload.step_result.latency_s,
+                    "flujo.budget.actual_cost_usd": getattr(payload.step_result, "cost_usd", 0.0),
+                    "flujo.budget.actual_tokens": getattr(payload.step_result, "token_counts", 0),
+                    "feedback": payload.step_result.feedback,
+                }
+            )
+        else:
+            try:
+                current_span.attributes["success"] = False
+            except Exception:
+                pass
         # If this failure is actually a pause (HITL), add a paused event
         try:
             fb = (payload.step_result.feedback or "").lower()

@@ -4,7 +4,7 @@ from pydantic import BaseModel, ValidationError
 
 from flujo.domain.dsl import Step
 from flujo.domain.models import PipelineContext
-from flujo.exceptions import OrchestratorError
+from flujo.exceptions import ResumeError
 from flujo.testing.utils import StubAgent, gather_result
 from tests.conftest import create_test_flujo
 
@@ -116,7 +116,7 @@ async def test_cannot_resume_non_paused_pipeline() -> None:
     pipeline = Step.model_validate({"name": "a", "agent": StubAgent(["done"])})
     runner = create_test_flujo(pipeline)
     result = await gather_result(runner, "x")
-    with pytest.raises(OrchestratorError):
+    with pytest.raises(ResumeError):
         await runner.resume_async(result, "irrelevant")
 
 
