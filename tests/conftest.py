@@ -1,5 +1,7 @@
 from __future__ import annotations
 import os
+import sys
+import traceback
 import importlib.util as _importlib_util
 from pathlib import Path
 from typing import Any, Optional, Dict
@@ -357,6 +359,45 @@ def pytest_ignore_collect(collection_path, config):  # type: ignore[override]
     except Exception:
         return None
     return None
+
+
+@pytest.fixture(scope="session", autouse=True)
+def guard_unraisable_hook() -> None:
+    """Prevent RecursionError in sys.unraisablehook during pytest collection.
+
+    On Python 3.12 with xdist we occasionally see the unraisable hook itself
+    recurse while formatting an exception, which aborts the run. Delegate to the
+    original hook and, if it recurses, emit a compact fallback log instead.
+    """
+
+    original_hook = sys.unraisablehook
+
+    def _safe_hook(unraisable) -> None:  # type: ignore[no-untyped-def]
+        try:
+            original_hook(unraisable)
+            return
+        except RecursionError:
+            pass  # Fall through to safe logging
+
+        try:
+            err_msg = getattr(unraisable, "err_msg", "") or "Unraisable exception"
+            exc_type = getattr(unraisable, "exc_type", None)
+            exc_value = getattr(unraisable, "exc_value", None)
+            tb = getattr(unraisable, "exc_traceback", None)
+            formatted = "".join(traceback.format_exception(exc_type, exc_value, tb))
+        except Exception:
+            formatted = "<unable to format unraisable exception>"
+
+        print(
+            f"[unraisable-guard] {err_msg}: {exc_type} {exc_value}\n{formatted}",
+            file=sys.stderr,
+        )
+
+    sys.unraisablehook = _safe_hook
+    try:
+        yield
+    finally:
+        sys.unraisablehook = original_hook
 
 
 def get_registered_factory(skill_id: str):
