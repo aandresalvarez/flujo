@@ -86,6 +86,8 @@ class ConsoleTracer:
 
     def _handle_pre_run(self, payload: PreRunPayload) -> None:
         """Handle the ``pre_run`` event."""
+        if getattr(payload, "is_background", False):
+            return
         initial_input = payload.initial_input
         title = "Pipeline Start"
         if self._rich_available and self._RPanel is not None and self._RText is not None:
@@ -106,6 +108,8 @@ class ConsoleTracer:
           ``pipeline_result.final_pipeline_context`` as a fallback).
         - Adjust the title and styling accordingly.
         """
+        if getattr(payload, "is_background", False):
+            return
         pipeline_result = payload.pipeline_result
 
         # Determine final status
@@ -142,6 +146,8 @@ class ConsoleTracer:
 
     def _handle_pre_step(self, payload: PreStepPayload) -> None:
         """Handle the ``pre_step`` event."""
+        if getattr(payload, "is_background", False):
+            return
         step = payload.step
         step_input = payload.step_input
         indent = "  " * self._depth
@@ -158,6 +164,8 @@ class ConsoleTracer:
 
     def _handle_post_step(self, payload: PostStepPayload) -> None:
         """Handle the ``post_step`` event."""
+        if getattr(payload, "is_background", False):
+            return
         step_result = payload.step_result
         self._depth = max(0, self._depth - 1)
         indent = "  " * self._depth
@@ -177,6 +185,8 @@ class ConsoleTracer:
 
     def _handle_on_step_failure(self, payload: OnStepFailurePayload) -> None:
         """Handle the ``on_step_failure`` event."""
+        if getattr(payload, "is_background", False):
+            return
         step_result = payload.step_result
         self._depth = max(0, self._depth - 1)
         indent = "  " * self._depth

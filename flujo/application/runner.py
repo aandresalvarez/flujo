@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import datetime
+from dataclasses import dataclass
 from typing import (
     Any,
     Dict,
@@ -32,6 +33,7 @@ from .core.context_manager import (
     _accepts_param,
     _extract_missing_fields,
 )
+from .core.state_manager import StateManager
 from .core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
 from .core.factories import BackendFactory, ExecutorFactory
 from .run_plan_resolver import RunPlanResolver
@@ -65,6 +67,20 @@ InfiniteRedirectError = _InfiniteRedirectError
 RunnerInT = TypeVar("RunnerInT")
 RunnerOutT = TypeVar("RunnerOutT")
 ContextT = TypeVar("ContextT", bound=PipelineContext)
+
+
+@dataclass
+class BackgroundTaskInfo:
+    """Metadata about a persisted background task."""
+
+    task_id: str
+    run_id: str
+    parent_run_id: Optional[str]
+    step_name: Optional[str]
+    status: str
+    error: Optional[str]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
 
 
 class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
@@ -510,6 +526,233 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     async def replay_from_trace(self, run_id: str) -> PipelineResult[ContextT]:
         """Replay a prior run deterministically using recorded trace and responses (FSD-013)."""
         return await replay_from_trace(self, run_id)
+
+    @staticmethod
+    def _parse_timestamp(value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except Exception:
+                return None
+        return None
+
+    def _find_step_by_name(self, name: str) -> Optional[Step[Any, Any]]:
+        if self.pipeline is None:
+            return None
+        LoopStepType: Any = None
+        try:
+            from ..domain.dsl.loop import LoopStep as _LoopStep
+
+            LoopStepType = _LoopStep
+        except Exception:
+            pass
+
+        queue: list[Step[Any, Any]] = list(getattr(self.pipeline, "steps", []))
+        visited: set[int] = set()
+
+        while queue:
+            current = queue.pop(0)
+            if id(current) in visited:
+                continue
+            visited.add(id(current))
+
+            if getattr(current, "name", None) == name:
+                return current
+
+            if (
+                LoopStepType is not None
+                and isinstance(current, LoopStepType)
+                and getattr(current, "body", None)
+            ):
+                queue.append(current.body)
+
+            branches = getattr(current, "branches", None)
+            if branches:
+                queue.extend(list(branches))
+
+            nested_steps = getattr(current, "steps", None)
+            if nested_steps:
+                queue.extend(list(nested_steps))
+
+        return None
+
+    async def get_failed_background_tasks(
+        self,
+        parent_run_id: Optional[str] = None,
+        hours_back: int = 24,
+    ) -> list[BackgroundTaskInfo]:
+        """List failed background tasks for optional parent run."""
+        if self.state_backend is None:
+            return []
+
+        tasks = await self.state_backend.get_failed_background_tasks(
+            parent_run_id=parent_run_id, hours_back=hours_back
+        )
+        results: list[BackgroundTaskInfo] = []
+        for task in tasks:
+            metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
+            task_id = metadata.get("task_id") or task.get("task_id")
+            if not task_id:
+                continue
+            results.append(
+                BackgroundTaskInfo(
+                    task_id=str(task_id),
+                    run_id=str(task.get("run_id")),
+                    parent_run_id=metadata.get("parent_run_id") or task.get("parent_run_id"),
+                    step_name=metadata.get("step_name"),
+                    status=str(task.get("status")),
+                    error=metadata.get("background_error") or task.get("background_error"),
+                    created_at=self._parse_timestamp(task.get("created_at")),
+                    updated_at=self._parse_timestamp(task.get("updated_at")),
+                )
+            )
+        return results
+
+    async def resume_background_task(
+        self,
+        task_id: str,
+        new_data: Optional[Any] = None,
+    ) -> PipelineResult[ContextT]:
+        """Resume a failed background task synchronously."""
+        if self.state_backend is None:
+            raise ValueError("State backend required for background task resumption")
+
+        tasks = await self.state_backend.list_background_tasks(status="failed")
+        task = next(
+            (
+                t
+                for t in tasks
+                if (t.get("metadata") or {}).get("task_id") == task_id
+                or t.get("task_id") == task_id
+            ),
+            None,
+        )
+        if task is None:
+            raise ValueError(f"Background task '{task_id}' not found")
+
+        bg_run_id = task.get("run_id")
+        if bg_run_id is None:
+            raise ValueError(f"Background task '{task_id}' missing run_id")
+
+        state_manager = StateManager[ContextT](self.state_backend)
+        context, _, _, _, _, _, _ = await state_manager.load_workflow_state(
+            bg_run_id, context_model=self.context_model
+        )
+
+        metadata_dict: Dict[str, Any] = (
+            task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
+        )
+        data = new_data if new_data is not None else metadata_dict.get("input_data")
+        step_name = metadata_dict.get("step_name")
+        step = self._find_step_by_name(step_name) if step_name else None
+        if step is None:
+            raise ValueError(f"Step '{step_name}' not found in pipeline")
+
+        executor = getattr(self.backend, "_executor", None)
+        if executor is None:
+            raise ValueError("Executor not available for resuming background tasks")
+
+        step_copy = step.model_copy(deep=True)
+        if hasattr(step_copy, "config"):
+            try:
+                step_copy.config.execution_mode = "sync"
+            except Exception:
+                pass
+
+        final_context = context
+
+        def _context_setter(_res: PipelineResult[Any], updated_ctx: Optional[Any]) -> None:
+            nonlocal final_context
+            if updated_ctx is not None:
+                final_context = updated_ctx
+
+        frame = executor._make_execution_frame(
+            step_copy,
+            data,
+            context,
+            self.resources,
+            self.usage_limits,
+            _context_setter,
+            stream=False,
+            on_chunk=None,
+            fallback_depth=0,
+            quota=None,
+            result=None,
+        )
+
+        meta_for_persist: Dict[str, Any] = dict(metadata_dict)
+        meta_for_persist.setdefault("task_id", task_id)
+        meta_for_persist.setdefault("is_background_task", True)
+
+        try:
+            outcome = await executor.execute(frame)
+            step_result = executor._unwrap_outcome_to_step_result(
+                outcome, executor._safe_step_name(step_copy)
+            )
+            if step_result.branch_context is not None:
+                final_context = step_result.branch_context
+            status = "completed" if getattr(step_result, "success", False) else "failed"
+            if status == "completed":
+                meta_for_persist.pop("background_error", None)
+            await state_manager.persist_workflow_state(
+                run_id=bg_run_id,
+                context=final_context,
+                current_step_index=1,
+                last_step_output=getattr(step_result, "output", None),
+                status=status,
+                step_history=[step_result],
+                metadata=meta_for_persist,
+            )
+            return PipelineResult[ContextT](
+                step_history=[step_result],
+                final_pipeline_context=final_context,
+                success=bool(getattr(step_result, "success", False)),
+            )
+        except Exception as exc:
+            meta_for_persist["background_error"] = str(exc)
+            await state_manager.persist_workflow_state(
+                run_id=bg_run_id,
+                context=final_context,
+                current_step_index=1,
+                last_step_output=None,
+                status="failed",
+                step_history=[],
+                metadata=meta_for_persist,
+            )
+            raise
+
+    async def retry_failed_background_tasks(
+        self,
+        parent_run_id: str,
+        max_retries: int = 3,
+    ) -> list[PipelineResult[ContextT]]:
+        """Retry failed background tasks for a given parent run."""
+        results: list[PipelineResult[ContextT]] = []
+        tasks = await self.get_failed_background_tasks(parent_run_id=parent_run_id)
+        for task in tasks:
+            for attempt in range(max_retries):
+                try:
+                    result = await self.resume_background_task(task.task_id)
+                    results.append(result)
+                    break
+                except Exception:
+                    if attempt == max_retries - 1:
+                        raise
+                    await asyncio.sleep(2**attempt)
+        return results
+
+    async def cleanup_stale_background_tasks(self, stale_hours: int = 24) -> int:
+        """Mark stale running background tasks as failed."""
+        if self.state_backend is None:
+            return 0
+        if hasattr(self.state_backend, "cleanup_stale_background_tasks"):
+            try:
+                return await self.state_backend.cleanup_stale_background_tasks(stale_hours)
+            except Exception:
+                return 0
+        return 0
 
     async def run_with_events(
         self,

@@ -105,6 +105,18 @@ class PrometheusCollector:
         avg.add_metric([], stats.get("average_execution_time_ms", 0))
         yield avg
 
+        # Background tasks by status
+        bg_counts = stats.get("background_status_counts", {}) or {}
+        if isinstance(bg_counts, dict):
+            bg_gauge = GaugeMetricFamily(
+                "flujo_background_tasks_by_status",
+                "Background tasks by status",
+                labels=["status"],
+            )
+            for status, count in bg_counts.items():
+                bg_gauge.add_metric([status], count)
+            yield bg_gauge
+
 
 _SERVERS: list[tuple[Any, threading.Thread, int]] = []
 

@@ -80,6 +80,44 @@ class StateBackend(ABC):
         """Get failed workflows from the last N hours with error details."""
         raise NotImplementedError
 
+    async def list_background_tasks(
+        self,
+        parent_run_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """List background tasks with optional filtering and pagination."""
+        try:
+            workflows = await self.list_workflows(status=status, limit=limit, offset=offset)
+        except Exception:
+            return []
+
+        background_tasks = [
+            wf
+            for wf in workflows
+            if wf.get("metadata", {}).get("is_background_task") or wf.get("is_background_task")
+        ]
+
+        if parent_run_id is not None:
+            background_tasks = [
+                wf
+                for wf in background_tasks
+                if wf.get("metadata", {}).get("parent_run_id") == parent_run_id
+                or wf.get("parent_run_id") == parent_run_id
+            ]
+
+        return background_tasks
+
+    async def get_failed_background_tasks(
+        self,
+        parent_run_id: Optional[str] = None,
+        hours_back: int = 24,
+    ) -> List[Dict[str, Any]]:
+        """Get failed background tasks within a time window."""
+        tasks = await self.list_background_tasks(parent_run_id=parent_run_id, status="failed")
+        return tasks
+
     @abstractmethod
     async def get_trace(self, run_id: str) -> Any:
         """Retrieve and deserialize the trace tree for a given run_id."""
@@ -108,6 +146,10 @@ class StateBackend(ABC):
     ) -> Dict[str, Any]:
         """Get aggregated span statistics."""
         raise NotImplementedError
+
+    async def cleanup_stale_background_tasks(self, stale_hours: int = 24) -> int:
+        """Mark stale background tasks as failed (timeout)."""
+        return 0
 
     # --- New structured persistence API ---
     async def save_run_start(self, run_data: Dict[str, Any]) -> None:

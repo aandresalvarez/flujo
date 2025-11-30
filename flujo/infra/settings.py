@@ -20,6 +20,19 @@ from ..exceptions import SettingsError
 dotenv.load_dotenv()
 
 
+class BackgroundTaskSettings(BaseModel):
+    """Settings for background task management."""
+
+    enable_state_tracking: bool = True
+    enable_resumability: bool = True
+    enable_quota: bool = True
+    max_cost_per_task: float = 1.0
+    max_tokens_per_task: int = 10000
+    default_retry_limit: int = 3
+    state_retention_days: int = 30
+    stale_task_timeout_hours: int = 24
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables. Standard names are preferred."""
 
@@ -79,6 +92,9 @@ class Settings(BaseSettings):
     # Enforce strict context isolation and merging (CI-friendly). Can be overridden per-executor.
     strict_context_isolation: bool = False
     strict_context_merge: bool = False
+
+    # --- Background task management ---
+    background_tasks: BackgroundTaskSettings = BackgroundTaskSettings()
 
     # --- Default models for each agent ---
     default_solution_model: str = "openai:gpt-4o"

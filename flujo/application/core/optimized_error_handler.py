@@ -292,7 +292,14 @@ class ErrorClassifier:
             ErrorCategory.TIMEOUT: ["timeout", "deadline", "expired", "time limit"],
             ErrorCategory.AUTHENTICATION: ["auth", "login", "credential", "token", "unauthorized"],
             ErrorCategory.AUTHORIZATION: ["permission", "access", "forbidden", "privilege"],
-            ErrorCategory.VALIDATION: ["invalid", "malformed", "format", "schema", "validation"],
+            ErrorCategory.VALIDATION: [
+                "invalid",
+                "malformed",
+                "format",
+                "schema",
+                "validation",
+                "valueerror",
+            ],
             ErrorCategory.RESOURCE_EXHAUSTION: [
                 "memory",
                 "disk",

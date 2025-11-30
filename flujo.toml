@@ -25,3 +25,15 @@ completion_tokens_per_1k = 0.0006
 # [budgets.default]
 # total_cost_usd_limit = 10.0
 # total_tokens_limit = 100000
+
+# Background task controls
+[background_tasks]
+# Enable persistence and resumability for background steps
+enable_state_tracking = true
+enable_resumability = true
+enable_quota = true
+# Per-task budgets when no parent quota is available
+max_cost_per_task = 1.0
+max_tokens_per_task = 10000
+# Cleanup threshold for zombie background tasks
+stale_task_timeout_hours = 24

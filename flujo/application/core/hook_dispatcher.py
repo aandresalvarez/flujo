@@ -26,6 +26,7 @@ from ...domain.types import HookCallable
 from ...exceptions import PipelineAbortSignal
 
 __all__ = ["_dispatch_hook", "_should_dispatch", "_get_hook_params"]
+IS_BACKGROUND_FALLBACK_RUN_ID_MARKER = "_bg_"
 
 # Get the flujo logger for proper test capture
 _flujo_logger = logging.getLogger("flujo")
@@ -59,6 +60,36 @@ def _should_dispatch(annotation: Any, payload: HookPayload) -> bool:
     if isinstance(annotation, type):
         return isinstance(payload, annotation)
     return True
+
+
+def _is_background_context(context: Any) -> bool:
+    """Best-effort determination of background execution based on context."""
+    try:
+        scratch = getattr(context, "scratchpad", None)
+        if isinstance(scratch, dict) and scratch.get("is_background_task"):
+            return True
+    except Exception:
+        pass
+
+    try:
+        run_id = getattr(context, "run_id", None)
+        if isinstance(run_id, str) and IS_BACKGROUND_FALLBACK_RUN_ID_MARKER in run_id:
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
+def _is_background_step(step: Any) -> bool:
+    """Detect if a step is configured for background execution."""
+    try:
+        cfg = getattr(step, "config", None)
+        if cfg is not None and getattr(cfg, "execution_mode", "sync") == "background":
+            return True
+    except Exception:
+        return False
+    return False
 
 
 def _log_hook_error(msg: str) -> None:
@@ -116,6 +147,12 @@ async def _dispatch_hook(
     PayloadCls = payload_map.get(event_name)
     if PayloadCls is None:
         return
+
+    # Derive is_background if not explicitly provided
+    if "is_background" not in kwargs:
+        ctx = kwargs.get("context")
+        step_obj = kwargs.get("step")
+        kwargs["is_background"] = _is_background_context(ctx) or _is_background_step(step_obj)
 
     payload = PayloadCls(event_name=cast(Any, event_name), **kwargs)
 
