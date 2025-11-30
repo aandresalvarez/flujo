@@ -11,6 +11,7 @@ from typing import (
     Dict,
     TypeVar,
     Callable,
+    overload,
     cast,
 )
 from types import FunctionType, BuiltinFunctionType, MethodType
@@ -24,6 +25,14 @@ _model_cache: dict[str, tuple[Optional[str], str]] = {}
 T = TypeVar("T")
 # Fast-path callable types for micro-optimized resolution in tight loops
 _FAST_CALLABLE_TYPES: tuple[type[Any], ...] = (FunctionType, BuiltinFunctionType, MethodType)
+
+
+@overload
+def resolve_callable(value: Callable[[], T]) -> T: ...
+
+
+@overload
+def resolve_callable(value: T) -> T: ...
 
 
 def resolve_callable(value: T | Callable[[], T]) -> T:
@@ -40,6 +49,7 @@ def resolve_callable(value: T | Callable[[], T]) -> T:
         The resolved value of type T
     """
     # Fast path for common callable types to avoid callable() overhead in hot loops
+    # Avoid getattr/cast overhead in the hot path.
     if isinstance(value, _FAST_CALLABLE_TYPES):
         return cast(T, value())
 
