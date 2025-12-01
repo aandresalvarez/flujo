@@ -31,10 +31,8 @@ class StateSerializer(Generic[ContextT]):
         if context is None:
             return "none"
 
-        # Use a fast hash of the context data, excluding auto-generated fields
-        context_data = context.model_dump()
-
-        # Remove auto-generated fields that shouldn't affect change detection
+        # OPTIMIZATION: Avoid model_dump() which can be slow for large contexts
+        # Instead, iterate over fields directly
         fields_to_exclude = {
             "run_id",
             "created_at",
@@ -43,23 +41,58 @@ class StateSerializer(Generic[ContextT]):
             "pipeline_name",
             "pipeline_version",
         }
-        filtered_data = {k: v for k, v in context_data.items() if k not in fields_to_exclude}
 
-        # For large contexts, use a simpler hash to avoid expensive JSON serialization
-        if len(filtered_data) > 10 or any(
-            isinstance(v, (list, dict)) and len(str(v)) > 1000 for v in filtered_data.values()
-        ):
+        data_items: list[tuple[str, Any]] = []
+        if isinstance(context, BaseModel):
+            # Fast path for Pydantic models
+            # Fix deprecation: access model_fields from class
+            for name in type(context).model_fields:
+                if name in fields_to_exclude:
+                    continue
+                data_items.append((name, getattr(context, name)))
+        else:
+            # Fallback for dicts or other types
+            try:
+                data = context.model_dump() if hasattr(context, "model_dump") else dict(context)
+                for k, v in data.items():
+                    if k not in fields_to_exclude:
+                        data_items.append((k, v))
+            except Exception:
+                return "error_hashing_context"
+
+        # Heuristic: Check if context is "large" without expensive string conversion
+        is_large = len(data_items) > 10
+        if not is_large:
+            for _, v in data_items:
+                if isinstance(v, (list, dict, str, bytes, tuple, set)):
+                    # Check length of container directly, avoid str(v) which is O(N)
+                    if len(v) > 100:
+                        is_large = True
+                        break
+
+        if is_large:
+            # For large contexts, use a simpler hash to avoid expensive JSON serialization
             hash_input = []
-            for key, value in sorted(filtered_data.items()):
-                hash_input.append(f"{key}:{type(value).__name__}:{len(str(value))}")
+            # Sort by key to ensure deterministic order
+            data_items.sort(key=lambda x: x[0])
+            for key, value in data_items:
+                # SUPER OPTIMIZATION: Use len(value) directly for containers
+                # This avoids O(N) string conversion for large lists/dicts
+                if isinstance(value, (str, list, dict, bytes, tuple, set)):
+                    val_repr = str(len(value))
+                else:
+                    val_repr = str(value)
+                hash_input.append(f"{key}:{type(value).__name__}:{val_repr}")
             context_str = "|".join(hash_input)
         else:
-
+            # For small contexts, use the original JSON-based approach
             def default_serializer(o: Any) -> Any:
                 if hasattr(o, "__class__") and "Mock" in o.__class__.__name__:
                     return f"Mock({type(o).__name__})"
                 raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 
+            # Construct dict only if needed for JSON dump
+            filtered_data = {k: v for k, v in data_items}
             context_str = json.dumps(
                 filtered_data, sort_keys=True, separators=(",", ":"), default=default_serializer
             )

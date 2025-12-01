@@ -3,6 +3,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+import os
+import unittest
+
 import pytest
 
 from flujo import Flujo, Pipeline, Step
@@ -144,21 +147,17 @@ async def test_background_quota_reserve_and_reclaim(tmp_path: Path) -> None:
     )
     pipeline = Pipeline.from_step(bg_step)
 
-    async with Flujo(
-        pipeline,
-        context_model=BgContext,
-        state_backend=backend,
-        hooks=[recorder],
-        settings_override={
-            "background_tasks": {
-                "enable_quota": True,
-            },
-        },
-    ) as runner:
-        executor = runner.backend._executor  # type: ignore[attr-defined]
-        executor._get_background_quota = lambda parent_quota=None: quota_holder  # type: ignore[assignment]
-        await runner.run_async("payload3")
-        await asyncio.sleep(0.2)
+    with unittest.mock.patch.dict(os.environ, {"FLUJO_BACKGROUND_TASKS__ENABLE_QUOTA": "true"}):
+        async with Flujo(
+            pipeline,
+            context_model=BgContext,
+            state_backend=backend,
+            hooks=[recorder],
+        ) as runner:
+            executor = runner.backend._executor  # type: ignore[attr-defined]
+            executor._get_background_quota = lambda parent_quota=None: quota_holder  # type: ignore[assignment]
+            await runner.run_async("payload3")
+            await asyncio.sleep(0.2)
 
     remaining_cost, remaining_tokens = quota_holder.get_remaining()
     assert remaining_cost == 2.0

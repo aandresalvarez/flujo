@@ -351,6 +351,7 @@ class TestExtractUsageMetrics:
             # Restore original warning method
             telemetry.logfire.warning = original_warning
 
+    @pytest.mark.serial  # Monkey-patches telemetry.logfire.warning - must run serially
     def test_extract_usage_metrics_no_model_info_available(self):
         """Test that the system handles cases where no model information is available."""
 
@@ -675,6 +676,7 @@ class TestCostCalculator:
             # Expected: (1000/1000 * 0.005) + (500/1000 * 0.015) = 0.005 + 0.0075 = 0.0125
             assert cost == 0.0125
 
+    @pytest.mark.serial
     def test_calculate_cost_no_pricing(self):
         """Test cost calculation when no pricing is configured."""
         calculator = CostCalculator()
@@ -684,7 +686,7 @@ class TestCostCalculator:
             # Patch the warning method directly on the logfire object
             from flujo.infra import telemetry
 
-            telemetry.logfire.warning = lambda msg: None
+            m.setattr(telemetry.logfire, "warning", lambda msg: None)
 
             cost = calculator.calculate(
                 model_name="unknown-model", prompt_tokens=1000, completion_tokens=500
