@@ -171,6 +171,12 @@ test-slow: .uv ## Run slow tests serially
 	@echo "🐌 Running slow tests serially (enhanced runner)..."
 	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "slow or veryslow or serial or benchmark" --workers 1 --timeout 180 --tb
 
+.PHONY: test-ultra-slow
+test-ultra-slow: .uv ## Run ultra-slow stress tests (>30s each) separately
+	@echo "⚠️ Running ultra-slow tests (>30s each)"
+	@echo "These tests are excluded from regular CI due to long execution time"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "ultra_slow" --workers 1 --timeout 300 --tb --no-split-slow
+
 .PHONY: test-parallel
 test-parallel: .uv ## Run all tests in parallel (excludes serial tests)
 	@echo "🚀 Running tests in parallel (enhanced runner)..."
