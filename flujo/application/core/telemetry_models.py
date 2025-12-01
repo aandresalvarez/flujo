@@ -9,11 +9,13 @@ aggregation and reporting utilities for comprehensive telemetry data management.
 import time
 from collections import deque, defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar
-from threading import RLock
 from enum import Enum
+from threading import RLock
+from typing import Dict, List, Optional, Set, Tuple, TypeVar
 import statistics
 import uuid
+
+from flujo.type_definitions.common import JSONObject
 
 T = TypeVar("T")
 
@@ -381,7 +383,7 @@ class ExecutionStats:
             self.first_execution_timestamp = current_time
         self.last_execution_timestamp = current_time
 
-    def get_trend_analysis(self) -> Dict[str, Any]:
+    def get_trend_analysis(self) -> JSONObject:
         """Analyze performance trends."""
         analysis = {}
 
@@ -628,7 +630,7 @@ class TelemetryReporter:
         """Add execution metrics for reporting."""
         self._aggregator.add_metrics(metrics, step_name)
 
-    def generate_performance_report(self) -> Dict[str, Any]:
+    def generate_performance_report(self) -> JSONObject:
         """Generate comprehensive performance report."""
         aggregated = self._aggregator.get_aggregated_metrics()
 
@@ -654,7 +656,7 @@ class TelemetryReporter:
 
         return report
 
-    def generate_trend_report(self, stats: ExecutionStats) -> Dict[str, Any]:
+    def generate_trend_report(self, stats: ExecutionStats) -> JSONObject:
         """Generate trend analysis report."""
         trend_analysis = stats.get_trend_analysis()
 
@@ -715,7 +717,7 @@ def create_execution_stats() -> ExecutionStats:
     return ExecutionStats()
 
 
-def generate_performance_report() -> Dict[str, Any]:
+def generate_performance_report() -> JSONObject:
     """Generate a performance report using the global reporter."""
     reporter = get_global_telemetry_reporter()
     return reporter.generate_performance_report()

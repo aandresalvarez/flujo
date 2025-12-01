@@ -1,4 +1,5 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 
 from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union
 
@@ -42,7 +43,7 @@ class DynamicParallelRouterStep(Step[Any, Any], Generic[TContext]):
         default=None,
         description="Context keys to include when copying context to branches.",
     )
-    merge_strategy: Union[MergeStrategy, Callable[[TContext, Dict[str, Any]], None]] = Field(
+    merge_strategy: Union[MergeStrategy, Callable[[TContext, JSONObject], None]] = Field(
         default=MergeStrategy.NO_MERGE,
         description="Strategy for merging branch contexts back.",
     )

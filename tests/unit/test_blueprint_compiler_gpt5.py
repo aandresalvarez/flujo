@@ -1,6 +1,7 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 
-from typing import Any, Dict
+from typing import Any
 
 
 def test_compiler_passes_model_settings(monkeypatch) -> None:
@@ -8,7 +9,7 @@ def test_compiler_passes_model_settings(monkeypatch) -> None:
     from flujo.domain.blueprint.compiler import DeclarativeBlueprintCompiler
     from flujo.domain.blueprint.loader import BlueprintPipelineModel
 
-    captured: Dict[str, Any] = {}
+    captured: JSONObject = {}
 
     def _fake_make_agent_async(*, model: str, system_prompt: str, output_type: Any, **kwargs: Any):  # type: ignore[no-untyped-def]
         captured["model"] = model

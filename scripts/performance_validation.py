@@ -13,7 +13,7 @@ import statistics
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, asdict
-from typing import Dict, List, Any
+from typing import Any, List
 from unittest.mock import Mock
 
 # Import the optimized components
@@ -39,7 +39,7 @@ class PerformanceMetrics:
     success_rate: float
     throughput_ops_per_sec: float
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
 
@@ -48,14 +48,14 @@ class PerformanceMetrics:
 class ValidationResults:
     """Complete validation results."""
 
-    baseline_metrics: Dict[str, PerformanceMetrics]
-    optimized_metrics: Dict[str, PerformanceMetrics]
-    improvements: Dict[str, float]
+    baseline_metrics: dict[str, PerformanceMetrics]
+    optimized_metrics: dict[str, PerformanceMetrics]
+    improvements: dict[str, float]
     bottlenecks: List[str]
     recommendations: List[str]
     overall_score: float
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "baseline_metrics": {k: v.to_dict() for k, v in self.baseline_metrics.items()},

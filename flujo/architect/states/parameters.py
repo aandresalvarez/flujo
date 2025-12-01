@@ -1,7 +1,9 @@
 from __future__ import annotations
 # mypy: disable-error-code=arg-type
 
-from typing import Any, Callable, Coroutine, Dict, cast
+from typing import Any, Callable, Coroutine, cast
+
+from flujo.type_definitions.common import JSONObject
 
 from flujo.architect.states.common import (
     goto,
@@ -14,8 +16,8 @@ from flujo.domain.dsl import Pipeline, Step
 
 
 async def _collect_params(
-    _data: Dict[str, Any] | None = None, context: _BaseModel | None = None
-) -> Dict[str, Any]:
+    _data: JSONObject | None = None, context: _BaseModel | None = None
+) -> JSONObject:
     try:
         non_interactive = bool(getattr(context, "non_interactive", False)) if context else True
     except Exception:
@@ -62,7 +64,7 @@ async def _collect_params(
                 continue
         except Exception:
             continue
-    out: Dict[str, Any] = {"execution_plan": plan} if changed else {}
+    out: JSONObject = {"execution_plan": plan} if changed else {}
     nxt = await goto("Generation", context=context)
     out.update(nxt)
     return out
@@ -79,7 +81,7 @@ def build_parameter_collection_state() -> Pipeline[Any, Any]:
     return (
         Pipeline.from_step(
             Step.from_callable(
-                cast(Callable[[Any], Coroutine[Any, Any, Dict[str, Any]]], _collect_params),
+                cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _collect_params),
                 name="CollectParams",
                 updates_context=True,
             )

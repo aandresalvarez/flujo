@@ -6,8 +6,9 @@ in real-world scenarios, ensuring the FSD requirements are fully met.
 """
 
 import pytest
-from typing import Any, Dict, List
+from typing import Any, List
 from flujo.domain.models import BaseModel
+from flujo.type_definitions.common import JSONObject
 
 from flujo.domain import Step, Pipeline
 from flujo.testing.utils import StubAgent, gather_result
@@ -18,7 +19,7 @@ class ConceptResolutionContext(BaseModel):
     """Context for concept resolution pipeline."""
 
     resolved_concepts: List[str] = []
-    confidence_scores: Dict[str, float] = {}
+    confidence_scores: dict[str, float] = {}
 
 
 class SQLGenerationContext(BaseModel):
@@ -32,7 +33,7 @@ class MasterContext(BaseModel):
     """Combined context for the master pipeline."""
 
     resolved_concepts: List[str] = []
-    confidence_scores: Dict[str, float] = {}
+    confidence_scores: dict[str, float] = {}
     generated_sql: str = ""
     validation_errors: List[str] = []
     # Add fields that will be set by the steps
@@ -49,7 +50,7 @@ class MasterContext(BaseModel):
 class ConceptResolutionAgent:
     """Agent that resolves concepts from text input."""
 
-    async def run(self, data: str, **kwargs) -> Dict[str, Any]:
+    async def run(self, data: str, **kwargs) -> JSONObject:
         # Simulate concept resolution
         concepts = ["users", "orders", "products"]
         scores = {"users": 0.95, "orders": 0.87, "products": 0.92}
@@ -60,7 +61,7 @@ class ConceptResolutionAgent:
 class SQLGenerationAgent:
     """Agent that generates SQL from resolved concepts."""
 
-    async def run(self, data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    async def run(self, data: JSONObject, **kwargs) -> JSONObject:
         # Simulate SQL generation based on resolved concepts
         concepts = data.get("concepts", [])
         sql = f"SELECT * FROM {', '.join(concepts)} WHERE 1=1;"
@@ -70,7 +71,7 @@ class SQLGenerationAgent:
 class SQLValidationAgent:
     """Agent that validates generated SQL."""
 
-    async def run(self, data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    async def run(self, data: JSONObject, **kwargs) -> JSONObject:
         # Simulate SQL validation
         # Extract SQL from the input data (could be a string or dict with sql field)
         if isinstance(data, str):
@@ -86,7 +87,7 @@ class SQLValidationAgent:
         }
 
 
-def build_concept_pipeline() -> Pipeline[str, Dict[str, Any]]:
+def build_concept_pipeline() -> Pipeline[str, JSONObject]:
     """Build the concept resolution pipeline."""
     concept_agent = ConceptResolutionAgent()
 
@@ -103,7 +104,7 @@ def build_concept_pipeline() -> Pipeline[str, Dict[str, Any]]:
     return Pipeline.from_step(resolve_step)
 
 
-def build_sql_pipeline() -> Pipeline[Dict[str, Any], Dict[str, Any]]:
+def build_sql_pipeline() -> Pipeline[JSONObject, JSONObject]:
     """Build the SQL generation and validation pipeline."""
     sql_gen_agent = SQLGenerationAgent()
     sql_val_agent = SQLValidationAgent()
@@ -131,7 +132,7 @@ def build_sql_pipeline() -> Pipeline[Dict[str, Any], Dict[str, Any]]:
     return generate_step >> validate_step
 
 
-def build_master_pipeline() -> Pipeline[str, Dict[str, Any]]:
+def build_master_pipeline() -> Pipeline[str, JSONObject]:
     """Build the master pipeline by chaining concept and SQL pipelines."""
     concept_pipeline = build_concept_pipeline()
     sql_pipeline = build_sql_pipeline()
@@ -273,13 +274,13 @@ async def test_pipeline_composition_backward_compatibility() -> None:
 async def test_pipeline_composition_type_safety() -> None:
     """Test that pipeline composition maintains type safety."""
     # Create pipelines with specific input/output types
-    concept_pipeline = build_concept_pipeline()  # str -> Dict[str, Any]
-    sql_pipeline = build_sql_pipeline()  # Dict[str, Any] -> Dict[str, Any]
+    concept_pipeline = build_concept_pipeline()  # str -> JSONObject
+    sql_pipeline = build_sql_pipeline()  # JSONObject -> JSONObject
 
     # Compose them
     master_pipeline = concept_pipeline >> sql_pipeline
 
-    # The resulting pipeline should have type str -> Dict[str, Any]
+    # The resulting pipeline should have type str -> JSONObject
     # This is verified by the fact that we can pass a string to the runner
     runner = create_test_flujo(master_pipeline)
     result = await gather_result(runner, "test input")

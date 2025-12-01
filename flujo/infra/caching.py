@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Protocol, Any, Dict, Optional, runtime_checkable
+from typing import Protocol, Any, Optional, runtime_checkable
+from flujo.type_definitions.common import JSONObject
 
 
 @runtime_checkable
@@ -15,7 +16,7 @@ class InMemoryCache(CacheBackend):
 
     def __init__(self) -> None:
         # TTL handling could be added later
-        self._cache: Dict[str, Any] = {}
+        self._cache: JSONObject = {}
 
     async def get(self, key: str) -> Any:
         value = self._cache.get(key)

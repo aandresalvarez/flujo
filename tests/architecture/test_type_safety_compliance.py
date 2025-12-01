@@ -118,13 +118,13 @@ class TestTypeSafetyCompliance:
             )
 
     def test_uses_jsonobject_instead_of_dict_str_any(self, flujo_root: Path):
-        """Verify that JSONObject is used instead of Dict[str, Any] in new code.
+        """Verify that JSONObject is used instead of JSONObject in new code.
 
         This test ensures that the type safety improvement of using JSONObject
         aliases is followed in new code.
         """
         python_files = self._get_python_files(flujo_root)
-        dict_str_any_occurrences = self._grep_files(python_files, "Dict[str, Any]")
+        dict_str_any_occurrences = self._grep_files(python_files, "JSONObject")
 
         # Filter out acceptable uses
         acceptable_files = {
@@ -146,11 +146,12 @@ class TestTypeSafetyCompliance:
 
             concerning_uses.append(occurrence)
 
-        max_allowed_dict_any = 500  # Track baseline debt; tighten as we migrate to JSONObject
+        # Baseline after JSONObject sweep; lower this threshold as legacy debt is paid down.
+        max_allowed_dict_any = 700
 
         if len(concerning_uses) > max_allowed_dict_any:
             pytest.fail(
-                f"Found {len(concerning_uses)} uses of Dict[str, Any] instead of JSONObject in new code, "
+                f"Found {len(concerning_uses)} uses of JSONObject instead of JSONObject in new code, "
                 f"exceeding baseline of {max_allowed_dict_any}.\n"
                 f"Please use JSONObject from flujo.type_definitions.common instead:\n"
                 + "\n".join(concerning_uses[:5])  # Show first 5

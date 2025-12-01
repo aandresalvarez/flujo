@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
+
+from flujo.type_definitions.common import JSONObject
 
 from flujo.architect.states.common import normalize_name_from_goal
 from flujo.architect.states.generation import (
@@ -13,7 +15,7 @@ from flujo.domain.dsl import Pipeline, Step
 from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 
 
-async def _finalize(_x: Any = None, *, context: _BaseModel | None = None) -> Dict[str, Any]:
+async def _finalize(_x: Any = None, *, context: _BaseModel | None = None) -> JSONObject:
     """Ensure final YAML is present and return it as the step output."""
     yaml_text: Optional[str] = None
     try:
@@ -139,7 +141,7 @@ def build_finalization_state() -> Pipeline[Any, Any]:
 
 
 def build_failure_state() -> Pipeline[Any, Any]:
-    async def _failure_step(*_a: Any, **_k: Any) -> Dict[str, Any]:
+    async def _failure_step(*_a: Any, **_k: Any) -> JSONObject:
         return {}
 
     return Pipeline.from_step(Step.from_callable(_failure_step, name="Failure"))

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
+
+from flujo.type_definitions.common import JSONObject
+from flujo.infra.skill_models import SkillRegistration
 
 from .builtins_support import return_yaml_for_cli
 
@@ -8,11 +11,11 @@ from .builtins_support import return_yaml_for_cli
 def register_transform_skills(reg: Any) -> None:
     """Register data transform builtins into the provided registry."""
 
-    async def to_csv(rows: Any, *, headers: Optional[List[str]] = None) -> str:
+    async def to_csv(rows: Any, *, headers: Optional[list[str]] = None) -> str:
         import csv
         import io
 
-        norm: List[Dict[str, Any]]
+        norm: list[JSONObject]
         if isinstance(rows, dict):
             norm = [rows]
         elif isinstance(rows, list) and all(isinstance(x, dict) for x in rows):
@@ -44,18 +47,20 @@ def register_transform_skills(reg: Any) -> None:
         return buf.getvalue()
 
     reg.register(
-        "flujo.builtins.to_csv",
-        lambda **_params: to_csv,
-        description="Convert list[dict] into CSV string (deterministic headers).",
-        arg_schema={
-            "type": "object",
-            "properties": {
-                "rows": {"type": ["array", "object"]},
-                "headers": {"type": "array", "items": {"type": "string"}},
+        **SkillRegistration(
+            id="flujo.builtins.to_csv",
+            factory=lambda **_params: to_csv,
+            description="Convert list[dict] into CSV string (deterministic headers).",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "rows": {"type": ["array", "object"]},
+                    "headers": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["rows"],
             },
-            "required": ["rows"],
-        },
-        side_effects=False,
+            side_effects=False,
+        ).__dict__
     )
 
     async def aggregate(
@@ -65,7 +70,7 @@ def register_transform_skills(reg: Any) -> None:
         field: Optional[str] = None,
     ) -> float | int:
         op = (operation or "").strip().lower()
-        items: List[Dict[str, Any]]
+        items: list[JSONObject]
         if isinstance(data, list) and all(isinstance(x, dict) for x in data):
             items = data
         elif isinstance(data, dict):
@@ -73,8 +78,8 @@ def register_transform_skills(reg: Any) -> None:
         else:
             items = []
 
-        def _nums() -> List[float]:
-            out: List[float] = []
+        def _nums() -> list[float]:
+            out: list[float] = []
             if not field:
                 return out
             for obj in items:
@@ -106,34 +111,36 @@ def register_transform_skills(reg: Any) -> None:
         return 0
 
     reg.register(
-        "flujo.builtins.aggregate",
-        lambda **_params: aggregate,
-        description="Aggregate numeric field across list[dict]: sum/avg/count.",
-        arg_schema={
-            "type": "object",
-            "properties": {
-                "data": {"type": ["array", "object"]},
-                "operation": {"type": "string"},
-                "field": {"type": "string"},
+        **SkillRegistration(
+            id="flujo.builtins.aggregate",
+            factory=lambda **_params: aggregate,
+            description="Aggregate numeric field across list[dict]: sum/avg/count.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "data": {"type": ["array", "object"]},
+                    "operation": {"type": "string"},
+                    "field": {"type": "string"},
+                },
+                "required": ["data", "operation"],
             },
-            "required": ["data", "operation"],
-        },
-        side_effects=False,
+            side_effects=False,
+        ).__dict__
     )
 
     async def select_fields(
         data: Any,
         *,
-        include: Optional[List[str]] = None,
-        rename: Optional[Dict[str, str]] = None,
+        include: Optional[list[str]] = None,
+        rename: Optional[dict[str, str]] = None,
     ) -> Any:
         includes = list(include) if include else None
         ren = dict(rename) if rename else {}
 
-        def _project(obj: Dict[str, Any]) -> Dict[str, Any]:
+        def _project(obj: JSONObject) -> JSONObject:
             try:
                 keys = list(obj.keys()) if includes is None else [k for k in includes]
-                out: Dict[str, Any] = {}
+                out: JSONObject = {}
                 for k in keys:
                     if k in obj:
                         out[ren.get(k, k)] = obj.get(k)
@@ -167,10 +174,10 @@ def register_transform_skills(reg: Any) -> None:
         side_effects=False,
     )
 
-    async def flatten(items: Any) -> List[Any]:
+    async def flatten(items: Any) -> list[Any]:
         if not isinstance(items, list):
             return []
-        out: List[Any] = []
+        out: list[Any] = []
         for sub in items:
             if isinstance(sub, list):
                 out.extend(sub)

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 # mypy: ignore-errors
 
 from ._shared import (  # noqa: F401
@@ -77,7 +78,7 @@ async def prepare_agent_execution(
     # Pre-execution AROS instrumentation expected by some unit/integration tests.
     # Emit grammar.applied and run optional reasoning precheck validator.
     try:
-        pmeta: Dict[str, Any] = {}
+        pmeta: JSONObject = {}
         if hasattr(step, "meta") and isinstance(step.meta, dict):
             pmeta = step.meta.get("processing", {}) or {}
             if not isinstance(pmeta, dict):

@@ -16,13 +16,13 @@ import asyncio
 import time
 import psutil
 import os
-from typing import Dict, List, Any, Optional
+from typing import Any
 import pytest
 from unittest.mock import AsyncMock
 
 from flujo.application.core.executor_core import ExecutorCore
-from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult
+from tests.test_types.fixtures import create_test_step, create_test_step_result
 from tests.test_types.mocks import create_mock_executor_core
 from tests.robustness.baseline_manager import get_baseline_manager, measure_and_check_regression
 
@@ -36,7 +36,7 @@ class TestPerformanceRegression:
         return get_baseline_manager()
 
     @pytest.fixture
-    def baseline_thresholds(self) -> Dict[str, float]:
+    def baseline_thresholds(self) -> dict[str, float]:
         """Provide default performance thresholds for robustness tests."""
         # Generous defaults to avoid flaky regressions; can be tightened as needed.
         return {
@@ -67,7 +67,7 @@ class TestPerformanceRegression:
         executor = create_mock_executor_core()
 
         async def execute_step():
-            step = Step(name="test_step", agent=AsyncMock())
+            step = create_test_step(name="test_step", agent=AsyncMock())
             data = {"input": "test"}
             result = await executor.execute(step, data)
             return result
@@ -95,12 +95,12 @@ class TestPerformanceRegression:
 
         asyncio.run(run_performance_test())
 
-    def test_pipeline_creation_performance(self, baseline_thresholds: Dict[str, float]):
+    def test_pipeline_creation_performance(self, baseline_thresholds: dict[str, float]):
         """Test that pipeline creation performance stays within bounds."""
         from flujo.domain.dsl.pipeline import Pipeline
 
         def create_test_pipeline():
-            steps = [Step(name=f"step_{i}", agent=AsyncMock()) for i in range(10)]
+            steps = [create_test_step(name=f"step_{i}", agent=AsyncMock()) for i in range(10)]
             return Pipeline(steps=steps)
 
         # Warm up
@@ -119,7 +119,7 @@ class TestPerformanceRegression:
             f"Pipeline creation time {avg_time:.2f}ms exceeds threshold {threshold}ms"
         )
 
-    def test_context_isolation_performance(self, baseline_thresholds: Dict[str, float]):
+    def test_context_isolation_performance(self, baseline_thresholds: dict[str, float]):
         """Test that context isolation performance stays within bounds."""
         from flujo.application.core.context_manager import ContextManager
         from flujo.domain.models import PipelineContext
@@ -144,13 +144,13 @@ class TestPerformanceRegression:
             f"Context isolation time {avg_time:.2f}ms exceeds threshold {threshold}ms"
         )
 
-    def test_serialization_performance(self, baseline_thresholds: Dict[str, float]):
+    def test_serialization_performance(self, baseline_thresholds: dict[str, float]):
         """Test that serialization performance stays within bounds."""
         from flujo.utils.serialization import safe_serialize
         from flujo.domain.models import StepResult
 
         def serialize_object():
-            result = StepResult(
+            result = create_test_step_result(
                 name="test",
                 output={"data": "test" * 100},  # Larger object
                 success=True,
@@ -173,7 +173,7 @@ class TestPerformanceRegression:
             f"Serialization time {avg_time:.2f}ms exceeds threshold {threshold}ms"
         )
 
-    def test_memory_overhead_monitoring(self, baseline_thresholds: Dict[str, float]):
+    def test_memory_overhead_monitoring(self, baseline_thresholds: dict[str, float]):
         """Test that memory overhead stays within acceptable bounds."""
         import gc
 
@@ -191,7 +191,9 @@ class TestPerformanceRegression:
         # Perform operations that should not cause significant memory growth
         results = []
         for i in range(100):
-            result = StepResult(name=f"test_{i}", output={"data": f"value_{i}"}, success=True)
+            result = create_test_step_result(
+                name=f"test_{i}", output={"data": f"value_{i}"}, success=True
+            )
             results.append(result)
 
             if i % 10 == 0:
@@ -216,7 +218,7 @@ class TestPerformanceRegression:
             executor = create_mock_executor_core()
 
             async def execute_single():
-                step = Step(name="concurrent_step", agent=AsyncMock())
+                step = create_test_step(name="concurrent_step", agent=AsyncMock())
                 data = {"input": "concurrent_test"}
                 return await executor.execute(step, data)
 
@@ -242,7 +244,7 @@ class TestPerformanceRegression:
     def test_caching_performance_improvement(self, baseline_manager):
         """Test that caching provides measurable performance improvement."""
         executor = create_mock_executor_core(cache_hit=True)
-        step = Step(name="cached_step", agent=AsyncMock())
+        step = create_test_step(name="cached_step", agent=AsyncMock())
 
         async def run_cached_test():
             # First execution (cache miss)
@@ -281,7 +283,7 @@ class TestScalabilityRegression:
 
         # Create a large pipeline
         num_steps = 50
-        steps = [Step(name=f"step_{i}", agent=AsyncMock()) for i in range(num_steps)]
+        steps = [create_test_step(name=f"step_{i}", agent=AsyncMock()) for i in range(num_steps)]
         pipeline = Pipeline(steps=steps)
 
         # Measure pipeline creation time
@@ -307,11 +309,16 @@ class TestScalabilityRegression:
             executor = create_mock_executor_core()
 
             # Warm up executor to avoid one-time initialization costs impacting timing
-            await executor.execute(Step(name="warmup", agent=AsyncMock()), {"input": "warmup"})
+            await executor.execute(
+                create_test_step(name="warmup", agent=AsyncMock()), {"input": "warmup"}
+            )
 
-            steps = [Step(name=f"concurrency_test_{i}", agent=AsyncMock()) for i in range(100)]
+            steps = [
+                create_test_step(name=f"concurrency_test_{i}", agent=AsyncMock())
+                for i in range(100)
+            ]
 
-            async def execute_with_delay(step: Step):
+            async def execute_with_delay(step: Any):
                 await asyncio.sleep(0.0005)  # Small delay to simulate work
                 return await executor.execute(step, {"input": "test"})
 

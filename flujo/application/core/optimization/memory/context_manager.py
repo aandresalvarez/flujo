@@ -6,12 +6,13 @@ caching, immutability detection, and efficient merge algorithms to reduce
 context handling overhead.
 """
 
+from flujo.type_definitions.common import JSONObject
 import copy
 import hashlib
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Set, Tuple, Callable, TypeVar, List
+from typing import Any, Optional, Set, Tuple, Callable, TypeVar, List
 from weakref import WeakKeyDictionary
 from threading import RLock
 
@@ -397,7 +398,7 @@ class OptimizedContextManager:
             # If we can't cache the result, that's okay
             pass
 
-    def _create_merge_snapshot(self, target: Any, source: Any) -> Dict[str, Any]:
+    def _create_merge_snapshot(self, target: Any, source: Any) -> JSONObject:
         """Create a snapshot of merge operation for caching."""
         snapshot = {
             "target_hash": self._hash_context(target),
@@ -428,7 +429,7 @@ class OptimizedContextManager:
 
         return snapshot
 
-    def _apply_cached_merge(self, target: Any, cached_result: Dict[str, Any]) -> bool:
+    def _apply_cached_merge(self, target: Any, cached_result: JSONObject) -> bool:
         """Apply a cached merge result."""
         try:
             # Check if cached result is still valid

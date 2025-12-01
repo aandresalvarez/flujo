@@ -21,10 +21,10 @@ Test Strategy:
 """
 
 import pytest
-from typing import Any, Dict, List
 from flujo import Flujo
 from flujo.domain.dsl import Pipeline, Step, LoopStep, HumanInTheLoopStep
 from pydantic import BaseModel
+from flujo.type_definitions.common import JSONObject
 
 
 pytestmark = [pytest.mark.slow, pytest.mark.serial]
@@ -35,7 +35,7 @@ class SlotOutput(BaseModel):
 
     action: str
     question: str
-    slots: Dict[str, Any]
+    slots: JSONObject
 
 
 @pytest.mark.timeout(120)
@@ -192,7 +192,7 @@ async def test_hitl_in_loop_agent_output_captured():
 
     Expected: Agent step completes BEFORE HITL pause, output is captured.
     """
-    executed_steps: List[str] = []
+    executed_steps: list[str] = []
 
     def track_execution(step_name: str):
         """Track which steps actually execute."""
@@ -389,7 +389,7 @@ async def test_hitl_in_loop_multiple_iterations():
     The bug would cause each resume to create nested loops, preventing
     the loop from progressing through iterations.
     """
-    iteration_data: List[Dict[str, Any]] = []
+    iteration_data: list[JSONObject] = []
 
     def track_iteration(iteration_num: int):
         """Track data for each iteration."""
@@ -565,7 +565,7 @@ async def test_hitl_in_loop_resume_at_correct_step():
     If loop has 3 steps and pauses at step 1, resume should continue
     from step 2 (not restart from step 0).
     """
-    executed_steps: List[tuple] = []  # (iteration, step_name)
+    executed_steps: list[tuple] = []  # (iteration, step_name)
 
     def track(step_name: str):
         def tracker(x):

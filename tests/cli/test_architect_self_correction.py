@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
+from flujo.type_definitions.common import JSONObject
 
 import pytest
 from typer.testing import CliRunner
@@ -20,14 +21,14 @@ class _DummyReport:
 
 
 @pytest.fixture()
-def mock_architect_self_correction(monkeypatch) -> Dict[str, Any]:
+def mock_architect_self_correction(monkeypatch) -> JSONObject:
     """Patch architect compiler and validator to exercise self-correction.
 
     - yaml_writer returns invalid YAML first, valid YAML second
     - validate_yaml_text returns invalid first call, valid second
     """
 
-    counters: Dict[str, int] = {"architect_calls": 0, "repair_calls": 0, "validator_calls": 0}
+    counters: dict[str, int] = {"architect_calls": 0, "repair_calls": 0, "validator_calls": 0}
     validator_inputs: list[str] = []
 
     class _ArchitectAgent:
@@ -107,7 +108,7 @@ def mock_architect_self_correction(monkeypatch) -> Dict[str, Any]:
     monkeypatch.setattr(_cli_main, "validate_yaml_text", _fake_validate_yaml_text, raising=True)
 
     # Capture step history names via a wrapper around execute_pipeline_with_output_handling
-    captured: Dict[str, Any] = {"step_names": [], "loop_attempts": -1}
+    captured: JSONObject = {"step_names": [], "loop_attempts": -1}
 
     def _flatten_names(step_results: Any, acc: list[str]) -> None:
         try:

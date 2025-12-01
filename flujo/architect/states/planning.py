@@ -2,7 +2,9 @@ from __future__ import annotations
 # mypy: disable-error-code=arg-type
 
 import os as _os
-from typing import Any, Callable, Coroutine, Dict, List, cast
+from typing import Any, Callable, Coroutine, List, cast
+
+from flujo.type_definitions.common import JSONObject
 
 from flujo.architect.states.common import (
     goto,
@@ -16,9 +18,9 @@ from flujo.domain.dsl import Pipeline, Step
 from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 
 
-async def make_plan_from_goal(*_: Any, context: _BaseModel | None = None) -> Dict[str, Any]:
+async def make_plan_from_goal(*_: Any, context: _BaseModel | None = None) -> JSONObject:
     goal = ""
-    available: List[Dict[str, Any]] | None = None
+    available: List[JSONObject] | None = None
     try:
         if context is not None:
             goal = str(getattr(context, "user_goal", "") or "")
@@ -26,7 +28,7 @@ async def make_plan_from_goal(*_: Any, context: _BaseModel | None = None) -> Dic
     except Exception:
         pass
     g = goal.lower()
-    chosen: Dict[str, Any]
+    chosen: JSONObject
     import re as _re
 
     url = None
@@ -74,7 +76,7 @@ async def make_plan_from_goal(*_: Any, context: _BaseModel | None = None) -> Dic
         }
         summary = "Returns the input unchanged."
 
-    plan: List[Dict[str, Any]] = [chosen]
+    plan: List[JSONObject] = [chosen]
     if save_path and skill_available("flujo.builtins.fs_write_file", available=available):
         plan.append(
             {
@@ -89,7 +91,7 @@ async def make_plan_from_goal(*_: Any, context: _BaseModel | None = None) -> Dic
     return {"execution_plan": plan, "plan_summary": summary}
 
 
-async def run_planner_agent(_x: Any = None, *, context: _BaseModel | None = None) -> Dict[str, Any]:
+async def run_planner_agent(_x: Any = None, *, context: _BaseModel | None = None) -> JSONObject:
     """Call Planner Agent when available; fallback to heuristics.
 
     Expects planner agent to accept a dict with keys:
@@ -132,7 +134,7 @@ async def run_planner_agent(_x: Any = None, *, context: _BaseModel | None = None
             agent_callable = entry["factory"]()
             result = await agent_callable(payload)
             plan_summary = None
-            steps_out: List[Dict[str, Any]] = []
+            steps_out: List[JSONObject] = []
             if isinstance(result, dict):
                 plan_summary = result.get("plan_summary")
                 steps = result.get("steps")
@@ -142,7 +144,7 @@ async def run_planner_agent(_x: Any = None, *, context: _BaseModel | None = None
                             nm = s.get("step_name") or s.get("name") or "step"
                             purpose = s.get("purpose") or ""
                             steps_out.append({"name": nm, "purpose": purpose})
-            out: Dict[str, Any] = {}
+            out: JSONObject = {}
             if steps_out:
                 out["execution_plan"] = steps_out
             if plan_summary:
@@ -169,7 +171,7 @@ def build_planning_state() -> Pipeline[Any, Any]:
             )
         else:
 
-            async def _viz_fallback(plan: Any) -> Dict[str, Any]:
+            async def _viz_fallback(plan: Any) -> JSONObject:
                 return {"plan_mermaid_graph": "graph TD"}
 
             visualize = Step.from_callable(
@@ -177,7 +179,7 @@ def build_planning_state() -> Pipeline[Any, Any]:
             )
     except Exception:
 
-        async def _viz_fallback(plan: Any) -> Dict[str, Any]:
+        async def _viz_fallback(plan: Any) -> JSONObject:
             return {"plan_mermaid_graph": "graph TD"}
 
         visualize = Step.from_callable(_viz_fallback, name="VisualizePlan", updates_context=True)
@@ -191,24 +193,24 @@ def build_planning_state() -> Pipeline[Any, Any]:
             )
         else:
 
-            async def _est_fallback(plan: Any) -> Dict[str, Any]:
+            async def _est_fallback(plan: Any) -> JSONObject:
                 return {"plan_estimated_cost_usd": 0.0}
 
             estimate = Step.from_callable(_est_fallback, name="EstimateCost", updates_context=True)
     except Exception:
 
-        async def _est_fallback(plan: Any) -> Dict[str, Any]:
+        async def _est_fallback(plan: Any) -> JSONObject:
             return {"plan_estimated_cost_usd": 0.0}
 
         estimate = Step.from_callable(_est_fallback, name="EstimateCost", updates_context=True)
 
     async def _goto_approval(
-        _data: Dict[str, Any] | None = None, context: _BaseModel | None = None
-    ) -> Dict[str, Any]:
+        _data: JSONObject | None = None, context: _BaseModel | None = None
+    ) -> JSONObject:
         return await goto("PlanApproval", context=context)
 
     goto_approval_step = Step.from_callable(
-        cast(Callable[[Any], Coroutine[Any, Any, Dict[str, Any]]], _goto_approval),
+        cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _goto_approval),
         name="GotoApproval",
         updates_context=True,
     )

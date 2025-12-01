@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 from pydantic import SecretStr, BaseModel, TypeAdapter
-from typing import List, Dict, Union
+from typing import List, Union, Dict
 
 from flujo.agents import (
     AsyncAgentWrapper,
@@ -462,7 +462,7 @@ async def test_make_agent_async_type_adapter(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_make_agent_async_type_adapter_complex_nested(monkeypatch) -> None:
-    """Test TypeAdapter with complex nested types like List[Dict[str, Any]]."""
+    """Test TypeAdapter with complex nested types like List[JSONObject]."""
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
 

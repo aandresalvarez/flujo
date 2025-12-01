@@ -14,8 +14,9 @@ import os
 import time
 import threading
 import sys
-from typing import Optional, Union, List, Dict, Any
+from typing import Optional, Union, List
 from unittest.mock import patch, MagicMock
+from flujo.type_definitions.common import JSONObject
 
 from flujo.domain.models import BaseModel
 from flujo.application.core.context_adapter import (
@@ -348,7 +349,7 @@ class TestTypeResolution:
 
         class TestContext(BaseModel):
             user: _UserCustomModel
-            settings: Optional[Dict[str, Any]] = None
+            settings: Optional[JSONObject] = None
 
         # Register the custom type
         register_custom_type(_UserCustomModel)

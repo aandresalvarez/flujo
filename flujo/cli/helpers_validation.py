@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, Optional, cast
+from typing import Any, Optional, cast
 
 import yaml
 from typer import Exit
@@ -12,6 +12,7 @@ from flujo.domain.dsl import Pipeline
 from flujo.domain.pipeline_validation import ValidationReport
 from flujo.infra.skill_registry import get_skill_registry
 from flujo.infra.skills_catalog import load_skills_catalog, load_skills_entry_points
+from flujo.type_definitions.common import JSONObject
 
 from .helpers_io import load_pipeline_from_file
 
@@ -117,7 +118,7 @@ def sanitize_blueprint_yaml(yaml_text: str) -> str:
     if not isinstance(steps, list):
         return yaml_text
 
-    name_counter: Dict[str, int] = {}
+    name_counter: dict[str, int] = {}
     changed: bool = False
 
     def _gen_name(prefix: str) -> str:
@@ -125,7 +126,7 @@ def sanitize_blueprint_yaml(yaml_text: str) -> str:
         name_counter[prefix] = idx
         return f"{prefix}_{idx}"
 
-    def _derive_prefix(node: Dict[str, Any]) -> str:
+    def _derive_prefix(node: JSONObject) -> str:
         agent = node.get("agent")
         if isinstance(agent, dict):
             sid = agent.get("id")
@@ -156,7 +157,7 @@ def sanitize_blueprint_yaml(yaml_text: str) -> str:
                     pass
             if isinstance(node.get("step"), dict):
                 try:
-                    embedded = cast(Dict[str, Any], node.get("step"))
+                    embedded = cast(JSONObject, node.get("step"))
                 except Exception:
                     embedded = None
                 if isinstance(embedded, dict):
@@ -293,7 +294,7 @@ def sanitize_blueprint_yaml(yaml_text: str) -> str:
                 except Exception:
                     pass
                 node["kind"] = "parallel"
-                branches_map: Dict[str, Any] = {}
+                branches_map: JSONObject = {}
                 if isinstance(par, list):
                     for idx, child in enumerate(par, start=1):
                         branch_name = f"branch_{idx}"
@@ -393,7 +394,7 @@ def enrich_yaml_with_required_params(
         load_skills_entry_points()
 
     skill_registry = get_skill_registry()
-    inserted_params: Dict[str, Dict[str, Any]] = {}
+    inserted_params: dict[str, JSONObject] = {}
 
     def _walk(node: Any, path: str = "") -> None:
         if isinstance(node, dict):
@@ -410,7 +411,7 @@ def enrich_yaml_with_required_params(
                         params = agent_info.get("params")
                         if not isinstance(params, dict):
                             params = {}
-                        added: Dict[str, Any] = {}
+                        added: JSONObject = {}
                         for key, default in required_params.items():
                             if key not in params:
                                 params[key] = default

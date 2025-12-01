@@ -1,4 +1,5 @@
-from typing import Protocol, TypeVar, Dict, Any, Optional, Callable, Generic, Union
+from typing import Protocol, TypeVar, Any, Optional, Callable, Generic, Union
+from flujo.type_definitions.common import JSONObject
 from pydantic import BaseModel, Field
 
 
@@ -6,7 +7,7 @@ from pydantic import BaseModel, Field
 class ContextWithScratchpad(Protocol):
     """A contract ensuring a context object has a scratchpad attribute."""
 
-    scratchpad: Dict[str, Any]
+    scratchpad: JSONObject
 
 
 TContext_w_Scratch = TypeVar("TContext_w_Scratch", bound=ContextWithScratchpad)
@@ -19,7 +20,7 @@ class Step:
 
 
 class ParallelStep(Step, Generic[TContext_w_Scratch]):
-    merge_strategy: Union[str, Callable[[TContext_w_Scratch, Dict[str, Any]], None]] = Field(...)
+    merge_strategy: Union[str, Callable[[TContext_w_Scratch, JSONObject], None]] = Field(...)
 
     def __init__(self, name: str, merge_strategy: Any):
         super().__init__(name)
@@ -33,7 +34,7 @@ class ContextWithoutScratchpad(BaseModel):
 
 # Define a mock context with a scratchpad
 class ContextWithActualScratchpad(BaseModel):
-    scratchpad: Dict[str, Any] = Field(default_factory=dict)
+    scratchpad: JSONObject = Field(default_factory=dict)
     value: str
 
 

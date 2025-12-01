@@ -6,12 +6,13 @@ which could reveal bugs in context state management during iterative refinement.
 """
 
 import pytest
-from typing import Any, Dict, List
+from typing import Any, List
 from flujo import step, Step
 from flujo.domain.models import PipelineContext, RefinementCheck
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+from flujo.type_definitions.common import JSONObject
 
 
 class RefineContext(PipelineContext):
@@ -23,7 +24,7 @@ class RefineContext(PipelineContext):
     refinement_history: List[str] = []
     current_quality: float = 0.0
     best_quality: float = 0.0
-    refinement_data: Dict[str, Any] = {}
+    refinement_data: JSONObject = {}
 
 
 @step(updates_context=True)

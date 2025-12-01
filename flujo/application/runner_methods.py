@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import inspect
-from typing import TYPE_CHECKING, Any, AsyncIterator, Dict, Optional, Type, TypeVar, Generic, cast
+from typing import TYPE_CHECKING, Any, AsyncIterator, Optional, Type, TypeVar, Generic, cast
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -26,6 +26,7 @@ from ..domain.models import (
     Success,
 )
 from ..domain.resources import AppResources
+from ..type_definitions.common import JSONObject
 from .core.context_manager import _extract_missing_fields
 from .runner_execution import resume_async_inner
 from .run_session import RunSession
@@ -78,7 +79,7 @@ async def run_outcomes_async(
     initial_input: RunnerInT,
     *,
     run_id: str | None = None,
-    initial_context_data: Optional[Dict[str, Any]] = None,
+    initial_context_data: Optional[JSONObject] = None,
 ) -> AsyncIterator[StepOutcome[StepResult]]:
     """Run the pipeline and yield typed StepOutcome events."""
     pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
@@ -174,7 +175,7 @@ async def _consume_run_async_to_result(
     initial_input: RunnerInT,
     *,
     run_id: str | None = None,
-    initial_context_data: Optional[Dict[str, Any]] = None,
+    initial_context_data: Optional[JSONObject] = None,
 ) -> PipelineResult[ContextT]:
     """Consume run_async and return the final PipelineResult."""
     result: PipelineResult[ContextT] | None = None
@@ -223,7 +224,7 @@ async def stream_async(
     self: Flujo[RunnerInT, RunnerOutT, ContextT],
     initial_input: RunnerInT,
     *,
-    initial_context_data: Optional[Dict[str, Any]] = None,
+    initial_context_data: Optional[JSONObject] = None,
 ) -> AsyncIterator[Any]:
     pipeline = self._ensure_pipeline()
     last_step = pipeline.steps[-1]
@@ -260,7 +261,7 @@ def run_sync(
     initial_input: RunnerInT,
     *,
     run_id: str | None = None,
-    initial_context_data: Optional[Dict[str, Any]] = None,
+    initial_context_data: Optional[JSONObject] = None,
 ) -> PipelineResult[ContextT]:
     try:
         asyncio.get_running_loop()
@@ -295,7 +296,7 @@ def as_step(
         context: BaseModel | None = None,
         resources: AppResources | None = None,
     ) -> PipelineResult[ContextT]:
-        initial_sub_context_data: Dict[str, Any] = {}
+        initial_sub_context_data: JSONObject = {}
         if inherit_context and context is not None:
             initial_sub_context_data = copy.deepcopy(context.model_dump())
             initial_sub_context_data.pop("run_id", None)

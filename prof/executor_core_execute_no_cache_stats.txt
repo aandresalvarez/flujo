@@ -1,0 +1,38 @@
+         61113 function calls (58708 primitive calls) in 0.017 seconds
+
+   Ordered by: cumulative time
+   List reduced from 537 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.017    0.017 runners.py:160(run)
+        3    0.000    0.000    0.017    0.006 base_events.py:618(run_until_complete)
+        3    0.000    0.000    0.017    0.006 base_events.py:594(run_forever)
+        6    0.000    0.000    0.017    0.003 base_events.py:1859(_run_once)
+        1    0.000    0.000    0.017    0.017 runners.py:86(run)
+        6    0.000    0.000    0.017    0.003 events.py:82(_run)
+        6    0.000    0.000    0.017    0.003 {method 'run' of '_contextvars.Context' objects}
+        1    0.000    0.000    0.017    0.017 profile_executor_core_hotpath.py:68(run_workload)
+       35    0.000    0.000    0.016    0.000 executor_core.py:701(execute)
+       35    0.000    0.000    0.016    0.000 executor_helpers.py:357(execute_entrypoint)
+       35    0.000    0.000    0.016    0.000 executor_helpers.py:222(execute_flow)
+       35    0.000    0.000    0.015    0.000 executor_core.py:662(_dispatch_frame)
+       35    0.000    0.000    0.015    0.000 dispatch_handler.py:27(dispatch)
+       35    0.000    0.000    0.015    0.000 execution_dispatcher.py:37(dispatch)
+       35    0.000    0.000    0.015    0.000 policy_handlers.py:249(default_step)
+       35    0.000    0.000    0.015    0.000 agent_orchestrator.py:27(execute)
+       35    0.001    0.000    0.015    0.000 agent_execution_runner.py:31(execute)
+       35    0.000    0.000    0.006    0.000 default_components.py:296(run)
+       35    0.000    0.000    0.004    0.000 signature_tools.py:63(analyze_signature)
+      108    0.000    0.000    0.003    0.000 inspect.py:3261(signature)
+      108    0.000    0.000    0.003    0.000 inspect.py:3007(from_callable)
+  214/108    0.000    0.000    0.003    0.000 inspect.py:2435(_signature_from_callable)
+       35    0.000    0.000    0.003    0.000 context_manager.py:359(merge)
+       35    0.000    0.000    0.003    0.000 context_strategies.py:32(merge)
+       35    0.000    0.000    0.003    0.000 context_manager.py:374(_merge_lenient_impl)
+       35    0.000    0.000    0.003    0.000 context.py:145(safe_merge_context_updates)
+       35    0.000    0.000    0.002    0.000 typing.py:2319(get_type_hints)
+      140    0.000    0.000    0.002    0.000 context_manager.py:494(_accepts_param)
+      108    0.001    0.000    0.002    0.000 inspect.py:2331(_signature_from_function)
+       70    0.000    0.000    0.002    0.000 context_manager.py:220(isolate)
+
+

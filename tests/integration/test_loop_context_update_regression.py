@@ -13,11 +13,12 @@ The tests verify:
 
 import os
 import pytest
-from typing import Any, Dict
+from typing import Any
 
 
 from flujo import Step, Pipeline, step, Flujo
 from flujo.domain.models import PipelineContext
+from flujo.type_definitions.common import JSONObject
 
 
 # Module-level constant for performance test loop count
@@ -30,11 +31,11 @@ class RegressionTestContext(PipelineContext):
     iteration_count: int = 0
     accumulated_value: int = 0
     is_complete: bool = False
-    debug_data: Dict[str, Any] = {}
+    debug_data: JSONObject = {}
 
 
 @step(updates_context=True)
-async def regression_test_step(data: Any, *, context: RegressionTestContext) -> Dict[str, Any]:
+async def regression_test_step(data: Any, *, context: RegressionTestContext) -> JSONObject:
     """Step that updates context to test the regression fix."""
     context.iteration_count += 1
     context.accumulated_value += data if isinstance(data, (int, float)) else 1
@@ -51,7 +52,7 @@ async def regression_test_step(data: Any, *, context: RegressionTestContext) -> 
     }
 
 
-def regression_exit_condition(output: Dict[str, Any], context: RegressionTestContext) -> bool:
+def regression_exit_condition(output: JSONObject, context: RegressionTestContext) -> bool:
     """Exit condition that depends on context state."""
     return context.is_complete
 
@@ -108,7 +109,7 @@ async def test_regression_assertion_catches_merge_failures():
         pass
 
     @step(updates_context=True)
-    async def incompatible_step(data: Any, *, context: IncompatibleContext) -> Dict[str, Any]:
+    async def incompatible_step(data: Any, *, context: IncompatibleContext) -> JSONObject:
         """Step that would cause merge failures."""
         return {"test": "data"}
 
@@ -144,7 +145,7 @@ async def test_regression_parallel_step_context_updates():
     """Test that parallel steps maintain context updates (prevent similar bugs)."""
 
     @step(updates_context=True)
-    async def parallel_context_step(data: Any, *, context: RegressionTestContext) -> Dict[str, Any]:
+    async def parallel_context_step(data: Any, *, context: RegressionTestContext) -> JSONObject:
         """Step that updates context in parallel execution."""
         context.accumulated_value += data if isinstance(data, (int, float)) else 1
         context.debug_data[f"branch_{data}"] = context.accumulated_value
@@ -193,9 +194,7 @@ async def test_regression_conditional_step_context_updates():
     """Test that conditional steps maintain context updates."""
 
     @step(updates_context=True)
-    async def conditional_context_step(
-        data: Any, *, context: RegressionTestContext
-    ) -> Dict[str, Any]:
+    async def conditional_context_step(data: Any, *, context: RegressionTestContext) -> JSONObject:
         """Step that updates context in conditional execution."""
         context.accumulated_value += data if isinstance(data, (int, float)) else 1
         context.debug_data["conditional_executed"] = True
@@ -237,7 +236,7 @@ async def test_regression_edge_case_deep_copy_isolation():
     """Test that deep copy isolation doesn't break context updates."""
 
     @step(updates_context=True)
-    async def deep_copy_test_step(data: Any, *, context: RegressionTestContext) -> Dict[str, Any]:
+    async def deep_copy_test_step(data: Any, *, context: RegressionTestContext) -> JSONObject:
         """Step that tests deep copy isolation with context updates."""
         context.iteration_count += 1
 
@@ -297,9 +296,7 @@ async def test_regression_serialization_edge_cases():
     """Test that serialization doesn't break context updates."""
 
     @step(updates_context=True)
-    async def serialization_test_step(
-        data: Any, *, context: RegressionTestContext
-    ) -> Dict[str, Any]:
+    async def serialization_test_step(data: Any, *, context: RegressionTestContext) -> JSONObject:
         """Step that tests serialization edge cases with context updates."""
         context.iteration_count += 1
 
@@ -358,7 +355,7 @@ async def test_regression_performance_under_load():
     """Test that context updates work correctly under performance load."""
 
     @step(updates_context=True)
-    async def performance_test_step(data: Any, *, context: RegressionTestContext) -> Dict[str, Any]:
+    async def performance_test_step(data: Any, *, context: RegressionTestContext) -> JSONObject:
         """Step that tests performance with context updates."""
         context.iteration_count += 1
         context.accumulated_value += data if isinstance(data, (int, float)) else 1

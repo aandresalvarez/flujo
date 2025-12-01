@@ -30,7 +30,8 @@ In production code:
 """
 
 import pytest
-from typing import Any, Dict, List
+from typing import Any, List
+from flujo.type_definitions.common import JSONObject
 
 from flujo.domain import Pipeline
 from flujo.domain.models import PipelineContext
@@ -67,9 +68,7 @@ class CodeReviewContext(PipelineContext):
 
 
 @step(updates_context=True)
-async def analyze_code_quality(
-    data: Dict[str, Any], *, context: CodeReviewContext
-) -> Dict[str, Any]:
+async def analyze_code_quality(data: JSONObject, *, context: CodeReviewContext) -> JSONObject:
     """Analyze code quality and return metrics."""
     code = data.get("code", context.code_content)
     # Simulate code analysis
@@ -90,7 +89,7 @@ async def analyze_code_quality(
 
 
 @step(updates_context=True)
-async def security_analysis(data: Dict[str, Any], *, context: CodeReviewContext) -> Dict[str, Any]:
+async def security_analysis(data: JSONObject, *, context: CodeReviewContext) -> JSONObject:
     """Perform security analysis on the code."""
     code = data.get("code", context.code_content)
     security_issues = []
@@ -109,9 +108,7 @@ async def security_analysis(data: Dict[str, Any], *, context: CodeReviewContext)
 
 
 @step(updates_context=True)
-async def performance_analysis(
-    data: Dict[str, Any], *, context: CodeReviewContext
-) -> Dict[str, Any]:
+async def performance_analysis(data: JSONObject, *, context: CodeReviewContext) -> JSONObject:
     """Analyze code performance characteristics."""
     code = data.get("code", context.code_content)
     performance_issues = []
@@ -128,7 +125,7 @@ async def performance_analysis(
 
 
 @step(updates_context=True)
-async def style_analysis(data: Dict[str, Any], *, context: CodeReviewContext) -> Dict[str, Any]:
+async def style_analysis(data: JSONObject, *, context: CodeReviewContext) -> JSONObject:
     """Analyze code style and formatting."""
     code = data.get("code", context.code_content)
     style_issues = []
@@ -145,9 +142,7 @@ async def style_analysis(data: Dict[str, Any], *, context: CodeReviewContext) ->
 
 
 @step(updates_context=True)
-async def generate_review_summary(
-    data: Dict[str, Any], *, context: CodeReviewContext
-) -> Dict[str, Any]:
+async def generate_review_summary(data: JSONObject, *, context: CodeReviewContext) -> JSONObject:
     """Generate a comprehensive review summary."""
     total_issues = (
         len(context.security_issues) + len(context.performance_issues) + len(context.style_issues)
@@ -184,9 +179,7 @@ async def generate_review_summary(
 
 
 @step(updates_context=True)
-async def human_review_approval(
-    data: Dict[str, Any], *, context: CodeReviewContext
-) -> Dict[str, Any]:
+async def human_review_approval(data: JSONObject, *, context: CodeReviewContext) -> JSONObject:
     """Simulate human reviewer approval process."""
     summary = data.get("summary", {})
     overall_score = summary.get("overall_score", 0.0)
@@ -227,9 +220,7 @@ async def human_review_approval(
 
 
 @step
-async def failing_analysis_step(
-    data: Dict[str, Any], *, context: CodeReviewContext
-) -> Dict[str, Any]:
+async def failing_analysis_step(data: JSONObject, *, context: CodeReviewContext) -> JSONObject:
     """A step that fails to test error handling."""
     context.retry_count += 1
     if context.retry_count < 3:
@@ -513,7 +504,6 @@ def safe_input_handling_example():
     """
     import ast
     import json
-    from typing import Any
 
     def safe_literal_eval(user_input: str) -> Any | None:
         """

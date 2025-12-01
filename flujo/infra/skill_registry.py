@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional, List, TYPE_CHECKING, cast
+from typing import Any, Callable, List, Optional, TYPE_CHECKING, cast
+
+from flujo.type_definitions.common import JSONObject
 
 # Domain interface adapter to avoid leaking infra into domain logic
 if TYPE_CHECKING:
     from flujo.domain.interfaces import (
         SkillRegistry as SkillRegistryProtocol,
         SkillRegistryProvider as SkillRegistryProviderProtocol,
+        SkillFactory,
         set_default_skill_registry_provider as set_default_skill_registry_provider_fn,
         set_default_skill_resolver as set_default_skill_resolver_fn,
     )
@@ -15,12 +18,14 @@ else:  # pragma: no cover - runtime import guard
         from flujo.domain.interfaces import (
             SkillRegistry as SkillRegistryProtocol,
             SkillRegistryProvider as SkillRegistryProviderProtocol,
+            SkillFactory,
             set_default_skill_registry_provider as set_default_skill_registry_provider_fn,
             set_default_skill_resolver as set_default_skill_resolver_fn,
         )
     except Exception:
         SkillRegistryProtocol = object  # type: ignore[assignment]
         SkillRegistryProviderProtocol = object  # type: ignore[assignment]
+        SkillFactory = Callable[..., Any]
         set_default_skill_registry_provider_fn = None
         set_default_skill_resolver_fn = None
 
@@ -29,24 +34,24 @@ class SkillRegistry(SkillRegistryProtocol):
     """Versioned, scoped registry for resolving skills/agents by ID."""
 
     def __init__(self) -> None:
-        self._entries: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        self._entries: dict[str, dict[str, JSONObject]] = {}
 
     def register(
         self,
         id: str,
-        factory: Callable[..., Any] | Any,
+        factory: SkillFactory | Any,
         *,
         scope: str | None = None,
         description: Optional[str] = None,
-        input_schema: Optional[dict[str, Any]] = None,
+        input_schema: Optional[JSONObject] = None,
         # FSD-020 naming alias: arg_schema is accepted as alias of input_schema
-        output_schema: Optional[dict[str, Any]] = None,
+        output_schema: Optional[JSONObject] = None,
         capabilities: Optional[List[str]] = None,
         safety_level: Optional[str] = None,
         auth_required: Optional[bool] = None,
         auth_scope: Optional[str] = None,
         side_effects: Optional[bool] = None,
-        arg_schema: Optional[dict[str, Any]] = None,
+        arg_schema: Optional[JSONObject] = None,
         version: str | None = None,
     ) -> None:
         # Prefer explicit input_schema; fall back to arg_schema for compatibility with FSD specs
@@ -74,7 +79,7 @@ class SkillRegistry(SkillRegistryProtocol):
 
     def get(
         self, id: str, *, scope: str | None = None, version: str | None = None
-    ) -> Optional[dict[str, Any]]:
+    ) -> Optional[JSONObject]:
         scope_key = scope or "default"
         scoped = self._entries.get(scope_key, {})
         versions = scoped.get(id)
@@ -138,7 +143,7 @@ class SkillRegistryProvider(SkillRegistryProviderProtocol):
     """Provide scoped registries (per scope name)."""
 
     def __init__(self) -> None:
-        self._registries: Dict[str, SkillRegistry] = {}
+        self._registries: dict[str, SkillRegistry] = {}
 
     def get_registry(self, *, scope: str | None = None) -> SkillRegistryProtocol:
         scope_key = scope or "default"

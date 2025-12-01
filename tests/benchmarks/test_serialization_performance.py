@@ -1,3 +1,5 @@
+from flujo.type_definitions.common import JSONObject
+
 """Performance benchmarks for serialization and reconstruction operations."""
 
 import pytest
@@ -20,9 +22,9 @@ class BenchmarkModel(BaseModel):
 
     id: int
     name: str
-    data: Dict[str, Any]
+    data: JSONObject
     items: List[str]
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: JSONObject = Field(default_factory=dict)
 
 
 class NestedBenchmarkModel(BaseModel):

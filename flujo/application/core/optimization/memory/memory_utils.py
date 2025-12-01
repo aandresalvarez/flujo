@@ -6,6 +6,7 @@ temporary object reduction, memory pressure detection, and automatic cleanup
 mechanisms to reduce memory usage and improve performance.
 """
 
+from flujo.type_definitions.common import JSONObject
 import gc
 import psutil
 import sys
@@ -14,7 +15,7 @@ import time
 import weakref
 from collections import deque, defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set, Callable, TypeVar, Generic, Tuple, Union
+from typing import Any, List, Optional, Set, Callable, TypeVar, Generic, Tuple, Union
 from threading import RLock, Event
 
 T = TypeVar("T")
@@ -128,7 +129,7 @@ class PreAllocationPool(Generic[T]):
             while len(self._pool) > target_size:
                 self._pool.pop()
 
-    def get_stats(self) -> Dict[str, Union[int, float]]:
+    def get_stats(self) -> dict[str, Union[int, float]]:
         """Get pool statistics."""
         with self._lock:
             return {
@@ -161,9 +162,9 @@ class StringOptimizer:
         self.intern_threshold = intern_threshold
         self.cache_size = cache_size
 
-        self._intern_cache: Dict[str, str] = {}
-        self._format_cache: Dict[Tuple[str, Tuple[Any, ...], Tuple[Tuple[str, Any], ...]], str] = {}
-        self._concat_cache: Dict[Tuple[str, ...], str] = {}
+        self._intern_cache: dict[str, str] = {}
+        self._format_cache: dict[Tuple[str, Tuple[Any, ...], Tuple[Tuple[str, Any], ...]], str] = {}
+        self._concat_cache: dict[Tuple[str, ...], str] = {}
         self._lock = RLock()
 
     def optimized_intern(self, s: str) -> str:
@@ -246,8 +247,8 @@ class TemporaryObjectTracker:
     def __init__(self, tracking_enabled: bool = True):
         self.tracking_enabled = tracking_enabled
 
-        self._object_counts: Dict[type, int] = defaultdict(int)
-        self._creation_patterns: Dict[str, List[float]] = defaultdict(list)
+        self._object_counts: dict[type, int] = defaultdict(int)
+        self._creation_patterns: dict[str, List[float]] = defaultdict(list)
         # Weak references for cleanup
         self._weak_refs: Set[weakref.ref[Any]] = set()
         self._last_cleanup = time.time()
@@ -271,10 +272,10 @@ class TemporaryObjectTracker:
                 # Some objects can't be weakly referenced
                 pass
 
-    def get_creation_stats(self) -> Dict[str, Any]:
+    def get_creation_stats(self) -> JSONObject:
         """Get object creation statistics."""
         with self._lock:
-            stats: Dict[str, Any] = {
+            stats: JSONObject = {
                 "object_counts": dict(self._object_counts),
                 "total_objects": sum(self._object_counts.values()),
                 "tracked_refs": len(self._weak_refs),
@@ -369,7 +370,7 @@ class MemoryPressureDetector:
             if callback in self._cleanup_callbacks:
                 self._cleanup_callbacks.remove(callback)
 
-    def check_memory_pressure(self) -> Dict[str, Any]:
+    def check_memory_pressure(self) -> JSONObject:
         """Check current memory pressure."""
         try:
             process = psutil.Process()
@@ -476,7 +477,7 @@ class MemoryOptimization:
         self.enable_pressure_detection = enable_pressure_detection
 
         # Initialize components
-        self._pools: Dict[str, PreAllocationPool[Any]] = {}
+        self._pools: dict[str, PreAllocationPool[Any]] = {}
         self._string_optimizer = StringOptimizer() if enable_string_optimization else None
         self._object_tracker = TemporaryObjectTracker(enable_tracking)
         self._pressure_detector = (
@@ -551,7 +552,7 @@ class MemoryOptimization:
         else:
             raise ValueError(f"Unknown string operation: {operation}")
 
-    def check_memory_pressure(self) -> Dict[str, Any]:
+    def check_memory_pressure(self) -> JSONObject:
         """Check current memory pressure."""
         if self._pressure_detector:
             return self._pressure_detector.check_memory_pressure()
@@ -583,9 +584,9 @@ class MemoryOptimization:
 
         return suggestions
 
-    def get_comprehensive_stats(self) -> Dict[str, Any]:
+    def get_comprehensive_stats(self) -> JSONObject:
         """Get comprehensive memory optimization statistics."""
-        stats: Dict[str, Any] = {
+        stats: JSONObject = {
             "pools": {name: pool.get_stats() for name, pool in self._pools.items()},
             "tracking": self._object_tracker.get_creation_stats() if self.enable_tracking else {},
             "memory_pressure": self.check_memory_pressure(),
@@ -658,7 +659,7 @@ def optimize_string_operation(operation: str, *args: Any, **kwargs: Any) -> str:
     return optimizer.optimize_string(operation, *args, **kwargs)
 
 
-def check_memory_status() -> Dict[str, Any]:
+def check_memory_status() -> JSONObject:
     """Convenience function to check memory status."""
     optimizer = get_global_memory_optimizer()
     return optimizer.check_memory_pressure()

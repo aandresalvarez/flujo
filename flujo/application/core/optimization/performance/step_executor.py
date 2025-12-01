@@ -12,7 +12,7 @@ import time
 import weakref
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set, TypeVar
+from typing import Any, Optional, Set, TypeVar
 from threading import RLock
 from enum import Enum
 
@@ -20,6 +20,7 @@ from .....domain.models import StepResult
 from .....signature_tools import analyze_signature
 from ..memory.object_pool import get_global_pool
 from ..memory.memory_utils import track_object_creation
+from flujo.type_definitions.common import JSONObject
 
 T = TypeVar("T")
 
@@ -61,7 +62,7 @@ class StepAnalysis:
     supports_streaming: bool = False
 
     # Agent analysis
-    agent_signature: Optional[Dict[str, Any]] = None
+    agent_signature: Optional[JSONObject] = None
     agent_accepts_context: bool = False
     agent_accepts_resources: bool = False
     agent_accepts_stream: bool = False
@@ -93,7 +94,7 @@ class ExecutionStats:
     analysis_cache_misses: int = 0
 
     # Error tracking
-    error_types: Dict[str, int] = field(default_factory=dict)
+    error_types: dict[str, int] = field(default_factory=dict)
     last_error: Optional[str] = None
 
     @property
@@ -123,8 +124,8 @@ class StepAnalyzer:
     """Analyzes steps for optimization opportunities."""
 
     def __init__(self) -> None:
-        self._signature_cache: Dict[Any, Dict[str, Any]] = {}
-        self._complexity_cache: Dict[str, StepComplexity] = {}
+        self._signature_cache: dict[Any, JSONObject] = {}
+        self._complexity_cache: dict[str, StepComplexity] = {}
         self._lock = RLock()
 
     def analyze_step(self, step: Any) -> StepAnalysis:
@@ -234,7 +235,7 @@ class StepAnalyzer:
         self._complexity_cache[step_type] = complexity
         return complexity
 
-    def _analyze_agent(self, step: Any) -> Dict[str, Any]:
+    def _analyze_agent(self, step: Any) -> JSONObject:
         """Analyze step agent for optimization opportunities."""
         agent = getattr(step, "agent", None)
         if not agent:
@@ -245,7 +246,7 @@ class StepAnalyzer:
         if agent_id in self._signature_cache:
             return self._signature_cache[agent_id]
 
-        analysis: Dict[str, Any] = {}
+        analysis: JSONObject = {}
 
         try:
             # Get the executable function
@@ -438,17 +439,17 @@ class OptimizedStepExecutor:
         self._object_pool = get_global_pool()
 
         # Caches
-        self._analysis_cache: Dict[int, StepAnalysis] = {}
+        self._analysis_cache: dict[int, StepAnalysis] = {}
         # Weak references for cleanup
         self._weak_refs: Set[weakref.ref[Any]] = set()
         self._last_cleanup = time.time()
 
         # Statistics
-        self._execution_stats: Dict[str, ExecutionStats] = defaultdict(ExecutionStats)
+        self._execution_stats: dict[str, ExecutionStats] = defaultdict(ExecutionStats)
         self._global_stats = ExecutionStats()
 
         # Performance optimization
-        self._fast_path_cache: Dict[int, bool] = {}
+        self._fast_path_cache: dict[int, bool] = {}
         self._result_pool: deque[StepResult] = deque(
             maxlen=100
         )  # Pool of reusable StepResult objects
@@ -766,7 +767,7 @@ class OptimizedStepExecutor:
         """Get global execution statistics."""
         return self._global_stats
 
-    def get_analysis_cache_stats(self) -> Dict[str, Any]:
+    def get_analysis_cache_stats(self) -> JSONObject:
         """Get analysis cache statistics."""
         with self._lock:
             return {

@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 import sys
 
 try:
@@ -14,7 +14,7 @@ except Exception:
     sys.exit(1)
 
 
-DEFAULT_PROCESSING: Dict[str, Any] = {
+DEFAULT_PROCESSING: dict[str, Any] = {
     "structured_output": "auto",  # off | auto | openai_json | outlines | xgrammar
     "aop": "minimal",  # off | minimal | full
     "coercion": {
@@ -29,7 +29,7 @@ DEFAULT_PROCESSING: Dict[str, Any] = {
 }
 
 
-def deep_merge(dst: Dict[str, Any], src: Dict[str, Any]) -> Dict[str, Any]:
+def deep_merge(dst: dict[str, Any], src: dict[str, Any]) -> dict[str, Any]:
     out = dict(dst)
     for k, v in src.items():
         if isinstance(v, dict) and isinstance(out.get(k), dict):

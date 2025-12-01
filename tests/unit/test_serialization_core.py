@@ -7,7 +7,7 @@ from flujo.utils.serialization import (
     register_custom_serializer,
     reset_custom_serializer_registry,
 )
-from flujo.domain.dsl import Step
+from tests.test_types.fixtures import create_test_step
 
 
 class SelfRefModel(BaseModel):
@@ -28,7 +28,7 @@ def clear_serializers():
 
 
 def test_determinism_with_unordered_collections() -> None:
-    step = Step(name="determinism")
+    step = create_test_step(name="determinism")
     data1 = {"a": 1, "b": 2, "set": {3, 1}}
     data2 = {"b": 2, "a": 1, "set": {1, 3}}
     key1 = _generate_cache_key(step, data1)

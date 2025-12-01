@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import importlib
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 from ..interfaces import get_config_provider, get_skill_resolver
 from .loader_models import BlueprintError
+from flujo.type_definitions.common import JSONObject
 
 _skills_base_dir_stack: list[str] = []
 
@@ -179,7 +180,7 @@ def _resolve_agent(agent_spec: str) -> Any:
         return obj
 
 
-def _resolve_agent_entry(agent: Union[str, Dict[str, Any]]) -> Any:
+def _resolve_agent_entry(agent: Union[str, JSONObject]) -> Any:
     if isinstance(agent, str):
         return _resolve_agent(agent)
     if isinstance(agent, dict):
@@ -209,7 +210,7 @@ def _resolve_agent_entry(agent: Union[str, Dict[str, Any]]) -> Any:
     raise BlueprintError("Invalid agent specification")
 
 
-def _resolve_plugins(specs: List[Union[str, Dict[str, Any]]]) -> List[Tuple[Any, int]]:
+def _resolve_plugins(specs: List[Union[str, JSONObject]]) -> List[Tuple[Any, int]]:
     result: List[Tuple[Any, int]] = []
     for item in specs:
         try:

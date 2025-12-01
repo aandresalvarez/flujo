@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol, TypeVar, Generic, cast
+from typing import Any, Optional, Protocol, TypeVar, Generic, cast, Callable
+from flujo.type_definitions.common import JSONObject
 
 
 class SkillResolver(Protocol):
     """Resolve skills/agents by identifier."""
 
-    def get(self, skill_id: str, *, scope: Optional[str] = None) -> Optional[dict[str, Any]]: ...
+    def get(self, skill_id: str, *, scope: Optional[str] = None) -> Optional[JSONObject]: ...
 
 
 class TelemetrySink(Protocol):
@@ -47,17 +48,17 @@ class SkillsDiscovery(Protocol):
 class SkillRegistry(Protocol):
     """Registry Protocol to allow registration and resolution of skills."""
 
-    _entries: dict[str, dict[str, dict[str, Any]]]
+    _entries: dict[str, dict[str, JSONObject]]
 
     def register(
         self,
         id: str,
-        factory: Any,
+        factory: Callable[..., Any] | Any,
         *,
         scope: str | None = None,
         description: Optional[str] = None,
-        input_schema: Optional[dict[str, Any]] = None,
-        output_schema: Optional[dict[str, Any]] = None,
+        input_schema: Optional[JSONObject] = None,
+        output_schema: Optional[JSONObject] = None,
         capabilities: Optional[list[str]] = None,
         safety_level: Optional[str] = None,
         auth_required: Optional[bool] = None,
@@ -69,13 +70,19 @@ class SkillRegistry(Protocol):
 
     def get(
         self, id: str, *, scope: str | None = None, version: str | None = None
-    ) -> Optional[dict[str, Any]]: ...
+    ) -> Optional[JSONObject]: ...
 
 
 class SkillRegistryProvider(Protocol):
     """Provide scoped skill registries."""
 
     def get_registry(self, *, scope: str | None = None) -> SkillRegistry: ...
+
+
+class SkillFactory(Protocol):
+    """Typed callable that produces a skill/agent instance."""
+
+    def __call__(self, **params: Any) -> Any: ...
 
 
 T = TypeVar("T")

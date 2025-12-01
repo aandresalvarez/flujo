@@ -1,4 +1,5 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 
 import types
 import threading
@@ -125,7 +126,7 @@ class _ModuleTypeResolver:
     def __init__(self, module: Any) -> None:
         self.module = module
         self._cache: Dict[str, Type[Any]] = {}
-        self._type_hints_cache: Optional[Dict[str, Any]] = None
+        self._type_hints_cache: Optional[JSONObject] = None
 
     def resolve_type(self, type_name: str) -> Optional[Type[Any]]:
         """Resolve type from module scope with caching."""
@@ -149,7 +150,7 @@ class _ModuleTypeResolver:
 
         return None
 
-    def _get_module_type_hints(self) -> Dict[str, Any]:
+    def _get_module_type_hints(self) -> JSONObject:
         """Get type hints from module with caching."""
         if self._type_hints_cache is None:
             try:

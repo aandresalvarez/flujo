@@ -1,6 +1,6 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 
-from typing import Any, Dict
 from pydantic import BaseModel
 
 from flujo.domain.dsl import Pipeline, Step
@@ -28,7 +28,7 @@ def test_v_t5_prior_model_field_existence() -> None:
 
 
 def test_v_t6_json_trap() -> None:
-    async def b(x: Dict[str, Any]) -> str:  # type: ignore[override]
+    async def b(x: JSONObject) -> str:  # type: ignore[override]
         return "ok"
 
     async def pass_through(x: str) -> str:  # type: ignore[override]

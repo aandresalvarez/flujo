@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 from flujo.type_definitions.common import JSONObject
 
@@ -25,7 +25,7 @@ def _register_architect_agents() -> None:
     async def _planner_agent(payload: JSONObject) -> JSONObject:
         goal = str(payload.get("user_goal") or "").strip()
         g = goal.lower()
-        steps: List[Dict[str, str]] = []
+        steps: list[dict[str, str]] = []
         if not goal:
             steps = [{"step_name": "UnderstandGoal", "purpose": "Clarify the intended outcome."}]
         else:
@@ -199,7 +199,7 @@ def _register_architect_agents() -> None:
 
         if wants_parallel:
             # Build a single ParallelStep with each selection as its own branch
-            branches: Dict[str, List[JSONObject]] = {}
+            branches: dict[str, list[JSONObject]] = {}
             for idx, sel in enumerate(selections, start=1):
                 if not isinstance(sel, dict):
                     continue
@@ -209,7 +209,7 @@ def _register_architect_agents() -> None:
                 step_dict = {"kind": "step", "name": sname, "agent": {"id": sid, "params": params}}
                 branches[f"branch_{idx}"] = [step_dict]
 
-            parallel_dict: Dict[str, Any] = {
+            parallel_dict: JSONObject = {
                 "kind": "parallel",
                 "name": "DoInParallel",
                 "branches": branches,
@@ -280,7 +280,7 @@ def has_yaml_key(_out: Any = None, ctx: DomainBaseModel | None = None, **_kwargs
     return "present" if present else "absent"
 
 
-class DiscoverSkillsAgent(AsyncAgentProtocol[Any, Dict[str, Any]]):
+class DiscoverSkillsAgent(AsyncAgentProtocol[Any, JSONObject]):
     """Builtin agent that discovers available skills and exposes them to context.
 
     - Loads skills from a local catalog (skills.yaml/skills.json) and Python entry points.
@@ -290,7 +290,7 @@ class DiscoverSkillsAgent(AsyncAgentProtocol[Any, Dict[str, Any]]):
     def __init__(self, directory: Optional[str] = None) -> None:
         self.directory = directory or "."
 
-    async def run(self, data: Any, **kwargs: Any) -> Dict[str, Any]:
+    async def run(self, data: Any, **kwargs: Any) -> JSONObject:
         # Best-effort: load catalog + packaged entry points
         try:
             load_skills_catalog(self.directory)
@@ -300,7 +300,7 @@ class DiscoverSkillsAgent(AsyncAgentProtocol[Any, Dict[str, Any]]):
             pass
 
         # Collect a public view of registered skills
-        skills: List[Dict[str, Any]] = []
+        skills: list[JSONObject] = []
         try:
             reg = get_skill_registry()
             entries = getattr(reg, "_entries", {})  # Access internal map read-only
@@ -322,12 +322,12 @@ class DiscoverSkillsAgent(AsyncAgentProtocol[Any, Dict[str, Any]]):
 # --- Adapter: extract decomposed steps into a flat context key ---
 async def extract_decomposed_steps(
     decomposition: Any, *, output_key: str = "prepared_steps_for_mapping"
-) -> Dict[str, Any]:
+) -> JSONObject:
     """Adapter to extract a list of step dicts from the decomposer output.
 
     Returns a dict so that `updates_context: true` can merge it into the pipeline context.
     """
-    steps: List[Dict[str, Any]] = []
+    steps: list[JSONObject] = []
     try:
         # Handle pydantic models with .model_dump()
         if isinstance(decomposition, PydanticBaseModel):
@@ -356,7 +356,7 @@ async def extract_decomposed_steps(
 
 
 # --- Adapter: extract YAML text from writer output ---
-async def extract_yaml_text(writer_output: Any) -> Dict[str, str]:
+async def extract_yaml_text(writer_output: Any) -> dict[str, str]:
     """
     Robustly extracts YAML text from various agent output formats,
     stores it in the context, and returns it as a dictionary.
@@ -452,7 +452,7 @@ async def extract_yaml_text(writer_output: Any) -> Dict[str, str]:
 
 
 # --- Adapter: capture ValidationReport for later error extraction ---
-async def capture_validation_report(report: Any) -> Dict[str, Any]:
+async def capture_validation_report(report: Any) -> JSONObject:
     """Capture the full ValidationReport in the context for later error extraction."""
     try:
         if hasattr(report, "model_dump"):
@@ -471,7 +471,7 @@ async def capture_validation_report(report: Any) -> Dict[str, Any]:
 
 
 # --- Adapter: turn ValidationReport into a boolean flag on context ---
-async def validation_report_to_flag(report: Any) -> Dict[str, Any]:
+async def validation_report_to_flag(report: Any) -> JSONObject:
     """Return a dict with yaml_is_valid based on a ValidationReport-like input."""
     try:
         if isinstance(report, dict):
@@ -509,7 +509,7 @@ def exit_when_yaml_valid(_out: Any, context: Any | None) -> bool:
 # --- Adapter: extract validation errors for repair loop ---
 async def extract_validation_errors(
     report: Any, *, context: DomainBaseModel | None = None
-) -> Dict[str, Any]:
+) -> JSONObject:
     """Extract error messages from a ValidationReport-like input for repair loops.
 
     Also returns the current yaml_is_valid flag (when available) so that the
@@ -527,7 +527,7 @@ async def extract_validation_errors(
         else:
             report_source = report
 
-        report_dict: Dict[str, Any]
+        report_dict: JSONObject
         if isinstance(report_source, dict):
             report_dict = report_source
         elif (
@@ -553,7 +553,7 @@ async def extract_validation_errors(
     except Exception:
         is_valid = False
 
-    result: Dict[str, Any] = {
+    result: JSONObject = {
         "validation_errors": _json.dumps(errors),
         "yaml_is_valid": is_valid,
     }
@@ -813,7 +813,7 @@ def select_by_yaml_shape(
     return "valid"
 
 
-async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> Dict[str, Any]:
+async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> JSONObject:
     """Return {'yaml_is_valid': bool} based on a quick YAML shape heuristic.
 
     - False only when the 'steps:' line contains an opening '[' without a closing ']'.
@@ -830,7 +830,7 @@ async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> D
         except Exception:
             line = ""
         if "[" in line and "]" not in line:
-            _out: Dict[str, Any] = {"yaml_is_valid": False, "yaml_text": yt}
+            _out: JSONObject = {"yaml_is_valid": False, "yaml_text": yt}
             try:
                 gy = getattr(context, "generated_yaml", None)
                 if isinstance(gy, str):
@@ -848,7 +848,7 @@ async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> D
                 or ("[" in first and "]" in first)
                 or not ("[" in first and "]" not in first)
             ):
-                _out2: Dict[str, Any] = {"yaml_is_valid": True, "yaml_text": yt}
+                _out2: JSONObject = {"yaml_is_valid": True, "yaml_text": yt}
                 try:
                     gy = getattr(context, "generated_yaml", None)
                     if isinstance(gy, str):
@@ -858,7 +858,7 @@ async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> D
                 return _out2
         except Exception:
             pass
-    _out3: Dict[str, Any] = {"yaml_is_valid": True}
+    _out3: JSONObject = {"yaml_is_valid": True}
     if isinstance(yt, str):
         _out3["yaml_text"] = yt
     try:

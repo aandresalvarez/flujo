@@ -1,7 +1,8 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from flujo.exceptions import MockDetectionError
 from flujo.infra import telemetry
@@ -274,7 +275,7 @@ def _normalize_builtin_params(step: Any, data: Any) -> Any:
     if not isinstance(agent_id, str) or not agent_id.startswith("flujo.builtins."):
         return data
 
-    params: Dict[str, Any] = {}
+    params: JSONObject = {}
 
     if isinstance(agent_spec, dict) and "params" in agent_spec:
         agent_params = agent_spec["params"]

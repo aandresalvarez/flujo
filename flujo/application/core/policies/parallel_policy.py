@@ -1,4 +1,5 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 # mypy: ignore-errors
 
 from typing import Type
@@ -124,7 +125,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                 pass
         # Tracking variables
         branch_results: Dict[str, StepResult] = {}
-        branch_contexts: Dict[str, Any] = {}
+        branch_contexts: JSONObject = {}
         total_cost = 0.0
         total_tokens = 0
         all_successful = True
@@ -651,7 +652,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         else:
             result.success = all_successful
         # Build output
-        output_dict: Dict[str, Any] = {}
+        output_dict: JSONObject = {}
         for bn, br in branch_results.items():
             output_dict[bn] = br.output if br.success else br
         result.output = output_dict

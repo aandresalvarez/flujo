@@ -1,7 +1,9 @@
 from __future__ import annotations
 # mypy: disable-error-code=arg-type
 
-from typing import Any, Callable, Coroutine, Dict, cast
+from typing import Any, Callable, Coroutine, cast
+
+from flujo.type_definitions.common import JSONObject
 
 from flujo.architect.states.common import goto, make_transition_guard, trace_next_state
 from flujo.domain.base_model import BaseModel as _BaseModel
@@ -12,12 +14,12 @@ def build_goal_clarification_state() -> Pipeline[Any, Any]:
     """Bridge from GatheringContext to Planning."""
 
     async def _goto_plan(
-        _data: Dict[str, Any] | None = None, context: _BaseModel | None = None
-    ) -> Dict[str, Any]:
+        _data: JSONObject | None = None, context: _BaseModel | None = None
+    ) -> JSONObject:
         return await goto("Planning", context=context)
 
     goto_plan = Step.from_callable(
-        cast(Callable[[Any], Coroutine[Any, Any, Dict[str, Any]]], _goto_plan),
+        cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _goto_plan),
         name="GotoPlanning",
         updates_context=True,
     )

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Optional
 from ...domain.models import StepOutcome, StepResult, Success
 from ...infra import telemetry
-from .default_components import DefaultCacheKeyGenerator, _LRUCache
+from .default_cache_components import DefaultCacheKeyGenerator, _LRUCache
 
 if TYPE_CHECKING:  # pragma: no cover
     from .types import ExecutionFrame

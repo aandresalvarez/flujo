@@ -5,25 +5,26 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, List, Optional, cast
 
 import aiosqlite
 import atexit
 
 from flujo.infra import telemetry
+from flujo.type_definitions.common import JSONObject
 from flujo.utils.serialization import robust_serialize, safe_deserialize
 from .sqlite_core import SQLiteBackendBase, _fast_json_dumps
 from .sqlite_trace import SQLiteTraceMixin
 
 
 class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
-    async def save_trace(self, run_id: str, trace: Dict[str, Any]) -> None:
+    async def save_trace(self, run_id: str, trace: JSONObject) -> None:
         return await SQLiteTraceMixin.save_trace(self, run_id, trace)
 
-    async def get_trace(self, run_id: str) -> Optional[Dict[str, Any]]:
+    async def get_trace(self, run_id: str) -> Optional[JSONObject]:
         return await SQLiteTraceMixin.get_trace(self, run_id)
 
-    async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
+    async def save_state(self, run_id: str, state: JSONObject) -> None:
         """Save workflow state to the database.
 
         Args:
@@ -123,11 +124,11 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
             await self._with_retries(_save)
 
-    async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
+    async def load_state(self, run_id: str) -> Optional[JSONObject]:
         await self._ensure_init()
         async with self._lock:
 
-            async def _load() -> Optional[Dict[str, Any]]:
+            async def _load() -> Optional[JSONObject]:
                 conn = await self._create_connection()
                 try:
                     db = conn
@@ -179,7 +180,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 }
 
             result = await self._with_retries(_load)
-            return cast(Optional[Dict[str, Any]], result)
+            return cast(Optional[JSONObject], result)
 
     async def delete_state(self, run_id: str) -> None:
         """Delete workflow state."""
@@ -193,7 +194,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
             finally:
                 await conn.close()
 
-    async def list_states(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def list_states(self, status: Optional[str] = None) -> List[JSONObject]:
         """List workflow states with optional status filter.
 
         Uses the pooled connection when available to minimize connection overhead.
@@ -244,7 +245,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         status: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[JSONObject]:
         """List background tasks with optional filtering."""
         await self._ensure_init()
         async with self._lock:
@@ -278,7 +279,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 async with db.execute(query, params) as cursor:
                     rows = await cursor.fetchall()
 
-                tasks: List[Dict[str, Any]] = []
+                tasks: List[JSONObject] = []
                 for row in rows:
                     metadata_raw = safe_deserialize(json.loads(row[4])) if row[4] else {}
                     tasks.append(
@@ -305,11 +306,11 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         self,
         parent_run_id: Optional[str] = None,
         hours_back: int = 24,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[JSONObject]:
         """Return failed background tasks within a time window."""
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
         tasks = await self.list_background_tasks(parent_run_id=parent_run_id, status="failed")
-        filtered: List[Dict[str, Any]] = []
+        filtered: List[JSONObject] = []
 
         def _normalize_ts(value: Any) -> Optional[datetime]:
             dt: Optional[datetime] = None
@@ -392,7 +393,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         pipeline_id: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[JSONObject]:
         """Enhanced workflow listing with additional filters and metadata."""
         await self._ensure_init()
         async with self._lock:
@@ -438,7 +439,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 async with db.execute(query, params) as cursor:
                     rows = await cursor.fetchall()
 
-                result: List[Dict[str, Any]] = []
+                result: List[JSONObject] = []
                 for row in rows:
                     if row is None:
                         continue
@@ -478,7 +479,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         pipeline_name: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[JSONObject]:
         """List runs from the new structured schema for lens CLI."""
         await self._ensure_init()
         async with self._lock:
@@ -540,7 +541,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 async with db.execute(query, params) as cursor:
                     rows = await cursor.fetchall()
 
-                result: List[Dict[str, Any]] = []
+                result: List[JSONObject] = []
                 for row in rows:
                     if row is None:
                         continue
@@ -569,7 +570,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     except Exception:
                         pass
 
-    async def get_workflow_stats(self) -> Dict[str, Any]:
+    async def get_workflow_stats(self) -> JSONObject:
         """Get comprehensive workflow statistics."""
         await self._ensure_init()
         async with self._lock:
@@ -591,7 +592,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 """
                 )
                 status_counts_rows = await cursor.fetchall()
-                status_counts: Dict[str, int] = {
+                status_counts: dict[str, int] = {
                     row[0]: row[1] for row in status_counts_rows if row is not None
                 }
                 await cursor.close()
@@ -631,7 +632,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     """
                 )
                 bg_counts_rows = await cursor.fetchall()
-                bg_status_counts: Dict[str, int] = {
+                bg_status_counts: dict[str, int] = {
                     row[0]: row[1] for row in bg_counts_rows if row is not None
                 }
                 await cursor.close()
@@ -646,7 +647,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
             finally:
                 await conn.close()
 
-    async def get_failed_workflows(self, hours_back: int = 24) -> List[Dict[str, Any]]:
+    async def get_failed_workflows(self, hours_back: int = 24) -> List[JSONObject]:
         """Get failed workflows from the last N hours."""
         await self._ensure_init()
         async with self._lock:
@@ -669,7 +670,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 rows = await cursor.fetchall()
                 await cursor.close()
 
-                result: List[Dict[str, Any]] = []
+                result: List[JSONObject] = []
                 for row in rows:
                     if row is None:
                         continue
@@ -735,7 +736,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     # New structured persistence API
     # ------------------------------------------------------------------
 
-    async def save_run_start(self, run_data: Dict[str, Any]) -> None:
+    async def save_run_start(self, run_data: JSONObject) -> None:
         async with self._lock:
             # Fast path: if backend not fully initialized yet, bootstrap only the 'runs' table
             # to avoid heavy DDL/PRAGMA costs on first write. Full initialization (other tables,
@@ -842,7 +843,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
             await self._with_retries(_save)
 
-    async def save_step_result(self, step_data: Dict[str, Any]) -> None:
+    async def save_step_result(self, step_data: JSONObject) -> None:
         await self._ensure_init()
         async with self._lock:
 
@@ -909,7 +910,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
             await self._with_retries(_save)
 
-    async def save_run_end(self, run_id: str, end_data: Dict[str, Any]) -> None:
+    async def save_run_end(self, run_id: str, end_data: JSONObject) -> None:
         await self._ensure_init()
         async with self._lock:
 
@@ -949,7 +950,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
             await self._with_retries(_save)
 
-    async def get_run_details(self, run_id: str) -> Optional[Dict[str, Any]]:
+    async def get_run_details(self, run_id: str) -> Optional[JSONObject]:
         await self._ensure_init()
         async with self._lock:
             conn = await self._create_connection()
@@ -982,7 +983,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
             finally:
                 await conn.close()
 
-    async def list_run_steps(self, run_id: str) -> List[Dict[str, Any]]:
+    async def list_run_steps(self, run_id: str) -> List[JSONObject]:
         await self._ensure_init()
         async with self._lock:
             conn = await self._create_connection()
@@ -998,7 +999,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 )
                 rows = await cursor.fetchall()
                 await cursor.close()
-                results: List[Dict[str, Any]] = []
+                results: List[JSONObject] = []
                 for r in rows:
                     results.append(
                         {

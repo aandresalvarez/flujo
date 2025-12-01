@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from ...exceptions import UsageLimitExceededError
 from ...domain.models import UsageLimits, Quota
-from .default_components import OrjsonSerializer, Blake3Hasher
+from .default_cache_components import OrjsonSerializer, Blake3Hasher
 from .context_manager import ContextManager
 from .types import ExecutionFrame
 from ...steps.cache_step import CacheStep

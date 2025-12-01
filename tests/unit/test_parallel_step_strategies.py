@@ -1,8 +1,9 @@
 """Unit tests for parallel step execution strategies."""
 
+from flujo.type_definitions.common import JSONObject
+
 import asyncio
 import logging
-from typing import Any, Dict
 
 import pytest
 
@@ -25,14 +26,14 @@ class MockContext(BaseModel):
 
     # Required PipelineContext attributes
     initial_prompt: str = "test_prompt"
-    scratchpad: Dict[str, Any] = {}
+    scratchpad: JSONObject = {}
 
     # Additional data storage for tests that expect it
-    data: Dict[str, Any] = {}
+    data: JSONObject = {}
 
     model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
-    def __init__(self, data: Dict[str, Any] = None, **kwargs):
+    def __init__(self, data: JSONObject = None, **kwargs):
         # Merge data and kwargs
         merged_data = dict(data) if data is not None else {}
         merged_data.update(kwargs)
@@ -51,7 +52,7 @@ class MockContext(BaseModel):
         )
 
     @classmethod
-    def model_validate(cls, data: Dict[str, Any]):
+    def model_validate(cls, data: JSONObject):
         return cls(data)
 
 
@@ -434,11 +435,11 @@ class TestParallelStepExecution:
         # Use a context with no scratchpad attribute at all
         class NoScratchpadContext(BaseModel):
             initial_prompt: str = "test_prompt"
-            data: Dict[str, Any] = {}
+            data: JSONObject = {}
 
             model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
-            def __init__(self, data: Dict[str, Any] = None, **kwargs):
+            def __init__(self, data: JSONObject = None, **kwargs):
                 merged_data = dict(data) if data is not None else {}
                 merged_data.update(kwargs)
 
@@ -588,7 +589,7 @@ class TestParallelStepExecution:
         class TestContext(BaseModel):
             initial_prompt: str = "test_prompt"
             value: str = "initial"
-            scratchpad: Dict[str, Any] = {}
+            scratchpad: JSONObject = {}
 
             model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 

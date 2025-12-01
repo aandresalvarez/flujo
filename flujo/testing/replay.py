@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
+
+from flujo.type_definitions.common import JSONObject
 
 from ..domain.agent_protocol import AsyncAgentProtocol
 
@@ -18,8 +20,8 @@ class ReplayAgent(AsyncAgentProtocol[Any, Any]):
     plumbing to propagate them through agent kwargs.
     """
 
-    def __init__(self, responses_by_key: Dict[str, Any]) -> None:
-        self._responses_by_key: Dict[str, Any] = dict(responses_by_key)
+    def __init__(self, responses_by_key: JSONObject) -> None:
+        self._responses_by_key: JSONObject = dict(responses_by_key)
 
     async def run(self, *args: Any, **kwargs: Any) -> Any:
         step_name = kwargs.get("step_name") or kwargs.get("name") or "unknown"

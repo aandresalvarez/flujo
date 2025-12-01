@@ -1,3 +1,5 @@
+from flujo.type_definitions.common import JSONObject
+
 """Error handling utilities for robustness tests.
 
 This module provides standardized error handling patterns and recovery
@@ -25,7 +27,7 @@ class ErrorResult:
     error_message: Optional[str] = None
     recovery_time: Optional[float] = None
     cleanup_successful: bool = False
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[JSONObject] = None
 
 
 class RobustnessErrorHandler:
@@ -245,7 +247,7 @@ class RobustnessErrorHandler:
 
         raise last_exception
 
-    def get_error_summary(self) -> Dict[str, Any]:
+    def get_error_summary(self) -> JSONObject:
         """Get summary of error handling results."""
         total_errors = len(self.error_history)
         successful_handling = sum(1 for r in self.error_history if r.success)

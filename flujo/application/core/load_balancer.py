@@ -6,6 +6,7 @@ resource contention reduction, task scheduling optimization, work-stealing queue
 and load distribution algorithms for optimal performance under varying loads.
 """
 
+from flujo.type_definitions.common import JSONObject
 import asyncio
 import time
 import heapq
@@ -64,7 +65,7 @@ class Task:
     coro: Optional[Awaitable[Any]] = None
     func: Optional[Callable[..., Any]] = None
     args: Tuple[Any, ...] = field(default_factory=tuple)
-    kwargs: Dict[str, Any] = field(default_factory=dict)
+    kwargs: JSONObject = field(default_factory=dict)
 
     # Metadata
     created_at: float = field(default_factory=time.time)
@@ -119,7 +120,7 @@ class Worker:
 
     # Task tracking
     active_tasks: Set[str] = field(default_factory=set)
-    task_history: deque[Dict[str, Any]] = field(default_factory=lambda: deque(maxlen=100))
+    task_history: deque[JSONObject] = field(default_factory=lambda: deque(maxlen=100))
 
     # Health metrics
     last_heartbeat: float = field(default_factory=time.time)
@@ -305,7 +306,7 @@ class TaskQueue:
                 if task_id in self._dependency_graph:
                     del self._dependency_graph[task_id]
 
-    def get_queue_stats(self) -> Dict[str, Any]:
+    def get_queue_stats(self) -> JSONObject:
         """Get queue statistics."""
         with self._lock:
             return {
@@ -358,7 +359,7 @@ class LoadBalancer:
         self._shutdown_event = asyncio.Event()
 
         # Statistics
-        self._stats: Dict[str, Any] = {
+        self._stats: JSONObject = {
             "total_tasks": 0,
             "completed_tasks": 0,
             "failed_tasks": 0,
@@ -656,7 +657,7 @@ class LoadBalancer:
             if worker_id in self._workers:
                 self._workers[worker_id].last_heartbeat = time.time()
 
-    def get_worker_stats(self) -> Dict[str, Any]:
+    def get_worker_stats(self) -> JSONObject:
         """Get worker statistics."""
         with self._lock:
             return {
@@ -674,11 +675,11 @@ class LoadBalancer:
                 },
             }
 
-    def get_queue_stats(self) -> Dict[str, Any]:
+    def get_queue_stats(self) -> JSONObject:
         """Get task queue statistics."""
         return self._task_queue.get_queue_stats()
 
-    def get_load_balancer_stats(self) -> Dict[str, Any]:
+    def get_load_balancer_stats(self) -> JSONObject:
         """Get comprehensive load balancer statistics."""
         with self._lock:
             return {
@@ -694,7 +695,7 @@ class LoadBalancer:
                 ),
             }
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> JSONObject:
         """Get load balancer statistics (alias for get_load_balancer_stats)."""
         return self.get_load_balancer_stats()
 
@@ -757,7 +758,7 @@ def add_worker(
     balancer.add_worker(worker_id, capacity, resource_capacity)
 
 
-def get_load_balancer_stats() -> Dict[str, Any]:
+def get_load_balancer_stats() -> JSONObject:
     """Get load balancer statistics."""
     balancer = get_global_load_balancer()
     return balancer.get_load_balancer_stats()

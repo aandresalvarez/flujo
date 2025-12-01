@@ -1,7 +1,8 @@
 """Domain models for flujo."""
 
 from __future__ import annotations
-from typing import Any, List, Optional, Literal, Dict, Generic, TypeVar, Tuple
+from typing import Any, List, Optional, Literal, Generic, TypeVar, Tuple
+from flujo.type_definitions.common import JSONObject
 from threading import RLock
 from pydantic import Field, ConfigDict, field_validator, PrivateAttr
 from typing import ClassVar
@@ -536,7 +537,7 @@ class PipelineContext(BaseModel):
 
     run_id: str = Field(default_factory=lambda: f"run_{uuid.uuid4().hex}")
     initial_prompt: Optional[str] = None
-    scratchpad: Dict[str, Any] = Field(default_factory=dict)
+    scratchpad: JSONObject = Field(default_factory=dict)
     hitl_history: List[HumanInteraction] = Field(default_factory=list)
     command_log: List[ExecutedCommandLog] = Field(
         default_factory=list,
@@ -555,7 +556,7 @@ class PipelineContext(BaseModel):
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
     @property
-    def steps(self) -> Dict[str, Any]:
+    def steps(self) -> JSONObject:
         """Expose recorded step outputs stored in scratchpad['steps']."""
         try:
             sp = getattr(self, "scratchpad", {})

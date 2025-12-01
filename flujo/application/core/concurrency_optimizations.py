@@ -6,12 +6,13 @@ semaphore optimization, and contention reduction strategies to improve
 concurrent execution performance.
 """
 
+from flujo.type_definitions.common import JSONObject
 import asyncio
 import multiprocessing
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Awaitable, Union
+from typing import Any, List, Optional, Tuple, Awaitable, Union
 from asyncio import Task
 from threading import RLock
 from enum import Enum
@@ -608,9 +609,9 @@ class ConcurrencyOptimizer:
                 # Continue processing other work items
                 continue
 
-    def get_concurrency_stats(self) -> Dict[str, Any]:
+    def get_concurrency_stats(self) -> JSONObject:
         """Get comprehensive concurrency statistics."""
-        stats: Dict[str, Any] = {
+        stats: JSONObject = {
             "total_workers": self.num_workers,
             "work_stealing_enabled": self.enable_work_stealing,
         }
@@ -674,7 +675,7 @@ async def execute_with_optimized_concurrency(
     return await optimizer.execute_with_concurrency(coro, priority, task_id)
 
 
-def get_concurrency_stats() -> Dict[str, Any]:
+def get_concurrency_stats() -> JSONObject:
     """Get global concurrency statistics."""
     optimizer = get_global_concurrency_optimizer()
     return optimizer.get_concurrency_stats()

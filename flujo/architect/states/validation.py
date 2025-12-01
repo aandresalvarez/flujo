@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
+
+from flujo.type_definitions.common import JSONObject
 
 from flujo.architect.states.common import skill_resolver, telemetry
 from flujo.domain.base_model import BaseModel as _BaseModel
@@ -26,13 +28,13 @@ def build_validation_state() -> Pipeline[Any, Any]:
             validate: Step[Any, Any] = Step.from_callable(_validate, name="ValidateYAML")
         else:
 
-            async def _validate_fallback(yt: Any) -> Dict[str, Any]:
+            async def _validate_fallback(yt: Any) -> JSONObject:
                 return {"is_valid": True}
 
             validate = Step.from_callable(_validate_fallback, name="ValidateYAML")
     except Exception:
 
-        async def _validate_fallback(yt: Any) -> Dict[str, Any]:
+        async def _validate_fallback(yt: Any) -> JSONObject:
             return {"is_valid": True}
 
         validate = Step.from_callable(_validate_fallback, name="ValidateYAML")
@@ -51,7 +53,7 @@ def build_validation_state() -> Pipeline[Any, Any]:
 
             async def _capture_fallback(
                 rep: Any, *, context: _BaseModel | None = None
-            ) -> Dict[str, Any]:
+            ) -> JSONObject:
                 is_valid = True
                 try:
                     telemetry().info(f"[ArchitectSM] CaptureReport FIRST fallback: rep={rep}")
@@ -80,9 +82,7 @@ def build_validation_state() -> Pipeline[Any, Any]:
             )
     except Exception:
 
-        async def _capture_fallback(
-            rep: Any, *, context: _BaseModel | None = None
-        ) -> Dict[str, Any]:
+        async def _capture_fallback(rep: Any, *, context: _BaseModel | None = None) -> JSONObject:
             is_valid = True
             try:
                 if isinstance(rep, dict):
@@ -98,9 +98,7 @@ def build_validation_state() -> Pipeline[Any, Any]:
 
         capture = Step.from_callable(_capture_fallback, name="CaptureReport", updates_context=True)
 
-    async def _decide_next(
-        _rep: Any = None, *, context: _BaseModel | None = None
-    ) -> Dict[str, Any]:
+    async def _decide_next(_rep: Any = None, *, context: _BaseModel | None = None) -> JSONObject:
         valid = False
         try:
             if isinstance(_rep, dict) and "is_valid" in _rep:
@@ -135,7 +133,7 @@ def build_validation_state() -> Pipeline[Any, Any]:
                 _repair = repair_entry["factory"]()
                 repaired = await _repair(getattr(context, "yaml_text", ""))
                 if isinstance(repaired, dict):
-                    out: Dict[str, Any] = {**repaired}
+                    out: JSONObject = {**repaired}
                 else:
                     out = {}
             else:

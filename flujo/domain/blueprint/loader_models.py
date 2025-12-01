@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, List, Literal, Optional, Union
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from ...exceptions import ConfigurationError
 from .schema import AgentModel
+from flujo.type_definitions.common import JSONObject
 
 
 class BlueprintError(ConfigurationError):
@@ -17,7 +18,7 @@ class _CoercionConfig(BaseModel):
     tolerant_level: int = 0
     max_unescape_depth: int | None = None
     anyof_strategy: str | None = None
-    allow: Dict[str, List[str]] | None = None
+    allow: dict[str, List[str]] | None = None
 
     @model_validator(mode="after")
     def _validate_values(self) -> "_CoercionConfig":
@@ -82,7 +83,7 @@ class ProcessingConfigModel(BaseModel):
     structured_output: str | None = None
     aop: str | None = None
     coercion: _CoercionConfig | None = None
-    output_schema: Dict[str, Any] | None = Field(default=None, alias="schema")
+    output_schema: JSONObject | None = Field(default=None, alias="schema")
     enforce_grammar: bool | None = None
     reasoning_precheck: _ReasoningPrecheckConfig | None = None
 
@@ -125,37 +126,37 @@ class BlueprintStepModel(BaseModel):
     ] = Field(default="step")
     # Accept both 'name' and legacy 'step' keys for step name
     name: str = Field(validation_alias=AliasChoices("name", "step"))
-    agent: Optional[Union[str, Dict[str, Any]]] = None
+    agent: Optional[Union[str, JSONObject]] = None
     uses: Optional[str] = None
     input: Optional[Any] = None
-    config: Dict[str, Any] = Field(default_factory=dict)
+    config: JSONObject = Field(default_factory=dict)
     updates_context: bool = False
     validate_fields: bool = False
-    branches: Optional[Dict[str, Any]] = None
-    reduce: Optional[Union[str, Dict[str, Any]]] = None
+    branches: Optional[JSONObject] = None
+    reduce: Optional[Union[str, JSONObject]] = None
     condition: Optional[str] = None
     condition_expression: Optional[str] = None
     default_branch: Optional[Any] = None
-    loop: Optional[Dict[str, Any]] = None
-    map: Optional[Dict[str, Any]] = None
-    router: Optional[Dict[str, Any]] = None
-    fallback: Optional[Dict[str, Any]] = None
-    usage_limits: Optional[Dict[str, Any]] = None
-    plugins: Optional[List[Union[str, Dict[str, Any]]]] = None
+    loop: Optional[JSONObject] = None
+    map: Optional[JSONObject] = None
+    router: Optional[JSONObject] = None
+    fallback: Optional[JSONObject] = None
+    usage_limits: Optional[JSONObject] = None
+    plugins: Optional[List[Union[str, JSONObject]]] = None
     validators: Optional[List[str]] = None
     merge_strategy: Optional[str] = None
     on_branch_failure: Optional[str] = None
     context_include_keys: Optional[List[str]] = None
-    field_mapping: Optional[Dict[str, List[str]]] = None
+    field_mapping: Optional[dict[str, List[str]]] = None
     ignore_branch_names: Optional[bool] = None
     message: Optional[str] = None
-    input_schema: Optional[Dict[str, Any]] = None
+    input_schema: Optional[JSONObject] = None
     sink_to: Optional[str] = None
-    wrapped_step: Optional[Dict[str, Any]] = None
+    wrapped_step: Optional[JSONObject] = None
     planner: Optional[str] = None
-    registry: Optional[Union[str, Dict[str, Any]]] = None
+    registry: Optional[Union[str, JSONObject]] = None
     output_template: Optional[str] = None
-    processing: Optional[Dict[str, Any]] = None
+    processing: Optional[JSONObject] = None
 
     @field_validator("uses")
     @classmethod
@@ -189,9 +190,9 @@ class BlueprintStepModel(BaseModel):
 class BlueprintPipelineModel(BaseModel):
     version: str = Field(default="0.1")
     name: Optional[str] = None
-    steps: List[Dict[str, Any]]
-    agents: Optional[Dict[str, "AgentModel"]] = None
-    imports: Optional[Dict[str, str]] = None
+    steps: List[JSONObject]
+    agents: Optional[dict[str, "AgentModel"]] = None
+    imports: Optional[dict[str, str]] = None
 
     @model_validator(mode="after")
     def _validate_agent_references(self) -> "BlueprintPipelineModel":

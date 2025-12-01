@@ -1,0 +1,28 @@
+         42539 function calls (41945 primitive calls) in 0.013 seconds
+
+   Ordered by: cumulative time
+   List reduced from 547 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.013    0.013 runners.py:160(run)
+        3    0.000    0.000    0.013    0.004 base_events.py:618(run_until_complete)
+        3    0.000    0.000    0.013    0.004 base_events.py:594(run_forever)
+        6    0.000    0.000    0.013    0.002 base_events.py:1859(_run_once)
+        1    0.000    0.000    0.013    0.013 runners.py:86(run)
+        6    0.000    0.000    0.013    0.002 events.py:82(_run)
+        6    0.000    0.000    0.013    0.002 {method 'run' of '_contextvars.Context' objects}
+        1    0.000    0.000    0.013    0.013 profile_executor_core_hotpath.py:72(run_workload)
+       60    0.000    0.000    0.013    0.000 executor_core.py:694(execute)
+       60    0.000    0.000    0.013    0.000 executor_helpers.py:357(execute_entrypoint)
+       60    0.000    0.000    0.012    0.000 executor_helpers.py:222(execute_flow)
+       60    0.000    0.000    0.011    0.000 executor_core.py:655(_dispatch_frame)
+       60    0.000    0.000    0.011    0.000 dispatch_handler.py:27(dispatch)
+       60    0.000    0.000    0.011    0.000 execution_dispatcher.py:37(dispatch)
+       60    0.000    0.000    0.011    0.000 policy_handlers.py:249(default_step)
+       60    0.000    0.000    0.010    0.000 agent_orchestrator.py:27(execute)
+       60    0.002    0.000    0.010    0.000 agent_execution_runner.py:31(execute)
+       60    0.000    0.000    0.005    0.000 default_components.py:296(run)
+       60    0.000    0.000    0.003    0.000 signature_tools.py:63(analyze_signature)
+      121    0.000    0.000    0.002    0.000 inspect.py:3261(signature)
+
+

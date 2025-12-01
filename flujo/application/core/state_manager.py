@@ -3,12 +3,13 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
+from typing import Any, Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
 
 from flujo.domain.models import StepResult, BaseModel, PipelineResult
 from flujo.state.backends import StateBackend
 from flujo.state.models import WorkflowState
 from .state_serializer import StateSerializer
+from flujo.type_definitions.common import JSONObject
 
 if TYPE_CHECKING:
     from flujo.type_definitions.common import JSONObject
@@ -30,8 +31,8 @@ class StateManager(Generic[ContextT]):
         self.state_backend = state_backend
         self._serializer: StateSerializer[ContextT] = serializer or StateSerializer()
         # Legacy caches retained for compatibility; StateSerializer holds the authoritative caches.
-        self._serialization_cache: Dict[str, Any] = {}
-        self._context_hash_cache: Dict[str, str] = {}
+        self._serialization_cache: dict[str, JSONObject] = {}
+        self._context_hash_cache: dict[str, str] = {}
 
     def _compute_context_hash(self, context: Optional[ContextT]) -> str:
         """Compute a fast hash of the context for change detection."""
@@ -103,7 +104,9 @@ class StateManager(Generic[ContextT]):
         # Context hasn't changed, skip serialization
         return False
 
-    def _get_cached_serialization(self, context: Optional[ContextT], run_id: str) -> Optional[Any]:
+    def _get_cached_serialization(
+        self, context: Optional[ContextT], run_id: str
+    ) -> Optional[JSONObject]:
         """Get cached serialization result if available."""
         if context is None:
             return None
@@ -128,7 +131,7 @@ class StateManager(Generic[ContextT]):
         return parts[0], parts[1]
 
     def _cache_serialization(
-        self, context: Optional[ContextT], run_id: str, serialized: Any
+        self, context: Optional[ContextT], run_id: str, serialized: JSONObject
     ) -> None:
         """Cache serialized context to avoid redundant serialization."""
         if context is None:
@@ -277,7 +280,7 @@ class StateManager(Generic[ContextT]):
         # Serialize step history with error handling
         # Use minimal representation to avoid expensive deep serialization on large runs
         serialized_step_history = self._serializer.serialize_step_history_minimal(step_history)
-        metadata_dict: Dict[str, Any] = metadata or {}
+        metadata_dict: JSONObject = metadata or {}
 
         state_data = {
             "run_id": run_id,
@@ -361,7 +364,7 @@ class StateManager(Generic[ContextT]):
         else:
             serialized_step_history = []
 
-        metadata_dict: Dict[str, Any] = metadata or {}
+        metadata_dict: JSONObject = metadata or {}
 
         # OPTIMIZATION: Use minimal state data structure
         state_data = {
@@ -609,11 +612,11 @@ class StateManager(Generic[ContextT]):
         except NotImplementedError:
             pass
 
-    def _convert_trace_to_dict(self, trace_tree: Any) -> Dict[str, Any]:
+    def _convert_trace_to_dict(self, trace_tree: Any) -> JSONObject:
         """Convert trace tree to dictionary format for JSON serialization."""
         if hasattr(trace_tree, "__dict__"):
             # Handle Span objects
-            trace_dict: Dict[str, Any] = {
+            trace_dict: JSONObject = {
                 "span_id": getattr(trace_tree, "span_id", "unknown"),
                 "name": getattr(trace_tree, "name", "unknown"),
                 "start_time": getattr(trace_tree, "start_time", 0.0),

@@ -6,7 +6,7 @@ with context updates to identify any bugs or issues.
 """
 
 import pytest
-from typing import Any, Dict, List
+from typing import List
 from pydantic import Field
 
 from flujo import Step, Pipeline
@@ -14,6 +14,7 @@ from flujo.domain.models import PipelineContext
 from flujo.domain import MergeStrategy
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+from flujo.type_definitions.common import JSONObject
 
 
 class DynamicRouterContext(PipelineContext):
@@ -21,7 +22,7 @@ class DynamicRouterContext(PipelineContext):
 
     initial_prompt: str = Field(default="test")
     router_selection: List[str] = Field(default_factory=list)
-    branch_results: Dict[str, str] = Field(default_factory=dict)
+    branch_results: JSONObject = Field(default_factory=dict)
     execution_count: int = Field(default=0)
     router_called: bool = Field(default=False)
     context_updates: List[str] = Field(default_factory=list)
@@ -56,7 +57,7 @@ class FailingRouterAgent:
 class BillingAgent:
     """Agent for billing branch."""
 
-    async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+    async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
         context.branch_results["billing"] = f"billing:{data}"
         context.context_updates.append("billing_processed")
         return {"billing_result": f"billing:{data}"}
@@ -65,7 +66,7 @@ class BillingAgent:
 class SupportAgent:
     """Agent for support branch."""
 
-    async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+    async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
         context.branch_results["support"] = f"support:{data}"
         context.context_updates.append("support_processed")
         return {"support_result": f"support:{data}"}
@@ -74,7 +75,7 @@ class SupportAgent:
 class FailingBillingAgent:
     """Agent for billing branch that fails."""
 
-    async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+    async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
         context.context_updates.append("billing_failed")
         raise Exception("Billing step failed")
 
@@ -90,7 +91,7 @@ class NestedRouterAgent:
 class NestedBillingAgent:
     """Agent with nested context updates."""
 
-    async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+    async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
         context.context_updates.append("nested_step_called")
         context.branch_results["billing"] = f"billing:{data}"
         context.context_updates.append("billing_processed")
@@ -243,13 +244,13 @@ async def test_dynamic_router_branch_failure_context_preservation():
             return ["billing", "support"]
 
     class BranchFailureBillingAgent:
-        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
             context.branch_results["billing"] = f"billing:{data}"
             context.context_updates.append("billing_processed")
             return {"billing_result": f"billing:{data}"}
 
     class FailingSupportAgent:
-        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
             context.context_updates.append("support_failed")
             raise ValueError("Support step failed")
 
@@ -297,7 +298,7 @@ async def test_dynamic_router_nested_context_updates():
             return ["billing"]
 
     class NestedContextBillingAgent:
-        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
             context.branch_results["billing"] = f"billing:{data}"
             context.context_updates.append("billing_processed")
             return {"billing_result": f"billing:{data}"}
@@ -331,12 +332,12 @@ async def test_dynamic_router_context_field_mapping():
             return ["billing", "support"]
 
     class FieldMappingBillingAgent:
-        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
             context.branch_results["billing"] = f"billing:{data}"
             return {"billing_result": f"billing:{data}"}
 
     class FieldMappingSupportAgent:
-        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
             context.branch_results["support"] = f"support:{data}"
             return {"support_result": f"support:{data}"}
 
@@ -376,7 +377,7 @@ async def test_dynamic_router_large_context_performance():
 
     class LargeContext(DynamicRouterContext):
         large_data: List[str] = Field(default_factory=lambda: ["item"] * 1000)
-        complex_data: Dict[str, Any] = Field(default_factory=lambda: {"nested": {"deep": "value"}})
+        complex_data: JSONObject = Field(default_factory=lambda: {"nested": {"deep": "value"}})
 
     class LargeContextRouterAgent:
         async def run(self, data: str, *, context: LargeContext) -> List[str]:
@@ -385,7 +386,7 @@ async def test_dynamic_router_large_context_performance():
             return ["billing"]
 
     class LargeContextBillingAgent:
-        async def run(self, data: str, *, context: LargeContext) -> Dict[str, Any]:
+        async def run(self, data: str, *, context: LargeContext) -> JSONObject:
             context.branch_results["billing"] = f"billing:{data}"
             context.context_updates.append("billing_processed")
             return {"billing_result": f"billing:{data}"}
@@ -422,7 +423,7 @@ async def test_dynamic_router_high_frequency_context_updates():
             return ["billing"]
 
     class HighFrequencyBillingAgent:
-        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
             context.branch_results["billing"] = f"billing:{data}"
             for i in range(10):
                 context.context_updates.append(f"billing_update_{i}")
@@ -462,7 +463,7 @@ async def test_dynamic_router_empty_branch_selection():
             return []  # No branches selected
 
     class EmptySelectionBillingAgent:
-        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
             context.branch_results["billing"] = f"billing:{data}"
             return {"billing_result": f"billing:{data}"}
 
@@ -500,7 +501,7 @@ async def test_dynamic_router_invalid_branch_selection():
             return ["invalid_branch"]  # Branch doesn't exist
 
     class InvalidSelectionBillingAgent:
-        async def run(self, data: str, *, context: DynamicRouterContext) -> Dict[str, Any]:
+        async def run(self, data: str, *, context: DynamicRouterContext) -> JSONObject:
             context.branch_results["billing"] = f"billing:{data}"
             return {"billing_result": f"billing:{data}"}
 
@@ -532,8 +533,8 @@ async def test_dynamic_router_complex_context_objects():
     """Test dynamic router with complex context objects."""
 
     class ComplexContext(DynamicRouterContext):
-        nested_dict: Dict[str, Any] = Field(default_factory=lambda: {"level1": {"level2": "value"}})
-        nested_list: List[Dict[str, Any]] = Field(
+        nested_dict: JSONObject = Field(default_factory=lambda: {"level1": {"level2": "value"}})
+        nested_list: List[JSONObject] = Field(
             default_factory=lambda: [{"id": i, "data": f"item_{i}"} for i in range(5)]
         )
 
@@ -546,7 +547,7 @@ async def test_dynamic_router_complex_context_objects():
             return ["billing"]
 
     class ComplexContextBillingAgent:
-        async def run(self, data: str, *, context: ComplexContext) -> Dict[str, Any]:
+        async def run(self, data: str, *, context: ComplexContext) -> JSONObject:
             context.branch_results["billing"] = f"billing:{data}"
             context.nested_dict["level1"]["level2"] = "billing_updated"
             context.context_updates.append("billing_processed")

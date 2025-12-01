@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import click
 import typer
 from typing_extensions import Annotated
 
+from flujo.type_definitions.common import JSONObject
 from .exit_codes import EX_CONFIG_ERROR, EX_OK, EX_RUNTIME_ERROR
 from flujo.utils.serialization import safe_serialize
 
@@ -46,7 +47,7 @@ def status(
     import time as _time
 
     # Prepare base payload
-    payload: Dict[str, Any] = {
+    payload: JSONObject = {
         "command": "status",
         "timestamp_utc": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
         "providers": [],
@@ -57,10 +58,10 @@ def status(
         from flujo.infra.settings import get_settings as _get_settings
 
         s = _get_settings()
-        providers: List[Dict[str, Any]] = []
+        providers: list[JSONObject] = []
 
-        def _ping_openai(key: Optional[Any]) -> Dict[str, Any]:
-            info: Dict[str, Any] = {"name": "openai", "enabled": bool(key)}
+        def _ping_openai(key: Optional[Any]) -> JSONObject:
+            info: JSONObject = {"name": "openai", "enabled": bool(key)}
             if not key:
                 info["status"] = "MISSING"
                 return info
@@ -98,8 +99,8 @@ def status(
                 info.update({"status": status, "message": str(e)})
             return info
 
-        def _ping_anthropic(key: Optional[Any]) -> Dict[str, Any]:
-            info: Dict[str, Any] = {"name": "anthropic", "enabled": bool(key)}
+        def _ping_anthropic(key: Optional[Any]) -> JSONObject:
+            info: JSONObject = {"name": "anthropic", "enabled": bool(key)}
             if not key:
                 info["status"] = "MISSING"
                 return info
@@ -136,8 +137,8 @@ def status(
                 info.update({"status": status, "message": str(e)})
             return info
 
-        def _ping_gemini(key: Optional[Any]) -> Dict[str, Any]:
-            info: Dict[str, Any] = {"name": "gemini", "enabled": bool(key)}
+        def _ping_gemini(key: Optional[Any]) -> JSONObject:
+            info: JSONObject = {"name": "gemini", "enabled": bool(key)}
             if not key:
                 info["status"] = "MISSING"
                 return info
@@ -196,7 +197,7 @@ def status(
         import sqlite3 as _sql
 
         uri = _get_state_uri(force_reload=True)
-        sqlite_info: Dict[str, Any] = {"configured": False}
+        sqlite_info: JSONObject = {"configured": False}
         if uri:
             uri_lower = uri.strip().lower()
             # Memory-like forms => not configured for SQLite
@@ -223,7 +224,7 @@ def status(
 
         # Last runs summary when SQLite is configured and file exists
         try:
-            history: Dict[str, Any] = {"available": False, "items": []}
+            history: JSONObject = {"available": False, "items": []}
             if sqlite_info.get("configured") and sqlite_info.get("path"):
                 dbp = Path(str(sqlite_info["path"]))
                 if dbp.exists():

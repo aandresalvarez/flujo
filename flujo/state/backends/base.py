@@ -2,7 +2,9 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, List, Optional, Tuple
+
+from flujo.type_definitions.common import JSONObject
 
 from ...utils.serialization import safe_serialize
 
@@ -28,7 +30,7 @@ class StateBackend(ABC):
     """
 
     @abstractmethod
-    async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
+    async def save_state(self, run_id: str, state: JSONObject) -> None:
         """Save workflow state.
 
         Args:
@@ -38,7 +40,7 @@ class StateBackend(ABC):
         pass
 
     @abstractmethod
-    async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
+    async def load_state(self, run_id: str) -> Optional[JSONObject]:
         """Load workflow state.
 
         Args:
@@ -65,11 +67,11 @@ class StateBackend(ABC):
         pipeline_id: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[JSONObject]:
         """List workflows with optional filtering and pagination."""
         raise NotImplementedError
 
-    async def get_workflow_stats(self) -> Dict[str, Any]:
+    async def get_workflow_stats(self) -> JSONObject:
         """Get statistics about stored workflows."""
         raise NotImplementedError
 
@@ -77,7 +79,7 @@ class StateBackend(ABC):
         """Delete workflows older than specified days. Returns number of deleted workflows."""
         raise NotImplementedError
 
-    async def get_failed_workflows(self, hours_back: int = 24) -> List[Dict[str, Any]]:
+    async def get_failed_workflows(self, hours_back: int = 24) -> List[JSONObject]:
         """Get failed workflows from the last N hours with error details."""
         raise NotImplementedError
 
@@ -87,7 +89,7 @@ class StateBackend(ABC):
         status: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[JSONObject]:
         """List background tasks with optional filtering and pagination."""
         try:
             workflows = await self.list_workflows(status=status, limit=limit, offset=offset)
@@ -114,7 +116,7 @@ class StateBackend(ABC):
         self,
         parent_run_id: Optional[str] = None,
         hours_back: int = 24,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[JSONObject]:
         """Get failed background tasks within a time window."""
         tasks = await self.list_background_tasks(parent_run_id=parent_run_id, status="failed")
         cutoff = datetime.now(timezone.utc) - timedelta(hours=hours_back)
@@ -133,7 +135,7 @@ class StateBackend(ABC):
                 return dt.replace(tzinfo=timezone.utc)
             return dt.astimezone(timezone.utc)
 
-        filtered: List[Dict[str, Any]] = []
+        filtered: List[JSONObject] = []
         for task in tasks:
             ts_raw = task.get("created_at") or task.get("started_at")
             parsed_ts = _parse_timestamp(ts_raw)
@@ -150,7 +152,7 @@ class StateBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def save_trace(self, run_id: str, trace: Dict[str, Any]) -> None:
+    async def save_trace(self, run_id: str, trace: JSONObject) -> None:
         """Save trace data for a given run_id.
 
         Args:
@@ -161,7 +163,7 @@ class StateBackend(ABC):
 
     async def get_spans(
         self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> List[JSONObject]:
         """Get individual spans with optional filtering."""
         raise NotImplementedError
 
@@ -169,7 +171,7 @@ class StateBackend(ABC):
         self,
         pipeline_name: Optional[str] = None,
         time_range: Optional[Tuple[float, float]] = None,
-    ) -> Dict[str, Any]:
+    ) -> JSONObject:
         """Get aggregated span statistics."""
         raise NotImplementedError
 
@@ -178,23 +180,23 @@ class StateBackend(ABC):
         return 0
 
     # --- New structured persistence API ---
-    async def save_run_start(self, run_data: Dict[str, Any]) -> None:
+    async def save_run_start(self, run_data: JSONObject) -> None:
         """Persist initial run metadata."""
         raise NotImplementedError
 
-    async def save_step_result(self, step_data: Dict[str, Any]) -> None:
+    async def save_step_result(self, step_data: JSONObject) -> None:
         """Persist a single step execution record."""
         raise NotImplementedError
 
-    async def save_run_end(self, run_id: str, end_data: Dict[str, Any]) -> None:
+    async def save_run_end(self, run_id: str, end_data: JSONObject) -> None:
         """Update run metadata when execution finishes."""
         raise NotImplementedError
 
-    async def get_run_details(self, run_id: str) -> Optional[Dict[str, Any]]:
+    async def get_run_details(self, run_id: str) -> Optional[JSONObject]:
         """Retrieve stored metadata for a run."""
         raise NotImplementedError
 
-    async def list_run_steps(self, run_id: str) -> List[Dict[str, Any]]:
+    async def list_run_steps(self, run_id: str) -> List[JSONObject]:
         """Return all step records for a run ordered by step index."""
         raise NotImplementedError
 

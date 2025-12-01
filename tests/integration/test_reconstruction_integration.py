@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import pytest
-from typing import Any, List, Dict
+from typing import List
 
 from flujo import Step
 from flujo.domain.models import BaseModel as FlujoBaseModel
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend, gather_result
 from flujo.utils.serialization import safe_serialize, register_custom_serializer
 from tests.conftest import create_test_flujo
+from flujo.type_definitions.common import JSONObject
 
 
 class UserContext(FlujoBaseModel):
@@ -19,7 +20,7 @@ class UserContext(FlujoBaseModel):
     is_active: bool
     preferences: List[str]
     scores: List[float]
-    metadata: Dict[str, Any]
+    metadata: JSONObject
 
 
 class ProductContext(FlujoBaseModel):
@@ -39,10 +40,10 @@ class OrderContext(FlujoBaseModel):
 
     order_id: str
     customer: UserContext
-    items: List[Dict[str, Any]]
+    items: List[JSONObject]
     total_amount: float
     status: str
-    shipping_address: Dict[str, str]
+    shipping_address: dict[str, str]
 
 
 class TestReconstructionIntegration:
@@ -53,7 +54,7 @@ class TestReconstructionIntegration:
         """Test a pipeline that processes user profiles with scalar values."""
 
         class UserProfileAgent:
-            async def run(self, data: Dict[str, Any], *, context: UserContext) -> Dict[str, Any]:
+            async def run(self, data: JSONObject, *, context: UserContext) -> JSONObject:
                 # Verify that scalar values are preserved correctly
                 assert isinstance(context.user_id, str)
                 assert isinstance(context.name, str)
@@ -112,7 +113,7 @@ class TestReconstructionIntegration:
         """Test a pipeline that processes product catalog with mixed data types."""
 
         class ProductCatalogAgent:
-            async def run(self, data: Dict[str, Any], *, context: ProductContext) -> Dict[str, Any]:
+            async def run(self, data: JSONObject, *, context: ProductContext) -> JSONObject:
                 # Verify that mixed data types are preserved correctly
                 assert isinstance(context.product_id, str)
                 assert isinstance(context.name, str)
@@ -176,7 +177,7 @@ class TestReconstructionIntegration:
         """Test a pipeline that processes orders with nested structures."""
 
         class OrderProcessingAgent:
-            async def run(self, data: Dict[str, Any], *, context: OrderContext) -> Dict[str, Any]:
+            async def run(self, data: JSONObject, *, context: OrderContext) -> JSONObject:
                 # Verify that nested structures are preserved correctly
                 assert isinstance(context.order_id, str)
                 assert isinstance(context.customer, UserContext)
@@ -279,7 +280,7 @@ class TestReconstructionIntegration:
         """Test a multi-step pipeline that updates context between steps."""
 
         class Step1Agent:
-            async def run(self, data: Dict[str, Any], *, context: "UserContext") -> Dict[str, Any]:
+            async def run(self, data: JSONObject, *, context: "UserContext") -> JSONObject:
                 # Update context with new data
                 context.age += 1
                 context.scores.append(95.0)
@@ -288,7 +289,7 @@ class TestReconstructionIntegration:
                 return {"step": 1, "processed": True}
 
         class Step2Agent:
-            async def run(self, data: Dict[str, Any], *, context: "UserContext") -> Dict[str, Any]:
+            async def run(self, data: JSONObject, *, context: "UserContext") -> JSONObject:
                 # Verify context updates from previous step
                 assert context.age == 31  # Should be incremented from 30
                 assert len(context.scores) == 4  # Should have one more score
@@ -301,7 +302,7 @@ class TestReconstructionIntegration:
                 return {"step": 2, "processed": True}
 
         class Step3Agent:
-            async def run(self, data: Dict[str, Any], *, context: "UserContext") -> Dict[str, Any]:
+            async def run(self, data: JSONObject, *, context: "UserContext") -> JSONObject:
                 # Verify all context updates are preserved
                 assert context.age == 31
                 assert len(context.scores) == 4
@@ -357,7 +358,7 @@ class TestReconstructionIntegration:
         """Integration test specifically for the regression bug fix."""
 
         class RegressionTestAgent:
-            async def run(self, data: Dict[str, Any], *, context: "UserContext") -> Dict[str, Any]:
+            async def run(self, data: JSONObject, *, context: "UserContext") -> JSONObject:
                 # This test specifically checks that scalar values are NOT wrapped in lists
                 # The bug was that scalar values were being converted to lists
 
@@ -370,7 +371,7 @@ class TestReconstructionIntegration:
                 # Verify list values are preserved as lists
                 assert isinstance(context.preferences, list)  # Should be List[str]
                 assert isinstance(context.scores, list)  # Should be List[float]
-                assert isinstance(context.metadata, dict)  # Should be Dict[str, Any]
+                assert isinstance(context.metadata, dict)
 
                 # Verify the actual values
                 assert context.user_id == "test_user"

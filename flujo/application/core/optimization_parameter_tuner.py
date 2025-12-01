@@ -13,11 +13,12 @@ import multiprocessing
 import psutil
 import time
 from dataclasses import dataclass, field, asdict
-from typing import Dict, List, Any, Optional, Callable, Tuple
+from typing import Any, List, Optional, Callable, Tuple
 from threading import RLock
 from enum import Enum
 
 from .performance_monitor import PerformanceMonitor
+from flujo.type_definitions.common import JSONObject
 
 
 class TuningStrategy(Enum):
@@ -97,7 +98,7 @@ class TuningResult:
     confidence: float
     timestamp: float = field(default_factory=time.time)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JSONObject:
         """Convert to dictionary."""
         return asdict(self)
 
@@ -110,7 +111,7 @@ class SystemProfile:
     memory_gb: float
     cpu_frequency_mhz: float
     memory_bandwidth_gbps: float
-    cache_sizes: Dict[str, int]
+    cache_sizes: dict[str, int]
 
     @classmethod
     def detect_system(cls) -> "SystemProfile":
@@ -175,12 +176,12 @@ class OptimizationParameterTuner:
         self.system_profile = SystemProfile.detect_system()
 
         # Parameter specifications
-        self.parameters: Dict[str, ParameterSpec] = {}
+        self.parameters: dict[str, ParameterSpec] = {}
         self._initialize_parameters()
 
         # Tuning history
         self.tuning_history: List[TuningResult] = []
-        self.best_configurations: Dict[str, Any] = {}
+        self.best_configurations: JSONObject = {}
 
         # Performance monitoring
         self.performance_monitor = PerformanceMonitor() if enable_telemetry else None
@@ -190,7 +191,7 @@ class OptimizationParameterTuner:
 
         # Tuning state
         self._current_iteration = 0
-        self._baseline_metrics: Optional[Dict[str, float]] = None
+        self._baseline_metrics: Optional[dict[str, float]] = None
 
     def _initialize_parameters(self) -> None:
         """Initialize parameter specifications based on system profile."""
@@ -383,7 +384,7 @@ class OptimizationParameterTuner:
             }
         )
 
-    def get_optimized_parameters(self) -> Dict[str, Any]:
+    def get_optimized_parameters(self) -> JSONObject:
         """Get current optimized parameter values."""
         with self._lock:
             return {name: spec.current_value for name, spec in self.parameters.items()}
@@ -401,13 +402,13 @@ class OptimizationParameterTuner:
             spec.current_value = value
             return True
 
-    def get_system_optimized_defaults(self) -> Dict[str, Any]:
+    def get_system_optimized_defaults(self) -> JSONObject:
         """Get system-optimized default parameters."""
         cpu_count = self.system_profile.cpu_count
         memory_gb = self.system_profile.memory_gb
 
         # Calculate optimized defaults based on system characteristics
-        defaults: Dict[str, Any] = {}
+        defaults: JSONObject = {}
 
         # Object Pool Optimization
         # Scale pool sizes with available memory
@@ -456,7 +457,7 @@ class OptimizationParameterTuner:
 
         return defaults
 
-    def apply_optimized_parameters(self) -> Dict[str, bool]:
+    def apply_optimized_parameters(self) -> dict[str, bool]:
         """Apply system-optimized parameters."""
         optimized_params = self.get_system_optimized_defaults()
         results = {}
@@ -467,8 +468,8 @@ class OptimizationParameterTuner:
         return results
 
     async def benchmark_configuration(
-        self, config: Dict[str, Any], benchmark_func: Callable[..., Any], iterations: int = 10
-    ) -> Dict[str, float]:
+        self, config: JSONObject, benchmark_func: Callable[..., Any], iterations: int = 10
+    ) -> dict[str, float]:
         """Benchmark a parameter configuration."""
         # Apply configuration
         old_values = {}
@@ -605,7 +606,7 @@ class OptimizationParameterTuner:
 
     async def auto_tune_all_parameters(
         self, benchmark_func: Callable[..., Any]
-    ) -> Dict[str, List[TuningResult]]:
+    ) -> dict[str, List[TuningResult]]:
         """Automatically tune all parameter categories."""
         all_results = {}
 
@@ -636,7 +637,7 @@ class OptimizationParameterTuner:
 
         return all_results
 
-    def get_tuning_summary(self) -> Dict[str, Any]:
+    def get_tuning_summary(self) -> JSONObject:
         """Get summary of tuning results."""
         with self._lock:
             if not self.tuning_history:
@@ -661,7 +662,7 @@ class OptimizationParameterTuner:
             )
 
             # Track improvements by category
-            category_improvements: Dict[str, float] = {}
+            category_improvements: dict[str, float] = {}
             for result in self.tuning_history:
                 category = result.parameter_name.split("_")[0]
                 if (
@@ -708,19 +709,19 @@ class OptimizationParameterTuner:
 
     def tune_parameters(
         self,
-        objective_function: Callable[[Dict[str, Any]], float],
-        parameter_ranges: Dict[str, Tuple[float, float]],
+        objective_function: Callable[[JSONObject], float],
+        parameter_ranges: dict[str, Tuple[float, float]],
         population_size: int = 50,
         generations: int = 100,
         mutation_rate: float = 0.1,
         crossover_rate: float = 0.8,
-    ) -> Dict[str, Any]:
+    ) -> JSONObject:
         """Tune parameters using genetic algorithm."""
         # Implementation here
         return {}
 
     def evaluate_parameters(
-        self, parameters: Dict[str, Any], objective_function: Callable[[Dict[str, Any]], float]
+        self, parameters: JSONObject, objective_function: Callable[[JSONObject], float]
     ) -> float:
         """Evaluate a set of parameters."""
         # Implementation here
@@ -729,20 +730,20 @@ class OptimizationParameterTuner:
     def optimize_category(
         self,
         category: str,
-        objective_function: Callable[[Dict[str, Any]], float],
-        parameter_ranges: Dict[str, Tuple[float, float]],
+        objective_function: Callable[[JSONObject], float],
+        parameter_ranges: dict[str, Tuple[float, float]],
         max_iterations: int = 50,
-    ) -> Dict[str, Any]:
+    ) -> JSONObject:
         """Optimize parameters for a specific category."""
         # Implementation here
         return {}
 
     async def tune_all_categories(
         self,
-        objective_functions: Dict[str, Callable[[Dict[str, Any]], float]],
-        parameter_ranges: Dict[str, Dict[str, Tuple[float, float]]],
+        objective_functions: dict[str, Callable[[JSONObject], float]],
+        parameter_ranges: dict[str, dict[str, Tuple[float, float]]],
         max_iterations_per_category: int = 50,
-    ) -> Dict[str, List[TuningResult]]:
+    ) -> dict[str, List[TuningResult]]:
         """Tune parameters across all categories using a multi-objective approach."""
         all_results = {}
 
@@ -781,13 +782,13 @@ def get_global_parameter_tuner() -> OptimizationParameterTuner:
     return _global_parameter_tuner
 
 
-def apply_system_optimized_parameters() -> Dict[str, bool]:
+def apply_system_optimized_parameters() -> dict[str, bool]:
     """Apply system-optimized parameters globally."""
     tuner = get_global_parameter_tuner()
     return tuner.apply_optimized_parameters()
 
 
-def get_current_optimization_parameters() -> Dict[str, Any]:
+def get_current_optimization_parameters() -> JSONObject:
     """Get current optimization parameters."""
     tuner = get_global_parameter_tuner()
     return tuner.get_optimized_parameters()
@@ -795,7 +796,7 @@ def get_current_optimization_parameters() -> Dict[str, Any]:
 
 async def auto_tune_optimization_parameters(
     benchmark_func: Callable[..., Any],
-) -> Dict[str, List[TuningResult]]:
+) -> dict[str, List[TuningResult]]:
     """Auto-tune all optimization parameters."""
     tuner = get_global_parameter_tuner()
     return await tuner.auto_tune_all_parameters(benchmark_func)

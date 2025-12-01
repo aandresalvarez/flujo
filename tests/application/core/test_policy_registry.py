@@ -1,8 +1,9 @@
 import pytest
 
+from flujo.application.core.factories import ExecutorFactory
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.execution_dispatcher import ExecutionDispatcher
-from flujo.application.core.policy_registry import PolicyRegistry
+from flujo.application.core.policy_registry import PolicyRegistry, StepPolicy
 from flujo.application.core.types import ExecutionFrame
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import Success, StepResult
@@ -14,6 +15,19 @@ class DummyStep(Step[str, str]):
 
 class ChildStep(DummyStep):
     pass
+
+
+class _FactoryPolicy(StepPolicy[DummyStep]):
+    @property
+    def handles_type(self) -> type[DummyStep]:
+        return DummyStep
+
+    async def execute(
+        self, _core: ExecutorCore[object], *args: object, **_: object
+    ) -> Success[StepResult]:
+        frame = args[0]
+        assert isinstance(frame, ExecutionFrame)
+        return Success(step_result=StepResult(name=frame.step.name, success=True, output="factory"))
 
 
 @pytest.mark.asyncio
@@ -95,3 +109,17 @@ def test_policy_lookup_cache_invalidation_on_register() -> None:
     registry.register(DummyStep, parent_policy)
 
     assert registry.get(ChildStep) is parent_policy
+
+
+@pytest.mark.asyncio
+async def test_executor_factory_policy_override_applied() -> None:
+    factory = ExecutorFactory(policy_overrides=[_FactoryPolicy()])
+    executor = factory.create_executor()
+
+    step = DummyStep(name="factory-override")
+    outcome = await executor.execute(step, data=None)
+
+    result = outcome.step_result if isinstance(outcome, Success) else outcome
+
+    assert isinstance(result, StepResult)
+    assert result.output == "factory"

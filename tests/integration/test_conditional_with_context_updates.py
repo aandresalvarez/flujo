@@ -6,12 +6,13 @@ which could reveal bugs in context state management during conditional execution
 """
 
 import pytest
-from typing import Any, Dict, List
+from typing import Any, List
 from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+from flujo.type_definitions.common import JSONObject
 
 
 class ConditionalContext(PipelineContext):
@@ -21,7 +22,7 @@ class ConditionalContext(PipelineContext):
     branch_executed: str = ""
     total_branches: int = 0
     conditional_history: List[str] = []
-    branch_data: Dict[str, Any] = {}
+    branch_data: JSONObject = {}
     current_condition: str = ""
     condition_count: int = 0
 

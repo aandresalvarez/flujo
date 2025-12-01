@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Callable
+from typing import Any, List, Optional, Sequence, Callable
 
 from ...domain.models import ConversationTurn, ConversationRole
+from ...type_definitions.common import JSONObject
 
 # Optional import exposed at module scope so tests can monkeypatch it.
 # If the central config manager is unavailable, this name remains None
@@ -186,7 +187,7 @@ class HistoryManager:
                 try:
                     import json as _json
 
-                    obj: Dict[str, Any] = _json.loads(content)
+                    obj: JSONObject = _json.loads(content)
                     keys = {str(k).lower() for k in obj.keys()}
                     if {"tool", "tool_call", "function", "arguments", "name"} & keys:
                         continue

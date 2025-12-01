@@ -1,7 +1,8 @@
 """Tests for flujo.application.evaluators module."""
 
 from flujo.application.evaluators import FinalSolutionEvaluator
-from flujo.domain.models import PipelineResult, StepResult
+from flujo.domain.models import PipelineResult
+from tests.test_types.fixtures import create_test_step_result
 
 
 class TestFinalSolutionEvaluator:
@@ -17,7 +18,7 @@ class TestFinalSolutionEvaluator:
                 self.expected_output = expected_output
 
         # Create a pipeline result with step history
-        step_result = StepResult(
+        step_result = create_test_step_result(
             name="test_step",
             output="expected_result",
             success=True,
@@ -44,7 +45,7 @@ class TestFinalSolutionEvaluator:
                 self.output = output
                 self.expected_output = expected_output
 
-        step_result = StepResult(
+        step_result = create_test_step_result(
             name="test_step",
             output="actual_result",
             success=True,
@@ -88,7 +89,7 @@ class TestFinalSolutionEvaluator:
                 self.output = output
                 self.expected_output = expected_output
 
-        step_result = StepResult(
+        step_result = create_test_step_result(
             name="test_step",
             output=None,
             success=True,
@@ -115,7 +116,7 @@ class TestFinalSolutionEvaluator:
                 self.output = output
                 self.expected_output = expected_output
 
-        step1 = StepResult(
+        step1 = create_test_step_result(
             name="step1",
             output="first_result",
             success=True,
@@ -125,7 +126,7 @@ class TestFinalSolutionEvaluator:
             cost_usd=0.0,
         )
 
-        step2 = StepResult(
+        step2 = create_test_step_result(
             name="step2",
             output="final_result",
             success=True,
@@ -153,7 +154,7 @@ class TestFinalSolutionEvaluator:
                 self.expected_output = expected_output
 
         # Test with integer output
-        step_result = StepResult(
+        step_result = create_test_step_result(
             name="test_step",
             output=42,
             success=True,
@@ -173,7 +174,7 @@ class TestFinalSolutionEvaluator:
         assert result is True
 
         # Test with list output
-        step_result2 = StepResult(
+        step_result2 = create_test_step_result(
             name="test_step",
             output=[1, 2, 3],
             success=True,
@@ -212,7 +213,7 @@ class TestFinalSolutionEvaluator:
         complex_output = ComplexObject("test_value")
         expected_complex = ComplexObject("test_value")
 
-        step_result = StepResult(
+        step_result = create_test_step_result(
             name="test_step",
             output=complex_output,
             success=True,

@@ -3,7 +3,7 @@ import os
 import sys
 import importlib.util as _importlib_util
 from pathlib import Path
-from typing import Any, Optional, Dict
+from typing import Any, Optional
 from flujo import Flujo
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl import Step
@@ -16,6 +16,7 @@ import threading
 import os as _os
 import re
 from typing import Callable
+from flujo.type_definitions.common import JSONObject
 
 # Set test mode environment variables for deterministic, low-overhead runs
 os.environ["FLUJO_TEST_MODE"] = "1"
@@ -533,16 +534,16 @@ class NoOpStateBackend(StateBackend):
 
     def __init__(self):
         # Store serialized copies to mimic persistent backends (but in memory for tests)
-        self._store: Dict[str, Any] = {}
-        self._trace_store: Dict[str, Any] = {}
+        self._store: JSONObject = {}
+        self._trace_store: JSONObject = {}
 
-    async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
+    async def save_state(self, run_id: str, state: JSONObject) -> None:
         # Simulate real backend behavior by serializing and storing state
         from flujo.utils.serialization import safe_serialize
 
         self._store[run_id] = safe_serialize(state)
 
-    async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
+    async def load_state(self, run_id: str) -> Optional[JSONObject]:
         # Simulate real backend behavior by deserializing stored state
         stored = self._store.get(run_id)
         if stored is None:

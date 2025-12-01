@@ -1,7 +1,7 @@
 import logging
 import sys
 import os
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, List, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, List, cast
 from typing import Any as _TypeAny  # local alias to avoid name clash
 
 set_default_telemetry_sink_fn: Optional[Callable[[Any], None]]
@@ -293,7 +293,7 @@ def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
                 )
                 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-                exporter_args: Dict[str, Any] = {}
+                exporter_args: dict[str, Any] = {}
                 if settings_to_use.otlp_endpoint:
                     exporter_args["endpoint"] = settings_to_use.otlp_endpoint
 

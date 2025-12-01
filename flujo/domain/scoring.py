@@ -1,11 +1,12 @@
 """Scoring utilities for flujo."""
 
-from typing import List, Dict, Any
+from typing import List, Any
 from .models import Checklist
 from pydantic_ai import Agent
 import os
 from .interfaces import get_settings_provider, get_telemetry_sink, TelemetrySink
 from ..exceptions import FeatureDisabled, RewardModelUnavailable
+from flujo.type_definitions.common import JSONObject
 
 
 def ratio_score(check: Checklist) -> float:
@@ -18,7 +19,7 @@ def ratio_score(check: Checklist) -> float:
     return passed / len(check.items)
 
 
-def weighted_score(check: Checklist, weights: List[Dict[str, Any]]) -> float:
+def weighted_score(check: Checklist, weights: List[JSONObject]) -> float:
     """
     Computes a weighted score for a checklist.
     `weights` is a list of dicts, e.g., [{"item": "description", "weight": 0.7}]
@@ -29,7 +30,7 @@ def weighted_score(check: Checklist, weights: List[Dict[str, Any]]) -> float:
     if not isinstance(weights, list):
         raise ValueError("weights must be a list of dicts with 'item' and 'weight'")
 
-    weight_map: Dict[str, float] = {}
+    weight_map: dict[str, float] = {}
     for w in weights:
         if (
             not isinstance(w, dict)

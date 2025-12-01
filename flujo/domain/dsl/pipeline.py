@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from typing import (
     Any,
     ClassVar,
@@ -172,7 +171,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
             try:
                 # Relaxed compatibility for common dict-like bridges
-                # Many built-in skills return Dict[str, Any]. Allow flowing into object/str inputs,
+                # Many built-in skills return JSONObject. Allow flowing into object/str inputs,
                 # because YAML param templating often selects a concrete field at runtime.
                 # Treat both direct dict and typing.Dict origins as dict-like.
                 origin_a = get_origin(a)

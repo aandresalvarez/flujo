@@ -18,6 +18,7 @@ from flujo.exceptions import (
     MissingAgentError,
     PricingNotConfiguredError,
 )
+from tests.test_types.fixtures import create_test_step
 
 # Unskip: core fallback tests add value for error-handling guarantees
 
@@ -56,38 +57,36 @@ class TestExecutorCoreFallback:
     def create_step_with_fallback(self):
         """Helper to create a step with fallback configuration."""
 
-        def _create_step(primary_fails=True, fallback_succeeds=True):
-            primary_step = Mock()
-            primary_step.name = "primary_step"
-            primary_step.agent = Mock()
-            if primary_fails:
-                primary_step.agent.run = AsyncMock(side_effect=Exception("Primary failed"))
-            else:
-                primary_step.agent.run = AsyncMock(return_value="primary success")
-            primary_step.config.max_retries = 1
-            primary_step.config.temperature = 0.7
-            primary_step.processors = Mock()
-            primary_step.processors.prompt_processors = []
-            primary_step.processors.output_processors = []
-            primary_step.processors.process = AsyncMock(return_value="processed output")
-            primary_step.validators = []
-            primary_step.plugins = []
+        from flujo.domain.processors import AgentProcessors
 
-            fallback_step = Mock()
-            fallback_step.name = "fallback_step"
-            fallback_step.agent = Mock()
-            if fallback_succeeds:
-                fallback_step.agent.run = AsyncMock(return_value="fallback success")
+        def _create_step(primary_fails=True, fallback_succeeds=True):
+            primary_agent = Mock()
+            if primary_fails:
+                primary_agent.run = AsyncMock(side_effect=Exception("Primary failed"))
             else:
-                fallback_step.agent.run = AsyncMock(side_effect=Exception("Fallback failed"))
-            fallback_step.config.max_retries = 1
-            fallback_step.config.temperature = 0.7
-            fallback_step.processors = Mock()
-            fallback_step.processors.prompt_processors = []
-            fallback_step.processors.output_processors = []
-            fallback_step.processors.process = AsyncMock(return_value="processed output")
-            fallback_step.validators = []
-            fallback_step.plugins = []
+                primary_agent.run = AsyncMock(return_value="primary success")
+
+            primary_step = create_test_step(
+                name="primary_step",
+                agent=primary_agent,
+                processors=AgentProcessors(prompt_processors=[], output_processors=[]),
+                validators=[],
+                plugins=[],
+            )
+
+            fallback_agent = Mock()
+            if fallback_succeeds:
+                fallback_agent.run = AsyncMock(return_value="fallback success")
+            else:
+                fallback_agent.run = AsyncMock(side_effect=Exception("Fallback failed"))
+
+            fallback_step = create_test_step(
+                name="fallback_step",
+                agent=fallback_agent,
+                processors=AgentProcessors(prompt_processors=[], output_processors=[]),
+                validators=[],
+                plugins=[],
+            )
 
             primary_step.fallback_step = fallback_step
             return primary_step, fallback_step

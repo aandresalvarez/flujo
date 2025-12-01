@@ -7,6 +7,7 @@ from flujo.domain.dsl import Pipeline
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultLoopStepExecutor
+from tests.test_types.fixtures import create_test_step
 
 
 class TestExecutorCoreLoopStep:
@@ -61,10 +62,9 @@ class TestExecutorCoreLoopStep:
     async def test_handle_loop_step_basic_execution(self, executor_core, mock_loop_step):
         """Test basic LoopStep execution through ExecutorCore."""
         # Create a simple step for the loop body
-        from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
-        simple_step = Step(name="test_step", agent=StubAgent(["test_output"]))
+        simple_step = create_test_step(name="test_step", agent=StubAgent(["test_output"]))
         mock_loop_step.loop_body_pipeline.steps = [simple_step]
         mock_loop_step.exit_condition_callable = Mock(
             return_value=True
@@ -86,10 +86,9 @@ class TestExecutorCoreLoopStep:
     async def test_handle_loop_step_error_handling(self, executor_core, mock_loop_step):
         """Test LoopStep error handling."""
         # Create a step that will fail
-        from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
-        failing_step = Step(
+        failing_step = create_test_step(
             name="failing_step", agent=StubAgent([])
         )  # Empty list causes IndexError
         mock_loop_step.loop_body_pipeline.steps = [failing_step]
@@ -110,10 +109,9 @@ class TestExecutorCoreLoopStep:
     async def test_handle_loop_step_recursive_execution(self, executor_core, mock_loop_step):
         """Test that LoopStep uses recursive step execution."""
         # Create a step for the loop body
-        from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
-        simple_step = Step(name="test_step", agent=StubAgent(["test_output"]))
+        simple_step = create_test_step(name="test_step", agent=StubAgent(["test_output"]))
         mock_loop_step.loop_body_pipeline.steps = [simple_step]
         mock_loop_step.exit_condition_callable = Mock(return_value=True)
 
@@ -132,10 +130,9 @@ class TestExecutorCoreLoopStep:
     async def test_handle_loop_step_parameter_passing(self, executor_core, mock_loop_step):
         """Test that parameters are passed correctly to the LoopStep handler."""
         # Create a simple step for the loop body
-        from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
-        simple_step = Step(name="test_step", agent=StubAgent(["test_output"]))
+        simple_step = create_test_step(name="test_step", agent=StubAgent(["test_output"]))
         mock_loop_step.loop_body_pipeline.steps = [simple_step]
         mock_loop_step.exit_condition_callable = Mock(return_value=True)
 
@@ -195,10 +192,9 @@ class TestExecutorCoreLoopStep:
     ):
         """Test that the step_executor function works correctly."""
         # Create a simple step for the loop body
-        from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
-        simple_step = Step(name="test_step", agent=StubAgent(["test_output"]))
+        simple_step = create_test_step(name="test_step", agent=StubAgent(["test_output"]))
         mock_loop_step.loop_body_pipeline.steps = [simple_step]
         mock_loop_step.exit_condition_callable = Mock(return_value=True)
 
@@ -219,10 +215,9 @@ class TestExecutorCoreLoopStep:
     ):
         """Test that the step_executor function handles extra kwargs correctly."""
         # Create a simple step for the loop body
-        from flujo.domain.dsl import Step
         from flujo.testing.utils import StubAgent
 
-        simple_step = Step(name="test_step", agent=StubAgent(["test_output"]))
+        simple_step = create_test_step(name="test_step", agent=StubAgent(["test_output"]))
         mock_loop_step.loop_body_pipeline.steps = [simple_step]
         mock_loop_step.exit_condition_callable = Mock(return_value=True)
 

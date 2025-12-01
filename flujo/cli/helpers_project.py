@@ -4,12 +4,12 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from typer import Exit
 
 
-def apply_cli_defaults(command: str, **kwargs: Any) -> Dict[str, Any]:
+def apply_cli_defaults(command: str, **kwargs: Any) -> dict[str, Any]:
     """Apply CLI defaults from configuration file to command arguments."""
     from flujo.cli.main import get_cli_defaults
 

@@ -122,9 +122,19 @@ from .default_components import (
     DefaultProcessorPipeline,
     DefaultValidatorRunner,
     DefaultPluginRunner,
+    DefaultTelemetry,
+)
+from .executor_protocols import (
+    IAgentRunner,
+    IProcessorPipeline,
+    IValidatorRunner,
+    IPluginRunner,
+    IUsageMeter,
+    ITelemetry,
+)
+from .default_cache_components import (
     ThreadSafeMeter,
     InMemoryLRUBackend,
-    DefaultTelemetry,
     OrjsonSerializer,
     Blake3Hasher,
     DefaultCacheKeyGenerator,
@@ -136,7 +146,6 @@ from .executor_protocols import (
     ISerializer,
     IHasher,
     ICacheBackend,
-    IUsageMeter,
 )
 # Protocols are defined in executor_protocols.py. They are not imported here
 # to avoid unused-import lint warnings, as ExecutorCore uses structural typing
@@ -176,15 +185,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     def __init__(
         self,
-        agent_runner: Any = None,
-        processor_pipeline: Any = None,
-        validator_runner: Any = None,
-        plugin_runner: Any = None,
-        usage_meter: Any = None,
+        agent_runner: IAgentRunner | None = None,
+        processor_pipeline: IProcessorPipeline | None = None,
+        validator_runner: IValidatorRunner | None = None,
+        plugin_runner: IPluginRunner | None = None,
+        usage_meter: IUsageMeter | None = None,
         quota_manager: Optional[QuotaManager] = None,
         cache_backend: Any = None,
         cache_key_generator: Any = None,
-        telemetry: Any = None,
+        telemetry: ITelemetry | None = None,
         enable_cache: bool = True,
         # Additional parameters for compatibility
         serializer: Any = None,
@@ -764,4 +773,5 @@ __all__ = [
     "DefaultValidatorRunner",
     "DefaultPluginRunner",
     "DefaultTelemetry",
+    "DefaultCacheKeyGenerator",
 ]

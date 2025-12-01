@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Mapping, Optional
+from flujo.type_definitions.common import JSONObject
 
 __all__ = [
     "StepValueProxy",
@@ -90,7 +91,7 @@ class TemplateContextProxy:
         raise KeyError(key)
 
 
-def get_steps_map_from_context(context: Any) -> Dict[str, Any]:
+def get_steps_map_from_context(context: Any) -> JSONObject:
     """Extract mapping of prior step outputs from context.scratchpad['steps'] when present."""
     try:
         scratchpad = getattr(context, "scratchpad", None)
@@ -120,7 +121,7 @@ def render_template(
         # Fallback simple replacement if formatter import breaks in isolated tests
         return template
 
-    steps_map: Dict[str, Any] = {}
+    steps_map: dict[str, Any] = {}
     if steps:
         for k, v in steps.items():
             steps_map[k] = v if isinstance(v, StepValueProxy) else StepValueProxy(v)

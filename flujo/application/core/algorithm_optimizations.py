@@ -11,10 +11,11 @@ import time
 import weakref
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, List, Optional, Set, Tuple, Union
 from threading import RLock
 
 from ...domain.models import BaseModel
+from flujo.type_definitions.common import JSONObject
 
 # Try to import high-performance libraries
 try:
@@ -125,7 +126,7 @@ class OptimizedHasher:
         # Hash cache with LRU eviction
         self._hash_cache: OrderedDict[int, str] = OrderedDict()
         # Use bounded weak-reference-based collision tracker to avoid memory growth
-        self._collision_tracker: Dict[str, List[weakref.ref[Any]]] = defaultdict(list)
+        self._collision_tracker: dict[str, List[weakref.ref[Any]]] = defaultdict(list)
         # Weak references for cleanup
         self._weak_refs: Set[weakref.ref[Any]] = set()
         self._last_cleanup = time.time()
@@ -240,7 +241,7 @@ class OptimizedHasher:
         # Fallback to string representation
         return self._hash_bytes(str(obj).encode("utf-8", errors="ignore"))
 
-    def _hash_dict(self, d: Dict[Any, Any]) -> str:
+    def _hash_dict(self, d: dict[Any, Any]) -> str:
         """Hash dictionary with sorted keys."""
         try:
             # Sort keys for deterministic hashing
@@ -399,7 +400,7 @@ class OptimizedSerializer:
 
         # Serialization cache
         self._serialize_cache: OrderedDict[int, bytes] = OrderedDict()
-        self._deserialize_cache: OrderedDict[str, Any] = OrderedDict()
+        self._deserialize_cache: OrderedDict[str, JSONObject] = OrderedDict()
         # Weak references for cleanup
         self._weak_refs: Set[weakref.ref[Any]] = set()
         self._last_cleanup = time.time()
@@ -641,7 +642,7 @@ class OptimizedCacheKeyGenerator:
         self.enable_component_caching = enable_component_caching
 
         # Component cache for partial key reuse
-        self._component_cache: Dict[str, str] = {}
+        self._component_cache: dict[str, str] = {}
         self._lock = RLock()
 
     def generate_cache_key(
@@ -781,7 +782,7 @@ class OptimizedCacheKeyGenerator:
         """Get cache key component for resources."""
         return self.hasher.hash_object(resources)
 
-    def _get_kwargs_key(self, kwargs: Dict[str, Any]) -> str:
+    def _get_kwargs_key(self, kwargs: dict[str, Any]) -> str:
         """Get cache key component for additional parameters."""
         # Sort kwargs for deterministic key generation
         sorted_kwargs = sorted(kwargs.items(), key=lambda x: str(x[0]))
@@ -792,7 +793,7 @@ class OptimizedCacheKeyGenerator:
         with self._lock:
             self._component_cache.clear()
 
-    def get_component_cache_stats(self) -> Dict[str, Any]:
+    def get_component_cache_stats(self) -> dict[str, Any]:
         """Get component cache statistics."""
         with self._lock:
             return {

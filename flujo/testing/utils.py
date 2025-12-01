@@ -15,6 +15,7 @@ from flujo.domain.resources import AppResources
 from flujo.domain.models import StepResult, UsageLimits, BaseModel as FlujoBaseModel
 from flujo.utils.serialization import safe_serialize
 from flujo.domain.models import StepOutcome, Success, Failure, Paused, PipelineResult
+from flujo.type_definitions.common import JSONObject
 from flujo.exceptions import PausedException
 
 
@@ -152,7 +153,7 @@ class DummyRemoteBackend:
         def _ensure_string_fields_are_strings(obj: Any, original: Any = None) -> Any:
             """Ensure that string fields in Pydantic models are actually strings."""
             if isinstance(obj, dict):
-                cleaned: Dict[str, Any] = {}
+                cleaned: JSONObject = {}
                 for key, value in obj.items():
                     orig_val = None
                     if original and isinstance(original, dict):
@@ -385,7 +386,7 @@ class SimpleDummyRemoteBackend(ExecutionBackend):
     """A simple dummy remote backend for testing purposes."""
 
     def __init__(self) -> None:
-        self.storage: Dict[str, Any] = {}
+        self.storage: dict[str, Any] = {}
         self.call_count = 0
 
     async def execute_step(self, request: StepExecutionRequest) -> StepOutcome[StepResult]:

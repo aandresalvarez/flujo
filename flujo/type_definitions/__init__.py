@@ -1,7 +1,7 @@
 """Type definitions and aliases for Flujo.
 
 This module provides type aliases and definitions to improve type safety
-throughout the Flujo codebase, reducing reliance on `Any` and `Dict[str, Any]`.
+throughout the Flujo codebase, reducing reliance on `Any` and `JSONObject`.
 """
 
 from .common import JSONObject, JSONArray

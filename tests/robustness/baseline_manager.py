@@ -1,3 +1,5 @@
+from flujo.type_definitions.common import JSONObject
+
 """Baseline management for performance regression tests.
 
 This module provides utilities for managing performance baselines,
@@ -43,7 +45,7 @@ class BaselineManager:
     def __init__(self, baseline_file: Path):
         self.baseline_file = baseline_file
         self.baselines: Dict[str, BaselineConfig] = {}
-        self.metadata: Dict[str, Any] = {}
+        self.metadata: JSONObject = {}
         self._load_baselines()
 
     def _load_baselines(self) -> None:

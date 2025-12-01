@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Optional
 import os
 import json
 
@@ -12,6 +12,7 @@ except Exception:  # pragma: no cover
 from .skill_registry import get_skill_registry
 from importlib import import_module
 import importlib.metadata as importlib_metadata
+from flujo.type_definitions.common import JSONObject
 
 
 def _import_object(path: str) -> Any:
@@ -43,7 +44,7 @@ def load_skills_catalog(directory: str) -> None:
     path: Optional[str] = next((p for p in candidates if os.path.isfile(p)), None)
     if not path:
         return
-    data: Dict[str, Dict[str, Any]]
+    data: dict[str, JSONObject]
     try:
         if path.endswith((".yaml", ".yml")) and yaml is not None:
             with open(path, "r") as f:
@@ -54,7 +55,7 @@ def load_skills_catalog(directory: str) -> None:
         if not isinstance(raw, dict):
             return
         # Raw must be a mapping of skill_id -> attributes; enforce type at runtime
-        tmp: Dict[str, Dict[str, Any]] = {}
+        tmp: dict[str, JSONObject] = {}
         for k, v in raw.items():
             if isinstance(v, dict):
                 tmp[str(k)] = dict(v)

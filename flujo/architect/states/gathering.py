@@ -1,7 +1,7 @@
 from __future__ import annotations
 # mypy: disable-error-code=arg-type
 
-from typing import Any, Callable, Coroutine, Dict, Union, cast
+from typing import Any, Callable, Coroutine, Union, cast
 
 from flujo.architect.states.common import (
     goto,
@@ -11,6 +11,7 @@ from flujo.architect.states.common import (
 )
 from flujo.domain.base_model import BaseModel as _BaseModel
 from flujo.domain.dsl import Pipeline, Step
+from flujo.type_definitions.common import JSONObject
 
 
 def build_gathering_state() -> Pipeline[Any, Any]:
@@ -27,7 +28,7 @@ def build_gathering_state() -> Pipeline[Any, Any]:
             )
         else:
 
-            async def _discover_fallback(*_a: Any, **_k: Any) -> Dict[str, Any]:
+            async def _discover_fallback(*_a: Any, **_k: Any) -> JSONObject:
                 return {"available_skills": []}
 
             discover = Step.from_callable(
@@ -35,7 +36,7 @@ def build_gathering_state() -> Pipeline[Any, Any]:
             )
     except Exception:
 
-        async def _discover_fallback(*_a: Any, **_k: Any) -> Dict[str, Any]:
+        async def _discover_fallback(*_a: Any, **_k: Any) -> JSONObject:
             return {"available_skills": []}
 
         discover = Step.from_callable(
@@ -51,7 +52,7 @@ def build_gathering_state() -> Pipeline[Any, Any]:
             )
         else:
 
-            async def _analyze_fallback(*_a: Any, **_k: Any) -> Dict[str, Any]:
+            async def _analyze_fallback(*_a: Any, **_k: Any) -> JSONObject:
                 return {"project_summary": ""}
 
             analyze = Step.from_callable(
@@ -59,12 +60,12 @@ def build_gathering_state() -> Pipeline[Any, Any]:
             )
     except Exception:
 
-        async def _analyze_fallback(*_a: Any, **_k: Any) -> Dict[str, Any]:
+        async def _analyze_fallback(*_a: Any, **_k: Any) -> JSONObject:
             return {"project_summary": ""}
 
         analyze = Step.from_callable(_analyze_fallback, name="AnalyzeProject", updates_context=True)
 
-    async def _schema_fallback(*_a: Any, **_k: Any) -> Dict[str, Any]:
+    async def _schema_fallback(*_a: Any, **_k: Any) -> JSONObject:
         return {"flujo_schema": {}}
 
     get_schema: Union[Step[Any, Any], Pipeline[Any, Any]] = Step.from_callable(
@@ -72,12 +73,12 @@ def build_gathering_state() -> Pipeline[Any, Any]:
     )
 
     async def _goto_goal(
-        _data: Dict[str, Any] | None = None, context: _BaseModel | None = None
-    ) -> Dict[str, Any]:
+        _data: JSONObject | None = None, context: _BaseModel | None = None
+    ) -> JSONObject:
         return await goto("GoalClarification", context=context)
 
     goto_goal = Step.from_callable(
-        cast(Callable[[Any], Coroutine[Any, Any, Dict[str, Any]]], _goto_goal),
+        cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _goto_goal),
         name="GotoGoalClarification",
         updates_context=True,
     )

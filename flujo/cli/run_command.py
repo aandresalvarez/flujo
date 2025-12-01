@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from typing import Any, Dict, Optional, cast
+from typing import Any, Optional, cast
 import typer
 import click
 import json
@@ -12,6 +12,7 @@ from pathlib import Path
 from flujo.exceptions import UsageLimitExceededError
 from flujo.infra import telemetry
 import flujo.builtins as _flujo_builtins  # noqa: F401 - register builtins
+from flujo.type_definitions.common import JSONObject
 from .helpers import (
     setup_run_command_environment,
     load_pipeline_from_yaml_file,
@@ -1075,7 +1076,7 @@ state_uri = "sqlite:///flujo_ops.db"
                 reg = _get_reg()
                 entries = getattr(reg, "_entries", None)
                 if isinstance(entries, dict):
-                    preserved: Dict[str, Any] = {
+                    preserved: JSONObject = {
                         k: v
                         for k, v in list(entries.items())
                         if isinstance(k, str)
