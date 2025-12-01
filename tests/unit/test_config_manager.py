@@ -39,6 +39,22 @@ class TestConfigManager:
             finally:
                 os.chdir(original_cwd)
 
+    def test_empty_config_uses_cache_until_force_reload(self):
+        """Default config without flujo.toml should reuse cache unless force_reload is set."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_cwd = os.getcwd()
+            os.chdir(temp_dir)
+            try:
+                config_manager = ConfigManager()
+                first = config_manager.load_config()
+                second = config_manager.load_config()
+                assert first is second
+
+                refreshed = config_manager.load_config(force_reload=True)
+                assert refreshed is not first
+            finally:
+                os.chdir(original_cwd)
+
     def test_basic_config_loading(self):
         """Test loading a basic configuration file."""
         config_content = """
@@ -218,6 +234,25 @@ class TestConfigManager:
                 ConfigurationError,
                 match="Error loading configuration",
             ):
+                config_manager.load_config()
+        finally:
+            os.unlink(config_path)
+
+    def test_invalid_section_shapes(self):
+        """Non-dict sections should be rejected early with a clear error."""
+        invalid_content = """
+        settings = "not-a-table"
+        blueprint_allowed_imports = "not-a-list"
+        solve = "oops"
+        """
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+            f.write(invalid_content)
+            config_path = f.name
+
+        try:
+            config_manager = ConfigManager(config_path)
+            with pytest.raises(ConfigurationError, match="Invalid configuration structure"):
                 config_manager.load_config()
         finally:
             os.unlink(config_path)

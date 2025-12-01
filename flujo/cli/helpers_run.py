@@ -6,7 +6,9 @@ import importlib.metadata as importlib_metadata
 import json
 import os
 import sys
-from typing import Any, Dict, List, Optional, Type, cast
+from typing import Any, List, Optional, Type, cast
+
+from flujo.type_definitions.common import JSONObject
 
 from typer import Exit
 
@@ -38,7 +40,7 @@ def setup_run_command_environment(
     context_model: Optional[str],
     context_data: Optional[str],
     context_file: Optional[str],
-) -> tuple[Any, str, Any, Optional[Dict[str, Any]], Optional[Type[PipelineContext]]]:
+) -> tuple[Any, str, Any, Optional[JSONObject], Optional[Type[PipelineContext]]]:
     """Set up the environment for the run command."""
     import runpy
 
@@ -65,7 +67,7 @@ def setup_run_command_environment(
 def create_flujo_runner(
     pipeline: Any,
     context_model_class: Optional[Type[PipelineContext]],
-    initial_context_data: Optional[Dict[str, Any]],
+    initial_context_data: Optional[JSONObject],
     state_backend: Optional[Any] = None,
     *,
     debug: bool = False,
@@ -618,12 +620,12 @@ def get_version_string() -> str:
         return "unknown"
 
 
-def get_masked_settings_dict() -> Dict[str, Any]:
+def get_masked_settings_dict() -> JSONObject:
     """Return settings as a dict with sensitive keys masked/removed."""
     import flujo.cli.main as cli_main
 
     settings = cli_main.load_settings()
-    return cast(Dict[str, Any], settings.model_dump(exclude={"openai_api_key", "logfire_api_key"}))
+    return cast(JSONObject, settings.model_dump(exclude={"openai_api_key", "logfire_api_key"}))
 
 
 def execute_improve(

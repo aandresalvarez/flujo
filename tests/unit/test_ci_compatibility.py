@@ -15,7 +15,8 @@ import sys
 import platform
 import gc
 import time
-from typing import Any, Dict
+
+from flujo.type_definitions.common import JSONObject
 
 from flujo.utils.serialization import safe_serialize, robust_serialize
 
@@ -218,7 +219,7 @@ class TestCITimingIssues:
         assert serialization_time < 10.0, f"Serialization took {serialization_time:.3f}s"
         assert isinstance(result, dict)
 
-    def _create_deep_nested_structure(self, depth: int) -> Dict[str, Any]:
+    def _create_deep_nested_structure(self, depth: int) -> JSONObject:
         """Create a deeply nested structure for testing."""
         if depth <= 0:
             return {"leaf": "value"}

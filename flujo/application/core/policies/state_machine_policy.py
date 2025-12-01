@@ -1,8 +1,8 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 
 from ._shared import (
     Any,
-    Dict,
     Failure,
     Optional,
     PipelineResult,
@@ -80,7 +80,7 @@ class StateMachinePolicyExecutor:
             _step: Any,
             _from_state: Optional[str],
             _event: str,
-            _payload: Dict[str, Any],
+            _payload: JSONObject,
             _context: Optional[Any],
         ) -> Optional[str]:
             try:
@@ -176,7 +176,7 @@ class StateMachinePolicyExecutor:
                     # On pause, do not merge iteration context; resolve pause transition and re-raise
                     try:
                         # Build minimal payload for expressions
-                        pause_payload: Dict[str, Any] = {
+                        pause_payload: JSONObject = {
                             "event": "pause",
                             "last_output": None,
                             "last_step": None,
@@ -312,9 +312,7 @@ class StateMachinePolicyExecutor:
                     lcd = getattr(last_context, "scratchpad")
                     if isinstance(lcd, dict):
 
-                        def _deep_merge_dict(
-                            a: Dict[str, Any], b: Dict[str, Any]
-                        ) -> Dict[str, Any]:
+                        def _deep_merge_dict(a: JSONObject, b: JSONObject) -> JSONObject:
                             res = dict(a)
                             for k, v in b.items():
                                 if k in res and isinstance(res[k], dict) and isinstance(v, dict):
@@ -396,7 +394,7 @@ class StateMachinePolicyExecutor:
                 if last_sr is not None and isinstance(getattr(last_sr, "success", None), bool):
                     event = "success" if last_sr.success else "failure"
                 # Prepare payload for expressions
-                event_payload: Dict[str, Any] = {
+                event_payload: JSONObject = {
                     "event": event,
                     "last_output": getattr(last_sr, "output", None)
                     if last_sr is not None

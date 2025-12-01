@@ -1,0 +1,28 @@
+         26573 function calls (26279 primitive calls) in 0.008 seconds
+
+   Ordered by: cumulative time
+   List reduced from 531 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.008    0.008 runners.py:160(run)
+        3    0.000    0.000    0.008    0.003 base_events.py:618(run_until_complete)
+        3    0.000    0.000    0.008    0.003 base_events.py:594(run_forever)
+        6    0.000    0.000    0.008    0.001 base_events.py:1859(_run_once)
+        1    0.000    0.000    0.008    0.008 runners.py:86(run)
+        6    0.000    0.000    0.007    0.001 events.py:82(_run)
+        6    0.000    0.000    0.007    0.001 {method 'run' of '_contextvars.Context' objects}
+        1    0.000    0.000    0.007    0.007 profile_executor_core_hotpath.py:72(run_workload)
+       60    0.000    0.000    0.007    0.000 executor_core.py:694(execute)
+       60    0.000    0.000    0.007    0.000 executor_helpers.py:357(execute_entrypoint)
+       60    0.000    0.000    0.007    0.000 executor_helpers.py:222(execute_flow)
+       60    0.000    0.000    0.006    0.000 executor_core.py:655(_dispatch_frame)
+       60    0.000    0.000    0.006    0.000 dispatch_handler.py:27(dispatch)
+       60    0.000    0.000    0.006    0.000 execution_dispatcher.py:37(dispatch)
+       60    0.000    0.000    0.006    0.000 policy_handlers.py:249(default_step)
+       60    0.000    0.000    0.005    0.000 agent_orchestrator.py:27(execute)
+       60    0.001    0.000    0.005    0.000 agent_execution_runner.py:31(execute)
+      242    0.000    0.000    0.001    0.000 main.py:243(__init__)
+       60    0.000    0.000    0.001    0.000 estimation.py:23(estimate)
+        1    0.000    0.000    0.001    0.001 _mock_val_ser.py:91(__getattr__)
+
+

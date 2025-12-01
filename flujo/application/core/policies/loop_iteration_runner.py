@@ -33,6 +33,7 @@ from .loop_history import (
 )
 from .loop_mapper import apply_iteration_input_mapper, finalize_loop_output
 from ._shared import HumanInTheLoopStep  # noqa: F401  # used via isinstance checks
+from ..step_result_pool import build_pooled_step_result
 
 
 async def run_loop_iterations(
@@ -150,7 +151,7 @@ async def run_loop_iterations(
             raise e
         except Exception as e:
             return to_outcome(
-                StepResult(
+                build_pooled_step_result(
                     name=loop_step.name,
                     success=False,
                     output=None,
@@ -160,7 +161,7 @@ async def run_loop_iterations(
                     cost_usd=cumulative_cost,
                     feedback=f"Error in loop.init for LoopStep '{loop_step.name}': {e}",
                     branch_context=iteration_context,
-                    metadata_={
+                    metadata={
                         "iterations": 0,
                         "exit_reason": "initial_input_mapper_error",
                     },
@@ -474,7 +475,7 @@ async def run_loop_iterations(
                                 pass
                             raise PausedException("Loop step paused via HITL")
                         return to_outcome(
-                            StepResult(
+                            build_pooled_step_result(
                                 name=loop_step.name,
                                 success=False,
                                 output=None,
@@ -484,7 +485,7 @@ async def run_loop_iterations(
                                 cost_usd=sr.cost_usd,
                                 feedback=f"Loop body failed: {sr.feedback}",
                                 branch_context=iteration_context,
-                                metadata_={
+                                metadata={
                                     "iterations": iteration_count,
                                     "exit_reason": "body_step_error",
                                 },
@@ -547,7 +548,7 @@ async def run_loop_iterations(
                         f"LoopStep '{loop_step.name}' error executing step '{step_name}': {e}"
                     )
                     return to_outcome(
-                        StepResult(
+                        build_pooled_step_result(
                             name=loop_step.name,
                             success=False,
                             output=None,
@@ -557,7 +558,7 @@ async def run_loop_iterations(
                             cost_usd=cumulative_cost,
                             feedback=str(e),
                             branch_context=iteration_context,
-                            metadata_={
+                            metadata={
                                 "iterations": iteration_count,
                                 "exit_reason": "body_step_execution_error",
                             },
@@ -750,7 +751,7 @@ async def run_loop_iterations(
                     break
             except Exception as e:
                 return to_outcome(
-                    StepResult(
+                    build_pooled_step_result(
                         name=loop_step.name,
                         success=False,
                         output=None,
@@ -760,7 +761,7 @@ async def run_loop_iterations(
                         cost_usd=cumulative_cost,
                         feedback=f"Exception in exit condition for LoopStep '{loop_step.name}': {e}",
                         branch_context=current_context,
-                        metadata_={
+                        metadata={
                             "iterations": iteration_count,
                             "exit_reason": "exit_condition_error",
                         },
@@ -875,7 +876,7 @@ async def run_loop_iterations(
             telemetry.logfire.warning(
                 f"LoopStep '{loop_step.name}' failed to clean up resume state: {cleanup_error}"
             )
-    result = StepResult(
+    result = build_pooled_step_result(
         name=loop_step.name,
         success=success_flag,
         output=final_output,
@@ -885,7 +886,7 @@ async def run_loop_iterations(
         cost_usd=cumulative_cost,
         feedback=feedback_msg,
         branch_context=current_context,
-        metadata_={
+        metadata={
             "iterations": completed_iterations,
             "exit_reason": exit_reason or "max_loops",
             **(

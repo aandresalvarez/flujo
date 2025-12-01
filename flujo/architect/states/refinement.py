@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from flujo.architect.states.common import goto
 from flujo.domain.base_model import BaseModel as _BaseModel
 from flujo.domain.dsl import Pipeline, Step
+from flujo.type_definitions.common import JSONObject
 
 
-async def _capture_refinement(*_a: Any, context: _BaseModel | None = None) -> Dict[str, Any]:
+async def _capture_refinement(*_a: Any, context: _BaseModel | None = None) -> JSONObject:
     fb = None
     try:
         fb = getattr(context, "refinement_feedback", None)

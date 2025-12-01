@@ -1,7 +1,7 @@
 from __future__ import annotations
 # mypy: disable-error-code=arg-type
 
-from typing import Any, Callable, Coroutine, Dict, cast
+from typing import Any, Callable, Coroutine, cast
 
 from flujo.architect.states.common import (
     goto,
@@ -11,6 +11,7 @@ from flujo.architect.states.common import (
 )
 from flujo.domain.base_model import BaseModel as _BaseModel
 from flujo.domain.dsl import Pipeline, Step
+from flujo.type_definitions.common import JSONObject
 
 
 async def _select_yaml_text(_x: Any = None, context: _BaseModel | None = None) -> str:
@@ -25,12 +26,12 @@ def build_dry_run_offer_state() -> Pipeline[Any, Any]:
     """Optional dry-run offer; defaults to moving to Finalization."""
 
     async def _goto_final(
-        _data: Dict[str, Any] | None = None, context: _BaseModel | None = None
-    ) -> Dict[str, Any]:
+        _data: JSONObject | None = None, context: _BaseModel | None = None
+    ) -> JSONObject:
         return await goto("Finalization", context=context)
 
     goto_final = Step.from_callable(
-        cast(Callable[[Any], Coroutine[Any, Any, Dict[str, Any]]], _goto_final),
+        cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _goto_final),
         name="GotoFinal",
         updates_context=True,
     )
@@ -59,24 +60,24 @@ def build_dry_run_execution_state() -> Pipeline[Any, Any]:
             )
         else:
 
-            async def _dry_fallback(*_a: Any, **_k: Any) -> Dict[str, Any]:
+            async def _dry_fallback(*_a: Any, **_k: Any) -> JSONObject:
                 return {"dry_run_result": {}}
 
             dryrun = Step.from_callable(_dry_fallback, name="DryRunInMemory")
     except Exception:
 
-        async def _dry_fallback(*_a: Any, **_k: Any) -> Dict[str, Any]:
+        async def _dry_fallback(*_a: Any, **_k: Any) -> JSONObject:
             return {"dry_run_result": {}}
 
         dryrun = Step.from_callable(_dry_fallback, name="DryRunInMemory")
 
     async def _goto_final(
-        _data: Dict[str, Any] | None = None, context: _BaseModel | None = None
-    ) -> Dict[str, Any]:
+        _data: JSONObject | None = None, context: _BaseModel | None = None
+    ) -> JSONObject:
         return await goto("Finalization", context=context)
 
     goto_final = Step.from_callable(
-        cast(Callable[[Any], Coroutine[Any, Any, Dict[str, Any]]], _goto_final),
+        cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _goto_final),
         name="GotoFinal2",
         updates_context=True,
     )

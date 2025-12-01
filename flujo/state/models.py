@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal
+from typing import Any, List, Literal
+
+from flujo.type_definitions.common import JSONObject
 
 from ..domain.models import BaseModel
 from pydantic import Field
@@ -15,15 +17,13 @@ class WorkflowState(BaseModel):
     pipeline_name: str
     pipeline_version: str
     current_step_index: int
-    pipeline_context: Dict[str, Any]
+    pipeline_context: JSONObject
     last_step_output: Any | None = None
-    step_history: List[Dict[str, Any]] = Field(
-        default_factory=list
-    )  # Serialized StepResult objects
+    step_history: List[JSONObject] = Field(default_factory=list)  # Serialized StepResult objects
     status: Literal["running", "paused", "completed", "failed", "cancelled"]
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: JSONObject = Field(default_factory=dict)
     is_background_task: bool = False
     parent_run_id: str | None = None
     task_id: str | None = None

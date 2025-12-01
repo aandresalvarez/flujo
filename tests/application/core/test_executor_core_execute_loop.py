@@ -2,9 +2,9 @@ import pytest
 from types import SimpleNamespace
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import StepResult
-from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import StubAgent
+from tests.test_types.fixtures import create_test_step
 
 
 class DummyExecutor(ExecutorCore):
@@ -47,7 +47,7 @@ async def test_execute_loop_basic_iterations_and_history():
     """
     exec = DummyExecutor()
     # Create a proper Step with agent instead of SimpleNamespace
-    step = Step.model_validate({"name": "inc", "agent": StubAgent([1, 2, 3])})
+    step = create_test_step(name="inc", agent=StubAgent([1, 2, 3]))
     pipeline = Pipeline.from_step(step)
     loop_step = SimpleNamespace(
         name="loop",
@@ -81,9 +81,7 @@ async def test_execute_loop_with_exit_condition_and_mappers():
     """
     exec = DummyExecutor()
     # Create a proper Step with agent instead of SimpleNamespace
-    step = Step.model_validate(
-        {"name": "inc", "agent": StubAgent([2])}
-    )  # Return 2 to satisfy exit condition
+    step = create_test_step(name="inc", agent=StubAgent([2]))  # Return 2 to satisfy exit condition
     pipeline = Pipeline.from_step(step)
 
     def exit_cond(data, context):
@@ -128,7 +126,7 @@ async def test_execute_loop_with_output_mapper_exception():
     """
     exec = DummyExecutor()
     # Create a proper Step with agent instead of SimpleNamespace
-    step = Step.model_validate({"name": "inc", "agent": StubAgent([1, 2])})
+    step = create_test_step(name="inc", agent=StubAgent([1, 2]))
     pipeline = Pipeline.from_step(step)
 
     def bad_output_mapper(data, context):

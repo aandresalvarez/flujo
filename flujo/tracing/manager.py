@@ -7,9 +7,11 @@ of pipelines and builds a hierarchical trace tree for debugging and analysis.
 
 import time
 import uuid
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 from contextvars import ContextVar
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+from flujo.type_definitions.common import JSONObject
 
 from ..domain.events import (
     PreRunPayload,
@@ -70,9 +72,9 @@ class Span:
     start_time: float
     end_time: Optional[float] = None
     parent_span_id: Optional[str] = None
-    attributes: Dict[str, Any] = field(default_factory=dict)
-    children: List["Span"] = field(default_factory=list)
-    events: List[Dict[str, Any]] = field(default_factory=list)
+    attributes: JSONObject = field(default_factory=dict)
+    children: list["Span"] = field(default_factory=list)
+    events: list[JSONObject] = field(default_factory=list)
     status: str = "running"
 
 
@@ -80,7 +82,7 @@ class TraceManager:
     """Manages hierarchical trace construction during pipeline execution."""
 
     def __init__(self) -> None:
-        self._span_stack: List[Span] = []
+        self._span_stack: list[Span] = []
         self._root_span: Optional[Span] = None
 
     async def hook(self, payload: HookPayload) -> None:
@@ -100,7 +102,7 @@ class TraceManager:
     async def _handle_pre_run(self, payload: PreRunPayload) -> None:
         """Handle pre-run event - create root span."""
         # Root span: pipeline_run per Trace Contract
-        root_attrs: Dict[str, Any] = {
+        root_attrs: JSONObject = {
             "flujo.input": str(payload.initial_input),
         }
         if getattr(payload, "is_background", False):
@@ -168,7 +170,7 @@ class TraceManager:
         step_obj = getattr(payload, "step", None)
         step_name = getattr(step_obj, "name", None)
         # Step span per Trace Contract
-        step_attrs: Dict[str, Any] = {
+        step_attrs: JSONObject = {
             "flujo.step.type": type(step_obj).__name__ if step_obj is not None else "UnknownStep",
             "step_input": str(getattr(payload, "step_input", "")),
         }
@@ -221,7 +223,7 @@ class TraceManager:
         except Exception:
             pass
 
-    def add_event(self, name: str, attributes: Dict[str, Any]) -> None:
+    def add_event(self, name: str, attributes: JSONObject) -> None:
         """Attach an event to the current active span (best-effort)."""
         try:
             if not self._span_stack:

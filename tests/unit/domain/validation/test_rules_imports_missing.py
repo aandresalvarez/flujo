@@ -1,4 +1,5 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject  # noqa: F401
 
 import textwrap
 from pathlib import Path
@@ -43,8 +44,7 @@ def test_v_i5_input_projection_coherence_warns_initial_prompt_vs_object() -> Non
     """Warn when projecting to initial_prompt but child expects object input."""
     # Child first step expects dict
     child_py = (
-        "from typing import Dict, Any\n"
-        "async def f(x: Dict[str, Any]) -> Dict[str, Any]:\n    return x\n"
+        "from typing import Dict, Any\nasync def f(x: JSONObject) -> JSONObject:\n    return x\n"
     )
     import tempfile
     import textwrap

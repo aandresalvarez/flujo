@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import List
 
 from flujo.domain.models import PipelineContext
+from flujo.type_definitions.common import JSONObject
 
 
-async def clarify(
-    goal: str | dict | None, *, context: PipelineContext | None = None
-) -> Dict[str, Any]:
+async def clarify(goal: str | dict | None, *, context: PipelineContext | None = None) -> JSONObject:
     """Produce a minimal cohort definition from the initial goal.
 
     In real pipelines this would call an LLM or validator. Here we synthesize a structure.
@@ -20,9 +19,7 @@ async def clarify(
     return {"scratchpad": {"cohort_definition": cohort_definition}}
 
 
-async def discover_concepts(
-    _data: object, *, context: PipelineContext | None = None
-) -> Dict[str, Any]:
+async def discover_concepts(_data: object, *, context: PipelineContext | None = None) -> JSONObject:
     """Derive concept sets from the cohort definition in context."""
     assert context is not None
     cd = context.scratchpad.get("cohort_definition") or {}
@@ -31,7 +28,7 @@ async def discover_concepts(
     return {"scratchpad": {"concept_sets": concept_sets}}
 
 
-async def build_sql(_data: object, *, context: PipelineContext | None = None) -> Dict[str, Any]:
+async def build_sql(_data: object, *, context: PipelineContext | None = None) -> JSONObject:
     """Build a final SQL string from cohort_definition and concept_sets in context."""
     assert context is not None
     cd = context.scratchpad.get("cohort_definition")
@@ -40,7 +37,7 @@ async def build_sql(_data: object, *, context: PipelineContext | None = None) ->
     return {"scratchpad": {"final_sql": final_sql}}
 
 
-async def accept_review(_data: object, *, context: PipelineContext | None = None) -> Dict[str, Any]:
+async def accept_review(_data: object, *, context: PipelineContext | None = None) -> JSONObject:
     """Map the last human response from HITL into scratchpad.cohort_definition.
 
     If the user pasted JSON, try to parse `{ "name": ..., "criteria": [...] }`.
@@ -64,7 +61,7 @@ async def accept_review(_data: object, *, context: PipelineContext | None = None
         except Exception:
             human = None
 
-    cd: Dict[str, Any]
+    cd: JSONObject
     if isinstance(human, (dict, list)):
         cd = {"name": "user", "criteria": ["from_json"]}
     else:

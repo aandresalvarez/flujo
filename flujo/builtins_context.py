@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
+
+from flujo.type_definitions.common import JSONObject
 
 from flujo.domain.models import BaseModel as DomainBaseModel
 from flujo.infra.skill_registry import get_skill_registry
@@ -11,7 +13,7 @@ async def context_set(
     value: Any,
     *,
     context: Optional[DomainBaseModel] = None,
-) -> Dict[str, Any]:
+) -> JSONObject:
     """Set a context field at the specified dot-separated path."""
     from flujo.utils.context import set_nested_context_field
 
@@ -29,10 +31,10 @@ async def context_set(
 
 async def context_merge(
     path: str,
-    value: Dict[str, Any],
+    value: JSONObject,
     *,
     context: Optional[DomainBaseModel] = None,
-) -> Dict[str, Any]:
+) -> JSONObject:
     """Merge a dictionary into the context at the specified path."""
     from flujo.utils.context import set_nested_context_field
 

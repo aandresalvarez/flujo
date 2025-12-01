@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, cast
+from typing import Any, Optional, cast
 
 from ..dsl import Pipeline, Step, StepConfig
 from .loader_models import (
@@ -28,8 +28,8 @@ def _make_step_from_blueprint(
     model: Any,
     *,
     yaml_path: Optional[str] = None,
-    compiled_agents: Optional[Dict[str, Any]] = None,
-    compiled_imports: Optional[Dict[str, Any]] = None,
+    compiled_agents: Optional[dict[str, Any]] = None,
+    compiled_imports: Optional[dict[str, Any]] = None,
 ) -> Step[Any, Any]:
     if isinstance(model, dict):
         _raw_use_history = None
@@ -43,7 +43,7 @@ def _make_step_from_blueprint(
             try:
                 branches_raw = model.get("branches")
                 if isinstance(branches_raw, dict):
-                    coerced: Dict[str, Any] = {}
+                    coerced: dict[str, Any] = {}
                     for _k, _v in branches_raw.items():
                         if isinstance(_k, bool):
                             coerced[str(_k).lower()] = _v
@@ -65,7 +65,7 @@ def _make_step_from_blueprint(
             states_raw = model.get("states") or {}
             if not isinstance(states_raw, dict):
                 raise BlueprintError("StateMachine.states must be a mapping of state → steps")
-            coerced_states: Dict[str, Pipeline[Any, Any]] = {}
+            coerced_states: dict[str, Pipeline[Any, Any]] = {}
             for _state_name, _branch_spec in states_raw.items():
                 coerced_states[str(_state_name)] = _build_pipeline_from_branch(
                     _branch_spec,
@@ -80,7 +80,7 @@ def _make_step_from_blueprint(
             if isinstance(transitions_raw, list):
                 for _idx, _rule in enumerate(transitions_raw):
                     if isinstance(_rule, dict):
-                        _coerced: Dict[str, Any] = {}
+                        _coerced: dict[str, Any] = {}
                         for _k, _v in _rule.items():
                             if _k is True:
                                 _coerced["on"] = _v
@@ -257,8 +257,8 @@ def _build_pipeline_from_branch(
     branch_spec: Any,
     *,
     base_path: Optional[str] = None,
-    compiled_agents: Optional[Dict[str, Any]] = None,
-    compiled_imports: Optional[Dict[str, Any]] = None,
+    compiled_agents: Optional[dict[str, Any]] = None,
+    compiled_imports: Optional[dict[str, Any]] = None,
 ) -> Pipeline[Any, Any]:
     if isinstance(branch_spec, list):
         steps: list[Step[Any, Any]] = []
@@ -315,8 +315,8 @@ def _build_pipeline_from_branch(
 
 def build_pipeline_from_blueprint(
     model: BlueprintPipelineModel,
-    compiled_agents: Optional[Dict[str, Any]] = None,
-    compiled_imports: Optional[Dict[str, Any]] = None,
+    compiled_agents: Optional[dict[str, Any]] = None,
+    compiled_imports: Optional[dict[str, Any]] = None,
 ) -> Pipeline[Any, Any]:
     steps: list[Step[Any, Any]] = []
     for idx, s in enumerate(model.steps):

@@ -2,7 +2,8 @@
 
 import pytest
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, List
+from flujo.type_definitions.common import JSONObject
 
 from flujo.utils.serialization import (
     register_custom_serializer,
@@ -18,7 +19,7 @@ from flujo.utils.serialization import (
 class MockCustomType:
     """A custom type for testing serialization."""
 
-    def __init__(self, value: str, metadata: Dict[str, Any]):
+    def __init__(self, value: str, metadata: JSONObject):
         self.value = value
         self.metadata = metadata
 
@@ -65,7 +66,7 @@ class TestSerializationRegistry:
         """Test registering a custom serializer."""
 
         # Create a custom serializer
-        def serialize_custom_type(obj: MockCustomType) -> Dict[str, Any]:
+        def serialize_custom_type(obj: MockCustomType) -> JSONObject:
             return {"type": "MockCustomType", "value": obj.value, "metadata": obj.metadata}
 
         # Register the serializer
@@ -87,7 +88,7 @@ class TestSerializationRegistry:
         """Test registering a custom deserializer."""
 
         # Create a custom deserializer
-        def deserialize_custom_type(data: Dict[str, Any]) -> MockCustomType:
+        def deserialize_custom_type(data: JSONObject) -> MockCustomType:
             return MockCustomType(data["value"], data["metadata"])
 
         # Register the deserializer
@@ -102,10 +103,10 @@ class TestSerializationRegistry:
         """Test that serialization and deserialization work together."""
 
         # Create serializers and deserializers
-        def serialize_custom_type(obj: MockCustomType) -> Dict[str, Any]:
+        def serialize_custom_type(obj: MockCustomType) -> JSONObject:
             return {"type": "MockCustomType", "value": obj.value, "metadata": obj.metadata}
 
-        def deserialize_custom_type(data: Dict[str, Any]) -> MockCustomType:
+        def deserialize_custom_type(data: JSONObject) -> MockCustomType:
             return MockCustomType(data["value"], data["metadata"])
 
         # Register both
@@ -131,16 +132,16 @@ class TestSerializationRegistry:
         """Test serialization with nested custom objects."""
 
         # Create serializers and deserializers for both types
-        def serialize_custom_type(obj: MockCustomType) -> Dict[str, Any]:
+        def serialize_custom_type(obj: MockCustomType) -> JSONObject:
             return {"type": "MockCustomType", "value": obj.value, "metadata": obj.metadata}
 
-        def deserialize_custom_type(data: Dict[str, Any]) -> MockCustomType:
+        def deserialize_custom_type(data: JSONObject) -> MockCustomType:
             return MockCustomType(data["value"], data["metadata"])
 
-        def serialize_enum(obj: MockEnum) -> Dict[str, Any]:
+        def serialize_enum(obj: MockEnum) -> JSONObject:
             return {"type": "MockEnum", "name": obj.name, "value": obj.value}
 
-        def deserialize_enum(data: Dict[str, Any]) -> MockEnum:
+        def deserialize_enum(data: JSONObject) -> MockEnum:
             return MockEnum(data["name"], data["value"])
 
         # Register all serializers and deserializers
@@ -173,7 +174,7 @@ class TestSerializationRegistry:
         """Test serialization with dataclasses."""
 
         # Create serializers and deserializers for dataclass
-        def serialize_dataclass(obj: MockDataclass) -> Dict[str, Any]:
+        def serialize_dataclass(obj: MockDataclass) -> JSONObject:
             return {
                 "type": "MockDataclass",
                 "field1": obj.field1,
@@ -181,7 +182,7 @@ class TestSerializationRegistry:
                 "field3": obj.field3,
             }
 
-        def deserialize_dataclass(data: Dict[str, Any]) -> MockDataclass:
+        def deserialize_dataclass(data: JSONObject) -> MockDataclass:
             return MockDataclass(data["field1"], data["field2"], data["field3"])
 
         # Register serializers and deserializers
@@ -210,7 +211,7 @@ class TestSerializationRegistry:
         class SubMockCustomType(MockCustomType):
             pass
 
-        def serialize_custom_type(obj: MockCustomType) -> Dict[str, Any]:
+        def serialize_custom_type(obj: MockCustomType) -> JSONObject:
             return {"type": "MockCustomType", "value": obj.value, "metadata": obj.metadata}
 
         # Register serializer for base class
@@ -228,7 +229,7 @@ class TestSerializationRegistry:
         class SubMockCustomType(MockCustomType):
             pass
 
-        def deserialize_custom_type(data: Dict[str, Any]) -> MockCustomType:
+        def deserialize_custom_type(data: JSONObject) -> MockCustomType:
             return MockCustomType(data["value"], data["metadata"])
 
         # Register deserializer for base class
@@ -242,7 +243,7 @@ class TestSerializationRegistry:
     def test_registry_reset(self):
         """Test that the registry can be reset."""
 
-        def serialize_custom_type(obj: MockCustomType) -> Dict[str, Any]:
+        def serialize_custom_type(obj: MockCustomType) -> JSONObject:
             return {"type": "MockCustomType", "value": obj.value}
 
         # Register a serializer
@@ -262,7 +263,7 @@ class TestSerializationRegistry:
         import threading
         import time
 
-        def serialize_custom_type(obj: MockCustomType) -> Dict[str, Any]:
+        def serialize_custom_type(obj: MockCustomType) -> JSONObject:
             return {"type": "MockCustomType", "value": obj.value}
 
         def register_in_thread():
@@ -313,7 +314,7 @@ class TestSerializationRegistry:
     def test_deserialization_error_handling(self):
         """Test that deserialization errors are handled gracefully."""
 
-        def bad_deserializer(data: Dict[str, Any]) -> MockCustomType:
+        def bad_deserializer(data: JSONObject) -> MockCustomType:
             raise ValueError("Deserialization failed")
 
         # Register a bad deserializer
@@ -329,7 +330,7 @@ class TestSerializationRegistry:
     def test_circular_reference_handling(self):
         """Test that circular references are handled correctly."""
 
-        def serialize_custom_type(obj: MockCustomType) -> Dict[str, Any]:
+        def serialize_custom_type(obj: MockCustomType) -> JSONObject:
             return {"type": "MockCustomType", "value": obj.value, "metadata": obj.metadata}
 
         # Register serializer

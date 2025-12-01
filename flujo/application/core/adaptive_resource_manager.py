@@ -20,6 +20,7 @@ import multiprocessing
 
 from .optimized_telemetry import get_global_telemetry
 from .optimization.memory.memory_utils import get_global_memory_optimizer
+from flujo.type_definitions.common import JSONObject
 
 
 class ResourceType(Enum):
@@ -344,7 +345,7 @@ class AdaptiveResourceManager:
         self._memory_optimizer = get_global_memory_optimizer()
 
         # Resource limits
-        self._resource_limits: Dict[ResourceType, ResourceLimit] = {}
+        self._resource_limits: dict[ResourceType, ResourceLimit] = {}
         self._initialize_default_limits()
 
         # Adaptation tracking
@@ -359,7 +360,7 @@ class AdaptiveResourceManager:
         self._lock = RLock()
 
         # Statistics
-        self._stats: Dict[str, Any] = {
+        self._stats: JSONObject = {
             "total_adaptations": 0,
             "successful_adaptations": 0,
             "failed_adaptations": 0,
@@ -369,7 +370,7 @@ class AdaptiveResourceManager:
 
         # Performance tracking
         self._resource_usage: deque[float] = deque(maxlen=100)
-        self._allocation_history: deque[Dict[str, Any]] = deque(maxlen=100)
+        self._allocation_history: deque[JSONObject] = deque(maxlen=100)
 
     def _initialize_default_limits(self) -> None:
         """Initialize default resource limits."""
@@ -681,7 +682,7 @@ class AdaptiveResourceManager:
                 current_value=current_value,
             )
 
-    def get_system_metrics(self) -> Dict[ResourceType, ResourceMetrics]:
+    def get_system_metrics(self) -> dict[ResourceType, ResourceMetrics]:
         """Get current system metrics."""
         return self._system_monitor.get_metrics()
 
@@ -690,7 +691,7 @@ class AdaptiveResourceManager:
         with self._lock:
             return list(self._adaptation_history)[-limit:]
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> JSONObject:
         """Get resource manager statistics."""
         with self._lock:
             metrics = self.get_system_metrics()
@@ -717,7 +718,7 @@ class AdaptiveResourceManager:
                 "last_adaptation_time": self._last_adaptation_time,
             }
 
-    def get_recommendations(self) -> List[Dict[str, Any]]:
+    def get_recommendations(self) -> List[JSONObject]:
         """Get resource optimization recommendations."""
         recommendations = []
         metrics = self.get_system_metrics()
@@ -791,13 +792,13 @@ async def stop_adaptive_resource_management() -> None:
     await manager.stop()
 
 
-def get_resource_metrics() -> Dict[ResourceType, ResourceMetrics]:
+def get_resource_metrics() -> dict[ResourceType, ResourceMetrics]:
     """Get current resource metrics."""
     manager = get_global_adaptive_resource_manager()
     return manager.get_system_metrics()
 
 
-def get_resource_recommendations() -> List[Dict[str, Any]]:
+def get_resource_recommendations() -> List[JSONObject]:
     """Get resource optimization recommendations."""
     manager = get_global_adaptive_resource_manager()
     return manager.get_recommendations()

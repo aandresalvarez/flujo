@@ -6,6 +6,7 @@ error classification, automatic strategy selection, recovery success tracking,
 and strategy optimization for robust error handling.
 """
 
+from flujo.type_definitions.common import JSONObject
 import asyncio
 import time
 import random
@@ -567,7 +568,7 @@ class CircuitBreakerStrategy(BaseRecoveryStrategy):
             self._circuit_breakers[name] = CircuitBreaker(name, self.circuit_breaker_config)
         return self._circuit_breakers[name]
 
-    def get_circuit_breaker_stats(self) -> Dict[str, Dict[str, Any]]:
+    def get_circuit_breaker_stats(self) -> Dict[str, JSONObject]:
         """Get statistics for all circuit breakers."""
         return {name: cb.get_health_info() for name, cb in self._circuit_breakers.items()}
 

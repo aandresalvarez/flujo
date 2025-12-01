@@ -4,10 +4,11 @@ import json
 from hypothesis import given, strategies as st, settings, Verbosity
 from hypothesis.strategies import composite
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional, Union, Literal
+from typing import Any, List, Optional, Union, Literal
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from flujo.type_definitions.common import JSONObject
 
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
 from flujo.utils.serialization import safe_serialize
@@ -45,7 +46,7 @@ class ComplexModel(BaseModel):
     float_field: float
     bool_field: bool
     list_field: List[str]
-    dict_field: Dict[str, Any]
+    dict_field: JSONObject
     optional_field: Optional[str] = None
     enum_field: MockEnum = MockEnum.A
     nested_field: Optional[NestedModel] = None
@@ -58,8 +59,8 @@ class DeeplyNestedModel(BaseModel):
 
     level1: ComplexModel
     level2: List[ComplexModel]
-    level3: Dict[str, ComplexModel]
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    level3: dict[str, ComplexModel]
+    metadata: JSONObject = Field(default_factory=dict)
 
 
 # Hypothesis strategies for generating test data

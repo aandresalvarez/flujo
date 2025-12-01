@@ -1,9 +1,10 @@
 """Unit tests for serialization utilities."""
 
+from flujo.type_definitions.common import JSONObject
 import json
 from datetime import datetime, date, time
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from unittest.mock import patch
 
 import pytest
@@ -44,7 +45,7 @@ class MyCustomObject:
     def __init__(self, data: str):
         self.data = data
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JSONObject:
         return {"data": self.data}
 
 
@@ -54,7 +55,7 @@ class TestSerializationRegistry:
     def test_register_custom_serializer(self):
         """Test registering a custom serializer."""
 
-        def custom_serializer(obj: MyCustomObject) -> Dict[str, Any]:
+        def custom_serializer(obj: MyCustomObject) -> JSONObject:
             return {"custom_data": obj.data}
 
         register_custom_serializer(MyCustomObject, custom_serializer)
@@ -68,7 +69,7 @@ class TestSerializationRegistry:
     def test_register_custom_deserializer(self):
         """Test registering a custom deserializer."""
 
-        def custom_deserializer(data: Dict[str, Any]) -> MyCustomObject:
+        def custom_deserializer(data: JSONObject) -> MyCustomObject:
             return MyCustomObject(data["custom_data"])
 
         register_custom_deserializer(MyCustomObject, custom_deserializer)
@@ -93,7 +94,7 @@ class TestSerializationRegistry:
     def test_reset_custom_serializer_registry(self):
         """Test resetting the custom serializer registry."""
 
-        def custom_serializer(obj: MyCustomObject) -> Dict[str, Any]:
+        def custom_serializer(obj: MyCustomObject) -> JSONObject:
             return {"data": obj.data}
 
         register_custom_serializer(MyCustomObject, custom_serializer)
@@ -114,7 +115,7 @@ class TestSerializerFactories:
     def test_create_serializer_for_type(self):
         """Test creating a serializer for a specific type."""
 
-        def custom_serializer(obj: MyCustomObject) -> Dict[str, Any]:
+        def custom_serializer(obj: MyCustomObject) -> JSONObject:
             return {"serialized": obj.data}
 
         serializer = create_serializer_for_type(MyCustomObject, custom_serializer)
@@ -236,7 +237,7 @@ class TestSafeSerialize:
     def test_safe_serialize_with_custom_serializer(self):
         """Test serializing with custom serializer."""
 
-        def custom_serializer(obj: MyCustomObject) -> Dict[str, Any]:
+        def custom_serializer(obj: MyCustomObject) -> JSONObject:
             return {"custom_data": obj.data}
 
         register_custom_serializer(MyCustomObject, custom_serializer)
@@ -368,7 +369,7 @@ class TestSafeDeserialize:
     def test_safe_deserialize_with_custom_deserializer(self):
         """Test deserializing with custom deserializer."""
 
-        def custom_deserializer(data: Dict[str, Any]) -> MyCustomObject:
+        def custom_deserializer(data: JSONObject) -> MyCustomObject:
             return MyCustomObject(data["custom_data"])
 
         register_custom_deserializer(MyCustomObject, custom_deserializer)

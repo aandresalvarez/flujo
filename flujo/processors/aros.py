@@ -9,7 +9,9 @@ global [aros] defaults (see FSD.md v1.2).
 
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple, Dict, List
+from typing import Any, List, Optional, Tuple
+
+from flujo.type_definitions.common import JSONObject
 
 from .base import Processor
 from ..infra.telemetry import logfire
@@ -363,14 +365,14 @@ def _coerce_with_schema(
     allow: dict[str, List[str]],
     *,
     path: Tuple[str, ...],
-) -> Tuple[Any, set[str], Dict[str, int]]:
+) -> Tuple[Any, set[str], dict[str, int]]:
     """Attempt to coerce value to satisfy schema. Returns (new_value, transforms, branch_choices).
 
     - Supports type, properties/required, items, anyOf/oneOf (first-pass), and allowlist conversions.
     - Records branch choices as a mapping from path ("/a/b") to chosen index.
     """
     transforms: set[str] = set()
-    branch_choices: Dict[str, int] = {}
+    branch_choices: dict[str, int] = {}
 
     # enum coercion: try to coerce string to allowed enum values when whitelisted
     if isinstance(schema.get("enum"), list):
@@ -436,7 +438,7 @@ def _coerce_with_schema(
             props = schema.get("properties") or {}
             if not isinstance(props, dict):
                 props = {}
-            out: Dict[str, Any] = dict(value)
+            out: JSONObject = dict(value)
             for k, sub in props.items():
                 if k in out and isinstance(sub, dict):
                     nv, tf, bc = _coerce_with_schema(out[k], sub, allow, path=(*path, k))
@@ -545,7 +547,7 @@ class SmartTypeCoercionProcessor(Processor):
                     data, self.schema, self.allow, path=()
                 )
                 if transforms and tm is not None:
-                    payload: Dict[str, Any] = {
+                    payload: JSONObject = {
                         "stage": "semantic",
                         "transforms": sorted(list(transforms))[:10],
                     }

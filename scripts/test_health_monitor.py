@@ -12,7 +12,7 @@ import subprocess
 import time
 import psutil
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Optional
 
 
 class TestHealthMonitor:
@@ -68,7 +68,7 @@ class TestHealthMonitor:
         with open(self.health_file, "w") as f:
             json.dump(self.health_data, f, indent=2)
 
-    def get_health_report(self) -> Dict[str, Any]:
+    def get_health_report(self) -> dict[str, Any]:
         """Generate health report."""
         if not self.health_data["runs"]:
             return {"status": "no_data", "message": "No test runs recorded yet"}
@@ -115,7 +115,7 @@ class TestHealthMonitor:
             "last_run": recent_runs[-1]["timestamp"] if recent_runs else None,
         }
 
-    def run_test_suite(self, test_command: str = "make test-fast") -> Dict[str, Any]:
+    def run_test_suite(self, test_command: str = "make test-fast") -> dict[str, Any]:
         """Run test suite and record results."""
         print(f"🧪 Running test suite: {test_command}")
 

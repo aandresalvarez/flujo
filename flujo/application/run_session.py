@@ -9,7 +9,6 @@ from typing import (
     Awaitable,
     AsyncIterator,
     Callable,
-    Dict,
     Generic,
     Literal,
     Optional,
@@ -38,6 +37,7 @@ from ..exceptions import (
     UsageLimitExceededError,
 )
 from ..state import StateBackend
+from ..type_definitions.common import JSONObject
 from ..utils.config import get_settings
 from .core.execution_manager import ExecutionManager
 from .core.state_manager import StateManager
@@ -59,7 +59,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
         pipeline_version: str,
         pipeline_id: str,
         context_model: Optional[Type[ContextT]],
-        initial_context_data: Dict[str, Any],
+        initial_context_data: JSONObject,
         resources: Optional[AppResources],
         usage_limits: Optional[UsageLimits],
         hooks: list[HookCallable],
@@ -176,7 +176,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
         initial_input: RunnerInT,
         *,
         run_id: str | None = None,
-        initial_context_data: Optional[Dict[str, Any]] = None,
+        initial_context_data: Optional[JSONObject] = None,
     ) -> AsyncIterator[PipelineResult[ContextT]]:
         """Internal implementation for async pipeline execution."""
 
@@ -259,7 +259,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                     Optional[ContextT], PipelineContext(initial_prompt=str(initial_input))
                 )
                 try:
-                    merged_data: Dict[str, Any] = {}
+                    merged_data: JSONObject = {}
                     if isinstance(self.initial_context_data, dict):
                         merged_data.update(copy.deepcopy(self.initial_context_data))
                     if isinstance(initial_context_data, dict):

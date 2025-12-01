@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import os as _os
-from typing import Any, Dict, List
+from typing import Any, List
 
 from flujo.architect.states.common import normalize_name_from_goal, skill_resolver, telemetry
 from flujo.domain.base_model import BaseModel as _BaseModel
 from flujo.domain.dsl import MapStep, Pipeline, Step
+from flujo.type_definitions.common import JSONObject
 
 
 async def emit_minimal_yaml(goal: str) -> dict[str, Any]:
@@ -30,7 +31,7 @@ async def emit_minimal_yaml(goal: str) -> dict[str, Any]:
 
 async def generate_yaml_from_plan(
     _x: Any = None, *, context: _BaseModel | None = None
-) -> Dict[str, Any]:
+) -> JSONObject:
     try:
         goal = getattr(context, "user_goal", None) if context is not None else None
     except Exception:
@@ -105,9 +106,9 @@ async def generate_yaml_from_plan(
     return result
 
 
-async def prepare_for_map(_x: Any = None, *, context: _BaseModel | None = None) -> Dict[str, Any]:
+async def prepare_for_map(_x: Any = None, *, context: _BaseModel | None = None) -> JSONObject:
     """Prepare `prepared_steps_for_mapping` from `execution_plan`."""
-    items: List[Dict[str, Any]] = []
+    items: List[JSONObject] = []
     try:
         plan = getattr(context, "execution_plan", None) if context is not None else None
         if isinstance(plan, list):
@@ -138,9 +139,7 @@ async def prepare_for_map(_x: Any = None, *, context: _BaseModel | None = None) 
     return {"prepared_steps_for_mapping": items}
 
 
-async def match_one_tool(
-    step_item: Dict[str, Any], *, context: _BaseModel | None = None
-) -> Dict[str, Any]:
+async def match_one_tool(step_item: JSONObject, *, context: _BaseModel | None = None) -> JSONObject:
     """Run ToolMatcher agent for a single planned step; resilient with safe fallback."""
     from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 
@@ -148,7 +147,7 @@ async def match_one_tool(
         step_name = step_item.get("step_name") if isinstance(step_item, dict) else None
         purpose = step_item.get("purpose") if isinstance(step_item, dict) else None
         preselected = step_item.get("preselected_agent") if isinstance(step_item, dict) else None
-        available: List[Dict[str, Any]] = []
+        available: List[JSONObject] = []
         try:
             if context is not None:
                 available = list(getattr(context, "available_skills", []) or [])
@@ -223,20 +222,20 @@ async def match_one_tool(
 
 async def collect_tool_selections(
     result_list: Any, *, context: _BaseModel | None = None
-) -> Dict[str, Any]:
+) -> JSONObject:
     results = result_list if isinstance(result_list, list) else []
     return {"tool_selections": results}
 
 
 async def generate_yaml_from_tool_selections(
     _x: Any = None, *, context: _BaseModel | None = None
-) -> Dict[str, Any]:
+) -> JSONObject:
     """YAML writer using agent when available, with robust fallback."""
     from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 
     goal = None
-    flujo_schema: Dict[str, Any] = {}
-    selections: List[Dict[str, Any]] = []
+    flujo_schema: JSONObject = {}
+    selections: List[JSONObject] = []
     try:
         if context is not None:
             goal = getattr(context, "user_goal", None)

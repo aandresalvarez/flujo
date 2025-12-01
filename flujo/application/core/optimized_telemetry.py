@@ -13,17 +13,7 @@ import threading
 from collections import deque, defaultdict
 from contextlib import contextmanager, asynccontextmanager
 from dataclasses import dataclass, field
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Callable,
-    Union,
-    Set,
-    Generator,
-    AsyncGenerator,
-)
+from typing import Any, Optional, Callable, Union, Set, Generator, AsyncGenerator
 from asyncio import Task
 from threading import RLock
 from enum import Enum
@@ -31,6 +21,7 @@ import uuid
 import weakref
 
 from .optimization.memory.object_pool import get_global_pool
+from flujo.type_definitions.common import JSONObject
 
 
 class LogLevel(Enum):
@@ -61,8 +52,8 @@ class Span:
     start_time_ns: int
     end_time_ns: Optional[int] = None
     parent_span_id: Optional[str] = None
-    tags: Dict[str, Any] = field(default_factory=dict)
-    logs: List[Dict[str, Any]] = field(default_factory=list)
+    tags: JSONObject = field(default_factory=dict)
+    logs: list[JSONObject] = field(default_factory=list)
     status: str = "ok"
 
     @property
@@ -119,7 +110,7 @@ class Metric:
     metric_type: MetricType
     value: Union[int, float]
     timestamp_ns: int
-    tags: Dict[str, Any] = field(default_factory=dict)
+    tags: JSONObject = field(default_factory=dict)
 
     def reset(self) -> None:
         """Reset metric for reuse."""
@@ -221,9 +212,9 @@ class CircularBuffer:
             self.count -= 1
             return item
 
-    def get_batch(self, max_items: int) -> List[Any]:
+    def get_batch(self, max_items: int) -> list[Any]:
         """Get batch of items from buffer."""
-        items: List[Any] = []
+        items: list[Any] = []
         with self._lock:
             for _ in range(min(max_items, self.count)):
                 item = self.buffer[self.head]
@@ -268,7 +259,7 @@ class BatchProcessor:
         self._metric_buffer = CircularBuffer(max_buffer_size)
 
         # Processing
-        self._processors: List[Callable[[List[Any]], None]] = []
+        self._processors: list[Callable[[list[Any]], None]] = []
         self._last_flush = time.time()
         self._processing_task: Optional[Task[Any]] = None
         self._shutdown_event = asyncio.Event()
@@ -276,7 +267,7 @@ class BatchProcessor:
         # Thread safety
         self._lock = RLock()
 
-    def add_processor(self, processor: Callable[[List[Any]], None]) -> None:
+    def add_processor(self, processor: Callable[[list[Any]], None]) -> None:
         """Add batch processor function."""
         with self._lock:
             self._processors.append(processor)
@@ -350,7 +341,7 @@ class BatchProcessor:
 
         self._last_flush = current_time
 
-    async def _process_span_batch(self, spans: List[Span]) -> None:
+    async def _process_span_batch(self, spans: list[Span]) -> None:
         """Process batch of spans."""
         for processor in self._processors:
             try:
@@ -362,7 +353,7 @@ class BatchProcessor:
                 # Continue with other processors
                 continue
 
-    async def _process_metric_batch(self, metrics: List[Metric]) -> None:
+    async def _process_metric_batch(self, metrics: list[Metric]) -> None:
         """Process batch of metrics."""
         for processor in self._processors:
             try:
@@ -414,8 +405,8 @@ class OptimizedTelemetry:
         self._batch_processor = BatchProcessor(batch_size=batch_size, flush_interval=flush_interval)
 
         # Current span tracking
-        self._current_spans: Dict[int, Span] = {}  # thread_id -> span
-        self._span_stack: Dict[int, List[Span]] = defaultdict(list)  # thread_id -> span stack
+        self._current_spans: dict[int, Span] = {}  # thread_id -> span
+        self._span_stack: dict[int, list[Span]] = defaultdict(list)  # thread_id -> span stack
 
         # Statistics
         self._stats = TelemetryStats() if enable_stats else None
@@ -428,7 +419,7 @@ class OptimizedTelemetry:
         self._sample_threshold = int(1.0 / max(sampling_rate, 0.001))
 
         # Worker tasks
-        self._worker_tasks: List[Optional[Task[Any]]] = [None] * self.num_workers
+        self._worker_tasks: list[Optional[Task[Any]]] = [None] * self.num_workers
         self._worker_running = False
 
         # Weak references for cleanup
@@ -436,7 +427,7 @@ class OptimizedTelemetry:
         self._last_cleanup = time.time()
 
         # Callbacks
-        self._callbacks: List[Callable[[str, Dict[str, Any]], None]] = []
+        self._callbacks: list[Callable[[str, JSONObject], None]] = []
 
     async def start(self) -> None:
         """Start telemetry system."""
@@ -456,7 +447,7 @@ class OptimizedTelemetry:
             return self._sample_counter % self._sample_threshold == 0
 
     def start_span(
-        self, name: str, parent_span: Optional[Span] = None, tags: Optional[Dict[str, Any]] = None
+        self, name: str, parent_span: Optional[Span] = None, tags: JSONObject | None = None
     ) -> Optional[Span]:
         """Start a new span."""
         if not self.enable_tracing or not self.should_sample():
@@ -540,7 +531,7 @@ class OptimizedTelemetry:
 
     @contextmanager
     def trace(
-        self, name: str, tags: Optional[Dict[str, Any]] = None
+        self, name: str, tags: JSONObject | None = None
     ) -> Generator[Optional[Span], None, None]:
         """Context manager for tracing."""
         span: Optional[Span] = self.start_span(name, tags=tags)
@@ -552,7 +543,7 @@ class OptimizedTelemetry:
 
     @asynccontextmanager
     async def trace_async(
-        self, name: str, tags: Optional[Dict[str, Any]] = None
+        self, name: str, tags: JSONObject | None = None
     ) -> AsyncGenerator[Optional[Span], None]:
         """Async context manager for tracing."""
         span: Optional[Span] = self.start_span(name, tags=tags)
@@ -567,7 +558,7 @@ class OptimizedTelemetry:
         name: str,
         value: Union[int, float],
         metric_type: MetricType = MetricType.COUNTER,
-        tags: Optional[Dict[str, Any]] = None,
+        tags: JSONObject | None = None,
     ) -> None:
         """Record a metric."""
         if not self.enable_metrics or not self.should_sample():
@@ -603,32 +594,28 @@ class OptimizedTelemetry:
         except Exception:
             pass  # Silently ignore metric recording errors
 
-    def increment_counter(
-        self, name: str, value: int = 1, tags: Optional[Dict[str, Any]] = None
-    ) -> None:
+    def increment_counter(self, name: str, value: int = 1, tags: JSONObject | None = None) -> None:
         """Increment a counter metric."""
         self.record_metric(name, value, MetricType.COUNTER, tags)
 
     def set_gauge(
-        self, name: str, value: Union[int, float], tags: Optional[Dict[str, Any]] = None
+        self, name: str, value: Union[int, float], tags: JSONObject | None = None
     ) -> None:
         """Set a gauge metric."""
         self.record_metric(name, value, MetricType.GAUGE, tags)
 
     def record_histogram(
-        self, name: str, value: Union[int, float], tags: Optional[Dict[str, Any]] = None
+        self, name: str, value: Union[int, float], tags: JSONObject | None = None
     ) -> None:
         """Record a histogram metric."""
         self.record_metric(name, value, MetricType.HISTOGRAM, tags)
 
-    def record_timer(
-        self, name: str, duration_ns: int, tags: Optional[Dict[str, Any]] = None
-    ) -> None:
+    def record_timer(self, name: str, duration_ns: int, tags: JSONObject | None = None) -> None:
         """Record a timer metric."""
         duration_ms = duration_ns / 1_000_000
         self.record_metric(name, duration_ms, MetricType.TIMER, tags)
 
-    def add_processor(self, processor: Callable[[List[Any]], None]) -> None:
+    def add_processor(self, processor: Callable[[list[Any]], None]) -> None:
         """Add batch processor function."""
         self._batch_processor.add_processor(processor)
 
@@ -730,11 +717,11 @@ class OptimizedTelemetry:
         if self._stats:
             self._stats = TelemetryStats()
 
-    def register_callback(self, callback: Callable[[str, Dict[str, Any]], None]) -> None:
+    def register_callback(self, callback: Callable[[str, JSONObject], None]) -> None:
         """Register a callback for telemetry events."""
         self._callbacks.append(callback)
 
-    def _notify_callbacks(self, event: str, data: Dict[str, Any]) -> None:
+    def _notify_callbacks(self, event: str, data: JSONObject) -> None:
         """Notify all registered callbacks."""
         for callback in self._callbacks:
             try:
@@ -758,7 +745,7 @@ def get_global_telemetry() -> OptimizedTelemetry:
 
 # Convenience functions
 def trace_function(
-    name: str, tags: Optional[Dict[str, Any]] = None
+    name: str, tags: JSONObject | None = None
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator for tracing functions."""
 
@@ -807,7 +794,7 @@ def trace_function(
     return decorator
 
 
-def start_span(name: str, tags: Optional[Dict[str, Any]] = None) -> Optional[Span]:
+def start_span(name: str, tags: JSONObject | None = None) -> Optional[Span]:
     """Start a span using global telemetry."""
     telemetry = get_global_telemetry()
     return telemetry.start_span(name, tags=tags)
@@ -823,20 +810,20 @@ def record_metric(
     name: str,
     value: Union[int, float],
     metric_type: MetricType = MetricType.COUNTER,
-    tags: Optional[Dict[str, Any]] = None,
+    tags: JSONObject | None = None,
 ) -> None:
     """Record a metric using global telemetry."""
     telemetry = get_global_telemetry()
     telemetry.record_metric(name, value, metric_type, tags)
 
 
-def increment_counter(name: str, value: int = 1, tags: Optional[Dict[str, Any]] = None) -> None:
+def increment_counter(name: str, value: int = 1, tags: JSONObject | None = None) -> None:
     """Increment a counter using global telemetry."""
     telemetry = get_global_telemetry()
     telemetry.increment_counter(name, value, tags)
 
 
-def set_gauge(name: str, value: Union[int, float], tags: Optional[Dict[str, Any]] = None) -> None:
+def set_gauge(name: str, value: Union[int, float], tags: JSONObject | None = None) -> None:
     """Set a gauge using global telemetry."""
     telemetry = get_global_telemetry()
     telemetry.set_gauge(name, value, tags)

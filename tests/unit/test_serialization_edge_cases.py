@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from collections import defaultdict, OrderedDict, Counter
 import uuid
 
+from flujo.type_definitions.common import JSONObject
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
 from flujo.utils.serialization import safe_serialize
 from flujo.utils.serialization import register_custom_serializer
@@ -52,7 +53,7 @@ class EdgeCaseModel(BaseModel):
 
     # Collection edge cases
     empty_list: List[str] = Field(default_factory=list)
-    empty_dict: Dict[str, Any] = Field(default_factory=dict)
+    empty_dict: JSONObject = Field(default_factory=dict)
     single_item_list: List[str] = ["single"]
     large_list: List[int] = Field(default_factory=lambda: list(range(1000)))
     nested_empty_list: List[List[str]] = [[]]
@@ -61,7 +62,7 @@ class EdgeCaseModel(BaseModel):
     none_string: Optional[str] = None
     none_int: Optional[int] = None
     none_list: Optional[List[str]] = None
-    none_dict: Optional[Dict[str, Any]] = None
+    none_dict: Optional[JSONObject] = None
 
     # Enum fields
     enum_field: MockEnum = MockEnum.A
@@ -75,8 +76,8 @@ class EdgeCaseModel(BaseModel):
     literal_field: Literal["a", "b", "c"] = "a"
 
     # Complex nested structures
-    nested_dict: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    list_of_dicts: List[Dict[str, Any]] = Field(default_factory=list)
+    nested_dict: Dict[str, JSONObject] = Field(default_factory=dict)
+    list_of_dicts: List[JSONObject] = Field(default_factory=list)
     dict_of_lists: Dict[str, List[str]] = Field(default_factory=dict)
 
 
@@ -111,7 +112,7 @@ class RecursiveModel(BaseModel):
 
     value: str
     children: List["RecursiveModel"] = Field(default_factory=list)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: JSONObject = Field(default_factory=dict)
 
 
 register_custom_serializer(RecursiveModel, lambda obj: obj.__dict__)

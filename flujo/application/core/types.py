@@ -1,5 +1,6 @@
-from typing import Protocol, TypeVar, Dict, Any, List, Generic, Optional, Callable, Awaitable
+from typing import Protocol, TypeVar, Any, List, Generic, Optional, Callable, Awaitable
 from dataclasses import dataclass
+from flujo.type_definitions.common import JSONObject
 
 from flujo.domain.dsl.step import Step
 from ...domain.resources import AppResources
@@ -9,7 +10,7 @@ from ...domain.models import UsageLimits, PipelineResult, Quota
 class ContextWithScratchpad(Protocol):
     """A contract ensuring a context object has a scratchpad attribute."""
 
-    scratchpad: Dict[str, Any]
+    scratchpad: JSONObject
     executed_branches: List[str]
 
 

@@ -10,13 +10,14 @@ This example shows how to:
 """
 
 import asyncio
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from pydantic import BaseModel
 
 from flujo.application.core.context_adapter import register_custom_type
 from flujo.domain.models import BaseModel as FlujoBaseModel
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step
+from flujo.type_definitions.common import JSONObject
 
 
 # Define custom types that users might create
@@ -51,7 +52,7 @@ class ComplexUserData(BaseModel):
     profile: UserProfile
     settings: Optional[UserSettings] = None
     preferences: UserPreferences
-    metadata: Dict[str, Any] = {}
+    metadata: JSONObject = {}
 
 
 # Register custom types using the new public API
@@ -76,7 +77,7 @@ class UserContext(FlujoBaseModel):
 
 
 # Example step that processes user data
-async def process_user_data(data: Dict[str, Any], context: UserContext) -> Dict[str, Any]:
+async def process_user_data(data: JSONObject, context: UserContext) -> JSONObject:
     """Process user data with custom type resolution."""
     print(f"Processing user data for: {data.get('name', 'Unknown')}")
 
@@ -92,7 +93,7 @@ async def process_user_data(data: Dict[str, Any], context: UserContext) -> Dict[
 
 
 # Example step that updates user settings
-async def update_user_settings(data: Dict[str, Any], context: UserContext) -> UserSettings:
+async def update_user_settings(data: JSONObject, context: UserContext) -> UserSettings:
     """Update user settings with automatic type resolution."""
     print("Updating user settings...")
 

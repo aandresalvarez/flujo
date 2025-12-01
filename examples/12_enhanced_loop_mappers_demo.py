@@ -12,11 +12,12 @@ is not yet available in Flujo 0.4.37. This demonstrates the concept and
 shows how it would simplify conversational AI workflows.
 """
 
-from typing import Any, Dict, List
+from typing import Any, List
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import PipelineContext
 from flujo.testing.utils import StubAgent
+from flujo.type_definitions.common import JSONObject
 
 
 class ConversationalContext(PipelineContext):
@@ -29,7 +30,7 @@ class ConversationalContext(PipelineContext):
     clarification_count: int = 0
 
 
-def map_initial_input(context: ConversationalContext) -> Dict[str, Any]:
+def map_initial_input(context: ConversationalContext) -> JSONObject:
     """
     Maps the initial LoopStep input to structured format for first iteration.
 
@@ -44,7 +45,7 @@ def map_initial_input(context: ConversationalContext) -> Dict[str, Any]:
     }
 
 
-def map_iteration_input(context: ConversationalContext, previous_output: Any) -> Dict[str, Any]:
+def map_iteration_input(context: ConversationalContext, previous_output: Any) -> JSONObject:
     """
     Maps previous iteration output to next iteration input.
 
@@ -72,7 +73,7 @@ def is_finish_command(context: ConversationalContext, output: Any) -> bool:
     return context.clarification_count >= 3
 
 
-def map_loop_output(context: ConversationalContext, final_output: Any) -> Dict[str, Any]:
+def map_loop_output(context: ConversationalContext, final_output: Any) -> JSONObject:
     """
     Maps the final successful output to LoopStep result.
 

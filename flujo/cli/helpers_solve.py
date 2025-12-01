@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import warnings
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, List, Optional, cast
 
 from typer import Exit
 
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.domain.models import Checklist, Task
+from flujo.type_definitions.common import JSONObject
 
 from .helpers_io import load_weights_file
 from .helpers_project import apply_cli_defaults
@@ -42,7 +43,7 @@ def create_agents_for_solve(
 
 def run_solve_pipeline(
     prompt: str,
-    metadata: Dict[str, Any],
+    metadata: JSONObject,
     solution_agent: AsyncAgentProtocol[Any, str],
     review_agent: AsyncAgentProtocol[Any, Checklist],
     validator_agent: AsyncAgentProtocol[Any, Checklist],
@@ -160,9 +161,9 @@ def setup_json_output_mode(json_output: bool) -> None:
         warnings.filterwarnings("ignore")
 
 
-def create_improvement_report_table(suggestions: List[Any]) -> tuple[Dict[str, List[Any]], Any]:
+def create_improvement_report_table(suggestions: List[Any]) -> tuple[dict[str, List[Any]], Any]:
     """Create a table for improvement suggestions."""
-    groups: Dict[str, List[Any]] = {}
+    groups: dict[str, List[Any]] = {}
     for sugg in suggestions:
         key = sugg.target_step_name or "Evaluation Suite"
         groups.setdefault(key, []).append(sugg)
@@ -296,7 +297,7 @@ def setup_solve_command_environment(
     review_model: Optional[str],
     validator_model: Optional[str],
     reflection_model: Optional[str],
-) -> tuple[Dict[str, Any], Dict[str, Any], tuple[Any, ...]]:
+) -> tuple[dict[str, Any], JSONObject, tuple[Any, ...]]:
     """Set up the environment for the solve command."""
     from flujo.cli.main import load_settings
     from flujo.exceptions import ConfigurationError
@@ -332,7 +333,7 @@ def setup_solve_command_environment(
         if cli_args["scorer"]:
             settings.scorer = cli_args["scorer"]
 
-        metadata: Dict[str, Any] = {}
+        metadata: JSONObject = {}
         if cli_args["weights_path"]:
             metadata["weights"] = load_weights_file(cli_args["weights_path"])
 
@@ -363,8 +364,8 @@ def setup_solve_command_environment(
 
 def execute_solve_pipeline(
     prompt: str,
-    cli_args: Dict[str, Any],
-    metadata: Dict[str, Any],
+    cli_args: dict[str, Any],
+    metadata: JSONObject,
     agents: tuple[Any, ...],
     settings: Any,
 ) -> Any:

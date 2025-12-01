@@ -6,6 +6,7 @@ temporary object reduction, memory pressure detection, and automatic cleanup
 mechanisms to reduce memory usage and improve performance.
 """
 
+from flujo.type_definitions.common import JSONObject
 import gc
 import psutil
 import sys
@@ -272,10 +273,10 @@ class TemporaryObjectTracker:
                 # Some objects can't be weakly referenced
                 pass
 
-    def get_creation_stats(self) -> Dict[str, Any]:
+    def get_creation_stats(self) -> JSONObject:
         """Get object creation statistics."""
         with self._lock:
-            stats: Dict[str, Any] = {
+            stats: JSONObject = {
                 "object_counts": dict(self._object_counts),
                 "total_objects": sum(self._object_counts.values()),
                 "tracked_refs": len(self._weak_refs),
@@ -375,7 +376,7 @@ class MemoryPressureDetector:
             if callback in self._cleanup_callbacks:
                 self._cleanup_callbacks.remove(callback)
 
-    def check_memory_pressure(self) -> Dict[str, Any]:
+    def check_memory_pressure(self) -> JSONObject:
         """Check current memory pressure."""
         try:
             process = psutil.Process()
@@ -565,7 +566,7 @@ class MemoryOptimizer:
         else:
             raise ValueError(f"Unknown string operation: {operation}")
 
-    def check_memory_pressure(self) -> Dict[str, Any]:
+    def check_memory_pressure(self) -> JSONObject:
         """Check current memory pressure."""
         if self._pressure_detector:
             return self._pressure_detector.check_memory_pressure()
@@ -598,7 +599,7 @@ class MemoryOptimizer:
 
         return suggestions
 
-    def get_comprehensive_stats(self) -> Dict[str, Any]:
+    def get_comprehensive_stats(self) -> JSONObject:
         """Get comprehensive memory optimization statistics."""
         stats = {
             "pools": {name: pool.get_stats() for name, pool in self._pools.items()},
@@ -660,7 +661,7 @@ def optimize_string_operation(operation: str, *args: object, **kwargs: object) -
     return optimizer.optimize_string(operation, *args, **kwargs)
 
 
-def check_memory_status() -> Dict[str, Any]:
+def check_memory_status() -> JSONObject:
     """Convenience function to check memory status."""
     optimizer = get_global_memory_optimizer()
     return optimizer.check_memory_pressure()

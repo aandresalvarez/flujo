@@ -1,8 +1,9 @@
 from __future__ import annotations
 from abc import abstractmethod
-from typing import Protocol, Any, runtime_checkable, Optional, Dict, Callable, Tuple
+from typing import Protocol, Any, runtime_checkable, Optional, Callable, Tuple
 from flujo.domain.base_model import BaseModel
 from pydantic import Field
+from flujo.type_definitions.common import JSONObject
 
 
 class ValidationResult(BaseModel):
@@ -11,7 +12,7 @@ class ValidationResult(BaseModel):
     is_valid: bool
     feedback: Optional[str] = None
     validator_name: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: JSONObject = Field(default_factory=dict)
 
 
 @runtime_checkable

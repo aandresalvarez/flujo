@@ -1,4 +1,5 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 
 # NOTE: This module was extracted from flujo.domain.pipeline_dsl as part of FSD1 refactor
 # It contains the core Step DSL primitives (StepConfig, Step, decorators, etc.)
@@ -173,7 +174,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             "(e.g., 'counter' or 'scratchpad.value')."
         ),
     )
-    meta: Dict[str, Any] = Field(
+    meta: JSONObject = Field(
         default_factory=dict,
         description="Arbitrary metadata about this step.",
     )
@@ -914,20 +915,20 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         *,
         wait_for: List[str],
         **config_kwargs: Any,
-    ) -> "Step[Any, Dict[str, Any]]":
+    ) -> "Step[Any, JSONObject]":
         """Collect outputs from multiple parallel branches.
 
         The step expects a dictionary input (e.g. from :meth:`parallel`) and
         returns a dictionary containing only the specified keys.
         """
 
-        async def _gather(data: Any, *, context: BaseModel | None = None) -> Dict[str, Any]:
+        async def _gather(data: Any, *, context: BaseModel | None = None) -> JSONObject:
             if not isinstance(data, dict):
                 raise TypeError("Gather step expects dict input")
             return {k: data.get(k) for k in wait_for}
 
         return cast(
-            "Step[Any, Dict[str, Any]]",
+            "Step[Any, JSONObject]",
             cls.from_callable(_gather, name=name, is_adapter=True, **config_kwargs),
         )
 

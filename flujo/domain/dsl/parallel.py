@@ -1,15 +1,6 @@
 from __future__ import annotations
 
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    List,
-    Optional,
-    TypeVar,
-    Union,
-)
+from typing import Any, Callable, Generic, List, Optional, TypeVar, Union
 
 try:
     from typing import Self
@@ -22,6 +13,7 @@ from ..models import BaseModel
 from .step import Step, MergeStrategy, BranchFailureStrategy
 from .pipeline import Pipeline  # Import for runtime use in normalization
 from ...application.core.types import TContext_w_Scratch
+from flujo.type_definitions.common import JSONObject
 
 TContext = TypeVar("TContext", bound=BaseModel)
 
@@ -37,7 +29,7 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
     ``merge_strategy``.
     """
 
-    branches: Dict[str, Any] = Field(
+    branches: JSONObject = Field(
         description="Mapping of branch names to pipelines to run in parallel."
     )
     context_include_keys: Optional[List[str]] = Field(
@@ -45,17 +37,15 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
         description="If provided, only these top-level context fields will be copied to each branch. "
         "If None, the entire context is deep-copied (default behavior).",
     )
-    merge_strategy: Union[MergeStrategy, Callable[[TContext_w_Scratch, Dict[str, Any]], None]] = (
-        Field(
-            default=MergeStrategy.CONTEXT_UPDATE,
-            description="Strategy for merging successful branch contexts back into the main context.",
-        )
+    merge_strategy: Union[MergeStrategy, Callable[[TContext_w_Scratch, JSONObject], None]] = Field(
+        default=MergeStrategy.CONTEXT_UPDATE,
+        description="Strategy for merging successful branch contexts back into the main context.",
     )
     on_branch_failure: BranchFailureStrategy = Field(
         default=BranchFailureStrategy.PROPAGATE,
         description="How the ParallelStep should behave when a branch fails.",
     )
-    field_mapping: Optional[Dict[str, List[str]]] = Field(
+    field_mapping: Optional[dict[str, List[str]]] = Field(
         default=None,
         description="Explicit mapping of branch names to context fields that should be merged. "
         "Only used with CONTEXT_UPDATE merge strategy.",
@@ -82,7 +72,7 @@ class ParallelStep(Step[Any, Any], Generic[TContext]):
         if not branches:
             raise ValueError("'branches' dictionary cannot be empty.")
 
-        normalized: Dict[str, "Pipeline[Any, Any]"] = {}
+        normalized: dict[str, "Pipeline[Any, Any]"] = {}
         for key, branch in branches.items():
             if isinstance(branch, Step):
                 normalized[key] = Pipeline.from_step(branch)

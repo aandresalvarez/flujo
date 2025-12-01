@@ -1,0 +1,38 @@
+         19736 function calls (18160 primitive calls) in 0.005 seconds
+
+   Ordered by: cumulative time
+   List reduced from 523 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.005    0.005 runners.py:160(run)
+        3    0.000    0.000    0.005    0.002 base_events.py:618(run_until_complete)
+        3    0.000    0.000    0.005    0.002 base_events.py:594(run_forever)
+        6    0.000    0.000    0.005    0.001 base_events.py:1859(_run_once)
+        1    0.000    0.000    0.005    0.005 runners.py:86(run)
+        6    0.000    0.000    0.005    0.001 events.py:82(_run)
+        6    0.000    0.000    0.005    0.001 {method 'run' of '_contextvars.Context' objects}
+        1    0.000    0.000    0.005    0.005 profile_executor_core_hotpath.py:67(run_workload)
+       60    0.000    0.000    0.005    0.000 executor_core.py:701(execute)
+       60    0.000    0.000    0.005    0.000 executor_helpers.py:357(execute_entrypoint)
+       60    0.000    0.000    0.004    0.000 executor_helpers.py:222(execute_flow)
+       60    0.000    0.000    0.003    0.000 executor_core.py:419(_maybe_use_cache)
+       60    0.000    0.000    0.003    0.000 executor_helpers.py:346(maybe_use_cache)
+       60    0.000    0.000    0.003    0.000 result_handler.py:177(maybe_use_cache)
+       60    0.000    0.000    0.003    0.000 cache_manager.py:185(maybe_return_cached)
+       60    0.000    0.000    0.003    0.000 cache_manager.py:154(maybe_fetch_step_result)
+       60    0.000    0.000    0.001    0.000 cache_manager.py:77(fetch_step_result)
+       60    0.000    0.000    0.001    0.000 cache_manager.py:58(get_cached_result)
+       60    0.000    0.000    0.001    0.000 default_cache_components.py:277(get)
+       59    0.000    0.000    0.001    0.000 main.py:387(model_copy)
+       59    0.000    0.000    0.001    0.000 main.py:936(__deepcopy__)
+ 1416/118    0.001    0.000    0.001    0.000 copy.py:128(deepcopy)
+   118/59    0.000    0.000    0.001    0.000 copy.py:227(_deepcopy_dict)
+       62    0.000    0.000    0.001    0.000 cache_manager.py:46(generate_cache_key)
+       62    0.000    0.000    0.001    0.000 default_cache_components.py:175(generate_key)
+        1    0.000    0.000    0.001    0.001 executor_core.py:662(_dispatch_frame)
+        1    0.000    0.000    0.001    0.001 dispatch_handler.py:27(dispatch)
+        1    0.000    0.000    0.001    0.001 execution_dispatcher.py:37(dispatch)
+        1    0.000    0.000    0.001    0.001 policy_handlers.py:249(default_step)
+       62    0.000    0.000    0.001    0.000 cache_step.py:452(_generate_cache_key)
+
+

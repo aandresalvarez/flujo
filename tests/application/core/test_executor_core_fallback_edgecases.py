@@ -14,6 +14,11 @@ from flujo.exceptions import (
     MissingAgentError,
     PricingNotConfiguredError,
 )
+from tests.test_types.fixtures import create_test_step
+from flujo.domain.processors import AgentProcessors
+
+# Alias for typed step factory across this module
+Step = create_test_step
 
 # Temporarily skip module pending alignment of fallback semantics with
 # policy-driven execution per FLUJO_TEAM_GUIDE. Follow-up task will
@@ -59,37 +64,29 @@ class TestExecutorCoreFallback:
         """Helper to create a step with fallback configuration."""
 
         def _create_step(primary_fails=True, fallback_succeeds=True):
-            primary_step = Mock()
-            primary_step.name = "primary_step"
-            primary_step.agent = Mock()
+            primary_step = create_test_step(
+                name="primary_step",
+                agent=Mock(),
+                processors=AgentProcessors(),
+                validators=[],
+                plugins=[],
+            )
             if primary_fails:
                 primary_step.agent.run = AsyncMock(side_effect=Exception("Primary failed"))
             else:
                 primary_step.agent.run = AsyncMock(return_value="primary success")
-            primary_step.config.max_retries = 1
-            primary_step.config.temperature = 0.7
-            primary_step.processors = Mock()
-            primary_step.processors.prompt_processors = []
-            primary_step.processors.output_processors = []
-            primary_step.processors.process = AsyncMock(return_value="processed output")
-            primary_step.validators = []
-            primary_step.plugins = []
 
-            fallback_step = Mock()
-            fallback_step.name = "fallback_step"
-            fallback_step.agent = Mock()
+            fallback_step = create_test_step(
+                name="fallback_step",
+                agent=Mock(),
+                processors=AgentProcessors(),
+                validators=[],
+                plugins=[],
+            )
             if fallback_succeeds:
                 fallback_step.agent.run = AsyncMock(return_value="fallback success")
             else:
                 fallback_step.agent.run = AsyncMock(side_effect=Exception("Fallback failed"))
-            fallback_step.config.max_retries = 1
-            fallback_step.config.temperature = 0.7
-            fallback_step.processors = Mock()
-            fallback_step.processors.prompt_processors = []
-            fallback_step.processors.output_processors = []
-            fallback_step.processors.process = AsyncMock(return_value="processed output")
-            fallback_step.validators = []
-            fallback_step.plugins = []
 
             primary_step.fallback_step = fallback_step
             return primary_step, fallback_step
@@ -1142,24 +1139,20 @@ class TestExecutorCoreFallback:
     ):
         """Test that fallback properly tracks usage metrics using real fallback logic."""
         # Arrange - Create real step objects instead of Mocks
-        from flujo.domain.dsl.step import Step, StepConfig
-        from flujo.domain.processors import AgentProcessors
-
-        # Create a real primary step that will fail
-        primary_step = Step(
+        # Create real steps that will fail/succeed
+        primary_step = create_test_step(
             name="primary_step",
             agent=Mock(),  # We'll mock the agent, not the step
-            config=StepConfig(max_retries=1, temperature=0.7),
+            config=None,
             processors=AgentProcessors(),
             validators=[],
             plugins=[],
         )
 
-        # Create a real fallback step that will succeed
-        fallback_step = Step(
+        fallback_step = create_test_step(
             name="fallback_step",
             agent=Mock(),  # We'll mock the agent, not the step
-            config=StepConfig(max_retries=1, temperature=0.7),
+            config=None,
             processors=AgentProcessors(),
             validators=[],
             plugins=[],

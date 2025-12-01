@@ -8,12 +8,13 @@ which could reveal bugs in cache key generation and context state management.
 import pytest
 import asyncio
 import time
-from typing import Any, Dict, List
+from typing import Any, List
 from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.testing.utils import gather_result
 from flujo.infra.caching import InMemoryCache
 from tests.conftest import create_test_flujo
+from flujo.type_definitions.common import JSONObject
 
 
 class CacheContext(PipelineContext):
@@ -22,16 +23,16 @@ class CacheContext(PipelineContext):
     initial_prompt: str = "test"
     cache_hits: int = 0
     cache_misses: int = 0
-    cached_results: Dict[str, Any] = {}
+    cached_results: JSONObject = {}
     processing_history: List[str] = []
     current_operation: str = ""
     operation_count: int = 0
-    cache_timestamps: Dict[str, float] = {}
+    cache_timestamps: dict[str, float] = {}
     cache_keys: List[str] = []
 
 
 @step(updates_context=True)
-async def cache_aware_step(data: Any, *, context: CacheContext) -> Dict[str, Any]:
+async def cache_aware_step(data: Any, *, context: CacheContext) -> JSONObject:
     """Step that updates context and should be cached."""
     context.operation_count += 1
     context.current_operation = f"cached_operation_{data}"
@@ -49,7 +50,7 @@ async def cache_aware_step(data: Any, *, context: CacheContext) -> Dict[str, Any
 
 
 @step(updates_context=True)
-async def context_dependent_cache_step(data: Any, *, context: CacheContext) -> Dict[str, Any]:
+async def context_dependent_cache_step(data: Any, *, context: CacheContext) -> JSONObject:
     """Step that depends on context state for cache key generation."""
     context.operation_count += 1
     context.current_operation = f"context_dependent_{data}"
@@ -67,7 +68,7 @@ async def context_dependent_cache_step(data: Any, *, context: CacheContext) -> D
 
 
 @step(updates_context=True)
-async def timestamp_cache_step(data: Any, *, context: CacheContext) -> Dict[str, Any]:
+async def timestamp_cache_step(data: Any, *, context: CacheContext) -> JSONObject:
     """Step that includes timestamps in cache key generation."""
     context.operation_count += 1
     current_time = time.time()
@@ -81,7 +82,7 @@ async def timestamp_cache_step(data: Any, *, context: CacheContext) -> Dict[str,
 
 
 @step(updates_context=True)
-async def cache_key_tracking_step(data: Any, *, context: CacheContext) -> Dict[str, Any]:
+async def cache_key_tracking_step(data: Any, *, context: CacheContext) -> JSONObject:
     """Step that tracks cache keys for debugging."""
     context.operation_count += 1
     cache_key = f"cache_key_{data}_{context.operation_count}"
@@ -96,7 +97,7 @@ async def cache_key_tracking_step(data: Any, *, context: CacheContext) -> Dict[s
 
 
 @step(updates_context=True)
-async def failing_cache_step(data: Any, *, context: CacheContext) -> Dict[str, Any]:
+async def failing_cache_step(data: Any, *, context: CacheContext) -> JSONObject:
     """Step that fails and should not be cached."""
     context.operation_count += 1
 
@@ -128,7 +129,7 @@ def create_simple_step(step_type: str) -> Step:
     """
 
     @step(updates_context=True)
-    async def simple_step(data: Any, *, context: CacheContext) -> Dict[str, Any]:
+    async def simple_step(data: Any, *, context: CacheContext) -> JSONObject:
         """Generic simplified step based on step_type."""
         context.operation_count += 1
         if step_type == "timestamp":

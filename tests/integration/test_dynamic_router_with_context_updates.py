@@ -7,13 +7,14 @@ problematic due to router state management and context field conflicts.
 """
 
 import pytest
-from typing import Any, Dict
+from typing import Any
 
 from flujo.domain import Step, Pipeline
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl import step, MergeStrategy
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+from flujo.type_definitions.common import JSONObject
 
 
 class RouterContext(PipelineContext):
@@ -24,8 +25,8 @@ class RouterContext(PipelineContext):
     branch_executed: str = ""
     branch_count: int = 0
     total_updates: int = 0
-    router_metadata: Dict[str, Any] = {}
-    branch_results: Dict[str, Any] = {}
+    router_metadata: JSONObject = {}
+    branch_results: JSONObject = {}
 
 
 @step(updates_context=True)

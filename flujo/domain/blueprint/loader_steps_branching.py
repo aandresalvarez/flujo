@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Optional
 
 from ..dsl import ParallelStep, Pipeline, StepConfig
 from .loader_models import BlueprintError, BlueprintStepModel
@@ -16,13 +16,13 @@ def build_parallel_step(
     step_config: StepConfig,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[Dict[str, Any]],
-    compiled_imports: Optional[Dict[str, Any]],
+    compiled_agents: Optional[dict[str, Any]],
+    compiled_imports: Optional[dict[str, Any]],
     build_branch: BuildBranch,
 ) -> ParallelStep[Any]:
     if not model.branches:
         raise BlueprintError("parallel step requires branches")
-    branches_map: Dict[str, Pipeline[Any, Any]] = {}
+    branches_map: dict[str, Pipeline[Any, Any]] = {}
     for branch_name, branch_spec in model.branches.items():
         branches_map[branch_name] = build_branch(
             branch_spec,
@@ -49,7 +49,7 @@ def build_parallel_step(
 def _attach_parallel_reduce(
     model: BlueprintStepModel,
     st_par: ParallelStep[Any],
-    branches_map: Dict[str, Pipeline[Any, Any]],
+    branches_map: dict[str, Pipeline[Any, Any]],
 ) -> None:
     try:
         reduce_spec = model.reduce
@@ -65,13 +65,13 @@ def _attach_parallel_reduce(
         else:
             mode = str(reduce_spec.get("mode", "")).strip().lower()
 
-        def _reduce(output_map: Dict[str, Any], _ctx: Optional[Any]) -> Any:
+        def _reduce(output_map: dict[str, Any], _ctx: Optional[Any]) -> Any:
             if mode == "keys":
                 return [bn for bn in branch_order if bn in output_map]
             if mode == "values":
                 return [output_map[bn] for bn in branch_order if bn in output_map]
             if mode == "union":
-                acc: Dict[str, Any] = {}
+                acc: dict[str, Any] = {}
                 for bn in branch_order:
                     val = output_map.get(bn)
                     if isinstance(val, dict):
@@ -111,15 +111,15 @@ def build_conditional_step(
     step_config: StepConfig,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[Dict[str, Any]],
-    compiled_imports: Optional[Dict[str, Any]],
+    compiled_agents: Optional[dict[str, Any]],
+    compiled_imports: Optional[dict[str, Any]],
     build_branch: BuildBranch,
 ) -> Any:
     from ..dsl.conditional import ConditionalStep
 
     if not model.branches:
         raise BlueprintError("conditional step requires branches")
-    branches_map: Dict[Any, Pipeline[Any, Any]] = {}
+    branches_map: dict[Any, Pipeline[Any, Any]] = {}
     for key, branch_spec in model.branches.items():
         branches_map[key] = build_branch(
             branch_spec,
@@ -154,7 +154,7 @@ def build_conditional_step(
 
 
 def _build_condition_callable(
-    model: BlueprintStepModel, branches_map: Dict[Any, Pipeline[Any, Any]]
+    model: BlueprintStepModel, branches_map: dict[Any, Pipeline[Any, Any]]
 ) -> Any:
     if model.condition:
         try:
@@ -218,8 +218,8 @@ def build_dynamic_router_step(
     step_config: StepConfig,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[Dict[str, Any]],
-    compiled_imports: Optional[Dict[str, Any]],
+    compiled_agents: Optional[dict[str, Any]],
+    compiled_imports: Optional[dict[str, Any]],
     build_branch: BuildBranch,
 ) -> Any:
     from ..dsl.dynamic_router import DynamicParallelRouterStep
@@ -227,7 +227,7 @@ def build_dynamic_router_step(
     if not model.router or "router_agent" not in model.router or "branches" not in model.router:
         raise BlueprintError("dynamic_router requires router.router_agent and router.branches")
     router_agent = _resolve_agent_entry(model.router.get("router_agent") or "")
-    branches_router: Dict[str, Pipeline[Any, Any]] = {}
+    branches_router: dict[str, Pipeline[Any, Any]] = {}
     for bname, bspec in model.router.get("branches", {}).items():
         branches_router[bname] = build_branch(
             bspec,

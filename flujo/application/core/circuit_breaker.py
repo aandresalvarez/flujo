@@ -6,6 +6,7 @@ failure thresholds, timeouts, state management, and automatic recovery to preven
 cascade failures and improve system resilience.
 """
 
+from flujo.type_definitions.common import JSONObject
 import asyncio
 import time
 from collections import deque
@@ -604,7 +605,7 @@ class CircuitBreaker:
         with self._lock:
             return self._stats
 
-    def get_health_info(self) -> Dict[str, Any]:
+    def get_health_info(self) -> JSONObject:
         """Get comprehensive health information."""
         with self._lock:
             return {
@@ -663,7 +664,7 @@ class CircuitBreakerRegistry:
         with self._lock:
             return list(self._breakers.keys())
 
-    def get_all_health_info(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_health_info(self) -> Dict[str, JSONObject]:
         """Get health information for all circuit breakers."""
         with self._lock:
             return {name: breaker.get_health_info() for name, breaker in self._breakers.items()}

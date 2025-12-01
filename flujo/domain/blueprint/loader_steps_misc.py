@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Optional
 
 from ..dsl import Pipeline, Step, StepConfig
 from ..dsl.import_step import ImportStep, OutputMapping
@@ -15,6 +15,7 @@ from .loader_resolution import (
     _resolve_validators,
 )
 from .loader_steps_common import _finalize_step_types
+from flujo.type_definitions.common import JSONObject
 
 BuildStep = Callable[..., Step[Any, Any]]
 
@@ -43,8 +44,8 @@ def build_cache_step(
     model: BlueprintStepModel,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[Dict[str, Any]],
-    compiled_imports: Optional[Dict[str, Any]],
+    compiled_agents: Optional[dict[str, Any]],
+    compiled_imports: Optional[dict[str, Any]],
     make_step_fn: BuildStep,
 ) -> Any:
     from flujo.steps.cache_step import CacheStep as _CacheStep
@@ -74,7 +75,7 @@ def build_agentic_loop_step(
         raise BlueprintError("agentic_loop requires 'planner'")
     planner_agent = _resolve_agent_entry(model.planner)
 
-    reg_obj: Dict[str, Any] = {}
+    reg_obj: JSONObject = {}
     if isinstance(model.registry, dict):
         reg_obj = dict(model.registry)
     elif isinstance(model.registry, str):
@@ -148,8 +149,8 @@ def build_basic_step(
     step_config: StepConfig,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[Dict[str, Any]],
-    compiled_imports: Optional[Dict[str, Any]],
+    compiled_agents: Optional[dict[str, Any]],
+    compiled_imports: Optional[dict[str, Any]],
     make_step_fn: BuildStep,
 ) -> Step[Any, Any]:
     _use_history_extra = None
@@ -184,7 +185,7 @@ def build_basic_step(
             if key not in compiled_imports:
                 raise BlueprintError(f"Unknown imported pipeline referenced: {uses_spec}")
             pipeline: Pipeline[Any, Any] = compiled_imports[key]
-            import_cfg: Dict[str, Any] = dict(model.config or {})
+            import_cfg: JSONObject = dict(model.config or {})
             inherit_context = bool(import_cfg.get("inherit_context", False))
             input_to_val = str(import_cfg.get("input_to", "initial_prompt"))
             if input_to_val not in {"initial_prompt", "scratchpad", "both"}:
@@ -323,7 +324,7 @@ def _build_callable_step(
 ) -> Optional[Step[Any, Any]]:
     st: Optional[Step[Any, Any]] = None
     callable_obj: Any = agent_obj
-    _params_for_callable: Dict[str, Any] = {}
+    _params_for_callable: JSONObject = {}
     skill_id_for_attr = None
     try:
         if isinstance(model.agent, dict):

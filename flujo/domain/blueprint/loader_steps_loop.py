@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Optional
+
+from flujo.type_definitions.common import JSONObject
 
 from ..dsl import Pipeline, StepConfig
 from .loader_models import BlueprintError, BlueprintStepModel
@@ -15,8 +17,8 @@ def build_loop_step(
     step_config: StepConfig,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[Dict[str, Any]],
-    compiled_imports: Optional[Dict[str, Any]],
+    compiled_agents: Optional[JSONObject],
+    compiled_imports: Optional[JSONObject],
     build_branch: BuildBranch,
 ) -> Any:
     from typing import Callable as _Callable, Optional as _Optional
@@ -71,7 +73,7 @@ def build_loop_step(
             _expr_fn2 = _compile_expr(str(model.loop["exit_expression"]))
 
             def _exit_condition(
-                _output: Any, _ctx: Optional[Any], *, _state: Optional[Dict[str, int]] = None
+                _output: Any, _ctx: Optional[Any], *, _state: Optional[dict[str, int]] = None
             ) -> bool:
                 return bool(_expr_fn2(_output, _ctx))
 
@@ -80,7 +82,7 @@ def build_loop_step(
     else:
 
         def _exit_condition(
-            _output: Any, _ctx: Optional[Any], *, _state: Optional[Dict[str, int]] = None
+            _output: Any, _ctx: Optional[Any], *, _state: Optional[dict[str, int]] = None
         ) -> bool:
             if _state is None:
                 _state = {"count": 0}
@@ -463,8 +465,8 @@ def build_map_step(
     step_config: StepConfig,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[Dict[str, Any]],
-    compiled_imports: Optional[Dict[str, Any]],
+    compiled_agents: Optional[JSONObject],
+    compiled_imports: Optional[JSONObject],
     build_branch: BuildBranch,
 ) -> Any:
     from ..dsl.loop import MapStep
@@ -632,7 +634,7 @@ def build_map_step(
                 def _finalize_map(prev_output: Any, ctx: Optional[Any]) -> Any:
                     if ctx is None:
                         return {k: None for k, _ in items}
-                    out: Dict[str, Any] = {}
+                    out: JSONObject = {}
                     for mk, mtpl in items:
                         try:
                             out[mk] = _render_template_value(prev_output, ctx, mtpl)

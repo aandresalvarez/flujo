@@ -5,15 +5,16 @@ import json
 import os
 import runpy
 import sys
-from typing import Any, Dict, List, Optional, Type, Union, cast
+from typing import Any, List, Optional, Type, Union, cast
 
 import yaml
 from typer import Exit
 
 from flujo.domain.dsl import Pipeline, Step
 from flujo.domain.models import PipelineContext
-from .exit_codes import EX_IMPORT_ERROR, EX_RUNTIME_ERROR
 from flujo.infra.skills_catalog import load_skills_catalog, load_skills_entry_points
+from flujo.type_definitions.common import JSONObject
+from .exit_codes import EX_IMPORT_ERROR, EX_RUNTIME_ERROR
 
 
 def print_rich_or_typer(msg: str, *, style: Optional[str] = None, stderr: bool = False) -> None:
@@ -40,7 +41,7 @@ def load_pipeline_from_file(
 ) -> tuple["Pipeline[Any, Any]", str]:
     """Load a pipeline from a Python file."""
     try:
-        ns: Dict[str, Any] = runpy.run_path(pipeline_file)
+        ns: JSONObject = runpy.run_path(pipeline_file)
     except ModuleNotFoundError as e:
         mod = getattr(e, "name", None) or str(e)
         try:
@@ -153,7 +154,7 @@ def load_pipeline_from_yaml_file(yaml_path: str) -> "Pipeline[Any, Any]":
 def load_dataset_from_file(dataset_path: str) -> Any:
     """Load a dataset from a Python file."""
     try:
-        dataset_ns: Dict[str, Any] = runpy.run_path(dataset_path)
+        dataset_ns: JSONObject = runpy.run_path(dataset_path)
     except Exception:
         raise Exit(1)
 
@@ -166,13 +167,13 @@ def load_dataset_from_file(dataset_path: str) -> Any:
 
 def parse_context_data(
     context_data: Optional[str], context_file: Optional[str]
-) -> Optional[Dict[str, Any]]:
+) -> Optional[JSONObject]:
     """Parse context data from string or file."""
     if context_data:
         try:
             from flujo.cli.main import safe_deserialize
 
-            return cast(Optional[Dict[str, Any]], safe_deserialize(json.loads(context_data)))
+            return cast(Optional[JSONObject], safe_deserialize(json.loads(context_data)))
         except json.JSONDecodeError:
             raise Exit(1)
 
@@ -180,11 +181,11 @@ def parse_context_data(
         try:
             with open(context_file, "r") as f:
                 if context_file.endswith((".yaml", ".yml")):
-                    return cast(Optional[Dict[str, Any]], yaml.safe_load(f))
+                    return cast(Optional[JSONObject], yaml.safe_load(f))
                 else:
                     from flujo.cli.main import safe_deserialize
 
-                    return cast(Optional[Dict[str, Any]], safe_deserialize(json.load(f)))
+                    return cast(Optional[JSONObject], safe_deserialize(json.load(f)))
         except Exception:
             raise Exit(1)
 
@@ -245,7 +246,7 @@ def resolve_initial_input(input_data: Optional[str]) -> str:
 
 
 def validate_context_model(
-    context_model: str, pipeline_file: str, ns: Dict[str, Any]
+    context_model: str, pipeline_file: str, ns: JSONObject
 ) -> Optional[Type[PipelineContext]]:
     """Validate and return a context model class."""
     try:
@@ -278,7 +279,7 @@ def validate_context_model(
         raise Exit(1)
 
 
-def load_weights_file(weights_path: str) -> List[Dict[str, Union[str, float]]]:
+def load_weights_file(weights_path: str) -> List[dict[str, Union[str, float]]]:
     """Load weights from a JSON or YAML file."""
     if not os.path.isfile(weights_path):
         try:
@@ -296,7 +297,7 @@ def load_weights_file(weights_path: str) -> List[Dict[str, Union[str, float]]]:
             else:
                 from flujo.cli.main import safe_deserialize
 
-                weights = cast(List[Dict[str, Union[str, float]]], safe_deserialize(json.load(f)))
+                weights = cast(List[dict[str, Union[str, float]]], safe_deserialize(json.load(f)))
 
         if not isinstance(weights, list) or not all(
             isinstance(w, dict) and "item" in w and "weight" in w for w in weights

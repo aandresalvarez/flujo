@@ -6,6 +6,7 @@ from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
 from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import StepResult
+from tests.test_types.fixtures import create_test_step
 
 
 class _RaisingAgentStepExecutor:
@@ -30,7 +31,7 @@ async def test_executor_core_choke_point_converts_unexpected_exception_to_failur
     # Inject a policy that raises unexpectedly
     core.agent_step_executor = _RaisingAgentStepExecutor()
 
-    step = Step(name="unit", agent=object())
+    step = create_test_step(name="unit", agent=object())
 
     outcome = await core.execute(step=step, data="x")
     assert isinstance(outcome, StepResult)

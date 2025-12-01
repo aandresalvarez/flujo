@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import yaml
 from pydantic import ValidationError
@@ -10,14 +10,15 @@ from ..interfaces import get_skills_discovery
 from .loader_models import BlueprintError, BlueprintPipelineModel
 from .loader_resolution import _pop_skills_base_dir, _push_skills_base_dir
 from .loader_steps import build_pipeline_from_blueprint
+from flujo.type_definitions.common import JSONObject
 
 
 def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
     """Serialize a Pipeline to a minimal YAML blueprint (v0)."""
 
-    def step_to_yaml(step: Any) -> Dict[str, Any]:
+    def step_to_yaml(step: Any) -> JSONObject:
         if isinstance(step, ParallelStep):
-            branches: Dict[str, Any] = {}
+            branches: JSONObject = {}
             for k, p in step.branches.items():
                 branches[str(k)] = [step_to_yaml(s) for s in p.steps]
             return {
@@ -33,7 +34,7 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                 branches = {
                     str(k): [step_to_yaml(s) for s in p.steps] for k, p in step.branches.items()
                 }
-                router_data: Dict[str, Any] = {"branches": branches}
+                router_data: JSONObject = {"branches": branches}
                 agent = getattr(step, "router_agent", None)
                 try:
                     if (
@@ -44,7 +45,7 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                         router_data["router_agent"] = f"{agent.__module__}:{agent.__name__}"
                 except Exception:
                     pass
-                router_step_data: Dict[str, Any] = {
+                router_step_data: JSONObject = {
                     "kind": "dynamic_router",
                     "name": step.name,
                     "router": router_data,
@@ -63,7 +64,7 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                 body = getattr(step, "original_body_pipeline", None) or getattr(
                     step, "pipeline_to_run", None
                 )
-                body_steps: List[Dict[str, Any]] = []
+                body_steps: List[JSONObject] = []
                 if body is not None:
                     body_steps = [step_to_yaml(s) for s in body.steps]
                 return {
@@ -83,7 +84,7 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                 branches = {
                     str(k): [step_to_yaml(s) for s in p.steps] for k, p in step.branches.items()
                 }
-                data: Dict[str, Any] = {
+                data: JSONObject = {
                     "kind": "conditional",
                     "name": step.name,
                     "branches": branches,
@@ -114,7 +115,7 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
             from ..dsl.step import HumanInTheLoopStep
 
             if isinstance(step, HumanInTheLoopStep):
-                hitl_data: Dict[str, Any] = {
+                hitl_data: JSONObject = {
                     "kind": "hitl",
                     "name": step.name,
                 }
@@ -158,7 +159,7 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
             pass
         return {"kind": "step", "name": getattr(step, "name", "step")}
 
-    data: Dict[str, Any] = {
+    data: JSONObject = {
         "version": "0.1",
         "steps": [step_to_yaml(s) for s in pipeline.steps],
     }
@@ -182,17 +183,19 @@ def load_pipeline_blueprint_from_yaml(
         except Exception:
             _pushed_sys_path = False
     try:
-        loc_index: Dict[str, Tuple[int, int]] = {}
-        sup_index: Dict[str, List[str]] = {}
+        loc_index: dict[str, Tuple[int, int]] = {}
+        sup_index: dict[str, List[str]] = {}
         try:
             from ruamel.yaml import YAML as _RYAML
             from ruamel.yaml.comments import CommentedMap as _CMap, CommentedSeq as _CSeq
 
-            def _build_index(txt: str) -> Tuple[Dict[str, Tuple[int, int]], Dict[str, List[str]]]:
+            def _build_index(
+                txt: str,
+            ) -> Tuple[dict[str, Tuple[int, int]], dict[str, List[str]]]:
                 yaml_rt = _RYAML(typ="rt")
                 root = yaml_rt.load(txt)
-                idx: Dict[str, Tuple[int, int]] = {}
-                sup: Dict[str, List[str]] = {}
+                idx: dict[str, Tuple[int, int]] = {}
+                sup: dict[str, List[str]] = {}
 
                 def _extract_ignores(comment_obj: Any) -> List[str]:
                     pats: List[str] = []

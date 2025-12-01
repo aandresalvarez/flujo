@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel
 
@@ -10,6 +10,7 @@ from .loader import (
 )
 from .model_generator import generate_model_from_schema
 from ...agents import make_agent_async, make_templated_agent_async
+from flujo.type_definitions.common import JSONObject
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ...agents import AsyncAgentWrapper
@@ -21,7 +22,7 @@ from ...exceptions import ConfigurationError
 class DeclarativeAgentModel(BaseModel):
     model: str
     system_prompt: str
-    output_schema: Dict[str, Any]
+    output_schema: JSONObject
 
 
 class DeclarativeBlueprintCompiler:
@@ -29,8 +30,8 @@ class DeclarativeBlueprintCompiler:
 
     def __init__(self, blueprint: BlueprintPipelineModel, base_dir: Optional[str] = None) -> None:
         self.blueprint = blueprint
-        self._compiled_agents: Dict[str, Any] = {}
-        self._compiled_imports: Dict[str, Any] = {}
+        self._compiled_agents: dict[str, Any] = {}
+        self._compiled_imports: dict[str, Any] = {}
         self._base_dir: Optional[str] = base_dir
 
     def _validate_and_coerce_max_retries(
@@ -87,7 +88,7 @@ class DeclarativeBlueprintCompiler:
             return None, warnings
 
     def _compile_agents(self) -> None:
-        agents: Optional[Dict[str, Any]] = getattr(self.blueprint, "agents", None)
+        agents: Optional[dict[str, Any]] = getattr(self.blueprint, "agents", None)
         if not agents:
             return
         for name, spec in agents.items():
@@ -170,7 +171,7 @@ class DeclarativeBlueprintCompiler:
                     max_retries_opt = None
 
             # Lint JSON schema (V-S1) for basic structural issues
-            def _lint_schema(sc: Dict[str, Any]) -> list[str]:
+            def _lint_schema(sc: JSONObject) -> list[str]:
                 warnings: list[str] = []
                 try:
                     st = sc.get("type")
@@ -295,7 +296,7 @@ class DeclarativeBlueprintCompiler:
 
     def _compile_imports(self) -> None:
         """Load and compile imported blueprints into Pipeline objects cached by alias."""
-        imports: Optional[Dict[str, str]] = getattr(self.blueprint, "imports", None)
+        imports: Optional[dict[str, str]] = getattr(self.blueprint, "imports", None)
         if not imports:
             return
         import os

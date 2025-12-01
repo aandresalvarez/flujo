@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from threading import RLock
 
 from .....domain.models import BaseModel
+from flujo.type_definitions.common import JSONObject
 
 # Try to import high-performance libraries
 try:
@@ -397,7 +398,7 @@ class OptimizedSerializer:
 
         # Serialization cache
         self._serialize_cache: OrderedDict[int, bytes] = OrderedDict()
-        self._deserialize_cache: OrderedDict[str, Any] = OrderedDict()
+        self._deserialize_cache: OrderedDict[str, JSONObject] = OrderedDict()
         self._weak_refs: Set[weakref.ref[Any]] = set()
 
         # Statistics
@@ -777,7 +778,7 @@ class OptimizedCacheKeyGenerator:
         """Get cache key component for resources."""
         return self.hasher.hash_object(resources)
 
-    def _get_kwargs_key(self, kwargs: Dict[str, Any]) -> str:
+    def _get_kwargs_key(self, kwargs: JSONObject) -> str:
         """Get cache key component for additional parameters."""
         # Sort kwargs for deterministic key generation
         sorted_kwargs = sorted(kwargs.items(), key=lambda x: str(x[0]))
@@ -788,7 +789,7 @@ class OptimizedCacheKeyGenerator:
         with self._lock:
             self._component_cache.clear()
 
-    def get_component_cache_stats(self) -> Dict[str, Any]:
+    def get_component_cache_stats(self) -> JSONObject:
         """Get component cache statistics."""
         with self._lock:
             return {
@@ -844,7 +845,7 @@ class AlgorithmOptimizations:
         """Generate optimized cache key."""
         return self.cache_key_generator.generate_cache_key(step, data, context, resources, **kwargs)
 
-    def get_comprehensive_stats(self) -> Dict[str, Any]:
+    def get_comprehensive_stats(self) -> JSONObject:
         """Get comprehensive algorithm optimization statistics."""
         return {
             "hasher": self.hasher.get_stats(),

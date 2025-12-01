@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 import typer
 from typing_extensions import Annotated
@@ -31,6 +31,7 @@ from flujo.application.self_improvement import (
 )
 from flujo.recipes.factories import run_default_pipeline as _run_default_pipeline
 from flujo.utils.serialization import safe_deserialize as _safe_deserialize
+from flujo.type_definitions.common import JSONObject
 
 from .dev_commands_experimental import (
     add_eval_case_cmd as _add_eval_case_cmd,
@@ -92,8 +93,8 @@ execute_solve_pipeline = _execute_solve_pipeline
 validate_yaml_text = _validate_yaml_text
 
 # Type definitions for CLI
-WeightsType = List[Dict[str, Union[str, float]]]
-MetadataType = Dict[str, Any]
+WeightsType = list[dict[str, Union[str, float]]]
+MetadataType = JSONObject
 ScorerType = (
     str  # Changed from Literal["ratio", "weighted", "reward"] to str for typer compatibility
 )
@@ -243,7 +244,7 @@ if __name__ == "__main__":
         raise typer.Exit(2) from e
 
 
-def get_cli_defaults(command: str) -> Dict[str, Any]:
+def get_cli_defaults(command: str) -> JSONObject:
     """Pass-through for tests to monkeypatch at flujo.cli.main level.
 
     Delegates to the real config manager function unless monkeypatched in tests.

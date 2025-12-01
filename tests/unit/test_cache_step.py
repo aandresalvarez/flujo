@@ -9,7 +9,8 @@ from flujo.steps.cache_step import (
     _create_step_fingerprint,
     _generate_cache_key,
 )
-from flujo.domain.dsl import Step
+from tests.test_types.fixtures import create_test_step
+from flujo.domain.dsl.step import Step
 from flujo.infra.caching import InMemoryCache
 from flujo.domain.models import BaseModel
 
@@ -20,7 +21,7 @@ class TestCacheStep:
     def test_cache_step_cached_classmethod(self):
         """Test the cached classmethod."""
         # Create a proper step
-        step = Step(name="test_step")
+        step = create_test_step(name="test_step")
 
         # Test with default cache backend
         cache_step = CacheStep.cached(step)
@@ -39,7 +40,7 @@ class TestCacheStep:
 
     def test_cache_step_cached_classmethod_with_none_backend(self):
         """Test the cached classmethod with None cache backend."""
-        step = Step(name="test_step")
+        step = create_test_step(name="test_step")
 
         cache_step = CacheStep.cached(step, cache_backend=None)
         assert isinstance(cache_step.cache_backend, InMemoryCache)
@@ -55,7 +56,7 @@ class TestSerializeForCacheKey:
 
     def test_serialize_circular_reference_step(self):
         """Test serializing a Step with circular reference."""
-        step = Step(name="test_step")
+        step = create_test_step(name="test_step")
 
         class TestAgent:
             pass
@@ -133,7 +134,7 @@ class TestSerializeForCacheKey:
 
     def test_serialize_step_with_agent_field(self):
         """Test serializing a Step with agent field."""
-        step = Step(name="test_step")
+        step = create_test_step(name="test_step")
 
         class TestAgent:
             pass

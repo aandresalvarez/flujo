@@ -1,9 +1,10 @@
 from flujo import Pipeline, step
 from flujo.domain.models import BaseModel
-from typing import Any, Dict
+from typing import Any
 from pydantic import BaseModel as PydBaseModel
 from flujo.domain.dsl.step import Step
 from flujo.domain.blueprint.loader import _finalize_step_types
+from flujo.type_definitions.common import JSONObject
 
 
 class Ctx(BaseModel):
@@ -36,7 +37,7 @@ class MyOutModel(PydBaseModel):
     value: int
 
 
-async def _consume_dict(d: Dict[str, Any]) -> str:
+async def _consume_dict(d: JSONObject) -> str:
     return "ok"
 
 

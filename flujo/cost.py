@@ -47,14 +47,15 @@ def resolve_callable(value: T | Callable[[], T]) -> T:
     Returns:
         The resolved value of type T
     """
-    fast_types = _FAST_CALLABLE_TYPES
-    value_type = type(value)
-    if value_type in fast_types:
-        value_callable: Callable[[], T] = value  # type: ignore[assignment]
-        return value_callable()
+    vt = type(value)
+    if vt is FunctionType or vt is BuiltinFunctionType or vt is MethodType:
+        callable_value: Callable[[], T] = value  # type: ignore[assignment]
+        return callable_value()
 
     if callable(value):
-        return value()
+        callable_value = value
+        return callable_value()
+
     return value
 
 

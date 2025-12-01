@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, Generic, List, TypeVar
+from typing import Any, Awaitable, Callable, Generic, List, TypeVar
 
 from ...domain.models import PipelineContext, PipelineResult
 from ...exceptions import ReplayError
 from ...testing.replay import ReplayAgent
+from ...type_definitions.common import JSONObject
 
 _CtxT = TypeVar("_CtxT", bound=PipelineContext)
 
@@ -30,7 +31,7 @@ class ReplayExecutor(Generic[_CtxT]):
             steps = []
 
         initial_input: Any = None
-        initial_context_data: Dict[str, Any] = {}
+        initial_context_data: JSONObject = {}
         try:
             if isinstance(trace, dict):
                 attrs = trace.get("attributes", {}) if trace else {}
@@ -70,8 +71,8 @@ class ReplayExecutor(Generic[_CtxT]):
         finally:
             runner.resume_async = original_resume
 
-    def _build_response_map(self, steps: List[Dict[str, Any]]) -> Dict[str, Any]:
-        response_map: Dict[str, Any] = {}
+    def _build_response_map(self, steps: List[JSONObject]) -> JSONObject:
+        response_map: JSONObject = {}
         for s in steps:
             step_name = s.get("step_name", "")
             key = f"{step_name}:attempt_1"
@@ -84,7 +85,7 @@ class ReplayExecutor(Generic[_CtxT]):
     def _collect_human_inputs(self, trace: Any) -> List[Any]:
         human_inputs: list[Any] = []
 
-        def _collect_events(span: Dict[str, Any]) -> None:
+        def _collect_events(span: JSONObject) -> None:
             try:
                 for ev in span.get("events", []) or []:
                     if ev.get("name") == "flujo.resumed":
@@ -117,7 +118,7 @@ class ReplayExecutor(Generic[_CtxT]):
         self,
         runner: Any,
         initial_input: Any,
-        initial_context_data: Dict[str, Any],
+        initial_context_data: JSONObject,
     ) -> PipelineResult[_CtxT]:
         final_result: PipelineResult[_CtxT] | None = None
         async for item in runner.run_async(

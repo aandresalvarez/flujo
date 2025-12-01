@@ -6,12 +6,13 @@ which could reveal bugs in context state management during human interaction.
 """
 
 import pytest
-from typing import Any, Dict, List
+from typing import Any, List
 from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+from flujo.type_definitions.common import JSONObject
 
 
 class HITLContext(PipelineContext):
@@ -20,7 +21,7 @@ class HITLContext(PipelineContext):
     initial_prompt: str = "test"
     human_interactions: List[str] = []
     total_interactions: int = 0
-    hitl_data: Dict[str, Any] = {}
+    hitl_data: JSONObject = {}
     current_interaction: str = ""
     interaction_history: List[str] = []
     approval_count: int = 0

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, List, Optional
 
 from flujo.domain.base_model import BaseModel
 from flujo.domain.interfaces import (
@@ -9,6 +9,7 @@ from flujo.domain.interfaces import (
     get_skill_resolver,
     get_telemetry_sink,
 )
+from flujo.type_definitions.common import JSONObject
 
 
 def telemetry() -> TelemetrySink:
@@ -34,10 +35,10 @@ def normalize_name_from_goal(goal: Optional[str]) -> str:
     return safe_name
 
 
-async def goto(state: str, context: BaseModel | None = None) -> Dict[str, Any]:
+async def goto(state: str, context: BaseModel | None = None) -> JSONObject:
     """Set next_state in the context scratchpad for SM transitions."""
     try:
-        sp: Dict[str, Any] = {"next_state": state}
+        sp: JSONObject = {"next_state": state}
         try:
             telemetry().info(f"[ArchitectSM] goto -> {state}")
         except Exception:
@@ -47,8 +48,8 @@ async def goto(state: str, context: BaseModel | None = None) -> Dict[str, Any]:
         return {"scratchpad": {"next_state": state}}
 
 
-def make_transition_guard(target_state: str) -> Callable[[Any], Awaitable[Dict[str, Any]]]:
-    async def _guard(_x: Any = None, context: BaseModel | None = None) -> Dict[str, Any]:
+def make_transition_guard(target_state: str) -> Callable[[Any], Awaitable[JSONObject]]:
+    async def _guard(_x: Any = None, context: BaseModel | None = None) -> JSONObject:
         """Force next_state to target_state unconditionally to break stale loops."""
         try:
             telemetry().info(f"[ArchitectSM] guard -> forcing next_state={target_state}")
@@ -59,7 +60,7 @@ def make_transition_guard(target_state: str) -> Callable[[Any], Awaitable[Dict[s
     return _guard
 
 
-async def trace_next_state(_x: Any = None, context: BaseModel | None = None) -> Dict[str, Any]:
+async def trace_next_state(_x: Any = None, context: BaseModel | None = None) -> JSONObject:
     """Pure observer of next_state; does not modify context."""
     try:
         sp = getattr(context, "scratchpad", {}) if context is not None else {}
@@ -73,7 +74,7 @@ async def trace_next_state(_x: Any = None, context: BaseModel | None = None) -> 
     return {}
 
 
-def skill_available(skill_id: str, *, available: Optional[List[Dict[str, Any]]]) -> bool:
+def skill_available(skill_id: str, *, available: Optional[List[JSONObject]]) -> bool:
     try:
         if isinstance(available, list):
             found = any(isinstance(x, dict) and x.get("id") == skill_id for x in available)

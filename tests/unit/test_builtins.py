@@ -1,7 +1,8 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 
 import asyncio
-from typing import Any, Dict, List, AsyncIterator
+from typing import Any, List, AsyncIterator
 
 import pytest
 from pydantic import BaseModel
@@ -10,7 +11,7 @@ from flujo.builtins import extract_decomposed_steps
 
 
 class _DecomposerModel(BaseModel):
-    steps: List[Dict[str, Any]]
+    steps: List[JSONObject]
 
 
 def test_extract_decomposed_steps_from_model() -> None:
@@ -65,8 +66,8 @@ def test_web_search_returns_simplified_results(monkeypatch: pytest.MonkeyPatch) 
         async def __aexit__(self, exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
             return None
 
-        def text(self, query: str, max_results: int = 3) -> AsyncIterator[Dict[str, Any]]:
-            async def _gen() -> AsyncIterator[Dict[str, Any]]:
+        def text(self, query: str, max_results: int = 3) -> AsyncIterator[JSONObject]:
+            async def _gen() -> AsyncIterator[JSONObject]:
                 for i in range(max_results):
                     yield {
                         "title": f"Result {i} for {query}",
@@ -115,7 +116,7 @@ def test_web_search_when_dependency_missing_returns_empty(monkeypatch: pytest.Mo
 @pytest.mark.fast
 def test_extract_from_text_returns_agent_dict(monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeAgent:
-        async def run(self, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+        async def run(self, *_args: Any, **_kwargs: Any) -> JSONObject:
             return {"ceo_name": "Jane Doe", "stock_price": 123.45}
 
     import flujo.builtins as builtins

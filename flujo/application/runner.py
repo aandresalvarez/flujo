@@ -34,6 +34,7 @@ from ..domain.backends import ExecutionBackend
 from ..domain.interfaces import StateProvider
 from ..state import StateBackend
 from ..infra.registry import PipelineRegistry
+from ..type_definitions.common import JSONObject
 from .core.context_manager import (
     _accepts_param,
     _extract_missing_fields,
@@ -122,7 +123,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         pipeline: Pipeline[RunnerInT, RunnerOutT] | Step[RunnerInT, RunnerOutT] | None = None,
         *,
         context_model: Optional[Type[ContextT]] = None,
-        initial_context_data: Optional[Dict[str, Any]] = None,
+        initial_context_data: Optional[JSONObject] = None,
         resources: Optional[AppResources] = None,
         usage_limits: Optional[UsageLimits] = None,
         hooks: Optional[list[HookCallable]] = None,
@@ -189,7 +190,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.pipeline_name = self._plan_resolver.pipeline_name
         self.pipeline_version = self._plan_resolver.pipeline_version
         self.context_model = context_model
-        self.initial_context_data: Dict[str, Any] = initial_context_data or {}
+        self.initial_context_data: JSONObject = initial_context_data or {}
         self.resources = resources
 
         def _post_run_only(hook: HookCallable) -> HookCallable:
@@ -403,7 +404,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         initial_input: RunnerInT,
         *,
         run_id: str | None = None,
-        initial_context_data: Optional[Dict[str, Any]] = None,
+        initial_context_data: Optional[JSONObject] = None,
     ) -> AsyncIterator[PipelineResult[ContextT]]:
         """Delegate run orchestration to the composed RunSession."""
         session = self._make_session()
@@ -424,7 +425,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         initial_input: RunnerInT,
         *,
         run_id: str | None = None,
-        initial_context_data: Optional[Dict[str, Any]] = None,
+        initial_context_data: Optional[JSONObject] = None,
     ) -> _RunAsyncHandle[ContextT]:
         """Run the pipeline asynchronously.
 
@@ -443,7 +444,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         initial_input: RunnerInT,
         *,
         run_id: str | None = None,
-        initial_context_data: Optional[Dict[str, Any]] = None,
+        initial_context_data: Optional[JSONObject] = None,
     ) -> PipelineResult[ContextT]:
         """Run the pipeline asynchronously and return the final PipelineResult."""
         return await _consume_run_async_to_result(
@@ -458,7 +459,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         initial_input: RunnerInT,
         *,
         run_id: str | None = None,
-        initial_context_data: Optional[Dict[str, Any]] = None,
+        initial_context_data: Optional[JSONObject] = None,
     ) -> AsyncIterator[StepOutcome[StepResult]]:
         async for outcome in _run_outcomes_async(
             self,
@@ -473,7 +474,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         initial_input: RunnerInT,
         *,
         run_id: str | None = None,
-        initial_context_data: Optional[Dict[str, Any]] = None,
+        initial_context_data: Optional[JSONObject] = None,
     ) -> AsyncIterator[StepOutcome[StepResult]]:
         """Run the pipeline and stream StepOutcome events as they complete."""
         async for outcome in self.run_outcomes_async(
@@ -488,7 +489,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         initial_input: RunnerInT,
         *,
         run_id: str | None = None,
-        initial_context_data: Optional[Dict[str, Any]] = None,
+        initial_context_data: Optional[JSONObject] = None,
     ) -> AsyncIterator[StepOutcome[StepResult]]:
         """Alias for run_stream() with clearer naming."""
         async for outcome in self.run_stream(
@@ -502,7 +503,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self,
         initial_input: RunnerInT,
         *,
-        initial_context_data: Optional[Dict[str, Any]] = None,
+        initial_context_data: Optional[JSONObject] = None,
     ) -> AsyncIterator[Any]:
         async for item in _stream_async(
             self,
@@ -516,7 +517,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         initial_input: RunnerInT,
         *,
         run_id: str | None = None,
-        initial_context_data: Optional[Dict[str, Any]] = None,
+        initial_context_data: Optional[JSONObject] = None,
     ) -> PipelineResult[ContextT]:
         return _run_sync(
             self,
@@ -648,9 +649,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             bg_run_id, context_model=self.context_model
         )
 
-        metadata_dict: Dict[str, Any] = (
-            task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
-        )
+        metadata_value = task.get("metadata")
+        metadata_dict: JSONObject = metadata_value if isinstance(metadata_value, dict) else {}
         data = new_data if new_data is not None else metadata_dict.get("input_data")
         step_name = metadata_dict.get("step_name")
         step = self._find_step_by_name(step_name) if step_name else None
@@ -692,7 +692,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             result=None,
         )
 
-        meta_for_persist: Dict[str, Any] = dict(metadata_dict)
+        meta_for_persist: JSONObject = dict(metadata_dict)
         meta_for_persist.setdefault("task_id", task_id)
         meta_for_persist.setdefault("is_background_task", True)
 
@@ -786,7 +786,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         initial_input: RunnerInT,
         *,
         run_id: str | None = None,
-        initial_context_data: Optional[Dict[str, Any]] = None,
+        initial_context_data: Optional[JSONObject] = None,
     ) -> AsyncIterator[Any]:
         """Run pipeline yielding lifecycle events (StepOutcome/Chunk) and final PipelineResult."""
         async for item in self.run_async(

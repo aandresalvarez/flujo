@@ -101,4 +101,5 @@ sbom.json
 
 # Profiling and debugging files
 profile_*.py
+!scripts/profile_executor_core_hotpath.py
 warnings.log

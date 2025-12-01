@@ -2,9 +2,10 @@ from __future__ import annotations
 import re
 import json
 import uuid
-from typing import Any, Dict
+from typing import Any
 from pydantic import BaseModel
 from .serialization import robust_serialize
+from flujo.type_definitions.common import JSONObject
 
 IF_BLOCK_REGEX = re.compile(r"\{\{#if\s*([^\}]+?)\s*\}\}(.*?)\{\{\/if\}\}", re.DOTALL)
 EACH_BLOCK_REGEX = re.compile(r"\{\{#each\s*([^\}]+?)\s*\}\}(.*?)\{\{\/each\}\}", re.DOTALL)
@@ -37,7 +38,7 @@ class AdvancedPromptFormatter:
         # to prevent collisions with user content
         self._escape_marker = f"__ESCAPED_TEMPLATE_{uuid.uuid4().hex[:8]}__"
 
-    def _get_nested_value(self, data: Dict[str, Any], key: str) -> Any:
+    def _get_nested_value(self, data: JSONObject, key: str) -> Any:
         """Retrieve ``key`` from ``data`` using dotted attribute syntax.
 
         In strict mode, raises TemplateResolutionError if key is undefined.

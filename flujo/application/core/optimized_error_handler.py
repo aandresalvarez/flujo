@@ -10,12 +10,13 @@ import asyncio
 import time
 import weakref
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Callable, Type
+from typing import Any, Optional, Set, Callable, Type
 from threading import RLock
 from enum import Enum
 import hashlib
 
 from .optimized_telemetry import get_global_telemetry
+from flujo.type_definitions.common import JSONObject
 
 
 class ErrorSeverity(Enum):
@@ -79,10 +80,10 @@ class ErrorContext:
 
     # Recovery information
     is_recoverable: bool = True
-    recovery_suggestions: List[RecoveryAction] = field(default_factory=list)
+    recovery_suggestions: list[RecoveryAction] = field(default_factory=list)
 
     # Additional metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: JSONObject = field(default_factory=dict)
 
     @classmethod
     def from_exception(
@@ -117,7 +118,7 @@ class RecoveryStrategy:
 
     name: str
     error_types: Set[Type[Exception]]
-    error_patterns: List[str] = field(default_factory=list)
+    error_patterns: list[str] = field(default_factory=list)
 
     # Recovery configuration
     max_retries: int = 3
@@ -128,7 +129,7 @@ class RecoveryStrategy:
 
     # Recovery actions
     primary_action: RecoveryAction = RecoveryAction.RETRY
-    fallback_actions: List[RecoveryAction] = field(default_factory=list)
+    fallback_actions: list[RecoveryAction] = field(default_factory=list)
 
     # Conditions
     applies_to_categories: Set[ErrorCategory] = field(default_factory=set)
@@ -185,7 +186,7 @@ class ErrorRecoveryResult:
     new_error: Optional[Exception] = None
 
     # Metadata
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: JSONObject = field(default_factory=dict)
 
 
 @dataclass
@@ -197,13 +198,13 @@ class ErrorStats:
     unrecovered_errors: int = 0
 
     # Error type breakdown
-    error_type_counts: Dict[str, int] = field(default_factory=dict)
-    error_category_counts: Dict[ErrorCategory, int] = field(default_factory=dict)
-    error_severity_counts: Dict[ErrorSeverity, int] = field(default_factory=dict)
+    error_type_counts: dict[str, int] = field(default_factory=dict)
+    error_category_counts: dict[ErrorCategory, int] = field(default_factory=dict)
+    error_severity_counts: dict[ErrorSeverity, int] = field(default_factory=dict)
 
     # Recovery statistics
-    recovery_action_counts: Dict[RecoveryAction, int] = field(default_factory=dict)
-    strategy_usage_counts: Dict[str, int] = field(default_factory=dict)
+    recovery_action_counts: dict[RecoveryAction, int] = field(default_factory=dict)
+    strategy_usage_counts: dict[str, int] = field(default_factory=dict)
 
     # Performance statistics
     total_recovery_time_ms: float = 0.0
@@ -393,7 +394,7 @@ class ErrorClassifier:
 
         return error_context.error_type not in non_recoverable_types
 
-    def _suggest_recovery_actions(self, error_context: ErrorContext) -> List[RecoveryAction]:
+    def _suggest_recovery_actions(self, error_context: ErrorContext) -> list[RecoveryAction]:
         """Suggest recovery actions based on error classification."""
         suggestions = []
 
@@ -457,12 +458,12 @@ class OptimizedErrorHandler:
         self._telemetry = get_global_telemetry() if enable_telemetry else None
 
         # Recovery strategies
-        self._strategies: List[RecoveryStrategy] = []
-        self._strategy_cache: Dict[str, Optional[RecoveryStrategy]] = {}
+        self._strategies: list[RecoveryStrategy] = []
+        self._strategy_cache: dict[str, Optional[RecoveryStrategy]] = {}
 
         # Error caching
-        self._error_cache: Dict[str, ErrorContext] = {}
-        self._recovery_cache: Dict[str, ErrorRecoveryResult] = {}
+        self._error_cache: dict[str, ErrorContext] = {}
+        self._recovery_cache: dict[str, ErrorRecoveryResult] = {}
         # Weak references for cleanup
         self._weak_refs: Set[weakref.ref[Any]] = set()
         self._last_cleanup = time.time()
@@ -880,7 +881,7 @@ class OptimizedErrorHandler:
             self._strategy_cache.clear()
             self._weak_refs.clear()
 
-    def get_cache_info(self) -> Dict[str, Any]:
+    def get_cache_info(self) -> JSONObject:
         """Get cache information."""
         with self._lock:
             return {
@@ -891,7 +892,7 @@ class OptimizedErrorHandler:
                 "max_cache_size": self.cache_size,
             }
 
-    def analyze_error_patterns(self, time_window_hours: int = 24) -> Dict[str, Any]:
+    def analyze_error_patterns(self, time_window_hours: int = 24) -> JSONObject:
         """Analyze error patterns over time window."""
         if not self.enable_stats or not self._stats:
             return {}
@@ -925,9 +926,9 @@ class OptimizedErrorHandler:
 
         return analysis
 
-    def suggest_optimizations(self) -> List[Dict[str, Any]]:
+    def suggest_optimizations(self) -> list[JSONObject]:
         """Suggest optimizations based on error patterns."""
-        suggestions: List[Dict[str, Any]] = []
+        suggestions: list[JSONObject] = []
 
         if not self.enable_stats or not self._stats:
             return suggestions
@@ -1013,7 +1014,7 @@ async def handle_error(
     return await handler.handle_error(error, step_name, execution_id, attempt_number, **kwargs)
 
 
-def analyze_error_patterns(time_window_hours: int = 24) -> Dict[str, Any]:
+def analyze_error_patterns(time_window_hours: int = 24) -> JSONObject:
     """Convenience function to analyze error patterns."""
     handler = get_global_error_handler()
     return handler.analyze_error_patterns(time_window_hours)
@@ -1096,7 +1097,7 @@ def with_error_handling(
             self._strategy_cache.clear()
             self._weak_refs.clear()
 
-    def get_strategies(self) -> List[RecoveryStrategy]:
+    def get_strategies(self) -> list[RecoveryStrategy]:
         """Get registered recovery strategies."""
         with self._lock:
             return list(self._strategies)

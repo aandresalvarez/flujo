@@ -21,6 +21,9 @@ except (ImportError, ModuleNotFoundError):
         pass
 
 
+from flujo.type_definitions.common import JSONObject
+
+
 # Global registry for custom serializers
 _custom_serializers: Dict[Type[Any], Callable[[Any], Any]] = {}
 # Global registry for custom deserializers
@@ -837,7 +840,7 @@ def safe_serialize(
                 pass
 
 
-def serialize_agent_response(response: Any, mode: str = "default") -> Dict[str, Any]:
+def serialize_agent_response(response: Any, mode: str = "default") -> JSONObject:
     """
     Serialize AgentResponse objects properly with proper field extraction.
 
@@ -847,11 +850,11 @@ def serialize_agent_response(response: Any, mode: str = "default") -> Dict[str, 
     Returns:
         A serializable dictionary representation of the AgentResponse
     """
-    result: Dict[str, Any] = {
+    result: JSONObject = {
         "content": getattr(response, "content", getattr(response, "output", None)),
         "metadata": {},
     }
-    metadata: Dict[str, Any] = result["metadata"]
+    metadata: JSONObject = result["metadata"]
 
     # Handle usage information if present
     if hasattr(response, "usage"):
@@ -900,7 +903,7 @@ def serialize_agent_response(response: Any, mode: str = "default") -> Dict[str, 
 
 def serialize_mock_object(
     mock_obj: Any, mode: str = "default", _seen: Optional[Set[int]] = None
-) -> Dict[str, Any]:
+) -> JSONObject:
     """
     Serialize Mock objects for testing scenarios with improved detection.
 
@@ -912,7 +915,7 @@ def serialize_mock_object(
     Returns:
         A serializable dictionary representation of the Mock object
     """
-    result: Dict[str, Any] = {
+    result: JSONObject = {
         "type": "Mock",
         "class_name": type(mock_obj).__name__,
         "module": getattr(mock_obj, "__module__", "unknown"),

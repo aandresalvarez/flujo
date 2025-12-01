@@ -1,7 +1,8 @@
 from __future__ import annotations
-from typing import Protocol, Any, Awaitable, Optional, List, Dict, Callable
+from typing import Protocol, Any, Awaitable, Optional, Callable, List
 from ...domain.models import UsageLimits, StepResult
 from ...domain.validation import ValidationResult
+from flujo.type_definitions.common import JSONObject
 
 
 # --- Core execution protocols ---
@@ -13,7 +14,7 @@ class IAgentRunner(Protocol):
         *,
         context: Any,
         resources: Any,
-        options: Dict[str, Any],
+        options: JSONObject,
         stream: bool = False,
         on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
     ) -> Any: ...

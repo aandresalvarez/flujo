@@ -2,16 +2,17 @@ import pytest
 import asyncio
 
 
-from flujo.domain.dsl import Step, StepConfig
+from flujo.domain.dsl import StepConfig
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
 from tests.conftest import create_test_flujo
+from tests.test_types.fixtures import create_test_step
 
 
 @pytest.mark.asyncio
 async def test_fallback_assignment() -> None:
-    primary = Step.model_validate({"name": "p", "agent": StubAgent(["x"])})
-    fb = Step.model_validate({"name": "fb", "agent": StubAgent(["y"])})
+    primary = create_test_step(name="p", agent=StubAgent(["x"]))
+    fb = create_test_step(name="fb", agent=StubAgent(["y"]))
     primary.fallback(fb)
     assert primary.fallback_step is fb
 
@@ -19,8 +20,8 @@ async def test_fallback_assignment() -> None:
 @pytest.mark.asyncio
 async def test_fallback_not_triggered_on_success() -> None:
     agent = StubAgent(["ok"])
-    primary = Step.model_validate({"name": "p", "agent": agent})
-    fb = Step.model_validate({"name": "fb", "agent": StubAgent(["fallback"])})
+    primary = create_test_step(name="p", agent=agent)
+    fb = create_test_step(name="fb", agent=StubAgent(["fallback"]))
     primary.fallback(fb)
     runner = create_test_flujo(primary)
     res = await gather_result(runner, "in")
@@ -35,16 +36,14 @@ async def test_fallback_not_triggered_on_success() -> None:
 async def test_fallback_triggered_on_failure() -> None:
     primary_agent = StubAgent(["bad"])
     plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
-    primary = Step.model_validate(
-        {
-            "name": "p",
-            "agent": primary_agent,
-            "config": StepConfig(max_retries=1),
-            "plugins": [(plugin, 0)],
-        }
+    primary = create_test_step(
+        name="p",
+        agent=primary_agent,
+        config=StepConfig(max_retries=1),
+        plugins=[(plugin, 0)],
     )
     fb_agent = StubAgent(["recover"])
-    fb = Step.model_validate({"name": "fb", "agent": fb_agent})
+    fb = create_test_step(name="fb", agent=fb_agent)
     primary.fallback(fb)
     runner = create_test_flujo(primary)
     res = await gather_result(runner, "data")
@@ -60,12 +59,10 @@ async def test_fallback_triggered_on_failure() -> None:
 async def test_fallback_failure_propagates() -> None:
     primary_agent = StubAgent(["bad"])
     plugin_primary = DummyPlugin([PluginOutcome(success=False, feedback="p fail")])
-    primary = Step.model_validate(
-        {"name": "p", "agent": primary_agent, "plugins": [(plugin_primary, 0)]}
-    )
+    primary = create_test_step(name="p", agent=primary_agent, plugins=[(plugin_primary, 0)])
     fb_agent = StubAgent(["still bad"])
     plugin_fb = DummyPlugin([PluginOutcome(success=False, feedback="fb fail")])
-    fb = Step.model_validate({"name": "fb", "agent": fb_agent, "plugins": [(plugin_fb, 0)]})
+    fb = create_test_step(name="fb", agent=fb_agent, plugins=[(plugin_fb, 0)])
     primary.fallback(fb)
     runner = create_test_flujo(primary)
     res = await gather_result(runner, "data")
@@ -92,15 +89,13 @@ class SlowAgent:
 @pytest.mark.asyncio
 async def test_fallback_latency_accumulated() -> None:
     plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
-    failing = Step.model_validate(
-        {
-            "name": "p",
-            "agent": StubAgent(["bad"]),
-            "plugins": [(plugin, 0)],
-            "config": StepConfig(max_retries=1),
-        }
+    failing = create_test_step(
+        name="p",
+        agent=StubAgent(["bad"]),
+        plugins=[(plugin, 0)],
+        config=StepConfig(max_retries=1),
     )
-    fb = Step.model_validate({"name": "fb", "agent": SlowAgent()})
+    fb = create_test_step(name="fb", agent=SlowAgent())
     failing.fallback(fb)
     runner = create_test_flujo(failing)
     res = await gather_result(runner, "x")
@@ -120,17 +115,15 @@ class CostlyOutput:
 @pytest.mark.asyncio
 async def test_failed_fallback_accumulates_metrics() -> None:
     plugin_primary = DummyPlugin([PluginOutcome(success=False, feedback="bad")])
-    primary = Step.model_validate(
-        {
-            "name": "p",
-            "agent": StubAgent(["bad"]),
-            "plugins": [(plugin_primary, 0)],
-            "config": StepConfig(max_retries=1),
-        }
+    primary = create_test_step(
+        name="p",
+        agent=StubAgent(["bad"]),
+        plugins=[(plugin_primary, 0)],
+        config=StepConfig(max_retries=1),
     )
     fb_plugin = DummyPlugin([PluginOutcome(success=False, feedback="worse")])
     fb_agent = StubAgent([CostlyOutput("oops")])
-    fb = Step.model_validate({"name": "fb", "agent": fb_agent, "plugins": [(fb_plugin, 0)]})
+    fb = create_test_step(name="fb", agent=fb_agent, plugins=[(fb_plugin, 0)])
     primary.fallback(fb)
     runner = create_test_flujo(primary)
     res = await gather_result(runner, "in")
@@ -144,16 +137,14 @@ async def test_failed_fallback_accumulates_metrics() -> None:
 async def test_successful_fallback_correctly_sets_metrics() -> None:
     """Test that successful fallbacks correctly set metrics according to FSD 5."""
     plugin_primary = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="primary failed")])
-    primary = Step.model_validate(
-        {
-            "name": "p",
-            "agent": StubAgent(["bad"]),
-            "plugins": [(plugin_primary, 0)],
-            "config": StepConfig(max_retries=1),
-        }
+    primary = create_test_step(
+        name="p",
+        agent=StubAgent(["bad"]),
+        plugins=[(plugin_primary, 0)],
+        config=StepConfig(max_retries=1),
     )
     fb_agent = StubAgent([CostlyOutput("success")])
-    fb = Step.model_validate({"name": "fb", "agent": fb_agent})
+    fb = create_test_step(name="fb", agent=fb_agent)
     primary.fallback(fb)
     runner = create_test_flujo(primary)
     res = await gather_result(runner, "in")
@@ -172,21 +163,17 @@ async def test_successful_fallback_correctly_sets_metrics() -> None:
 @pytest.mark.asyncio
 async def test_infinite_fallback_loop_detected() -> None:
     plugin = DummyPlugin(outcomes=[PluginOutcome(success=False, feedback="err")])
-    a = Step.model_validate(
-        {
-            "name": "a",
-            "agent": StubAgent(["bad"] * 100),
-            "plugins": [(plugin, 0)],
-            "config": StepConfig(max_retries=1),
-        }
+    a = create_test_step(
+        name="a",
+        agent=StubAgent(["bad"] * 100),
+        plugins=[(plugin, 0)],
+        config=StepConfig(max_retries=1),
     )
-    b = Step.model_validate(
-        {
-            "name": "b",
-            "agent": StubAgent(["bad"] * 100),
-            "plugins": [(plugin, 0)],
-            "config": StepConfig(max_retries=1),
-        }
+    b = create_test_step(
+        name="b",
+        agent=StubAgent(["bad"] * 100),
+        plugins=[(plugin, 0)],
+        config=StepConfig(max_retries=1),
     )
     a.fallback(b)
     b.fallback(a)

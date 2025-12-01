@@ -6,12 +6,13 @@ which could reveal bugs in context state management during error recovery scenar
 """
 
 import pytest
-from typing import Any, Dict, List
+from typing import Any, List
 from flujo import step
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+from flujo.type_definitions.common import JSONObject
 
 
 class ErrorRecoveryContext(PipelineContext):
@@ -20,7 +21,7 @@ class ErrorRecoveryContext(PipelineContext):
     initial_prompt: str = "test"
     recovery_attempts: int = 0
     total_errors: int = 0
-    recovery_data: Dict[str, Any] = {}
+    recovery_data: JSONObject = {}
     current_operation: str = ""
     operation_history: List[str] = []
     successful_recoveries: int = 0

@@ -154,6 +154,10 @@ make test-analyze-performance
 
 # Quick analysis without execution
 make test-slow-analysis
+
+# Executor hot-path profiling (cProfile)
+uv run python scripts/profile_executor_core_hotpath.py --iterations 50 --warmup 10 --optimized --no-cache
+uv run python scripts/compare_profiles.py --a prof/executor_core_execute_no_cache.prof --b prof/executor_core_execute_no_cache_fastpath_optimized.prof --top 30
 ```
 
 ## Pytest Configuration

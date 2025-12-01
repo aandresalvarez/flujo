@@ -1,13 +1,14 @@
 from __future__ import annotations
 import typer
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Any, Optional
 import datetime
 import json as _json
 from .config import load_backend_from_config
+from flujo.type_definitions.common import JSONObject
 
 
-def _format_node_label(node: Dict[str, Any]) -> str:
+def _format_node_label(node: JSONObject) -> str:
     name = node.get("name", "(unknown)")
     status = node.get("status", "unknown")
     start = node.get("start_time")
@@ -31,7 +32,7 @@ def _format_node_label(node: Dict[str, Any]) -> str:
 
 
 def _render_trace_tree(
-    node: Dict[str, Any], parent: Optional[Any] = None, *, preview_len: int = 200
+    node: JSONObject, parent: Optional[Any] = None, *, preview_len: int = 200
 ) -> Any:
     try:
         from rich.tree import Tree
@@ -104,9 +105,7 @@ def trace_command(run_id: str, *, prompt_preview_len: int = 200) -> None:
 
     # helper defs removed; using top-level versions
 
-    def _print_trace_summary(
-        trace: Dict[str, Any], run_details: Optional[Dict[str, Any]] = None
-    ) -> None:
+    def _print_trace_summary(trace: JSONObject, run_details: Optional[JSONObject] = None) -> None:
         console: Any | None = None
         panel_cls: Any | None = None
         text_cls: Any | None = None

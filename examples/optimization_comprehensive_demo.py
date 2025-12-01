@@ -17,7 +17,7 @@ import asyncio
 import time
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any, List
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -34,7 +34,7 @@ class TestData:
 
     id: int
     content: str
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
 
 
 class OptimizationDemo:
@@ -93,7 +93,7 @@ class OptimizationDemo:
             await asyncio.sleep(0.1)  # Simulate work
             return f"Processed: {data.content}"
 
-        async def complex_step(data: TestData) -> Dict[str, Any]:
+        async def complex_step(data: TestData) -> dict[str, Any]:
             await asyncio.sleep(0.2)  # Simulate complex work
             return {
                 "id": data.id,
@@ -166,7 +166,7 @@ class OptimizationDemo:
             processed = [f"processed_{item}" for item in large_list]
             return processed[:10]  # Return subset
 
-        async def context_intensive_step(data: TestData, context: Dict[str, Any]) -> Dict[str, Any]:
+        async def context_intensive_step(data: TestData, context: dict[str, Any]) -> dict[str, Any]:
             # Simulate context manipulation
             context_copy = context.copy()
             context_copy[f"processed_{data.id}"] = {
@@ -413,7 +413,7 @@ class OptimizationDemo:
         monitoring_executor = ExecutorCore(optimization_config=monitoring_config)
 
         # Define monitored steps
-        async def monitored_step(data: TestData) -> Dict[str, Any]:
+        async def monitored_step(data: TestData) -> dict[str, Any]:
             await asyncio.sleep(0.1)
             return {
                 "processed": True,

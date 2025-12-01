@@ -2,9 +2,10 @@
 
 import pytest
 import asyncio
-from typing import Dict, Any
 from uuid import uuid4
 from datetime import datetime
+
+from flujo.type_definitions.common import JSONObject
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
@@ -39,7 +40,7 @@ def create_run_data(run_id: str) -> dict:
 
 
 @pytest.fixture
-def sample_trace_tree() -> Dict[str, Any]:
+def sample_trace_tree() -> JSONObject:
     """Create a sample trace tree for testing."""
     return {
         "span_id": "root-123",

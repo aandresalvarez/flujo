@@ -13,6 +13,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import UsageLimits
+from tests.test_types.fixtures import create_test_step, create_test_step_result
 from flujo.exceptions import (
     UsageLimitExceededError,
     MissingAgentError,
@@ -61,7 +62,7 @@ class TestExecutorCoreFallback:
         recursive fallback_step attributes. The InfiniteFallbackError protection
         is working correctly - the issue was Mock objects creating infinite chains.
         """
-        from flujo.domain.dsl.step import Step, StepConfig
+        from flujo.domain.dsl.step import StepConfig
         from flujo.domain.processors import AgentProcessors
 
         def _create_step(primary_fails=True, fallback_succeeds=True):
@@ -72,7 +73,7 @@ class TestExecutorCoreFallback:
             else:
                 primary_agent.run = AsyncMock(return_value="primary success")
 
-            primary_step = Step(
+            primary_step = create_test_step(
                 name="primary_step",
                 agent=primary_agent,
                 config=StepConfig(max_retries=1, temperature=0.7),
@@ -88,7 +89,7 @@ class TestExecutorCoreFallback:
             else:
                 fallback_agent.run = AsyncMock(side_effect=Exception("Fallback failed"))
 
-            fallback_step = Step(
+            fallback_step = create_test_step(
                 name="fallback_step",
                 agent=fallback_agent,
                 config=StepConfig(max_retries=1, temperature=0.7),
@@ -156,10 +157,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output="fallback success",
                 success=True,
@@ -206,10 +206,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback failure
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output=None,
                 success=False,
@@ -257,10 +256,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output="fallback success",
                 success=True,
@@ -308,10 +306,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback failure
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output=None,
                 success=False,
@@ -357,10 +354,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output="fallback success",
                 success=True,
@@ -522,10 +518,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output="fallback success",
                 success=True,
@@ -578,10 +573,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output="fallback success",
                 success=True,
@@ -797,10 +791,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output="fallback success",
                 success=True,
@@ -851,10 +844,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output="fallback success",
                 success=True,
@@ -933,10 +925,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output="fallback success",
                 success=True,
@@ -981,10 +972,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output="fallback success",
                 success=True,
@@ -1030,10 +1020,9 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock the execute method for fallback
-        from flujo.domain.models import StepResult
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = StepResult(
+            mock_execute.return_value = create_test_step_result(
                 name="fallback_step",
                 output="fallback success",
                 success=True,
@@ -1081,11 +1070,10 @@ class TestExecutorCoreFallback:
         ]
 
         # Mock telemetry logging and fallback execution
-        from flujo.domain.models import StepResult
 
         with patch("flujo.infra.telemetry.logfire.info"):
             with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-                mock_execute.return_value = StepResult(
+                mock_execute.return_value = create_test_step_result(
                     name="fallback_step",
                     output="fallback success",
                     success=True,

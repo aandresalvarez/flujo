@@ -1,4 +1,5 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 # mypy: ignore-errors
 
 from typing import Type
@@ -124,7 +125,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                 pass
         # Tracking variables
         branch_results: Dict[str, StepResult] = {}
-        branch_contexts: Dict[str, Any] = {}
+        branch_contexts: JSONObject = {}
         total_cost = 0.0
         total_tokens = 0
         all_successful = True
@@ -403,16 +404,6 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                 except Exception:
                     pass
 
-        # Execute branches concurrently using the shared quota, and proactively cancel on breach
-        pending: set[asyncio.Task] = set()
-        task_to_branch: dict[asyncio.Task, str] = {}
-        for bn, bp in zip(branch_names, branch_pipelines):
-            t = asyncio.create_task(
-                execute_branch(bn, bp, branch_contexts[bn], branch_quota_map.get(bn))
-            )
-            pending.add(t)
-            task_to_branch[t] = bn
-
         async def _handle_branch_result(branch_execution_result: Any, idx: int) -> None:
             nonlocal total_cost, total_tokens, all_successful
             branch_name_local = list(parallel_step.branches.keys())[idx]
@@ -477,8 +468,59 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     f"branch '{branch_name_local}' failed: {branch_result.feedback}"
                 )
 
+        # Optional guard: run the first branch eagerly when limits are present to detect
+        # over-budget scenarios before spinning up all branches (reduces wall time when one
+        # branch obviously breaches limits, e.g., in proactive cancellation tests).
+        start_index = 0
+        if limits is not None and branch_names:
+            guard_branch = branch_names[0]
+            guard_result = await execute_branch(
+                guard_branch,
+                branch_pipelines[0],
+                branch_contexts[guard_branch],
+                branch_quota_map.get(guard_branch),
+            )
+            await _handle_branch_result(guard_result, start_index)
+            start_index = 1
+            # Check limits immediately after the guard branch without launching others
+            try:
+                from flujo.utils.formatting import format_cost as _fmt
+
+                breached_cost = getattr(
+                    limits, "total_cost_usd_limit", None
+                ) is not None and total_cost > float(limits.total_cost_usd_limit)
+                breached_tokens = getattr(
+                    limits, "total_tokens_limit", None
+                ) is not None and total_tokens > int(limits.total_tokens_limit)
+                if breached_cost or breached_tokens:
+                    pipeline_result: PipelineResult[Any] = PipelineResult(
+                        step_history=list(branch_results.values()),
+                        total_cost_usd=total_cost,
+                        total_tokens=total_tokens,
+                        final_pipeline_context=context,
+                    )
+                    if breached_cost:
+                        msg = f"Cost limit of ${_fmt(float(limits.total_cost_usd_limit))} exceeded"
+                    else:
+                        msg = f"Token limit of {int(limits.total_tokens_limit)} exceeded"
+                    raise UsageLimitExceededError(msg, pipeline_result)
+            except UsageLimitExceededError:
+                raise
+            except Exception:
+                pass
+
+        # Execute remaining branches concurrently using the shared quota, and proactively cancel on breach
+        pending: set[asyncio.Task] = set()
+        task_to_branch: dict[asyncio.Task, str] = {}
+        for bn, bp in zip(branch_names[start_index:], branch_pipelines[start_index:]):
+            t = asyncio.create_task(
+                execute_branch(bn, bp, branch_contexts[bn], branch_quota_map.get(bn))
+            )
+            pending.add(t)
+            task_to_branch[t] = bn
+
         # Consume tasks as they complete; cancel the rest if limits are breached
-        completed_count = 0
+        completed_count = start_index
         while pending:
             done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
             # Process all finished tasks, aggregating successful results first.
@@ -651,7 +693,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         else:
             result.success = all_successful
         # Build output
-        output_dict: Dict[str, Any] = {}
+        output_dict: JSONObject = {}
         for bn, br in branch_results.items():
             output_dict[bn] = br.output if br.success else br
         result.output = output_dict

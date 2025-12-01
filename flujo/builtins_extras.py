@@ -1,7 +1,10 @@
 from __future__ import annotations
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Optional
+
 from flujo.domain.models import BaseModel as DomainBaseModel
+from flujo.infra.skill_models import SkillRegistration
 from flujo.infra.skill_registry import get_skill_registry
+from flujo.type_definitions.common import JSONObject
 from .agents.wrapper import make_agent_async
 from .builtins_support import (
     context_get,
@@ -50,7 +53,7 @@ except Exception:
         _DDGS_CLASS = None
 
 
-async def render_jinja_template(template: str, variables: Dict[str, Any] | None = None) -> str:
+async def render_jinja_template(template: str, variables: JSONObject | None = None) -> str:
     """Render a Jinja2 template string with provided variables."""
     if _jinja2 is None:
         return template
@@ -67,84 +70,98 @@ def _register_builtins() -> None:
     """Register builtin skills with the global registry."""
     try:
         reg = get_skill_registry()
+        # NOTE: Prefer SkillRegistration for all new builtins to keep metadata consistent.
         # --- Context manipulation helpers (Task 2.3) ---
         if reg.get("flujo.builtins.context_set") is None:
             reg.register(
-                "flujo.builtins.context_set",
-                lambda **_params: context_set,
-                description="Set a context field at a dot-separated path (e.g., 'scratchpad.counter')",
-                arg_schema={
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string"},
-                        "value": {},  # Any type
+                **SkillRegistration(
+                    id="flujo.builtins.context_set",
+                    factory=lambda **_params: context_set,
+                    description="Set a context field at a dot-separated path (e.g., 'scratchpad.counter')",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "value": {},  # Any type
+                        },
+                        "required": ["path", "value"],
                     },
-                    "required": ["path", "value"],
-                },
-                side_effects=True,  # Modifies context
+                    side_effects=True,
+                ).__dict__
             )
         if reg.get("flujo.builtins.context_merge") is None:
             reg.register(
-                "flujo.builtins.context_merge",
-                lambda **_params: context_merge,
-                description="Merge a dictionary into context at a path (e.g., 'scratchpad.settings')",
-                arg_schema={
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string"},
-                        "value": {"type": "object"},
+                **SkillRegistration(
+                    id="flujo.builtins.context_merge",
+                    factory=lambda **_params: context_merge,
+                    description="Merge a dictionary into context at a path (e.g., 'scratchpad.settings')",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "value": {"type": "object"},
+                        },
+                        "required": ["path", "value"],
                     },
-                    "required": ["path", "value"],
-                },
-                side_effects=True,  # Modifies context
+                    side_effects=True,
+                ).__dict__
             )
         if reg.get("flujo.builtins.context_get") is None:
             reg.register(
-                "flujo.builtins.context_get",
-                lambda **_params: context_get,
-                description="Get a value from context at a dot-separated path with optional default",
-                arg_schema={
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string"},
-                        "default": {},  # Any type
+                **SkillRegistration(
+                    id="flujo.builtins.context_get",
+                    factory=lambda **_params: context_get,
+                    description="Get a value from context at a dot-separated path with optional default",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "default": {},  # Any type
+                        },
+                        "required": ["path"],
                     },
-                    "required": ["path"],
-                },
-                side_effects=False,
+                    side_effects=False,
+                ).__dict__
             )
         # Welcome experience for new users
         reg.register(
-            "flujo.builtins.welcome_agent",
-            lambda **_params: welcome_agent,
-            description="Returns a fun welcome message for new users.",
-            arg_schema={
-                "type": "object",
-                "properties": {"name": {"type": "string", "default": "Developer"}},
-            },
-            side_effects=False,
+            **SkillRegistration(
+                id="flujo.builtins.welcome_agent",
+                factory=lambda **_params: welcome_agent,
+                description="Returns a fun welcome message for new users.",
+                input_schema={
+                    "type": "object",
+                    "properties": {"name": {"type": "string", "default": "Developer"}},
+                },
+                side_effects=False,
+            ).__dict__
         )
         # Factory accepts params to match YAML 'agent: { id: ..., params: {...} }'
         reg.register(
-            "flujo.builtins.discover_skills",
-            lambda directory=".": DiscoverSkillsAgent(directory=directory),
-            description="Discover local and packaged skills; returns available_skills list.",
+            **SkillRegistration(
+                id="flujo.builtins.discover_skills",
+                factory=lambda directory=".": DiscoverSkillsAgent(directory=directory),
+                description="Discover local and packaged skills; returns available_skills list.",
+            ).__dict__
         )
         # Adapter function: return the async callable without invoking it
         # Loader will call this factory with params (none by default) and expect an agent object
         reg.register(
-            "flujo.builtins.extract_decomposed_steps",
-            # Factory returns the coroutine function itself so Step.from_callable can wrap it
-            lambda **_params: extract_decomposed_steps,
-            description=(
-                "Extract list of step dicts from decomposer output into 'prepared_steps_for_mapping'"
-            ),
+            **SkillRegistration(
+                id="flujo.builtins.extract_decomposed_steps",
+                factory=lambda **_params: extract_decomposed_steps,
+                description=(
+                    "Extract list of step dicts from decomposer output into 'prepared_steps_for_mapping'"
+                ),
+            ).__dict__
         )
         # Adapter extractor for YAML string
         reg.register(
-            "flujo.builtins.extract_yaml_text",
-            lambda **_params: extract_yaml_text,
-            description="Extract YAML string from YamlWriter output object or dict.",
+            **SkillRegistration(
+                id="flujo.builtins.extract_yaml_text",
+                factory=lambda **_params: extract_yaml_text,
+                description="Extract YAML string from YamlWriter output object or dict.",
+            ).__dict__
         )
 
         # --- FSD: Built-in data transforms (M1)
@@ -153,7 +170,7 @@ def _register_builtins() -> None:
         # --- FSD-024: analyze_project (safe filesystem scan)
         async def analyze_project(
             _data: Any = None, *, directory: str = ".", max_files: int = 200
-        ) -> Dict[str, Any]:
+        ) -> JSONObject:
             import os
 
             try:
@@ -180,7 +197,7 @@ def _register_builtins() -> None:
                 return {"project_summary": "Error analyzing project"}
 
         def _make_analyze_runner(directory: str = ".", max_files: int = 200) -> Any:
-            async def _runner(_data: Any = None, **_k: Any) -> Dict[str, Any]:
+            async def _runner(_data: Any = None, **_k: Any) -> JSONObject:
                 return await analyze_project(_data, directory=directory, max_files=max_files)
 
             return _runner
@@ -200,7 +217,7 @@ def _register_builtins() -> None:
         )
 
         # --- FSD-024: visualize_plan -> Mermaid
-        async def visualize_plan(plan: Any) -> Dict[str, str]:
+        async def visualize_plan(plan: Any) -> dict[str, str]:
             try:
                 lines: list[str] = ["graph TD"]
                 if isinstance(plan, list):
@@ -225,7 +242,7 @@ def _register_builtins() -> None:
         )
 
         # --- FSD-024: estimate_plan_cost (sum registry est_cost)
-        async def estimate_plan_cost(plan: Any) -> Dict[str, float]:
+        async def estimate_plan_cost(plan: Any) -> dict[str, float]:
             total = 0.0
             try:
                 registry = get_skill_registry()
@@ -259,7 +276,7 @@ def _register_builtins() -> None:
             input_text: str = "",
             sandbox: bool = True,
             base_dir: Optional[str] = None,
-        ) -> Dict[str, Any]:
+        ) -> JSONObject:
             from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
             from flujo.cli.helpers import create_flujo_runner, execute_pipeline_with_output_handling
             from flujo.infra.skill_registry import get_skill_registry as _get
@@ -290,8 +307,8 @@ def _register_builtins() -> None:
 
                         def _make_factory(
                             _sid: str,
-                        ) -> Callable[..., Callable[..., Awaitable[Dict[str, _Any]]]]:
-                            async def _mock(*_a: _Any, **_k: _Any) -> Dict[str, _Any]:
+                        ) -> Callable[..., Callable[..., Awaitable[dict[str, _Any]]]]:
+                            async def _mock(*_a: _Any, **_k: _Any) -> dict[str, _Any]:
                                 return {"mocked": True, "skill": _sid}
 
                             return lambda **_p: _mock
@@ -459,7 +476,7 @@ def _register_builtins() -> None:
         )
 
         # Introspect registered framework step primitives and produce JSON Schemas
-        async def get_framework_schema() -> Dict[str, Any]:
+        async def get_framework_schema() -> JSONObject:
             try:
                 import flujo.framework as _fw  # noqa: F401
                 from flujo.framework.registry import (
@@ -494,7 +511,7 @@ def _register_builtins() -> None:
                         pass
             except Exception:
                 mapping = {}
-            schemas: Dict[str, Any] = {}
+            schemas: JSONObject = {}
             for kind, cls in mapping.items():
                 try:
                     if hasattr(cls, "model_json_schema") and callable(
@@ -572,7 +589,7 @@ def _register_builtins() -> None:
         )
 
         # Emit current YAML validity flag from context for loop exit to read
-        async def get_yaml_validity(*, context: DomainBaseModel | None = None) -> Dict[str, Any]:
+        async def get_yaml_validity(*, context: DomainBaseModel | None = None) -> JSONObject:
             try:
                 val = bool(getattr(context, "yaml_is_valid", False))
             except Exception:
@@ -667,7 +684,7 @@ def _register_builtins() -> None:
         # Aggregator: combine mapped results with goal and (optional) skills
         async def aggregate_plan(
             mapped_step_results: Any, *, context: DomainBaseModel | None = None
-        ) -> Dict[str, Any]:
+        ) -> JSONObject:
             try:
                 user_goal = getattr(context, "user_goal", None) or getattr(
                     context, "initial_prompt", None
@@ -675,7 +692,7 @@ def _register_builtins() -> None:
             except Exception:
                 user_goal = None
             # Normalize list of results into list of dicts
-            plans: List[Dict[str, Any]] = []
+            plans: list[JSONObject] = []
             try:
                 if isinstance(mapped_step_results, list):
                     for item in mapped_step_results:
@@ -693,7 +710,7 @@ def _register_builtins() -> None:
                                 pass
             except Exception:
                 plans = []
-            skills: List[Dict[str, Any]] = []
+            skills: list[JSONObject] = []
             try:
                 maybe = getattr(context, "available_skills", None)
                 if isinstance(maybe, list):
@@ -715,7 +732,7 @@ def _register_builtins() -> None:
         # Adapter: build input for tool matcher from a step item and context skills
         async def build_tool_match_input(
             item: Any, *, context: DomainBaseModel | None = None
-        ) -> Dict[str, Any]:
+        ) -> JSONObject:
             name = None
             purpose = None
             try:
@@ -752,14 +769,14 @@ def _register_builtins() -> None:
         )
 
         # --- Killer Demo: web_search ---
-        async def web_search(query: str, max_results: int = 3) -> List[Dict[str, Any]]:
+        async def web_search(query: str, max_results: int = 3) -> list[JSONObject]:
             """Perform a DuckDuckGo web search (top N simplified results).
             Returns a list of {title, link, snippet} dicts.
             """
             if _DDGSAsync is None and _DDGS_CLASS is None:
                 # Graceful degrade if optional dependency not installed
                 return []
-            results: List[Dict[str, Any]] = []
+            results: list[JSONObject] = []
             try:
                 if _DDGSAsync is not None:
                     # Use async client when available
@@ -781,10 +798,10 @@ def _register_builtins() -> None:
                     import asyncio
                     from concurrent.futures import ThreadPoolExecutor
 
-                    def _search_sync() -> List[Dict[str, Any]]:
+                    def _search_sync() -> list[JSONObject]:
                         assert _DDGS_CLASS is not None
                         ddgs = _DDGS_CLASS()
-                        search_results: List[Dict[str, Any]] = []
+                        search_results: list[JSONObject] = []
                         try:
                             iterable = ddgs.text(query, max_results=max_results)
                         except Exception:
@@ -801,7 +818,7 @@ def _register_builtins() -> None:
             except Exception:
                 # Non-fatal: return empty results on any search error
                 return []
-            simplified: List[Dict[str, Any]] = []
+            simplified: list[JSONObject] = []
             for item in results:
                 try:
                     title = item.get("title") if isinstance(item, dict) else None
@@ -837,10 +854,10 @@ def _register_builtins() -> None:
         # --- Killer Demo: extract_from_text ---
         async def extract_from_text(
             text: str,
-            schema: Dict[str, Any],
+            schema: JSONObject,
             *,
             model: Optional[str] = None,
-        ) -> Dict[str, Any]:
+        ) -> JSONObject:
             """Extract structured data from unstructured text using an LLM.
             The JSON schema is used as instruction; output is a dict.
             """
@@ -869,7 +886,7 @@ def _register_builtins() -> None:
             agent = _make_agent_async(
                 model=chosen_model,
                 system_prompt=system_prompt,
-                output_type=Dict[str, Any],
+                output_type=JSONObject,
                 max_retries=2,
                 auto_repair=True,
             )
@@ -896,7 +913,7 @@ def _register_builtins() -> None:
         )
 
         # --- Killer Demo: http_get ---
-        async def http_get(url: str, timeout: int = 30) -> Dict[str, Any]:
+        async def http_get(url: str, timeout: int = 30) -> JSONObject:
             """Fetch content from a URL and return status, headers, and body."""
             if _httpx is None:
                 return {
@@ -916,22 +933,24 @@ def _register_builtins() -> None:
                 return {"status_code": 500, "headers": {}, "body": f"HTTP GET failed: {e}"}
 
         reg.register(
-            "flujo.builtins.http_get",
-            lambda **_params: http_get,
-            description="Fetch content from a URL.",
-            arg_schema={
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string"},
-                    "timeout": {"type": "integer", "default": 30},
+            **SkillRegistration(
+                id="flujo.builtins.http_get",
+                factory=lambda **_params: http_get,
+                description="Fetch content from a URL.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "timeout": {"type": "integer", "default": 30},
+                    },
+                    "required": ["url"],
                 },
-                "required": ["url"],
-            },
-            side_effects=False,
+                side_effects=False,
+            ).__dict__
         )
 
         # --- Killer Demo: fs_write_file ---
-        async def fs_write_file(path: str, content: str) -> Dict[str, Any]:
+        async def fs_write_file(path: str, content: str) -> JSONObject:
             """Write content to a local file asynchronously.
             Prefers true async I/O via aiofiles when available. Falls back to
             thread offload to avoid blocking the event loop when aiofiles is not installed.
@@ -947,7 +966,7 @@ def _register_builtins() -> None:
                 # Fallback to thread offload if aiofiles is not available
                 import asyncio as _asyncio
 
-                def _write_sync() -> Dict[str, Any]:
+                def _write_sync() -> JSONObject:
                     try:
                         with open(path, "w", encoding="utf-8") as f:
                             f.write(content)
@@ -973,7 +992,7 @@ def _register_builtins() -> None:
         )
 
         # Convenience: write pipeline YAML where the step input is the content
-        async def write_pipeline_yaml(content: str, path: str = "pipeline.yaml") -> Dict[str, Any]:
+        async def write_pipeline_yaml(content: str, path: str = "pipeline.yaml") -> JSONObject:
             """Write YAML content to disk; treats step input as content.
             This adapter mirrors fs_write_file but accepts content as the first
             parameter so it works naturally with blueprint 'input' templating.
@@ -987,7 +1006,7 @@ def _register_builtins() -> None:
             except ImportError:
                 import asyncio as _asyncio
 
-                def _write_sync() -> Dict[str, Any]:
+                def _write_sync() -> JSONObject:
                     try:
                         with open(path, "w", encoding="utf-8") as f:
                             f.write(content)

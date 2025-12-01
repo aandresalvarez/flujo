@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import List
 from pydantic import BaseModel, Field
+from flujo.type_definitions.common import JSONObject
 
 
 class PlannedStep(BaseModel):
@@ -21,7 +22,7 @@ class ToolSelection(BaseModel):
     chosen_agent_id: str = Field(
         ..., description="The ID of the best skill, e.g., 'flujo.builtins.web_search'."
     )
-    agent_params: Dict[str, Any] = Field(
+    agent_params: JSONObject = Field(
         default_factory=dict,
         description="Parameters to pass to the chosen agent.",
     )

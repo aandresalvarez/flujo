@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Union
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel, model_validator, Field
+from flujo.type_definitions.common import JSONObject
 
 
 class AgentModel(BaseModel):
@@ -12,12 +13,12 @@ class AgentModel(BaseModel):
     # { from_file: "path", variables: { ... } }
     class PromptTemplateSpec(BaseModel):
         from_file: str
-        variables: Optional[Dict[str, Any]] = None
+        variables: Optional[JSONObject] = None
 
     system_prompt: Union[str, "AgentModel.PromptTemplateSpec"]
-    output_schema: Dict[str, Any]
+    output_schema: JSONObject
     # Optional provider-specific controls (e.g., GPT-5: reasoning, text verbosity)
-    model_settings: Optional[Dict[str, Any]] = None
+    model_settings: Optional[JSONObject] = None
     # Optional execution controls
     timeout: Optional[Union[int, str]] = Field(
         default=None,

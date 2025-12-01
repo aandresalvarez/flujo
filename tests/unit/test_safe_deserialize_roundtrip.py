@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Any, Dict
+from flujo.type_definitions.common import JSONObject
 
 import pytest
 
@@ -16,11 +16,11 @@ class CustomType:
     def __init__(self, value: int) -> None:
         self.value = value
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> JSONObject:
         return {"value": self.value}
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "CustomType":
+    def from_dict(cls, data: JSONObject) -> "CustomType":
         return cls(int(data["value"]))
 
 

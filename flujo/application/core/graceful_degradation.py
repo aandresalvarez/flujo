@@ -6,6 +6,7 @@ automatic recovery mechanisms, degradation level management, system health monit
 and automatic optimization adjustment for maintaining system stability under stress.
 """
 
+from flujo.type_definitions.common import JSONObject
 import asyncio
 import time
 from collections import deque, defaultdict
@@ -266,7 +267,7 @@ class DegradationController:
         self._degradation_callbacks: List[Callable[[DegradationEvent], None]] = []
 
         # Statistics
-        self._stats: Dict[str, Any] = {
+        self._stats: JSONObject = {
             "total_degradations": 0,
             "total_recoveries": 0,
             "features_disabled": defaultdict(int),
@@ -734,7 +735,7 @@ class DegradationController:
         """Get current degradation level."""
         return self._current_level
 
-    def get_feature_status(self) -> Dict[str, Dict[str, Any]]:
+    def get_feature_status(self) -> Dict[str, JSONObject]:
         """Get status of all features."""
         with self._lock:
             return {
@@ -753,7 +754,7 @@ class DegradationController:
         with self._lock:
             return list(self._degradation_history)[-limit:]
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> JSONObject:
         """Get degradation controller statistics."""
         with self._lock:
             return {
@@ -840,7 +841,7 @@ def force_degradation(level: DegradationLevel, reason: str = "Manual override") 
     controller.force_degradation(level, reason)
 
 
-def get_degradation_stats() -> Dict[str, Any]:
+def get_degradation_stats() -> JSONObject:
     """Get degradation system statistics."""
     controller = get_global_degradation_controller()
     return controller.get_stats()

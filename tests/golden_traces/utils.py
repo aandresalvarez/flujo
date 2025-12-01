@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Set
+from typing import Any, List, Set
+from flujo.type_definitions.common import JSONObject
 
 
-def _attributes_keys(attrs: Dict[str, Any] | None) -> List[str]:
+def _attributes_keys(attrs: JSONObject | None) -> List[str]:
     if not attrs:
         return []
     return sorted(list(attrs.keys()))
@@ -21,12 +22,12 @@ REQUIRED_STEP_ATTRS: Set[str] = {
 }
 
 
-def span_to_contract_dict(span: Any) -> Dict[str, Any]:
+def span_to_contract_dict(span: Any) -> JSONObject:
     """Convert a TraceManager Span to a contract-comparable dict.
 
     Keeps only stable fields: name, attribute keys, event names+attribute keys, and children.
     """
-    node: Dict[str, Any] = {
+    node: JSONObject = {
         "name": getattr(span, "name", "<unknown>"),
         "attributes": _attributes_keys(getattr(span, "attributes", {})),
         "events": [],
@@ -62,7 +63,7 @@ def span_to_contract_dict(span: Any) -> Dict[str, Any]:
     return node
 
 
-def normalize_contract_tree(node: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_contract_tree(node: JSONObject) -> JSONObject:
     """Sort nested lists to ensure order-insensitive comparison, preserving structure."""
     normalized_children = [normalize_contract_tree(ch) for ch in (node.get("children", []) or [])]
     normalized_events = [
@@ -77,7 +78,7 @@ def normalize_contract_tree(node: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def trees_equal(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+def trees_equal(a: JSONObject, b: JSONObject) -> bool:
     return normalize_contract_tree(a) == normalize_contract_tree(b)
 
 
@@ -92,8 +93,8 @@ class TraceCapturingHook:
     """
 
     def __init__(self) -> None:
-        self._stack: List[Dict[str, Any]] = []
-        self.root: Dict[str, Any] | None = None
+        self._stack: List[JSONObject] = []
+        self.root: JSONObject | None = None
 
     async def hook(self, payload) -> None:
         event = getattr(payload, "event_name", None)
@@ -118,7 +119,7 @@ class TraceCapturingHook:
             root_attrs.append("flujo.pipeline.name")
         if getattr(payload, "pipeline_version", None) is not None:
             root_attrs.append("flujo.pipeline.version")
-        node: Dict[str, Any] = {
+        node: JSONObject = {
             "name": "pipeline_run",
             "attributes": sorted(list(set(root_attrs))),
             "events": [],
@@ -171,7 +172,7 @@ class TraceCapturingHook:
             attrs.append("flujo.budget.quota_before_tokens")
         if getattr(payload, "cache_hit", None) is not None:
             attrs.append("flujo.cache.hit")
-        child: Dict[str, Any] = {
+        child: JSONObject = {
             "name": getattr(payload.step, "name", "<step>"),
             "attributes": sorted(list(set(attrs))),
             "events": [],
@@ -219,7 +220,7 @@ class TraceCapturingHook:
         )
         current["attributes"] = sorted(list(attrs))
 
-    def get_contract_tree(self) -> Dict[str, Any] | None:
+    def get_contract_tree(self) -> JSONObject | None:
         if self.root is None:
             return None
         return normalize_contract_tree(self.root)

@@ -1,17 +1,20 @@
+from typing import Any
+
 import pytest
-from typing import Any, Dict
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl import Step, Pipeline
 from flujo.domain.dsl.parallel import ParallelStep
-from flujo.domain.dsl.step import MergeStrategy, BranchFailureStrategy
+from flujo.domain.dsl.step import BranchFailureStrategy, MergeStrategy
 from flujo.domain.models import StepResult
+from flujo.type_definitions.common import JSONObject
+from tests.test_types.fixtures import create_test_step_result
 
 
 class Ctx(BaseModel):
     value: str = "base"
-    scratchpad: Dict[str, Any] = {}
+    scratchpad: JSONObject = Field(default_factory=dict)
 
 
 @pytest.mark.asyncio
@@ -35,17 +38,19 @@ async def test_parallel_default_context_update_conflict_fails():
     base_ctx = Ctx(value="X")
 
     # Fake executor to inject branch contexts with conflicting values
-    async def fake_step_executor(step, input_data, context, resources):
+    async def fake_step_executor(
+        step: Any, input_data: Any, context: Any, resources: Any
+    ) -> StepResult:
         nm = getattr(step.steps[0], "name", "")
         if nm == "a":
-            return StepResult(
+            return create_test_step_result(
                 name="a", output=input_data, success=True, branch_context=Ctx(value="A")
             )
         if nm == "b":
-            return StepResult(
+            return create_test_step_result(
                 name="b", output=input_data, success=True, branch_context=Ctx(value="B")
             )
-        return StepResult(name="?", output=input_data, success=True)
+        return create_test_step_result(name="?", output=input_data, success=True)
 
     core = ExecutorCore()
     from flujo.application.core.step_policies import DefaultParallelStepExecutor
@@ -86,14 +91,16 @@ async def test_parallel_overwrite_allows_conflict():
 
     base_ctx = Ctx(value="X")
 
-    async def fake_step_executor(step, input_data, context, resources):
+    async def fake_step_executor(
+        step: Any, input_data: Any, context: Any, resources: Any
+    ) -> StepResult:
         nm = getattr(step.steps[0], "name", "")
         if nm == "a":
-            return StepResult(
+            return create_test_step_result(
                 name="a", output=input_data, success=True, branch_context=Ctx(value="A")
             )
         if nm == "b":
-            return StepResult(
+            return create_test_step_result(
                 name="b", output=input_data, success=True, branch_context=Ctx(value="B")
             )
         return StepResult(name="?", output=input_data, success=True)

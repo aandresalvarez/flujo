@@ -4,10 +4,11 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, cast, List, Tuple
+from typing import List, Optional, Tuple, cast
 
 from .base import StateBackend
-from ...utils.serialization import serialize_to_json, safe_deserialize
+from flujo.type_definitions.common import JSONObject
+from ...utils.serialization import safe_deserialize, serialize_to_json
 
 
 class FileBackend(StateBackend):
@@ -34,7 +35,7 @@ class FileBackend(StateBackend):
             raise ValueError(f"Invalid run_id: {run_id!r}")
         return candidate
 
-    async def save_state(self, run_id: str, state: Dict[str, Any]) -> None:
+    async def save_state(self, run_id: str, state: JSONObject) -> None:
         file_path = self._resolve_path(run_id)
         # Use proper serialization that fails fast on non-serializable objects
         data = serialize_to_json(state)
@@ -49,18 +50,18 @@ class FileBackend(StateBackend):
             os.fsync(f.fileno())
         os.replace(tmp, file_path)
 
-    async def load_state(self, run_id: str) -> Optional[Dict[str, Any]]:
+    async def load_state(self, run_id: str) -> Optional[JSONObject]:
         file_path = self._resolve_path(run_id)
         async with self._lock:
             if not file_path.exists():
                 return None
             return await asyncio.to_thread(self._read_json, file_path)
 
-    def _read_json(self, file_path: Path) -> Dict[str, Any]:
+    def _read_json(self, file_path: Path) -> JSONObject:
         with open(file_path, "rb") as f:
             data = json.loads(f.read().decode())
         # Apply safe_deserialize to restore custom types
-        return cast(Dict[str, Any], safe_deserialize(data))
+        return cast(JSONObject, safe_deserialize(data))
 
     async def delete_state(self, run_id: str) -> None:
         file_path = self._resolve_path(run_id)
@@ -68,13 +69,13 @@ class FileBackend(StateBackend):
             if file_path.exists():
                 await asyncio.to_thread(file_path.unlink)
 
-    async def get_trace(self, run_id: str) -> Optional[Dict[str, Any]]:
+    async def get_trace(self, run_id: str) -> Optional[JSONObject]:
         """Retrieve trace data for a given run_id."""
         # For FileBackend, traces are stored as part of the state
         # We'll return None as FileBackend doesn't implement separate trace storage
         return None
 
-    async def save_trace(self, run_id: str, trace: Dict[str, Any]) -> None:
+    async def save_trace(self, run_id: str, trace: JSONObject) -> None:
         """Save trace data for a given run_id."""
         # FileBackend doesn't support separate trace storage
         # Traces would need to be integrated into the main state if needed
@@ -82,7 +83,7 @@ class FileBackend(StateBackend):
 
     async def get_spans(
         self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> List[JSONObject]:
         """Get individual spans with optional filtering."""
         # FileBackend doesn't support normalized span storage
         return []
@@ -91,7 +92,7 @@ class FileBackend(StateBackend):
         self,
         pipeline_name: Optional[str] = None,
         time_range: Optional[Tuple[float, float]] = None,
-    ) -> Dict[str, Any]:
+    ) -> JSONObject:
         """Get aggregated span statistics."""
         # FileBackend doesn't support span statistics
         return {

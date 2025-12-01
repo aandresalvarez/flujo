@@ -6,13 +6,14 @@ which could reveal bugs in context state management during iterative operations.
 """
 
 import pytest
-from typing import Any, List, Dict
+from typing import List
 from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl.step import MergeStrategy
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+from flujo.type_definitions.common import JSONObject
 
 
 class MapContext(PipelineContext):
@@ -22,7 +23,7 @@ class MapContext(PipelineContext):
     items: List[str] = ["item1", "item2", "item3", "item4"]
     processed_items: List[str] = []
     total_processed: int = 0
-    map_results: Dict[str, Any] = {}
+    map_results: JSONObject = {}
     current_item: str = ""
     processing_history: List[str] = []
 

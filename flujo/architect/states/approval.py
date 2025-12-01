@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
+from flujo.type_definitions.common import JSONObject
 
 from flujo.architect.states.common import goto, skill_resolver
 from flujo.domain.base_model import BaseModel as _BaseModel
@@ -18,9 +19,7 @@ async def approval_noop(x: str, *, context: _BaseModel | None = None) -> str:
     return x
 
 
-async def _plan_approval_runner(
-    _x: Any = None, *, context: _BaseModel | None = None
-) -> Dict[str, Any]:
+async def _plan_approval_runner(_x: Any = None, *, context: _BaseModel | None = None) -> JSONObject:
     """
     Decide whether to approve the plan. In non-interactive mode, this always defaults to approved.
     In interactive mode, it can prompt the user. This prevents infinite loops caused by

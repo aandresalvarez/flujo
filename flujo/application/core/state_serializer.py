@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Dict, Generic, Optional, Type, TypeVar, cast
+from typing import Any, Generic, Optional, Type, TypeVar, cast
 
 from flujo.domain.models import BaseModel, PipelineContext, StepResult
+from flujo.type_definitions.common import JSONObject
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
@@ -21,8 +22,8 @@ class StateSerializer(Generic[ContextT]):
 
     def __init__(self) -> None:
         # Cache for serialization results to avoid redundant work
-        self._serialization_cache: Dict[str, Dict[str, Any]] = {}
-        self._context_hash_cache: Dict[str, str] = {}
+        self._serialization_cache: dict[str, JSONObject] = {}
+        self._context_hash_cache: dict[str, str] = {}
 
     # -------------------------- Hashing and cache --------------------------
 
@@ -78,19 +79,17 @@ class StateSerializer(Generic[ContextT]):
     def _create_cache_key(self, run_id: str, context_hash: str) -> str:
         return f"{run_id}|{context_hash}"
 
-    def _cache_get_by_hash(self, run_id: str, context_hash: str) -> Optional[Dict[str, Any]]:
+    def _cache_get_by_hash(self, run_id: str, context_hash: str) -> Optional[JSONObject]:
         return self._serialization_cache.get(self._create_cache_key(run_id, context_hash))
 
-    def _cache_put_by_hash(
-        self, run_id: str, context_hash: str, serialized: Dict[str, Any]
-    ) -> None:
+    def _cache_put_by_hash(self, run_id: str, context_hash: str, serialized: JSONObject) -> None:
         if len(self._serialization_cache) >= 100:
             self._serialization_cache.pop(next(iter(self._serialization_cache)))
         self._serialization_cache[self._create_cache_key(run_id, context_hash)] = serialized
 
     def get_cached_serialization(
         self, context: Optional[ContextT], run_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[JSONObject]:
         if context is None:
             return None
         context_hash = self.compute_context_hash(context)
@@ -98,7 +97,7 @@ class StateSerializer(Generic[ContextT]):
         return self._serialization_cache.get(cache_key)
 
     def cache_serialization(
-        self, context: Optional[ContextT], run_id: str, serialized: Dict[str, Any]
+        self, context: Optional[ContextT], run_id: str, serialized: JSONObject
     ) -> None:
         if context is None:
             return
@@ -127,13 +126,13 @@ class StateSerializer(Generic[ContextT]):
 
     # ---------------------------- Serialization ----------------------------
 
-    def serialize_context_full(self, context: ContextT) -> Dict[str, Any]:
+    def serialize_context_full(self, context: ContextT) -> JSONObject:
         # Use Pydantic dump for comprehensive state
-        return cast(Dict[str, Any], context.model_dump())
+        return cast(JSONObject, context.model_dump())
 
-    def serialize_context_minimal(self, context: ContextT) -> Dict[str, Any]:
+    def serialize_context_minimal(self, context: ContextT) -> JSONObject:
         # Minimal set used for optimized persistence paths
-        data: Dict[str, Any] = {
+        data: JSONObject = {
             "initial_prompt": getattr(context, "initial_prompt", ""),
             "pipeline_id": getattr(context, "pipeline_id", "unknown"),
             "pipeline_name": getattr(context, "pipeline_name", "unknown"),
@@ -157,7 +156,7 @@ class StateSerializer(Generic[ContextT]):
 
     def serialize_context_for_state(
         self, context: Optional[ContextT], run_id: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[JSONObject]:
         if context is None:
             return None
         # Compute hash once and check caches
@@ -181,8 +180,8 @@ class StateSerializer(Generic[ContextT]):
 
     def serialize_step_history_full(
         self, step_history: Optional[list[StepResult]]
-    ) -> list[Dict[str, Any]]:
-        out: list[Dict[str, Any]] = []
+    ) -> list[JSONObject]:
+        out: list[JSONObject] = []
         if not step_history:
             return out
         for step_result in step_history:
@@ -194,8 +193,8 @@ class StateSerializer(Generic[ContextT]):
 
     def serialize_step_history_minimal(
         self, step_history: Optional[list[StepResult]]
-    ) -> list[Dict[str, Any]]:
-        out: list[Dict[str, Any]] = []
+    ) -> list[JSONObject]:
+        out: list[JSONObject] = []
         if not step_history:
             return out
         for step_result in step_history:

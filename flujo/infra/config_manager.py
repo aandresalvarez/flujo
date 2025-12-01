@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import threading
-from typing import Any, Callable, Dict, Optional, Union, cast
+from pathlib import Path
+from typing import Any, Callable, Optional, Union, cast
 import os
 
 try:
@@ -12,10 +12,11 @@ try:
 except ImportError:
     # Fallback for Python versions < 3.11
     import tomli as tomllib  # type: ignore
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from ..domain.models import UsageLimits
 
 from ..exceptions import ConfigurationError
+from ..type_definitions.common import JSONObject
 
 
 class ArosConfig(BaseModel):
@@ -63,7 +64,7 @@ class FlujoConfig(BaseModel):
     state_uri: Optional[str] = None
 
     # Cost tracking configuration
-    cost: Optional[Dict[str, Any]] = None
+    cost: Optional[JSONObject] = None
 
     # Security: allow-list for YAML blueprint imports
     blueprint_allowed_imports: Optional[list[str]] = None
@@ -90,7 +91,7 @@ class ValidationConfig(BaseModel):
     V-A5 = "warning"
     """
 
-    profiles: Optional[Dict[str, Dict[str, Any]]] = None
+    profiles: Optional[dict[str, JSONObject]] = None
 
 
 class SolveConfig(BaseModel):
@@ -164,7 +165,7 @@ class BudgetConfig(BaseModel):
     """
 
     default: Optional[UsageLimits] = None
-    pipeline: Dict[str, UsageLimits] = {}
+    pipeline: dict[str, UsageLimits] = Field(default_factory=dict)
 
 
 class ArchitectConfig(BaseModel):
@@ -237,6 +238,38 @@ class ConfigManager:
 
         return None
 
+    def _validate_structures(self, data: dict[str, Any]) -> None:
+        """Fail fast on obviously invalid config shapes before model parsing."""
+        errors: list[str] = []
+
+        def _expect_mapping(key: str) -> None:
+            value = data.get(key)
+            if value is None:
+                return
+            if not isinstance(value, dict):
+                errors.append(f"[{key}] must be a table/dict, got {type(value).__name__}")
+
+        def _expect_list_of_str(key: str) -> None:
+            value = data.get(key)
+            if value is None:
+                return
+            if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                errors.append(f"[{key}] must be a list of strings")
+
+        _expect_mapping("solve")
+        _expect_mapping("bench")
+        _expect_mapping("run")
+        _expect_mapping("settings")
+        _expect_mapping("cost")
+        _expect_mapping("budgets")
+        _expect_mapping("architect")
+        _expect_mapping("validation")
+        _expect_mapping("template")
+        _expect_list_of_str("blueprint_allowed_imports")
+
+        if errors:
+            raise ConfigurationError("Invalid configuration structure: " + "; ".join(errors))
+
     def load_config(self, force_reload: bool = False) -> FlujoConfig:
         """Load configuration from flujo.toml file.
 
@@ -247,7 +280,11 @@ class ConfigManager:
             FlujoConfig: The loaded configuration
         """
         if self.config_path is None:
-            return FlujoConfig()
+            if not force_reload and self._cached_config is not None:
+                return self._cached_config
+            self._cached_config = FlujoConfig()
+            self._config_file_mtime = None
+            return self._cached_config
 
         # Check if we can use cached config
         if not force_reload and self._cached_config is not None:
@@ -265,8 +302,10 @@ class ConfigManager:
             with open(self.config_path, "rb") as f:
                 data = tomllib.load(f)
 
+            self._validate_structures(data)
+
             # Extract configuration sections
-            config_data = {}
+            config_data: JSONObject = {}
 
             # CLI command configurations
             if "solve" in data:
@@ -467,7 +506,7 @@ class ConfigManager:
         # Check if any of these environment variables are set
         return any(env_var in os.environ for env_var in env_var_names)
 
-    def get_cli_defaults(self, command: str, force_reload: bool = False) -> Dict[str, Any]:
+    def get_cli_defaults(self, command: str, force_reload: bool = False) -> JSONObject:
         """Get CLI defaults for a specific command.
 
         Args:
@@ -508,7 +547,7 @@ class ConfigManager:
 
 
 _CONFIG_MANAGER_LOCK = threading.Lock()
-_CONFIG_MANAGER_CACHE: Dict[int, ConfigManager] = {}
+_CONFIG_MANAGER_CACHE: dict[int, ConfigManager] = {}
 
 
 def get_config_manager(force_reload: bool = False) -> ConfigManager:
@@ -544,7 +583,7 @@ def load_settings(force_reload: bool = False) -> Any:
     return get_config_manager(force_reload=force_reload).get_settings()
 
 
-def get_cli_defaults(command: str, force_reload: bool = False) -> Dict[str, Any]:
+def get_cli_defaults(command: str, force_reload: bool = False) -> JSONObject:
     """Get CLI defaults for a specific command. If force_reload is True, reload config/settings."""
     return get_config_manager(force_reload=force_reload).get_cli_defaults(command)
 

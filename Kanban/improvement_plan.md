@@ -41,9 +41,9 @@ Based on Phase 3 and fix_items.md, these decompositions are complete:
 #### Remaining Targets
 
 - **steps**:
-    - [ ] Audit `performance_monitor.py` (695+ LOC) for split opportunities into metrics/alerts/analysis modules.
-    - [ ] Audit `default_components.py` (792+ LOC) for logical grouping into serialization/caching/telemetry components.
-    - [ ] Ensure all files in `application/core/` remain under 1200 LOC gate.
+    - [x] Audit `performance_monitor.py` (now ~541 LOC) for split opportunities; no split needed after review, keep monitoring hot-path allocations.
+    - [x] Audit `default_components.py` (now ~556 LOC) for logical grouping; no monolith risk, sections remain coherent.
+    - [x] Ensure all files in `application/core/` remain under 1200 LOC gate (current max: 1130 LOC).
   
   Run: `pytest tests/architecture/test_type_safety_compliance.py::TestArchitectureCompliance::test_no_monolith_files`
 
@@ -75,10 +75,11 @@ The guide provides extensive patterns for:
 #### Implementation Steps
 
 - **steps**:
-    - [ ] Profile `ExecutorCore.execute()` hot path using cProfile to identify bottlenecks.
-    - [ ] Implement caching for repeated policy lookups in `PolicyRegistry.get()`.
-    - [ ] Add object pooling for frequently created `StepResult` instances in loop execution.
-    - [ ] Ensure performance thresholds are maintained (never adjusted to hide regressions per Lesson 6).
+    - [x] Profile `ExecutorCore.execute()` hot path using cProfile to identify bottlenecks (`scripts/profile_executor_core_hotpath.py`; latest run `--optimized --iterations 50 --warmup 10` shows cache fast-path dominating cumulative time).
+    - [x] Implement caching for repeated policy lookups in `PolicyRegistry.get()`.
+    - [x] Add object pooling for frequently created `StepResult` instances in loop execution.
+    - [x] Ensure performance thresholds are maintained (never adjusted to hide regressions per Lesson 6) — verified with `pytest tests/robustness/test_performance_regression.py`.
+    - [x] Fast-path signature handling for agents with no injected kwargs (skips `analyze_signature` and cut no-cache profile cumulative time ~40%); added `scripts/compare_profiles.py` to diff profile runs.
   
   Run: `pytest tests/robustness/test_performance_regression.py`
 
@@ -106,9 +107,9 @@ Goal: Maintain <150ms budget for high-concurrency handling per existing robustne
 #### Implementation Steps
 
 - **steps**:
-    - [ ] Audit existing tests for ad-hoc mock creation patterns.
-    - [ ] Migrate tests to use `create_test_step()`, `create_test_step_result()`, `create_test_pipeline()` from fixtures.
-    - [ ] Ensure all new tests use typed factories from `tests/test_types/`.
+    - [x] Audit existing tests for ad-hoc mock creation patterns (robustness/performance + core fallback suites now using typed fixtures).
+    - [x] Migrate tests to use `create_test_step()`, `create_test_step_result()`, `create_test_pipeline()` from fixtures (e.g., robustness performance regression, executor_core fallback, evaluators).
+    - [x] Ensure all new tests use typed factories from `tests/test_types/` (documented and applied to updated suites; keep enforcing for future tests).
   
   Run: `make typecheck && make test-fast`
 
@@ -134,13 +135,14 @@ Goal: 100% typed test fixtures for improved test reliability and type safety.
 
 The guide mandates this pattern throughout, with extensive examples in Sections 3, 5, and 13.
 
-#### Implementation Steps
+#### Implementation Steps (Deferred to Final)
 
 - **steps**:
-    - [ ] Audit codebase for `Dict[str, Any]` usage patterns.
-    - [ ] Replace with `JSONObject` from `flujo.type_definitions.common`.
-    - [ ] Update serialization utilities to use consistent `JSONObject` typing.
-    - [ ] Ensure `safe_serialize`/`safe_deserialize` maintain type consistency.
+    - [x] Audit remaining `Dict[str, Any]` usage patterns (residual 0 in code; docs retain deliberate references).
+    - [x] Replace with `JSONObject` from `flujo.type_definitions.common`.
+    - [x] Update serialization utilities to use consistent `JSONObject` typing.
+    - [x] Ensure `safe_serialize`/`safe_deserialize` maintain type consistency.
+    - [x] Sweep completed; keep monitoring new code paths for regressions.
   
   Run: `make typecheck`
 
@@ -192,10 +194,10 @@ The guide already endorses **constructor injection for policies**. This improvem
 #### Implementation Steps
 
 - **steps**:
-    - [ ] Extend `ExecutorFactory` to accept optional policy overrides.
-    - [ ] Allow individual policy injection in `ExecutorCore` constructor (already partially implemented).
-    - [ ] Add typed interfaces for policy dependencies (e.g., `IAgentRunner`, `ITelemetry`).
-    - [ ] Maintain backward compatibility with default instantiation.
+    - [x] Extend `ExecutorFactory` to accept optional policy overrides.
+    - [x] Allow individual policy injection in `ExecutorCore` constructor (already partially implemented).
+    - [x] Add typed interfaces for policy dependencies (e.g., `IAgentRunner`, `ITelemetry`) and apply them in `ExecutorCore`/factories (ExecutorFactory now accepts typed runner/pipeline/plugin/meter overrides; skill registry interfaces use JSONObject).
+    - [x] Maintain backward compatibility with default instantiation.
   
   Run: `pytest tests/application/core/test_policy_registry.py tests/application/core/test_executor_core.py`
 
@@ -226,9 +228,9 @@ The guide mentions skills/builtins but doesn't provide detailed plugin architect
 
 - **steps**:
     - [ ] Document plugin/skill lifecycle in a dedicated guide section.
-    - [ ] Standardize skill registration patterns across `builtins_*.py` modules.
-    - [ ] Add typed interfaces for skill factories.
-    - [ ] Ensure graceful degradation patterns are consistent.
+    - [x] Standardize skill registration patterns across `builtins_*.py` modules (SkillRegistration dataclass and registry typing aligned to JSONObject).
+    - [x] Add typed interfaces for skill factories (SkillFactory protocol).
+    - [x] Ensure graceful degradation patterns are consistent (built-ins return safe defaults when optional deps missing; documented in `docs/guides/skills.md`).
   
   Run: `pytest tests/unit/test_builtins.py`
 
@@ -271,9 +273,9 @@ Goal: Standardize plugin/skill patterns for ecosystem growth.
 #### Implementation Steps
 
 - **steps**:
-    - [ ] Add caching layer within `ConfigManager.load_config()` to avoid repeated file reads.
-    - [ ] Add validation within `get_settings()` for early error detection.
-    - [ ] Ensure cache invalidation on config file changes (if applicable).
+    - [x] Add caching layer within `ConfigManager.load_config()` to avoid repeated file reads.
+    - [x] Add validation within `get_settings()` for early error detection.
+    - [x] Ensure cache invalidation on config file changes (if applicable).
   
   Run: `make test-fast`
 
@@ -346,7 +348,7 @@ Goal: Prevent architectural drift by explicitly documenting forbidden patterns.
 | Type errors | 0 | 0 | `make typecheck` |
 | Performance budget | <150ms | <150ms | `test_high_concurrency_handling` |
 | Test pass rate | 100% | 100% | `make test-fast` |
-| Dict[str, Any] occurrences | TBD | 0 | grep audit |
+| Dict[str, Any] occurrences | 0 (rg -g '*.py' in code) | 0 | grep audit |
 
 ---
 
@@ -377,4 +379,3 @@ Before implementing any change, verify:
 - `Kanban/phase3.md` - Policy decoupling status (completed)
 - `Kanban/fix_items.md` - Gate blockers status (completed)
 - `docs/development/type_safety.md` - Type safety patterns
-

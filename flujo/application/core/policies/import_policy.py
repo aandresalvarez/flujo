@@ -1,11 +1,11 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 
 from typing import Type, cast
 
 from ._shared import (
     Any,
     Callable,
-    Dict,
     ImportStep,
     InfiniteRedirectError,
     NonRetryableError,
@@ -162,10 +162,8 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                 if isinstance(sp, dict):
                     if isinstance(data, dict):
 
-                        def _deep_merge_dict(
-                            a: Dict[str, Any], b: Dict[str, Any]
-                        ) -> Dict[str, Any]:
-                            res: Dict[str, Any] = dict(a)
+                        def _deep_merge_dict(a: JSONObject, b: JSONObject) -> JSONObject:
+                            res: JSONObject = dict(a)
                             for k, v in b.items():
                                 if k in res and isinstance(res[k], dict) and isinstance(v, dict):
                                     res[k] = _deep_merge_dict(res[k], v)
@@ -515,7 +513,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
 
         if getattr(step, "updates_context", False) and step.outputs:
             # Build a minimal context update dict using outputs mapping
-            update_data: Dict[str, Any] = {}
+            update_data: JSONObject = {}
 
             def _get_child(path: str) -> Any:
                 parts = [p for p in path.split(".") if p]

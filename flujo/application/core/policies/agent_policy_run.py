@@ -1,4 +1,5 @@
 from __future__ import annotations
+from flujo.type_definitions.common import JSONObject
 # mypy: ignore-errors
 
 import inspect
@@ -125,11 +126,11 @@ async def run_agent_execution(
 
             strict, log_resolution = _load_template_config()
             steps_map = get_steps_map_from_context(context)
-            steps_wrapped: Dict[str, Any] = {
+            steps_wrapped: JSONObject = {
                 k: v if isinstance(v, StepValueProxy) else StepValueProxy(v)
                 for k, v in steps_map.items()
             }
-            fmt_context: Dict[str, Any] = {
+            fmt_context: JSONObject = {
                 "context": TemplateContextProxy(context, steps=steps_wrapped),
                 "previous_step": data,
                 "steps": steps_wrapped,
@@ -327,7 +328,7 @@ async def run_agent_execution(
                 from flujo.tracing.manager import get_active_trace_manager as _get_tm
 
                 tm = _get_tm()
-                rp_cfg: Dict[str, Any] = {}
+                rp_cfg: JSONObject = {}
                 try:
                     meta_obj = getattr(step, "meta", {}) or {}
                     if isinstance(meta_obj, dict):
@@ -577,7 +578,7 @@ async def run_agent_execution(
                 processed_data = await core._processor_pipeline.apply_prompt(
                     step.processors, data, context=attempt_context
                 )
-            options: Dict[str, Any] = {}
+            options: JSONObject = {}
             cfg = getattr(step, "config", None)
             if cfg:
                 if getattr(cfg, "temperature", None) is not None:

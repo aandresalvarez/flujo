@@ -8,8 +8,9 @@ import yaml
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Optional
 import pytest
+from flujo.type_definitions.common import JSONObject
 
 
 class TestCIConfiguration:
@@ -20,7 +21,7 @@ class TestCIConfiguration:
         """Get the project root directory."""
         return Path(__file__).parent.parent.parent
 
-    def _read_yaml_file(self, file_path: Path) -> Optional[Dict[str, Any]]:
+    def _read_yaml_file(self, file_path: Path) -> Optional[JSONObject]:
         """Read and parse a YAML file."""
         try:
             with open(file_path, "r") as f:
@@ -28,7 +29,7 @@ class TestCIConfiguration:
         except (FileNotFoundError, yaml.YAMLError, OSError):
             return None
 
-    def _read_json_file(self, file_path: Path) -> Optional[Dict[str, Any]]:
+    def _read_json_file(self, file_path: Path) -> Optional[JSONObject]:
         """Read and parse a JSON file."""
         try:
             with open(file_path, "r") as f:

@@ -6,7 +6,7 @@ in _execute_dynamic_router_step_logic works correctly.
 """
 
 import pytest
-from typing import Any, Dict, List
+from typing import List
 from pydantic import Field
 
 from flujo import Step, Pipeline
@@ -14,6 +14,7 @@ from flujo.domain.models import PipelineContext
 from flujo.domain import MergeStrategy
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+from flujo.type_definitions.common import JSONObject
 
 
 class DynamicRouterTestContext(PipelineContext):
@@ -21,7 +22,7 @@ class DynamicRouterTestContext(PipelineContext):
 
     initial_prompt: str = Field(default="test")
     router_called: bool = Field(default=False)
-    branch_results: Dict[str, str] = Field(default_factory=dict)
+    branch_results: JSONObject = Field(default_factory=dict)
     context_updates: List[str] = Field(default_factory=list)
 
 
@@ -39,7 +40,7 @@ class SimpleRouterAgent:
 class BillingAgent:
     """Agent for billing branch."""
 
-    async def run(self, data: str, *, context: DynamicRouterTestContext) -> Dict[str, Any]:
+    async def run(self, data: str, *, context: DynamicRouterTestContext) -> JSONObject:
         context.branch_results["billing"] = f"billing:{data}"
         context.context_updates.append("billing_processed")
         return {"billing_result": f"billing:{data}"}
@@ -48,7 +49,7 @@ class BillingAgent:
 class SupportAgent:
     """Agent for support branch."""
 
-    async def run(self, data: str, *, context: DynamicRouterTestContext) -> Dict[str, Any]:
+    async def run(self, data: str, *, context: DynamicRouterTestContext) -> JSONObject:
         context.branch_results["support"] = f"support:{data}"
         context.context_updates.append("support_processed")
         return {"support_result": f"support:{data}"}
@@ -216,13 +217,13 @@ async def test_dynamic_router_no_context_requirement():
     class NoContextBillingAgent:
         """Billing agent that doesn't require context parameter."""
 
-        async def run(self, data: str) -> Dict[str, Any]:
+        async def run(self, data: str) -> JSONObject:
             return {"billing_result": f"billing:{data}"}
 
     class NoContextSupportAgent:
         """Support agent that doesn't require context parameter."""
 
-        async def run(self, data: str) -> Dict[str, Any]:
+        async def run(self, data: str) -> JSONObject:
             return {"support_result": f"support:{data}"}
 
     router = Step.dynamic_parallel_branch(

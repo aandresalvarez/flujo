@@ -8,13 +8,14 @@ which could reveal bugs in performance bottlenecks and memory issues with large 
 import pytest
 import time
 import asyncio
-from typing import Any, Dict, List
+from typing import Any, List
 from flujo import step, Step
 from flujo.domain.models import PipelineContext
 from flujo.domain.dsl.step import MergeStrategy
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
+from flujo.type_definitions.common import JSONObject
 
 
 class PerformanceContext(PipelineContext):
@@ -23,13 +24,13 @@ class PerformanceContext(PipelineContext):
     initial_prompt: str = "test"
     operation_count: int = 0
     large_data: str = "x" * 10000  # 10KB of data
-    nested_data: Dict[str, Any] = {"deep": {"nested": {"data": "x" * 5000}}}
-    performance_metrics: Dict[str, float] = {}
+    nested_data: JSONObject = {"deep": {"nested": {"data": "x" * 5000}}}
+    performance_metrics: dict[str, float] = {}
     memory_usage: List[int] = []
     execution_times: List[float] = []
     context_updates: int = 0
     large_list: List[Any] = ["item"] * 1000  # 1000 items, can be strings or dicts
-    complex_object: Dict[str, Any] = {
+    complex_object: JSONObject = {
         "nested": {"deep": {"structure": {"with": {"many": {"levels": "data"}}}}},
         "arrays": [{"item": i, "data": "x" * 100} for i in range(100)],
         "strings": ["string"] * 50,
@@ -37,7 +38,7 @@ class PerformanceContext(PipelineContext):
 
 
 @step(updates_context=True)
-async def performance_step(data: Any, *, context: PerformanceContext) -> Dict[str, Any]:
+async def performance_step(data: Any, *, context: PerformanceContext) -> JSONObject:
     """Step that updates context with performance metrics."""
     start_time = time.time()
     context.operation_count += 1
@@ -54,7 +55,7 @@ async def performance_step(data: Any, *, context: PerformanceContext) -> Dict[st
 
 
 @step(updates_context=True)
-async def large_context_step(data: Any, *, context: PerformanceContext) -> Dict[str, Any]:
+async def large_context_step(data: Any, *, context: PerformanceContext) -> JSONObject:
     """Step that works with large context data."""
     context.operation_count += 1
     context.context_updates += 1
@@ -70,7 +71,7 @@ async def large_context_step(data: Any, *, context: PerformanceContext) -> Dict[
 
 
 @step(updates_context=True)
-async def high_frequency_step(data: Any, *, context: PerformanceContext) -> Dict[str, Any]:
+async def high_frequency_step(data: Any, *, context: PerformanceContext) -> JSONObject:
     """Step that performs high-frequency context updates."""
     context.operation_count += 1
     context.context_updates += 1
@@ -84,7 +85,7 @@ async def high_frequency_step(data: Any, *, context: PerformanceContext) -> Dict
 
 
 @step(updates_context=True)
-async def memory_intensive_step(data: Any, *, context: PerformanceContext) -> Dict[str, Any]:
+async def memory_intensive_step(data: Any, *, context: PerformanceContext) -> JSONObject:
     """Step that performs memory-intensive operations."""
     context.operation_count += 1
     context.context_updates += 1
@@ -302,7 +303,7 @@ async def test_performance_with_context_updates_error_handling():
     """Test performance with error handling and context updates."""
 
     @step(updates_context=True)
-    async def error_prone_step(data: Any, *, context: PerformanceContext) -> Dict[str, Any]:
+    async def error_prone_step(data: Any, *, context: PerformanceContext) -> JSONObject:
         """Step that may fail but updates context."""
         context.operation_count += 1
         context.context_updates += 1

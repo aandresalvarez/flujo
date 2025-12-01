@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, List
+from flujo.type_definitions.common import JSONObject
 
 
 class FailureType(Enum):
@@ -13,7 +14,7 @@ class FlujoMonitor:
     """Simple in-memory monitor for agent calls."""
 
     def __init__(self) -> None:
-        self.calls: List[Dict[str, Any]] = []
+        self.calls: List[JSONObject] = []
 
     def record_agent_call(
         self,

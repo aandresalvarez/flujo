@@ -8,7 +8,7 @@ visualization, and AI-driven modification.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, cast, TYPE_CHECKING
+from typing import Any, Optional, cast, TYPE_CHECKING
 from pydantic import TypeAdapter
 
 from ..domain.dsl.pipeline import Pipeline
@@ -119,7 +119,7 @@ def make_default_pipeline(
 
 def make_state_machine_pipeline(
     *,
-    nodes: Dict[str, Step[Any, Any] | Pipeline[Any, Any]],
+    nodes: dict[str, Step[Any, Any] | Pipeline[Any, Any]],
     context_model: type[PipelineContext],
     router_field: str = "next_state",
     end_state_field: str = "is_complete",
@@ -140,7 +140,7 @@ def make_state_machine_pipeline(
             f"{context_model.__name__!s} is missing required field {end_state_field!r}"
         )
 
-    normalized: Dict[str, Pipeline[Any, Any]] = {}
+    normalized: dict[str, Pipeline[Any, Any]] = {}
     for key, val in nodes.items():
         normalized[key] = Pipeline.from_step(val) if isinstance(val, Step) else val
 
@@ -168,7 +168,7 @@ def make_state_machine_pipeline(
 
 def make_agentic_loop_pipeline(
     planner_agent: "AsyncAgentProtocol[Any, Any]",
-    agent_registry: Dict[str, "AsyncAgentProtocol[Any, Any]"],
+    agent_registry: dict[str, "AsyncAgentProtocol[Any, Any]"],
     max_loops: int = 10,
     max_retries: int = 3,
 ) -> Pipeline[str, Any]:
@@ -187,7 +187,7 @@ def make_agentic_loop_pipeline(
     class _CommandExecutor:
         """Internal class to execute commands from the planner."""
 
-        def __init__(self, agent_registry: Dict[str, "AsyncAgentProtocol[Any, Any]"]):
+        def __init__(self, agent_registry: dict[str, "AsyncAgentProtocol[Any, Any]"]):
             self.agent_registry = agent_registry
 
         async def run(self, data: Any, *, context: PipelineContext) -> ExecutedCommandLog:
@@ -223,7 +223,7 @@ def make_agentic_loop_pipeline(
                     if not agent:
                         exec_result = f"Error: Agent '{cmd.agent_name}' not found."
                     else:
-                        agent_kwargs: Dict[str, Any] = {}
+                        agent_kwargs: dict[str, Any] = {}
                         if _accepts_param(agent.run, "context"):
                             agent_kwargs["context"] = context
                         exec_result = await agent.run(cmd.input_data, **agent_kwargs)
