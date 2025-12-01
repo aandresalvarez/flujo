@@ -21,7 +21,8 @@ import pytest
 from unittest.mock import AsyncMock
 
 from flujo.application.core.executor_core import ExecutorCore
-from flujo.domain.models import StepResult
+from flujo.application.core.state_serializer import StateSerializer
+from flujo.domain.models import ConversationRole, ConversationTurn, PipelineContext, StepResult
 from tests.test_types.fixtures import create_test_step, create_test_step_result
 from tests.test_types.mocks import create_mock_executor_core
 from tests.robustness.baseline_manager import get_baseline_manager, measure_and_check_regression
@@ -173,6 +174,38 @@ class TestPerformanceRegression:
             f"Serialization time {avg_time:.2f}ms exceeds threshold {threshold}ms"
         )
 
+    def test_context_hash_performance(self):
+        """Ensure context hashing stays fast for large contexts."""
+        serializer: StateSerializer[PipelineContext] = StateSerializer()
+
+        conversation = [
+            ConversationTurn(
+                role=ConversationRole.user if i % 2 == 0 else ConversationRole.assistant,
+                content=f"message {i} {'x' * 10}",
+            )
+            for i in range(200)
+        ]
+        context = PipelineContext(
+            initial_prompt="performance check",
+            conversation_history=conversation,
+            scratchpad={
+                "metrics": [{"index": i, "values": list(range(15))} for i in range(50)],
+                "notes": "n" * 256,
+            },
+        )
+
+        # Warm up to populate caches
+        serializer.compute_context_hash(context)
+
+        start_time = time.perf_counter()
+        for _ in range(5):
+            serializer.compute_context_hash(context)
+        total_time = (time.perf_counter() - start_time) * 1000  # ms
+
+        assert total_time < 75, (
+            f"Context hashing took {total_time:.1f}ms for 5 runs, expected < 75ms"
+        )
+
     def test_memory_overhead_monitoring(self, baseline_thresholds: dict[str, float]):
         """Test that memory overhead stays within acceptable bounds."""
         import gc
@@ -233,8 +266,8 @@ class TestPerformanceRegression:
 
             # Sequential would take ~500ms (50ms * 10), concurrent should be much faster
             # Allow some overhead but ensure reasonable speedup
-            assert total_time < 200, (
-                f"Concurrent execution took {total_time:.1f}ms, expected < 200ms"
+            assert total_time < 150, (
+                f"Concurrent execution took {total_time:.1f}ms, expected < 150ms"
             )
             assert len(results) == 10, "Not all concurrent operations completed"
             assert all(isinstance(r, StepResult) for r in results), "Invalid results"
@@ -334,9 +367,8 @@ class TestScalabilityRegression:
 
             # With 1ms delay per operation, sequential would be ~100ms
             # Concurrent should be much faster but allow for test overhead
-            # Adjusted to 200ms to account for fingerprinting overhead in StateSerializer
-            assert total_time < 200, (
-                f"High concurrency test took {total_time:.1f}ms, expected < 200ms"
+            assert total_time < 150, (
+                f"High concurrency test took {total_time:.1f}ms, expected < 150ms"
             )
             assert len(results) == num_concurrent, "Not all operations completed"
             assert all(isinstance(r, StepResult) for r in results), "Invalid results"
