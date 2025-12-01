@@ -45,13 +45,70 @@ class StateSerializer(Generic[ContextT]):
         }
         filtered_data = {k: v for k, v in context_data.items() if k not in fields_to_exclude}
 
-        # For large contexts, use a simpler hash to avoid expensive JSON serialization
-        if len(filtered_data) > 10 or any(
-            isinstance(v, (list, dict)) and len(str(v)) > 1000 for v in filtered_data.values()
-        ):
+        data_items: list[tuple[str, Any]] = []
+        if isinstance(context, BaseModel):
+            # Fast path for Pydantic models
+            # Fix deprecation: access model_fields from class
+            for name in type(context).model_fields:
+                if name in fields_to_exclude:
+                    continue
+                data_items.append((name, getattr(context, name)))
+        else:
+            # Fallback for dicts or other types
+            try:
+                data = context.model_dump() if hasattr(context, "model_dump") else dict(context)
+                for k, v in data.items():
+                    if k not in fields_to_exclude:
+                        data_items.append((k, v))
+            except Exception as e:
+                # CRITICAL: Do not swallow control flow exceptions
+                # These must propagate to the orchestrator
+                from flujo.exceptions import ControlFlowError
+
+                if isinstance(e, ControlFlowError):
+                    raise
+                return "error_hashing_context"
+
+        # Heuristic: Check if context is "large" without expensive string conversion
+        is_large = len(data_items) > 10
+        if not is_large:
+            for _, v in data_items:
+                if isinstance(v, (list, dict, str, bytes, tuple, set)):
+                    # Check length of container directly, avoid str(v) which is O(N)
+                    if len(v) > 100:
+                        is_large = True
+                        break
+
+        if is_large:
+            # For large contexts, use a simpler hash to avoid expensive JSON serialization
             hash_input = []
-            for key, value in sorted(filtered_data.items()):
-                hash_input.append(f"{key}:{type(value).__name__}:{len(str(value))}")
+            # Sort by key to ensure deterministic order
+            data_items.sort(key=lambda x: x[0])
+            for key, value in data_items:
+                # SUPER OPTIMIZATION: Use len(value) directly for containers
+                # This avoids O(N) string conversion for large lists/dicts
+                if isinstance(value, (str, list, dict, bytes, tuple, set)):
+                    # Fingerprinting: Use length + sample of content to detect mutations
+                    # This is O(1) relative to total size, but sensitive to head mutations
+                    length = len(value)
+                    fingerprint = ""
+
+                    if isinstance(value, (list, tuple)):
+                        # Sample first 5 items
+                        sample = value[:5]
+                        fingerprint = f"{[type(x).__name__ for x in sample]}:{str(sample)[:50]}"
+                    elif isinstance(value, dict):
+                        # Sample first 5 keys
+                        sample_keys = sorted(list(value.keys()))[:5]
+                        fingerprint = f"{sample_keys}"
+                    elif isinstance(value, (bytes, str)):
+                        # Sample prefix
+                        fingerprint = str(value[:50])
+
+                    val_repr = f"{length}:{fingerprint}"
+                else:
+                    val_repr = str(value)
+                hash_input.append(f"{key}:{type(value).__name__}:{val_repr}")
             context_str = "|".join(hash_input)
         else:
 
