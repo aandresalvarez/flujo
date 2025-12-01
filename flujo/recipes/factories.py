@@ -245,6 +245,7 @@ def make_agentic_loop_pipeline(
                             return log_entry
                         context.scratchpad["paused_step_input"] = cmd
                         context.scratchpad["loop_resume_requires_hitl_output"] = True
+                        context.scratchpad["status"] = "paused"
                     # Do NOT create or append a log entry here; only log on resume
                     from flujo.infra import telemetry
 
