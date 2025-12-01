@@ -416,10 +416,17 @@ class TestPersistencePerformanceOverhead:
             )
 
             # Verify that the changed context was actually persisted (correctness check instead of timing check)
-            # We verify this by checking that the operation completed successfully and we can verify
-            # the persistence in the final verification step or by trusting the await call returned.
-            # The timing check was too brittle as first serialization often includes initialization overhead.
-            pass
+            # Load immediately after persisting context2 to ensure the cached/delta logic stored the new value.
+            (
+                loaded_context_changed,
+                loaded_last_output_changed,
+                loaded_step_index_changed,
+                *_,
+            ) = await state_manager.load_workflow_state("test_run", context_model=LargeContext)
+            assert loaded_context_changed is not None
+            assert loaded_context_changed.counter == 2
+            assert loaded_step_index_changed == 2
+            assert loaded_last_output_changed == "output2"
 
             # Verify cache clearing works
             state_manager.clear_cache("test_run")
