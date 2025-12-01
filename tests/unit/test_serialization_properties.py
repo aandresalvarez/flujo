@@ -1,7 +1,7 @@
 """Property-based tests for serialization and reconstruction using Hypothesis."""
 
 import json
-from hypothesis import given, strategies as st, settings, Verbosity
+from hypothesis import given, strategies as st, settings, Verbosity, HealthCheck
 from hypothesis.strategies import composite
 from pydantic import BaseModel, Field
 from typing import Any, List, Optional, Union, Literal
@@ -247,7 +247,9 @@ class TestSerializationProperties:
         assert reconstructed_input.model_dump() == model.model_dump()
 
     @given(model=complex_model_strategy())
-    @settings(verbosity=Verbosity.verbose, max_examples=100)
+    @settings(
+        verbosity=Verbosity.verbose, max_examples=100, suppress_health_check=[HealthCheck.too_slow]
+    )
     def test_complex_model_roundtrip(self, model):
         """Test that complex models with various field types can be serialized and reconstructed."""
         request_data = {
