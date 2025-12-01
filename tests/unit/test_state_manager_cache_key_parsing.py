@@ -162,5 +162,5 @@ class TestStateManagerCacheKeyParsing:
         parsing_time = time.perf_counter() - start_time
 
         # Should be very fast (less than 1ms for 1000 operations)
-        assert creation_time < 0.005, f"Cache key creation too slow: {creation_time:.6f}s"
-        assert parsing_time < 0.005, f"Cache key parsing too slow: {parsing_time:.6f}s"
+        assert creation_time < 0.001, f"Cache key creation too slow: {creation_time:.6f}s"
+        assert parsing_time < 0.001, f"Cache key parsing too slow: {parsing_time:.6f}s"

@@ -233,8 +233,8 @@ class TestPerformanceRegression:
 
             # Sequential would take ~500ms (50ms * 10), concurrent should be much faster
             # Allow some overhead but ensure reasonable speedup
-            assert total_time < 500, (
-                f"Concurrent execution took {total_time:.1f}ms, expected < 500ms"
+            assert total_time < 200, (
+                f"Concurrent execution took {total_time:.1f}ms, expected < 200ms"
             )
             assert len(results) == 10, "Not all concurrent operations completed"
             assert all(isinstance(r, StepResult) for r in results), "Invalid results"
@@ -334,8 +334,8 @@ class TestScalabilityRegression:
 
             # With 1ms delay per operation, sequential would be ~100ms
             # Concurrent should be much faster but allow for test overhead
-            assert total_time < 500, (
-                f"High concurrency test took {total_time:.1f}ms, expected < 500ms"
+            assert total_time < 150, (
+                f"High concurrency test took {total_time:.1f}ms, expected < 150ms"
             )
             assert len(results) == num_concurrent, "Not all operations completed"
             assert all(isinstance(r, StepResult) for r in results), "Invalid results"

@@ -571,7 +571,7 @@ class TestPersistenceOptimizationEdgeCases:
         total_time = time.perf_counter() - start_time
 
         # Should complete in reasonable time
-        assert total_time < 30.0, f"Load test took {total_time:.3f}s"
+        assert total_time < 10.0, f"Load test took {total_time:.3f}s"
 
         # Verify all runs were persisted
         for i in range(50):

@@ -125,9 +125,10 @@ async def test_performance_with_context_updates_basic():
         assert result.final_pipeline_context.operation_count == 1  # Each run gets fresh context
         assert result.final_pipeline_context.context_updates == 1
 
-    # Performance assertion (should complete within reasonable time)
-    # Threshold increased from 5.3s to 20.0s to account for CI environment variability
-    assert total_time < 20.0, f"Performance test took too long: {total_time:.2f}s"
+    # Performance assertion (should complete    # Should be reasonably fast despite context updates
+    # 50 operations * 0.01s sleep = 0.5s minimum
+    # Allow overhead for context updates and persistence (was 5.3s)
+    assert total_time < 5.3, f"Performance test took too long: {total_time:.2f}s"
 
     # Verify context updates are working (check last result)
     final_result = results[-1]
@@ -186,8 +187,9 @@ async def test_performance_with_context_updates_high_frequency():
         assert result.final_pipeline_context.context_updates == 1
 
     # Performance assertion (should complete within reasonable time)
-    # Performance assertion (should complete within reasonable time)
-    assert total_time < 40.0, f"High frequency test took too long: {total_time:.2f}s"
+    # Performance    # 100 operations * 10 updates = 1000 updates
+    # This stresses the hashing and serialization
+    assert total_time < 10.0, f"High frequency test took too long: {total_time:.2f}s"
 
     # Verify high-frequency updates (check last result)
     final_result = results[-1]
@@ -339,8 +341,8 @@ async def test_performance_with_context_updates_error_handling():
     assert len(results) >= 5, f"Expected at least 5 successful runs, got {len(results)}"
 
     # Performance assertion (should complete within reasonable time despite errors)
-    # Threshold increased from 5.3s to 20.0s to account for CI environment variability
-    assert total_time < 20.0, f"Error handling test took too long: {total_time:.2f}s"
+    # Threshold increased from 5.3s to 20.0s to account for    # Should handle errors efficiently
+    assert total_time < 5.3, f"Error handling test took too long: {total_time:.2f}s"
 
     # Verify context updates from successful runs
     if results:

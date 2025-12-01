@@ -35,4 +35,4 @@ async def test_background_task_overhead_below_half_second() -> None:
         await asyncio.sleep(0.1)
     duration = time.perf_counter() - start
     # Generous bound to avoid flakiness while still catching regressions.
-    assert duration < 2.0
+    assert duration < 0.5
