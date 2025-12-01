@@ -44,13 +44,20 @@ class StateSerializer(Generic[ContextT]):
 
         data_items: list[tuple[str, Any]] = []
         raw_mapping: Optional[dict[str, Any]] = None
+
+        # Optimization: Track size estimation during extraction to avoid double iteration
+        estimated_size = 0
+        is_large = False
+
         if isinstance(context, BaseModel):
             # Fast path for Pydantic models
-            # Fix deprecation: access model_fields from class
             for name in type(context).model_fields:
                 if name in fields_to_exclude:
                     continue
-                data_items.append((name, getattr(context, name)))
+                val = getattr(context, name)
+                data_items.append((name, val))
+                # Heuristic: check if we have many fields
+                estimated_size += 1
         else:
             # Fallback for dicts or other types
             try:
@@ -60,14 +67,27 @@ class StateSerializer(Generic[ContextT]):
                 for k, v in raw_mapping.items():
                     if k not in fields_to_exclude:
                         data_items.append((k, v))
+                        estimated_size += 1
             except Exception as e:
                 # CRITICAL: Do not swallow control flow exceptions
-                # These must propagate to the orchestrator
                 from flujo.exceptions import ControlFlowError
 
                 if isinstance(e, ControlFlowError):
                     raise
                 return "error_hashing_context"
+
+        # Heuristic: Check if context is "large" without expensive string conversion
+        # Check 1: Too many top-level fields
+        if estimated_size > 10:
+            is_large = True
+        else:
+            # Check 2: Check for large container values (only if few fields)
+            for _, v in data_items:
+                if isinstance(v, (list, dict, str, bytes, tuple, set)):
+                    # Check length of container directly, avoid str(v) which is O(N)
+                    if len(v) > 100:
+                        is_large = True
+                        break
 
         def _fingerprint_scalar(value: Any) -> str:
             type_name = type(value).__name__
@@ -96,6 +116,11 @@ class StateSerializer(Generic[ContextT]):
                 return _fingerprint_scalar(value)
 
             if isinstance(value, dict):
+                # Optimization: Avoid sorting all keys if dict is huge
+                if len(value) > 20:
+                    # Just fingerprint size for huge dicts to be fast
+                    return f"dict:{len(value)}"
+
                 sample_keys = sorted(value.keys())[:5]
                 samples: list[str] = []
                 for key in sample_keys:
@@ -106,25 +131,20 @@ class StateSerializer(Generic[ContextT]):
                 return f"{len(value)}:{'|'.join(samples)}"
 
             if isinstance(value, (list, tuple)):
+                # Optimization: Just take first 5 items
                 sample_items = list(itertools.islice(value, 5))
                 sample_fingerprints = ",".join(_fingerprint_scalar(item) for item in sample_items)
                 return f"{len(value)}:{sample_fingerprints}"
 
             if isinstance(value, set):
+                # Sets are unordered, so we must sort to be deterministic, but limit to 5
+                # Optimization: If set is huge, just use size
+                if len(value) > 20:
+                    return f"set:{len(value)}"
                 sample_items = sorted((_fingerprint_scalar(item) for item in value))[:5]
                 return f"{len(value)}:{','.join(sample_items)}"
 
             return _fingerprint_scalar(value)
-
-        # Heuristic: Check if context is "large" without expensive string conversion
-        is_large = len(data_items) > 10
-        if not is_large:
-            for _, v in data_items:
-                if isinstance(v, (list, dict, str, bytes, tuple, set)):
-                    # Check length of container directly, avoid str(v) which is O(N)
-                    if len(v) > 100:
-                        is_large = True
-                        break
 
         if is_large:
             # For large contexts, use a simpler hash to avoid expensive JSON serialization

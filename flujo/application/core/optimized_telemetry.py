@@ -447,7 +447,7 @@ class OptimizedTelemetry:
             return self._sample_counter % self._sample_threshold == 0
 
     def start_span(
-        self, name: str, parent_span: Optional[Span] = None, tags: JSONObject | None = None
+        self, name: str, parent_span: Optional[Span] = None, tags: Optional[JSONObject] = None
     ) -> Optional[Span]:
         """Start a new span."""
         if not self.enable_tracing or not self.should_sample():
@@ -531,7 +531,7 @@ class OptimizedTelemetry:
 
     @contextmanager
     def trace(
-        self, name: str, tags: JSONObject | None = None
+        self, name: str, tags: Optional[JSONObject] = None
     ) -> Generator[Optional[Span], None, None]:
         """Context manager for tracing."""
         span: Optional[Span] = self.start_span(name, tags=tags)
@@ -543,7 +543,7 @@ class OptimizedTelemetry:
 
     @asynccontextmanager
     async def trace_async(
-        self, name: str, tags: JSONObject | None = None
+        self, name: str, tags: Optional[JSONObject] = None
     ) -> AsyncGenerator[Optional[Span], None]:
         """Async context manager for tracing."""
         span: Optional[Span] = self.start_span(name, tags=tags)
@@ -558,7 +558,7 @@ class OptimizedTelemetry:
         name: str,
         value: Union[int, float],
         metric_type: MetricType = MetricType.COUNTER,
-        tags: JSONObject | None = None,
+        tags: Optional[JSONObject] = None,
     ) -> None:
         """Record a metric."""
         if not self.enable_metrics or not self.should_sample():
@@ -594,23 +594,25 @@ class OptimizedTelemetry:
         except Exception:
             pass  # Silently ignore metric recording errors
 
-    def increment_counter(self, name: str, value: int = 1, tags: JSONObject | None = None) -> None:
+    def increment_counter(
+        self, name: str, value: int = 1, tags: Optional[JSONObject] = None
+    ) -> None:
         """Increment a counter metric."""
         self.record_metric(name, value, MetricType.COUNTER, tags)
 
     def set_gauge(
-        self, name: str, value: Union[int, float], tags: JSONObject | None = None
+        self, name: str, value: Union[int, float], tags: Optional[JSONObject] = None
     ) -> None:
         """Set a gauge metric."""
         self.record_metric(name, value, MetricType.GAUGE, tags)
 
     def record_histogram(
-        self, name: str, value: Union[int, float], tags: JSONObject | None = None
+        self, name: str, value: Union[int, float], tags: Optional[JSONObject] = None
     ) -> None:
         """Record a histogram metric."""
         self.record_metric(name, value, MetricType.HISTOGRAM, tags)
 
-    def record_timer(self, name: str, duration_ns: int, tags: JSONObject | None = None) -> None:
+    def record_timer(self, name: str, duration_ns: int, tags: Optional[JSONObject] = None) -> None:
         """Record a timer metric."""
         duration_ms = duration_ns / 1_000_000
         self.record_metric(name, duration_ms, MetricType.TIMER, tags)
@@ -745,7 +747,7 @@ def get_global_telemetry() -> OptimizedTelemetry:
 
 # Convenience functions
 def trace_function(
-    name: str, tags: JSONObject | None = None
+    name: str, tags: Optional[JSONObject] = None
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator for tracing functions."""
 
@@ -794,7 +796,7 @@ def trace_function(
     return decorator
 
 
-def start_span(name: str, tags: JSONObject | None = None) -> Optional[Span]:
+def start_span(name: str, tags: Optional[JSONObject] = None) -> Optional[Span]:
     """Start a span using global telemetry."""
     telemetry = get_global_telemetry()
     return telemetry.start_span(name, tags=tags)
@@ -810,20 +812,20 @@ def record_metric(
     name: str,
     value: Union[int, float],
     metric_type: MetricType = MetricType.COUNTER,
-    tags: JSONObject | None = None,
+    tags: Optional[JSONObject] = None,
 ) -> None:
     """Record a metric using global telemetry."""
     telemetry = get_global_telemetry()
     telemetry.record_metric(name, value, metric_type, tags)
 
 
-def increment_counter(name: str, value: int = 1, tags: JSONObject | None = None) -> None:
+def increment_counter(name: str, value: int = 1, tags: Optional[JSONObject] = None) -> None:
     """Increment a counter using global telemetry."""
     telemetry = get_global_telemetry()
     telemetry.increment_counter(name, value, tags)
 
 
-def set_gauge(name: str, value: Union[int, float], tags: JSONObject | None = None) -> None:
+def set_gauge(name: str, value: Union[int, float], tags: Optional[JSONObject] = None) -> None:
     """Set a gauge using global telemetry."""
     telemetry = get_global_telemetry()
     telemetry.set_gauge(name, value, tags)

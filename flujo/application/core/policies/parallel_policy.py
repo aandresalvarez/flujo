@@ -458,7 +458,15 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     feedback=f"Branch execution failed: {branch_result}",
                     metadata_={},
                 )
+            branch_result = (
+                branch_execution_result[1]
+                if isinstance(branch_execution_result, tuple)
+                else branch_execution_result
+            )
             branch_results[branch_name_local] = branch_result
+            print(
+                f"DEBUG: branch={branch_name_local}, success={branch_result.success}, cost={branch_result.cost_usd}, feedback={branch_result.feedback}"
+            )
             if branch_result.success:
                 total_cost += branch_result.cost_usd
                 total_tokens += branch_result.token_counts
