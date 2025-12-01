@@ -468,7 +468,17 @@ class TestFlujoCompositionRoot:
         assert hasattr(backend, "_executor")
         from flujo.application.core.executor_core import ExecutorCore
 
-        assert isinstance(backend._executor, ExecutorCore)
+        # Use robust check to handle potential double-import issues in CI
+        executor = backend._executor
+        is_correct_type = isinstance(executor, ExecutorCore)
+        if not is_correct_type:
+            # Fallback: check class name and module
+            is_correct_type = (
+                executor.__class__.__name__ == "ExecutorCore"
+                and executor.__class__.__module__ == "flujo.application.core.executor_core"
+            )
+
+        assert is_correct_type, f"Expected ExecutorCore, got {type(executor)}"
 
     def test_executor_core_dependency_injection(self):
         """Test that ExecutorCore accepts all dependencies via DI."""
