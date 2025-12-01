@@ -38,8 +38,6 @@ class StubPlannerAgent:
         if self.current_index < len(self.commands):
             command = self.commands[self.current_index]
             self.current_index += 1
-            if context:
-                context.command_log.append(command)
             return command
         return FinishCommand(reason="No more commands")
 

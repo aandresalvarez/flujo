@@ -415,14 +415,18 @@ class TestPersistencePerformanceOverhead:
                 f"(threshold: {threshold})"
             )
 
-            # Changed context should take similar time to first serialization (both require full serialization)
-            # Allow for some timing variation due to system load and database initialization overhead
-            # The actual performance may vary due to caching optimizations, so we use a more lenient threshold
-            # The key is that the operation completes successfully, not the exact timing
-            assert changed_serialization_time >= first_serialization_time * 0.01, (
-                f"Changed context serialization ({changed_serialization_time:.6f}s) should be similar to "
-                f"first serialization ({first_serialization_time:.6f}s) - timing too different"
-            )
+            # Verify that the changed context was actually persisted (correctness check instead of timing check)
+            # Load immediately after persisting context2 to ensure the cached/delta logic stored the new value.
+            (
+                loaded_context_changed,
+                loaded_last_output_changed,
+                loaded_step_index_changed,
+                *_,
+            ) = await state_manager.load_workflow_state("test_run", context_model=LargeContext)
+            assert loaded_context_changed is not None
+            assert loaded_context_changed.counter == 2
+            assert loaded_step_index_changed == 2
+            assert loaded_last_output_changed == "output2"
 
             # Verify cache clearing works
             state_manager.clear_cache("test_run")
