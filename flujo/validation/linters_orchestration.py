@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 from ..domain.pipeline_validation import ValidationFinding
 from .linters_base import BaseLinter, _override_severity
@@ -13,9 +13,9 @@ class OrchestrationLinter(BaseLinter):
         out: list[ValidationFinding] = []
         steps = getattr(pipeline, "steps", []) or []
 
-        _ParallelStep: type[Any] | None = None
-        _ImportStep: type[Any] | None = None
-        _LoopStep: type[Any] | None = None
+        _ParallelStep: Optional[type[Any]] = None
+        _ImportStep: Optional[type[Any]] = None
+        _LoopStep: Optional[type[Any]] = None
         try:
             from ..domain.dsl.parallel import ParallelStep as _ParallelStep
         except Exception:
@@ -344,7 +344,7 @@ class OrchestrationLinter(BaseLinter):
 
         self._check_context_isolation(steps, _LoopStep, _ParallelStep, out)
 
-        _SM: type[Any] | None = None
+        _SM: Optional[type[Any]] = None
         try:
             from ..domain.dsl.state_machine import StateMachineStep as _SM
         except Exception:
@@ -561,7 +561,7 @@ class OrchestrationLinter(BaseLinter):
                         )
                     )
 
-    def _get_custom_skill_ref(self, step: Any) -> str | None:
+    def _get_custom_skill_ref(self, step: Any) -> Optional[str]:
         try:
             step_meta = getattr(step, "meta", {}) or {}
             if "uses" in step_meta and isinstance(step_meta["uses"], str):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
+from typing import Optional
 from flujo.domain.models import BaseModel
 
 
@@ -11,7 +12,7 @@ def _const_false(_out, _ctx) -> bool:  # type: ignore[no-untyped-def]
 
 def test_v_cf1_triggers_on_constant_false_exit_condition() -> None:
     # Build a trivial body pipeline
-    async def _noop(x: int, *, context: BaseModel | None = None) -> int:
+    async def _noop(x: int, *, context: Optional[BaseModel] = None) -> int:
         return x
 
     body = Pipeline.from_step(Step.from_callable(_noop, name="noop"))
@@ -27,7 +28,7 @@ def test_v_cf1_triggers_on_constant_false_exit_condition() -> None:
 
 
 def test_v_cf1_triggers_on_excessive_max_loops() -> None:
-    async def _noop(x: int, *, context: BaseModel | None = None) -> int:
+    async def _noop(x: int, *, context: Optional[BaseModel] = None) -> int:
         return x
 
     body = Pipeline.from_step(Step.from_callable(_noop, name="noop"))

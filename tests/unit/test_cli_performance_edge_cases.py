@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import platform
 import subprocess
+import sys
 
 from flujo.state.backends.sqlite import SQLiteBackend
 from typer.testing import CliRunner
@@ -435,7 +436,7 @@ class TestCLIErrorHandling:
         try:
             os.environ["FLUJO_STATE_URI"] = f"sqlite://{unwritable_db_path}"
             result = subprocess.run(
-                ["python", "-m", "flujo.cli.main", "lens", "show"],
+                [sys.executable, "-m", "flujo.cli.main", "lens", "show"],
                 capture_output=True,
                 text=True,
                 env=os.environ.copy(),
@@ -496,7 +497,7 @@ class TestCLIErrorHandling:
         env = os.environ.copy()
         env.pop("FLUJO_STATE_URI", None)
         result = subprocess.run(
-            ["python", "-m", "flujo.cli.main", "lens", "show"],
+            [sys.executable, "-m", "flujo.cli.main", "lens", "show"],
             capture_output=True,
             text=True,
             env=env,

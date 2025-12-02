@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import itertools
 from typing import Any, Generic, Optional, Type, TypeVar, cast
 
 from flujo.domain.models import BaseModel, PipelineContext, StepResult
@@ -31,8 +32,7 @@ class StateSerializer(Generic[ContextT]):
         if context is None:
             return "none"
 
-        # OPTIMIZATION: Avoid model_dump() which can be slow for large contexts
-        # Instead, iterate over fields directly
+        # Remove auto-generated fields that shouldn't affect change detection
         fields_to_exclude = {
             "run_id",
             "created_at",
@@ -43,26 +43,45 @@ class StateSerializer(Generic[ContextT]):
         }
 
         data_items: list[tuple[str, Any]] = []
+        raw_mapping: Optional[dict[str, Any]] = None
+
+        # Optimization: Track size estimation during extraction to avoid double iteration
+        estimated_size = 0
+        is_large = False
+
         if isinstance(context, BaseModel):
             # Fast path for Pydantic models
-            # Fix deprecation: access model_fields from class
             for name in type(context).model_fields:
                 if name in fields_to_exclude:
                     continue
-                data_items.append((name, getattr(context, name)))
+                val = getattr(context, name)
+                data_items.append((name, val))
+                # Heuristic: check if we have many fields
+                estimated_size += 1
         else:
             # Fallback for dicts or other types
             try:
-                data = context.model_dump() if hasattr(context, "model_dump") else dict(context)
-                for k, v in data.items():
+                raw_mapping = (
+                    context.model_dump() if hasattr(context, "model_dump") else dict(context)
+                )
+                for k, v in raw_mapping.items():
                     if k not in fields_to_exclude:
                         data_items.append((k, v))
-            except Exception:
+                        estimated_size += 1
+            except Exception as e:
+                # CRITICAL: Do not swallow control flow exceptions
+                from flujo.exceptions import ControlFlowError
+
+                if isinstance(e, ControlFlowError):
+                    raise
                 return "error_hashing_context"
 
         # Heuristic: Check if context is "large" without expensive string conversion
-        is_large = len(data_items) > 10
-        if not is_large:
+        # Check 1: Too many top-level fields
+        if estimated_size > 10:
+            is_large = True
+        else:
+            # Check 2: Check for large container values (only if few fields)
             for _, v in data_items:
                 if isinstance(v, (list, dict, str, bytes, tuple, set)):
                     # Check length of container directly, avoid str(v) which is O(N)
@@ -70,29 +89,86 @@ class StateSerializer(Generic[ContextT]):
                         is_large = True
                         break
 
+        def _fingerprint_scalar(value: Any) -> str:
+            type_name = type(value).__name__
+
+            if isinstance(value, (list, tuple, dict, set)):
+                return f"{type_name}:{len(value)}"
+
+            if isinstance(value, str):
+                return f"str:{len(value)}:{value[:20]}"
+
+            if isinstance(value, bytes):
+                return f"bytes:{len(value)}:{value[:8].hex()}"
+
+            if isinstance(value, (int, float, bool)) or value is None:
+                return f"{type_name}:{repr(value)}"
+
+            try:
+                rep = repr(value)
+            except Exception:
+                rep = ""
+            rep = rep[:20] if rep else f"<{type_name}>"
+            return f"{type_name}:{rep}"
+
+        def _fingerprint_container(value: Any) -> str:
+            if isinstance(value, (str, bytes)):
+                return _fingerprint_scalar(value)
+
+            if isinstance(value, dict):
+                # Optimization: Avoid sorting all keys if dict is huge
+                if len(value) > 20:
+                    # Just fingerprint size for huge dicts to be fast
+                    return f"dict:{len(value)}"
+
+                sample_keys = sorted(value.keys())[:5]
+                samples: list[str] = []
+                for key in sample_keys:
+                    try:
+                        samples.append(f"{key}:{_fingerprint_scalar(value[key])}")
+                    except Exception:
+                        samples.append(f"{key}:<unavailable>")
+                return f"{len(value)}:{'|'.join(samples)}"
+
+            if isinstance(value, (list, tuple)):
+                # Optimization: Just take first 5 items
+                sample_items = list(itertools.islice(value, 5))
+                sample_fingerprints = ",".join(_fingerprint_scalar(item) for item in sample_items)
+                return f"{len(value)}:{sample_fingerprints}"
+
+            if isinstance(value, set):
+                # Sets are unordered, so we must sort to be deterministic, but limit to 5
+                # Optimization: If set is huge, just use size
+                if len(value) > 20:
+                    return f"set:{len(value)}"
+                sample_items = sorted((_fingerprint_scalar(item) for item in value))[:5]
+                return f"{len(value)}:{','.join(sample_items)}"
+
+            return _fingerprint_scalar(value)
+
         if is_large:
             # For large contexts, use a simpler hash to avoid expensive JSON serialization
             hash_input = []
             # Sort by key to ensure deterministic order
             data_items.sort(key=lambda x: x[0])
             for key, value in data_items:
-                # SUPER OPTIMIZATION: Use len(value) directly for containers
-                # This avoids O(N) string conversion for large lists/dicts
                 if isinstance(value, (str, list, dict, bytes, tuple, set)):
-                    val_repr = str(len(value))
+                    val_repr = _fingerprint_container(value)
                 else:
-                    val_repr = str(value)
+                    val_repr = _fingerprint_scalar(value)
                 hash_input.append(f"{key}:{type(value).__name__}:{val_repr}")
             context_str = "|".join(hash_input)
         else:
-            # For small contexts, use the original JSON-based approach
+            if raw_mapping is None:
+                # Use cache-friendly serialization path only for small contexts to avoid overhead
+                raw_mapping = context.model_dump() if hasattr(context, "model_dump") else {}
+            filtered_data = {k: v for k, v in raw_mapping.items() if k not in fields_to_exclude}
+
             def default_serializer(o: Any) -> Any:
                 if hasattr(o, "__class__") and "Mock" in o.__class__.__name__:
                     return f"Mock({type(o).__name__})"
                 raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
 
-            # Construct dict only if needed for JSON dump
-            filtered_data = {k: v for k, v in data_items}
             context_str = json.dumps(
                 filtered_data, sort_keys=True, separators=(",", ":"), default=default_serializer
             )

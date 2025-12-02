@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, ClassVar, Iterable
+from typing import Any, ClassVar, Iterable, Optional
 
 from ..domain.pipeline_validation import ValidationFinding
 from .linters_base import BaseLinter, _override_severity
@@ -190,7 +190,7 @@ class AgentLinter(BaseLinter):
             except Exception:
                 pass
 
-            mode_val: str | None = None
+            mode_val: Optional[str] = None
             try:
                 meta = getattr(step_obj, "meta", {}) or {}
                 proc = meta.get("processing", {}) if isinstance(meta, dict) else None

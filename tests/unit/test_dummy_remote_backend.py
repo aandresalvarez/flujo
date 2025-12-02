@@ -1,4 +1,5 @@
 import pytest
+from typing import Optional
 from flujo.domain.models import BaseModel
 
 from flujo import Step
@@ -11,7 +12,7 @@ class Ctx(BaseModel):
 
 
 class IncrementAgent:
-    async def run(self, data: int, *, context: Ctx | None = None) -> int:
+    async def run(self, data: int, *, context: Optional[Ctx] = None) -> int:
         if context is not None:
             context.count += 1
         return data + 1

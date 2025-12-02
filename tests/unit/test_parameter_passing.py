@@ -15,7 +15,7 @@ class MockAgentWithContext:
     def __init__(self):
         self.run_mock = AsyncMock(return_value={"output": "ok"})
 
-    async def run(self, data, *, context: PipelineContext | None = None, **kwargs):
+    async def run(self, data, *, context: Optional[PipelineContext] = None, **kwargs):
         """Run method that expects 'context' parameter."""
         await self.run_mock(data, context=context, **kwargs)
         return {"output": f"Processed: {data}"}
@@ -32,7 +32,7 @@ class MockPluginWithContext(ValidationPlugin):
         )
 
     async def validate(
-        self, data: dict[str, Any], *, context: PipelineContext | None = None, **kwargs
+        self, data: dict[str, Any], *, context: Optional[PipelineContext] = None, **kwargs
     ) -> PluginOutcome:
         """Validate method that expects 'context' parameter."""
         await self.mock(data, context=context, **kwargs)

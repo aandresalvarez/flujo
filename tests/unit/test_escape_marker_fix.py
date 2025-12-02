@@ -2,12 +2,13 @@
 
 import os
 from flujo.utils import format_prompt
+from typing import Optional
 from flujo.domain.models import BaseModel
 
 
 class Person(BaseModel):
     name: str
-    email: str | None = None
+    email: Optional[str] = None
 
 
 class TestEscapeMarkerCollisionFix:

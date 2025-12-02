@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 import pytest
 
@@ -48,7 +48,7 @@ def test_compiler_wires_templated_wrapper(tmp_path: Path, monkeypatch: pytest.Mo
         *,
         model: str,
         template_string: str,
-        variables_spec: dict[str, Any] | None,
+        variables_spec: Optional[dict[str, Any]],
         **kwargs: Any,
     ) -> Any:
         captured.append((model, template_string, variables_spec or {}))

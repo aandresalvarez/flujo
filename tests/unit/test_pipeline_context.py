@@ -1,6 +1,6 @@
 import pytest
+from typing import Optional
 from flujo.domain.models import BaseModel
-
 from flujo.domain import Step
 from flujo import step
 from flujo.testing.utils import gather_result
@@ -17,20 +17,20 @@ class CaptureAgent:
     def __init__(self):
         self.seen = None
 
-    async def run(self, data: str, *, context: Ctx | None = None) -> str:
+    async def run(self, data: str, *, context: Optional[Ctx] = None) -> str:
         self.seen = context
         return data
 
 
 class IncAgent:
-    async def run(self, data: str, *, context: Ctx | None = None) -> str:
+    async def run(self, data: str, *, context: Optional[Ctx] = None) -> str:
         assert context is not None
         context.num += 1
         return data
 
 
 class ReadAgent:
-    async def run(self, data: str, *, context: Ctx | None = None) -> int:
+    async def run(self, data: str, *, context: Optional[Ctx] = None) -> int:
         assert context is not None
         return context.num
 
@@ -39,7 +39,7 @@ class ContextPlugin:
     def __init__(self):
         self.ctx = None
 
-    async def validate(self, data: dict, *, context: Ctx | None = None) -> PluginOutcome:
+    async def validate(self, data: dict, *, context: Optional[Ctx] = None) -> PluginOutcome:
         self.ctx = context
         return PluginOutcome(success=True)
 
@@ -130,7 +130,7 @@ async def test_step_updates_context_automatic_merge() -> None:
         return Ctx(num=42)
 
     @step
-    async def read(ctx_obj: Ctx, *, context: Ctx | None = None) -> int:
+    async def read(ctx_obj: Ctx, *, context: Optional[Ctx] = None) -> int:
         assert context is not None
         return context.num
 

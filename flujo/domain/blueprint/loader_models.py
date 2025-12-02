@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, List, Literal, Optional, Union
+from typing import Any, List, Optional, Literal, Union
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
@@ -16,9 +16,9 @@ class BlueprintError(ConfigurationError):
 
 class _CoercionConfig(BaseModel):
     tolerant_level: int = 0
-    max_unescape_depth: int | None = None
-    anyof_strategy: str | None = None
-    allow: dict[str, List[str]] | None = None
+    max_unescape_depth: Optional[int] = None
+    anyof_strategy: Optional[str] = None
+    allow: Optional[dict[str, List[str]]] = None
 
     @model_validator(mode="after")
     def _validate_values(self) -> "_CoercionConfig":
@@ -48,18 +48,18 @@ class _CoercionConfig(BaseModel):
 
 class _ReasoningPrecheckConfig(BaseModel):
     enabled: bool = False
-    validator_agent: Any | None = None
-    agent: Any | None = None
-    delimiters: List[str] | None = None
-    goal_context_key: str | None = None
-    score_threshold: float | None = None
-    required_context_keys: List[str] | None = None
-    inject_feedback: str | None = None
-    retry_guidance_prefix: str | None = None
-    context_feedback_key: str | None = None
-    consensus_agent: Any | None = None
-    consensus_samples: int | None = None
-    consensus_threshold: float | None = None
+    validator_agent: Optional[Any] = None
+    agent: Optional[Any] = None
+    delimiters: Optional[List[str]] = None
+    goal_context_key: Optional[str] = None
+    score_threshold: Optional[float] = None
+    required_context_keys: Optional[List[str]] = None
+    inject_feedback: Optional[str] = None
+    retry_guidance_prefix: Optional[str] = None
+    context_feedback_key: Optional[str] = None
+    consensus_agent: Optional[Any] = None
+    consensus_samples: Optional[int] = None
+    consensus_threshold: Optional[float] = None
 
     @model_validator(mode="after")
     def _validate_values(self) -> "_ReasoningPrecheckConfig":
@@ -80,12 +80,12 @@ class _ReasoningPrecheckConfig(BaseModel):
 
 
 class ProcessingConfigModel(BaseModel):
-    structured_output: str | None = None
-    aop: str | None = None
-    coercion: _CoercionConfig | None = None
-    output_schema: JSONObject | None = Field(default=None, alias="schema")
-    enforce_grammar: bool | None = None
-    reasoning_precheck: _ReasoningPrecheckConfig | None = None
+    structured_output: Optional[str] = None
+    aop: Optional[str] = None
+    coercion: Optional[_CoercionConfig] = None
+    output_schema: Optional[JSONObject] = Field(default=None, alias="schema")
+    enforce_grammar: Optional[bool] = None
+    reasoning_precheck: Optional[_ReasoningPrecheckConfig] = None
 
     model_config = {
         "populate_by_name": True,

@@ -1,5 +1,6 @@
 import pytest
 from types import TracebackType
+from typing import Optional
 
 from flujo import Step
 from flujo.domain.dsl.parallel import ParallelStep
@@ -15,7 +16,7 @@ class RecordingResource(AppResources):
     exit_calls: int = 0
     commit_count: int = 0
     rollback_count: int = 0
-    exc_types: list[type[BaseException] | None] = Field(default_factory=list)
+    exc_types: list[Optional[type[BaseException]]] = Field(default_factory=list)
     observed: list[str] = Field(default_factory=list)
 
     async def __aenter__(self) -> "RecordingResource":
@@ -24,9 +25,9 @@ class RecordingResource(AppResources):
 
     async def __aexit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
+        exc_type: Optional[type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
     ) -> None:
         self.exit_calls += 1
         self.exc_types.append(exc_type)

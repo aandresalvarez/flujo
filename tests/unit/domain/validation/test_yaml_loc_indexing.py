@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import textwrap
-from typing import Any
+from typing import Any, Optional
 
 from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
 
 
-def _get_yaml_loc(step: Any) -> dict[str, Any] | None:
+def _get_yaml_loc(step: Any) -> Optional[dict[str, Any]]:
     try:
         meta = getattr(step, "meta", None)
         if isinstance(meta, dict):

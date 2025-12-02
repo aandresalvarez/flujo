@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Optional, Type, cast
+from typing import Any, Awaitable, Callable, Optional, Type, cast, Union
 
 from ...domain.dsl.step import Step
 from ...domain.models import Failure, StepOutcome, StepResult
@@ -11,14 +11,14 @@ from .policy_registry import PolicyRegistry, StepPolicy
 
 
 PolicyCallable = Callable[[ExecutionFrame[Any]], Awaitable[StepOutcome[Any]]]
-RegisteredPolicy = PolicyCallable | StepPolicy[Any]
+RegisteredPolicy = Union[PolicyCallable, StepPolicy[Any]]
 
 
 class ExecutionDispatcher:
     """Routes step execution to the appropriate policy handler."""
 
     def __init__(
-        self, registry: Optional[PolicyRegistry] = None, *, core: Any | None = None
+        self, registry: Optional[PolicyRegistry] = None, *, core: Optional[Any] = None
     ) -> None:
         self._registry: PolicyRegistry = registry or PolicyRegistry()
         self._core = core

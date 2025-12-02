@@ -83,18 +83,17 @@ def register_optional_builtins() -> None:
             pass
         return f"(web_search stub) query='{query}'"
 
-    if reg.get("flujo.builtins.web_search") is None:
-        reg.register(
-            "flujo.builtins.web_search",
-            lambda: _web_search,
-            description="Perform a web search and return summarized results",
-            input_schema={
-                "type": "object",
-                "properties": {"query": {"type": "string"}, "max_results": {"type": "integer"}},
-                "required": ["query"],
-            },
-            side_effects=False,
-        )
+    reg.register(
+        "flujo.builtins.web_search",
+        lambda: _web_search,
+        description="Perform a web search and return summarized results",
+        input_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}, "max_results": {"type": "integer"}},
+            "required": ["query"],
+        },
+        side_effects=False,
+    )
 
     async def _http_get(*, url: str, timeout_s: int = 10) -> str:
         try:
@@ -107,20 +106,19 @@ def register_optional_builtins() -> None:
             pass
         return f"(http_get stub) url='{url}'"
 
-    if reg.get("flujo.builtins.http_get") is None:
-        reg.register(
-            "flujo.builtins.http_get",
-            lambda: _http_get,
-            description="Fetch content from a URL",
-            input_schema={
-                "type": "object",
-                "properties": {"url": {"type": "string"}, "timeout_s": {"type": "integer"}},
-                "required": ["url"],
-            },
-            side_effects=False,
-        )
+    reg.register(
+        "flujo.builtins.http_get",
+        lambda: _http_get,
+        description="Fetch content from a URL",
+        input_schema={
+            "type": "object",
+            "properties": {"url": {"type": "string"}, "timeout_s": {"type": "integer"}},
+            "required": ["url"],
+        },
+        side_effects=False,
+    )
 
-    async def render_jinja_template(template: str, variables: JSONObject | None = None) -> str:
+    async def render_jinja_template(template: str, variables: Optional[JSONObject] = None) -> str:
         if _jinja2 is None:
             return template
         try:

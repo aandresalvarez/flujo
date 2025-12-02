@@ -1,4 +1,5 @@
 import yaml
+from typing import Optional
 from pydantic import BaseModel
 
 from flujo.domain.dsl.pipeline import Pipeline
@@ -11,7 +12,7 @@ from flujo.domain.blueprint.loader import (
 
 class _ApprovalInput(BaseModel):
     confirmation: str
-    reasoning: str | None = None
+    reasoning: Optional[str] = None
 
 
 def test_dump_pipeline_with_hitl_outputs_kind_and_schema():

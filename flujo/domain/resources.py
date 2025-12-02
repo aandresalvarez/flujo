@@ -1,5 +1,5 @@
 from types import TracebackType
-from typing import Any, ClassVar, Protocol, runtime_checkable
+from typing import Any, ClassVar, Protocol, runtime_checkable, Optional, Type
 
 from flujo.domain.models import BaseModel
 from pydantic import ConfigDict
@@ -19,9 +19,9 @@ class AsyncResourceContextManager(Protocol):
 
     async def __aexit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
     ) -> None: ...
 
 
@@ -33,7 +33,7 @@ class ResourceContextManager(Protocol):
 
     def __exit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
     ) -> None: ...

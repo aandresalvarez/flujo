@@ -1,3 +1,4 @@
+from typing import Optional
 from flujo.domain.models import BaseModel
 from pydantic import BaseModel as PydanticModel
 from flujo.utils import format_prompt
@@ -5,7 +6,7 @@ from flujo.utils import format_prompt
 
 class Person(BaseModel):
     name: str
-    email: str | None = None
+    email: Optional[str] = None
 
 
 def test_baseline_placeholder_and_json() -> None:

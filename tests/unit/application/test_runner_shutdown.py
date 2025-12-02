@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import pytest
 
@@ -17,8 +17,8 @@ from flujo.state.backends.sqlite import SQLiteBackend
 async def _echo_agent(
     data: str,
     *,
-    context: PipelineContext | None = None,
-    resources: AppResources | None = None,
+    context: Optional[PipelineContext] = None,
+    resources: Optional[AppResources] = None,
     **_: Any,
 ) -> str:
     return data.upper()

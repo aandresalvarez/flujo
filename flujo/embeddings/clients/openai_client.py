@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 import openai
 from pydantic_ai.usage import RunUsage
 
@@ -31,7 +31,7 @@ class OpenAIEmbeddingClient:
         self.model_id = f"openai:{model_name}"
         # Lazily construct the OpenAI client to avoid requiring API key at import/initialization time
         # This allows unit tests that only validate formatting to run without network secrets.
-        self._client: openai.AsyncOpenAI | None = None
+        self._client: Optional[openai.AsyncOpenAI] = None
 
     async def embed(self, texts: List[str]) -> EmbeddingResult:
         """

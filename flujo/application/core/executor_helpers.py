@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Optional, cast, Callable, Awaitable, TypeVar
+from typing import Any, Optional, cast, Callable, Awaitable, TypeVar, Union
 
 from pydantic import BaseModel
 
@@ -28,7 +28,7 @@ from ...exceptions import (
 from ...domain.models import PipelineResult, StepResult, StepOutcome, Failure, Success
 from .failure_builder import build_failure_outcome
 
-Outcome = StepOutcome[StepResult] | StepResult
+Outcome = Union[StepOutcome[StepResult], StepResult]
 
 TContext = TypeVar("TContext")
 
@@ -413,7 +413,7 @@ async def run_validation(
 ) -> Optional[StepOutcome[StepResult]]:
     """Centralized validation + fallback handling."""
     validation_result = cast(
-        Optional[StepOutcome[StepResult] | StepResult],
+        Optional[Union[StepOutcome[StepResult], StepResult]],
         await core._validation_orchestrator.validate(
             core=core,
             step=step,
