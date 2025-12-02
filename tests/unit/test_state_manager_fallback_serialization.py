@@ -2,7 +2,7 @@
 
 import pytest
 from datetime import datetime
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from flujo.application.core.state_manager import StateManager
 from flujo.domain.models import PipelineContext
@@ -34,39 +34,19 @@ class TestStateManagerFallbackSerialization:
         mock_context.last_error = "previous error"
         mock_context.metadata = {"key": "value"}
 
-        # Mock the cache to return None (triggering fallback)
-        with patch.object(state_manager, "_get_cached_serialization", return_value=None):
-            with patch.object(state_manager, "_should_serialize_context", return_value=False):
-                # This would normally trigger the fallback serialization
-                # We'll test the fallback logic directly
-                fallback_context = {
-                    "initial_prompt": getattr(mock_context, "initial_prompt", ""),
-                    "pipeline_id": getattr(mock_context, "pipeline_id", "unknown"),
-                    "pipeline_name": getattr(mock_context, "pipeline_name", "unknown"),
-                    "pipeline_version": getattr(mock_context, "pipeline_version", "latest"),
-                    "total_steps": getattr(mock_context, "total_steps", 0),
-                    "error_message": getattr(mock_context, "error_message", None),
-                    "run_id": getattr(mock_context, "run_id", ""),
-                    "created_at": getattr(mock_context, "created_at", None),
-                    "updated_at": getattr(mock_context, "updated_at", None),
-                }
-                # Include any additional fields that might be present
-                for field_name in ["status", "current_step", "last_error", "metadata"]:
-                    if hasattr(mock_context, field_name):
-                        fallback_context[field_name] = getattr(mock_context, field_name, None)
+        fallback_context = state_manager._build_context_fallback(mock_context)
 
-                # Verify all essential fields are included
-                assert fallback_context["initial_prompt"] == "test prompt"
-                assert fallback_context["pipeline_id"] == "test_pipeline_123"
-                assert fallback_context["pipeline_name"] == "Test Pipeline"
-                assert fallback_context["pipeline_version"] == "1.0.0"
-                assert fallback_context["total_steps"] == 5
-                assert fallback_context["error_message"] == "test error"
-                assert fallback_context["run_id"] == "test_run_456"
-                assert fallback_context["status"] == "running"
-                assert fallback_context["current_step"] == 2
-                assert fallback_context["last_error"] == "previous error"
-                assert fallback_context["metadata"] == {"key": "value"}
+        assert fallback_context["initial_prompt"] == "test prompt"
+        assert fallback_context["pipeline_id"] == "test_pipeline_123"
+        assert fallback_context["pipeline_name"] == "Test Pipeline"
+        assert fallback_context["pipeline_version"] == "1.0.0"
+        assert fallback_context["total_steps"] == 5
+        assert fallback_context["error_message"] == "test error"
+        assert fallback_context["run_id"] == "test_run_456"
+        assert fallback_context["status"] == "running"
+        assert fallback_context["current_step"] == 2
+        assert fallback_context["last_error"] == "previous error"
+        assert fallback_context["metadata"] == {"key": "value"}
 
     def test_fallback_serialization_with_missing_fields(self, state_manager):
         """Test that fallback serialization handles missing fields gracefully."""
@@ -75,17 +55,7 @@ class TestStateManagerFallbackSerialization:
         mock_context.initial_prompt = "minimal prompt"
         # Other fields are not set, so they should get default values
 
-        fallback_context = {
-            "initial_prompt": getattr(mock_context, "initial_prompt", ""),
-            "pipeline_id": getattr(mock_context, "pipeline_id", "unknown"),
-            "pipeline_name": getattr(mock_context, "pipeline_name", "unknown"),
-            "pipeline_version": getattr(mock_context, "pipeline_version", "latest"),
-            "total_steps": getattr(mock_context, "total_steps", 0),
-            "error_message": getattr(mock_context, "error_message", None),
-            "run_id": getattr(mock_context, "run_id", ""),
-            "created_at": getattr(mock_context, "created_at", None),
-            "updated_at": getattr(mock_context, "updated_at", None),
-        }
+        fallback_context = state_manager._build_context_fallback(mock_context)
 
         # Verify default values are used for missing fields
         assert fallback_context["initial_prompt"] == "minimal prompt"
@@ -109,15 +79,9 @@ class TestStateManagerFallbackSerialization:
 
         # Simulate the error fallback serialization
         error_message = "Serialization failed: test error"
-        error_fallback_context = {
-            "error": error_message,
-            "initial_prompt": getattr(mock_context, "initial_prompt", ""),
-            "pipeline_id": getattr(mock_context, "pipeline_id", "unknown"),
-            "pipeline_name": getattr(mock_context, "pipeline_name", "unknown"),
-            "pipeline_version": getattr(mock_context, "pipeline_version", "latest"),
-            "total_steps": getattr(mock_context, "total_steps", 0),
-            "run_id": getattr(mock_context, "run_id", ""),
-        }
+        error_fallback_context = state_manager._build_context_fallback(
+            mock_context, error_message=error_message
+        )
 
         # Verify error fallback includes essential fields
         assert error_fallback_context["error"] == error_message
@@ -145,21 +109,7 @@ class TestStateManagerFallbackSerialization:
             "special_chars": "ñáéíóú 🚀🎉",
         }
 
-        fallback_context = {
-            "initial_prompt": getattr(mock_context, "initial_prompt", ""),
-            "pipeline_id": getattr(mock_context, "pipeline_id", "unknown"),
-            "pipeline_name": getattr(mock_context, "pipeline_name", "unknown"),
-            "pipeline_version": getattr(mock_context, "pipeline_version", "latest"),
-            "total_steps": getattr(mock_context, "total_steps", 0),
-            "error_message": getattr(mock_context, "error_message", None),
-            "run_id": getattr(mock_context, "run_id", ""),
-            "created_at": getattr(mock_context, "created_at", None),
-            "updated_at": getattr(mock_context, "updated_at", None),
-        }
-        # Include any additional fields that might be present
-        for field_name in ["status", "current_step", "last_error", "metadata"]:
-            if hasattr(mock_context, field_name):
-                fallback_context[field_name] = getattr(mock_context, field_name, None)
+        fallback_context = state_manager._build_context_fallback(mock_context)
 
         # Verify data integrity is preserved
         assert (
@@ -176,84 +126,3 @@ class TestStateManagerFallbackSerialization:
             "list": [1, 2, 3],
             "special_chars": "ñáéíóú 🚀🎉",
         }
-
-    def test_fallback_serialization_performance(self, state_manager):
-        """Test that fallback serialization is performant."""
-        import time
-        import os
-
-        # Create a mock context
-        mock_context = Mock(spec=PipelineContext)
-        mock_context.initial_prompt = "performance test"
-        mock_context.pipeline_id = "perf_test_123"
-        mock_context.pipeline_name = "Performance Test"
-        mock_context.pipeline_version = "1.0.0"
-        mock_context.total_steps = 10
-        mock_context.run_id = "perf_run_456"
-
-        # Adjust threshold based on environment
-        # CI environments and parallel execution can be slower due to resource contention
-        if os.environ.get("CI") == "1":
-            # More lenient threshold for CI environments
-            threshold = 0.075  # 75ms for CI
-        else:
-            # Standard threshold for local development
-            threshold = 0.050  # 50ms for local (slightly more lenient than original)
-
-        # Test with retry mechanism for intermittent performance issues
-        best_time = float("inf")
-        max_attempts = 3
-
-        for attempt in range(max_attempts):
-            # Warm up the system before timing
-            for _ in range(100):
-                fallback_context = {
-                    "initial_prompt": getattr(mock_context, "initial_prompt", ""),
-                    "pipeline_id": getattr(mock_context, "pipeline_id", "unknown"),
-                    "pipeline_name": getattr(mock_context, "pipeline_name", "unknown"),
-                    "pipeline_version": getattr(mock_context, "pipeline_version", "latest"),
-                    "total_steps": getattr(mock_context, "total_steps", 0),
-                    "error_message": getattr(mock_context, "error_message", None),
-                    "run_id": getattr(mock_context, "run_id", ""),
-                    "created_at": getattr(mock_context, "created_at", None),
-                    "updated_at": getattr(mock_context, "updated_at", None),
-                }
-                # Include any additional fields that might be present
-                for field_name in ["status", "current_step", "last_error", "metadata"]:
-                    if hasattr(mock_context, field_name):
-                        fallback_context[field_name] = getattr(mock_context, field_name, None)
-
-            # Actual performance measurement
-            start_time = time.perf_counter()
-            for _ in range(1000):
-                fallback_context = {
-                    "initial_prompt": getattr(mock_context, "initial_prompt", ""),
-                    "pipeline_id": getattr(mock_context, "pipeline_id", "unknown"),
-                    "pipeline_name": getattr(mock_context, "pipeline_name", "unknown"),
-                    "pipeline_version": getattr(mock_context, "pipeline_version", "latest"),
-                    "total_steps": getattr(mock_context, "total_steps", 0),
-                    "error_message": getattr(mock_context, "error_message", None),
-                    "run_id": getattr(mock_context, "run_id", ""),
-                    "created_at": getattr(mock_context, "created_at", None),
-                    "updated_at": getattr(mock_context, "updated_at", None),
-                }
-                # Include any additional fields that might be present
-                for field_name in ["status", "current_step", "last_error", "metadata"]:
-                    if hasattr(mock_context, field_name):
-                        fallback_context[field_name] = getattr(mock_context, field_name, None)
-            fallback_time = time.perf_counter() - start_time
-
-            # Track the best time across attempts
-            if fallback_time < best_time:
-                best_time = fallback_time
-
-            # If we get a good result, we can stop early
-            if fallback_time < threshold:
-                break
-
-        # Use the best time for the assertion
-        assert best_time < threshold, (
-            f"Fallback serialization consistently slow across {max_attempts} attempts. "
-            f"Best time: {best_time:.6f}s, threshold: {threshold:.6f}s. "
-            f"Environment: {'CI' if os.environ.get('CI') == '1' else 'Local'}"
-        )

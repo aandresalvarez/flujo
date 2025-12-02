@@ -1,3 +1,4 @@
+ 
 <div align="center">
   <a href="https://github.com/aandresalvarez/flujo">
     <img src="https://raw.githubusercontent.com/aandresalvarez/flujo/main/assets/flujo.png" alt="Flujo logo" width="180"/>
@@ -16,13 +17,15 @@
 </div>
 ---
 
-Flujo is a production-grade framework for building, observing, and deploying AI agent workflows. It bridges the gap between simple Python scripts and complex enterprise orchestration, giving you **retries**, **durable state persistence**, and **human-in-the-loop** capabilities out of the box.
+Flujo is a framework for building, observing, and deploying AI agent workflows. It bridges the gap between simple Python scripts and complex enterprise orchestration, giving you **retries**, **durable state persistence**, and **human-in-the-loop** capabilities out of the box.
+
+Designed for high-stakes, restricted environments (like healthcare), Flujo delivers **Temporal-like resilience and auditability** within a single, deployable Python process, eliminating the need for complex external infrastructure.
 
 ## ✨ Key Features
 
 *   **🧠 The Architect:** A built-in AI agent that generates complete, valid pipeline code from natural language goals.
 
-*   **💾 Durable State:** Every step is persisted to SQLite (local) or Postgres (production). Pause, resume, and replay workflows across server restarts.
+*   **💾 Durable & Secure State:** Every step is persisted to SQLite (local) or Postgres (production) with byte-level serialization for cryptographic audit trails. Pause, resume, and replay workflows across server restarts with total determinism.
 
 *   **🔀 Advanced Control Flow:** Native support for Loops, Conditionals (If/Else), Parallel execution, and Map/Reduce.
 
@@ -108,7 +111,8 @@ Flujo is not just a scripting library; it's a complete application server for AI
 | :--- | :--- |
 | **Declarative Blueprints** | Your entire workflow—agents, prompts, tools, and logic (`parallel`, `loops`)—is defined in a single, human-readable **YAML file**. This is the source of truth that the Architect Agent generates and the Runner executes. |
 | **Safety by Design** | The framework is built around **proactive Quotas** and **centralized Budgets**. A pipeline cannot start if it might exceed its budget, and parallel steps can't create race conditions that lead to overspending. |
-| **Auditability as a Contract** | Every execution produces a **formal, structured trace**. This isn't just logging; it's a deterministic ledger that enables 100% faithful replay, making bugs transparent and easy to fix. |
+| **Auditability as a Contract** | Every execution produces a **formal, structured trace**. This uses **byte-level serialization** (Blake3/Orjson) to create a deterministic ledger that enables 100% faithful replay, making bugs transparent and easy to fix, critical for compliance (HIPAA/GDPR). |
+| **Embedded Resilience** | Flujo uses **custom memory pooling** to ensure predictable memory usage and prevent data bleed between runs, making it safe for long-running processes in restricted environments. |
 | **Extensibility via Skills** | Add new capabilities (Python functions, API clients) to a central **Skill Registry**. The Architect Agent can discover and intelligently wire these skills into the pipelines it generates, allowing you to safely grant AI new powers. |
 
 ---
@@ -193,7 +197,7 @@ pip install flujo
 
 **Install with Extras (e.g., for specific LLM providers):**
 ```bash
-pip install flujo[openai,anthropic,prometheus]
+pip install flujo[openai,anthropic,prometheus,postgres]
 ```
 
 **Configure your API Keys:**
@@ -413,3 +417,4 @@ Flujo is available under a dual-license model:
 
 *   **AGPL-3.0:** For open-source projects and non-commercial use, Flujo is licensed under the AGPL-3.0. See the [`LICENSE`](LICENSE) file for details.
 *   **Commercial License:** For commercial use in proprietary applications, a separate commercial license is required. Please contact [Your Contact Email/Website] for more information.
+ 

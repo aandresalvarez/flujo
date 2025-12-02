@@ -1,13 +1,23 @@
 from __future__ import annotations
 
-import pytest
-import time
-import psutil
 import os
+import time
+
+import pytest
+
 from flujo.architect.builder import build_architect_pipeline
 from flujo.architect.context import ArchitectContext
 from flujo.cli.helpers import create_flujo_runner, execute_pipeline_with_output_handling
 from flujo.infra.config import get_performance_threshold
+
+try:
+    import psutil
+except ImportError:
+    psutil = None  # type: ignore[assignment,unused-ignore]
+
+pytestmark = []
+if psutil is None:
+    pytestmark.append(pytest.mark.skip(reason="psutil not available"))
 
 
 # Force minimal architect pipeline for performance tests to avoid hanging.
@@ -87,6 +97,8 @@ def test_architect_execution_time_consistency():
 @pytest.mark.timeout(60)
 def test_architect_memory_usage_stability():
     """Test: Architect memory usage remains stable during execution."""
+    if psutil is None:
+        pytest.skip("psutil not available")
     pipeline = build_architect_pipeline()
     initial = {"initial_prompt": "Make a pipeline", "user_goal": "Echo input"}
     runner = create_flujo_runner(
@@ -188,6 +200,8 @@ def test_architect_handles_high_frequency_requests():
 @pytest.mark.timeout(60)  # 60 second timeout to prevent hanging
 def test_architect_cpu_usage_efficiency():
     """Test: Architect CPU usage remains efficient during execution."""
+    if psutil is None:
+        pytest.skip("psutil not available")
     pipeline = build_architect_pipeline()
     initial = {"initial_prompt": "Make a pipeline", "user_goal": "Echo input"}
     runner = create_flujo_runner(
@@ -322,6 +336,8 @@ def test_architect_concurrent_pipeline_execution():
 @pytest.mark.timeout(60)  # 60 second timeout to prevent hanging
 def test_architect_memory_cleanup_after_execution():
     """Test: Architect properly cleans up memory after execution."""
+    if psutil is None:
+        pytest.skip("psutil not available")
     pipeline = build_architect_pipeline()
     initial = {"initial_prompt": "Make a pipeline", "user_goal": "Echo input"}
     runner = create_flujo_runner(
