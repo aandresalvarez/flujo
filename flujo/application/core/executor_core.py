@@ -30,6 +30,7 @@ from .result_handler import ResultHandler
 from .telemetry_handler import TelemetryHandler
 from .step_handler import StepHandler
 from .agent_handler import AgentHandler
+from .optimization_config_stub import OptimizationConfig
 from .executor_helpers import (
     _UsageTracker,
     format_feedback,
@@ -885,6 +886,7 @@ __all__ = [
     "PluginError",
     "StepExecutor",
     "_UsageTracker",
+    "OptimizationConfig",  # Deprecated stub for backward compatibility
     # Re-exports for compatibility
     "ISerializer",
     "IHasher",
