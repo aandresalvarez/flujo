@@ -7,17 +7,22 @@ detect performance regressions in critical code paths.
 
 import pytest
 
+try:
+    import psutil
+except ImportError:
+    psutil = None  # type: ignore[assignment,unused-ignore]
+
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.benchmark,
 ]
+if psutil is None:
+    pytestmark.append(pytest.mark.skip(reason="psutil not available"))
 
 import asyncio
 import time
-import psutil
 import os
 from typing import Any
-import pytest
 from unittest.mock import AsyncMock
 
 from flujo.application.core.executor_core import ExecutorCore
@@ -212,6 +217,8 @@ class TestPerformanceRegression:
 
         def get_memory_usage():
             """Get current memory usage in MB."""
+            if psutil is None:
+                pytest.skip("psutil not available")
             process = psutil.Process(os.getpid())
             return process.memory_info().rss / 1024 / 1024  # MB
 
