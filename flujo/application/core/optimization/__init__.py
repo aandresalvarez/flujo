@@ -10,6 +10,14 @@ This package contains all performance optimization components including:
 
 from .memory import OptimizedObjectPool, OptimizedContextManager
 from .performance import OptimizedStepExecutor, AlgorithmOptimizations
+from .config import (
+    OptimizationConfig,
+    coerce_optimization_config,
+    export_config,
+    get_config_manager,
+    get_optimization_stats,
+    get_performance_recommendations,
+)
 
 __all__ = [
     # Memory optimization
@@ -18,4 +26,11 @@ __all__ = [
     # Performance optimization
     "OptimizedStepExecutor",
     "AlgorithmOptimizations",
+    # Configuration
+    "OptimizationConfig",
+    "coerce_optimization_config",
+    "export_config",
+    "get_config_manager",
+    "get_optimization_stats",
+    "get_performance_recommendations",
 ]

@@ -3,8 +3,10 @@ from __future__ import annotations
 import warnings
 from typing import Any, TYPE_CHECKING
 
+from ....type_definitions.common import JSONObject
+
 if TYPE_CHECKING:
-    from .executor_core import ExecutorCore
+    pass
 
 
 class OptimizationConfig:
@@ -34,7 +36,7 @@ class OptimizationConfig:
             issues.append("cpu_usage_threshold_percent must be between 0.0 and 100.0")
         return issues
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> JSONObject:
         return {
             "enable_object_pool": self.enable_object_pool,
             "enable_context_optimization": self.enable_context_optimization,
@@ -50,7 +52,7 @@ class OptimizationConfig:
         }
 
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "OptimizationConfig":
+    def from_dict(cls, config_dict: JSONObject) -> "OptimizationConfig":
         return cls(**config_dict)
 
 
@@ -67,7 +69,7 @@ def coerce_optimization_config(config: Any) -> OptimizationConfig:
     return OptimizationConfig()
 
 
-def get_optimization_stats(config: OptimizationConfig) -> dict[str, Any]:
+def get_optimization_stats(config: OptimizationConfig) -> JSONObject:
     return {
         "cache_hits": 0,
         "cache_misses": 0,
@@ -99,7 +101,7 @@ def get_config_manager(config: OptimizationConfig) -> Any:
     return ConfigManager(config)
 
 
-def get_performance_recommendations() -> list[dict[str, Any]]:
+def get_performance_recommendations() -> list[JSONObject]:
     return [
         {
             "type": "cache_optimization",
@@ -119,7 +121,7 @@ def get_performance_recommendations() -> list[dict[str, Any]]:
     ]
 
 
-def export_config(config: OptimizationConfig, format_type: str = "dict") -> dict[str, Any]:
+def export_config(config: OptimizationConfig, format_type: str = "dict") -> JSONObject:
     if format_type == "dict":
         return {
             "optimization_config": config.to_dict(),
@@ -138,22 +140,11 @@ def export_config(config: OptimizationConfig, format_type: str = "dict") -> dict
     raise ValueError(f"Unsupported format type: {format_type}")
 
 
-class OptimizedExecutorCore:
-    """
-    Deprecated shim preserved for compatibility.
-
-    Re-exported from `executor_core` to avoid breaking legacy imports.
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        from .executor_core import ExecutorCore
-
-        warnings.warn(
-            "OptimizedExecutorCore is deprecated; use ExecutorCore with OptimizationConfig.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self._delegate: "ExecutorCore[Any]" = ExecutorCore(*args, **kwargs)
-
-    def __getattr__(self, name: str) -> Any:  # pragma: no cover - pass-through
-        return getattr(self._delegate, name)
+__all__ = [
+    "OptimizationConfig",
+    "coerce_optimization_config",
+    "export_config",
+    "get_config_manager",
+    "get_optimization_stats",
+    "get_performance_recommendations",
+]

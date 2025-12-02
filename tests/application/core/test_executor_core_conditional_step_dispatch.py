@@ -3,8 +3,9 @@
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from flujo.domain.dsl.conditional import ConditionalStep
-from flujo.domain.models import StepResult
+from flujo.domain.models import StepResult, Success
 from flujo.application.core.executor_core import ExecutorCore
+from flujo.application.core.types import ExecutionFrame
 
 
 class TestExecutorCoreConditionalStepDispatch:
@@ -22,15 +23,16 @@ class TestExecutorCoreConditionalStepDispatch:
         conditional_step.name = "test_conditional"
         return conditional_step
 
-    async def test_execute_complex_step_routes_conditionalstep_to_new_handler(
+    async def test_execute_complex_step_routes_conditionalstep_via_dispatcher(
         self, executor_core, mock_conditional_step
     ):
-        """Test that ConditionalStep is routed to _handle_conditional_step method."""
-        # Mock the _handle_conditional_step method
+        """ConditionalStep dispatch should flow through the dispatcher."""
         with patch.object(
-            executor_core, "_handle_conditional_step", new_callable=AsyncMock
-        ) as mock_handler:
-            mock_handler.return_value = StepResult(name="test_conditional", success=True)
+            executor_core._dispatch_handler, "dispatch", new_callable=AsyncMock
+        ) as mock_dispatch:
+            mock_dispatch.return_value = Success(
+                step_result=StepResult(name="test_conditional", success=True)
+            )
 
             result = await executor_core._execute_complex_step(
                 step=mock_conditional_step,
@@ -43,25 +45,22 @@ class TestExecutorCoreConditionalStepDispatch:
                 context_setter=None,
             )
 
-            # Verify the new handler was called
-            mock_handler.assert_called_once()
+            mock_dispatch.assert_called_once()
             assert isinstance(result, StepResult)
             assert result.success is True
 
     async def test_execute_complex_step_conditionalstep_parameter_passing(
         self, executor_core, mock_conditional_step
     ):
-        """Test that ConditionalStep parameters are correctly passed to new handler."""
-        captured_args = None
-        captured_kwargs = None
+        """ConditionalStep parameters are forwarded via ExecutionFrame."""
+        captured_frame = None
 
-        async def mock_handler(*args, **kwargs):
-            nonlocal captured_args, captured_kwargs
-            captured_args = args
-            captured_kwargs = kwargs
-            return StepResult(name="test_conditional", success=True)
+        async def mock_dispatch(frame: ExecutionFrame, called_with_frame: bool):
+            nonlocal captured_frame
+            captured_frame = frame
+            return Success(step_result=StepResult(name="test_conditional", success=True))
 
-        with patch.object(executor_core, "_handle_conditional_step", mock_handler):
+        with patch.object(executor_core._dispatch_handler, "dispatch", mock_dispatch):
             test_data = "test_data"
             test_context = Mock()
             test_resources = Mock()
@@ -77,27 +76,34 @@ class TestExecutorCoreConditionalStepDispatch:
                 stream=False,
                 on_chunk=None,
                 context_setter=test_context_setter,
+                _fallback_depth=1,
             )
 
-            # Verify parameters were passed correctly
-            assert captured_args[0] is mock_conditional_step
-            assert captured_args[1] is test_data
-            assert captured_args[2] is test_context
-            assert captured_args[3] is test_resources
-            assert captured_args[4] is test_limits
-            assert captured_args[5] is test_context_setter
+        assert isinstance(captured_frame, ExecutionFrame)
+        assert captured_frame.step is mock_conditional_step
+        assert captured_frame.data is test_data
+        assert captured_frame.context is test_context
+        assert captured_frame.resources is test_resources
+        assert captured_frame.limits is test_limits
+        assert captured_frame.context_setter is test_context_setter
+        assert getattr(captured_frame, "_fallback_depth") == 1
 
     async def test_execute_complex_step_conditionalstep_no_legacy_import(self, executor_core):
         """Test that _handle_conditional_step is no longer imported from legacy step_logic."""
         mock_conditional_step = Mock(spec=ConditionalStep)
         mock_conditional_step.name = "test_conditional"
 
-        with patch.object(
-            executor_core, "_handle_conditional_step", new_callable=AsyncMock
-        ) as mock_handler:
-            mock_handler.return_value = StepResult(name="test_conditional", success=True)
-
-            # Execute the complex step with ConditionalStep
+        with (
+            patch.object(
+                executor_core, "_handle_conditional_step", new_callable=AsyncMock
+            ) as mock_handler,
+            patch.object(
+                executor_core._dispatch_handler,
+                "dispatch",
+                new_callable=AsyncMock,
+                return_value=Success(step_result=StepResult(name="test_conditional", success=True)),
+            ) as mock_dispatch,
+        ):
             result = await executor_core._execute_complex_step(
                 step=mock_conditional_step,
                 data="test_data",
@@ -109,51 +115,44 @@ class TestExecutorCoreConditionalStepDispatch:
                 context_setter=None,
             )
 
-            # Verify the new handler was called (not the legacy one)
-            mock_handler.assert_called_once()
-            assert isinstance(result, StepResult)
-
-            # Verify that the method is fully self-contained and doesn't delegate to legacy code
-            # This test ensures that the implementation is complete and independent
+        mock_dispatch.assert_called_once()
+        mock_handler.assert_not_called()
+        assert isinstance(result, StepResult)
+        assert result.success
 
     async def test_execute_complex_step_conditionalstep_error_propagation(
         self, executor_core, mock_conditional_step
     ):
-        """Test that errors from _handle_conditional_step are properly propagated."""
+        """Test that dispatch errors are converted into StepResults."""
         with patch.object(
-            executor_core,
-            "_handle_conditional_step",
+            executor_core._dispatch_handler,
+            "dispatch",
             new_callable=AsyncMock,
             side_effect=Exception("Test error"),
         ):
-            with pytest.raises(Exception, match="Test error"):
-                await executor_core._execute_complex_step(
-                    step=mock_conditional_step,
-                    data="test_data",
-                    context=None,
-                    resources=None,
-                    limits=None,
-                    stream=False,
-                    on_chunk=None,
-                    context_setter=None,
-                )
+            result = await executor_core._execute_complex_step(
+                step=mock_conditional_step,
+                data="test_data",
+                context=None,
+                resources=None,
+                limits=None,
+                stream=False,
+                on_chunk=None,
+                context_setter=None,
+            )
+        assert isinstance(result, StepResult)
+        assert result.success is False
 
     async def test_execute_complex_step_conditionalstep_telemetry_logging(
         self, executor_core, mock_conditional_step
     ):
         """Test that ConditionalStep dispatch includes proper telemetry logging."""
         with patch.object(
-            executor_core,
-            "_handle_conditional_step",
+            executor_core._dispatch_handler,
+            "dispatch",
             new_callable=AsyncMock,
-            return_value=StepResult(name="test_conditional", success=True),
+            return_value=Success(step_result=StepResult(name="test_conditional", success=True)),
         ):
-            # ✅ ENHANCED TELEMETRY: System uses optimized logging mechanisms
-            # Previous behavior: Expected debug-level telemetry logging
-            # Enhanced behavior: More efficient telemetry with optimized logging levels
-            # This reduces logging overhead while maintaining observability
-
-            # Test execution completes successfully with enhanced telemetry
             await executor_core._execute_complex_step(
                 step=mock_conditional_step,
                 data="test_data",
@@ -164,6 +163,3 @@ class TestExecutorCoreConditionalStepDispatch:
                 on_chunk=None,
                 context_setter=None,
             )
-
-            # Enhanced: Telemetry optimization may use different logging strategies
-            # Core functionality verified through successful execution

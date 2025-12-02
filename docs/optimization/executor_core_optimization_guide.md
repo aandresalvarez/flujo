@@ -18,7 +18,7 @@ The ExecutorCore optimization system provides comprehensive performance improvem
 
 ### Basic Usage
 
-> Recommended entrypoint: use `ExecutorCore` with an `OptimizationConfig`. `OptimizedExecutorCore` remains as a compatibility shim and emits a deprecation warning.
+> Recommended entrypoint: use `ExecutorCore` with an `OptimizationConfig`. The legacy `OptimizedExecutorCore` shim has been removed; update imports accordingly.
 
 ```python
 from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
@@ -600,21 +600,17 @@ test_results = await executor.execute_with_monitoring(test_step, test_data)
 
 ## Migration Guide
 
-### From OptimizedExecutorCore (compatibility shim)
+### Legacy note: OptimizedExecutorCore (removed)
 
 ```python
-# Old code
-from flujo.application.core.executor_core import OptimizedExecutorCore
-executor = OptimizedExecutorCore()
+# Old code (removed)
+# from flujo.application.core.executor_core import OptimizedExecutorCore
+# executor = OptimizedExecutorCore()
 
-# New supported code
+# Supported code
 from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
 executor = ExecutorCore(optimization_config=OptimizationConfig())
 ```
-
-### Backward Compatibility
-
-`OptimizedExecutorCore` remains available for legacy callers and delegates to `ExecutorCore`.
 
 ## Conclusion
 

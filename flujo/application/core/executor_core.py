@@ -21,7 +21,6 @@ from .hitl_orchestrator import HitlOrchestrator
 from .loop_orchestrator import LoopOrchestrator
 from .failure_builder import build_failure_outcome
 from .pipeline_orchestrator import PipelineOrchestrator
-from .complex_step_router import ComplexStepRouter
 from .import_orchestrator import ImportOrchestrator
 from .validation_orchestrator import ValidationOrchestrator
 from .step_history_tracker import StepHistoryTracker
@@ -31,9 +30,8 @@ from .result_handler import ResultHandler
 from .telemetry_handler import TelemetryHandler
 from .step_handler import StepHandler
 from .agent_handler import AgentHandler
-from .optimization_support import (
+from .optimization.config import (
     OptimizationConfig,
-    OptimizedExecutorCore,
     coerce_optimization_config,
     export_config as export_opt_config,
     get_config_manager as get_opt_config_manager,
@@ -302,7 +300,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._hitl_orchestrator = HitlOrchestrator()
         self._loop_orchestrator = LoopOrchestrator()
         self._pipeline_orchestrator = PipelineOrchestrator()
-        self._complex_step_router = ComplexStepRouter()
         self._validation_orchestrator = ValidationOrchestrator()
 
         self._state_providers = self._hydration_manager._state_providers
@@ -681,18 +678,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             fb_depth = int(_fallback_depth)
         except Exception:
             fb_depth = 0
-        return await self._complex_step_router.route(
-            core=self,
-            step=step,
-            data=data,
+        outcome = await self.execute(
+            step,
+            data,
             context=context,
             resources=resources,
             limits=limits,
             stream=stream,
             on_chunk=on_chunk,
             context_setter=context_setter,
-            fallback_depth=fb_depth,
+            _fallback_depth=fb_depth,
         )
+        return self._unwrap_outcome_to_step_result(outcome, self._safe_step_name(step))
 
     async def wait_for_background_tasks(self, timeout: float = 5.0) -> None:
         """Wait for all background tasks to complete with a timeout."""
@@ -739,16 +736,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     _execute_agent_with_orchestration = execute_agent_with_orchestration
 
-    def get_optimization_stats(self) -> dict[str, Any]:
+    def get_optimization_stats(self) -> "JSONObject":
         return get_opt_stats(self.optimization_config)
 
     def get_config_manager(self) -> Any:
         return get_opt_config_manager(self.optimization_config)
 
-    def get_performance_recommendations(self) -> list[dict[str, Any]]:
+    def get_performance_recommendations(self) -> list["JSONObject"]:
         return get_opt_recommendations()
 
-    def export_config(self, format_type: str = "dict") -> dict[str, Any]:
+    def export_config(self, format_type: str = "dict") -> "JSONObject":
         return export_opt_config(self.optimization_config, format_type)
 
 
@@ -757,7 +754,6 @@ __all__ = [
     "PluginError",
     "StepExecutor",
     "_UsageTracker",
-    "OptimizedExecutorCore",
     "OptimizationConfig",
     # Re-exports for compatibility
     "ISerializer",
