@@ -66,7 +66,7 @@ def validator(func: Callable[..., Tuple[bool, Optional[str]] | bool]) -> Validat
 
     Example:
         @validator
-        def contains_hello(output: str) -> tuple[bool, str | None]:
+        def contains_hello(output: str) -> tuple[bool, Optional[str]]:
             if "hello" in output.lower():
                 return True, "Contains 'hello'"
             else:

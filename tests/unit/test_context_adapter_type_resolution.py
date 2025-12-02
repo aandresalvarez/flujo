@@ -156,14 +156,14 @@ class TestTypeResolution:
 
     def test_extract_union_types_modern_syntax(self):
         """Test extracting types from modern Union syntax (Python 3.10+)."""
-        # Test T | None syntax
-        union_type = _TestModel | None
+        # Test Optional[T] syntax
+        union_type = Optional[_TestModel]
         non_none_types = _extract_union_types(union_type)
         assert len(non_none_types) == 1
         assert non_none_types[0] == _TestModel
 
-        # Test T | U | None syntax
-        union_type = str | int | None
+        # Test Union[T, U, None] syntax
+        union_type = Union[str, int, None]
         non_none_types = _extract_union_types(union_type)
         assert len(non_none_types) == 2
         assert str in non_none_types
@@ -257,7 +257,7 @@ class TestTypeResolution:
     def test_complex_union_handling(self):
         """Test handling of complex union types with nested models."""
         # Test complex union type
-        union_type = _NestedTestModel | None
+        union_type = Optional[_NestedTestModel]
         non_none_types = _extract_union_types(union_type)
         assert len(non_none_types) == 1
         assert non_none_types[0] == _NestedTestModel

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 import pytest
 
@@ -9,8 +9,8 @@ from flujo.agents.wrapper import TemplatedAsyncAgentWrapper
 
 class _FakeAgent:
     def __init__(self) -> None:
-        self.system_prompt: str | None = None
-        self.called_with_prompt: str | None = None
+        self.system_prompt: Optional[str] = None
+        self.called_with_prompt: Optional[str] = None
 
     async def run(self, x: Any, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover - trivial
         # Record the prompt value at call-time

@@ -3,6 +3,7 @@ import pytest
 from flujo.domain import Step, Pipeline
 from flujo.domain.dsl import LoopStep
 from flujo.domain.models import PipelineContext
+from typing import Optional
 from tests.conftest import create_test_flujo
 
 
@@ -35,7 +36,7 @@ def test_step_factory_loop_until() -> None:
 @pytest.mark.asyncio
 async def test_loopstep_context_isolation_unit():
     class IncAgent:
-        async def run(self, x: int, *, context: Ctx | None = None) -> int:
+        async def run(self, x: int, *, context: Optional[Ctx] = None) -> int:
             if context:
                 context.counter += 1
             return x + 1

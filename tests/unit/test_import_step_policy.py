@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from typing import Optional
 from flujo.domain.models import PipelineContext
 
 
@@ -14,7 +15,7 @@ async def test_import_step_projects_input_and_merges_context() -> None:
 
     # Child pipeline: consumes cohort_definition/concept_sets from scratchpad
     # and writes final_sql into scratchpad
-    async def build_query(_data: object, *, context: PipelineContext | None = None) -> dict:
+    async def build_query(_data: object, *, context: Optional[PipelineContext] = None) -> dict:
         assert context is not None
         cd = context.scratchpad.get("cohort_definition")
         cs = context.scratchpad.get("concept_sets") or []

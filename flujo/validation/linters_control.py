@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar, Iterable
+from typing import Any, ClassVar, Iterable, Optional
 
 from ..domain.pipeline_validation import ValidationFinding
 from .linters_base import BaseLinter, _override_severity
@@ -20,7 +20,7 @@ class ExceptionLinter(BaseLinter):
         out: list[ValidationFinding] = []
         steps = getattr(pipeline, "steps", []) or []
 
-        _HITLStep: type[Any] | None = None
+        _HITLStep: Optional[type[Any]] = None
         try:
             from ..domain.dsl.step import HumanInTheLoopStep as _HITLStep
         except Exception:
@@ -356,7 +356,7 @@ class HitlNestedContextLinter(BaseLinter):
             return out
 
         def _check_for_hitl_in_steps(
-            steps: list[Any], context_chain: list[str], _parent_step_name: str | None = None
+            steps: list[Any], context_chain: list[str], _parent_step_name: Optional[str] = None
         ) -> None:
             for _idx, step in enumerate(steps):
                 try:

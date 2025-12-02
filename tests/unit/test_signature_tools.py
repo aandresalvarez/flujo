@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Optional
 
 import pytest
 
@@ -9,7 +10,7 @@ from flujo.domain.resources import AppResources
 
 
 class Ctx(BaseModel):
-    x: int | None = None
+    x: Optional[int] = None
 
 
 class Res(AppResources):

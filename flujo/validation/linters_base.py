@@ -4,7 +4,7 @@ import fnmatch
 import json
 import os
 from threading import RLock
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 from ..infra.telemetry import logfire
 
@@ -23,7 +23,7 @@ except ImportError:
         toml_lib = None  # type: ignore[assignment]
 
 # --- Rule overrides (profile/file/env) for early skip and severity adjustment ---
-_OVERRIDE_CACHE: dict[str, str] | None = None
+_OVERRIDE_CACHE: Optional[dict[str, str]] = None
 _OVERRIDE_CACHE_LOCK = RLock()
 
 
@@ -98,7 +98,7 @@ def _load_rule_overrides() -> dict[str, str]:
         return mapping
 
 
-def _override_severity(rule_id: str, default: str) -> str | None:
+def _override_severity(rule_id: str, default: str) -> Optional[str]:
     """Return overridden severity ('error'/'warning') or None to indicate OFF."""
     mp = _load_rule_overrides()
     rid = str(rule_id).upper()
