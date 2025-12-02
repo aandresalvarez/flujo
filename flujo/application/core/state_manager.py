@@ -96,6 +96,37 @@ class StateManager(Generic[ContextT]):
 
         self._serialization_cache[cache_key] = serialized
 
+    def _build_context_fallback(
+        self,
+        context: Optional[ContextT],
+        *,
+        error_message: str | None = None,
+    ) -> JSONObject:
+        """Build a lightweight fallback serialization when full serialization fails."""
+
+        fallback: JSONObject = {
+            "initial_prompt": getattr(context, "initial_prompt", "") if context else "",
+            "pipeline_id": getattr(context, "pipeline_id", "unknown") if context else "unknown",
+            "pipeline_name": getattr(context, "pipeline_name", "unknown") if context else "unknown",
+            "pipeline_version": getattr(context, "pipeline_version", "latest")
+            if context
+            else "latest",
+            "total_steps": getattr(context, "total_steps", 0) if context else 0,
+            "error_message": getattr(context, "error_message", None) if context else None,
+            "run_id": getattr(context, "run_id", "") if context else "",
+            "created_at": getattr(context, "created_at", None) if context else None,
+            "updated_at": getattr(context, "updated_at", None) if context else None,
+        }
+
+        for field_name in ("status", "current_step", "last_error", "metadata"):
+            if context is not None and hasattr(context, field_name):
+                fallback[field_name] = getattr(context, field_name)
+
+        if error_message is not None:
+            fallback["error"] = error_message
+
+        return fallback
+
     def _evict_least_recently_used_entry(self) -> None:
         """Evict the least recently used cache entry with proper cleanup."""
         # Find the oldest entry (first in insertion order for FIFO fallback)
@@ -261,15 +292,9 @@ class StateManager(Generic[ContextT]):
             except Exception as e:
                 logger.warning(f"Failed to serialize context for run {run_id}: {e}")
                 # Comprehensive fallback to prevent data loss even in error cases
-                pipeline_context = {
-                    "error": f"Failed to serialize context: {e}",
-                    "initial_prompt": getattr(context, "initial_prompt", ""),
-                    "pipeline_id": getattr(context, "pipeline_id", "unknown"),
-                    "pipeline_name": getattr(context, "pipeline_name", "unknown"),
-                    "pipeline_version": getattr(context, "pipeline_version", "latest"),
-                    "total_steps": getattr(context, "total_steps", 0),
-                    "run_id": getattr(context, "run_id", ""),
-                }
+                pipeline_context = self._build_context_fallback(
+                    context, error_message=f"Failed to serialize context: {e}"
+                )
 
         # Serialize step history with error handling
         # Use minimal representation to avoid expensive deep serialization on large runs
@@ -346,11 +371,9 @@ class StateManager(Generic[ContextT]):
                     pipeline_context = self._serializer.serialize_context_minimal(context)
             except Exception as e:
                 logger.warning(f"Failed to serialize context for run {run_id}: {e}")
-                pipeline_context = {
-                    "error": f"Failed to serialize context: {e}",
-                    "initial_prompt": getattr(context, "initial_prompt", ""),
-                    "run_id": getattr(context, "run_id", ""),
-                }
+                pipeline_context = self._build_context_fallback(
+                    context, error_message=f"Failed to serialize context: {e}"
+                )
 
         # Keep step_history: include minimal entries when provided (for crash recovery), else empty list
         if step_history:
