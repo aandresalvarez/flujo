@@ -3,10 +3,10 @@
     <img src="https://raw.githubusercontent.com/aandresalvarez/flujo/main/assets/flujo.png" alt="Flujo logo" width="180"/>
   </a> 
   
-  <h1>Flujo — Your Conversational AI Workflow Server</h1>
+  <h1>Flujo — The Type-Safe AI Workflow Server</h1>
   
   <p>
-    <b>Go from a simple idea to a production-grade, auditable AI pipeline in a single conversation.</b>
+    <b>Orchestrate AI Agents with Confidence. From local script to production cluster.</b>
   </p>
 
 | CI/CD | PyPI | Docs | License |
@@ -14,6 +14,24 @@
 | [![CI status](https://github.com/aandresalvarez/flujo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/aandresalvarez/flujo/actions/workflows/ci.yml) | [![PyPI version](https://img.shields.io/pypi/v/flujo.svg)](https://pypi.org/project/flujo/) | [![Documentation Status](https://readthedocs.org/projects/flujo/badge/?version=latest)](https://flujo.readthedocs.io/en/latest/?badge=latest) | [![License](https://img.shields.io/pypi/l/flujo.svg)](https://github.com/aandresalvarez/flujo/blob/main/LICENSE) |
 
 </div>
+---
+
+Flujo is a production-grade framework for building, observing, and deploying AI agent workflows. It bridges the gap between simple Python scripts and complex enterprise orchestration, giving you **retries**, **durable state persistence**, and **human-in-the-loop** capabilities out of the box.
+
+## ✨ Key Features
+
+*   **🧠 The Architect:** A built-in AI agent that generates complete, valid pipeline code from natural language goals.
+
+*   **💾 Durable State:** Every step is persisted to SQLite (local) or Postgres (production). Pause, resume, and replay workflows across server restarts.
+
+*   **🔀 Advanced Control Flow:** Native support for Loops, Conditionals (If/Else), Parallel execution, and Map/Reduce.
+
+*   **👤 Human-in-the-Loop:** Pause execution for user approval or input, then resume exactly where you left off.
+
+*   **🔍 Flujo Lens:** A powerful CLI TUI to debug traces, inspect step history, and analyze costs.
+
+*   **⚡ Serverless Ready:** Lightweight architecture optimized for Google Cloud Run and AWS Lambda.
+
 ---
 
 ## The Flujo Experience: Idea to Production in 3 Commands
@@ -41,7 +59,7 @@ flujo init --force
 flujo init --force --yes
 ```
 
-#### **Step 2: Tell Flujo Your Goal**
+#### **Step 2: Create Your Pipeline**
 
 Start a conversation with the Flujo Architect from inside your project:
 
@@ -49,8 +67,6 @@ Start a conversation with the Flujo Architect from inside your project:
 flujo create --goal "Summarize a web article, translate it to Spanish, and post to Slack."
 ```
 > **Flujo Architect:** `Understood. To post to Slack, I have a 'post_to_slack' tool. Which channel should I use?`
-
-#### **Step 2: Clarify and Confirm**
 
 Provide the missing details. The Architect confirms the plan.
 
@@ -97,32 +113,74 @@ Flujo is not just a scripting library; it's a complete application server for AI
 
 ---
 
-## For Developers: The Power Under the Hood
+## 🛠️ Python API
 
-While the CLI provides a no-code experience, Flujo offers a powerful, type-safe Python DSL for developers who need full control.
+For developers who prefer code over configuration, Flujo offers a fluent, type-safe Python DSL.
 
-**Example: A Simple Translation Agent & Pipeline**
 ```python
-# translate_pipeline.py
+import asyncio
 from pydantic import BaseModel
-from flujo import Step, Pipeline, make_agent_async
+from flujo import Step, Pipeline, Flujo
+from flujo.agents import make_agent_async
 
-class Translation(BaseModel):
-    original_text: str
-    translated_text: str
-    language: str
+# 1. Define Type-Safe Outputs
+class Analysis(BaseModel):
+    topic: str
+    summary: str
+    sentiment_score: float
 
-# 1. Define an agent with a structured, Pydantic-validated output
-translator_agent = make_agent_async(
-    model="openai:gpt-4o",
-    system_prompt="Translate the user's text into French.",
-    output_type=Translation,
-)
+# 2. Create Agents
+researcher = make_agent_async("openai:gpt-4o", "You are a researcher.", str)
+analyst = make_agent_async("openai:gpt-4o", "Analyze the text.", Analysis)
 
-# 2. Compose your pipeline with the `>>` operator
-pipeline = Step(name="TranslateToFrench", agent=translator_agent)
+# 3. Define Steps
+step_1 = Step(name="research", agent=researcher)
+step_2 = Step(name="analyze", agent=analyst, input="{{ previous_step }}")
+
+# 4. Compose Pipeline
+pipeline = step_1 >> step_2
+
+# 5. Run with State Persistence
+async def main():
+    runner = Flujo(pipeline)
+    result = await runner.run_async("The future of Quantum Computing")
+    print(result.output)  # Returns a validated Analysis object
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
+
 Your Python-defined pipelines get all the same benefits: automatic CLI generation, budget enforcement, and full traceability.
+
+---
+
+## 🧩 The Blueprint (YAML)
+
+Pipelines can also be defined in YAML, making them language-agnostic, version-controllable, and editable by the Architect agent.
+
+```yaml
+version: "0.1"
+name: "code_review_pipeline"
+
+steps:
+  - kind: step
+    name: review_code
+    agent: { id: "agents.senior_dev" }
+    input: "{{ initial_prompt }}"
+  
+  - kind: conditional
+    name: check_severity
+    condition: "{{ previous_step.severity == 'high' }}"
+    branches:
+      true:
+        - kind: hitl
+          message: "High severity issue detected. Approve fix?"
+          sink_to: "user_approval"
+      false:
+        - kind: step
+          name: auto_merge
+          agent: { id: "flujo.builtins.stringify" }
+```
 
 ---
 
@@ -156,16 +214,52 @@ Looking to use GPT‑5 with the Architect? See the guide: `docs/guides/gpt5_arch
 - `run`: 🚀 Run the workflow in the current project.
 - `lens`: 🔍 Inspect, debug, and trace past workflow runs.
   - `lens trace <run_id>` now shows prompt injection events per step (redacted preview). Use this to inspect how conversational history was rendered.
+
+### 🔍 Observability with Lens
+
+Flujo records every execution step, token usage, and cost. Inspect it all via the CLI.
+
+```bash
+# List recent runs
+flujo lens list
+
+# Visualize the execution tree of a specific run
+flujo lens trace <run_id>
+
+# View detailed inputs/outputs for debugging
+flujo lens show <run_id> --verbose
+
+# Replay a failed production run locally for perfect debugging
+flujo lens replay <run_id>
+```
 - `dev`: 🛠️ Access advanced developer and diagnostic tools.
-  - `validate`, `show-steps`, `visualize`, `compile-yaml`, `show-config`, `version`
+  - `validate`, `explain`, `visualize`, `compile-yaml`, `show-config`, `version`
 
-## Middleware & Observability API
+## 🤝 Middleware & Observability API
 
-Need to integrate Flujo with review dashboards or connector services? Use the new
-`TaskClient` facade (`flujo.client.TaskClient`) to list paused runs, inspect HITL prompts,
-resume workflows, or store global watermarks without touching the database schema.  
-See [docs/guides/building_middleware.md](docs/guides/building_middleware.md) for snippets.
-  - `experimental`: advanced tools like `solve`, `bench`, `add-case`, `improve`
+Need to integrate Flujo with review dashboards or connector services? Use the `TaskClient` facade to interact with running workflows programmatically.
+
+```python
+from flujo.client import TaskClient
+
+client = TaskClient()
+
+# Resume a workflow waiting for Human Input
+await client.resume_task(
+    run_id="run_12345", 
+    input_data="Approved"
+)
+
+# List paused runs
+paused_tasks = await client.list_tasks(status="paused")
+
+# Inspect HITL prompts
+task_detail = await client.get_task("run_12345")
+print(task_detail.hitl_prompt)
+```
+
+The `TaskClient` (`flujo.client.TaskClient`) lets you list paused runs, inspect HITL prompts, resume workflows, or store global watermarks without touching the database schema.  
+See [docs/guides/building_middleware.md](docs/guides/building_middleware.md) for more examples.
 
 ### CLI Flags & Exit Codes (Quick Reference)
 
@@ -266,7 +360,7 @@ Precedence: FLUJO_ARCHITECT_STATE_MACHINE → FLUJO_ARCHITECT_IGNORE_CONFIG/FLUJ
 
 Flujo persists workflow state (for traceability, resume, and lens tooling) via a pluggable state backend.
 
-- Templates (init/demo): default to `state_uri = "memory://"` so projects don’t persist state unless you opt in.
+- Templates (init/demo): default to `state_uri = "sqlite:///.flujo/state.db"` (relative to project root) for reliable pause/resume and history.
 - Core default when not using a project template: SQLite at `sqlite:///flujo_ops.db` (created in CWD) or as configured in `flujo.toml`.
 - Ephemeral (in-memory): set one of the following to avoid any persistent files (handy for demos or CI):
   - In `flujo.toml`: `state_uri = "memory://"`
@@ -284,6 +378,32 @@ echo 'state_uri = "memory://"' >> flujo.toml
 ```
 
 When using persistent SQLite, ensure the containing directory exists and is writable (see `flujo/cli/config.py` for path normalization and validation).
+
+---
+
+## 📦 Deployment & Scale
+
+Flujo uses a **"Stateless Worker, External Brain"** architecture.
+
+1.  **Local Dev:** Uses SQLite (`.flujo/state.db`) for zero-setup persistence.
+
+2.  **Production:** Switch to Postgres by setting `state_uri` in `flujo.toml`.
+
+3.  **Scale:** Deploy to **Google Cloud Run** or **AWS Lambda**. Since state is external, you can scale workers to zero or infinity instantly.
+
+```toml
+# flujo.toml
+state_uri = "postgresql://user:pass@db-host:5432/flujo_db"
+
+[settings]
+test_mode = false
+```
+
+This architecture ensures that:
+- Workers are stateless and can be killed/restarted without losing progress
+- State is centralized in a durable database (SQLite for dev, Postgres for prod)
+- Multiple workers can process different runs concurrently
+- Failed runs can be resumed from any worker
 
 ---
 

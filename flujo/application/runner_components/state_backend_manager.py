@@ -18,20 +18,27 @@ class StateBackendManager:
         state_backend: Optional[StateBackend] = None,
         *,
         delete_on_completion: bool = False,
+        enable_backend: bool = True,
     ) -> None:
+        self._enabled = enable_backend
         self._owns_backend = state_backend is None
         self._delete_on_completion = delete_on_completion
-        if state_backend is not None:
+        if not enable_backend:
+            self._backend: Optional[StateBackend] = None
+            self._owns_backend = False
+        elif state_backend is not None:
             self._backend = state_backend
         else:
             self._backend = self._create_default_backend()
 
     @property
-    def backend(self) -> StateBackend:
+    def backend(self) -> Optional[StateBackend]:
         return self._backend
 
     async def shutdown(self) -> None:
         """Shutdown the backend if this manager owns it."""
+        if not self._enabled or self._backend is None:
+            return
         if not self._owns_backend:
             return
         shutdown_fn = getattr(self._backend, "shutdown", None)
@@ -46,7 +53,7 @@ class StateBackendManager:
 
     async def delete_state(self, run_id: str) -> None:
         """Delete state for a completed run when configured to do so."""
-        if not self._delete_on_completion:
+        if not self._delete_on_completion or self._backend is None:
             return
         delete_fn = getattr(self._backend, "delete_state", None)
         if delete_fn is None or not callable(delete_fn):

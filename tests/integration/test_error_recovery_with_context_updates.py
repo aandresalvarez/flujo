@@ -133,7 +133,7 @@ async def test_error_recovery_with_context_updates_basic():
         >> Pipeline.from_step(post_recovery_step)
     )
 
-    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext)
+    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext, persist_state=False)
     result = await gather_result(runner, "test_fail_data")
 
     # Verify error recovery with context updates
@@ -160,7 +160,7 @@ async def test_error_recovery_with_context_updates_successful_recovery():
         >> Pipeline.from_step(post_recovery_step)
     )
 
-    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext)
+    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext, persist_state=False)
     result = await gather_result(runner, "test_fail_data")  # Changed to contain "fail"
 
     # Verify successful recovery with context updates
@@ -216,7 +216,7 @@ async def test_error_recovery_with_context_updates_context_dependent():
         >> Pipeline.from_step(post_recovery_step)
     )
 
-    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext)
+    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext, persist_state=False)
     result = await gather_result(runner, "test_fail_data")
 
     # Verify context-dependent recovery
@@ -264,7 +264,7 @@ async def test_error_recovery_with_context_updates_state_isolation():
         >> Pipeline.from_step(post_recovery_step)
     )
 
-    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext)
+    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext, persist_state=False)
     result = await gather_result(runner, "test_fail_data")
 
     # Verify state management
@@ -322,7 +322,7 @@ async def test_error_recovery_with_context_updates_complex_recovery():
         >> Pipeline.from_step(post_recovery_step)
     )
 
-    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext)
+    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext, persist_state=False)
     result = await gather_result(runner, "test_fail_data")
 
     # Verify complex recovery
@@ -374,7 +374,7 @@ async def test_error_recovery_with_context_updates_metadata_conflicts():
         >> Pipeline.from_step(post_recovery_step)
     )
 
-    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext)
+    runner = create_test_flujo(pipeline, context_model=ErrorRecoveryContext, persist_state=False)
     result = await gather_result(runner, "test_fail_data")
 
     # Verify metadata handling

@@ -41,6 +41,7 @@ This is the concise contributor guide for the Flujo repository. For deeper archi
 - **Run**: Iterate with `make test-fast`; verify with `make test`.
 - **Coverage**: Review via `make testcov` (HTML report).
 - **Critical Principle**: Fix root causes. **Never** change test expectations or performance thresholds simply to make a failing build "green." Test failures are signals of real regressions.
+- **Performance-focused tests**: When a test only cares about latency, create runners via `create_test_flujo(..., persist_state=False)` (or `Flujo(..., persist_state=False)`) to skip state persistence overhead.
 
 ### Test Marking Policy
 - **Benchmarks**: mark as `@pytest.mark.benchmark` and `@pytest.mark.slow` (module-level `pytestmark` recommended).

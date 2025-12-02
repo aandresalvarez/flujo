@@ -300,6 +300,7 @@ def create_test_flujo(
     *,
     pipeline_name: Optional[str] = None,
     pipeline_id: Optional[str] = None,
+    persist_state: bool = True,
     **kwargs: Any,
 ) -> Flujo[Any, Any, Any]:
     """Create a Flujo instance with proper test names and IDs.
@@ -315,6 +316,8 @@ def create_test_flujo(
         Custom pipeline name. If not provided, generates one based on test function name.
     pipeline_id : str, optional
         Custom pipeline ID. If not provided, generates a unique test ID.
+    persist_state : bool, default True
+        When False, disable persistence for ephemeral performance tests.
     **kwargs : Any
         Additional arguments to pass to Flujo constructor
 
@@ -341,10 +344,20 @@ def create_test_flujo(
         pipeline_id = f"test_{uuid.uuid4().hex[:8]}"
 
     # Always use NoOpStateBackend for test isolation unless explicitly overridden
-    if "state_backend" not in kwargs:
-        kwargs["state_backend"] = NoOpStateBackend()
+    if persist_state:
+        if "state_backend" not in kwargs:
+            kwargs["state_backend"] = NoOpStateBackend()
+    else:
+        # Ensure persistence stays disabled even if callers supplied a backend
+        kwargs.pop("state_backend", None)
 
-    return Flujo(pipeline, pipeline_name=pipeline_name, pipeline_id=pipeline_id, **kwargs)
+    return Flujo(
+        pipeline,
+        pipeline_name=pipeline_name,
+        pipeline_id=pipeline_id,
+        persist_state=persist_state,
+        **kwargs,
+    )
 
 
 def pytest_ignore_collect(collection_path, config):  # type: ignore[override]

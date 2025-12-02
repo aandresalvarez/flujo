@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 from urllib.parse import urlparse
 import os
+import importlib.util
 
 from flujo.application.core.default_components import (
     DefaultAgentRunner,
@@ -117,6 +118,13 @@ class BackendFactory:
             parsed = urlparse(state_uri)
             scheme = parsed.scheme.lower()
             if scheme in {"postgres", "postgresql"}:
+                # Guard: Check if asyncpg is available before creating PostgresBackend
+                spec = importlib.util.find_spec("asyncpg")
+                if spec is None:
+                    raise ImportError(
+                        "asyncpg is required for PostgreSQL support. "
+                        "Install with `pip install flujo[postgres]`."
+                    )
                 extended_settings = get_config_manager().get_settings()
                 pool_min = getattr(extended_settings, "postgres_pool_min", 1)
                 pool_max = getattr(extended_settings, "postgres_pool_max", 10)

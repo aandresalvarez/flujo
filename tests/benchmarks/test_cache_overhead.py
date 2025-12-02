@@ -18,8 +18,10 @@ async def test_cache_overhead_vs_plain_step() -> None:
     agent_cached = StubAgent(["ok"] * 5)
     cached_step = Step.cached(Step.solution(agent_cached), cache_backend=InMemoryCache())
 
-    runner_plain = create_test_flujo(plain)
-    runner_cached = create_test_flujo(cached_step)
+    runner_plain = create_test_flujo(plain, persist_state=False)
+    runner_plain.disable_tracing()
+    runner_cached = create_test_flujo(cached_step, persist_state=False)
+    runner_cached.disable_tracing()
 
     start = time.monotonic()
     await gather_result(runner_plain, "in")

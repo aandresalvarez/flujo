@@ -5,6 +5,7 @@ import json
 import importlib
 import importlib.util
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple, cast
 
 from flujo.state.backends.base import StateBackend
@@ -102,6 +103,7 @@ class PostgresBackend(StateBackend):
 
     async def _init_schema(self, pool: Pool) -> None:
         async with pool.acquire() as conn:
+            # Create base schema (version 1)
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS workflow_state (
@@ -245,6 +247,42 @@ class PostgresBackend(StateBackend):
                 ON CONFLICT (version) DO NOTHING
                 """
             )
+            # Apply pending migrations after base schema creation
+            await self._apply_pending_migrations(conn)
+
+    async def _apply_pending_migrations(self, conn: Any) -> None:
+        """Apply pending migration files from flujo/state/migrations/."""
+        # Find migration files
+        # postgres.py is in flujo/state/backends/, so go up to flujo/state/ then into migrations/
+        migrations_dir = Path(__file__).resolve().parent.parent / "migrations"
+        if not migrations_dir.exists():
+            return
+
+        migration_files: list[Tuple[int, Path]] = []
+        for path in migrations_dir.glob("*.sql"):
+            stem = path.stem.split("_", 1)[0]
+            if stem.isdigit():
+                version = int(stem)
+                # Skip version 1 as it's already applied by _init_schema
+                if version > 1:
+                    migration_files.append((version, path))
+        migration_files.sort(key=lambda item: item[0])
+
+        if not migration_files:
+            return
+
+        # Get already applied versions
+        applied_rows = await conn.fetch("SELECT version FROM flujo_schema_versions")
+        applied_versions = {int(row["version"]) for row in applied_rows}
+
+        # Apply pending migrations
+        for version, path in migration_files:
+            if version in applied_versions:
+                continue
+            sql = path.read_text()
+            # Migration files are already wrapped in transactions and update schema_versions
+            # Just execute them directly
+            await conn.execute(sql)
 
     def _extract_spans_from_tree(
         self, trace: JSONObject, run_id: str, max_depth: int = 100

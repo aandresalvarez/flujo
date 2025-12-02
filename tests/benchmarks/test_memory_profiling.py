@@ -37,7 +37,8 @@ async def test_loop_step_memory_stability() -> None:
         exit_condition_callable=lambda *_: False,
         max_loops=iterations,
     )
-    runner = create_test_flujo(loop)
+    runner = create_test_flujo(loop, persist_state=False)
+    runner.disable_tracing()
 
     process = psutil.Process(os.getpid())
     gc.collect()
