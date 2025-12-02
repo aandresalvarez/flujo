@@ -14,7 +14,8 @@ pytest.importorskip("pytest_benchmark")
 async def test_cache_hit_performance_gain() -> None:
     agent = StubAgent(["ok", "ok"])
     cached_step = Step.cached(Step.solution(agent), cache_backend=InMemoryCache())
-    runner = create_test_flujo(cached_step)
+    runner = create_test_flujo(cached_step, persist_state=False)
+    runner.disable_tracing()
 
     start = time.monotonic()
     await gather_result(runner, "x")

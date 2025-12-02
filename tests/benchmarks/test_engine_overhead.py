@@ -18,6 +18,7 @@ def test_pipeline_runner_overhead(benchmark):
         >> Step.model_validate({"name": "s4", "agent": agent})
     )
     runner = create_test_flujo(pipeline, persist_state=False)
+    runner.disable_tracing()
 
     @benchmark
     def run_pipeline():

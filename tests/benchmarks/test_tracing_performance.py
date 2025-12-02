@@ -192,7 +192,8 @@ class TestTracingPerformance:
             return Pipeline.from_step(conditional_step)
 
         pipeline = create_complex_pipeline()
-        runner = create_test_flujo(pipeline, hooks=[])
+        runner = create_test_flujo(pipeline, hooks=[], persist_state=False)
+        runner.disable_tracing()
 
         def run_pipeline():
             runner.run("input")
@@ -274,7 +275,7 @@ class TestTracingPerformance:
                     "agent": StubAgent([f"output_{i}"] * 5),  # Multiple outputs for multiple runs
                 }
             )
-            runner = create_test_flujo(step)
+            runner = create_test_flujo(step, persist_state=False)
             pipelines.append(runner)
 
         # Run all pipelines
@@ -326,7 +327,7 @@ class TestTracingPerformance:
             return pipeline
 
         pipeline = create_large_pipeline()
-        runner = create_test_flujo(pipeline)
+        runner = create_test_flujo(pipeline, persist_state=False)
 
         # Run the large pipeline
         result = None
@@ -377,7 +378,7 @@ class TestTracingPerformance:
             )
 
             pipeline = step1 >> step2
-            runner = create_test_flujo(pipeline)
+            runner = create_test_flujo(pipeline, persist_state=False)
 
             # Warmup runs to stabilize performance
             for _ in range(3):

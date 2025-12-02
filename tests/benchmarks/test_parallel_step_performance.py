@@ -57,8 +57,12 @@ async def test_context_copying_performance_benchmark() -> None:
     # Test with full context copying (default behavior)
     parallel_full = Step.parallel("parallel_full", branches)
 
-    runner_selective = create_test_flujo(parallel_selective, context_model=LargeContext)
-    runner_full = create_test_flujo(parallel_full, context_model=LargeContext)
+    runner_selective = create_test_flujo(
+        parallel_selective, context_model=LargeContext, persist_state=False
+    )
+    runner_selective.disable_tracing()
+    runner_full = create_test_flujo(parallel_full, context_model=LargeContext, persist_state=False)
+    runner_full.disable_tracing()
 
     # Measure performance with selective copying
     start = time.monotonic()
@@ -135,7 +139,8 @@ async def test_proactive_cancellation_performance_benchmark() -> None:
 
     parallel = Step.parallel("parallel_cancellation_benchmark", branches)
     limits = UsageLimits(total_cost_usd_limit=0.10)  # Will be breached by fast_expensive
-    runner = create_test_flujo(parallel, usage_limits=limits)
+    runner = create_test_flujo(parallel, usage_limits=limits, persist_state=False)
+    runner.disable_tracing()
 
     # Measure execution time with proactive cancellation
     start = time.monotonic()
@@ -146,7 +151,8 @@ async def test_proactive_cancellation_performance_benchmark() -> None:
     cancellation_time = time.monotonic() - start
 
     # Measure execution time without limits (should take longer)
-    runner_no_limits = create_test_flujo(parallel)  # No usage limits
+    runner_no_limits = create_test_flujo(parallel, persist_state=False)  # No usage limits
+    runner_no_limits.disable_tracing()
     start = time.monotonic()
     await gather_result(runner_no_limits, "input")
     no_limits_time = time.monotonic() - start
