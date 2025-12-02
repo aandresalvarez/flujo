@@ -57,8 +57,12 @@ class TestCleanupPerformanceImpact:
 
     async def test_memory_usage_improvement(self):
         """Test memory usage improvement from cleanup."""
-        import psutil
         import os
+
+        try:
+            import psutil
+        except ImportError:
+            pytest.skip("psutil not available")
 
         # Get current process
         process = psutil.Process(os.getpid())
