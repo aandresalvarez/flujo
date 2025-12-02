@@ -178,6 +178,51 @@ class StateManager(Generic[ContextT]):
             step_history,
         )
 
+    async def rehydrate_pipeline_result(
+        self,
+        run_id: str,
+        context_model: Optional[type[ContextT]] = None,
+    ) -> Optional[PipelineResult[ContextT]]:
+        """Rebuild a PipelineResult for the given run_id suitable for resume_async."""
+        if not run_id:
+            return None
+
+        (
+            context,
+            _,
+            _,
+            _,
+            _,
+            _,
+            step_history,
+        ) = await self.load_workflow_state(run_id, context_model)
+
+        if context is None and not step_history:
+            return None
+
+        total_cost = 0.0
+        total_tokens = 0
+        all_success = True
+        for step in step_history:
+            try:
+                total_cost += float(step.cost_usd or 0.0)
+            except Exception:
+                pass
+            try:
+                total_tokens += int(step.token_counts or 0)
+            except Exception:
+                pass
+            all_success = all_success and bool(step.success)
+
+        result = PipelineResult[ContextT](
+            step_history=step_history,
+            total_cost_usd=total_cost,
+            total_tokens=total_tokens,
+            final_pipeline_context=context,
+        )
+        result.success = all_success
+        return result
+
     async def persist_workflow_state(
         self,
         *,

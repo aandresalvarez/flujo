@@ -37,6 +37,7 @@ from .domain.dsl.step import step  # Add back the step decorator
 from .domain.models import PipelineResult
 from .infra import init_telemetry
 from .agents import make_agent_async  # Add back the agent factory
+from .client import TaskClient
 from .recipes.factories import (
     make_agentic_loop_pipeline,
     make_default_pipeline,
@@ -62,4 +63,5 @@ __all__ = [
     "make_default_pipeline",
     "run_agentic_loop_pipeline",
     "run_default_pipeline",
+    "TaskClient",
 ]

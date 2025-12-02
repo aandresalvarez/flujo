@@ -1,5 +1,3 @@
- 
-
 ### **Flujo Team Developer Guide: Architecture, Patterns & Contributions (v2.0)**
 
 This guide is for the Flujo core team—developers building and maintaining the framework itself. It covers architectural principles, contribution patterns, and the critical anti-patterns that ensure Flujo remains robust and maintainable.
@@ -30,6 +28,26 @@ Notes:
 - **Policies**: `step_policies.py` contains all step execution logic; register via `create_default_registry(core)`. No `isinstance` branching in ExecutorCore.
 - **Runner**: `runner.py` facade delegates to `runner_methods.py` (sync/async helpers), `runner_execution.py` (resume orchestration), and `runner_components/` (tracing manager, state backend manager, resume/replay orchestrators).
 - **Agent wrapper**: `flujo/agents/wrapper.py` handles retries, timeouts, repairs; returns `AgentIOValidationError` for validation failures and `ExecutionError` for execution issues.
+
+## **Autonomic Resource Management**
+
+- **AdaptiveResourceManager** + **load_balancer**: monitors CPU/memory and dynamically throttles/spreads work; expect branch pacing under pressure.
+- **CircuitBreaker** + **graceful_degradation**: isolates failures and sheds features when health checks fail; never bypass this layer.
+- These components live under `flujo/application/core/` and are active by default—architect changes must preserve their hooks and quotas.
+
+## **Executor Dispatch Guarantees**
+
+- Complex step routing must flow through the policy registry/dispatcher—`ComplexStepRouter` is removed. Do not reintroduce step-specific branching in `ExecutorCore`.
+- `ExecutorCore.execute` only accepts policy-era kwargs (`step`, `data`, `context`, `resources`, `limits`, `context_setter`, `stream`, `on_chunk`, `_fallback_depth`, `quota`, `result`, `usage_limits`). Legacy params like `cache_key` are intentionally rejected to avoid bypassing policy-managed caching/quota.
+- Each policy implementation must emit telemetry spans itself or rely on the dispatcher-wrapped span to keep trace completeness; missing spans are a policy wiring bug, not a core concern.
+
+## **Advanced Performance Architecture (ExecutorCore)**
+
+- **AdaptiveResourceManager**: dynamic concurrency throttle that reads CPU pressure and quota splits, then shrinks/grows worker pools. Expect opportunistic pausing of branch execution under load—this is intentional headroom, not a deadlock.
+- **MemoryOptimization**: object pooling + copy-on-write context helpers (see `optimization/memory/*`). The pools recycle ExecutionFrames and scratch buffers; context helpers avoid poisoning retries by isolating/merging copies.
+- **OptimizedTelemetry**: batching/buffering spans/metrics to cut hot-path overhead. Spans may flush slightly after completion; do not infer hangs from delayed export.
+- **Config surface**: use `OptimizationConfig` (via `ExecutorCore(optimization_config=...)`) to toggle these knobs. The deprecated `OptimizedExecutorCore` shim has been removed; policy-driven routing is the only entrypoint.
+- **Tracing expectation**: even with batching, every policy-routed step must emit spans via the dispatcher path—if you see missing spans, check policy registration before touching telemetry.
 
 ## **Policy Registration Pattern**
 

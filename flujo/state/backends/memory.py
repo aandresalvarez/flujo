@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+from datetime import datetime, timezone
 from typing import Any, List, Optional, Tuple, cast
 
 from flujo.type_definitions.common import JSONObject
 from ...utils.serialization import safe_deserialize, safe_serialize
 
 from .base import StateBackend
+from ._filters import metadata_contains
 
 
 class InMemoryBackend(StateBackend):
@@ -22,6 +24,7 @@ class InMemoryBackend(StateBackend):
     def __init__(self) -> None:
         # Store serialized copies to mimic persistent backends
         self._store: dict[str, Any] = {}
+        self._system_state: dict[str, JSONObject] = {}
         self._lock = asyncio.Lock()
 
     async def save_state(self, run_id: str, state: JSONObject) -> None:
@@ -72,3 +75,70 @@ class InMemoryBackend(StateBackend):
             "by_status": {},
             "avg_duration_by_name": {},
         }
+
+    async def list_runs(
+        self,
+        status: Optional[str] = None,
+        pipeline_name: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        metadata_filter: Optional[JSONObject] = None,
+    ) -> List[JSONObject]:
+        async with self._lock:
+            entries: list[tuple[datetime, JSONObject]] = []
+            for stored in self._store.values():
+                state = safe_deserialize(stored)
+                if status and state.get("status") != status:
+                    continue
+                if pipeline_name and state.get("pipeline_name") != pipeline_name:
+                    continue
+                metadata = state.get("metadata") or {}
+                if metadata_filter and not metadata_contains(metadata, metadata_filter):
+                    continue
+
+                created_at = state.get("created_at")
+                updated_at = state.get("updated_at")
+                sort_key = self._coerce_datetime(created_at)
+
+                entry: JSONObject = {
+                    "run_id": state.get("run_id"),
+                    "pipeline_name": state.get("pipeline_name"),
+                    "pipeline_version": state.get("pipeline_version"),
+                    "status": state.get("status"),
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                    "metadata": metadata,
+                    "start_time": created_at,
+                    "end_time": updated_at,
+                    "total_cost": 0.0,
+                }
+                entries.append((sort_key or datetime.min.replace(tzinfo=timezone.utc), entry))
+
+            entries.sort(key=lambda item: item[0], reverse=True)
+            sliced = entries[offset:]
+            if limit is not None:
+                sliced = sliced[:limit]
+            return [entry for _, entry in sliced]
+
+    @staticmethod
+    def _coerce_datetime(value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return None
+        return None
+
+    async def set_system_state(self, key: str, value: JSONObject) -> None:
+        async with self._lock:
+            self._system_state[key] = {
+                "key": key,
+                "value": value,
+                "updated_at": datetime.now(timezone.utc),
+            }
+
+    async def get_system_state(self, key: str) -> Optional[JSONObject]:
+        async with self._lock:
+            return self._system_state.get(key)

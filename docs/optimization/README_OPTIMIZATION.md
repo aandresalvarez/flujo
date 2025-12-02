@@ -4,7 +4,7 @@
 
 This documentation provides comprehensive guidance for using and configuring ExecutorCore optimizations in Flujo. The optimization system provides significant performance improvements through memory optimization, execution optimization, telemetry optimization, and error handling optimization.
 
-> **Compatibility notice:** `OptimizedExecutorCore` is kept as a shim for backward compatibility. The supported path is `ExecutorCore` with an `OptimizationConfig`; the shim forwards to the same engine and emits a deprecation warning.
+> **Compatibility notice:** The `OptimizedExecutorCore` shim has been removed. Use `ExecutorCore` with an `OptimizationConfig`; legacy imports should be updated to the new entrypoint.
 
 ## 📚 Documentation Structure
 
@@ -242,19 +242,19 @@ def debug_memory_usage(executor):
 
 ## 🔄 Migration Guide
 
-### From OptimizedExecutorCore (compatibility shim)
+### Legacy note: OptimizedExecutorCore (removed)
 
 ```python
-# Old code
-from flujo.application.core.executor_core import OptimizedExecutorCore
-executor = OptimizedExecutorCore()
+# Old (removed) code
+# from flujo.application.core.executor_core import OptimizedExecutorCore
+# executor = OptimizedExecutorCore()
 
 # New supported code
 from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
 executor = ExecutorCore(optimization_config=OptimizationConfig())
 ```
 
-The OptimizedExecutorCore remains for backward compatibility but delegates to ExecutorCore.
+The shim no longer exists; update imports to use `ExecutorCore` directly.
 
 ## 📋 Best Practices
 

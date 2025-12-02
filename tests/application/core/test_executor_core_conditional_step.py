@@ -254,11 +254,11 @@ class TestExecutorCoreConditionalStep:
         mock_step.config = StepConfig(max_retries=1)
         mock_conditional_step.branches["branch_a"].steps = [mock_step]
 
-        # Mock the _handle_conditional_step method to return a result with correct name
+        # Mock dispatch to return a result with correct name
         with patch.object(
-            executor_core, "_handle_conditional_step", new_callable=AsyncMock
-        ) as mock_handler:
-            mock_handler.return_value = StepResult(
+            executor_core._dispatch_handler, "dispatch", new_callable=AsyncMock
+        ) as mock_dispatch:
+            mock_dispatch.return_value = StepResult(
                 name="test_conditional", success=True, output="test_output"
             )
 
@@ -273,5 +273,5 @@ class TestExecutorCoreConditionalStep:
                 context_setter=None,
             )
 
-            assert result.success is True
-            assert result.name == "test_conditional"
+        assert result.success is True
+        assert result.name == "test_conditional"

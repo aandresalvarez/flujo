@@ -158,6 +158,13 @@ Looking to use GPT‑5 with the Architect? See the guide: `docs/guides/gpt5_arch
   - `lens trace <run_id>` now shows prompt injection events per step (redacted preview). Use this to inspect how conversational history was rendered.
 - `dev`: 🛠️ Access advanced developer and diagnostic tools.
   - `validate`, `show-steps`, `visualize`, `compile-yaml`, `show-config`, `version`
+
+## Middleware & Observability API
+
+Need to integrate Flujo with review dashboards or connector services? Use the new
+`TaskClient` facade (`flujo.client.TaskClient`) to list paused runs, inspect HITL prompts,
+resume workflows, or store global watermarks without touching the database schema.  
+See [docs/guides/building_middleware.md](docs/guides/building_middleware.md) for snippets.
   - `experimental`: advanced tools like `solve`, `bench`, `add-case`, `improve`
 
 ### CLI Flags & Exit Codes (Quick Reference)

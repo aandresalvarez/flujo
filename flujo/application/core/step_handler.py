@@ -90,15 +90,10 @@ class StepHandler:
         limits: Optional[UsageLimits],
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
     ) -> StepResult:
-        return await self._core._complex_step_router._handle_dynamic_router_step(
-            core=self._core,
-            step=step,
-            data=data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            context_setter=context_setter,
+        outcome = await self._core.dynamic_router_step_executor.execute(
+            self._core, step, data, context, resources, limits, context_setter
         )
+        return self._core._unwrap_outcome_to_step_result(outcome, self._core._safe_step_name(step))
 
     async def hitl_step(
         self,

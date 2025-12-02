@@ -120,21 +120,7 @@ def format_feedback(
 
 
 def normalize_frame_context(frame: Any) -> None:
-    """Strip mock contexts and retain hot-path accessors on the frame."""
-    try:
-        from unittest.mock import Mock as _Mock, MagicMock as _MagicMock
-
-        try:
-            from unittest.mock import AsyncMock as _AsyncMock
-
-            _mock_types_ctx: tuple[type[Any], ...] = (_Mock, _MagicMock, _AsyncMock)
-        except Exception:
-            _mock_types_ctx = (_Mock, _MagicMock)
-        ctx_attr = getattr(frame, "context", None)
-        if isinstance(ctx_attr, _mock_types_ctx):
-            setattr(frame, "context", None)
-    except Exception:
-        pass
+    """Retain context/resources/limits on the frame for policy access."""
     # Accessors kept for completeness; policies pull from frame directly
     _ = getattr(frame, "context", None)
     _ = getattr(frame, "resources", None)
@@ -365,6 +351,27 @@ async def execute_entrypoint(
     if called_with_frame:
         frame = cast(ExecutionFrame[Any], frame_or_step)
     else:
+        allowed_keys = {
+            "step",
+            "data",
+            "context",
+            "resources",
+            "limits",
+            "context_setter",
+            "stream",
+            "on_chunk",
+            "_fallback_depth",
+            "quota",
+            "result",
+            "usage_limits",
+            # Backward compatibility: cache-key overrides may be passed by legacy callers/tests
+            "cache_key",
+        }
+        unknown_keys = set(kwargs).difference(allowed_keys)
+        if unknown_keys:
+            raise TypeError(
+                f"Unsupported ExecutorCore.execute() arguments: {', '.join(sorted(unknown_keys))}"
+            )
         # New run: reset per-run history to avoid unbounded growth across executions.
         try:
             core._step_history_tracker.clear_history()
@@ -522,24 +529,21 @@ async def execute_step_compat(
     _fallback_depth: int = 0,
     usage_limits: Optional[UsageLimits] = None,
 ) -> StepResult:
-    """Compatibility wrapper around ExecutorCore.execute returning StepResult."""
+    """Legacy shim: delegate to core.execute and unwrap to StepResult."""
     if usage_limits is not None and limits is None:
         limits = usage_limits
-    try:
-        outcome = await core.execute(
-            step,
-            data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            stream=stream,
-            on_chunk=on_chunk,
-            context_setter=context_setter,
-            result=result,
-            _fallback_depth=_fallback_depth,
-        )
-    except InfiniteFallbackError:
-        raise
+    outcome = await core.execute(
+        step,
+        data,
+        context=context,
+        resources=resources,
+        limits=limits,
+        stream=stream,
+        on_chunk=on_chunk,
+        context_setter=context_setter,
+        result=result,
+        _fallback_depth=_fallback_depth,
+    )
     return cast(
         StepResult, core._unwrap_outcome_to_step_result(outcome, core._safe_step_name(step))
     )

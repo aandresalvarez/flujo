@@ -57,11 +57,11 @@ class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
         self,
         core: Any,
         router_step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        data: Any | None = None,
+        context: Optional[Any] = None,
+        resources: Optional[Any] = None,
+        limits: Optional[UsageLimits] = None,
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
         # Backward-compat: expose 'step' in signature for legacy inspection
         step: Optional[Any] = None,
     ) -> StepOutcome[StepResult]:
