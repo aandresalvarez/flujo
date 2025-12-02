@@ -8,8 +8,7 @@ streaming protocols.
 
 import pytest
 from unittest.mock import MagicMock
-from typing import AsyncIterator
-from typing import Any
+from typing import AsyncIterator, Any, Union
 
 from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor
 from flujo.domain.dsl.step import Step
@@ -49,7 +48,7 @@ class StubBinaryStreamingAgent(BinaryOnlyStreamingAgentProtocol):
 class StubLegacyStreamingAgent(StreamingAgentProtocol):
     """A stub agent using the legacy protocol for backward compatibility."""
 
-    def __init__(self, chunks: list[str | bytes]):
+    def __init__(self, chunks: list[Union[str, bytes]]):
         self.chunks = chunks
 
     async def stream(self, data: Any, **kwargs) -> AsyncIterator[str | bytes]:

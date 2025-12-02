@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, List, Tuple
+from typing import Any, List, Optional, Tuple
 
 import pytest
 
@@ -59,7 +59,7 @@ class _FakeConfigProvider:
 
 class _FakeSkillsDiscovery:
     def __init__(self) -> None:
-        self.calls: List[Tuple[str, str | None]] = []
+        self.calls: List[Tuple[str, Optional[str]]] = []
 
     def load_catalog(self, base_dir: str) -> None:
         self.calls.append(("catalog", base_dir))

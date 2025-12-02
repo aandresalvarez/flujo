@@ -25,17 +25,18 @@ def test_loop_meta_overrides_config_defaults(monkeypatch):
     # Build a minimal conversational loop with explicit loop meta overrides
     from flujo.domain.dsl.step import Step
     from flujo.domain.dsl.pipeline import Pipeline
+    from typing import Optional
     from flujo.domain.dsl.loop import LoopStep
     from flujo.application.runner import Flujo
     from flujo.domain.models import PipelineContext
 
-    async def agent(_: str, *, context: PipelineContext | None = None) -> str:
+    async def agent(_: str, *, context: Optional[PipelineContext] = None) -> str:
         return "ok"
 
     s = Step.from_callable(agent, name="s")
     body = Pipeline.from_step(s)
 
-    def _exit(_out: str, _ctx: PipelineContext | None) -> bool:
+    def _exit(_out: str, _ctx: Optional[PipelineContext]) -> bool:
         return True
 
     loop = LoopStep(name="L", loop_body_pipeline=body, exit_condition_callable=_exit, max_retries=1)

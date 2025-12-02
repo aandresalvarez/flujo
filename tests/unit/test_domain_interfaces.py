@@ -1,6 +1,6 @@
 import contextlib
-from typing import Any
-from flujo.type_definitions.common import JSONObject
+from typing import Any, Optional
+from flujo.domain.interfaces import JSONObject
 
 import pytest
 
@@ -12,7 +12,7 @@ class _StubResolver:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    def get(self, skill_id: str, *, scope: str | None = None) -> JSONObject | None:
+    def get(self, skill_id: str, *, scope: Optional[str] = None) -> Optional[JSONObject]:
         self.calls.append(skill_id)
         return {"factory": lambda **kwargs: {"resolved": skill_id, "params": kwargs}}
 

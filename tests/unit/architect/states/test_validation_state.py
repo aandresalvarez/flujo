@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from typing import Optional
 
 from flujo.architect.context import ArchitectContext
 from flujo.architect.states.validation import build_validation_state
@@ -13,7 +14,7 @@ async def test_validation_repair_loop_sets_validation_next_state() -> None:
 
     ctx = ArchitectContext(yaml_text="invalid")
 
-    async def _invalid_validate(_data: str, *, context: ArchitectContext | None = None) -> dict:
+    async def _invalid_validate(_data: str, *, context: Optional[ArchitectContext] = None) -> dict:
         return {"is_valid": False}
 
     validate_step.agent.run = _invalid_validate  # type: ignore[attr-defined]

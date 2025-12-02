@@ -1,7 +1,7 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
-from typing import Any
+from typing import Any, Optional
 
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step
@@ -10,12 +10,12 @@ from flujo.application.runner import Flujo
 from flujo.domain.models import PipelineContext
 
 
-def _echo_agent(payload: Any, *, context: Any | None = None) -> Any:
+def _echo_agent(payload: Any, *, context: Optional[Any] = None) -> Any:
     # Return payload as-is (used inside child pipeline)
     return payload
 
 
-def _echo_to_scratchpad(payload: Any, *, context: Any | None = None) -> JSONObject:
+def _echo_to_scratchpad(payload: Any, *, context: Optional[Any] = None) -> JSONObject:
     # Map the incoming payload into context.scratchpad.echo via updates_context
     return {"scratchpad": {"echo": payload}}
 
@@ -85,7 +85,7 @@ def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
 
     second_value = {"cohort_definition": "Influenza B, SNOMED 6142004"}
 
-    def _set_second(_: Any, *, context: Any | None = None) -> JSONObject:
+    def _set_second(_: Any, *, context: Optional[Any] = None) -> JSONObject:
         # Overwrite the explicit artifact key between imports
         return {"scratchpad": {"initial_input": second_value}}
 

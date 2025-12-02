@@ -22,9 +22,12 @@ from typing import (
     cast,
     TYPE_CHECKING,
     Literal,
-    ParamSpec,
-    Concatenate,
 )
+
+try:
+    from typing import ParamSpec, Concatenate
+except ImportError:
+    from typing_extensions import ParamSpec, Concatenate
 import contextvars
 import inspect
 from enum import Enum

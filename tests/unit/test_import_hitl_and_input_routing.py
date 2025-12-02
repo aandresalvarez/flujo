@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import pytest
-
+from typing import Optional
 from flujo.domain.models import PipelineContext, PipelineResult
 from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
 from flujo import Flujo, Step
@@ -49,7 +49,7 @@ steps:
     pipeline = load_pipeline_blueprint_from_yaml(parent_text, base_dir=str(parent_dir))
     runner = Flujo(pipeline, context_model=PipelineContext)
 
-    final: PipelineResult[PipelineContext] | None = None
+    final: Optional[PipelineResult[PipelineContext]] = None
     async for item in runner.run_async("goal"):
         if isinstance(item, PipelineResult):
             final = item
@@ -66,7 +66,9 @@ steps:
 @pytest.mark.asyncio
 async def test_import_input_to_initial_prompt_has_precedence() -> None:
     # Child pipeline that captures its initial_prompt into scratchpad.captured
-    async def capture_initial_prompt(_: object, *, context: PipelineContext | None = None) -> dict:
+    async def capture_initial_prompt(
+        _: object, *, context: Optional[PipelineContext] = None
+    ) -> dict:
         assert context is not None
         return {"scratchpad": {"captured": context.initial_prompt}}
 
@@ -93,7 +95,7 @@ async def test_import_input_to_initial_prompt_has_precedence() -> None:
     data = {"x": 1, "y": [2, 3]}
     expected_obj = data
 
-    final: PipelineResult[PipelineContext] | None = None
+    final: Optional[PipelineResult[PipelineContext]] = None
     async for item in runner.run_async(data):
         if isinstance(item, PipelineResult):
             final = item
@@ -141,7 +143,7 @@ steps:
     pipeline = load_pipeline_blueprint_from_yaml(parent_text, base_dir=str(parent_dir))
     runner = Flujo(pipeline, context_model=PipelineContext)
 
-    final: PipelineResult[PipelineContext] | None = None
+    final: Optional[PipelineResult[PipelineContext]] = None
     async for item in runner.run_async("goal"):
         if isinstance(item, PipelineResult):
             final = item
@@ -153,7 +155,7 @@ steps:
 
 @pytest.mark.asyncio
 async def test_import_input_to_both_merges_and_sets_prompt() -> None:
-    async def capture(_: object, *, context: PipelineContext | None = None) -> dict:
+    async def capture(_: object, *, context: Optional[PipelineContext] = None) -> dict:
         assert context is not None
         return {
             "scratchpad": {
@@ -186,7 +188,7 @@ async def test_import_input_to_both_merges_and_sets_prompt() -> None:
     runner = Flujo(parent, context_model=PipelineContext)
 
     data = {"x": 1}
-    final: PipelineResult[PipelineContext] | None = None
+    final: Optional[PipelineResult[PipelineContext]] = None
     async for item in runner.run_async(data):
         if isinstance(item, PipelineResult):
             final = item
@@ -200,7 +202,7 @@ async def test_import_input_to_both_merges_and_sets_prompt() -> None:
 
 @pytest.mark.asyncio
 async def test_import_scalar_to_scratchpad_key() -> None:
-    async def capture(_: object, *, context: PipelineContext | None = None) -> dict:
+    async def capture(_: object, *, context: Optional[PipelineContext] = None) -> dict:
         assert context is not None
         return {"scratchpad": {"captured": context.scratchpad}}
 
@@ -219,7 +221,7 @@ async def test_import_scalar_to_scratchpad_key() -> None:
     parent = Pipeline.from_step(import_step)
     runner = Flujo(parent, context_model=PipelineContext)
 
-    final: PipelineResult[PipelineContext] | None = None
+    final: Optional[PipelineResult[PipelineContext]] = None
     async for item in runner.run_async("hello"):
         if isinstance(item, PipelineResult):
             final = item

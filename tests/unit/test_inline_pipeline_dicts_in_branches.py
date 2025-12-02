@@ -16,9 +16,9 @@ def test_statemachine_state_allows_inline_steps_mapping(tmp_path: Path) -> None:
     # Child emits scratchpad.k = v
     tools = (
         "from __future__ import annotations\n"
-        "from typing import Any\n"
+        "from typing import Any, Optional\n"
         "from flujo.domain.models import PipelineContext\n\n"
-        "async def emit(_data: Any, *, context: PipelineContext | None = None) -> dict:\n"
+        "async def emit(_data: Any, *, context: Optional[PipelineContext] = None) -> dict:\n"
         '    return {"scratchpad": {"k": "v"}}\n'
     )
     child_yaml = (

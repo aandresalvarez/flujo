@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from ..dsl import Step
 from .loader_models import BlueprintError
 
 
-def _normalize_merge_strategy(value: str | None) -> Any:
+def _normalize_merge_strategy(value: Optional[str]) -> Any:
     from ..dsl.step import MergeStrategy as _MS
 
     if value is None:
@@ -17,7 +17,7 @@ def _normalize_merge_strategy(value: str | None) -> Any:
         raise BlueprintError(f"Invalid merge_strategy: {value}") from e
 
 
-def _normalize_branch_failure(value: str | None) -> Any:
+def _normalize_branch_failure(value: Optional[str]) -> Any:
     from ..dsl.step import BranchFailureStrategy as _BFS
 
     if value is None:

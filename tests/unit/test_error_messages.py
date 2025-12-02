@@ -1,3 +1,4 @@
+from typing import Optional
 import pytest
 
 from flujo import Step, Pipeline, step
@@ -60,12 +61,12 @@ def test_type_mismatch_errors() -> None:
 
 
 @step
-async def maybe_str(x: str) -> str | None:
+async def maybe_str(x: str) -> Optional[str]:
     return x if x else None
 
 
 @step
-async def expect_optional(x: str | None) -> str:
+async def expect_optional(x: Optional[str]) -> str:
     return x or ""
 
 

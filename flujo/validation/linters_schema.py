@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 from ..domain.pipeline_validation import ValidationFinding
 from .linters_base import BaseLinter, _override_severity
@@ -127,7 +127,7 @@ class ContextLinter(BaseLinter):
         try:
             from typing import get_origin as _go
 
-            _PR: type[Any] | None = None
+            _PR: Optional[type[Any]] = None
             try:
                 from ..domain.models import PipelineResult as _PR
             except Exception:  # pragma: no cover - defensive

@@ -396,7 +396,7 @@ async def capture_validation_report(report: Any) -> JSONObject:
 
 async def check_user_confirmation(
     _out: Any = None,
-    ctx: DomainBaseModel | None = None,
+    ctx: Optional[DomainBaseModel] = None,
     *,
     user_input: Optional[str] = None,
     **_kwargs: Any,
@@ -414,7 +414,7 @@ async def check_user_confirmation(
     return "denied"
 
 
-async def compute_validity_key(_x: Any = None, *, context: DomainBaseModel | None = None) -> str:
+async def compute_validity_key(_x: Any = None, *, context: Optional[DomainBaseModel] = None) -> str:
     try:
         val = bool(getattr(context, "yaml_is_valid", False))
     except Exception:
@@ -425,7 +425,7 @@ async def compute_validity_key(_x: Any = None, *, context: DomainBaseModel | Non
     return "valid" if val else "invalid"
 
 
-def always_valid_key(_out: Any = None, ctx: DomainBaseModel | None = None) -> str:
+def always_valid_key(_out: Any = None, ctx: Optional[DomainBaseModel] = None) -> str:
     """Return 'valid' unconditionally (used after successful repair)."""
     return "valid"
 
@@ -447,7 +447,7 @@ async def validation_report_to_flag(report: Any) -> JSONObject:
 
 
 async def extract_validation_errors(
-    report: Any, *, context: DomainBaseModel | None = None
+    report: Any, *, context: Optional[DomainBaseModel] = None
 ) -> JSONObject:
     """Extract error messages from a ValidationReport-like input for repair loops.
 
@@ -504,7 +504,7 @@ async def extract_validation_errors(
 
 def select_validity_branch(
     _out: Any = None,
-    ctx: DomainBaseModel | None = None,
+    ctx: Optional[DomainBaseModel] = None,
     **kwargs: Any,
 ) -> str:
     """Return 'valid' or 'invalid' using safe shape guard first, then explicit flags.
@@ -595,7 +595,7 @@ def select_validity_branch(
 
 def select_by_yaml_shape(
     _out: Any = None,
-    ctx: DomainBaseModel | None = None,
+    ctx: Optional[DomainBaseModel] = None,
     **kwargs: Any,
 ) -> str:
     """Return 'invalid' only for unmatched inline list on steps:
@@ -692,7 +692,7 @@ def select_by_yaml_shape(
     return "valid"
 
 
-async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> JSONObject:
+async def shape_to_validity_flag(*, context: Optional[DomainBaseModel] = None) -> JSONObject:
     """Return {'yaml_is_valid': bool} based on a quick YAML shape heuristic.
 
     - False only when the 'steps:' line contains an opening '[' without a closing ']'.

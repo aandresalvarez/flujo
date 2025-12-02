@@ -672,7 +672,7 @@ class TestPersistencePerformanceOverhead:
             state_manager._cache_serialization(context1, run_id_with_underscores, {"data": "test"})
 
             # Verify cache entry exists
-            cache_key = f"{run_id_with_underscores}|{state_manager._compute_context_hash(context1)}"
+            cache_key = f"{run_id_with_underscores}|{state_manager._serializer.compute_context_hash(context1)}"
             assert cache_key in state_manager._serialization_cache
 
             # Test 2: Force cache eviction by adding many entries

@@ -34,66 +34,13 @@ class StateManager(Generic[ContextT]):
         self._serialization_cache: dict[str, JSONObject] = {}
         self._context_hash_cache: dict[str, str] = {}
 
-    def _compute_context_hash(self, context: Optional[ContextT]) -> str:
-        """Compute a fast hash of the context for change detection."""
-        if context is None:
-            return "none"
-
-        try:
-            # Use a fast hash of the context data, excluding auto-generated fields
-            context_data = context.model_dump()
-
-            # Remove auto-generated fields that shouldn't affect change detection
-            fields_to_exclude = {
-                "run_id",
-                "created_at",
-                "updated_at",
-                "pipeline_id",
-                "pipeline_name",
-                "pipeline_version",
-            }
-            filtered_data = {k: v for k, v in context_data.items() if k not in fields_to_exclude}
-
-            # Optimize for large contexts: use a faster hash computation
-            # For large contexts, we can use a simpler hash to avoid expensive JSON serialization
-            import hashlib
-
-            # Use a faster approach for large contexts
-            if len(filtered_data) > 10 or any(
-                isinstance(v, (list, dict)) and len(str(v)) > 1000 for v in filtered_data.values()
-            ):
-                # For large contexts, use a faster hash based on key names and value types
-                # This avoids expensive JSON serialization while still detecting changes
-                hash_input = []
-                for key, value in sorted(filtered_data.items()):
-                    hash_input.append(f"{key}:{type(value).__name__}:{len(str(value))}")
-                context_str = "|".join(hash_input)
-            else:
-                # For small contexts, use the original JSON-based approach
-                import json
-
-                # Custom default function to handle mock objects during hashing
-                def default_serializer(o: Any) -> Any:
-                    if hasattr(o, "__class__") and "Mock" in o.__class__.__name__:
-                        return f"Mock({type(o).__name__})"
-                    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
-
-                context_str = json.dumps(
-                    filtered_data, sort_keys=True, separators=(",", ":"), default=default_serializer
-                )
-
-            return hashlib.md5(context_str.encode()).hexdigest()
-        except Exception as e:
-            # Re-raise the exception so it can be caught by the outer handler
-            # This ensures the error field is set in the pipeline context
-            raise e
-
     def _should_serialize_context(self, context: Optional[ContextT], run_id: str) -> bool:
         """Determine if context needs serialization based on change detection."""
         if context is None:
             return False
 
-        current_hash = self._compute_context_hash(context)
+        # Use the serializer's optimized hashing logic
+        current_hash = self._serializer.compute_context_hash(context)
         cached_hash = self._context_hash_cache.get(run_id)
 
         if cached_hash != current_hash:
@@ -111,7 +58,8 @@ class StateManager(Generic[ContextT]):
         if context is None:
             return None
 
-        context_hash = self._compute_context_hash(context)
+        # Use the serializer's optimized hashing logic
+        context_hash = self._serializer.compute_context_hash(context)
         cache_key = self._create_cache_key(run_id, context_hash)
         return self._serialization_cache.get(cache_key)
 
@@ -137,7 +85,8 @@ class StateManager(Generic[ContextT]):
         if context is None:
             return
 
-        context_hash = self._compute_context_hash(context)
+        # Use the serializer's optimized hashing logic
+        context_hash = self._serializer.compute_context_hash(context)
         cache_key = self._create_cache_key(run_id, context_hash)
 
         # Limit cache size to prevent memory leaks with intelligent eviction

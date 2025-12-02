@@ -13,6 +13,7 @@ from ...agents import make_agent_async, make_templated_agent_async
 from flujo.type_definitions.common import JSONObject
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from typing import Any, Optional
     from ...agents import AsyncAgentWrapper
     from ..dsl import Pipeline as _Pipeline
 import os
@@ -65,7 +66,7 @@ class DeclarativeBlueprintCompiler:
 
     def _validate_and_coerce_timeout(
         self, timeout_opt: Any, agent_name: str
-    ) -> tuple[int | None, list[str]]:
+    ) -> tuple[Optional[int], list[str]]:
         """Validate/coerce timeout to int seconds; collect warnings. None if invalid."""
         warnings: list[str] = []
         if timeout_opt is None:

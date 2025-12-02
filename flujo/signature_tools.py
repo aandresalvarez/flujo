@@ -40,7 +40,7 @@ _analysis_cache_weak: "weakref.WeakKeyDictionary[Callable[..., Any], SignatureAn
 _analysis_cache_id: dict[int, SignatureAnalysis] = {}
 
 
-def _cache_get(func: Callable[..., Any]) -> SignatureAnalysis | None:
+def _cache_get(func: Callable[..., Any]) -> Optional[SignatureAnalysis]:
     """Return cached :class:`SignatureAnalysis` for ``func`` if available."""
 
     try:

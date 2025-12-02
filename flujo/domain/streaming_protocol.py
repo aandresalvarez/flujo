@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Protocol, AsyncIterator, Any, TypeVar, runtime_checkable, TypeAlias
+from typing import Protocol, AsyncIterator, Any, TypeVar, runtime_checkable
+
+try:
+    from typing import TypeAlias
+except ImportError:
+    from typing_extensions import TypeAlias
 
 # Type variables for streaming data types
 StreamInT = TypeVar("StreamInT", contravariant=True)

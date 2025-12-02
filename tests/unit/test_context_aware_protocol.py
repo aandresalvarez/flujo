@@ -2,6 +2,7 @@ import warnings
 from typing import Any
 
 import pytest
+from typing import Optional
 from flujo.domain.models import BaseModel
 
 from flujo import Step
@@ -28,10 +29,10 @@ class TypedAgent(ContextAwareAgentProtocol[str, str, Ctx]):
 
 
 class LegacyAgent(AsyncAgentProtocol[str, str]):
-    async def run(self, data: str, *, context: Ctx | None = None) -> str:
+    async def run(self, data: str, *, context: Optional[Ctx] = None) -> str:
         return data
 
-    async def run_async(self, data: str, *, context: Ctx | None = None) -> str:
+    async def run_async(self, data: str, *, context: Optional[Ctx] = None) -> str:
         return await self.run(data, context=context)
 
 
