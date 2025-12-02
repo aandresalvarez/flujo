@@ -11,6 +11,7 @@ from .run_command import run as run_cmd
 from .status_command import status as status_cmd
 from .validate_command import validate as validate_cmd
 from .architect_command import create as create_cmd
+from .migrate_command import migrate as migrate_cmd
 
 
 def create_cli_app() -> typer.Typer:
@@ -62,6 +63,9 @@ def register_all_commands(app: typer.Typer) -> None:
     app.command(name="run", help="🚀 Run the workflow in the current project.")(run_cmd)
     app.command(name="status", help="Show provider readiness and SQLite state configuration.")(
         status_cmd
+    )
+    app.command(name="migrate", help="Apply database migrations for the state backend.")(
+        migrate_cmd
     )
     app.command(name="validate")(validate_cmd)
     app.command(name="init", help="Initialize a new Flujo project in the current directory.")(

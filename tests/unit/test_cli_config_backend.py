@@ -53,3 +53,14 @@ def test_default_non_test_mode_uses_cwd(monkeypatch: pytest.MonkeyPatch, tmp_pat
     assert isinstance(backend, SQLiteBackend)
     # Defaults to sqlite:///flujo_ops.db in CWD
     assert backend.db_path == tmp_path / "flujo_ops.db"
+
+
+def test_postgres_uri_returns_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FLUJO_STATE_URI", "postgres://user:pass@localhost:5432/flujo")
+    monkeypatch.setenv("FLUJO_TEST_MODE", "0")
+
+    from flujo.cli.config import load_backend_from_config
+    from flujo.state.backends.postgres import PostgresBackend
+
+    backend = load_backend_from_config()
+    assert isinstance(backend, PostgresBackend)

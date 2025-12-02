@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
+from urllib.parse import urlparse
 import os
 
 from flujo.application.core.default_components import (
@@ -31,9 +32,11 @@ from flujo.application.core.executor_protocols import (
 from flujo.application.core.policy_registry import PolicyRegistry, StepPolicy
 from flujo.infra.backends import LocalBackend
 from flujo.state.backends.memory import InMemoryBackend
+from flujo.state.backends.postgres import PostgresBackend
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.state.backends.base import StateBackend
 from flujo.utils.config import get_settings, Settings
+from flujo.infra.config_manager import get_config_manager, get_state_uri
 from flujo.domain.interfaces import StateProvider
 
 
@@ -108,6 +111,29 @@ class BackendFactory:
         cfg = settings or get_settings()
         if bool(getattr(cfg, "test_mode", False)):
             return InMemoryBackend()
+
+        state_uri = get_state_uri(force_reload=True)
+        if state_uri:
+            parsed = urlparse(state_uri)
+            scheme = parsed.scheme.lower()
+            if scheme in {"postgres", "postgresql"}:
+                extended_settings = get_config_manager().get_settings()
+                pool_min = getattr(extended_settings, "postgres_pool_min", 1)
+                pool_max = getattr(extended_settings, "postgres_pool_max", 10)
+                auto_migrate = os.getenv("FLUJO_AUTO_MIGRATE", "true").lower() != "false"
+                return PostgresBackend(
+                    state_uri,
+                    auto_migrate=auto_migrate,
+                    pool_min_size=pool_min,
+                    pool_max_size=pool_max,
+                )
+            if scheme in {"memory", "mem", "inmemory"}:
+                return InMemoryBackend()
+            if scheme.startswith("sqlite"):
+                from flujo.cli.config import _normalize_sqlite_path
+
+                sqlite_path = _normalize_sqlite_path(state_uri, Path.cwd())
+                return SQLiteBackend(sqlite_path)
 
         if db_path is not None:
             target_path = Path(db_path)

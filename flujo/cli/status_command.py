@@ -188,7 +188,7 @@ def status(
             typer.echo(_tb.format_exc(), err=True)
         raise typer.Exit(EX_CONFIG_ERROR)
 
-    # SQLite configuration insight (do not open or create files)
+    # State backend configuration insight (SQLite and PostgreSQL)
     try:
         from ..infra.config_manager import get_state_uri as _get_state_uri
         from .config import _normalize_sqlite_path as _norm_sqlite
@@ -198,14 +198,17 @@ def status(
 
         uri = _get_state_uri(force_reload=True)
         sqlite_info: JSONObject = {"configured": False}
+        postgres_info: JSONObject = {"configured": False}
         if uri:
             uri_lower = uri.strip().lower()
-            # Memory-like forms => not configured for SQLite
+            # Memory-like forms => not configured for SQLite or Postgres
             if uri_lower in {"memory", "memory://", "mem://", "inmemory://"}:
                 sqlite_info = {"configured": False}
+                postgres_info = {"configured": False}
             else:
                 parsed = _urlparse(uri)
-                if parsed.scheme.startswith("sqlite"):
+                scheme_lower = parsed.scheme.lower()
+                if scheme_lower.startswith("sqlite"):
                     try:
                         db_path = _norm_sqlite(uri, Path.cwd())
                         sqlite_info = {
@@ -217,10 +220,26 @@ def status(
                             "configured": False,
                             "error": f"Failed to parse SQLite path: {type(pe).__name__}: {pe}",
                         }
+                elif scheme_lower in {"postgres", "postgresql"}:
+                    # Extract connection info (without password for security)
+                    host = parsed.hostname or "localhost"
+                    port = parsed.port or 5432
+                    database = parsed.path.lstrip("/") if parsed.path else None
+                    user = parsed.username
+                    postgres_info = {
+                        "configured": True,
+                        "host": host,
+                        "port": port,
+                        "database": database,
+                        "user": user,
+                        "uri_scheme": scheme_lower,
+                    }
                 else:
                     # Unknown scheme => not our concern in MVP
                     sqlite_info = {"configured": False}
+                    postgres_info = {"configured": False}
         payload["sqlite"] = sqlite_info
+        payload["postgres"] = postgres_info
 
         # Last runs summary when SQLite is configured and file exists
         try:
