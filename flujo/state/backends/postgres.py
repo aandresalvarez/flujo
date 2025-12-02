@@ -283,7 +283,7 @@ class PostgresBackend(StateBackend):
                     end_time,
                     str(span_data.get("status", "running")),
                     created_at,
-                    safe_serialize(span_data.get("attributes", {})),
+                    span_data.get("attributes", {}),
                 )
             )
             for child in span_data.get("children", []):
@@ -319,7 +319,6 @@ class PostgresBackend(StateBackend):
                     last_step_output = EXCLUDED.last_step_output,
                     step_history = EXCLUDED.step_history,
                     status = EXCLUDED.status,
-                    created_at = EXCLUDED.created_at,
                     updated_at = EXCLUDED.updated_at,
                     total_steps = EXCLUDED.total_steps,
                     error_message = EXCLUDED.error_message,
@@ -831,9 +830,10 @@ class PostgresBackend(StateBackend):
                         "end_time": row[
                             "updated_at"
                         ],  # Map updated_at to end_time for backward compatibility
-                        "total_cost": row["execution_time_ms"]
-                        if row["execution_time_ms"] is not None
-                        else 0.0,  # Map execution_time_ms to total_cost for backward compatibility
+                        # Placeholder for cost; Postgres schema does not yet store total_cost.
+                        "total_cost": row.get("total_cost")
+                        if "total_cost" in row
+                        else (row.get("cost_usd") if "cost_usd" in row else 0.0),
                     }
                 )
             return result

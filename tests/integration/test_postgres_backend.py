@@ -412,7 +412,7 @@ async def test_postgres_backend_run_details(postgres_backend: PostgresBackend) -
 
 
 @pytest.mark.asyncio
-async def test_postgres_backend_auto_migrate_disabled(postgres_backend: PostgresBackend) -> None:
+async def test_postgres_backend_auto_migrate_disabled() -> None:
     """Test that backend raises error when auto_migrate is False and schema doesn't exist."""
     if not _testcontainers_available:
         pytest.skip("Requires testcontainers for isolated database")
