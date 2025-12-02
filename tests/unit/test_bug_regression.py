@@ -339,9 +339,13 @@ class TestCIEnvironmentCompatibility:
     def test_memory_efficient_serialization(self):
         """Test that serialization doesn't consume excessive memory."""
         import gc
-        import psutil
         import os
         import platform
+
+        try:
+            import psutil
+        except ImportError:
+            pytest.skip("psutil not available")
 
         # Get initial memory usage
         process = psutil.Process(os.getpid())
