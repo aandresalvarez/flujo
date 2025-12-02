@@ -5,7 +5,7 @@ import json
 import importlib
 import importlib.util
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, cast
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple, cast
 
 from flujo.state.backends.base import StateBackend
 from flujo.type_definitions.common import JSONObject
@@ -51,6 +51,7 @@ class PostgresBackend(StateBackend):
         self._pool: Optional[Pool] = None
         self._init_lock = asyncio.Lock()
         self._initialized = False
+        self._max_span_depth = 100
 
     async def _ensure_pool(self) -> Pool:
         if self._pool is not None:
@@ -80,10 +81,23 @@ class PostgresBackend(StateBackend):
 
     async def _verify_schema(self, pool: Pool) -> None:
         async with pool.acquire() as conn:
-            exists = await conn.fetchval("SELECT to_regclass('workflow_state')")
-            if exists is None:
+            required_tables = [
+                "workflow_state",
+                "runs",
+                "steps",
+                "traces",
+                "spans",
+                "flujo_schema_versions",
+            ]
+            missing: list[str] = []
+            for table in required_tables:
+                exists = await conn.fetchval("SELECT to_regclass($1)", table)
+                if exists is None:
+                    missing.append(table)
+            if missing:
                 raise RuntimeError(
-                    "workflow_state table not found; run `flujo migrate` or enable FLUJO_AUTO_MIGRATE"
+                    f"Missing required Postgres tables: {', '.join(missing)}. "
+                    "Run `flujo migrate` or enable FLUJO_AUTO_MIGRATE."
                 )
 
     async def _init_schema(self, pool: Pool) -> None:
@@ -200,9 +214,7 @@ class PostgresBackend(StateBackend):
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_id ON runs(pipeline_id)"
             )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at)"
-            )
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at)")
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_name ON runs(pipeline_name)"
             )
@@ -217,6 +229,68 @@ class PostgresBackend(StateBackend):
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_runs_context_gin ON workflow_state USING GIN(pipeline_context)"
             )
+            await conn.execute(
+                """
+                INSERT INTO flujo_schema_versions (version, applied_at)
+                VALUES (1, NOW())
+                ON CONFLICT (version) DO NOTHING
+                """
+            )
+
+    def _extract_spans_from_tree(
+        self, trace: JSONObject, run_id: str, max_depth: int = 100
+    ) -> List[
+        Tuple[str, str, Optional[str], str, float, Optional[float], str, datetime, JSONObject]
+    ]:
+        """Flatten a trace tree into span tuples for insertion."""
+        spans: List[
+            Tuple[str, str, Optional[str], str, float, Optional[float], str, datetime, JSONObject]
+        ] = []
+
+        if not trace or not isinstance(trace, dict):
+            return spans
+
+        def extract_span_recursive(
+            span_data: JSONObject, parent_span_id: Optional[str], depth: int
+        ) -> None:
+            if depth > max_depth:
+                return
+            if (
+                not isinstance(span_data, dict)
+                or "span_id" not in span_data
+                or "name" not in span_data
+            ):
+                return
+            try:
+                start_time = float(span_data.get("start_time", 0.0))
+            except (ValueError, TypeError):
+                return
+            try:
+                end_time = (
+                    float(span_data["end_time"]) if span_data.get("end_time") is not None else None
+                )
+            except (ValueError, TypeError):
+                return
+
+            created_at = datetime.now(timezone.utc)
+            spans.append(
+                (
+                    run_id,
+                    str(span_data.get("span_id", "")),
+                    parent_span_id,
+                    str(span_data.get("name", "")),
+                    start_time,
+                    end_time,
+                    str(span_data.get("status", "running")),
+                    created_at,
+                    safe_serialize(span_data.get("attributes", {})),
+                )
+            )
+            for child in span_data.get("children", []):
+                extract_span_recursive(child, str(span_data.get("span_id")), depth + 1)
+
+        extract_span_recursive(trace, None, 0)
+        return spans
 
     async def save_state(self, run_id: str, state: JSONObject) -> None:
         await self._ensure_init()
@@ -336,22 +410,159 @@ class PostgresBackend(StateBackend):
                 return None
             return cast(JSONObject, safe_deserialize(record["trace_data"]))
 
+    async def get_spans(
+        self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
+    ) -> List[JSONObject]:
+        await self._ensure_init()
+        assert self._pool is not None
+        async with self._pool.acquire() as conn:
+            query = """
+                SELECT span_id, parent_span_id, name, start_time, end_time,
+                       status, attributes, created_at
+                FROM spans WHERE run_id = $1
+            """
+            params: List[Any] = [run_id]
+            param_idx = 2
+            if status:
+                query += f" AND status = ${param_idx}"
+                params.append(status)
+                param_idx += 1
+            if name:
+                query += f" AND name = ${param_idx}"
+                params.append(name)
+            query += " ORDER BY start_time"
+            rows = await conn.fetch(query, *params)
+            results: List[JSONObject] = []
+            for row in rows:
+                results.append(
+                    {
+                        "span_id": str(row["span_id"]),
+                        "parent_span_id": str(row["parent_span_id"])
+                        if row["parent_span_id"] is not None
+                        else None,
+                        "name": str(row["name"]),
+                        "start_time": float(row["start_time"]),
+                        "end_time": float(row["end_time"]) if row["end_time"] is not None else None,
+                        "status": str(row["status"]),
+                        "attributes": safe_deserialize(row["attributes"])
+                        if row["attributes"]
+                        else {},
+                        "created_at": row["created_at"],
+                    }
+                )
+            return results
+
+    async def get_span_statistics(
+        self, pipeline_name: Optional[str] = None, time_range: Optional[Tuple[float, float]] = None
+    ) -> JSONObject:
+        await self._ensure_init()
+        assert self._pool is not None
+        async with self._pool.acquire() as conn:
+            query = """
+                SELECT s.name, s.status, s.start_time, s.end_time, r.pipeline_name
+                FROM spans s
+                JOIN runs r ON s.run_id = r.run_id
+                WHERE s.end_time IS NOT NULL
+            """
+            params: List[Any] = []
+            param_idx = 1
+            if pipeline_name:
+                query += f" AND r.pipeline_name = ${param_idx}"
+                params.append(pipeline_name)
+                param_idx += 1
+            if time_range:
+                start_time, end_time = time_range
+                query += f" AND s.start_time >= ${param_idx} AND s.start_time <= ${param_idx + 1}"
+                params.extend([start_time, end_time])
+            rows = await conn.fetch(query, *params)
+            stats: JSONObject = {
+                "total_spans": len(rows),
+                "by_name": {},
+                "by_status": {},
+                "avg_duration_by_name": {},
+            }
+            for row in rows:
+                name = str(row["name"])
+                status = str(row["status"])
+                start_time_val = float(row["start_time"])
+                end_time_val = float(row["end_time"]) if row["end_time"] is not None else 0.0
+                duration = end_time_val - start_time_val
+
+                stats["by_name"][name] = stats["by_name"].get(name, 0) + 1
+                stats["by_status"][status] = stats["by_status"].get(status, 0) + 1
+                if name not in stats["avg_duration_by_name"]:
+                    stats["avg_duration_by_name"][name] = {"total": 0.0, "count": 0}
+                stats["avg_duration_by_name"][name]["total"] += duration
+                stats["avg_duration_by_name"][name]["count"] += 1
+            for name, data in stats["avg_duration_by_name"].items():
+                count = data["count"]
+                data["average"] = data["total"] / count if count > 0 else 0.0
+            return stats
+
     async def save_trace(self, run_id: str, trace: JSONObject) -> None:
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
             now = datetime.now(timezone.utc)
-            await conn.execute(
-                """
-                INSERT INTO traces (run_id, trace_data, created_at)
-                VALUES ($1, $2::jsonb, $3)
-                ON CONFLICT (run_id) DO UPDATE SET trace_data = EXCLUDED.trace_data,
-                    created_at = EXCLUDED.created_at
-                """,
-                run_id,
-                _jsonb(trace),
-                now,
-            )
+            spans = self._extract_spans_from_tree(trace, run_id, self._max_span_depth)
+            async with conn.transaction():
+                # Ensure a runs record exists for FK integrity (unknowns are safe defaults)
+                await conn.execute(
+                    """
+                    INSERT INTO runs (
+                        run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                        created_at, updated_at
+                    ) VALUES ($1, 'unknown', 'unknown', 'latest', 'running', $2, $2)
+                    ON CONFLICT (run_id) DO NOTHING
+                    """,
+                    run_id,
+                    now,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO traces (run_id, trace_data, created_at)
+                    VALUES ($1, $2::jsonb, $3)
+                    ON CONFLICT (run_id) DO UPDATE SET trace_data = EXCLUDED.trace_data,
+                        created_at = EXCLUDED.created_at
+                    """,
+                    run_id,
+                    _jsonb(trace),
+                    now,
+                )
+                await conn.execute("DELETE FROM spans WHERE run_id = $1", run_id)
+                if spans:
+                    await conn.executemany(
+                        """
+                        INSERT INTO spans (
+                            run_id, span_id, parent_span_id, name, start_time, end_time,
+                            status, attributes, created_at
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+                        """,
+                        [
+                            (
+                                span_run_id,
+                                span_id,
+                                parent_span_id,
+                                name,
+                                start_time,
+                                end_time,
+                                status,
+                                _jsonb(attributes),
+                                created_at,
+                            )
+                            for (
+                                span_run_id,
+                                span_id,
+                                parent_span_id,
+                                name,
+                                start_time,
+                                end_time,
+                                status,
+                                created_at,
+                                attributes,
+                            ) in spans
+                        ],
+                    )
 
     async def save_run_start(self, run_data: JSONObject) -> None:
         await self._ensure_init()
@@ -480,6 +691,282 @@ class PostgresBackend(StateBackend):
                     }
                 )
             return results
+
+    async def list_workflows(
+        self,
+        status: Optional[str] = None,
+        pipeline_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[JSONObject]:
+        """Enhanced workflow listing with additional filters and metadata."""
+        await self._ensure_init()
+        assert self._pool is not None
+        async with self._pool.acquire() as conn:
+            # Build query with optional filters
+            query_parts = [
+                """
+                SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
+                       current_step_index, status, created_at, updated_at,
+                       total_steps, error_message, execution_time_ms, memory_usage_mb,
+                       metadata, is_background_task, parent_run_id, task_id, background_error
+                FROM workflow_state
+                WHERE 1=1
+                """
+            ]
+            params: List[Any] = []
+            param_num = 1
+
+            if status:
+                query_parts.append(f" AND status = ${param_num}")
+                params.append(status)
+                param_num += 1
+
+            if pipeline_id:
+                query_parts.append(f" AND pipeline_id = ${param_num}")
+                params.append(pipeline_id)
+                param_num += 1
+
+            query_parts.append(" ORDER BY created_at DESC")
+
+            if limit is not None:
+                query_parts.append(f" LIMIT ${param_num}")
+                params.append(limit)
+                param_num += 1
+            if offset:
+                query_parts.append(f" OFFSET ${param_num}")
+                params.append(offset)
+
+            query = "".join(query_parts)
+            rows = await conn.fetch(query, *params)
+
+            result: List[JSONObject] = []
+            for row in rows:
+                if row is None:
+                    continue
+                metadata = safe_deserialize(row["metadata"]) if row["metadata"] else {}
+                result.append(
+                    {
+                        "run_id": row["run_id"],
+                        "pipeline_id": row["pipeline_id"],
+                        "pipeline_name": row["pipeline_name"],
+                        "pipeline_version": row["pipeline_version"],
+                        "current_step_index": row["current_step_index"],
+                        "status": row["status"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "total_steps": row["total_steps"] or 0,
+                        "error_message": row["error_message"],
+                        "execution_time_ms": row["execution_time_ms"],
+                        "memory_usage_mb": row["memory_usage_mb"],
+                        "metadata": metadata,
+                        "is_background_task": bool(row["is_background_task"])
+                        if row["is_background_task"] is not None
+                        else False,
+                        "parent_run_id": row["parent_run_id"],
+                        "task_id": row["task_id"],
+                        "background_error": row["background_error"],
+                    }
+                )
+            return result
+
+    async def list_runs(
+        self,
+        status: Optional[str] = None,
+        pipeline_name: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[JSONObject]:
+        """List runs from the new structured schema for lens CLI."""
+        await self._ensure_init()
+        assert self._pool is not None
+        async with self._pool.acquire() as conn:
+            # Build query with optional filters
+            query_parts = [
+                """
+                SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at, execution_time_ms
+                FROM runs
+                WHERE 1=1
+                """
+            ]
+            params: List[Any] = []
+            param_num = 1
+
+            if status:
+                query_parts.append(f" AND status = ${param_num}")
+                params.append(status)
+                param_num += 1
+
+            if pipeline_name:
+                query_parts.append(f" AND pipeline_name = ${param_num}")
+                params.append(pipeline_name)
+                param_num += 1
+
+            query_parts.append(" ORDER BY created_at DESC")
+
+            if limit is not None:
+                query_parts.append(f" LIMIT ${param_num}")
+                params.append(limit)
+                param_num += 1
+            if offset:
+                query_parts.append(f" OFFSET ${param_num}")
+                params.append(offset)
+
+            query = "".join(query_parts)
+            rows = await conn.fetch(query, *params)
+
+            result: List[JSONObject] = []
+            for row in rows:
+                if row is None:
+                    continue
+                result.append(
+                    {
+                        "run_id": row["run_id"],
+                        "pipeline_name": row["pipeline_name"],
+                        "pipeline_version": row["pipeline_version"],
+                        "status": row["status"],
+                        "start_time": row[
+                            "created_at"
+                        ],  # Map created_at to start_time for backward compatibility
+                        "end_time": row[
+                            "updated_at"
+                        ],  # Map updated_at to end_time for backward compatibility
+                        "total_cost": row["execution_time_ms"]
+                        if row["execution_time_ms"] is not None
+                        else 0.0,  # Map execution_time_ms to total_cost for backward compatibility
+                    }
+                )
+            return result
+
+    async def get_workflow_stats(self) -> JSONObject:
+        """Get comprehensive workflow statistics."""
+        await self._ensure_init()
+        assert self._pool is not None
+        async with self._pool.acquire() as conn:
+            # Get total count
+            total_workflows = await conn.fetchval("SELECT COUNT(*) FROM workflow_state") or 0
+
+            # Get status counts
+            status_rows = await conn.fetch(
+                "SELECT status, COUNT(*) as count FROM workflow_state GROUP BY status"
+            )
+            status_counts: dict[str, int] = {
+                row["status"]: row["count"] for row in status_rows if row is not None
+            }
+
+            # Get recent workflows (last 24 hours)
+            recent_workflows_24h = (
+                await conn.fetchval(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_state
+                    WHERE created_at >= NOW() - INTERVAL '24 hours'
+                    """
+                )
+                or 0
+            )
+
+            # Get average execution time
+            avg_exec_time = (
+                await conn.fetchval(
+                    """
+                    SELECT AVG(execution_time_ms)
+                    FROM workflow_state
+                    WHERE execution_time_ms IS NOT NULL
+                    """
+                )
+                or 0
+            )
+
+            # Background task breakdown
+            bg_rows = await conn.fetch(
+                """
+                SELECT status, COUNT(*) as count FROM workflow_state
+                WHERE is_background_task = TRUE
+                GROUP BY status
+                """
+            )
+            bg_status_counts: dict[str, int] = {
+                row["status"]: row["count"] for row in bg_rows if row is not None
+            }
+
+            return {
+                "total_workflows": total_workflows,
+                "status_counts": status_counts,
+                "recent_workflows_24h": recent_workflows_24h,
+                "average_execution_time_ms": avg_exec_time or 0,
+                "background_status_counts": bg_status_counts,
+            }
+
+    async def get_failed_workflows(self, hours_back: int = 24) -> List[JSONObject]:
+        """Get failed workflows from the last N hours."""
+        await self._ensure_init()
+        assert self._pool is not None
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT run_id, pipeline_id, pipeline_name, pipeline_version,
+                       current_step_index, status, created_at, updated_at,
+                       total_steps, error_message, execution_time_ms, memory_usage_mb
+                FROM workflow_state
+                WHERE status = $1
+                AND updated_at >= NOW() - INTERVAL '1 hour' * $2
+                ORDER BY updated_at DESC
+                """,
+                "failed",
+                hours_back,
+            )
+
+            result: List[JSONObject] = []
+            for row in rows:
+                if row is None:
+                    continue
+                result.append(
+                    {
+                        "run_id": row["run_id"],
+                        "pipeline_id": row["pipeline_id"],
+                        "pipeline_name": row["pipeline_name"],
+                        "pipeline_version": row["pipeline_version"],
+                        "current_step_index": row["current_step_index"],
+                        "status": row["status"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "total_steps": row["total_steps"] or 0,
+                        "error_message": row["error_message"],
+                        "execution_time_ms": row["execution_time_ms"],
+                        "memory_usage_mb": row["memory_usage_mb"],
+                    }
+                )
+            return result
+
+    async def cleanup_old_workflows(self, days_old: float = 30) -> int:
+        """Delete workflows older than specified days. Returns number of deleted workflows."""
+        await self._ensure_init()
+        assert self._pool is not None
+        async with self._pool.acquire() as conn:
+            # Count workflows to be deleted
+            count = (
+                await conn.fetchval(
+                    """
+                    SELECT COUNT(*)
+                    FROM workflow_state
+                    WHERE created_at < NOW() - INTERVAL '1 day' * $1
+                    """,
+                    days_old,
+                )
+                or 0
+            )
+
+            # Delete old workflows
+            await conn.execute(
+                """
+                DELETE FROM workflow_state
+                WHERE created_at < NOW() - INTERVAL '1 day' * $1
+                """,
+                days_old,
+            )
+
+            return int(count)
 
     async def shutdown(self) -> None:
         if self._pool is not None:

@@ -4,6 +4,7 @@ import asyncio
 import importlib.util
 from pathlib import Path
 from typing import List, Optional, Tuple
+from urllib.parse import urlparse
 
 import typer
 
@@ -14,7 +15,9 @@ def migrate(dry_run: bool = False, target_version: Optional[int] = None) -> None
     """Apply PostgreSQL migrations for the configured state backend."""
 
     uri = get_state_uri(force_reload=True)
-    if uri is None or not uri.startswith(("postgres://", "postgresql://")):
+    parsed = urlparse(uri or "")
+    scheme = (parsed.scheme or "").lower()
+    if uri is None or scheme not in {"postgres", "postgresql"}:
         typer.secho("PostgreSQL state_uri required for migrations", fg=typer.colors.RED)
         raise typer.Exit(1)
 
@@ -38,13 +41,14 @@ async def _run_migrations(uri: str, dry_run: bool, target_version: Optional[int]
 
     migrations_dir = Path(__file__).resolve().parent.parent / "state" / "migrations"
     migration_files: List[Tuple[int, Path]] = []
-    for path in sorted(migrations_dir.glob("*.sql")):
+    for path in migrations_dir.glob("*.sql"):
         stem = path.stem.split("_", 1)[0]
         if stem.isdigit():
             version = int(stem)
             if target_version is not None and version > target_version:
                 continue
             migration_files.append((version, path))
+    migration_files.sort(key=lambda item: item[0])
 
     conn = await asyncpg.connect(uri)
     try:

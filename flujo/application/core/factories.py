@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
-from urllib.parse import ParseResult, urlparse
+from urllib.parse import urlparse
 import os
 
 from flujo.application.core.default_components import (
@@ -130,7 +130,9 @@ class BackendFactory:
             if scheme in {"memory", "mem", "inmemory"}:
                 return InMemoryBackend()
             if scheme.startswith("sqlite"):
-                sqlite_path = self._resolve_sqlite_path(parsed)
+                from flujo.cli.config import _normalize_sqlite_path
+
+                sqlite_path = _normalize_sqlite_path(state_uri, Path.cwd())
                 return SQLiteBackend(sqlite_path)
 
         if db_path is not None:
@@ -143,14 +145,3 @@ class BackendFactory:
                 root_base = Path.cwd()
             target_path = root_base / "flujo_ops.db"
         return SQLiteBackend(target_path)
-
-    @staticmethod
-    def _resolve_sqlite_path(parsed_uri: ParseResult) -> Path:
-        path_str = parsed_uri.path or parsed_uri.netloc
-        if not path_str:
-            raise ValueError("SQLite URI must include a path component")
-        if path_str.startswith("//"):
-            path_str = path_str[1:]
-        if path_str.startswith("/"):
-            return Path(path_str)
-        return (Path.cwd() / path_str).resolve()
