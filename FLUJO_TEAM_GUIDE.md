@@ -29,6 +29,12 @@ Notes:
 - **Runner**: `runner.py` facade delegates to `runner_methods.py` (sync/async helpers), `runner_execution.py` (resume orchestration), and `runner_components/` (tracing manager, state backend manager, resume/replay orchestrators).
 - **Agent wrapper**: `flujo/agents/wrapper.py` handles retries, timeouts, repairs; returns `AgentIOValidationError` for validation failures and `ExecutionError` for execution issues.
 
+## **Autonomic Resource Management**
+
+- **AdaptiveResourceManager** + **load_balancer**: monitors CPU/memory and dynamically throttles/spreads work; expect branch pacing under pressure.
+- **CircuitBreaker** + **graceful_degradation**: isolates failures and sheds features when health checks fail; never bypass this layer.
+- These components live under `flujo/application/core/` and are active by default—architect changes must preserve their hooks and quotas.
+
 ## **Executor Dispatch Guarantees**
 
 - Complex step routing must flow through the policy registry/dispatcher—`ComplexStepRouter` is removed. Do not reintroduce step-specific branching in `ExecutorCore`.

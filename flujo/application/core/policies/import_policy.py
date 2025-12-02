@@ -52,11 +52,12 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
         self,
         core: Any,
         step: ImportStep,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Callable[[PipelineResult[Any], Optional[Any]], None],
+        data: Any | None = None,
+        context: Optional[Any] = None,
+        resources: Optional[Any] = None,
+        limits: Optional[UsageLimits] = None,
+        context_setter: Callable[[PipelineResult[Any], Optional[Any]], None] = lambda _pr,
+        _ctx: None,
     ) -> StepOutcome[StepResult]:
         if isinstance(step, ExecutionFrame):
             frame = step

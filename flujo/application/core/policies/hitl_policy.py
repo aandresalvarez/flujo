@@ -53,11 +53,11 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
         self,
         core: Any,
         step: HumanInTheLoopStep,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        data: Any | None = None,
+        context: Optional[Any] = None,
+        resources: Optional[Any] = None,
+        limits: Optional[UsageLimits] = None,
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
     ) -> StepOutcome[StepResult]:
         """Handle Human-In-The-Loop step execution."""
         if isinstance(step, ExecutionFrame):

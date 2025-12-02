@@ -66,20 +66,6 @@ from .executor_helpers import (
     PluginError,
     StepExecutor,
 )
-from .executor_wrappers import (
-    handle_parallel_step,
-    execute_pipeline,
-    execute_pipeline_via_policies,
-    handle_loop_step,
-    handle_dynamic_router,
-    handle_hitl_step,
-    execute_loop,
-    handle_cache_step,
-    handle_conditional_step,
-    handle_dynamic_router_step,
-    default_set_final_context,
-    execute_agent_with_orchestration,
-)
 from .step_policies import (
     AgentResultUnpacker,
     AgentStepExecutor,
@@ -711,30 +697,206 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     _make_execution_frame = make_execution_frame
 
-    # Compatibility shim for existing call sites/tests
-    execute_step = execute_step_compat
-
     _execute_simple_step = execute_simple_step
 
     # Preserve failure builder compatibility
     _failure_builder = build_failure_outcome
 
-    _handle_parallel_step = handle_parallel_step
-    _execute_pipeline = execute_pipeline
-    _execute_pipeline_via_policies = execute_pipeline_via_policies
-    _handle_loop_step = handle_loop_step
-    _handle_dynamic_router = handle_dynamic_router
-    _handle_hitl_step = handle_hitl_step
-    _execute_loop = execute_loop
-    _handle_cache_step = handle_cache_step
-    _handle_conditional_step = handle_conditional_step
-    _handle_dynamic_router_step = handle_dynamic_router_step
-    _default_set_final_context = staticmethod(default_set_final_context)
+    # Compatibility shims retained for legacy call sites/tests
+    async def _execute_pipeline_via_policies(
+        self,
+        pipeline: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[Any],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
+    ) -> PipelineResult[Any]:
+        return await self._step_handler.pipeline(
+            pipeline, data, context, resources, limits, context_setter
+        )
+
+    async def _execute_pipeline(
+        self,
+        pipeline: Any,
+        data: Any,
+        context: Any,
+        resources: Any,
+        limits: Any,
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+    ) -> PipelineResult[Any]:
+        return await self._step_handler.pipeline(
+            pipeline, data, context, resources, limits, context_setter
+        )
+
+    async def _handle_loop_step(
+        self,
+        loop_step: Any,
+        data: Any,
+        context: Any,
+        resources: Any,
+        limits: Any,
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        _fallback_depth: int = 0,
+    ) -> StepResult:
+        return await self._step_handler.loop_step(
+            loop_step, data, context, resources, limits, context_setter, _fallback_depth
+        )
+
+    async def _execute_loop(
+        self,
+        loop_step: Any,
+        data: Any,
+        context: Any,
+        resources: Any,
+        limits: Any,
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        _fallback_depth: int = 0,
+    ) -> StepResult:
+        return await self._loop_orchestrator.execute(
+            core=self,
+            loop_step=loop_step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            context_setter=context_setter,
+            fallback_depth=_fallback_depth,
+        )
+
+    async def _handle_cache_step(
+        self,
+        step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
+        *,
+        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
+        **_: Any,
+    ) -> StepResult:
+        return await self._step_handler.cache_step(
+            step, data, context, resources, limits, context_setter, step_executor
+        )
+
+    async def _handle_conditional_step(
+        self,
+        step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        _fallback_depth: int = 0,
+        **_: Any,
+    ) -> StepResult:
+        return await self._step_handler.conditional_step(
+            step, data, context, resources, limits, context_setter, _fallback_depth
+        )
+
+    async def _handle_dynamic_router_step(
+        self,
+        step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
+        **_: Any,
+    ) -> StepResult:
+        return await self._step_handler.dynamic_router_step(
+            step, data, context, resources, limits, context_setter
+        )
+
+    async def _handle_hitl_step(
+        self,
+        step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        stream: bool = False,
+        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
+        cache_key: Optional[str] = None,
+        _fallback_depth: int = 0,
+        **_: Any,
+    ) -> StepResult:
+        return await self._step_handler.hitl_step(
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            context_setter,
+            stream,
+            on_chunk,
+            cache_key,
+            _fallback_depth,
+        )
+
+    async def _handle_parallel_step(
+        self,
+        step: Any | None = None,
+        data: Any = None,
+        context: Any = None,
+        resources: Any = None,
+        limits: Any = None,
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
+        *,
+        parallel_step: Any | None = None,
+        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
+    ) -> StepResult:
+        ps = parallel_step if parallel_step is not None else step
+        return await self._step_handler.parallel_step(
+            ps, data, context, resources, limits, context_setter, step_executor
+        )
+
+    async def _handle_dynamic_router(
+        self,
+        step: Any | None = None,
+        data: Any | None = None,
+        context: Any | None = None,
+        resources: Any | None = None,
+        limits: Any | None = None,
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
+        router_step: Any | None = None,
+        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
+    ) -> StepResult:
+        rs = router_step if router_step is not None else step
+        return await self._step_handler.dynamic_router_wrapper(
+            step, data, context, resources, limits, context_setter, rs, step_executor
+        )
+
+    async def _execute_agent_with_orchestration(
+        self,
+        step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        stream: bool,
+        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+        cache_key: Optional[str],
+        _fallback_depth: int,
+    ) -> StepOutcome[StepResult]:
+        return await self._agent_handler.execute(
+            step=step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            stream=stream,
+            on_chunk=on_chunk,
+            cache_key=cache_key,
+            fallback_depth=_fallback_depth,
+        )
+
+    execute_step = execute_step_compat
 
     _safe_step_name = staticmethod(safe_step_name)
     _format_feedback = staticmethod(format_feedback)
-
-    _execute_agent_with_orchestration = execute_agent_with_orchestration
 
     def get_optimization_stats(self) -> "JSONObject":
         return get_opt_stats(self.optimization_config)

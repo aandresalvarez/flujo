@@ -529,24 +529,21 @@ async def execute_step_compat(
     _fallback_depth: int = 0,
     usage_limits: Optional[UsageLimits] = None,
 ) -> StepResult:
-    """Compatibility wrapper around ExecutorCore.execute returning StepResult."""
+    """Legacy shim: delegate to core.execute and unwrap to StepResult."""
     if usage_limits is not None and limits is None:
         limits = usage_limits
-    try:
-        outcome = await core.execute(
-            step,
-            data,
-            context=context,
-            resources=resources,
-            limits=limits,
-            stream=stream,
-            on_chunk=on_chunk,
-            context_setter=context_setter,
-            result=result,
-            _fallback_depth=_fallback_depth,
-        )
-    except InfiniteFallbackError:
-        raise
+    outcome = await core.execute(
+        step,
+        data,
+        context=context,
+        resources=resources,
+        limits=limits,
+        stream=stream,
+        on_chunk=on_chunk,
+        context_setter=context_setter,
+        result=result,
+        _fallback_depth=_fallback_depth,
+    )
     return cast(
         StepResult, core._unwrap_outcome_to_step_result(outcome, core._safe_step_name(step))
     )
