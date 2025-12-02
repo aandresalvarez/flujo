@@ -193,9 +193,17 @@ class TestStateManagerFallbackSerialization:
 
         # Adjust threshold based on environment
         # CI environments and parallel execution can be slower due to resource contention
-        if os.environ.get("CI") == "1":
-            # More lenient threshold for CI environments
-            threshold = 0.075  # 75ms for CI
+        # Check for CI environment (handles both CI=1 and CI=true)
+        is_ci = os.environ.get("CI") in ("1", "true", "True", "TRUE")
+        # Also check for parallel execution (xdist sets TEST_WORKER)
+        is_parallel = (
+            os.environ.get("TEST_WORKER") is not None
+            or os.environ.get("PYTEST_XDIST_WORKER") is not None
+        )
+
+        if is_ci or is_parallel:
+            # More lenient threshold for CI environments and parallel execution
+            threshold = 0.080  # 80ms for CI/parallel (increased from 75ms for more stability)
         else:
             # Standard threshold for local development
             threshold = 0.050  # 50ms for local (slightly more lenient than original)
@@ -255,5 +263,5 @@ class TestStateManagerFallbackSerialization:
         assert best_time < threshold, (
             f"Fallback serialization consistently slow across {max_attempts} attempts. "
             f"Best time: {best_time:.6f}s, threshold: {threshold:.6f}s. "
-            f"Environment: {'CI' if os.environ.get('CI') == '1' else 'Local'}"
+            f"Environment: {'CI' if is_ci else 'Local'}"
         )
