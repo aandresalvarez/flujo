@@ -596,13 +596,7 @@ class StateManager(Generic[ContextT]):
                 self._serializer.clear_cache(run_id)
             except Exception:
                 pass
-            # Trigger memory cleanup after run completes to aid memory cleanup tests
-            try:
-                from ..core.optimization.memory.memory_utils import trigger_memory_cleanup
-
-                trigger_memory_cleanup(force=True)
-            except Exception:
-                pass
+            # Memory cleanup is handled by Python's garbage collector
         except NotImplementedError:
             pass
 

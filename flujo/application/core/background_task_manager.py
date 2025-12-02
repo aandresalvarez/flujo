@@ -11,7 +11,6 @@ from ...infra import telemetry
 from ...infra.settings import get_settings
 from .context_manager import ContextManager
 from ...exceptions import UsageLimitExceededError, PipelineAbortSignal, PausedException
-from .optimized_error_handler import ErrorContext, ErrorClassifier, ErrorCategory
 
 if TYPE_CHECKING:  # pragma: no cover
     from .executor_core import ExecutorCore
@@ -251,7 +250,7 @@ class BackgroundTaskManager:
                     quota.reclaim(reserved_estimate, UsageEstimate(cost_usd=0.0, tokens=0))
                 if enable_state_tracking and state_manager is not None and enable_resumability:
                     metadata["background_error"] = str(control_flow_err)
-                    metadata["error_category"] = ErrorCategory.CONTROL_FLOW.value
+                    metadata["error_category"] = "control_flow"
                     await core._mark_background_task_paused(
                         task_id=task_id,
                         context=final_context,
@@ -266,7 +265,7 @@ class BackgroundTaskManager:
                     quota.reclaim(reserved_estimate, UsageEstimate(cost_usd=0.0, tokens=0))
                 if enable_state_tracking and state_manager is not None and enable_resumability:
                     metadata["background_error"] = str(control_flow_err)
-                    metadata["error_category"] = ErrorCategory.CONTROL_FLOW.value
+                    metadata["error_category"] = "control_flow"
                     await core._mark_background_task_failed(
                         task_id=task_id,
                         context=final_context,
@@ -282,15 +281,28 @@ class BackgroundTaskManager:
                 if enable_state_tracking and state_manager is not None and enable_resumability:
                     metadata["background_error"] = str(e)
                     try:
-                        err_ctx = ErrorContext.from_exception(e)
-                        ErrorClassifier().classify_error(err_ctx)
-                        metadata["error_category"] = err_ctx.category.value
+                        err_name = type(e).__name__
+                        err_str = str(e).lower()
+                        if "Timeout" in err_name or "timeout" in err_str:
+                            metadata["error_category"] = "timeout"
+                        elif (
+                            "Connection" in err_name
+                            or "connection" in err_str
+                            or "network" in err_str
+                        ):
+                            metadata["error_category"] = "network"
+                        elif "Validation" in err_name or "validation" in err_str:
+                            metadata["error_category"] = "validation"
+                        elif "Auth" in err_name or "auth" in err_str:
+                            metadata["error_category"] = "authentication"
+                        else:
+                            metadata["error_category"] = "unknown"
                         if final_context is not None and hasattr(final_context, "scratchpad"):
-                            final_context.scratchpad["background_error_category"] = (
-                                err_ctx.category.value
-                            )
+                            final_context.scratchpad["background_error_category"] = metadata[
+                                "error_category"
+                            ]
                     except Exception:
-                        pass
+                        metadata["error_category"] = "unknown"
                     await core._mark_background_task_failed(
                         task_id=task_id,
                         context=final_context,

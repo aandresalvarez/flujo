@@ -20,7 +20,7 @@ from flujo.application.core.default_cache_components import (
     ThreadSafeMeter,
 )
 from flujo.application.core.estimation import build_default_estimator_factory
-from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.executor_protocols import (
     IAgentRunner,
     ICacheBackend,
@@ -54,7 +54,6 @@ class ExecutorFactory:
         validator_runner: IValidatorRunner | None = None,
         plugin_runner: IPluginRunner | None = None,
         usage_meter: IUsageMeter | None = None,
-        optimization_config: OptimizationConfig | None = None,
         state_providers: Optional[Dict[str, StateProvider[Any]]] = None,
         policy_registry: PolicyRegistry | None = None,
         policy_overrides: Sequence[StepPolicy[Any]] | None = None,
@@ -66,7 +65,6 @@ class ExecutorFactory:
         self._validator_runner = validator_runner
         self._plugin_runner = plugin_runner
         self._usage_meter = usage_meter
-        self._optimization_config = optimization_config
         self._state_providers = state_providers or {}
         self._policy_registry = policy_registry
         self._policy_overrides = list(policy_overrides) if policy_overrides else []
@@ -84,7 +82,6 @@ class ExecutorFactory:
             validator_runner=self._validator_runner or DefaultValidatorRunner(),
             plugin_runner=self._plugin_runner or DefaultPluginRunner(),
             telemetry=self._telemetry or DefaultTelemetry(),
-            optimization_config=self._optimization_config,
             estimator_factory=build_default_estimator_factory(),
             state_providers=self._state_providers,
             policy_registry=registry,

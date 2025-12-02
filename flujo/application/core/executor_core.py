@@ -30,14 +30,6 @@ from .result_handler import ResultHandler
 from .telemetry_handler import TelemetryHandler
 from .step_handler import StepHandler
 from .agent_handler import AgentHandler
-from .optimization.config import (
-    OptimizationConfig,
-    coerce_optimization_config,
-    export_config as export_opt_config,
-    get_config_manager as get_opt_config_manager,
-    get_optimization_stats as get_opt_stats,
-    get_performance_recommendations as get_opt_recommendations,
-)
 from .executor_helpers import (
     _UsageTracker,
     format_feedback,
@@ -219,25 +211,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         if concurrency_limit is not None and concurrency_limit <= 0:
             raise ValueError("concurrency_limit must be positive if specified")
 
-        self.optimization_config: OptimizationConfig = coerce_optimization_config(
-            optimization_config
-        )
-        config_issues = self.optimization_config.validate()
-        if config_issues:
+        # Hardcode flag to False (standard handling)
+        self.enable_optimized_error_handling = False
+
+        if optimization_config is not None:
             warnings.warn(
-                "OptimizationConfig validation issues: " + ", ".join(config_issues),
-                RuntimeWarning,
+                "optimization_config is deprecated and has no effect.",
+                DeprecationWarning,
                 stacklevel=2,
             )
-
-        effective_enable_optimized_error_handling = (
-            bool(self.optimization_config.enable_optimized_error_handling)
-            if optimization_config is not None
-            else bool(enable_optimized_error_handling)
-        )
-        self.optimization_config.enable_optimized_error_handling = (
-            effective_enable_optimized_error_handling
-        )
 
         self._agent_runner = agent_runner or DefaultAgentRunner()
         self._processor_pipeline = processor_pipeline or DefaultProcessorPipeline()
@@ -254,7 +236,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._fallback_handler = FallbackHandler()
         self._telemetry = telemetry or DefaultTelemetry()
         self._enable_cache = enable_cache
-        self.enable_optimized_error_handling = effective_enable_optimized_error_handling
         # Estimation selection: factory first, then direct estimator, then default
         self._estimator_factory: UsageEstimatorFactory = (
             estimator_factory or build_default_estimator_factory()
@@ -898,25 +879,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     _safe_step_name = staticmethod(safe_step_name)
     _format_feedback = staticmethod(format_feedback)
 
-    def get_optimization_stats(self) -> "JSONObject":
-        return get_opt_stats(self.optimization_config)
-
-    def get_config_manager(self) -> Any:
-        return get_opt_config_manager(self.optimization_config)
-
-    def get_performance_recommendations(self) -> list["JSONObject"]:
-        return get_opt_recommendations()
-
-    def export_config(self, format_type: str = "dict") -> "JSONObject":
-        return export_opt_config(self.optimization_config, format_type)
-
 
 __all__ = [
     "ExecutorCore",
     "PluginError",
     "StepExecutor",
     "_UsageTracker",
-    "OptimizationConfig",
     # Re-exports for compatibility
     "ISerializer",
     "IHasher",

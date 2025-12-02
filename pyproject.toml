@@ -72,11 +72,9 @@ dev = [
   "bandit>=1.7.5",
   "cyclonedx-python-lib>=5.2.0,<9",
   "cyclonedx-py",  # Added for CycloneDX CLI support
-  "logfire>=4.0.0", # Updated for compatibility with pydantic-graph 0.4.7
-  "sqlvalidator>=0.0.8",
-  "psutil>=5.9.0",  # Added for performance and memory tests
-  "types-psutil>=7.0.0.20250801",
-  "prometheus-client>=0.22.1,<0.23.0",  # Required for prometheus tests
+    "logfire>=4.0.0", # Updated for compatibility with pydantic-graph 0.4.7
+    "sqlvalidator>=0.0.8",
+    "prometheus-client>=0.22.1,<0.23.0",  # Required for prometheus tests
   "httpx",  # Required for prometheus integration tests
 ]
 "aop-extras" = [
@@ -436,5 +434,4 @@ ignore_no_config = true
 
 [dependency-groups]
 dev = [
-    "types-psutil>=7.0.0.20250801",
 ]
