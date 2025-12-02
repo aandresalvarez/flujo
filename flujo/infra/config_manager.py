@@ -147,6 +147,10 @@ class SettingsOverrides(BaseModel):
     otlp_endpoint: Optional[str] = None
     agent_timeout: Optional[int] = None
 
+    # Postgres backend tuning
+    postgres_pool_min: Optional[int] = None
+    postgres_pool_max: Optional[int] = None
+
     # Template filter controls
     enabled_template_filters: Optional[list[str]] = None
 

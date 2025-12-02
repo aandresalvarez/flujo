@@ -121,6 +121,18 @@ class Settings(BaseSettings):
         60, validation_alias="AGENT_TIMEOUT"
     )  # Timeout in seconds for agent calls
 
+    # --- Postgres state backend ---
+    postgres_pool_min: int = Field(
+        1,
+        description="Minimum connection pool size for the Postgres state backend.",
+        ge=1,
+    )
+    postgres_pool_max: int = Field(
+        10,
+        description="Maximum connection pool size for the Postgres state backend.",
+        ge=1,
+    )
+
     model_config: ClassVar[SettingsConfigDict] = {
         "env_file": ".env",
         "populate_by_name": True,
@@ -143,6 +155,8 @@ class Settings(BaseSettings):
                 provider_name = upper_key.removesuffix("_API_KEY").lower()
                 if value:
                     self.provider_api_keys[provider_name] = SecretStr(value)
+        if self.postgres_pool_max < self.postgres_pool_min:
+            raise ValueError("postgres_pool_max must be >= postgres_pool_min")
         return self
 
     @field_validator("t_schedule")

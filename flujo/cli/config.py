@@ -12,9 +12,10 @@ else:
     logging.basicConfig(level=logging.INFO)
 
 from ..state.backends.sqlite import SQLiteBackend
+from ..state.backends.postgres import PostgresBackend
 from ..state.backends.memory import InMemoryBackend
 from ..state.backends.base import StateBackend
-from ..infra.config_manager import get_state_uri
+from ..infra.config_manager import get_config_manager, get_state_uri
 from ..utils.config import get_settings
 import tempfile
 from .helpers import print_rich_or_typer
@@ -214,6 +215,19 @@ def load_backend_from_config() -> StateBackend:
             uri = "sqlite:///flujo_ops.db"
 
     parsed = urlparse(uri)
+    if parsed.scheme.lower() in {"postgres", "postgresql"}:
+        cfg_manager = get_config_manager()
+        settings_model = cfg_manager.get_settings()
+        pool_min = getattr(settings_model, "postgres_pool_min", 1)
+        pool_max = getattr(settings_model, "postgres_pool_max", 10)
+        auto_migrate = os.getenv("FLUJO_AUTO_MIGRATE", "true").lower() != "false"
+        return PostgresBackend(
+            uri,
+            auto_migrate=auto_migrate,
+            pool_min_size=pool_min,
+            pool_max_size=pool_max,
+        )
+
     if parsed.scheme.startswith("sqlite"):
         db_path = _normalize_sqlite_path(uri, Path.cwd())
         # Debug output for test visibility

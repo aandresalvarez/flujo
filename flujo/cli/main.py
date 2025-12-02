@@ -66,6 +66,7 @@ from .helpers import (
 from .lens import lens_app
 from .run_command import run as _run_cmd
 from .status_command import status as _status_cmd
+from .migrate_command import migrate as _migrate_cmd
 from .validate_command import _validate_impl, validate as _validate_cmd, validate_dev
 from .project_command import demo as _demo_cmd, init as _init_cmd
 
@@ -77,6 +78,7 @@ create = _create_cmd
 # Expose command callables for tests/backward compatibility
 run = _run_cmd
 status = _status_cmd
+migrate = _migrate_cmd
 validate = _validate_cmd
 init = _init_cmd
 demo = _demo_cmd
@@ -180,6 +182,7 @@ __all__ = [
     "app",
     "run",
     "status",
+    "migrate",
     "validate",
     "_validate_impl",
     "validate_dev",

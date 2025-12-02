@@ -109,6 +109,7 @@ logfire = ["logfire>=4.0.0"] # Updated for compatibility with pydantic-graph 0.4
 sql = ["sqlvalidator>=0.0.8"]
 templating = ["Jinja2>=3.1"]
 yaml_tools = ["ruamel.yaml>=0.18"]
+postgres = ["asyncpg>=0.29.0"]
 
 # Prometheus-related dependencies (install with: `pip install .[prometheus]`)
 prometheus = [
@@ -302,6 +303,13 @@ module = [
 disable_error_code = [
   "misc",
 ]
+
+[[tool.mypy.overrides]]
+module = [
+  "asyncpg",
+  "asyncpg.*",
+]
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [

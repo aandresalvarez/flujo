@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
+from urllib.parse import ParseResult, urlparse
 import os
 
 from flujo.application.core.default_components import (
@@ -31,9 +32,11 @@ from flujo.application.core.executor_protocols import (
 from flujo.application.core.policy_registry import PolicyRegistry, StepPolicy
 from flujo.infra.backends import LocalBackend
 from flujo.state.backends.memory import InMemoryBackend
+from flujo.state.backends.postgres import PostgresBackend
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.state.backends.base import StateBackend
 from flujo.utils.config import get_settings, Settings
+from flujo.infra.config_manager import get_config_manager, get_state_uri
 from flujo.domain.interfaces import StateProvider
 
 
@@ -109,6 +112,27 @@ class BackendFactory:
         if bool(getattr(cfg, "test_mode", False)):
             return InMemoryBackend()
 
+        state_uri = get_state_uri(force_reload=True)
+        if state_uri:
+            parsed = urlparse(state_uri)
+            scheme = parsed.scheme.lower()
+            if scheme in {"postgres", "postgresql"}:
+                extended_settings = get_config_manager().get_settings()
+                pool_min = getattr(extended_settings, "postgres_pool_min", 1)
+                pool_max = getattr(extended_settings, "postgres_pool_max", 10)
+                auto_migrate = os.getenv("FLUJO_AUTO_MIGRATE", "true").lower() != "false"
+                return PostgresBackend(
+                    state_uri,
+                    auto_migrate=auto_migrate,
+                    pool_min_size=pool_min,
+                    pool_max_size=pool_max,
+                )
+            if scheme in {"memory", "mem", "inmemory"}:
+                return InMemoryBackend()
+            if scheme.startswith("sqlite"):
+                sqlite_path = self._resolve_sqlite_path(parsed)
+                return SQLiteBackend(sqlite_path)
+
         if db_path is not None:
             target_path = Path(db_path)
         else:
@@ -119,3 +143,14 @@ class BackendFactory:
                 root_base = Path.cwd()
             target_path = root_base / "flujo_ops.db"
         return SQLiteBackend(target_path)
+
+    @staticmethod
+    def _resolve_sqlite_path(parsed_uri: ParseResult) -> Path:
+        path_str = parsed_uri.path or parsed_uri.netloc
+        if not path_str:
+            raise ValueError("SQLite URI must include a path component")
+        if path_str.startswith("//"):
+            path_str = path_str[1:]
+        if path_str.startswith("/"):
+            return Path(path_str)
+        return (Path.cwd() / path_str).resolve()
