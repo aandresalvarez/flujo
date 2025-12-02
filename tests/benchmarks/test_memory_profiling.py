@@ -1,8 +1,17 @@
 import os
 import gc
-import psutil
+
 import pytest
 from pydantic import BaseModel
+
+try:
+    import psutil
+except ImportError:
+    psutil = None  # type: ignore[assignment,unused-ignore]
+
+pytestmark = []
+if psutil is None:
+    pytestmark.append(pytest.mark.skip(reason="psutil not available"))
 
 from flujo import Step, Pipeline
 from flujo.testing.utils import gather_result
@@ -27,6 +36,8 @@ class LargeModelAgent:
 @pytest.mark.benchmark
 async def test_loop_step_memory_stability() -> None:
     """Ensure LoopStep does not leak memory across many iterations."""
+    if psutil is None:
+        pytest.skip("psutil not available")
 
     iterations = 1000
     body_step = Step.model_validate({"name": "make_large", "agent": LargeModelAgent()})
