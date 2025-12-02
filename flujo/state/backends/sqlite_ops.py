@@ -523,12 +523,16 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
                 query += " ORDER BY runs.created_at DESC"
 
-                if limit is not None:
-                    query += " LIMIT ?"
-                    params.append(int(limit))
-                if offset:
-                    query += " OFFSET ?"
-                    params.append(int(offset))
+                # FIX: Only apply SQL pagination if we are NOT filtering by metadata
+                # When metadata_filter is present, we need to filter in Python first,
+                # then apply pagination to the filtered results.
+                if metadata_filter is None:
+                    if limit is not None:
+                        query += " LIMIT ?"
+                        params.append(int(limit))
+                    if offset:
+                        query += " OFFSET ?"
+                        params.append(int(offset))
 
                 async with db.execute(query, params) as cursor:
                     rows = await cursor.fetchall()
@@ -554,6 +558,13 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                             "total_cost": row[6] if row[6] is not None else 0.0,
                         }
                     )
+
+                # FIX: Apply Python pagination if we filtered in memory
+                if metadata_filter is not None:
+                    start = offset
+                    end = offset + limit if limit is not None else None
+                    return result[start:end]
+
                 return result
             finally:
                 if _temp_conn:

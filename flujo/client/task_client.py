@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
 
@@ -9,6 +10,7 @@ from flujo.cli.config import load_backend_from_config
 from flujo.client.models import SystemState, TaskDetail, TaskStatus, TaskSummary
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.models import PipelineContext, PipelineResult
+from flujo.infra.registry import PipelineRegistry
 from flujo.state.backends.base import StateBackend
 from flujo.state.models import WorkflowState
 from flujo.type_definitions.common import JSONObject
@@ -26,7 +28,12 @@ class TaskClient:
     """High-level facade for inspecting and resuming persisted runs."""
 
     def __init__(self, backend: Optional[StateBackend] = None) -> None:
-        self._backend: StateBackend = backend or load_backend_from_config()
+        if backend is not None:
+            self._backend: StateBackend = backend
+            self._owns_backend = False
+        else:
+            self._backend = load_backend_from_config()
+            self._owns_backend = True
         self._state_manager: StateManager[PipelineContext] = StateManager(self._backend)
 
     @property
@@ -118,21 +125,81 @@ class TaskClient:
     async def resume_task(
         self,
         run_id: str,
-        pipeline: Pipeline[Any, Any],
-        input_data: Any,
+        pipeline_or_input: Any,
+        input_data: Optional[Any] = None,
         *,
+        pipeline: Optional[Pipeline[Any, Any]] = None,
+        registry: Optional[PipelineRegistry] = None,
         context_model: Optional[type[PipelineContext]] = None,
     ) -> PipelineResult[Any]:
-        """Resume a paused workflow run with the provided pipeline and input."""
+        """Resume a paused workflow run with the provided pipeline and input.
+
+        Signature supports both old and new APIs:
+        - Old: resume_task(run_id, pipeline, input_data)
+        - New: resume_task(run_id, input_data, pipeline=pipeline) or resume_task(run_id, input_data, registry=registry)
+
+        Either `pipeline` or `registry` must be provided. If `registry` is provided
+        and `pipeline` is None, the pipeline will be resolved from the registry using
+        the pipeline_name and pipeline_version stored in the task's metadata.
+        """
+        # Handle backward compatibility: old API was resume_task(run_id, pipeline, input_data)
+        target_pipeline: Optional[Pipeline[Any, Any]]
+        if isinstance(pipeline_or_input, Pipeline):
+            # Old API: second arg is pipeline, third is input_data
+            target_pipeline = pipeline_or_input
+            actual_input_data = input_data
+        else:
+            # New API: second arg is input_data, pipeline/registry are kwargs
+            target_pipeline = pipeline
+            actual_input_data = pipeline_or_input if input_data is None else input_data
+
         paused_result = await self._state_manager.rehydrate_pipeline_result(run_id, context_model)
         if paused_result is None:
             raise TaskNotFoundError(f"Run '{run_id}' has no persisted state")
 
+        # Resolve Pipeline
+        p_name: Optional[str] = None
+        if target_pipeline is None:
+            if registry is None:
+                raise ValueError(
+                    "Must provide either 'pipeline' object or 'registry' to resume_task"
+                )
+
+            # Resolve from metadata stored in backend
+            raw_state = await self._backend.load_state(run_id)
+            if raw_state is None:
+                raise TaskNotFoundError(f"Run '{run_id}' not found in backend")
+
+            wf_state = WorkflowState.model_validate(raw_state)
+            p_name = wf_state.pipeline_name
+            p_ver = wf_state.pipeline_version or "latest"
+
+            if not p_name:
+                raise ValueError(
+                    f"Run {run_id} has no recorded pipeline name to look up in registry"
+                )
+
+            target_pipeline = registry.get(p_name, p_ver)
+            if target_pipeline is None:
+                # Try "latest" if specific version not found
+                if p_ver != "latest":
+                    target_pipeline = registry.get_latest(p_name)
+                if target_pipeline is None:
+                    raise ValueError(f"Pipeline '{p_name}' (v={p_ver}) not found in registry")
+        else:
+            # If pipeline was provided, get pipeline_name from state for runner
+            raw_state = await self._backend.load_state(run_id)
+            if raw_state is not None:
+                wf_state = WorkflowState.model_validate(raw_state)
+                p_name = wf_state.pipeline_name
+
         runner: Flujo[Any, Any, PipelineContext] = Flujo(
-            pipeline=pipeline,
+            pipeline=target_pipeline,
             state_backend=self._backend,
+            pipeline_name=p_name,
+            enable_tracing=True,
         )
-        return await runner.resume_async(paused_result, input_data)
+        return await runner.resume_async(paused_result, actual_input_data)
 
     async def set_system_state(self, key: str, value: JSONObject) -> SystemState:
         """Persist a system-wide marker (e.g., connector watermark)."""
@@ -257,6 +324,41 @@ class TaskClient:
                     if isinstance(schema, dict):
                         return schema
         return None
+
+    async def close(self) -> None:
+        """Cleanly shutdown the backend connection if owned by this client.
+
+        If the backend was injected externally (passed into __init__), this method
+        will not close it, as the caller owns the lifecycle.
+        """
+        if not self._owns_backend:
+            return
+
+        shutdown_fn = getattr(self._backend, "shutdown", None)
+        if shutdown_fn is not None and callable(shutdown_fn):
+            result = shutdown_fn()
+            if inspect.isawaitable(result):
+                await result
+            return
+
+        close_fn = getattr(self._backend, "close", None)
+        if close_fn is not None and callable(close_fn):
+            result = close_fn()
+            if inspect.isawaitable(result):
+                await result
+
+    async def __aenter__(self) -> "TaskClient":
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any],
+    ) -> None:
+        """Async context manager exit - ensures cleanup."""
+        await self.close()
 
 
 __all__ = ["TaskClient", "TaskClientError", "TaskNotFoundError"]

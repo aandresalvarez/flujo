@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import importlib.util
 from pathlib import Path, PureWindowsPath
 from urllib.parse import urlparse
 import logging
@@ -216,6 +217,15 @@ def load_backend_from_config() -> StateBackend:
 
     parsed = urlparse(uri)
     if parsed.scheme.lower() in {"postgres", "postgresql"}:
+        # Guard: Check if asyncpg is available before creating PostgresBackend
+        spec = importlib.util.find_spec("asyncpg")
+        if spec is None:
+            print_rich_or_typer(
+                "[red]Error: asyncpg is required for PostgreSQL support. "
+                "Install with `pip install flujo[postgres]`.[/red]",
+                stderr=True,
+            )
+            raise typer.Exit(1)
         cfg_manager = get_config_manager()
         settings_model = cfg_manager.get_settings()
         pool_min = getattr(settings_model, "postgres_pool_min", 1)
