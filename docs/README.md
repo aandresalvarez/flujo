@@ -24,6 +24,11 @@ This directory contains comprehensive documentation for the Flujo framework.
   - [Tracing Guide](./guides/tracing_guide.md) - Comprehensive tracing and debugging
   - [Debugging with Replay](./guides/debugging_with_replay.md) - Deterministic replay for debugging
 - **Guides**
+  - [Database Backends: SQLite and PostgreSQL](./guides/databases.md) ⭐ NEW
+    - When to use SQLite vs PostgreSQL
+    - Configuration and setup
+    - Migration system and best practices
+    - Performance optimization
   - [AROS: Adaptive Reasoning & Output System](./guides/aros.md)
     - Structured outputs via pydantic-ai (wrapper-based)
     - AOP (extraction/repair/coercion) with schema-aware options
@@ -45,6 +50,7 @@ This directory contains comprehensive documentation for the Flujo framework.
 |--------------|-----------|
 | Understand Flujo's architecture | [flujo.md](https://github.com/aandresalvarez/flujo/blob/main/flujo.md) |
 | Build an application with Flujo | [DEVELOPER_GUIDE.md](https://github.com/aandresalvarez/flujo/blob/main/DEVELOPER_GUIDE.md) |
+| **Configure database backends** | **[Database Backends Guide](./guides/databases.md)** ⭐ NEW |
 | **Debug and inspect pipeline runs** | **[Lens Quick Start](./guides/lens_quickstart.md)** ⭐ NEW |
 | View execution traces | [Tracing Guide](./guides/tracing_guide.md) |
 | Replay a failed run | [Debugging with Replay](./guides/debugging_with_replay.md) |
