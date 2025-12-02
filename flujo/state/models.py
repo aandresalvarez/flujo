@@ -23,6 +23,7 @@ class WorkflowState(BaseModel):
     status: Literal["running", "paused", "completed", "failed", "cancelled"]
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    error_message: str | None = None
     metadata: JSONObject = Field(default_factory=dict)
     is_background_task: bool = False
     parent_run_id: str | None = None

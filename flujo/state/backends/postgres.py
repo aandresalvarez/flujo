@@ -147,6 +147,15 @@ class PostgresBackend(StateBackend):
             )
             await conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS system_state (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            await conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS steps (
                     id SERIAL PRIMARY KEY,
                     run_id TEXT NOT NULL,
@@ -691,6 +700,40 @@ class PostgresBackend(StateBackend):
                 )
             return results
 
+    async def set_system_state(self, key: str, value: JSONObject) -> None:
+        await self._ensure_init()
+        assert self._pool is not None
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO system_state (key, value, updated_at)
+                VALUES ($1, $2::jsonb, NOW())
+                ON CONFLICT (key) DO UPDATE
+                    SET value = EXCLUDED.value,
+                        updated_at = EXCLUDED.updated_at
+                """,
+                key,
+                _jsonb(value),
+            )
+
+    async def get_system_state(self, key: str) -> Optional[JSONObject]:
+        await self._ensure_init()
+        assert self._pool is not None
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT key, value, updated_at FROM system_state WHERE key = $1",
+                key,
+            )
+            if row is None:
+                return None
+            stored_value = row["value"]
+            deserialized = safe_deserialize(stored_value) if stored_value is not None else None
+            return {
+                "key": row["key"],
+                "value": deserialized,
+                "updated_at": row["updated_at"],
+            }
+
     async def list_workflows(
         self,
         status: Optional[str] = None,
@@ -775,16 +818,25 @@ class PostgresBackend(StateBackend):
         pipeline_name: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,
+        metadata_filter: Optional[JSONObject] = None,
     ) -> List[JSONObject]:
-        """List runs from the new structured schema for lens CLI."""
+        """List runs from the structured schema with optional metadata filtering."""
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
-            # Build query with optional filters
             query_parts = [
                 """
-                SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at, execution_time_ms
-                FROM runs
+                SELECT
+                    r.run_id,
+                    COALESCE(ws.pipeline_name, r.pipeline_name) AS pipeline_name,
+                    COALESCE(ws.pipeline_version, r.pipeline_version) AS pipeline_version,
+                    COALESCE(ws.status, r.status) AS status,
+                    r.created_at,
+                    r.updated_at,
+                    r.execution_time_ms,
+                    ws.metadata
+                FROM runs r
+                LEFT JOIN workflow_state ws ON ws.run_id = r.run_id
                 WHERE 1=1
                 """
             ]
@@ -792,16 +844,23 @@ class PostgresBackend(StateBackend):
             param_num = 1
 
             if status:
-                query_parts.append(f" AND status = ${param_num}")
+                query_parts.append(f" AND COALESCE(ws.status, r.status) = ${param_num}")
                 params.append(status)
                 param_num += 1
 
             if pipeline_name:
-                query_parts.append(f" AND pipeline_name = ${param_num}")
+                query_parts.append(
+                    f" AND COALESCE(ws.pipeline_name, r.pipeline_name) = ${param_num}"
+                )
                 params.append(pipeline_name)
                 param_num += 1
 
-            query_parts.append(" ORDER BY created_at DESC")
+            if metadata_filter:
+                query_parts.append(f" AND ws.metadata @> ${param_num}::jsonb")
+                params.append(_jsonb(metadata_filter))
+                param_num += 1
+
+            query_parts.append(" ORDER BY r.created_at DESC")
 
             if limit is not None:
                 query_parts.append(f" LIMIT ${param_num}")
@@ -818,19 +877,18 @@ class PostgresBackend(StateBackend):
             for row in rows:
                 if row is None:
                     continue
+                metadata = safe_deserialize(row["metadata"]) if row["metadata"] else {}
                 result.append(
                     {
                         "run_id": row["run_id"],
                         "pipeline_name": row["pipeline_name"],
                         "pipeline_version": row["pipeline_version"],
                         "status": row["status"],
-                        "start_time": row[
-                            "created_at"
-                        ],  # Map created_at to start_time for backward compatibility
-                        "end_time": row[
-                            "updated_at"
-                        ],  # Map updated_at to end_time for backward compatibility
-                        # Placeholder for cost; Postgres schema does not yet store total_cost.
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "metadata": metadata,
+                        "start_time": row["created_at"],
+                        "end_time": row["updated_at"],
                         "total_cost": row.get("total_cost")
                         if "total_cost" in row
                         else (row.get("cost_usd") if "cost_usd" in row else 0.0),

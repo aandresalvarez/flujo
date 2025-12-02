@@ -15,6 +15,7 @@ from flujo.type_definitions.common import JSONObject
 from flujo.utils.serialization import robust_serialize, safe_deserialize
 from .sqlite_core import SQLiteBackendBase, _fast_json_dumps
 from .sqlite_trace import SQLiteTraceMixin
+from ._filters import metadata_contains
 
 
 class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
@@ -479,8 +480,9 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         pipeline_name: Optional[str] = None,
         limit: Optional[int] = None,
         offset: int = 0,
+        metadata_filter: Optional[JSONObject] = None,
     ) -> List[JSONObject]:
-        """List runs from the new structured schema for lens CLI."""
+        """List runs with optional filtering and include workflow metadata."""
         await self._ensure_init()
         async with self._lock:
             db = self._connection_pool
@@ -493,43 +495,33 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     pass
                 _temp_conn = True
             try:
-                # Optimize query based on filters to use appropriate indexes
-                params: List[Any]
-                if status and not pipeline_name:
-                    # Use status index for better performance
-                    query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at, execution_time_ms
-                        FROM runs
-                        WHERE status = ?
-                        ORDER BY created_at DESC
-                    """
-                    params = [status]
-                elif pipeline_name and not status:
-                    # Use pipeline_name index
-                    query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at, execution_time_ms
-                        FROM runs
-                        WHERE pipeline_name = ?
-                        ORDER BY created_at DESC
-                    """
-                    params = [pipeline_name]
-                elif status and pipeline_name:
-                    # Use both filters
-                    query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at, execution_time_ms
-                        FROM runs
-                        WHERE status = ? AND pipeline_name = ?
-                        ORDER BY created_at DESC
-                    """
-                    params = [status, pipeline_name]
-                else:
-                    # No filters, use created_at index
-                    query = """
-                        SELECT run_id, pipeline_name, pipeline_version, status, created_at, updated_at, execution_time_ms
-                        FROM runs
-                        ORDER BY created_at DESC
-                    """
-                    params = []
+                query = """
+                    SELECT
+                        runs.run_id,
+                        COALESCE(ws.pipeline_name, runs.pipeline_name) AS pipeline_name,
+                        COALESCE(ws.pipeline_version, runs.pipeline_version) AS pipeline_version,
+                        COALESCE(ws.status, runs.status) AS status,
+                        runs.created_at,
+                        runs.updated_at,
+                        runs.execution_time_ms,
+                        ws.metadata
+                    FROM runs
+                    LEFT JOIN workflow_state ws ON ws.run_id = runs.run_id
+                """
+                params: List[Any] = []
+                where_clauses: List[str] = []
+
+                if status:
+                    where_clauses.append("COALESCE(ws.status, runs.status) = ?")
+                    params.append(status)
+                if pipeline_name:
+                    where_clauses.append("runs.pipeline_name = ?")
+                    params.append(pipeline_name)
+
+                if where_clauses:
+                    query += " WHERE " + " AND ".join(where_clauses)
+
+                query += " ORDER BY runs.created_at DESC"
 
                 if limit is not None:
                     query += " LIMIT ?"
@@ -545,21 +537,21 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 for row in rows:
                     if row is None:
                         continue
+                    metadata = safe_deserialize(json.loads(row[7])) if row[7] is not None else {}
+                    if metadata_filter and not metadata_contains(metadata, metadata_filter):
+                        continue
                     result.append(
                         {
                             "run_id": row[0],
                             "pipeline_name": row[1],
                             "pipeline_version": row[2],
                             "status": row[3],
-                            "start_time": row[
-                                4
-                            ],  # Map created_at to start_time for backward compatibility
-                            "end_time": row[
-                                5
-                            ],  # Map updated_at to end_time for backward compatibility
-                            "total_cost": row[6]
-                            if row[6] is not None
-                            else 0.0,  # Map execution_time_ms to total_cost for backward compatibility
+                            "created_at": row[4],
+                            "updated_at": row[5],
+                            "metadata": metadata,
+                            "start_time": row[4],
+                            "end_time": row[5],
+                            "total_cost": row[6] if row[6] is not None else 0.0,
                         }
                     )
                 return result
@@ -1017,6 +1009,55 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 return results
             finally:
                 await conn.close()
+
+    async def set_system_state(self, key: str, value: JSONObject) -> None:
+        await self._ensure_init()
+        async with self._lock:
+
+            async def _save() -> None:
+                conn = await self._create_connection()
+                try:
+                    payload = _fast_json_dumps(robust_serialize(value))
+                    now = datetime.now(timezone.utc).isoformat()
+                    await conn.execute(
+                        """
+                        INSERT INTO system_state (key, value, updated_at)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(key) DO UPDATE
+                            SET value = excluded.value,
+                                updated_at = excluded.updated_at
+                        """,
+                        (key, payload, now),
+                    )
+                    await conn.commit()
+                finally:
+                    await conn.close()
+
+            await self._with_retries(_save)
+
+    async def get_system_state(self, key: str) -> Optional[JSONObject]:
+        await self._ensure_init()
+        async with self._lock:
+            conn = await self._create_connection()
+            try:
+                cursor = await conn.execute(
+                    "SELECT key, value, updated_at FROM system_state WHERE key = ?",
+                    (key,),
+                )
+                row = await cursor.fetchone()
+                await cursor.close()
+            finally:
+                await conn.close()
+
+            if row is None:
+                return None
+
+            value = safe_deserialize(json.loads(row[1])) if row[1] is not None else None
+            try:
+                updated_at = datetime.fromisoformat(row[2]) if row[2] else None
+            except Exception:
+                updated_at = row[2]
+            return {"key": row[0], "value": value, "updated_at": updated_at}
 
     async def delete_run(self, run_id: str) -> None:
         """Delete a run from the runs table (cascades to traces). Audit log deletion."""

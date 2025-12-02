@@ -502,6 +502,15 @@ class SQLiteBackendBase(StateBackend):
                     )
                     """
                 )
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS system_state (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
 
                 # Create indexes for runs table
                 await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")

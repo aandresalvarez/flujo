@@ -4,6 +4,7 @@ import sys
 import importlib.util as _importlib_util
 from pathlib import Path
 from typing import Any, Optional
+from datetime import datetime, timezone
 from flujo import Flujo
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl import Step
@@ -536,6 +537,7 @@ class NoOpStateBackend(StateBackend):
         # Store serialized copies to mimic persistent backends (but in memory for tests)
         self._store: JSONObject = {}
         self._trace_store: JSONObject = {}
+        self._system_state: dict[str, JSONObject] = {}
 
     async def save_state(self, run_id: str, state: JSONObject) -> None:
         # Simulate real backend behavior by serializing and storing state
@@ -568,6 +570,26 @@ class NoOpStateBackend(StateBackend):
         from flujo.utils.serialization import safe_serialize
 
         self._trace_store[run_id] = safe_serialize(trace)
+
+    async def list_runs(
+        self,
+        status: Optional[str] = None,
+        pipeline_name: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        metadata_filter: Optional[JSONObject] = None,
+    ) -> list[JSONObject]:
+        return []
+
+    async def set_system_state(self, key: str, value: JSONObject) -> None:
+        self._system_state[key] = {
+            "key": key,
+            "value": value,
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+    async def get_system_state(self, key: str) -> Optional[JSONObject]:
+        return self._system_state.get(key)
 
 
 # ------------------------------------------------------------------------------

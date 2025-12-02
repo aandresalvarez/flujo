@@ -196,8 +196,27 @@ class StateBackend(ABC):
         """Retrieve stored metadata for a run."""
         raise NotImplementedError
 
+    async def list_runs(
+        self,
+        status: Optional[str] = None,
+        pipeline_name: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        metadata_filter: Optional[JSONObject] = None,
+    ) -> List[JSONObject]:
+        """Return stored runs with optional filtering."""
+        raise NotImplementedError
+
     async def list_run_steps(self, run_id: str) -> List[JSONObject]:
         """Return all step records for a run ordered by step index."""
+        raise NotImplementedError
+
+    async def set_system_state(self, key: str, value: JSONObject) -> None:
+        """Upsert a global key/value pair used for connector watermarks."""
+        raise NotImplementedError
+
+    async def get_system_state(self, key: str) -> Optional[JSONObject]:
+        """Fetch a previously stored global key/value pair."""
         raise NotImplementedError
 
     # Optional lifecycle hook: backends may override to release resources
