@@ -163,7 +163,7 @@ async def test_cache_with_context_updates_basic():
     )
 
     pipeline = cached_step
-    runner = create_test_flujo(pipeline, context_model=CacheContext)
+    runner = create_test_flujo(pipeline, context_model=CacheContext, persist_state=False)
 
     # First run - should be a cache miss
     result1 = await gather_result(runner, "test_input_1")
@@ -198,7 +198,7 @@ async def test_cache_with_context_updates_error_handling():
     )
 
     pipeline = cached_step
-    runner = create_test_flujo(pipeline, context_model=CacheContext)
+    runner = create_test_flujo(pipeline, context_model=CacheContext, persist_state=False)
 
     # Run with failing input
     result1 = await gather_result(runner, "fail")
@@ -243,7 +243,7 @@ async def test_cache_with_context_updates_context_dependent():
     )
 
     pipeline = cached_step
-    runner = create_test_flujo(pipeline, context_model=CacheContext)
+    runner = create_test_flujo(pipeline, context_model=CacheContext, persist_state=False)
 
     # First run
     result1 = await gather_result(runner, "input_a")

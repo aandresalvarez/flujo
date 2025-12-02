@@ -53,7 +53,7 @@ class TestTracingPerformance:
         def run_pipeline_with_tracing():
             """Run pipeline with tracing enabled (default)."""
             pipeline = create_simple_pipeline()
-            runner = create_test_flujo(pipeline)
+            runner = create_test_flujo(pipeline, persist_state=False)
             result = None
 
             async def run():
@@ -68,7 +68,7 @@ class TestTracingPerformance:
             """Run pipeline with tracing disabled."""
             pipeline = create_simple_pipeline()
             # Create runner and disable tracing using the API
-            runner = create_test_flujo(pipeline)
+            runner = create_test_flujo(pipeline, persist_state=False)
             runner.disable_tracing()
             result = None
 
@@ -136,7 +136,7 @@ class TestTracingPerformance:
             return Pipeline.from_step(conditional_step)
 
         pipeline = create_complex_pipeline()
-        runner = create_test_flujo(pipeline)
+        runner = create_test_flujo(pipeline, persist_state=False)
 
         def run_pipeline():
             runner.run("input")

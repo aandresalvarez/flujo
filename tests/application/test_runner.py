@@ -150,3 +150,15 @@ async def test_runner_run_outcomes_nested_pause_bubbles():
         break
 
     assert outcomes and isinstance(outcomes[0], Paused)
+
+
+def test_runner_can_disable_persistence_with_flag():
+    step = Step(name="echo", agent=_EchoAgent())
+    pipe = Pipeline.from_step(step)
+    from tests.conftest import NoOpStateBackend
+
+    with pytest.warns(UserWarning):
+        f = Flujo(pipe, state_backend=NoOpStateBackend(), persist_state=False)
+
+    assert f.persist_state is False
+    assert f.state_backend is None

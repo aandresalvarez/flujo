@@ -150,7 +150,7 @@ class TestAsyncPerformance:
                 return {"result": "test"}
 
             pipeline = test_step
-            flujo = create_test_flujo(pipeline)
+            flujo = create_test_flujo(pipeline, persist_state=False)
 
             # Use async for to iterate over the async generator
             final_result = None

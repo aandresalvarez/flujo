@@ -108,6 +108,8 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         Backend used to persist :class:`WorkflowState` for durable execution.
     delete_on_completion : bool, default False
         If ``True`` remove persisted state once the run finishes.
+    persist_state : bool, default True
+        Disable state persistence entirely for ephemeral runs when ``False``.
     state_providers : Dict[str, StateProvider], optional
         External state providers for :class:`ContextReference` hydration. Ignored when a
         custom ``executor_factory`` is supplied; pass providers directly to the factory
@@ -130,6 +132,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         backend: Optional[ExecutionBackend] = None,
         state_backend: Optional[StateBackend] = None,
         delete_on_completion: bool = False,
+        persist_state: bool = True,
         executor_factory: Optional[ExecutorFactory] = None,
         backend_factory: Optional[BackendFactory] = None,
         pipeline_version: str = "latest",
@@ -281,9 +284,19 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         executor_type = getattr(getattr(self.backend, "_executor", None), "__class__", None)
         telemetry.logfire.debug(f"Flujo backend: {backend_type}, executor: {executor_type}")
 
+        self.persist_state = persist_state
+        effective_state_backend = state_backend if persist_state else None
+        if not persist_state and state_backend is not None:
+            warnings.warn(
+                "persist_state=False ignores the provided state_backend; persistence disabled.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         self._state_manager = StateBackendManager(
-            state_backend=state_backend,
+            state_backend=effective_state_backend,
             delete_on_completion=delete_on_completion,
+            enable_backend=persist_state,
         )
         self.state_backend: StateBackend | None = self._state_manager.backend
         self.delete_on_completion = delete_on_completion

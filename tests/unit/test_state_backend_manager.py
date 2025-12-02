@@ -46,3 +46,12 @@ def test_delete_on_completion_invokes_backend(monkeypatch) -> None:
     asyncio.run(manager.delete_state("run-123"))
 
     assert dummy.deleted == ["run-123"]
+
+
+def test_disable_backend_skips_creation(monkeypatch) -> None:
+    manager = StateBackendManager(enable_backend=False)
+
+    assert manager.backend is None
+    # Should no-op
+    asyncio.run(manager.shutdown())
+    asyncio.run(manager.delete_state("run-ignored"))
