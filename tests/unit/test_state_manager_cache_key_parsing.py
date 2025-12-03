@@ -170,7 +170,7 @@ class TestStateManagerCacheKeyParsing:
         cache_key = state_manager._create_cache_key(run_id, context_hash)
         start_time = time.perf_counter()
         for _ in range(iterations):
-            parsed_run_id, parsed_context_hash = state_manager._parse_cache_key(cache_key)
+            _, _ = state_manager._parse_cache_key(cache_key)
         parsing_time = time.perf_counter() - start_time
 
         # Log performance for debugging
