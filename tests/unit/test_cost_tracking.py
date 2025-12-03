@@ -351,7 +351,7 @@ class TestExtractUsageMetrics:
             # Restore original warning method
             telemetry.logfire.warning = original_warning
 
-    def test_extract_usage_metrics_no_model_info_available(self):
+    def test_extract_usage_metrics_no_model_info_available(self, caplog):
         """Test that the system handles cases where no model information is available."""
 
         # Create a mock response with usage information
@@ -375,39 +375,38 @@ class TestExtractUsageMetrics:
         raw_output = MockResponse()
         agent = MockAgent()
 
-        # Capture warning messages by patching at the module level where it's used
-        import flujo.infra.telemetry as telemetry_module
+        # Import to clear log for clean test
+        import logging
 
-        warning_messages = []
-        original_warning = telemetry_module.logfire.warning
-
-        def capture_warning(message, *args, **kwargs):
-            warning_messages.append(message)
-            original_warning(message, *args, **kwargs)
-
-        telemetry_module.logfire.warning = capture_warning
-
-        try:
+        # Capture all log levels (the message is logged at ERROR level via standard logging)
+        with caplog.at_level(logging.DEBUG):
             prompt_tokens, completion_tokens, cost_usd = extract_usage_metrics(
                 raw_output, agent, "test_step"
             )
 
-            # Verify that a critical warning was logged about using 0.0 cost
-            assert len(warning_messages) > 0, (
-                f"Expected warnings but got none. Tokens: p={prompt_tokens}, c={completion_tokens}, cost={cost_usd}"
+            # Verify that a critical warning was logged
+            # The message goes through standard Python logging, not just logfire
+            log_messages = [record.message for record in caplog.records]
+            assert len(log_messages) > 0, (
+                f"Expected log messages but got none. "
+                f"Tokens: p={prompt_tokens}, c={completion_tokens}, cost={cost_usd}"
             )
-            warning_message = warning_messages[0]
-            assert "CRITICAL" in warning_message
-            assert "Could not determine model" in warning_message
+
+            # Check for the critical warning message
+            critical_warnings = [
+                msg
+                for msg in log_messages
+                if "CRITICAL" in msg and "Could not determine model" in msg
+            ]
+            assert len(critical_warnings) > 0, (
+                f"Expected CRITICAL warning about missing model but found none. "
+                f"Log messages: {log_messages}"
+            )
 
             # Verify that the system returns 0.0 for safety
             assert prompt_tokens == 100
             assert completion_tokens == 50
             assert cost_usd == 0.0  # Safer to return 0.0 than guess
-
-        finally:
-            # Restore original warning method
-            telemetry_module.logfire.warning = original_warning
 
     def test_extract_usage_metrics_graceful_fallback(self):
         """Test that the system gracefully falls back when usage information is incomplete."""
