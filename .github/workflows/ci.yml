@@ -148,7 +148,7 @@ jobs:
           uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "slow or serial or benchmark"
 
           # Run the comprehensive golden transcript tests
-          uv run coverage run --source=flujo --append -m pytest tests/e2e/test_golden_transcript_*.py
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/e2e/test_golden_transcript_*.py
 
       - name: Store slow tests coverage file
         uses: actions/upload-artifact@v4
@@ -198,7 +198,7 @@ jobs:
           uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -k "not sqlite and not test_sqlite"
 
           # Run SQLite tests separately without parallel mode to avoid bus errors
-          uv run coverage run --source=flujo --append -m pytest tests/ -k "sqlite or test_sqlite"
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -k "sqlite or test_sqlite"
 
       - name: Store full test coverage file
         uses: actions/upload-artifact@v4
