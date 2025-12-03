@@ -774,47 +774,69 @@ def isolated_telemetry(monkeypatch):
 
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
 
-    # Patch at the _shared module level since policies import telemetry from there
-    # The _shared module imports `from flujo.infra import telemetry` and then
-    # code uses `telemetry.logfire.info(...)`. We need to replace the telemetry
-    # module reference with our mock.
-    try:
-        from flujo.application.core.policies import _shared
+    # Comprehensive patching of all modules that import telemetry.
+    # When a module does `from ._shared import telemetry`, Python binds the name
+    # at import time. We need to patch each module's telemetry reference.
+    #
+    # Modules that use `telemetry` (from _shared or direct):
+    modules_with_telemetry = [
+        # Core policies (import from _shared)
+        "flujo.application.core.policies._shared",
+        "flujo.application.core.policies.loop_iteration_runner",
+        "flujo.application.core.policies.loop_policy",
+        "flujo.application.core.policies.loop_hitl_orchestrator",
+        "flujo.application.core.policies.loop_mapper",
+        "flujo.application.core.policies.conditional_policy",
+        "flujo.application.core.policies.parallel_policy",
+        "flujo.application.core.policies.import_policy",
+        "flujo.application.core.policies.hitl_policy",
+        "flujo.application.core.policies.state_machine_policy",
+        "flujo.application.core.policies.agent_policy",
+        "flujo.application.core.policies.agent_policy_execution",
+        "flujo.application.core.policies.agent_policy_run",
+        "flujo.application.core.policies.cache_policy",
+        "flujo.application.core.policies.common",
+        "flujo.application.core.policies.router_policy",
+        # Core modules (import from flujo.infra or _shared)
+        "flujo.application.core.policies.simple_policy",
+        "flujo.application.core.agent_execution_runner",
+        "flujo.application.core.agent_plugin_runner",
+        "flujo.application.core.background_task_manager",
+        "flujo.application.core.context_update_manager",
+        "flujo.application.core.estimation",
+        "flujo.application.core.executor_core",
+        "flujo.application.core.pipeline_orchestrator",
+        "flujo.application.core.state_manager",
+        "flujo.application.core.step_coordinator",
+        "flujo.application.core.step_executor",
+    ]
 
-        monkeypatch.setattr(_shared, "telemetry", mock_telemetry)
-    except ImportError:
-        pass
+    import sys
 
-    # Patch at the conditional_orchestrator level (uses `_telemetry` alias)
+    for mod_name in modules_with_telemetry:
+        try:
+            if mod_name in sys.modules:
+                mod = sys.modules[mod_name]
+                if hasattr(mod, "telemetry"):
+                    monkeypatch.setattr(mod, "telemetry", mock_telemetry)
+        except Exception:
+            pass
+
+    # Special cases: modules with aliased telemetry imports
+    # conditional_orchestrator uses `_telemetry` alias
     try:
         from flujo.application.core import conditional_orchestrator
 
         monkeypatch.setattr(conditional_orchestrator, "_telemetry", mock_telemetry)
-    except ImportError:
+    except (ImportError, AttributeError):
         pass
 
-    # Patch at the policy_handlers level (uses `_telemetry` alias)
+    # policy_handlers uses `_telemetry` alias
     try:
         from flujo.application.core import policy_handlers
 
         monkeypatch.setattr(policy_handlers, "_telemetry", mock_telemetry)
-    except ImportError:
-        pass
-
-    # Patch at the step_coordinator level
-    try:
-        from flujo.application.core import step_coordinator
-
-        monkeypatch.setattr(step_coordinator, "telemetry", mock_telemetry)
-    except ImportError:
-        pass
-
-    # Patch at the pipeline_orchestrator level
-    try:
-        from flujo.application.core import pipeline_orchestrator
-
-        monkeypatch.setattr(pipeline_orchestrator, "telemetry", mock_telemetry)
-    except ImportError:
+    except (ImportError, AttributeError):
         pass
 
     return capture
