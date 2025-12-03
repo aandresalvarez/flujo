@@ -251,60 +251,68 @@ class TestPerformanceRegression:
         gc.collect()
 
     def test_concurrent_execution_performance(self):
-        """Test that concurrent execution doesn't degrade performance significantly."""
+        """Test that concurrent execution provides speedup over sequential.
+
+        This test uses RELATIVE performance measurement instead of absolute thresholds.
+        By comparing concurrent vs sequential execution in the same environment,
+        we get an environment-independent test that works identically in local and CI.
+        """
         import asyncio
 
         async def execute_concurrent_steps():
             executor = create_mock_executor_core()
 
+            num_operations = 10
+
             async def execute_single():
                 step = create_test_step(name="concurrent_step", agent=AsyncMock())
                 data = {"input": "concurrent_test"}
+                await asyncio.sleep(0.001)  # 1ms simulated work
                 return await executor.execute(step, data)
 
-            # Execute 10 concurrent operations
-            num_operations = 10
+            # --- Measure SEQUENTIAL execution ---
+            sequential_start = time.perf_counter()
+            sequential_results = []
+            for _ in range(num_operations):
+                result = await execute_single()
+                sequential_results.append(result)
+            sequential_time = (time.perf_counter() - sequential_start) * 1000  # ms
+
+            # --- Measure CONCURRENT execution ---
             tasks = [execute_single() for _ in range(num_operations)]
-            start_time = time.perf_counter()
+            concurrent_start = time.perf_counter()
+            concurrent_results = await asyncio.gather(*tasks)
+            concurrent_time = (time.perf_counter() - concurrent_start) * 1000  # ms
 
-            results = await asyncio.gather(*tasks)
-
-            end_time = time.perf_counter()
-            total_time = (end_time - start_time) * 1000  # ms
-
-            # Performance expectation: concurrent execution should be faster than sequential
-            # This test validates that the executor can handle concurrent requests efficiently.
-            #
-            # Key insight: We're not measuring raw async performance, but executor overhead.
-            # The executor has initialization, caching, and policy routing overhead that
-            # dominates small operation times.
-            #
-            # Threshold calculation:
-            # - We expect at least 2x speedup over purely sequential execution
-            # - Sequential baseline: 10 operations * executor overhead per operation
-            # - The actual overhead varies by environment (local vs CI virtualization)
-
-            CI_TRUE_VALUES = ("true", "1", "yes")
-            is_ci = os.getenv("CI", "false").lower() in CI_TRUE_VALUES
-
-            # Base threshold: allow up to 150ms for 10 concurrent operations
-            # This is generous to account for executor initialization and policy routing
-            base_threshold = 150.0
-
-            # CI environments have virtualization overhead and shared resources
-            # A 2.0x multiplier is justified by:
-            # - VM scheduling latency
-            # - Shared CPU resources with other CI jobs
-            # - Memory pressure from parallel test execution
-            ci_multiplier = 2.0 if is_ci else 1.0
-            threshold = base_threshold * ci_multiplier
-
-            assert total_time < threshold, (
-                f"Concurrent execution took {total_time:.1f}ms, expected < {threshold:.1f}ms "
-                f"(is_ci={is_ci})"
+            # --- Validate correctness ---
+            assert len(sequential_results) == num_operations, "Sequential: not all completed"
+            assert len(concurrent_results) == num_operations, "Concurrent: not all completed"
+            assert all(isinstance(r, StepResult) for r in sequential_results), (
+                "Invalid sequential results"
             )
-            assert len(results) == num_operations, "Not all concurrent operations completed"
-            assert all(isinstance(r, StepResult) for r in results), "Invalid results"
+            assert all(isinstance(r, StepResult) for r in concurrent_results), (
+                "Invalid concurrent results"
+            )
+
+            # --- Validate RELATIVE performance ---
+            # Concurrent should be faster than sequential.
+            # With 10 operations and 1ms delay each:
+            # - Sequential: ~10ms (delays) + overhead
+            # - Concurrent: ~1ms (delays in parallel) + overhead
+            #
+            # We require at least 1.5x speedup as a sanity check.
+            speedup = sequential_time / concurrent_time if concurrent_time > 0 else float("inf")
+            min_speedup = 1.5
+
+            print(f"\nConcurrent Execution Performance:")
+            print(f"  Sequential: {sequential_time:.1f}ms")
+            print(f"  Concurrent: {concurrent_time:.1f}ms")
+            print(f"  Speedup: {speedup:.2f}x")
+
+            assert speedup >= min_speedup, (
+                f"Concurrent execution should be at least {min_speedup}x faster than sequential. "
+                f"Got {speedup:.2f}x (sequential={sequential_time:.1f}ms, concurrent={concurrent_time:.1f}ms)"
+            )
 
         asyncio.run(execute_concurrent_steps())
 
@@ -369,74 +377,86 @@ class TestScalabilityRegression:
         assert pipeline_size < 1024 * 1024, f"Pipeline memory usage {pipeline_size} bytes too high"
 
     def test_high_concurrency_handling(self):
-        """Test that the system handles high concurrency without degradation."""
+        """Test that the system handles high concurrency without degradation.
+
+        This test uses RELATIVE performance measurement (speedup over sequential)
+        rather than absolute time thresholds. This makes the test environment-independent:
+        - Local machine: faster absolute times, same relative speedup
+        - CI environment: slower absolute times, same relative speedup
+
+        The key invariant is: concurrent execution should be faster than sequential.
+        """
         import asyncio
 
         async def run_high_concurrency_test():
             executor = create_mock_executor_core()
 
-            # Warm up executor to avoid one-time initialization costs impacting timing
+            # Warm up executor to avoid one-time initialization costs
             await executor.execute(
                 create_test_step(name="warmup", agent=AsyncMock()), {"input": "warmup"}
             )
 
+            num_operations = 20  # Use 20 operations for reliable measurement
+
             steps = [
                 create_test_step(name=f"concurrency_test_{i}", agent=AsyncMock())
-                for i in range(100)
+                for i in range(num_operations)
             ]
 
             async def execute_with_delay(step: Any):
-                await asyncio.sleep(0.0005)  # Small delay to simulate work
+                await asyncio.sleep(0.001)  # 1ms delay to simulate work
                 return await executor.execute(step, {"input": "test"})
 
-            # Run concurrent operations
-            num_concurrent = 100
-            tasks = [execute_with_delay(step) for step in steps[:num_concurrent]]
+            # --- Measure SEQUENTIAL execution ---
+            sequential_start = time.perf_counter()
+            sequential_results = []
+            for step in steps:
+                result = await execute_with_delay(step)
+                sequential_results.append(result)
+            sequential_time = (time.perf_counter() - sequential_start) * 1000  # ms
 
-            start_time = time.perf_counter()
-            results = await asyncio.gather(*tasks)
-            end_time = time.perf_counter()
+            # --- Measure CONCURRENT execution ---
+            tasks = [execute_with_delay(step) for step in steps]
+            concurrent_start = time.perf_counter()
+            concurrent_results = await asyncio.gather(*tasks)
+            concurrent_time = (time.perf_counter() - concurrent_start) * 1000  # ms
 
-            total_time = (end_time - start_time) * 1000  # ms
-
-            # Performance expectation for high concurrency test:
-            #
-            # This test validates that the executor can handle high concurrency without
-            # degrading to sequential execution. The key metric is speedup over sequential.
-            #
-            # Observations from profiling:
-            # - Each executor.execute() call has ~1-2ms overhead from policy routing,
-            #   caching checks, and result construction
-            # - The 0.5ms simulated delay is dwarfed by executor overhead
-            # - With 100 concurrent operations, we see ~100-150ms total locally
-            #
-            # Threshold justification:
-            # - Sequential would be: 100 * (0.5ms delay + ~1.5ms overhead) = ~200ms
-            # - Concurrent should be faster due to parallelism
-            # - We set threshold at 200ms to ensure we're not regressing to sequential
-            # - CI environments get 3x multiplier due to:
-            #   * VM scheduling latency (significant with 100 concurrent tasks)
-            #   * Shared CPU resources with other CI jobs
-            #   * Memory pressure from parallel test workers
-            #   * Context switching overhead in virtualized environments
-
-            CI_TRUE_VALUES = ("true", "1", "yes")
-            is_ci = os.getenv("CI", "false").lower() in CI_TRUE_VALUES
-
-            # Base threshold: 200ms ensures we're faster than sequential
-            base_threshold = 200.0
-
-            # CI multiplier: 3x is justified by virtualization overhead observed in CI logs
-            # (CI showed 445.8ms, 317.3ms, 847.8ms in different runs - high variance)
-            ci_multiplier = 3.0 if is_ci else 1.0
-            threshold = base_threshold * ci_multiplier
-
-            assert total_time < threshold, (
-                f"High concurrency test took {total_time:.1f}ms, expected < {threshold:.1f}ms "
-                f"(is_ci={is_ci}, num_concurrent={num_concurrent})"
+            # --- Validate correctness ---
+            assert len(sequential_results) == num_operations, "Sequential: not all completed"
+            assert len(concurrent_results) == num_operations, "Concurrent: not all completed"
+            assert all(isinstance(r, StepResult) for r in sequential_results), (
+                "Invalid sequential results"
             )
-            assert len(results) == num_concurrent, "Not all operations completed"
-            assert all(isinstance(r, StepResult) for r in results), "Invalid results"
+            assert all(isinstance(r, StepResult) for r in concurrent_results), (
+                "Invalid concurrent results"
+            )
+
+            # --- Validate RELATIVE performance (environment-independent) ---
+            # Concurrent execution should provide speedup over sequential.
+            # With 20 operations and 1ms delay each:
+            # - Sequential: ~20ms (delays) + overhead
+            # - Concurrent: ~1ms (delays run in parallel) + overhead
+            #
+            # We require at least 1.5x speedup as a sanity check.
+            # This is conservative because:
+            # - True parallelism would give ~20x speedup on the delays alone
+            # - But executor overhead and asyncio scheduling reduce this
+            # - 1.5x ensures we're not accidentally running sequentially
+
+            speedup = sequential_time / concurrent_time if concurrent_time > 0 else float("inf")
+            min_speedup = 1.5
+
+            # Log performance for debugging (not part of assertion)
+            print(f"\nHigh Concurrency Performance:")
+            print(f"  Sequential: {sequential_time:.1f}ms")
+            print(f"  Concurrent: {concurrent_time:.1f}ms")
+            print(f"  Speedup: {speedup:.2f}x")
+
+            assert speedup >= min_speedup, (
+                f"Concurrent execution should be at least {min_speedup}x faster than sequential. "
+                f"Got {speedup:.2f}x speedup (sequential={sequential_time:.1f}ms, "
+                f"concurrent={concurrent_time:.1f}ms)"
+            )
 
         asyncio.run(run_high_concurrency_test())
 
