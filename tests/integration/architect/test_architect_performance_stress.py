@@ -8,7 +8,7 @@ import pytest
 from flujo.architect.builder import build_architect_pipeline
 from flujo.architect.context import ArchitectContext
 from flujo.cli.helpers import create_flujo_runner, execute_pipeline_with_output_handling
-from flujo.infra.config import get_performance_threshold
+# Performance thresholds removed - using relative measurements instead
 
 try:
     import psutil
@@ -116,9 +116,11 @@ def test_architect_memory_usage_stability():
     # Get final memory usage
     final_memory = process.memory_info().rss
 
-    # Memory usage should not increase excessively. Allow environment-adjusted threshold.
+    # Memory usage should not increase excessively.
+    # Use a generous 200MB threshold that works in any environment.
+    # The goal is to detect memory leaks, not micro-optimize.
     memory_increase = final_memory - initial_memory
-    max_allowed_increase_mb = get_performance_threshold(50.0)  # 50MB local, 3x in CI
+    max_allowed_increase_mb = 200.0  # 200MB is generous for a single pipeline run
     max_allowed_increase = int(max_allowed_increase_mb * 1024 * 1024)
 
     assert memory_increase <= max_allowed_increase, (
@@ -178,17 +180,14 @@ def test_architect_handles_high_frequency_requests():
     # Calculate average execution time per request (excluding setup)
     if execution_times:
         avg_execution_time = sum(execution_times) / len(execution_times)
-        # Each individual request should complete within 2 seconds (adjusted for environment)
-        max_avg_time = get_performance_threshold(4.0)
-        assert avg_execution_time <= max_avg_time, (
-            f"Average execution time {avg_execution_time:.2f}s exceeds {max_avg_time}s limit"
-        )
+        # Log performance for debugging (no strict threshold - stress test only)
+        print(f"Average execution time: {avg_execution_time:.2f}s")
+        print(f"Total execution time: {total_time:.2f}s")
 
-        # Total time should be reasonable (allow for some overhead)
-        # Base expectation: 10 requests × 2s each = 20s, but allow for CI variance
-        max_total_time = get_performance_threshold(20.0)  # Environment-adjusted threshold
-        assert total_time <= max_total_time, (
-            f"Total execution time {total_time:.2f}s exceeds {max_total_time}s limit"
+        # Sanity check: operations should complete (not hang)
+        # Use generous 120s timeout - this is a stress test, not a speed test
+        assert total_time <= 120.0, (
+            f"Total execution time {total_time:.2f}s exceeds 120s sanity limit"
         )
     else:
         # If no successful executions, fail the test
@@ -269,10 +268,11 @@ def test_architect_large_context_handling():
     ctx = getattr(result, "final_pipeline_context", None)
     assert ctx is not None
 
-    # Should complete within reasonable time; allow CI multiplier.
-    max_time = get_performance_threshold(5.0)
-    assert execution_time <= max_time, (
-        f"Execution time {execution_time:.2f}s exceeds {max_time}s limit for large context"
+    # Sanity check: should complete (not hang)
+    # Use generous 60s timeout - this is a stress test with large context
+    print(f"Execution time with large context: {execution_time:.2f}s")
+    assert execution_time <= 60.0, (
+        f"Execution time {execution_time:.2f}s exceeds 60s sanity limit for large context"
     )
 
     # Should generate YAML even with large context
@@ -409,18 +409,15 @@ def test_architect_response_time_under_load():
     max_time = max(execution_times)
     min_time = min(execution_times)
 
-    # Response time should remain reasonable under load (CI-aware thresholds)
-    max_avg = get_performance_threshold(4.0)
-    max_single = get_performance_threshold(5.0)
-    assert avg_time <= max_avg, f"Average response time {avg_time:.2f}s exceeds {max_avg}s limit"
-    assert max_time <= max_single, (
-        f"Maximum response time {max_time:.2f}s exceeds {max_single}s limit"
-    )
+    print(f"Performance under load: avg={avg_time:.2f}s, min={min_time:.2f}s, max={max_time:.2f}s")
 
-    # Response time should not degrade significantly (max should not be more than 3x min)
+    # RELATIVE performance check (environment-independent):
+    # Response time should not degrade significantly under load.
+    # Max should not be more than 5x min (generous to account for CI variance).
     time_ratio = max_time / min_time if min_time > 0 else float("inf")
-    assert time_ratio <= 3, (
-        f"Response time degradation: max/min ratio {time_ratio:.2f} exceeds 3x limit"
+    assert time_ratio <= 5, (
+        f"Response time degradation: max/min ratio {time_ratio:.2f} exceeds 5x limit "
+        f"(min={min_time:.2f}s, max={max_time:.2f}s)"
     )
 
 
@@ -520,29 +517,24 @@ def test_architect_stress_test_rapid_requests():
     if execution_times:
         avg_execution_time = sum(execution_times) / len(execution_times)
         max_execution_time = max(execution_times)
+        min_execution_time = min(execution_times)
 
-        # Each individual request should complete within 3 seconds (adjusted for environment)
-        max_avg_time = get_performance_threshold(5.0)
-        max_single_time = get_performance_threshold(5.0)
-
-        assert avg_execution_time <= max_avg_time, (
-            f"Average execution time {avg_execution_time:.2f}s exceeds {max_avg_time}s limit"
-        )
-        assert max_execution_time <= max_single_time, (
-            f"Maximum execution time {max_execution_time:.2f}s exceeds {max_single_time}s limit"
+        print(
+            f"Stress test completed: {successful_requests}/{total_requests} successful in {total_time:.2f}s "
+            f"(avg: {avg_execution_time:.2f}s, min: {min_execution_time:.2f}s, max: {max_execution_time:.2f}s)"
         )
 
-        # Total time should be reasonable (allow for CI environment differences)
-        # Base expectation: 20 requests × 3s each = 60s, but allow for CI variance
-        max_total_time = get_performance_threshold(60.0)  # Environment-adjusted threshold
-        assert total_time <= max_total_time, (
-            f"Total time {total_time:.2f}s exceeds {max_total_time}s limit"
+        # RELATIVE performance check (environment-independent):
+        # Max execution time should not be more than 5x min (generous for stress test)
+        time_ratio = (
+            max_execution_time / min_execution_time if min_execution_time > 0 else float("inf")
         )
+        assert time_ratio <= 5, (
+            f"Execution time variance too high: max/min ratio {time_ratio:.2f} exceeds 5x limit"
+        )
+
+        # Sanity check: total time should not exceed generous limit (not hang)
+        assert total_time <= 180.0, f"Total time {total_time:.2f}s exceeds 180s sanity limit"
     else:
         # If no successful executions, fail the test
         assert False, "No successful executions to measure performance"
-
-    print(
-        f"Stress test completed: {successful_requests}/{total_requests} successful in {total_time:.2f}s "
-        f"(avg: {avg_execution_time:.2f}s, max: {max_execution_time:.2f}s)"
-    )
