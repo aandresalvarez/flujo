@@ -82,9 +82,10 @@ jobs:
       - name: Run fast tests with coverage
         run: |
           # Use pytest-cov to handle xdist subprocess coverage correctly
-          uv run pytest --cov=flujo --cov-report= tests/ -m "not slow and not serial and not benchmark" -n 2
+          # Disable benchmark plugin to suppress warnings (benchmarks already excluded via -m)
+          uv run pytest --cov=flujo --cov-report= tests/ -m "not slow and not serial and not benchmark" -n 2 -p no:benchmark
           # Rename default .coverage to a unique name for artifact upload
-          mv .coverage .coverage.fast-${{ matrix.python-version }}-${{ matrix.mode }}
+          mv .coverage .coverage.fast-${{ matrix.python-version }}
 
       - name: Store fast tests coverage file
         uses: actions/upload-artifact@v4
