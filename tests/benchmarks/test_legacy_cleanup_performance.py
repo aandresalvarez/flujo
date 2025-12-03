@@ -233,23 +233,41 @@ class TestCleanupCompleteness:
         print("step_logic.py file successfully removed")
 
     async def test_performance_regression_detection(self):
-        """Test that we can detect performance regressions."""
-        # This test ensures our performance testing framework works
-        # by measuring a known fast operation
+        """Test that we can detect performance regressions.
 
+        Uses relative performance measurement to ensure detection works
+        in any environment by comparing operations at different scales.
+        """
+
+        # Measure small scale (100 operations)
         start_time = time.perf_counter()
+        for _ in range(100):
+            _ = 1 + 1
+        end_time = time.perf_counter()
+        small_scale_time = end_time - start_time
 
-        # Fast operation
+        # Measure large scale (1000 operations)
+        start_time = time.perf_counter()
         for _ in range(1000):
             _ = 1 + 1
-
         end_time = time.perf_counter()
-        total_time = end_time - start_time
+        large_scale_time = end_time - start_time
 
-        # Should be very fast
-        assert total_time < 0.001
+        print(f"100 additions: {small_scale_time:.6f}s")
+        print(f"1000 additions: {large_scale_time:.6f}s")
 
-        print(f"Baseline performance test: {total_time:.6f} seconds")
+        # Relative check: 1000 operations should be roughly 10x 100 operations
+        # Allow generous margin (25x) to account for fixed overhead and timing jitter
+        if small_scale_time > 0:
+            ratio = large_scale_time / small_scale_time
+            assert ratio < 25.0, (
+                f"Performance scaling seems off. "
+                f"1000 ops took {large_scale_time:.6f}s, 100 ops took {small_scale_time:.6f}s. "
+                f"Ratio {ratio:.2f}x exceeds expected ~10x (max 25x)"
+            )
+        else:
+            # Fallback if timing is too fast to measure accurately
+            assert large_scale_time < 0.01, "1000 additions should complete in < 10ms"
 
 
 class TestBenchmarkUtilities:
@@ -266,23 +284,43 @@ class TestBenchmarkUtilities:
         print(f"Simple module import time: {import_time:.4f} seconds")
 
     def test_function_call_measurement(self):
-        """Test that function call measurement works correctly."""
+        """Test that function call measurement works correctly.
+
+        This test validates that our performance measurement infrastructure works,
+        not that Python function calls are fast. Uses relative measurement.
+        """
 
         def simple_function():
             return "test"
 
+        # Baseline: measure overhead of empty loop
         start_time = time.perf_counter()
+        for _ in range(1000):
+            pass
+        end_time = time.perf_counter()
+        baseline_time = end_time - start_time
 
+        # Measure function call overhead
+        start_time = time.perf_counter()
         for _ in range(1000):
             _ = simple_function()
-
         end_time = time.perf_counter()
         total_time = end_time - start_time
 
-        # Should be very fast
-        assert total_time < 0.001
+        print(f"Simple function call time: {total_time:.6f}s for 1000 calls")
+        print(f"Baseline (empty loop): {baseline_time:.6f}s")
 
-        print(f"Simple function call time: {total_time:.6f} seconds for 1000 calls")
+        # Relative check: function calls should not be more than 100x slower than empty loop
+        # This validates the measurement works without being environment-dependent
+        if baseline_time > 0:
+            ratio = total_time / baseline_time
+            assert ratio < 100.0, (
+                f"Function calls took {total_time:.6f}s, baseline {baseline_time:.6f}s. "
+                f"Ratio {ratio:.2f}x seems excessive"
+            )
+        else:
+            # Fallback: just ensure it's reasonable (< 10ms for 1000 calls)
+            assert total_time < 0.01, f"Function calls took {total_time:.6f}s, should be < 10ms"
 
     def _measure_import_time(self, module_name: str) -> float:
         """Measure the time it takes to import a module."""

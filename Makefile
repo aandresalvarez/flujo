@@ -212,8 +212,7 @@ testcov: .uv ## Run tests and generate an HTML coverage report
 .PHONY: testcov-fast
 testcov-fast: .uv ## Run fast tests with coverage in parallel
 	@echo "⚡ Running fast tests with coverage in parallel..."
-	@uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not veryslow and not serial and not benchmark" -n auto
-	@uv run coverage html
+	@uv run pytest --cov=flujo --cov-report=html tests/ -m "not slow and not veryslow and not serial and not benchmark" -n auto
 	@echo "\n✅ Coverage report generated in 'htmlcov/'. Open htmlcov/index.html to view."
 
 .PHONY: test-perf

@@ -81,8 +81,11 @@ jobs:
 
       - name: Run fast tests with coverage
         run: |
-          # Run fast tests with limited parallelism for CI stability and speed
-          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n 2
+          # Use pytest-cov to handle xdist subprocess coverage correctly
+          # Disable benchmark plugin to suppress warnings (benchmarks already excluded via -m)
+          uv run pytest --cov=flujo --cov-report= tests/ -m "not slow and not serial and not benchmark" -n 2 -p no:benchmark
+          # Rename default .coverage to a unique name for artifact upload
+          mv .coverage .coverage.fast-${{ matrix.python-version }}
 
       - name: Store fast tests coverage file
         uses: actions/upload-artifact@v4
@@ -93,10 +96,10 @@ jobs:
       - name: Check for stray xdist flags
         run: |
           # Check for pytest -n usage outside allowed locations
-          # Allowed: CI workflows, Makefile
+          # Allowed: CI workflows, Makefile, Documentation
           # The pattern uses a variable to avoid self-matching
           PATTERN='pytest[^\n]*\s-+n'
-          if git grep -nE "$PATTERN" -- ':!**/.github/workflows/*' ':!Makefile' ':!**/Makefile'; then
+          if git grep -nE "$PATTERN" -- ':!**/.github/workflows/*' ':!Makefile' ':!**/Makefile' ':!docs/**'; then
             echo 'pytest -n usage detected outside CI workflows and Makefile';
             exit 1;
           fi
