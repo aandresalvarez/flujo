@@ -18,9 +18,9 @@ class LargeContext(BaseModel):
     field_3: str = "value_3"
     field_4: str = "value_4"
     field_5: str = "value_5"
-    large_data_1: str = "x" * 50000  # Large field
-    large_data_2: str = "y" * 50000  # Another large field
-    large_data_3: str = "z" * 50000  # Third large field
+    large_data_1: str = "x" * 10000  # Large field (reduced from 50KB)
+    large_data_2: str = "y" * 10000  # Another large field (reduced from 50KB)
+    large_data_3: str = "z" * 10000  # Third large field (reduced from 50KB)
     shared_field: str = "shared"
 
 

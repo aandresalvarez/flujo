@@ -7,13 +7,16 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from flujo.state.backends.sqlite import SQLiteBackend
+
+# Mark all tests in this module as slow due to database operations
+pytestmark = pytest.mark.slow
+
 if getattr(os, "geteuid", lambda: -1)() == 0:
     pytest.skip(
         "permission-based SQLite tests skipped when running as root",
         allow_module_level=True,
     )
-
-from flujo.state.backends.sqlite import SQLiteBackend
 
 
 class TestSQLiteBackendEdgeCases:
