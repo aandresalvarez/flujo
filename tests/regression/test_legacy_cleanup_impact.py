@@ -19,6 +19,7 @@ from flujo.domain.models import StepResult
 from flujo.exceptions import PausedException
 
 
+@pytest.mark.asyncio
 class TestLegacyFunctionUsageAnalysis:
     """Test that legacy functions are properly categorized and handled."""
 
@@ -92,6 +93,7 @@ class TestLegacyFunctionUsageAnalysis:
         assert isinstance(result, StepResult)
 
 
+@pytest.mark.asyncio
 class TestMigrationCompleteness:
     """Test that migration is complete and safe."""
 
@@ -277,6 +279,7 @@ class TestDeprecationDecorator:
         assert isinstance(result, StepResult)
 
 
+@pytest.mark.asyncio
 class TestFunctionSignatureAnalysis:
     """Test that function signatures are preserved correctly."""
 
@@ -328,6 +331,7 @@ class TestFunctionSignatureAnalysis:
         assert "resources" in params
 
 
+@pytest.mark.asyncio
 class TestLegacyCleanupCompleteness:
     """Test that the legacy cleanup is complete and comprehensive."""
 
