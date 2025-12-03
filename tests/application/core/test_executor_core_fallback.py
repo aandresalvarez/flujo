@@ -1054,7 +1054,9 @@ class TestExecutorCoreFallback:
             )  # Should show all attempts were made (1 initial + 3 retries + 1 fallback)
 
     @pytest.mark.asyncio
-    async def test_fallback_with_telemetry_logging(self, executor_core, create_step_with_fallback):
+    async def test_fallback_with_telemetry_logging(
+        self, executor_core, create_step_with_fallback, isolated_telemetry
+    ):
         """Test that fallback triggers proper telemetry logging."""
         # Arrange
         primary_step, fallback_step = create_step_with_fallback(
@@ -1069,39 +1071,37 @@ class TestExecutorCoreFallback:
             Exception("Primary failed"),  # Fourth attempt fails (all retries exhausted)
         ]
 
-        # Mock telemetry logging and fallback execution
+        # Use isolated_telemetry fixture for telemetry capture
+        with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = create_test_step_result(
+                name="fallback_step",
+                output="fallback success",
+                success=True,
+                attempts=1,
+                latency_s=0.1,
+                cost_usd=0.2,
+                token_counts=23,
+                feedback=None,
+            )
 
-        with patch("flujo.infra.telemetry.logfire.info"):
-            with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
-                mock_execute.return_value = create_test_step_result(
-                    name="fallback_step",
-                    output="fallback success",
-                    success=True,
-                    attempts=1,
-                    latency_s=0.1,
-                    cost_usd=0.2,
-                    token_counts=23,
-                    feedback=None,
-                )
+            # Act
+            result = await executor_core._execute_simple_step(
+                primary_step,
+                "test data",
+                None,  # context
+                None,  # resources
+                None,  # limits
+                False,  # stream
+                None,  # on_chunk
+                "cache_key",
+                None,  #
+            )
 
-                # Act
-                result = await executor_core._execute_simple_step(
-                    primary_step,
-                    "test data",
-                    None,  # context
-                    None,  # resources
-                    None,  # limits
-                    False,  # stream
-                    None,  # on_chunk
-                    "cache_key",
-                    None,  #
-                )
-
-                # Assert
-                assert result.success is True
-                # The telemetry logging might not be called in this test setup
-                # Let's just verify the fallback worked
-                assert result.output == "fallback success"
+            # Assert
+            assert result.success is True
+            # The telemetry logging might not be called in this test setup
+            # Let's just verify the fallback worked
+            assert result.output == "fallback success"
 
     @pytest.mark.asyncio
     async def test_fallback_with_usage_meter_tracking(
