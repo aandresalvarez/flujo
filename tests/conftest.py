@@ -705,7 +705,6 @@ def isolated_telemetry(monkeypatch):
         - debugs: list of debug messages
         - spans: list of span names
     """
-    from flujo.infra import telemetry
 
     class IsolatedTelemetryCapture:
         def __init__(self):
@@ -763,7 +762,44 @@ def isolated_telemetry(monkeypatch):
             pass
 
     mock_logfire = IsolatedMockLogfire()
+
+    # Patch at the main telemetry module level
+    from flujo.infra import telemetry
+
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
+
+    # Also patch at the _shared module level since policies import telemetry from there
+    # This ensures the patch works regardless of Python version module caching behavior
+    try:
+        from flujo.application.core.policies import _shared
+
+        monkeypatch.setattr(
+            _shared, "telemetry", type("TelemetryMock", (), {"logfire": mock_logfire})()
+        )
+    except ImportError:
+        pass
+
+    # Patch at the conditional_orchestrator level
+    try:
+        from flujo.application.core import conditional_orchestrator
+
+        monkeypatch.setattr(
+            conditional_orchestrator,
+            "_telemetry",
+            type("TelemetryMock", (), {"logfire": mock_logfire})(),
+        )
+    except ImportError:
+        pass
+
+    # Patch at the policy_handlers level
+    try:
+        from flujo.application.core import policy_handlers
+
+        monkeypatch.setattr(
+            policy_handlers, "_telemetry", type("TelemetryMock", (), {"logfire": mock_logfire})()
+        )
+    except ImportError:
+        pass
 
     return capture
 
