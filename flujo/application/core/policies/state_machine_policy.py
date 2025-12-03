@@ -267,6 +267,18 @@ class StateMachinePolicyExecutor:
             except Exception:
                 pass
 
+            # Defensive: Ensure current_state is preserved in the final result context
+            # This handles cases where context merge might have dropped it or sub-pipeline didn't return it
+            if current_state is not None:
+                try:
+                    if getattr(pipeline_result, "final_pipeline_context", None) is not None:
+                        ctx = getattr(pipeline_result, "final_pipeline_context")
+                        if hasattr(ctx, "scratchpad") and isinstance(ctx.scratchpad, dict):
+                            if "current_state" not in ctx.scratchpad:
+                                ctx.scratchpad["current_state"] = current_state
+                except Exception:
+                    pass
+
             # Merge sub-pipeline's final context back into the state machine's main context
             sub_ctx = getattr(pipeline_result, "final_pipeline_context", iteration_context)
             # Capture next_state/current_state from the sub-context BEFORE merge. The generic
