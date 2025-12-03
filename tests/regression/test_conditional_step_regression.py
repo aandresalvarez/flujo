@@ -8,8 +8,8 @@ from flujo.domain.dsl.step import StepConfig
 from flujo.domain.models import StepResult
 from flujo.application.core.executor_core import ExecutorCore
 
-# Tests that mock telemetry.logfire need to run serially to avoid cross-test interference
-pytestmark = pytest.mark.serial
+# Note: Tests that need telemetry capture should use the isolated_telemetry fixture
+# which provides per-test isolation without requiring serial execution.
 
 
 class TestConditionalStepRegression:
@@ -396,7 +396,7 @@ class TestConditionalStepRegression:
             # Verify attempts field is set correctly
             assert result.attempts == 1
 
-    async def test_telemetry_regression(self, executor_core):
+    async def test_telemetry_regression(self, executor_core, isolated_telemetry):
         """Test that telemetry logging behavior is preserved."""
         conditional_step = ConditionalStep(
             name="test_conditional",
@@ -420,23 +420,20 @@ class TestConditionalStepRegression:
                 name="test_agent", success=True, output="test_output"
             )
 
-            # Mock telemetry to capture log messages
-            with patch("flujo.infra.telemetry.logfire.info") as mock_info:
-                await executor_core._handle_conditional_step(
-                    conditional_step,
-                    data="test_data",
-                    context=None,
-                    resources=None,
-                    limits=None,
-                    context_setter=None,
-                )
+            await executor_core._handle_conditional_step(
+                conditional_step,
+                data="test_data",
+                context=None,
+                resources=None,
+                limits=None,
+                context_setter=None,
+            )
 
-                # Verify telemetry logging is preserved
-                mock_info.assert_called()
-                info_calls = [call[0][0] for call in mock_info.call_args_list]
-                assert any(
-                    "Condition evaluated to branch key 'branch_a'" in call for call in info_calls
-                )
+            # Verify telemetry logging is preserved
+            assert any(
+                "Condition evaluated to branch key 'branch_a'" in msg
+                for msg in isolated_telemetry.infos
+            )
 
     async def test_null_parameters_regression(self, executor_core):
         """Test that null parameters are handled correctly."""

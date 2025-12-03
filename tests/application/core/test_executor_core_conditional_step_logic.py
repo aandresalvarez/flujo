@@ -7,8 +7,8 @@ from flujo.domain.dsl import Pipeline, Step
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.application.core.executor_core import ExecutorCore
 
-# Tests that mock telemetry.logfire need to run serially to avoid cross-test interference
-pytestmark = pytest.mark.serial
+# Note: Tests that need telemetry capture should use the isolated_telemetry fixture
+# which provides per-test isolation without requiring serial execution.
 
 
 class TestExecutorCoreConditionalStepLogic:
@@ -347,7 +347,9 @@ class TestExecutorCoreConditionalStepLogic:
             assert result.success is True
             assert result.output == "step2_output"
 
-    async def test_telemetry_logging(self, executor_core, mock_conditional_step):
+    async def test_telemetry_logging(
+        self, executor_core, mock_conditional_step, isolated_telemetry
+    ):
         """Test that telemetry logging is properly implemented."""
         mock_conditional_step.branches["branch_a"].steps = []
 
@@ -356,23 +358,20 @@ class TestExecutorCoreConditionalStepLogic:
                 name="test_branch_step", success=True, output="test_output"
             )
 
-            # Mock telemetry to capture log messages
-            with patch("flujo.infra.telemetry.logfire.info") as mock_info:
-                await executor_core._handle_conditional_step(
-                    mock_conditional_step,
-                    data="test_data",
-                    context=None,
-                    resources=None,
-                    limits=None,
-                    context_setter=None,
-                )
+            await executor_core._handle_conditional_step(
+                mock_conditional_step,
+                data="test_data",
+                context=None,
+                resources=None,
+                limits=None,
+                context_setter=None,
+            )
 
-                # Verify info logging was called
-                mock_info.assert_called()
-                info_calls = [call[0][0] for call in mock_info.call_args_list]
-                assert any(
-                    "Condition evaluated to branch key 'branch_a'" in call for call in info_calls
-                )
+            # Verify info logging was called
+            assert any(
+                "Condition evaluated to branch key 'branch_a'" in msg
+                for msg in isolated_telemetry.infos
+            )
 
     async def test_error_handling_with_context(self, executor_core, mock_conditional_step):
         """Test error handling when context is provided."""
