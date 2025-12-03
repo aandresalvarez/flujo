@@ -763,41 +763,57 @@ def isolated_telemetry(monkeypatch):
 
     mock_logfire = IsolatedMockLogfire()
 
+    # Create a mock telemetry module that has logfire as an attribute
+    class MockTelemetryModule:
+        logfire = mock_logfire
+
+    mock_telemetry = MockTelemetryModule()
+
     # Patch at the main telemetry module level
     from flujo.infra import telemetry
 
     monkeypatch.setattr(telemetry, "logfire", mock_logfire)
 
-    # Also patch at the _shared module level since policies import telemetry from there
-    # This ensures the patch works regardless of Python version module caching behavior
+    # Patch at the _shared module level since policies import telemetry from there
+    # The _shared module imports `from flujo.infra import telemetry` and then
+    # code uses `telemetry.logfire.info(...)`. We need to replace the telemetry
+    # module reference with our mock.
     try:
         from flujo.application.core.policies import _shared
 
-        monkeypatch.setattr(
-            _shared, "telemetry", type("TelemetryMock", (), {"logfire": mock_logfire})()
-        )
+        monkeypatch.setattr(_shared, "telemetry", mock_telemetry)
     except ImportError:
         pass
 
-    # Patch at the conditional_orchestrator level
+    # Patch at the conditional_orchestrator level (uses `_telemetry` alias)
     try:
         from flujo.application.core import conditional_orchestrator
 
-        monkeypatch.setattr(
-            conditional_orchestrator,
-            "_telemetry",
-            type("TelemetryMock", (), {"logfire": mock_logfire})(),
-        )
+        monkeypatch.setattr(conditional_orchestrator, "_telemetry", mock_telemetry)
     except ImportError:
         pass
 
-    # Patch at the policy_handlers level
+    # Patch at the policy_handlers level (uses `_telemetry` alias)
     try:
         from flujo.application.core import policy_handlers
 
-        monkeypatch.setattr(
-            policy_handlers, "_telemetry", type("TelemetryMock", (), {"logfire": mock_logfire})()
-        )
+        monkeypatch.setattr(policy_handlers, "_telemetry", mock_telemetry)
+    except ImportError:
+        pass
+
+    # Patch at the step_coordinator level
+    try:
+        from flujo.application.core import step_coordinator
+
+        monkeypatch.setattr(step_coordinator, "telemetry", mock_telemetry)
+    except ImportError:
+        pass
+
+    # Patch at the pipeline_orchestrator level
+    try:
+        from flujo.application.core import pipeline_orchestrator
+
+        monkeypatch.setattr(pipeline_orchestrator, "telemetry", mock_telemetry)
     except ImportError:
         pass
 
