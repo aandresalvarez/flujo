@@ -7,6 +7,9 @@ from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
 from tests.conftest import create_test_flujo
 
+# Tests that mock telemetry.logfire need to run serially to avoid cross-test interference
+pytestmark = pytest.mark.serial
+
 
 class EchoAgent:
     async def run(self, data, **kwargs):

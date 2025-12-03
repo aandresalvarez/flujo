@@ -282,39 +282,52 @@ class BackgroundTaskManager:
                     metadata["background_error"] = str(e)
                     try:
                         err_name = type(e).__name__
-                        err_str = str(e).lower()
+                        err_str = str(e)  # Keep original case for pattern matching
+                        err_str_lower = err_str.lower()
                         # Check for control flow exceptions first
                         if isinstance(e, (PausedException, PipelineAbortSignal)):
                             metadata["error_category"] = "control_flow"
                         # Check for validation errors (ValueError, ValidationError, etc.)
+                        # Also check for wrapped errors like "Agent execution failed with ValueError:"
                         elif (
                             err_name in ("ValueError", "ValidationError", "TypeError")
-                            or "validation" in err_str
+                            or "validation" in err_str_lower
+                            or "ValueError" in err_str
+                            or "ValidationError" in err_str
+                            or "TypeError" in err_str
                         ):
                             metadata["error_category"] = "validation"
                         # Check for network/connection errors
                         elif (
                             "Timeout" in err_name
-                            or "timeout" in err_str
+                            or "timeout" in err_str_lower
                             or "Connection" in err_name
-                            or "connection" in err_str
-                            or "network" in err_str
+                            or "connection" in err_str_lower
+                            or "network" in err_str_lower
                         ):
                             metadata["error_category"] = "network"
                         # Check for authentication errors
-                        elif "Auth" in err_name or "auth" in err_str or "unauthorized" in err_str:
+                        elif (
+                            "Auth" in err_name
+                            or "auth" in err_str_lower
+                            or "unauthorized" in err_str_lower
+                        ):
                             metadata["error_category"] = "authentication"
                         # Check for resource exhaustion
                         elif (
                             "Quota" in err_name
-                            or "quota" in err_str
-                            or "limit" in err_str
-                            or "exhausted" in err_str
+                            or "quota" in err_str_lower
+                            or "limit" in err_str_lower
+                            or "exhausted" in err_str_lower
                             or "UsageLimit" in err_name
                         ):
                             metadata["error_category"] = "resource_exhaustion"
                         # Check for configuration errors
-                        elif "Config" in err_name or "config" in err_str or "setting" in err_str:
+                        elif (
+                            "Config" in err_name
+                            or "config" in err_str_lower
+                            or "setting" in err_str_lower
+                        ):
                             metadata["error_category"] = "configuration"
                         # Check for system errors (OSError, IOError, etc.)
                         elif err_name in ("OSError", "IOError", "SystemError", "RuntimeError"):
