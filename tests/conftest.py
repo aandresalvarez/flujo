@@ -682,6 +682,92 @@ def _diagnose_threads() -> None:
         pass
 
 
+@pytest.fixture
+def isolated_telemetry(monkeypatch):
+    """Fixture that provides an isolated telemetry mock for testing.
+
+    This fixture creates a per-test mock for telemetry.logfire that:
+    - Captures all log calls (info, warn, error, debug)
+    - Captures all spans
+    - Does not interfere with other tests running in parallel
+
+    Usage:
+        def test_something(isolated_telemetry):
+            # Do something that logs
+            assert "expected message" in isolated_telemetry.infos
+            assert "span_name" in isolated_telemetry.spans
+
+    Returns:
+        An object with:
+        - infos: list of info messages
+        - warns: list of warning messages
+        - errors: list of error messages
+        - debugs: list of debug messages
+        - spans: list of span names
+    """
+    from flujo.infra import telemetry
+
+    class IsolatedTelemetryCapture:
+        def __init__(self):
+            self.infos: list[str] = []
+            self.warns: list[str] = []
+            self.errors: list[str] = []
+            self.debugs: list[str] = []
+            self.spans: list[str] = []
+
+    capture = IsolatedTelemetryCapture()
+
+    class FakeSpan:
+        def __init__(self, name: str) -> None:
+            self.name = name
+            capture.spans.append(name)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+        def set_attribute(self, key: str, value) -> None:
+            pass
+
+    class IsolatedMockLogfire:
+        def span(self, name: str, *args, **kwargs):
+            return FakeSpan(name)
+
+        def info(self, msg: str, *args, **kwargs) -> None:
+            capture.infos.append(msg)
+
+        def warn(self, msg: str, *args, **kwargs) -> None:
+            capture.warns.append(msg)
+
+        def warning(self, msg: str, *args, **kwargs) -> None:
+            capture.warns.append(msg)
+
+        def error(self, msg: str, *args, **kwargs) -> None:
+            capture.errors.append(msg)
+
+        def debug(self, msg: str, *args, **kwargs) -> None:
+            capture.debugs.append(msg)
+
+        def configure(self, *args, **kwargs) -> None:
+            pass
+
+        def instrument(self, name: str, *args, **kwargs):
+            def decorator(func):
+                return func
+
+            return decorator
+
+        def enable_stdout_viewer(self) -> None:
+            pass
+
+    mock_logfire = IsolatedMockLogfire()
+    monkeypatch.setattr(telemetry, "logfire", mock_logfire)
+
+    return capture
+
+
 def pytest_sessionfinish(session, exitstatus):  # type: ignore
     """Best-effort cleanup for background services to avoid process hang."""
     # Attempt to stop any prometheus servers started during tests

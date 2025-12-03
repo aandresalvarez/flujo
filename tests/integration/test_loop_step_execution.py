@@ -1,5 +1,4 @@
 import pytest
-from typing import Any
 from flujo.domain.models import BaseModel
 
 from flujo.domain import Step, Pipeline
@@ -7,8 +6,8 @@ from flujo.testing.utils import StubAgent, DummyPlugin, gather_result
 from flujo.domain.plugins import PluginOutcome
 from tests.conftest import create_test_flujo
 
-# Tests that mock telemetry.logfire need to run serially to avoid cross-test interference
-pytestmark = pytest.mark.serial
+# Note: Tests that need telemetry capture should use the isolated_telemetry fixture
+# which provides per-test isolation without requiring serial execution.
 
 
 class IncrementAgent:
@@ -394,25 +393,7 @@ async def test_loop_step_default_mapper_behavior() -> None:
 
 
 @pytest.mark.asyncio
-async def test_loop_step_overall_span(monkeypatch) -> None:
-    spans: list[str] = []
-
-    class FakeSpan:
-        def __init__(self, name: str) -> None:
-            spans.append(name)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            pass
-
-    from unittest.mock import Mock
-    from flujo.infra import telemetry
-
-    mock_logfire = Mock(span=lambda name: FakeSpan(name))
-    monkeypatch.setattr(telemetry, "logfire", mock_logfire)
-
+async def test_loop_step_overall_span(isolated_telemetry) -> None:
     body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     loop = Step.loop_until(
         name="span_loop",
@@ -421,40 +402,11 @@ async def test_loop_step_overall_span(monkeypatch) -> None:
     )
     runner = create_test_flujo(loop)
     await gather_result(runner, 0)
-    assert "span_loop" in spans
+    assert "span_loop" in isolated_telemetry.spans
 
 
 @pytest.mark.asyncio
-async def test_loop_step_iteration_spans_and_logging(monkeypatch) -> None:
-    infos: list[str] = []
-    warns: list[str] = []
-    spans: list[str] = []
-
-    class FakeSpan:
-        def __init__(self, name: str) -> None:
-            self.name = name
-            spans.append(name)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            pass
-
-        def set_attribute(self, key: str, value: Any) -> None:
-            pass
-
-    from unittest.mock import Mock
-    from flujo.infra import telemetry
-
-    mock_logfire = Mock(
-        span=lambda name: FakeSpan(name),
-        info=lambda msg, *a, **k: infos.append(msg),
-        warn=lambda msg, *a, **k: warns.append(msg),
-        error=lambda *a, **k: None,
-    )
-    monkeypatch.setattr(telemetry, "logfire", mock_logfire)
-
+async def test_loop_step_iteration_spans_and_logging(isolated_telemetry) -> None:
     body = Pipeline.from_step(Step.model_validate({"name": "inc", "agent": IncrementAgent()}))
     loop = Step.loop_until(
         name="loop_log",
@@ -464,42 +416,16 @@ async def test_loop_step_iteration_spans_and_logging(monkeypatch) -> None:
     )
     runner = create_test_flujo(loop)
     await gather_result(runner, 0)
-    assert "LoopStep 'loop_log': Starting Iteration 1/2" in infos
-    assert "LoopStep 'loop_log': Starting Iteration 2/2" in infos
-    assert "LoopStep 'loop_log' exit condition met at iteration 2." in infos
-    assert spans.count("Loop 'loop_log' - Iteration 1") == 1
-    assert spans.count("Loop 'loop_log' - Iteration 2") == 1
-    assert not warns
+    assert "LoopStep 'loop_log': Starting Iteration 1/2" in isolated_telemetry.infos
+    assert "LoopStep 'loop_log': Starting Iteration 2/2" in isolated_telemetry.infos
+    assert "LoopStep 'loop_log' exit condition met at iteration 2." in isolated_telemetry.infos
+    assert isolated_telemetry.spans.count("Loop 'loop_log' - Iteration 1") == 1
+    assert isolated_telemetry.spans.count("Loop 'loop_log' - Iteration 2") == 1
+    assert not isolated_telemetry.warns
 
 
 @pytest.mark.asyncio
-async def test_loop_step_error_logging_in_callables(monkeypatch) -> None:
-    errors: list[str] = []
-
-    class FakeSpan:
-        def __init__(self, name: str) -> None:
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            pass
-
-        def set_attribute(self, key: str, value: Any) -> None:
-            pass
-
-    from unittest.mock import Mock
-    from flujo.infra import telemetry
-
-    mock_logfire = Mock(
-        span=lambda name: FakeSpan(name),
-        info=lambda *a, **k: None,
-        warn=lambda *a, **k: None,
-        error=lambda msg, *a, **k: errors.append(msg),
-    )
-    monkeypatch.setattr(telemetry, "logfire", mock_logfire)
-
+async def test_loop_step_error_logging_in_callables(isolated_telemetry) -> None:
     def bad_iter(out: int, ctx: Ctx | None, i: int) -> int:
         raise RuntimeError("iter fail")
 
@@ -513,4 +439,7 @@ async def test_loop_step_error_logging_in_callables(monkeypatch) -> None:
     )
     runner = create_test_flujo(loop, context_model=Ctx)
     await gather_result(runner, 0)
-    assert any("Error in iteration_input_mapper for LoopStep 'loop_err_log'" in m for m in errors)
+    assert any(
+        "Error in iteration_input_mapper for LoopStep 'loop_err_log'" in m
+        for m in isolated_telemetry.errors
+    )
