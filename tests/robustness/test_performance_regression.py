@@ -445,8 +445,17 @@ class TestPerformanceRegression:
     @pytest.mark.asyncio
     async def test_caching_performance_improvement(self, baseline_manager):
         """Test that caching provides measurable performance improvement."""
-        executor = create_mock_executor_core(cache_hit=True)
+        # Use stateful mock: first call miss (None), second call hit (StepResult)
+        executor = create_mock_executor_core(cache_hit=False)
         step = create_test_step(name="cached_step", agent=AsyncMock())
+
+        cached_result = StepResult(
+            name="cached_step",
+            output={"cached": "result"},
+            success=True,
+            metadata_={"cache_hit": True},
+        )
+        executor._cache_backend.get = AsyncMock(side_effect=[None, cached_result])
 
         # First execution (cache miss)
         _, first_time = await self.measure_async_execution_time(
