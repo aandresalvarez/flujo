@@ -97,8 +97,10 @@ jobs:
 
       - name: Check for stray xdist flags
         run: |
-          if git grep -nE 'pytest[^\n]*\s-+n' -- ':!**/.github/workflows/*'; then
-            echo 'pytest -n usage detected outside CI workflows';
+          # Allow pytest -n in Makefile (for local dev) and CI workflows
+          # Only flag usage in test files and scripts
+          if git grep -nE 'pytest[^\n]*\s-+n' -- ':!**/.github/workflows/*' ':!Makefile' ':!**/Makefile'; then
+            echo 'pytest -n usage detected outside CI workflows and Makefile';
             exit 1;
           fi
 

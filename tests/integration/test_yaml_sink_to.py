@@ -5,6 +5,8 @@ from flujo import Flujo
 from flujo.domain.dsl import Pipeline
 from flujo.domain.models import PipelineContext
 
+pytestmark = pytest.mark.serial
+
 
 @pytest.mark.asyncio
 async def test_sink_to_from_yaml():

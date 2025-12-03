@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
 from pathlib import Path
+
+pytestmark = pytest.mark.serial
 
 
 def _write_child_project(base: Path, name: str, tool_src: str, pipeline_yaml: str) -> Path:

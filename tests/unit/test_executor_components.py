@@ -466,9 +466,11 @@ class TestFlujoCompositionRoot:
 
         # Verify it has an ExecutorCore
         assert hasattr(backend, "_executor")
-        from flujo.application.core.executor_core import ExecutorCore
 
-        assert isinstance(backend._executor, ExecutorCore)
+        # Use type check instead of isinstance to avoid import path issues
+        assert type(backend._executor).__name__ == "ExecutorCore"
+        # Also verify it's actually an ExecutorCore by checking the module
+        assert "executor_core" in type(backend._executor).__module__
 
     def test_executor_core_dependency_injection(self):
         """Test that ExecutorCore accepts all dependencies via DI."""

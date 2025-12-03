@@ -560,9 +560,10 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                 # Bubble up pauses so the runner marks pipeline paused
                 raise
             except Exception as e:
-                # Log error for visibility in tests
+                # Log error for visibility in tests - include the original error message
+                error_msg = str(e)
                 try:
-                    telemetry.logfire.error(str(e))
+                    telemetry.logfire.error(error_msg)
                 except Exception:
                     pass
                 result.feedback = f"Error executing conditional logic or branch: {e}"

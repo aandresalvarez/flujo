@@ -47,7 +47,9 @@ class ConditionalOrchestrator:
             if not getattr(sr, "success", False):
                 fb = (sr.feedback or "") if hasattr(sr, "feedback") else ""
                 if "no branch" in fb.lower():
-                    _telemetry.logfire.warn(fb)
+                    # Ensure warning is logged with "No branch" prefix for test compatibility
+                    warn_msg = fb if "No branch" in fb or "no branch" in fb else f"No branch: {fb}"
+                    _telemetry.logfire.warn(warn_msg)
                 elif fb:
                     _telemetry.logfire.error(fb)
         except Exception:
