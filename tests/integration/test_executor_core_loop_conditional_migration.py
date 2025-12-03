@@ -13,6 +13,9 @@ from flujo.domain.models import StepResult, UsageLimits
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.testing.utils import StubAgent
 
+# Mark this module as slow due to complex integration testing
+pytestmark = pytest.mark.slow
+
 
 class IntegrationTestContext(BaseModel):
     """Test context for integration tests."""

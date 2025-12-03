@@ -3,7 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_loader_autoloads_skills_catalog_when_base_dir_is_provided(tmp_path: Path) -> None:
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_loader_autoloads_skills_catalog_when_base_dir_is_provided(tmp_path: Path) -> None:
     # Write a skills.yaml in the temp project dir
     (tmp_path / "skills.yaml").write_text(
         """
@@ -31,7 +35,7 @@ steps:
     text = p.read_text()
     pipeline = load_pipeline_blueprint_from_yaml(text, base_dir=str(tmp_path))
     runner = Flujo(pipeline)
-    result = runner.run("")
+    result = await runner.run_async("")
 
     # The single step should have produced "hello" via the echo agent
     assert result.step_history, "no steps executed"

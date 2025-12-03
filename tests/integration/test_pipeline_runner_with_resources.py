@@ -1,4 +1,5 @@
 import pytest
+
 from unittest.mock import MagicMock
 from typing import Any
 from flujo.domain.models import BaseModel
@@ -109,8 +110,11 @@ async def test_resource_instance_is_shared_across_steps(mock_resources: MyResour
 
 @pytest.mark.asyncio
 async def test_pipeline_with_no_resources_succeeds():
-    agent = MagicMock(spec=AsyncAgentProtocol)
-    agent.run.return_value = "ok"
+    class SimpleAgent(AsyncAgentProtocol):
+        async def run(self, data: str, **kwargs) -> str:
+            return "ok"
+
+    agent = SimpleAgent()
     pipeline = Step.model_validate({"name": "simple_step", "agent": agent})
 
     runner = create_test_flujo(pipeline)

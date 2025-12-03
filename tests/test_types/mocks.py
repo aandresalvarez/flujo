@@ -12,10 +12,11 @@ Usage:
         result = await executor.execute(step, data)
 """
 
-from typing import Any
+from typing import Any, Optional
 from unittest.mock import AsyncMock, Mock
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import StepResult, UsageLimits
+
 
 # Keep strong references to created executors for tests that expect fixtures
 # to remain alive across garbage collection.
@@ -67,7 +68,7 @@ def create_mock_executor_core(
             data: Any,
             context: Any,
             resources: Any,
-            limits: UsageLimits | None,
+            limits: Optional[UsageLimits],
             stream: bool,
             on_chunk: Any,
             cache_key: Any,

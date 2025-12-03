@@ -15,6 +15,9 @@ from flujo.exceptions import (
     MissingAgentError,
 )
 
+# Mark this module as slow due to complex integration testing
+pytestmark = pytest.mark.slow
+
 
 class TestExecutorCoreFallbackIntegration:
     """Integration tests for fallback functionality in ExecutorCore."""

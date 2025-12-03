@@ -110,40 +110,40 @@ def _register_architect_agents() -> None:
         # Helper to check availability
         def _is_avail(sid: str) -> bool:
             try:
+                # Check explicit available_skills list first
                 if any(isinstance(x, dict) and x.get("id") == sid for x in available):
                     return True
+
+                # Fallback to registry lookup
                 entry = get_skill_registry().get(sid, scope=None)
-                # Treat empty dicts/None as unavailable
-                return bool(entry) if isinstance(entry, dict) else (entry is not None)
-            except Exception:
+                is_available = bool(entry) if isinstance(entry, dict) else (entry is not None)
+                print(f"DEBUG: Checking availability of {sid}: {is_available}")
+                return is_available
+            except Exception as e:
+                print(f"DEBUG: Error checking availability of {sid}: {e}")
                 return False
 
         # Simple heuristics to choose a skill
         if any(k in purpose for k in ["http", "url", "fetch", "webpage", "download"]):
-            sid = (
-                "flujo.builtins.http_get"
-                if _is_avail("flujo.builtins.http_get")
-                else "flujo.builtins.stringify"
-            )
+            avail = _is_avail("flujo.builtins.http_get")
+            print(f"DEBUG: http_get available: {avail}")
+            sid = "flujo.builtins.http_get" if avail else "flujo.builtins.stringify"
             params: JSONObject = {}
         elif any(k in purpose for k in ["search", "find", "lookup", "discover"]):
-            sid = (
-                "flujo.builtins.web_search"
-                if _is_avail("flujo.builtins.web_search")
-                else "flujo.builtins.stringify"
-            )
+            avail = _is_avail("flujo.builtins.web_search")
+            print(f"DEBUG: web_search available: {avail}")
+            sid = "flujo.builtins.web_search" if avail else "flujo.builtins.stringify"
             params = {"query": purpose[:80]} if sid.endswith("web_search") else {}
         elif any(k in purpose for k in ["save", "write", "persist", "export", "file"]):
-            sid = (
-                "flujo.builtins.fs_write_file"
-                if _is_avail("flujo.builtins.fs_write_file")
-                else "flujo.builtins.stringify"
-            )
+            avail = _is_avail("flujo.builtins.fs_write_file")
+            print(f"DEBUG: fs_write_file available: {avail}")
+            sid = "flujo.builtins.fs_write_file" if avail else "flujo.builtins.stringify"
             params = {"path": "output.txt"} if sid.endswith("fs_write_file") else {}
         else:
             sid = "flujo.builtins.stringify"
             params = {}
 
+        print(f"DEBUG: Chosen agent for {step_name}: {sid}")
         return {"step_name": step_name, "chosen_agent_id": sid, "agent_params": params}
 
     if reg.get("flujo.architect.tool_matcher") is None:

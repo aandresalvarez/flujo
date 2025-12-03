@@ -682,6 +682,166 @@ def _diagnose_threads() -> None:
         pass
 
 
+@pytest.fixture
+def isolated_telemetry(monkeypatch):
+    """Fixture that provides an isolated telemetry mock for testing.
+
+    This fixture creates a per-test mock for telemetry.logfire that:
+    - Captures all log calls (info, warn, error, debug)
+    - Captures all spans
+    - Does not interfere with other tests running in parallel
+
+    Usage:
+        def test_something(isolated_telemetry):
+            # Do something that logs
+            assert "expected message" in isolated_telemetry.infos
+            assert "span_name" in isolated_telemetry.spans
+
+    Returns:
+        An object with:
+        - infos: list of info messages
+        - warns: list of warning messages
+        - errors: list of error messages
+        - debugs: list of debug messages
+        - spans: list of span names
+    """
+
+    class IsolatedTelemetryCapture:
+        def __init__(self):
+            self.infos: list[str] = []
+            self.warns: list[str] = []
+            self.errors: list[str] = []
+            self.debugs: list[str] = []
+            self.spans: list[str] = []
+
+    capture = IsolatedTelemetryCapture()
+
+    class FakeSpan:
+        def __init__(self, name: str) -> None:
+            self.name = name
+            capture.spans.append(name)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+        def set_attribute(self, key: str, value) -> None:
+            pass
+
+    class IsolatedMockLogfire:
+        def span(self, name: str, *args, **kwargs):
+            return FakeSpan(name)
+
+        def info(self, msg: str, *args, **kwargs) -> None:
+            capture.infos.append(msg)
+
+        def warn(self, msg: str, *args, **kwargs) -> None:
+            capture.warns.append(msg)
+
+        def warning(self, msg: str, *args, **kwargs) -> None:
+            capture.warns.append(msg)
+
+        def error(self, msg: str, *args, **kwargs) -> None:
+            capture.errors.append(msg)
+
+        def debug(self, msg: str, *args, **kwargs) -> None:
+            capture.debugs.append(msg)
+
+        def configure(self, *args, **kwargs) -> None:
+            pass
+
+        def instrument(self, name: str, *args, **kwargs):
+            def decorator(func):
+                return func
+
+            return decorator
+
+        def enable_stdout_viewer(self) -> None:
+            pass
+
+    mock_logfire = IsolatedMockLogfire()
+
+    # Create a mock telemetry module that has logfire as an attribute
+    class MockTelemetryModule:
+        logfire = mock_logfire
+
+    mock_telemetry = MockTelemetryModule()
+
+    # Patch at the main telemetry module level
+    from flujo.infra import telemetry
+
+    monkeypatch.setattr(telemetry, "logfire", mock_logfire)
+
+    # Comprehensive patching of all modules that import telemetry.
+    # When a module does `from ._shared import telemetry`, Python binds the name
+    # at import time. We need to patch each module's telemetry reference.
+    #
+    # Modules that use `telemetry` (from _shared or direct):
+    modules_with_telemetry = [
+        # Core policies (import from _shared)
+        "flujo.application.core.policies._shared",
+        "flujo.application.core.policies.loop_iteration_runner",
+        "flujo.application.core.policies.loop_policy",
+        "flujo.application.core.policies.loop_hitl_orchestrator",
+        "flujo.application.core.policies.loop_mapper",
+        "flujo.application.core.policies.conditional_policy",
+        "flujo.application.core.policies.parallel_policy",
+        "flujo.application.core.policies.import_policy",
+        "flujo.application.core.policies.hitl_policy",
+        "flujo.application.core.policies.state_machine_policy",
+        "flujo.application.core.policies.agent_policy",
+        "flujo.application.core.policies.agent_policy_execution",
+        "flujo.application.core.policies.agent_policy_run",
+        "flujo.application.core.policies.cache_policy",
+        "flujo.application.core.policies.common",
+        "flujo.application.core.policies.router_policy",
+        # Core modules (import from flujo.infra or _shared)
+        "flujo.application.core.policies.simple_policy",
+        "flujo.application.core.agent_execution_runner",
+        "flujo.application.core.agent_plugin_runner",
+        "flujo.application.core.background_task_manager",
+        "flujo.application.core.context_update_manager",
+        "flujo.application.core.estimation",
+        "flujo.application.core.executor_core",
+        "flujo.application.core.pipeline_orchestrator",
+        "flujo.application.core.state_manager",
+        "flujo.application.core.step_coordinator",
+        "flujo.application.core.step_executor",
+    ]
+
+    import sys
+
+    for mod_name in modules_with_telemetry:
+        try:
+            if mod_name in sys.modules:
+                mod = sys.modules[mod_name]
+                if hasattr(mod, "telemetry"):
+                    monkeypatch.setattr(mod, "telemetry", mock_telemetry)
+        except Exception:
+            pass
+
+    # Special cases: modules with aliased telemetry imports
+    # conditional_orchestrator uses `_telemetry` alias
+    try:
+        from flujo.application.core import conditional_orchestrator
+
+        monkeypatch.setattr(conditional_orchestrator, "_telemetry", mock_telemetry)
+    except (ImportError, AttributeError):
+        pass
+
+    # policy_handlers uses `_telemetry` alias
+    try:
+        from flujo.application.core import policy_handlers
+
+        monkeypatch.setattr(policy_handlers, "_telemetry", mock_telemetry)
+    except (ImportError, AttributeError):
+        pass
+
+    return capture
+
+
 def pytest_sessionfinish(session, exitstatus):  # type: ignore
     """Best-effort cleanup for background services to avoid process hang."""
     # Attempt to stop any prometheus servers started during tests

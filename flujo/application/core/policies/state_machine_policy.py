@@ -59,6 +59,7 @@ class StateMachinePolicyExecutor:
                 context is not None
                 and hasattr(context, "scratchpad")
                 and isinstance(getattr(context, "scratchpad"), dict)
+                and current_state is not None  # Defensive check
                 and isinstance(current_state, str)
             ):
                 context.scratchpad["current_state"] = current_state
@@ -265,6 +266,18 @@ class StateMachinePolicyExecutor:
                         step_history.append(sr)
             except Exception:
                 pass
+
+            # Defensive: Ensure current_state is preserved in the final result context
+            # This handles cases where context merge might have dropped it or sub-pipeline didn't return it
+            if current_state is not None:
+                try:
+                    if getattr(pipeline_result, "final_pipeline_context", None) is not None:
+                        ctx = getattr(pipeline_result, "final_pipeline_context")
+                        if hasattr(ctx, "scratchpad") and isinstance(ctx.scratchpad, dict):
+                            if "current_state" not in ctx.scratchpad:
+                                ctx.scratchpad["current_state"] = current_state
+                except Exception:
+                    pass
 
             # Merge sub-pipeline's final context back into the state machine's main context
             sub_ctx = getattr(pipeline_result, "final_pipeline_context", iteration_context)
@@ -478,15 +491,16 @@ class StateMachinePolicyExecutor:
                 break
 
         # Final safeguard: ensure the final state is visible on the caller context
+        # Use direct assignment instead of setdefault to ensure the final state is always set
         try:
             if isinstance(current_state, str):
                 for ctx_obj in (last_context, context):
                     if ctx_obj is not None and hasattr(ctx_obj, "scratchpad"):
                         spf = getattr(ctx_obj, "scratchpad")
                         if isinstance(spf, dict):
-                            spf.setdefault("current_state", current_state)
+                            spf["current_state"] = current_state
                             # If a hop was decided, mirror it to next_state for clarity
-                            if isinstance(spf.get("next_state"), str) is False:
+                            if not isinstance(spf.get("next_state"), str):
                                 spf["next_state"] = current_state
         except Exception:
             pass

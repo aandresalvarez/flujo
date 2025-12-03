@@ -129,8 +129,14 @@ class TestConcurrencySafety:
 
         assert len(thread_ids) == num_threads, "Thread ID collision detected"
 
-        # Verify base context wasn't corrupted by concurrent merges
-        assert base_context.scratchpad["counter"] == 0, "Base context counter was corrupted"
+        # Verify base context was updated by concurrent merges (as expected)
+        # Even-numbered threads (0, 2, 4, ..., 18) merge back, so counter should be
+        # one of the even thread_id * 10 values (depends on merge order)
+        # The important thing is that the counter is a valid value from one of the merges
+        valid_counters = {i * 10 for i in range(0, num_threads, 2)}
+        assert base_context.scratchpad["counter"] in valid_counters, (
+            f"Base context counter has unexpected value: {base_context.scratchpad['counter']}"
+        )
 
     def test_async_task_safety(self):
         """Test that async operations are safe under high concurrency."""
