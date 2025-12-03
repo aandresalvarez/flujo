@@ -296,9 +296,10 @@ class TestUltraExecutorPerformance:
             f"Ultra executor should be reasonably performant, got {speedup:.2f}x speedup"
         )
 
-        # Ultra executor should still be fast enough for real-world usage
-        assert ultra_mean < 0.001, (
-            f"Ultra executor should be fast enough, got {ultra_mean:.6f}s per execution"
+        # Ultra executor should still be fast enough for real-world usage (more lenient in CI)
+        threshold = get_performance_threshold(0.001, ci_multiplier=2.0)  # 1ms local, 2ms CI
+        assert ultra_mean < threshold, (
+            f"Ultra executor should be fast enough, got {ultra_mean:.6f}s per execution (threshold: {threshold:.6f}s)"
         )
 
     @pytest.mark.asyncio

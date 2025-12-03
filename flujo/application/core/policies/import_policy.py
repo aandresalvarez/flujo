@@ -452,8 +452,11 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
             pass
         # Proactively merge child scratchpad into parent context to avoid state leakage
         # when upstream merge strategies or exclusions skip scratchpad fields.
+        # Skip this merge when outputs is specified, as the outputs mapping will handle it.
         try:
-            if getattr(step, "outputs", None) != []:
+            outputs = getattr(step, "outputs", None)
+            # Only do proactive merge when outputs is None (not when outputs is specified or empty list)
+            if outputs is None:
                 if (
                     context is not None
                     and child_final_ctx is not None

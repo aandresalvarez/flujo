@@ -161,6 +161,18 @@ class TestStateManagerCacheKeyParsing:
             parsed_run_id, parsed_context_hash = state_manager._parse_cache_key(cache_key)
         parsing_time = time.perf_counter() - start_time
 
-        # Should be very fast (less than 1ms for 1000 operations)
-        assert creation_time < 0.001, f"Cache key creation too slow: {creation_time:.6f}s"
-        assert parsing_time < 0.001, f"Cache key parsing too slow: {parsing_time:.6f}s"
+        # Should be very fast (less than 1ms for 1000 operations, more lenient in CI)
+        import os
+
+        CI_TRUE_VALUES = ("true", "1", "yes")
+        is_ci = os.getenv("CI", "false").lower() in CI_TRUE_VALUES
+        multiplier = 2.0 if is_ci else 1.0
+
+        creation_threshold = 0.001 * multiplier  # 1ms local, 2ms CI
+        parsing_threshold = 0.001 * multiplier  # 1ms local, 2ms CI
+        assert creation_time < creation_threshold, (
+            f"Cache key creation too slow: {creation_time:.6f}s (threshold: {creation_threshold:.6f}s)"
+        )
+        assert parsing_time < parsing_threshold, (
+            f"Cache key parsing too slow: {parsing_time:.6f}s (threshold: {parsing_threshold:.6f}s)"
+        )

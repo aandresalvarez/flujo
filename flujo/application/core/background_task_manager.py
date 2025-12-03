@@ -283,18 +283,42 @@ class BackgroundTaskManager:
                     try:
                         err_name = type(e).__name__
                         err_str = str(e).lower()
-                        if "Timeout" in err_name or "timeout" in err_str:
-                            metadata["error_category"] = "timeout"
+                        # Check for control flow exceptions first
+                        if isinstance(e, (PausedException, PipelineAbortSignal)):
+                            metadata["error_category"] = "control_flow"
+                        # Check for validation errors (ValueError, ValidationError, etc.)
                         elif (
-                            "Connection" in err_name
+                            err_name in ("ValueError", "ValidationError", "TypeError")
+                            or "validation" in err_str
+                        ):
+                            metadata["error_category"] = "validation"
+                        # Check for network/connection errors
+                        elif (
+                            "Timeout" in err_name
+                            or "timeout" in err_str
+                            or "Connection" in err_name
                             or "connection" in err_str
                             or "network" in err_str
                         ):
                             metadata["error_category"] = "network"
-                        elif "Validation" in err_name or "validation" in err_str:
-                            metadata["error_category"] = "validation"
-                        elif "Auth" in err_name or "auth" in err_str:
+                        # Check for authentication errors
+                        elif "Auth" in err_name or "auth" in err_str or "unauthorized" in err_str:
                             metadata["error_category"] = "authentication"
+                        # Check for resource exhaustion
+                        elif (
+                            "Quota" in err_name
+                            or "quota" in err_str
+                            or "limit" in err_str
+                            or "exhausted" in err_str
+                            or "UsageLimit" in err_name
+                        ):
+                            metadata["error_category"] = "resource_exhaustion"
+                        # Check for configuration errors
+                        elif "Config" in err_name or "config" in err_str or "setting" in err_str:
+                            metadata["error_category"] = "configuration"
+                        # Check for system errors (OSError, IOError, etc.)
+                        elif err_name in ("OSError", "IOError", "SystemError", "RuntimeError"):
+                            metadata["error_category"] = "system"
                         else:
                             metadata["error_category"] = "unknown"
                         if final_context is not None and hasattr(final_context, "scratchpad"):
