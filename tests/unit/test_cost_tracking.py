@@ -2458,6 +2458,10 @@ class TestEdgeCasesAndRobustness:
 
     def test_agent_with_complex_model_id_parsing(self):
         """Test agent with complex model ID that needs parsing."""
+        from flujo.cost import clear_cost_cache
+
+        # Clear cache to ensure test isolation
+        clear_cost_cache()
 
         class MockResponse:
             def __init__(self):
@@ -2495,7 +2499,9 @@ class TestEdgeCasesAndRobustness:
             assert prompt_tokens == 300
             assert completion_tokens == 150
             # Cost should be calculated for models with pricing
-            assert cost_usd > 0.0  # Should have pricing for all configured models
+            assert cost_usd > 0.0, (
+                f"Cost should be > 0.0 for model_id='{model_id}'"
+            )  # Should have pricing for all configured models
 
     def test_usage_limit_precedence_with_falsy_values(self):
         """Test usage limit precedence with falsy values."""
