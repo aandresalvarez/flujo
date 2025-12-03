@@ -478,15 +478,16 @@ class StateMachinePolicyExecutor:
                 break
 
         # Final safeguard: ensure the final state is visible on the caller context
+        # Use direct assignment instead of setdefault to ensure the final state is always set
         try:
             if isinstance(current_state, str):
                 for ctx_obj in (last_context, context):
                     if ctx_obj is not None and hasattr(ctx_obj, "scratchpad"):
                         spf = getattr(ctx_obj, "scratchpad")
                         if isinstance(spf, dict):
-                            spf.setdefault("current_state", current_state)
+                            spf["current_state"] = current_state
                             # If a hop was decided, mirror it to next_state for clarity
-                            if isinstance(spf.get("next_state"), str) is False:
+                            if not isinstance(spf.get("next_state"), str):
                                 spf["next_state"] = current_state
         except Exception:
             pass
