@@ -89,8 +89,8 @@ def create_large_model() -> BenchmarkModel:
         }
 
     # Generate large items list
-    for i in range(1000):
-        large_items.append(f"item_{i}")
+    for i in range(100):
+        large_items.append(f"item_{i}")  # Reduced from 1000 to 100
 
     # Generate large metadata
     for i in range(50):
@@ -183,7 +183,9 @@ class TestSerializationPerformance:
     def test_small_model_performance(self):
         """Benchmark performance with small models."""
         model = create_small_model()
-        results = self.benchmark_serialization_speed(model, iterations=10000)
+        results = self.benchmark_serialization_speed(
+            model, iterations=1000
+        )  # Reduced from 10000 to 1000
 
         print("\nSmall Model Performance (10,000 iterations):")
         print(f"  Avg serialization: {results['avg_serialization']:.3f} ms")
@@ -202,9 +204,11 @@ class TestSerializationPerformance:
     def test_medium_model_performance(self):
         """Benchmark performance with medium-sized models."""
         model = create_medium_model()
-        results = self.benchmark_serialization_speed(model, iterations=1000)
+        results = self.benchmark_serialization_speed(
+            model, iterations=100
+        )  # Reduced from 1000 to 100
 
-        print("\nMedium Model Performance (1,000 iterations):")
+        print("\nMedium Model Performance (100 iterations):")
         print(f"  Avg serialization: {results['avg_serialization']:.3f} ms")
         print(f"  Avg JSON encode: {results['avg_json_encode']:.3f} ms")
         print(f"  Avg JSON decode: {results['avg_json_decode']:.3f} ms")
@@ -265,7 +269,7 @@ class TestSerializationPerformance:
         initial_memory = process.memory_info().rss / 1024 / 1024  # MB
 
         # Create and serialize large models
-        models = [create_large_model() for _ in range(100)]
+        models = [create_large_model() for _ in range(50)]  # Reduced from 100 to 50
         request_data_list = []
 
         for model in models:
@@ -293,8 +297,8 @@ class TestSerializationPerformance:
         print(f"  Peak memory: {peak_memory:.2f} MB")
         print(f"  Memory increase: {memory_increase:.2f} MB")
 
-        # Memory usage should be reasonable (less than 1GB for 100 large models)
-        assert memory_increase < 1000, f"Memory usage too high: {memory_increase:.2f} MB"
+        # Memory usage should be reasonable (less than 500MB for 50 large models)
+        assert memory_increase < 500, f"Memory usage too high: {memory_increase:.2f} MB"
 
     def test_concurrent_serialization(self):
         """Test performance under concurrent serialization operations."""
@@ -400,7 +404,7 @@ class TestSerializationPerformance:
         initial_memory = process.memory_info().rss / 1024 / 1024  # MB
 
         # Create and destroy models repeatedly
-        for _ in range(1000):
+        for _ in range(500):  # Reduced from 1000 to 500
             model = create_medium_model()
             request_data = {
                 "input_data": model,

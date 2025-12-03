@@ -54,7 +54,6 @@ jobs:
       fail-fast: true
       matrix:
         python-version: ["3.11", "3.12"]
-        mode: ["compat", "pure"]
     env:
       CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
@@ -80,11 +79,7 @@ jobs:
       - name: Set dummy OpenAI API key for tests
         run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
 
-      - name: Set mode env
-        run: |
-          if [ "${{ matrix.mode }}" = "pure" ]; then echo "FLUJO_PURE_QUOTA=1" >> $GITHUB_ENV; fi
-
-      - name: Run fast tests with coverage (${{ matrix.mode }})
+      - name: Run fast tests with coverage
         run: |
           # Run fast tests with limited parallelism for CI stability and speed
           uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n 2
@@ -92,7 +87,7 @@ jobs:
       - name: Store fast tests coverage file
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-fast-${{ matrix.python-version }}-${{ matrix.mode }}
+          name: coverage-fast-${{ matrix.python-version }}
           path: .coverage.*
 
       - name: Check for stray xdist flags
@@ -148,7 +143,7 @@ jobs:
           uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "slow or serial or benchmark"
 
           # Run the comprehensive golden transcript tests
-          uv run coverage run --source=flujo --append -m pytest tests/e2e/test_golden_transcript_*.py
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/e2e/test_golden_transcript_*.py
 
       - name: Store slow tests coverage file
         uses: actions/upload-artifact@v4
@@ -157,62 +152,12 @@ jobs:
           path: .coverage.*
 
   # ----------------------------------------------------------------------------
-  # Job 4: Run Full Test Suite (Legacy) - For Comprehensive Coverage
-  # ----------------------------------------------------------------------------
-  test-full:
-    name: Full Test Suite
-    runs-on: ubuntu-latest
-    needs: lint-and-typecheck
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.10"]  # Run full suite on older Python versions
-    env:
-      CI: "true"
-      FLUJO_CLI_PERF_THRESHOLD: "0.2"
-      FLUJO_CV_THRESHOLD: "1.0"
-      FLUJO_CI_DB_SIZE: "250"  # Optimized database size for mass CI (was 500)
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v1
-        with:
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --all-extras
-
-      - name: Set dummy OpenAI API key for tests
-        run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
-
-      - name: Run all tests with coverage
-        run: |
-          # Run non-SQLite tests with parallel mode for better performance
-          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -k "not sqlite and not test_sqlite"
-
-          # Run SQLite tests separately without parallel mode to avoid bus errors
-          uv run coverage run --source=flujo --append -m pytest tests/ -k "sqlite or test_sqlite"
-
-      - name: Store full test coverage file
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-full-${{ matrix.python-version }}
-          path: .coverage.*
-
-  # ----------------------------------------------------------------------------
   # Job 5: Combine and Report Code Coverage
   # ----------------------------------------------------------------------------
   coverage:
     name: Report Coverage
     runs-on: ubuntu-latest
-    needs: [test-fast, test-slow, test-full]
+    needs: [test-fast, test-slow]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

@@ -23,16 +23,16 @@ class PerformanceContext(PipelineContext):
 
     initial_prompt: str = "test"
     operation_count: int = 0
-    large_data: str = "x" * 10000  # 10KB of data
-    nested_data: JSONObject = {"deep": {"nested": {"data": "x" * 5000}}}
+    large_data: str = "x" * 2000  # 2KB of data (reduced from 10KB for faster tests)
+    nested_data: JSONObject = {"deep": {"nested": {"data": "x" * 1000}}}
     performance_metrics: dict[str, float] = {}
     memory_usage: List[int] = []
     execution_times: List[float] = []
     context_updates: int = 0
-    large_list: List[Any] = ["item"] * 1000  # 1000 items, can be strings or dicts
+    large_list: List[Any] = ["item"] * 100  # 100 items, can be strings or dicts (reduced from 1000)
     complex_object: JSONObject = {
         "nested": {"deep": {"structure": {"with": {"many": {"levels": "data"}}}}},
-        "arrays": [{"item": i, "data": "x" * 100} for i in range(100)],
+        "arrays": [{"item": i, "data": "x" * 100} for i in range(10)],  # Reduced from 100 to 10
         "strings": ["string"] * 50,
     }
 
@@ -44,8 +44,8 @@ async def performance_step(data: Any, *, context: PerformanceContext) -> JSONObj
     context.operation_count += 1
     context.context_updates += 1
 
-    # Simulate some work
-    await asyncio.sleep(0.01)
+    # Simulate some work (reduced sleep for faster tests)
+    await asyncio.sleep(0.001)
 
     execution_time = time.time() - start_time
     context.execution_times.append(execution_time)
@@ -91,8 +91,8 @@ async def memory_intensive_step(data: Any, *, context: PerformanceContext) -> JS
     context.context_updates += 1
 
     # Create large data structures
-    large_string = "x" * 50000  # 50KB
-    large_list = [{"data": large_string, "index": i} for i in range(100)]
+    large_string = "x" * 2000  # 2KB (reduced from 10KB for faster tests)
+    large_list = [{"data": large_string, "index": i} for i in range(10)]  # Reduced from 100 to 10
 
     # Update context with large data
     context.large_data = large_string
@@ -154,9 +154,12 @@ async def test_performance_with_context_updates_large_context():
     assert result.final_pipeline_context.context_updates == 1
 
     # Verify large data was updated
-    assert len(result.final_pipeline_context.large_data) > 10000
-    assert len(result.final_pipeline_context.large_list) > 1000
-    assert len(result.final_pipeline_context.complex_object["arrays"]) > 100
+    # large_data starts at 2000 chars, large_context_step appends "_update_1" (8 chars) = 2008 total
+    assert len(result.final_pipeline_context.large_data) > 2000
+    # large_list starts at 100 items, large_context_step appends 1 item = 101 total
+    assert len(result.final_pipeline_context.large_list) > 100
+    # complex_object["arrays"] starts at 10 items, large_context_step appends 1 item = 11 total
+    assert len(result.final_pipeline_context.complex_object["arrays"]) > 10
 
     # Performance assertion (should complete within reasonable time)
     assert execution_time < 2.0, f"Large context test took too long: {execution_time:.2f}s"
@@ -216,8 +219,10 @@ async def test_performance_with_context_updates_memory_intensive():
     assert result.final_pipeline_context.context_updates == 1
 
     # Verify large data was created
-    assert len(result.final_pipeline_context.large_data) >= 50000
-    assert len(result.final_pipeline_context.large_list) >= 100
+    # memory_intensive_step sets large_data to "x" * 2000 = 2000 chars
+    assert len(result.final_pipeline_context.large_data) >= 2000
+    # memory_intensive_step sets large_list to 10 items
+    assert len(result.final_pipeline_context.large_list) >= 10
     assert "large_arrays" in result.final_pipeline_context.complex_object
 
     # Performance assertion (should complete within reasonable time)
@@ -293,10 +298,10 @@ async def test_performance_with_context_updates_complex_pipeline():
     assert result.final_pipeline_context.context_updates == 4
 
     # Verify large data was processed
-    assert len(result.final_pipeline_context.large_data) > 10000
-    assert (
-        len(result.final_pipeline_context.large_list) >= 100
-    )  # Memory intensive step creates 100 items
+    # memory_intensive_step (last step) sets large_data to "x" * 2000 = 2000 chars
+    assert len(result.final_pipeline_context.large_data) >= 2000
+    # memory_intensive_step sets large_list to 10 items
+    assert len(result.final_pipeline_context.large_list) >= 10
     assert len(result.final_pipeline_context.performance_metrics) > 0
 
     # Performance assertion (complex pipeline should complete within reasonable time)

@@ -24,7 +24,7 @@ class LargeModel(BaseModel):
 
 
 class LargeModelAgent:
-    def __init__(self, size: int = 10_000) -> None:  # Reduced from 200_000 to 10_000
+    def __init__(self, size: int = 5_000) -> None:  # Reduced from 10_000 to 5_000 (50% reduction)
         self.size = size
 
     async def run(self, idx: int) -> int:
@@ -39,7 +39,7 @@ async def test_loop_step_memory_stability() -> None:
     if psutil is None:
         pytest.skip("psutil not available")
 
-    iterations = 1000
+    iterations = 500  # Reduced from 1000 to 500 (50% reduction)
     body_step = Step.model_validate({"name": "make_large", "agent": LargeModelAgent()})
     body_pipeline = Pipeline.from_step(body_step)
     loop = Step.loop_until(

@@ -250,7 +250,7 @@ def _has_pytest_option(option: str, disable_autoload: bool) -> bool:
             stderr=sp.STDOUT,
             text=True,
             env=env,
-            timeout=20,
+            timeout=10,  # Reduced from 20s for faster option detection
         )
         supported = option in (proc.stdout or "")
     except Exception:
@@ -402,7 +402,7 @@ def discover_tests(
     kexpr: Optional[str],
     pytest_args: Sequence[str],
     disable_autoload: bool,
-    collect_timeout: int = 180,
+    collect_timeout: int = 120,  # Reduced from 180s due to optimized test suite
     sanitize_pytest_addopts: bool = False,
 ) -> List[str]:
     """
@@ -572,9 +572,9 @@ def _auto_workers() -> int:
         n = os.cpu_count() or 4
     except Exception:
         n = 4
-    # Keep it conservative to avoid overloading local dev
-    # Formula: (CPU_count + 1) // 2, capped at 8
-    return max(1, min(8, (n + 1) // 2))
+    # Allow higher parallelism on powerful machines for faster test execution
+    # Formula: (CPU_count + 1) // 2, capped at 12 (increased from 8)
+    return max(1, min(12, (n + 1) // 2))
 
 
 def _run_serial(
@@ -732,8 +732,8 @@ def main() -> int:
     ap.add_argument(
         "--timeout",
         type=int,
-        default=60,
-        help="Per-test timeout (pytest-timeout) in seconds (default: 60)",
+        default=30,
+        help="Per-test timeout (pytest-timeout) in seconds (default: 30, reduced from 60 due to optimized datasets)",
     )
     ap.add_argument(
         "--outer-timeout",

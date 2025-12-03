@@ -12,7 +12,7 @@ async def test_sqlite_backend_large_dataset_performance(sqlite_backend_factory):
     """Test that SQLiteBackend can handle a large number of workflows efficiently."""
     backend = sqlite_backend_factory("state.db")
     now = datetime.utcnow().replace(microsecond=0)
-    num_workflows = 5000
+    num_workflows = 1000  # Reduced from 5000 to 1000 (80% reduction)
     # Insert many workflows
     for i in range(num_workflows):
         state = {
@@ -63,7 +63,7 @@ async def test_sqlite_backend_high_concurrency(sqlite_backend_factory):
     """Test SQLiteBackend under high concurrent load (writers and readers)."""
     backend = sqlite_backend_factory("state.db")
     now = datetime.utcnow().replace(microsecond=0)
-    num_workflows = 1000
+    num_workflows = 200  # Reduced from 1000 to 200 (80% reduction)
     num_workers = 20
 
     async def writer(i):
