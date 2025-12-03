@@ -8,6 +8,9 @@ from flujo.domain.dsl.step import StepConfig
 from flujo.domain.models import StepResult
 from flujo.application.core.executor_core import ExecutorCore
 
+# Tests that mock telemetry.logfire need to run serially to avoid cross-test interference
+pytestmark = pytest.mark.serial
+
 
 class TestConditionalStepRegression:
     """Regression test suite for ConditionalStep logic migration."""

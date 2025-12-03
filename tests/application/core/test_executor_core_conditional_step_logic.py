@@ -7,6 +7,9 @@ from flujo.domain.dsl import Pipeline, Step
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.application.core.executor_core import ExecutorCore
 
+# Tests that mock telemetry.logfire need to run serially to avoid cross-test interference
+pytestmark = pytest.mark.serial
+
 
 class TestExecutorCoreConditionalStepLogic:
     """Test suite for ConditionalStep core logic in ExecutorCore."""
