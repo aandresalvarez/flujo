@@ -81,8 +81,10 @@ jobs:
 
       - name: Run fast tests with coverage
         run: |
-          # Run fast tests with limited parallelism for CI stability and speed
-          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n 2
+          # Use pytest-cov to handle xdist subprocess coverage correctly
+          uv run pytest --cov=flujo --cov-report= tests/ -m "not slow and not serial and not benchmark" -n 2
+          # Rename default .coverage to a unique name for artifact upload
+          mv .coverage .coverage.fast-${{ matrix.python-version }}-${{ matrix.mode }}
 
       - name: Store fast tests coverage file
         uses: actions/upload-artifact@v4

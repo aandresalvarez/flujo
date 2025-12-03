@@ -76,7 +76,10 @@ jobs:
       - name: Run fast tests with coverage (deterministic order)
         run: |
           # Disable pytest-randomly to avoid order-dependent flakes; keep limited parallelism
-          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "not slow and not serial and not benchmark" -n 2 -p no:randomly
+          # Use pytest-cov to handle xdist subprocess coverage correctly
+          uv run pytest --cov=flujo --cov-report= tests/ -m "not slow and not serial and not benchmark" -n 2 -p no:randomly
+          # Rename default .coverage to a unique name for artifact upload
+          mv .coverage .coverage.fast-pr
 
       - name: Store coverage file
         uses: actions/upload-artifact@v4
