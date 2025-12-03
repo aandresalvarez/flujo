@@ -443,6 +443,71 @@ def safe_merge_context_updates(
 
                 # Skip excluded fields to prevent duplication during loop merging
                 if field_name in excluded_fields:
+                    # Special handling for scratchpad: even if excluded, we must preserve critical keys
+                    # and simple primitive values to ensure state machine transitions and basic data flow work.
+                    if field_name == "scratchpad":
+                        if _VERBOSE_DEBUG:
+                            logger.debug(
+                                "Processing excluded scratchpad for critical keys and primitives"
+                            )
+
+                        # Critical keys that must ALWAYS be preserved
+                        CRITICAL_SCRATCHPAD_KEYS = {
+                            "current_state",
+                            "status",
+                            "pause_message",
+                            "next_state",
+                            "loop_index",
+                            "loop_output",
+                        }
+
+                        # Check if source has any critical keys or primitives
+                        source_scratch = getattr(source_context, "scratchpad", {})
+                        if isinstance(source_scratch, dict):
+                            # Filter for critical keys OR primitive types (str, int, float, bool, None)
+                            # This prevents large objects from polluting the context while allowing basic state to flow.
+                            updates_to_merge = {}
+                            for k, v in source_scratch.items():
+                                if k in CRITICAL_SCRATCHPAD_KEYS:
+                                    updates_to_merge[k] = v
+                                elif isinstance(v, (str, int, float, bool, type(None))):
+                                    updates_to_merge[k] = v
+
+                            if updates_to_merge:
+                                if _VERBOSE_DEBUG:
+                                    logger.debug(
+                                        f"Merging filtered scratchpad keys: {list(updates_to_merge.keys())}"
+                                    )
+
+                                # Get or create target scratchpad
+                                if not hasattr(target_context, "scratchpad"):
+                                    _force_setattr(target_context, "scratchpad", {})
+                                target_scratch = getattr(target_context, "scratchpad")
+
+                                if isinstance(target_scratch, dict):
+                                    # Merge filtered keys
+                                    merged_scratch = deep_merge_dict(
+                                        target_scratch, updates_to_merge
+                                    )
+                                    _force_setattr(target_context, "scratchpad", merged_scratch)
+
+                                    # Observability: Warn about keys being merged from excluded scratchpad
+                                    # This helps identify if the exclusion policy is too aggressive
+                                    # We only warn if CRITICAL keys are involved, as primitives are less risky
+                                    critical_keys_merged = [
+                                        k
+                                        for k in updates_to_merge.keys()
+                                        if k in CRITICAL_SCRATCHPAD_KEYS
+                                    ]
+                                    if critical_keys_merged:
+                                        logger.warning(
+                                            f"Merged critical keys {critical_keys_merged} from excluded 'scratchpad'. "
+                                            "Consider removing 'scratchpad' from excluded_fields if this is unintended."
+                                        )
+
+                                    updated_count += 1
+                                    continue
+
                     if _VERBOSE_DEBUG:
                         logger.debug("Skipping excluded field: %s", field_name)
                     continue

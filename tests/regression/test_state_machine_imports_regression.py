@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import pytest
 
 
 def _write_child_project(base: Path, name: str, tool_src: str, pipeline_yaml: str) -> Path:
@@ -12,7 +13,8 @@ def _write_child_project(base: Path, name: str, tool_src: str, pipeline_yaml: st
     return d
 
 
-def test_regression_state_machine_import_step_no_missing_agent(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_regression_state_machine_import_step_no_missing_agent(tmp_path: Path) -> None:
     """Regression: importing a sub-pipeline inside a StateMachine state should not
     be treated as a plain Step (no agent) and should not raise MissingAgentError.
     Mirrors the original scenario name 'run_clarification_subpipeline'.
@@ -74,7 +76,7 @@ def test_regression_state_machine_import_step_no_missing_agent(tmp_path: Path) -
 
     # Run and ensure the value merged; no MissingAgentError surfaced
     runner = Flujo(pipeline)
-    res = runner.run("")
+    res = await runner.run_async("")
     ctx = res.final_pipeline_context
     assert ctx is not None
     assert ctx.scratchpad.get("value") == 1

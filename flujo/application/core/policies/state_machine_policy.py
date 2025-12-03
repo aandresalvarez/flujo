@@ -59,6 +59,7 @@ class StateMachinePolicyExecutor:
                 context is not None
                 and hasattr(context, "scratchpad")
                 and isinstance(getattr(context, "scratchpad"), dict)
+                and current_state is not None  # Defensive check
                 and isinstance(current_state, str)
             ):
                 context.scratchpad["current_state"] = current_state
