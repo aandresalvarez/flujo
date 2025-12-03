@@ -544,7 +544,8 @@ class TestQualityGates:
                 timeout=300,
             )
             if result.returncode != 0:
-                failures.append(f"unit tests failed: {result.stderr[:500]}...")
+                error_info = f"unit tests failed:\nSTDOUT:\n{result.stdout[-1000:]}\nSTDERR:\n{result.stderr[-2000:]}"
+                failures.append(error_info)
         except subprocess.TimeoutExpired:
             failures.append("unit tests timed out")
 
