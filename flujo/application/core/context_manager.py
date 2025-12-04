@@ -376,7 +376,7 @@ class ContextManager:
     ) -> Optional[BaseModel]:
         """Merge updates from branch_context into main_context and return the result."""
         # NOTE: Removed thread check that was skipping merge on non-main threads.
-        # This caused test failures in CI when running with pytest-xdist (-n 2)
+        # This caused test failures in CI when running with pytest-xdist (parallel workers)
         # because xdist worker processes run tests in worker threads, not the main thread.
         # The original check was likely intended to prevent race conditions, but
         # context merging should work correctly regardless of thread context.
