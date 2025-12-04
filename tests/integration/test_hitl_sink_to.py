@@ -132,7 +132,6 @@ async def test_hitl_sink_with_updates_context_true():
 @pytest.mark.asyncio
 @pytest.mark.slow
 @pytest.mark.serial
-@pytest.mark.skip(reason="Loop+HITL resume logic needs more investigation")
 async def test_hitl_sink_in_loop_iterations():
     """Test that sink_to works correctly in loop iterations."""
     yaml_content = """

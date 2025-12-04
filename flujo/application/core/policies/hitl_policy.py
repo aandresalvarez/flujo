@@ -105,6 +105,14 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
                         resume_payload = sp.get("user_input")
                         sp["status"] = "running"
                         sp.pop("loop_resume_requires_hitl_output", None)
+                        # Apply sink_to before returning (mirrors logic at lines 248-260)
+                        if step.sink_to and context is not None:
+                            try:
+                                from flujo.utils.context import set_nested_context_field
+
+                                set_nested_context_field(context, step.sink_to, resume_payload)
+                            except Exception:
+                                pass
                         return Success(
                             step_result=StepResult(
                                 name=getattr(step, "name", "hitl"),

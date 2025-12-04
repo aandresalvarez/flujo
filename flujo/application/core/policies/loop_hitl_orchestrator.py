@@ -38,6 +38,9 @@ def prepare_resume_config(loop_step: Any, current_context: Any, data: Any) -> Lo
         LoopResumeState.clear(current_context)
         if isinstance(scratchpad_ref, dict):
             scratchpad_ref["status"] = "paused" if resume_requires_hitl_output else "running"
+            # Restore the HITL marker so the HITL policy's fast-path can consume user_input
+            if resume_requires_hitl_output:
+                scratchpad_ref["loop_resume_requires_hitl_output"] = True
         telemetry.logfire.info(
             f"LoopStep '{loop_step.name}' RESUMING from iteration {saved_iteration}, step {saved_step_index}"
         )
