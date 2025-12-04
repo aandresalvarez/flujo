@@ -279,7 +279,6 @@ class TestDeprecationDecorator:
         assert isinstance(result, StepResult)
 
 
-@pytest.mark.asyncio
 class TestFunctionSignatureAnalysis:
     """Test that function signatures are preserved correctly."""
 
@@ -331,7 +330,6 @@ class TestFunctionSignatureAnalysis:
         assert "resources" in params
 
 
-@pytest.mark.asyncio
 class TestLegacyCleanupCompleteness:
     """Test that the legacy cleanup is complete and comprehensive."""
 

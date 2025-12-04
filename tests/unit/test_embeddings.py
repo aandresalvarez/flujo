@@ -66,7 +66,7 @@ class TestEmbeddingResult:
         result = EmbeddingResult(embeddings=embeddings, usage_info=usage_info)
 
         usage = result.usage()
-        input_tokens = getattr(usage, "input_tokens", getattr(usage, "request_tokens", 0))
+        input_tokens = getattr(usage, "input_tokens", getattr(usage, "prompt_tokens", 0))
         total_tokens = getattr(usage, "total_tokens", 0)
 
         assert input_tokens == 0
@@ -125,7 +125,7 @@ class TestOpenAIEmbeddingClient:
 
             # Verify usage information
             usage = result.usage()
-            input_tokens = getattr(usage, "input_tokens", getattr(usage, "request_tokens", 0))
+            input_tokens = getattr(usage, "input_tokens", getattr(usage, "prompt_tokens", 0))
             total_tokens = getattr(usage, "total_tokens", 0)
 
             assert input_tokens == 100

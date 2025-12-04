@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import pytest
 
+# StateMachine context manipulations are not xdist-safe
+pytestmark = [pytest.mark.serial]
+
 
 def _write_child_project(base: Path, name: str, tool_src: str, pipeline_yaml: str) -> Path:
     d = base / name

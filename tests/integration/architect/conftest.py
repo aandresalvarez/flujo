@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+# Architect integration tests use StateMachine pipelines with shared scratchpad state
+# that can race under xdist parallel execution.
+pytestmark = [pytest.mark.serial]
+
 
 @pytest.fixture(autouse=True)
 def enable_architect_state_machine(monkeypatch: pytest.MonkeyPatch) -> None:

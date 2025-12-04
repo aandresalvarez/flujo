@@ -621,11 +621,9 @@ async def run_loop_iterations(
                         current_data = getattr(fallback_result, "output", current_data)
             except Exception:
                 pass
-        if (
-            getattr(pipeline_result, "final_pipeline_context", None) is not None
-            and getattr(loop_step, "name", "") != "ValidateAndRepair"
-        ):
-            iteration_context = pipeline_result.final_pipeline_context
+        final_ctx = getattr(pipeline_result, "final_pipeline_context", None)
+        if final_ctx is not None and getattr(loop_step, "name", "") != "ValidateAndRepair":
+            iteration_context = final_ctx
             try:
                 merged_context = ContextManager.merge(current_context, iteration_context)
                 if merged_context is not None:
@@ -634,8 +632,19 @@ async def run_loop_iterations(
                 telemetry.logfire.warning(
                     f"LoopStep '{loop_step.name}' ContextManager.merge failed: {e}"
                 )
-        elif pipeline_result.final_pipeline_context is not None:
-            current_context = pipeline_result.final_pipeline_context
+        elif final_ctx is not None:
+            current_context = final_ctx
+        elif iteration_context is not None and current_context is not None:
+            # Some pipelines mutate the provided iteration_context in place without
+            # returning it as final_pipeline_context. Merge it to avoid losing init/body updates.
+            try:
+                merged_context = ContextManager.merge(current_context, iteration_context)
+                if merged_context is not None:
+                    current_context = merged_context
+            except Exception as e:
+                telemetry.logfire.warning(
+                    f"LoopStep '{loop_step.name}' merge of iteration_context failed: {e}"
+                )
         sync_conversation_history(
             current_context=current_context,
             iteration_context=iteration_context,
