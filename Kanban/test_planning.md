@@ -192,8 +192,8 @@ flake-detection:
 - [x] Refactor tests to use generous thresholds (1s sanity checks) ✅
 
 ### Medium-term
-- [ ] Update `docs/testing.md` with isolation best practices
-- [ ] Add pre-commit check for common test isolation issues
+- [x] Update `docs/testing.md` with isolation best practices ✅
+- [ ] Add pre-commit check for common test isolation issues (optional)
 
 ---
 
