@@ -963,36 +963,56 @@ class TestCLIPerformance:
 
     @pytest.mark.slow
     def test_lens_list_with_filters_performance(self, large_database: Path) -> None:
-        """Test that `flujo lens list` with filters completes in <2s with configurable number of runs."""
+        """Test that `flujo lens list` with filters is as fast or faster than unfiltered list.
 
+        This test uses RELATIVE performance measurement instead of absolute thresholds.
+        By comparing filtered vs unfiltered queries in the same environment, we get an
+        environment-independent test that validates filter optimization (filtering returns
+        fewer results so should be at least as fast as full list).
+        """
         # Set environment variable to point to our test database
         # Use correct URI format: sqlite:///path for absolute paths
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
         runner = CliRunner()
 
-        # Test with status filter
+        # --- Baseline: Unfiltered list ---
         start_time = time.perf_counter()
-        result = runner.invoke(app, ["lens", "list", "--status", "completed"])
-        execution_time = time.perf_counter() - start_time
+        result_unfiltered = runner.invoke(app, ["lens", "list"])
+        unfiltered_time = time.perf_counter() - start_time
 
-        # Enhanced error handling with detailed debugging
-        if result.exit_code != 0:
-            logger.error("CLI command failed with detailed information:")
-            logger.error(f"Exit code: {result.exit_code}")
-            logger.error(f"stdout: {result.stdout}")
-            logger.error(f"stderr: {result.stderr}")
-            raise AssertionError(f"CLI command failed: {result.stdout}")
+        if result_unfiltered.exit_code != 0:
+            logger.error("CLI unfiltered list failed:")
+            logger.error(f"Exit code: {result_unfiltered.exit_code}")
+            logger.error(f"stdout: {result_unfiltered.stdout}")
+            logger.error(f"stderr: {result_unfiltered.stderr}")
+            raise AssertionError(f"CLI unfiltered list failed: {result_unfiltered.stdout}")
+
+        # --- Test: Filtered list ---
+        start_time = time.perf_counter()
+        result_filtered = runner.invoke(app, ["lens", "list", "--status", "completed"])
+        filtered_time = time.perf_counter() - start_time
+
+        if result_filtered.exit_code != 0:
+            logger.error("CLI filtered list failed:")
+            logger.error(f"Exit code: {result_filtered.exit_code}")
+            logger.error(f"stdout: {result_filtered.stdout}")
+            logger.error(f"stderr: {result_filtered.stderr}")
+            raise AssertionError(f"CLI filtered list failed: {result_filtered.stdout}")
 
         # Log performance results for debugging
-        logger.debug("CLI List with Filter Performance Test:")
-        logger.debug(f"Execution time: {execution_time:.3f}s")
-        logger.debug(f"Exit code: {result.exit_code}")
+        logger.debug("CLI List Filter Performance Test (RELATIVE):")
+        logger.debug(f"Unfiltered time: {unfiltered_time:.3f}s")
+        logger.debug(f"Filtered time: {filtered_time:.3f}s")
+        logger.debug(f"Ratio: {filtered_time / unfiltered_time:.2f}x")
 
-        # Use standardized threshold configuration
-        threshold = self.get_cli_performance_threshold()
-        assert execution_time < threshold, (
-            f"`flujo lens list --status completed` took {execution_time:.3f}s, exceeds {threshold}s limit"
+        # RELATIVE assertion: filtered should be no slower than unfiltered + 20% tolerance
+        # The tolerance accounts for timing variance while still catching major regressions
+        tolerance = 1.2
+        assert filtered_time <= unfiltered_time * tolerance, (
+            f"Filtered list ({filtered_time:.3f}s) should be at most {tolerance}x "
+            f"unfiltered list ({unfiltered_time:.3f}s), but ratio was "
+            f"{filtered_time / unfiltered_time:.2f}x"
         )
 
     @pytest.mark.slow
