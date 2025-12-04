@@ -8,7 +8,6 @@ from flujo.agents.wrapper import make_agent_async, AsyncAgentWrapper
 pytestmark = pytest.mark.slow
 
 
-@pytest.mark.fast
 def test_make_agent_uses_openai_responses_model_for_gpt5_family():
     try:
         from pydantic_ai.models.openai import OpenAIResponsesModel
@@ -24,7 +23,6 @@ def test_make_agent_uses_openai_responses_model_for_gpt5_family():
     assert isinstance(agent.model, OpenAIResponsesModel)
 
 
-@pytest.mark.fast
 @pytest.mark.asyncio
 async def test_make_agent_async_allows_structured_output_hint_without_network(monkeypatch):
     # Build a GPT-5 family agent wrapper
@@ -55,7 +53,6 @@ async def test_make_agent_async_allows_structured_output_hint_without_network(mo
     assert rf.get("type") in {"json_schema", "json_object"}
 
 
-@pytest.mark.fast
 @pytest.mark.asyncio
 async def test_make_agent_async_gpt4o_structured_output_hint_without_network(monkeypatch):
     wrapper = make_agent_async(
@@ -79,7 +76,6 @@ async def test_make_agent_async_gpt4o_structured_output_hint_without_network(mon
     assert rf.get("type") in {"json_schema", "json_object"}
 
 
-@pytest.mark.fast
 @pytest.mark.asyncio
 async def test_policy_openai_gpt4o_auto_grammar_applied(monkeypatch):
     from flujo.application.core.executor_core import ExecutorCore
@@ -126,7 +122,6 @@ async def test_policy_openai_gpt4o_auto_grammar_applied(monkeypatch):
     assert cur.attributes.get("aros.soe.mode") == "openai_json"
 
 
-@pytest.mark.fast
 @pytest.mark.asyncio
 async def test_policy_enables_structured_output_for_gpt5_family_without_network(monkeypatch):
     from flujo.application.core.executor_core import ExecutorCore

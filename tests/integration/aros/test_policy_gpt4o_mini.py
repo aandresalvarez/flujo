@@ -7,7 +7,6 @@ from flujo.agents.wrapper import make_agent_async
 pytestmark = pytest.mark.slow
 
 
-@pytest.mark.fast
 @pytest.mark.asyncio
 async def test_policy_openai_gpt4o_mini_auto_grammar_applied(monkeypatch):
     from flujo.application.core.executor_core import ExecutorCore
