@@ -435,8 +435,9 @@ class DefaultAgentRunner:
                 sig = inspect.signature(executable_func)
                 func_params = set(sig.parameters.keys()) - {"self", "cls"}
                 payload_keys = set(payload.keys())
-                # Only unpack if at least one payload key matches a function parameter
-                if payload_keys & func_params:
+                # Only unpack if ALL payload keys are valid function parameters
+                # This prevents passing unexpected kwargs that would cause TypeError
+                if payload_keys and payload_keys <= func_params:
                     filtered_kwargs.update(payload)
                     payload = None  # Clear payload since we're passing via kwargs
                     _skip_payload = True  # We deliberately unpacked; don't pass payload
