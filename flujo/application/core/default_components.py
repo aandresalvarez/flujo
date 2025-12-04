@@ -419,7 +419,9 @@ class DefaultAgentRunner:
         # Handle builtin skill input: syntax - unpack dict payload as kwargs
         # When builtins are called via step.input instead of agent.params, the dict
         # payload needs to be unpacked as keyword arguments to match function signatures.
+        # Only unpack if the dict keys match the function's expected parameter names.
         _is_builtin = False
+        _skip_payload = False  # Track if we deliberately cleared payload for builtin unpacking
         try:
             func_module = getattr(executable_func, "__module__", "")
             _is_builtin = isinstance(func_module, str) and (
@@ -428,14 +430,25 @@ class DefaultAgentRunner:
         except Exception:
             _is_builtin = False
         if _is_builtin and isinstance(payload, dict):
-            # Unpack the dict payload as kwargs for builtin skills
-            filtered_kwargs.update(payload)
-            payload = None  # Clear payload since we're passing via kwargs
+            # Check if dict keys match function parameters before unpacking
+            try:
+                sig = inspect.signature(executable_func)
+                func_params = set(sig.parameters.keys()) - {"self", "cls"}
+                payload_keys = set(payload.keys())
+                # Only unpack if at least one payload key matches a function parameter
+                if payload_keys & func_params:
+                    filtered_kwargs.update(payload)
+                    payload = None  # Clear payload since we're passing via kwargs
+                    _skip_payload = True  # We deliberately unpacked; don't pass payload
+            except (ValueError, TypeError):
+                # Can't inspect signature; don't unpack
+                pass
 
         # Helper to call function with or without payload based on builtin unpacking
         def _call_args() -> tuple[tuple[Any, ...], dict[str, Any]]:
-            if payload is None:
+            if _skip_payload:
                 return (), filtered_kwargs
+            # Always pass payload as first arg, even if None (agents may expect it)
             return (payload,), filtered_kwargs
 
         try:
