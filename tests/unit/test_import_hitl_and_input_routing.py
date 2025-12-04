@@ -154,6 +154,7 @@ steps:
 
 
 @pytest.mark.asyncio
+@pytest.mark.serial
 async def test_import_input_to_both_merges_and_sets_prompt() -> None:
     async def capture(_: object, *, context: Optional[PipelineContext] = None) -> dict:
         assert context is not None
@@ -201,6 +202,7 @@ async def test_import_input_to_both_merges_and_sets_prompt() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.serial
 async def test_import_scalar_to_scratchpad_key() -> None:
     async def capture(_: object, *, context: Optional[PipelineContext] = None) -> dict:
         assert context is not None
