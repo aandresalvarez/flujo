@@ -2,10 +2,10 @@
 
 | Project | Flujo |
 | :--- | :--- |
-| **Version** | 3.1 (Enhanced) |
-| **Status** | **Approved** |
-| **Feature** | Core cleanup & Dead Code Removal |
-| **Strategy** | **Test-Driven Decoupling** |
+| **Version** | 3.2 (Architecturally Verified) |
+| **Status** | **Ready for Implementation** |
+| **Feature** | Core Cleanup & Dead Code Removal |
+| **Strategy** | **Strangler Fig Pattern with Subprocess Verification** |
 
 ---
 
@@ -13,270 +13,217 @@
 
 This initiative aims to remove the unused "optimization" layer within the Flujo core architecture (`adaptive_resource_manager`, `circuit_breaker`, `performance_monitor`, etc.). This code is currently inactive in default execution paths but adds significant maintenance overhead, threading complexity, and a heavy binary dependency (`psutil`).
 
-We will execute a **Progressive Decoupling Strategy**. Instead of immediately deleting files, we will first refactor the consuming components (`ExecutorCore`, `BackgroundTaskManager`) to sever their dependencies. We will prove via architectural tests that the optimization modules are no longer loaded at runtime, and only then proceed to delete the code. This guarantees zero API breakage and system stability during the transition.
+We will execute a **Progressive Decoupling Strategy**. We will first refactor consuming components to sever dependencies, prove via **isolated subprocess tests** that the modules are not loaded, and only then proceed to delete the code. Crucially, we will retain a compatibility stub to prevent import errors for legacy integrations.
 
 ---
 
 ## 2. Problem Statement
 
-1.  **Dead Weight**: The `flujo/application/core/optimization/` directory contains complex logic for circuit breaking and resource management that is not wired into the default `SimpleStepExecutor`.
+1.  **Dead Weight**: The `flujo/application/core/optimization/` directory contains complex logic that is not wired into the default `SimpleStepExecutor`.
 2.  **Heavy Dependencies**: The unused modules import `psutil`, which requires compilation and causes issues in serverless/Lambda environments.
-3.  **Implicit Coupling**: `BackgroundTaskManager` currently imports `OptimizedErrorHandler` solely for error classification enums, forcing the entire optimization tree to load even when unused.
+3.  **Implicit Coupling**: `BackgroundTaskManager` currently imports `OptimizedErrorHandler`, forcing the entire optimization tree to load.
 4.  **API Confusion**: `ExecutorCore` accepts an `optimization_config` argument that implies functionality which is effectively dormant.
 
 ---
 
 ## 3. Objectives
 
-1.  **Eliminate `psutil` dependency**: Remove the requirement for system-level resource monitoring libraries.
-2.  **Zero API Breakage**: Maintain backward compatibility for `ExecutorCore` initialization signature.
-3.  **Verified Isolation**: Implement tests proving that standard pipeline runs do not import optimization modules.
-4.  **Safe Code Deletion**: Remove ~12 files/modules only after decoupling is verified.
+1.  **Eliminate `psutil` dependency**: Remove the requirement for system-level resource monitoring.
+2.  **Zero API Breakage**: Maintain backward compatibility for `ExecutorCore` initialization.
+3.  **Verified Isolation**: Implement **subprocess-based** tests proving that optimization modules are not loaded.
+4.  **Safe Code Deletion**: Remove the `optimization/` directory while preserving `optimization_config_stub.py`.
 
 ---
 
 ## 4. Phase 1: Verification Framework
 
-Before modifying application code, we establish a test to detect if the optimization layer is being loaded.
+To accurately verify that modules are not loaded, we must run tests in a fresh process. Standard `sys.modules` manipulation within a single test runner is insufficient due to singleton module caching.
 
-### 4.1 Task: Create Isolation Probe Test
+### 4.1 Task: Create Subprocess Isolation Test
 **File:** `tests/architecture/test_module_isolation.py`
 
-Implement a test that performs a standard pipeline run and asserts that specific modules are **not** present in `sys.modules`. The test uses import tracking to catch lazy imports that might not appear in `sys.modules` immediately.
+Implement a test that spawns a clean Python process, runs a minimal pipeline, and inspects `sys.modules`.
 
 ```python
-def test_standard_run_does_not_import_optimization():
+import sys
+import subprocess
+from pathlib import Path
+
+def test_standard_run_does_not_import_psutil_or_optimization():
     """
-    Verifies that initializing and running a standard pipeline 
-    does NOT trigger imports of the optimization layer or psutil.
-    
-    This test tracks imports during execution to catch lazy imports
-    that might not appear in sys.modules immediately.
+    Verifies that a fresh Flujo process does NOT load the optimization layer
+    or the heavy psutil dependency.
     """
-    import sys
-    import importlib
+    # Python script to run in the subprocess
+    code = """
+import sys
+from flujo import Pipeline, Step, Flujo
+
+# 1. Define and run a minimal pipeline
+step = Step.from_callable(lambda x: x, name="noop")
+pipeline = Pipeline.from_step(step)
+runner = Flujo(pipeline)
+runner.run(42)
+
+# 2. Inspect loaded modules
+forbidden = ['psutil', 'flujo.application.core.optimization']
+loaded = [m for m in sys.modules.keys() if any(f in m for f in forbidden)]
+
+if loaded:
+    print(f"VIOLATION: Found forbidden modules: {loaded}")
+    sys.exit(1)
+
+print("SUCCESS")
+"""
     
-    # 1. Clean slate: Force unload modules if they exist
-    modules_to_remove = []
-    for mod in list(sys.modules.keys()):
-        if "flujo.application.core.optimization" in mod or mod == "psutil":
-            modules_to_remove.append(mod)
-    for mod in modules_to_remove:
-        del sys.modules[mod]
-    
-    # 2. Track imports during execution
-    original_import = __builtins__.__import__
-    imported_modules = set()
-    
-    def tracking_import(name, *args, **kwargs):
-        if "flujo.application.core.optimization" in name or name == "psutil":
-            imported_modules.add(name)
-        return original_import(name, *args, **kwargs)
-    
-    __builtins__.__import__ = tracking_import
-    
-    try:
-        # 3. Perform Standard Run
-        from flujo import Pipeline, Step, Flujo
-        step = Step.from_callable(lambda x: x, name="noop")
-        pipeline = Pipeline.from_step(step)
-        runner = Flujo(pipeline)
-        result = runner.run(42)  # Actually execute the pipeline
-        
-        # 4. Verification
-        loaded_opt = [m for m in sys.modules if "flujo.application.core.optimization" in m]
-        loaded_psutil = [m for m in sys.modules if "psutil" in m]
-        
-        assert not loaded_opt, f"Optimization modules incorrectly loaded: {loaded_opt}"
-        assert not loaded_psutil, f"psutil incorrectly loaded: {loaded_psutil}"
-        assert not imported_modules, f"Optimization modules imported during execution: {imported_modules}"
-    finally:
-        __builtins__.__import__ = original_import
+    # Run the subprocess
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True
+    )
+
+    # Assert success
+    if result.returncode != 0:
+        pytest.fail(f"Isolation test failed:\nSTDOUT: {result.stdout}\nSTDERR: {result.stderr}")
 ```
 
-**Expectation:** This test **MUST FAIL** initially, proving that optimization modules are currently being imported.
+**Expectation:** This test **MUST FAIL** initially.
 
 ---
 
 ## 5. Phase 2: Surgical Decoupling
 
-We remove the import hooks connecting the Core to the Optimization layer.
+Sever the connections between Core and Optimization.
 
 ### 5.1 Refactor `BackgroundTaskManager`
-**Goal**: Remove the dependency on `OptimizedErrorHandler` enums (`ErrorCategory`) by replacing them with a local heuristic.
+**Goal**: Remove dependency on `OptimizedErrorHandler` while improving error classification robustness.
 
 **File:** `flujo/application/core/background_task_manager.py`
 
 1.  **Remove Import**: Delete `from .optimized_error_handler import ...`.
-2.  **Replace Error Categorization**:
-    Replace the complex `ErrorClassifier` usage with a simple string matching block in `_execute_background_step` (lines ~284-293).
-3.  **Update Constants**: Replace ALL usages of `ErrorCategory.CONTROL_FLOW.value` with the string literal `"control_flow"`:
-    - **Line ~254**: In `_mark_background_task_paused` handler (PausedException case)
-    - **Line ~269**: In `_execute_background_step` PipelineAbortSignal handler
-    
-    ```python
-    # OLD (both locations):
-    metadata["error_category"] = ErrorCategory.CONTROL_FLOW.value
-    
-    # NEW (both locations):
-    metadata["error_category"] = "control_flow"
-    ```
+2.  **Implement Robust Error Classification**: Instead of relying on fragile string matching alone, prioritize type checks for standard library exceptions, falling back to string matching only for un-importable types.
 
-4.  **Complete Error Classification Replacement**: In the general Exception handler (lines ~284-293), replace the entire error classification block:
-    
+    *Replace lines ~284-293 with:*
     ```python
-    # OLD:
-    try:
-        err_ctx = ErrorContext.from_exception(e)
-        ErrorClassifier().classify_error(err_ctx)
-        metadata["error_category"] = err_ctx.category.value
-        if final_context is not None and hasattr(final_context, "scratchpad"):
-            final_context.scratchpad["background_error_category"] = err_ctx.category.value
-    except Exception:
-        pass
+    # OLD: ErrorClassifier().classify_error(...)
     
     # NEW:
+    import asyncio
+    
     try:
-        err_name = type(e).__name__
-        err_str = str(e).lower()
-        if "Timeout" in err_name or "timeout" in err_str:
-            metadata["error_category"] = "timeout"
-        elif "Connection" in err_name or "connection" in err_str or "network" in err_str:
+        # 1. Priority: Type-based classification (Robust)
+        if isinstance(e, (asyncio.TimeoutError, ConnectionError)):
             metadata["error_category"] = "network"
-        elif "Validation" in err_name or "validation" in err_str:
-            metadata["error_category"] = "validation"
-        elif "Auth" in err_name or "auth" in err_str:
-            metadata["error_category"] = "authentication"
+        elif isinstance(e, (ValueError, TypeError, AttributeError)):
+             metadata["error_category"] = "validation"
+        elif isinstance(e, (PermissionError, OSError)):
+             metadata["error_category"] = "system"
+        
+        # 2. Fallback: String-based classification (Legacy/Third-party)
         else:
-            metadata["error_category"] = "unknown"
+            err_str = str(e).lower()
+            err_name = type(e).__name__.lower()
+            
+            if "auth" in err_str or "auth" in err_name:
+                metadata["error_category"] = "authentication"
+            elif "quota" in err_str or "limit" in err_str:
+                metadata["error_category"] = "resource_exhaustion"
+            else:
+                metadata["error_category"] = "unknown"
+                
         if final_context is not None and hasattr(final_context, "scratchpad"):
             final_context.scratchpad["background_error_category"] = metadata["error_category"]
     except Exception:
         metadata["error_category"] = "unknown"
     ```
 
+3.  **Update Constants**: Replace `ErrorCategory.CONTROL_FLOW.value` with literal `"control_flow"`.
+
 ### 5.2 Refactor `ExecutorCore`
-**Goal**: Maintain API signature compatibility but stop importing optimization configs.
+**Goal**: Remove imports but keep the `__init__` signature valid using the Stub.
 
 **File:** `flujo/application/core/executor_core.py`
 
-1.  **Remove Imports**: Delete imports referencing `optimization.config` and `performance_monitor`.
-2.  **Update `__init__` Signature**:
-    Change the type hint for `optimization_config` to `Any` (or `object`) to avoid needing the class import.
+1.  **Remove Imports**: Delete imports referencing `flujo.application.core.optimization`.
+2.  **Keep Stub Import**: Ensure `from .optimization_config_stub import OptimizationConfig` remains or is added if missing.
+3.  **Update `__init__`**:
     ```python
-    def __init__(self, ..., optimization_config: Any = None, ...):
+    def __init__(
+        self, 
+        ..., 
+        # Type hint remains valid via the stub
+        optimization_config: Optional[OptimizationConfig] = None, 
+        ...
+    ):
+        # ... existing code ...
+        
+        # Remove logic that uses optimization_config
+        if optimization_config is not None:
+            import warnings
+            warnings.warn(
+                "optimization_config is deprecated and has no effect.", 
+                DeprecationWarning, stacklevel=2
+            )
+        
+        # Hardcode the flag that previously relied on config
+        self.enable_optimized_error_handling = False 
     ```
-3.  **Update `__init__` Body**:
-    Remove the validation and coercion logic for the config. Add a deprecation warning if it is used.
-    ```python
-    # Hardcode flag to False (standard handling)
-    self.enable_optimized_error_handling = False
-    
-    if optimization_config is not None:
-        import warnings
-        warnings.warn(
-            "optimization_config is deprecated and has no effect.", 
-            DeprecationWarning, stacklevel=2
-        )
-    ```
-4.  **Delete Methods**: Remove methods exposing optimization stats (e.g., `get_optimization_stats`, `export_config`).
 
 ### 5.3 Refactor `ExecutorFactory`
 **File:** `flujo/application/core/factories.py`
 
-1.  Remove `optimization_config` from `__init__` parameter list.
-2.  Remove `self._optimization_config = optimization_config` from `__init__` body.
-3.  Remove `optimization_config=self._optimization_config` from `create_executor` method's `ExecutorCore(...)` call.
+1.  Clean up `create_executor` to stop passing the config object down.
 
-### 5.4 Cleanup `agent_policy_run.py`
-**File:** `flujo/application/core/policies/agent_policy_run.py`
-
-**Goal**: Remove optional imports of `optimized_telemetry` that keep the module alive.
-
-1.  **Remove Optional Imports**: Delete all `try/except` blocks that import `optimized_telemetry`:
-    
-    ```python
-    # DELETE all instances of:
-    # try:
-    #     from flujo.application.core.optimized_telemetry import increment_counter as _inc
-    #     _inc("estimator.usage", 1, tags={"strategy": strategy_name})
-    # except Exception:
-    #     pass
-    ```
-    
-    **Note**: These are optional metrics for telemetry. Removing them has no functional impact on execution.
-
-### 5.5 Verify Isolation
-**Action**: Run the `test_module_isolation.py` created in Phase 1.
-**Expectation**: The test **MUST PASS** now. This confirms safe decoupling.
+### 5.4 Verify Isolation
+**Action**: Run `tests/architecture/test_module_isolation.py`.
+**Expectation**: The test **MUST PASS**. `psutil` should no longer be loaded.
 
 ---
 
 ## 6. Phase 3: Safe Deletion
 
-With isolation verified, we can safely remove the dead code.
-
 ### 6.1 File Deletion
-Remove the following files and directories:
+**Critical Rule:** Delete the *folder*, but **preserve the stub**.
 
-*   **Directory**: `flujo/application/core/optimization/`
-*   **Files**:
-    *   `flujo/application/core/adaptive_resource_manager.py`
-    *   `flujo/application/core/performance_monitor.py`
-    *   `flujo/application/core/performance_models.py`
-    *   `flujo/application/core/load_balancer.py`
-    *   `flujo/application/core/graceful_degradation.py`
-    *   `flujo/application/core/circuit_breaker.py`
-    *   `flujo/application/core/error_recovery_strategies.py`
-    *   `flujo/application/core/optimization_parameter_tuner.py`
-    *   `flujo/application/core/optimized_error_handler.py`
-    *   `flujo/application/core/optimized_telemetry.py`
-    *   `flujo/application/core/telemetry_models.py`
+1.  **Retain**: `flujo/application/core/optimization_config_stub.py` (Do NOT delete).
+2.  **Delete Directory**: `flujo/application/core/optimization/` and all contents:
+    *   `adaptive_resource_manager.py`
+    *   `circuit_breaker.py`
+    *   `performance_monitor.py`
+    *   `optimized_error_handler.py`
+    *   (and others in that folder)
 
 ### 6.2 Dependency Cleanup
 **File:** `pyproject.toml`
-*   Remove `psutil` from project dependencies.
+*   Remove `psutil` from dependencies.
 
 ### 6.3 Test Suite Cleanup
-*   Delete unit tests residing in `tests/unit/application/core/optimization/`.
-*   Delete integration tests: `tests/integration/test_executor_core_optimization_integration.py` and `tests/regression/test_executor_core_optimization_regression.py`.
-*   Scan remaining integration tests for imports of `OptimizationConfig` and remove them.
+*   Delete tests in `tests/unit/application/core/optimization/`.
+*   Scan `tests/` for `from flujo.application.core.optimization import ...` and remove/refactor those tests.
 
 ---
 
-## 7. Phase 4: Deprecation Period (Optional)
+## 7. Phase 4: Artifact Retention & Deprecation
 
-If maintaining strict backward compatibility is critical for external consumers:
+To prevent breaking users who explicitly import the config class:
 
-### 7.1 Deprecation Strategy
-1. **Keep deleted code in a separate branch** (`archive/optimization-layer`) for one release cycle.
-2. **Document migration path** in `CHANGELOG.md`:
-   ```markdown
-   ## Deprecated
-   - `ExecutorCore(optimization_config=...)` parameter is deprecated and has no effect.
-     It will be removed in v0.8.0. Use standard error handling (default behavior).
-   ```
-3. **Monitor deprecation warnings** in production to identify external users.
-4. **Remove in next major version** (e.g., v0.8.0) by removing the parameter entirely.
-
-### 7.2 Alternative: Immediate Removal
-If the codebase is internal-only or breaking changes are acceptable:
-- Skip Phase 4 and proceed directly to complete removal in Phase 3.
-- Update version to v0.8.0 to signal breaking changes.
+1.  **Stub Verification**: Ensure `flujo/application/core/optimization_config_stub.py` contains a class `OptimizationConfig` that accepts `**kwargs`, does nothing, and issues a warning on init.
+2.  **Documentation**: Update `CHANGELOG.md`:
+    > **Deprecated:** The `optimization` layer has been removed to reduce bloat. `ExecutorCore` still accepts `optimization_config` for backward compatibility, but it is ignored. The `psutil` dependency has been dropped.
 
 ---
 
 ## 8. Rollback Strategy
 
-1.  **Decoupling Failure**: If `test_module_isolation.py` fails in Phase 2, analyze the import chain using `grep` to find the remaining link to the optimization folder. Do not proceed to deletion.
-2.  **Runtime Errors**: If the new error heuristic in `BackgroundTaskManager` causes crashes, revert that specific file to its previous state. The optimization code remains present (but unused) until the fix is applied.
-3.  **API Incompatibility**: If external consumers report `TypeError` on `ExecutorCore`, ensure the `optimization_config` argument was correctly preserved as `Any` in `__init__`.
+1.  **Subprocess Test Failure**: If Phase 2 verification fails, grep for `flujo.application.core.optimization`. A "zombie import" likely remains in `__init__.py` or type hints.
+2.  **AttributeError**: If runtime fails with `AttributeError: 'ExecutorCore' object has no attribute 'optimization_config'`, ensure the attribute was not being accessed by legacy properties in `ExecutorCore`.
+3.  **Stub Import Error**: If users report `ImportError`, restore `optimization_config_stub.py` immediately.
 
 ---
 
 ## 9. Success Metrics
 
-*   `tests/architecture/test_module_isolation.py` passes.
-*   Full test suite (`make test`) passes.
-*   `psutil` is no longer installed in the environment.
-*   `flujo run` executes successfully on a basic pipeline.
+*   **Verification**: `tests/architecture/test_module_isolation.py` passes.
+*   **Weight**: `psutil` is gone from the lockfile.
+*   **Compatibility**: Existing user code initializing `Flujo(optimization_config=...)` still runs (albeit with a warning).
