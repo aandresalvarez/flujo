@@ -149,32 +149,21 @@ grep -rn "get_cost_config\|get_settings\|config_manager\|FLUJO_CONFIG" tests/ --
 
 ---
 
-## 🔵 Phase 4: CI Infrastructure (P2)
+## 🔵 Phase 4: CI Infrastructure (P2) ✅
 
-### 4.1 Ensure Serial Tests Run Separately
+### 4.1 Ensure Serial Tests Run Separately ✅
 **File:** `.github/workflows/ci.yml`
 
-```yaml
-# Fast tests (parallel) - exclude serial
-uv run pytest tests/ -m "not slow and not serial and not benchmark" -n 2
+Already implemented:
+- `test-fast` job excludes serial: `-m "not slow and not serial and not benchmark" -n 2`
+- `test-slow` job runs serial explicitly: `-m "slow or serial or benchmark" -n 0`
 
-# Serial tests (sequential, separate step)  
-uv run pytest tests/ -m "serial" -n 0
-```
-
-### 4.2 Add Flake Detection Job (Optional)
-Run tests multiple times with different random seeds to catch flakiness before merge:
-
-```yaml
-flake-detection:
-  runs-on: ubuntu-latest
-  steps:
-    - name: Run tests 3x to detect flakes
-      run: |
-        for i in 1 2 3; do
-          uv run pytest tests/ -m "not slow" -n 2 --randomly-seed=$i || exit 1
-        done
-```
+### 4.2 Add Flake Detection Job ✅
+Added `flake-detection` job that:
+- Runs tests 3x with different random seeds (42, 123, 999)
+- Reports which seeds failed to help identify flaky tests
+- Uses `continue-on-error: true` so it doesn't block builds
+- Only runs on main branch pushes
 
 ---
 
@@ -194,6 +183,10 @@ flake-detection:
 ### Medium-term
 - [x] Update `docs/testing.md` with isolation best practices ✅
 - [x] Add pre-commit check for common test isolation issues ✅
+
+### Long-term (CI Infrastructure)
+- [x] Ensure serial tests run with `-n 0` explicitly ✅
+- [x] Add flake detection job (3x runs with different seeds) ✅
 
 ---
 
