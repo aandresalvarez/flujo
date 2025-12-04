@@ -85,14 +85,10 @@ steps:
 @pytest.mark.asyncio
 @pytest.mark.slow
 @pytest.mark.serial
-@pytest.mark.skip(
-    reason="Loop+HITL resume has complex iteration counting issue - needs deeper investigation"
-)
 async def test_hitl_sink_to_in_loop_body():
     """Test that sink_to works inside loop bodies.
 
     This tests the loop executor's context merging after iteration completes.
-    Note: Currently skipped due to loop iteration counting issue after HITL resume.
     """
     yaml_content = """
 version: "0.1"
