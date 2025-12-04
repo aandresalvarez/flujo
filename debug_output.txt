@@ -1,0 +1,86 @@
+/Users/alvaro1/Library/Python/3.9/lib/python/site-packages/pytest_asyncio/plugin.py:217: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+FFF.FFF.............FFF...                                               [100%]
+=================================== FAILURES ===================================
+______________ TestEmbeddingResult.test_embedding_result_creation ______________
+tests/unit/test_embeddings.py:29: in test_embedding_result_creation
+    usage_info = RunUsage(input_tokens=100, output_tokens=0)
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+____________ TestEmbeddingResult.test_embedding_result_usage_method ____________
+tests/unit/test_embeddings.py:40: in test_embedding_result_usage_method
+    usage_info = RunUsage(input_tokens=100, output_tokens=0)
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+__________ TestEmbeddingResult.test_embedding_result_with_zero_tokens __________
+tests/unit/test_embeddings.py:53: in test_embedding_result_with_zero_tokens
+    usage_info = RunUsage(input_tokens=0, output_tokens=0)
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+_____ TestOpenAIEmbeddingClient.test_openai_embedding_client_embed_method ______
+flujo/embeddings/clients/openai_client.py:94: in embed
+    usage = RunUsage(
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_embeddings.py:99: in test_openai_embedding_client_embed_method
+    result = await client.embed(texts)
+flujo/embeddings/clients/openai_client.py:99: in embed
+    usage = RunUsage(**usage_args)
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+----------------------------- Captured stdout call -----------------------------
+DEBUG: RunUsage is <class 'pydantic_ai.usage.Usage'>
+DEBUG: RunUsage signature: (requests: 'int' = 0, request_tokens: 'int | None' = None, response_tokens: 'int | None' = None, total_tokens: 'int | None' = None, details: 'dict[str, int] | None' = None) -> None
+___ TestOpenAIEmbeddingClient.test_openai_embedding_client_embed_single_text ___
+flujo/embeddings/clients/openai_client.py:94: in embed
+    usage = RunUsage(
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_embeddings.py:126: in test_openai_embedding_client_embed_single_text
+    result = await client.embed([text])
+flujo/embeddings/clients/openai_client.py:99: in embed
+    usage = RunUsage(**usage_args)
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+----------------------------- Captured stdout call -----------------------------
+DEBUG: RunUsage is <class 'pydantic_ai.usage.Usage'>
+DEBUG: RunUsage signature: (requests: 'int' = 0, request_tokens: 'int | None' = None, response_tokens: 'int | None' = None, total_tokens: 'int | None' = None, details: 'dict[str, int] | None' = None) -> None
+___ TestOpenAIEmbeddingClient.test_openai_embedding_client_embed_empty_list ____
+flujo/embeddings/clients/openai_client.py:94: in embed
+    usage = RunUsage(
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+
+During handling of the above exception, another exception occurred:
+tests/unit/test_embeddings.py:145: in test_openai_embedding_client_embed_empty_list
+    result = await client.embed([])
+flujo/embeddings/clients/openai_client.py:99: in embed
+    usage = RunUsage(**usage_args)
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+----------------------------- Captured stdout call -----------------------------
+DEBUG: RunUsage is <class 'pydantic_ai.usage.Usage'>
+DEBUG: RunUsage signature: (requests: 'int' = 0, request_tokens: 'int | None' = None, response_tokens: 'int | None' = None, total_tokens: 'int | None' = None, details: 'dict[str, int] | None' = None) -> None
+_ TestEmbeddingIntegrationWithCostTracking.test_embedding_result_with_cost_tracking _
+tests/unit/test_embeddings.py:361: in test_embedding_result_with_cost_tracking
+    usage_info = RunUsage(input_tokens=100, output_tokens=0)
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+_ TestEmbeddingIntegrationWithCostTracking.test_embedding_result_without_model_id _
+tests/unit/test_embeddings.py:400: in test_embedding_result_without_model_id
+    usage_info = RunUsage(input_tokens=100, output_tokens=0)
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+_ TestEmbeddingIntegrationWithCostTracking.test_embedding_result_with_strict_mode _
+tests/unit/test_embeddings.py:426: in test_embedding_result_with_strict_mode
+    usage_info = RunUsage(input_tokens=100, output_tokens=0)
+E   TypeError: __init__() got an unexpected keyword argument 'input_tokens'
+============================= slowest 25 durations =============================
+
+(25 durations < 0.5s hidden.  Use -vv to show these durations.)
+=========================== short test summary info ============================
+FAILED tests/unit/test_embeddings.py::TestEmbeddingResult::test_embedding_result_creation
+FAILED tests/unit/test_embeddings.py::TestEmbeddingResult::test_embedding_result_usage_method
+FAILED tests/unit/test_embeddings.py::TestEmbeddingResult::test_embedding_result_with_zero_tokens
+FAILED tests/unit/test_embeddings.py::TestOpenAIEmbeddingClient::test_openai_embedding_client_embed_method
+FAILED tests/unit/test_embeddings.py::TestOpenAIEmbeddingClient::test_openai_embedding_client_embed_single_text
+FAILED tests/unit/test_embeddings.py::TestOpenAIEmbeddingClient::test_openai_embedding_client_embed_empty_list
+FAILED tests/unit/test_embeddings.py::TestEmbeddingIntegrationWithCostTracking::test_embedding_result_with_cost_tracking
+FAILED tests/unit/test_embeddings.py::TestEmbeddingIntegrationWithCostTracking::test_embedding_result_without_model_id
+FAILED tests/unit/test_embeddings.py::TestEmbeddingIntegrationWithCostTracking::test_embedding_result_with_strict_mode
+9 failed, 17 passed in 3.16s

@@ -170,7 +170,7 @@ def load_pipeline_blueprint_from_yaml(
     yaml_text: str,
     base_dir: Optional[str] = None,
     source_file: Optional[str] = None,
-    _visited: Optional[set[str]] = None,
+    _visited: Optional[list[str]] = None,
 ) -> Pipeline[Any, Any]:
     import os
     import sys as _sys
@@ -186,14 +186,23 @@ def load_pipeline_blueprint_from_yaml(
         except Exception:
             _pushed_sys_path = False
 
-    # Cycle detection
+    # Cycle detection - stack-based approach
+    # Track the current recursion path (stack) rather than all files ever seen
+    # This correctly distinguishes cycles (A -> B -> A) from re-imports (A -> B, then C -> B)
+    _file_pushed = False
+    real_source: str | None = None
     if source_file:
         if _visited is None:
-            _visited = set()
+            _visited = []
         real_source = os.path.realpath(source_file)
+        # Check if this file is already in the current call stack (cycle)
         if real_source in _visited:
-            raise BlueprintError(f"Cyclic import detected: {real_source}")
-        _visited.add(real_source)
+            # Show the cycle path for better error messages
+            cycle_path = " -> ".join(_visited[-3:] + [real_source])
+            raise BlueprintError(f"Cyclic import detected: {real_source} (path: {cycle_path})")
+        # Push onto stack before processing
+        _visited.append(real_source)
+        _file_pushed = True
     try:
         loc_index: dict[str, Tuple[int, int]] = {}
         sup_index: dict[str, List[str]] = {}
@@ -469,6 +478,10 @@ def load_pipeline_blueprint_from_yaml(
                 msg = f"Invalid YAML: {ye}"
             raise BlueprintError(msg) from ye
     finally:
+        # Pop from stack after processing (critical for correct cycle detection)
+        if _file_pushed and _visited and real_source is not None:
+            if _visited and _visited[-1] == real_source:
+                _visited.pop()
         try:
             if _pushed_sys_path and base_dir:
                 base_dir_abs = os.path.abspath(base_dir)

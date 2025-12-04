@@ -340,7 +340,33 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._cache_manager.get_internal_cache()
 
     async def clear_cache(self) -> None:
+        """Async version - use this in async contexts with await."""
         await self._cache_manager.clear_cache()
+
+    def clear_cache_sync(self) -> None:
+        """Synchronous version - maintains backward compatibility for synchronous callers.
+
+        This method can be called from synchronous code. It will:
+        - Use asyncio.run() if no event loop is running
+        - Raise RuntimeError if called from within a running event loop (use await clear_cache() instead)
+        """
+        import asyncio
+
+        try:
+            # Check if we're in a running event loop
+            asyncio.get_running_loop()
+            # If we get here, we're in an async context with a running loop
+            raise RuntimeError(
+                "clear_cache_sync() cannot be called from within a running event loop. "
+                "Use 'await executor.clear_cache()' instead."
+            )
+        except RuntimeError as e:
+            # Check if this is the error we just raised, or if it's "no running loop"
+            if "cannot be called from within a running event loop" in str(e):
+                raise
+            # No running loop - safe to use asyncio.run()
+            # This handles the case where no event loop exists
+            asyncio.run(self._cache_manager.clear_cache())
 
     def _cache_key(self, frame: Any) -> str:
         return self._cache_manager.generate_cache_key(

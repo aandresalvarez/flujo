@@ -33,7 +33,7 @@ class DeclarativeBlueprintCompiler:
         self,
         blueprint: BlueprintPipelineModel,
         base_dir: Optional[str] = None,
-        _visited: Optional[set[str]] = None,
+        _visited: Optional[list[str]] = None,
     ) -> None:
         self.blueprint = blueprint
         self._compiled_agents: dict[str, Any] = {}
