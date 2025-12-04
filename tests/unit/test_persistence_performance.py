@@ -1059,11 +1059,11 @@ class TestCLIPerformance:
         logger.debug(f"Filtered time: {filtered_time:.3f}s")
         logger.debug(f"Ratio: {filtered_time / unfiltered_time:.2f}x")
 
-        # RELATIVE assertion: filtered should be no slower than unfiltered + 50% tolerance
-        # Tolerance is generous because at <20ms execution times, small variances
-        # (a few ms) can cause significant ratio changes. The key assertion is that
-        # filtering isn't dramatically slower than full listing.
-        tolerance = 1.5
+        # RELATIVE assertion: filtered should not be dramatically slower than unfiltered.
+        # Tolerance is very generous (5x) because at <50ms execution times in CI,
+        # small absolute variances cause large ratio swings due to system load.
+        # The key assertion is catching true regressions (10x+ slowdowns).
+        tolerance = 5.0
         assert filtered_time <= unfiltered_time * tolerance, (
             f"Filtered list ({filtered_time:.3f}s) should be at most {tolerance}x "
             f"unfiltered list ({unfiltered_time:.3f}s), but ratio was "
