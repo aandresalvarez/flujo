@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 from flujo.agents.wrapper import make_agent_async
 
-pytestmark = pytest.mark.skip(reason="Skip policy executor integration tests in unit suite.")
+# Integration tests for GPT-4o-mini model handling.
+pytestmark = pytest.mark.slow
 
 
 @pytest.mark.fast

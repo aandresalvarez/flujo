@@ -291,13 +291,6 @@ async def test_execution_manager_no_usage_limits():
     assert abs(result.total_cost_usd - 0.3) < 1e-10
 
 
-@pytest.mark.skip(reason="UsageGovernor removed in pure quota mode - see quota tests instead")
-@pytest.mark.asyncio
-async def test_usage_governor_check_usage_limits_efficient():
-    """(Skipped) Test for legacy governor path — superseded by Quota."""
-    return None
-
-
 @pytest.mark.asyncio
 async def test_execution_manager_failed_step_handling():
     """Test that ExecutionManager correctly handles failed steps."""
