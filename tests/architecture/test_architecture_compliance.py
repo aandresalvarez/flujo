@@ -532,11 +532,20 @@ class TestQualityGates:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             failures.append("ruff check timed out or ruff not available")
 
-        # Run tests (fast subset)
+        # Run tests (fast subset, excluding serial tests that need isolation)
         try:
             print("Running unit tests (tests/unit/) ...", flush=True)
             result = subprocess.run(
-                [sys.executable, "-m", "pytest", "-x", "--tb=short", "tests/unit/"],
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-x",
+                    "--tb=short",
+                    "-m",
+                    "not serial",
+                    "tests/unit/",
+                ],
                 cwd=flujo_root,
                 env=env,
                 capture_output=True,
