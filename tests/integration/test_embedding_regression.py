@@ -46,6 +46,26 @@ completion_tokens_per_1k = 0.00013
             # Set the config path
             m.setenv("FLUJO_CONFIG_PATH", str(config_path))
 
+            # Mock the cost config to ensure our pricing is used
+            from flujo.infra.config import ProviderPricing
+
+            def mock_get_cost_config():
+                class MockCostConfig:
+                    def __init__(self):
+                        self.strict = True
+                        self.providers = {
+                            "openai": {
+                                "gpt-4o": ProviderPricing(
+                                    prompt_tokens_per_1k=0.005,
+                                    completion_tokens_per_1k=0.015,
+                                ),
+                            }
+                        }
+
+                return MockCostConfig()
+
+            m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
+
             # Create a mock chat agent
             class MockChatAgent:
                 def __init__(self):

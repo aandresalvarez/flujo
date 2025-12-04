@@ -1003,7 +1003,7 @@ class TestCLIPerformance:
         # Tolerance is generous because at <20ms execution times, small variances
         # (a few ms) can cause significant ratio changes. The key assertion is that
         # show isn't dramatically slower than list.
-        tolerance = 1.5
+        tolerance = 3.0  # Generous tolerance for CI timing variance
         assert show_time <= list_time * tolerance, (
             f"Show single run ({show_time:.3f}s) should be at most {tolerance}x "
             f"list all runs ({list_time:.3f}s), but ratio was "

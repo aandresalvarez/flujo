@@ -39,3 +39,9 @@ repos:
         entry: python3 scripts/hooks/check_duplicate_suffix.py
         language: system
         types: [python]
+      - id: test-isolation
+        name: test isolation patterns
+        entry: python3 scripts/hooks/check_test_isolation.py
+        language: system
+        files: ^tests/.*\.py$
+        pass_filenames: false

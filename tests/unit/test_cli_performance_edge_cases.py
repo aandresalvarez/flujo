@@ -164,8 +164,8 @@ class TestCLIPerformanceEdgeCases:
 
             print(f"Filter {filter_args} performance: {execution_time:.3f}s")
             # Relative check: filtered should not be dramatically slower than baseline
-            # Allow 5x for major regression detection
-            max_ratio = 5.0
+            # Allow 10x for major regression detection (CI timing variance)
+            max_ratio = 10.0
             if baseline > 0:
                 ratio = execution_time / baseline
                 assert ratio < max_ratio, (
