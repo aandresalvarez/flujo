@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
-import openai
-from pydantic_ai.usage import RunUsage
+from typing import List, Optional, Any, Mapping, cast
+from types import SimpleNamespace
+import inspect
 
-from ..models import EmbeddingResult
+import openai
+
+from ..models import EmbeddingResult, UsageType, resolve_usage_constructor
 
 
 class OpenAIEmbeddingClient:
@@ -32,6 +34,70 @@ class OpenAIEmbeddingClient:
         # Lazily construct the OpenAI client to avoid requiring API key at import/initialization time
         # This allows unit tests that only validate formatting to run without network secrets.
         self._client: Optional[openai.AsyncOpenAI] = None
+        self._usage_ctor = resolve_usage_constructor()
+
+    @staticmethod
+    def _get_param_names(usage_ctor: Any) -> Mapping[str, inspect.Parameter]:
+        try:
+            return inspect.signature(usage_ctor).parameters
+        except Exception:
+            return {}
+
+    def _build_usage(self, prompt_tokens: int, total_tokens: int) -> UsageType:
+        """
+        Construct a RunUsage-compatible object across pydantic-ai versions.
+
+        Handles both the modern input/output_tokens signature and the older
+        request/response_tokens shape without raising when fields are absent.
+        """
+        usage_ctor: Any = self._usage_ctor
+        if not callable(usage_ctor):
+            return cast(
+                UsageType,
+                SimpleNamespace(
+                    input_tokens=prompt_tokens, output_tokens=0, total_tokens=total_tokens
+                ),
+            )
+
+        params = self._get_param_names(usage_ctor)
+
+        input_key = (
+            "input_tokens"
+            if "input_tokens" in params
+            else ("request_tokens" if "request_tokens" in params else None)
+        )
+        output_key = (
+            "output_tokens"
+            if "output_tokens" in params
+            else ("response_tokens" if "response_tokens" in params else None)
+        )
+        total_key = "total_tokens" if "total_tokens" in params else None
+
+        usage_kwargs: dict[str, int] = {}
+        if input_key:
+            usage_kwargs[input_key] = prompt_tokens
+        if output_key:
+            usage_kwargs[output_key] = 0
+        if total_key:
+            usage_kwargs[total_key] = total_tokens
+
+        try:
+            return cast(UsageType, usage_ctor(**usage_kwargs))
+        except TypeError:
+            # Some versions expect a requests field; include it on retry.
+            if "requests" in params and "requests" not in usage_kwargs:
+                usage_kwargs["requests"] = 1
+            try:
+                return cast(UsageType, usage_ctor(**usage_kwargs))
+            except Exception:
+                return cast(
+                    UsageType,
+                    SimpleNamespace(
+                        input_tokens=usage_kwargs.get(input_key or "", prompt_tokens),
+                        output_tokens=usage_kwargs.get(output_key or "", 0),
+                        total_tokens=usage_kwargs.get(total_key or "", total_tokens),
+                    ),
+                )
 
     async def embed(self, texts: List[str]) -> EmbeddingResult:
         """
@@ -61,12 +127,9 @@ class OpenAIEmbeddingClient:
         # Extract embeddings from the response
         embeddings = [item.embedding for item in response.data]
 
-        # Create usage information from the response
-        # For embeddings, we only have input tokens (the text being embedded)
-        usage_info = RunUsage(
-            input_tokens=response.usage.prompt_tokens,
-            output_tokens=0,  # Embeddings don't produce output tokens
-        )
+        prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
+        total_tokens = getattr(response.usage, "total_tokens", prompt_tokens)
+        usage = self._build_usage(prompt_tokens=prompt_tokens, total_tokens=total_tokens)
 
         # Return the embedding result
-        return EmbeddingResult(embeddings=embeddings, usage_info=usage_info)
+        return EmbeddingResult(embeddings=embeddings, usage_info=usage)

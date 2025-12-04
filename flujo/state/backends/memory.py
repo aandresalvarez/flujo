@@ -25,15 +25,21 @@ class InMemoryBackend(StateBackend):
         # Store serialized copies to mimic persistent backends
         self._store: dict[str, Any] = {}
         self._system_state: dict[str, JSONObject] = {}
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Lazily create the lock on first access."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def save_state(self, run_id: str, state: JSONObject) -> None:
-        async with self._lock:
+        async with self._get_lock():
             # Serialize state so custom types are handled consistently
             self._store[run_id] = safe_serialize(state)
 
     async def load_state(self, run_id: str) -> Optional[JSONObject]:
-        async with self._lock:
+        async with self._get_lock():
             stored = self._store.get(run_id)
             if stored is None:
                 return None
@@ -41,7 +47,7 @@ class InMemoryBackend(StateBackend):
             return deepcopy(cast(JSONObject, safe_deserialize(stored)))
 
     async def delete_state(self, run_id: str) -> None:
-        async with self._lock:
+        async with self._get_lock():
             self._store.pop(run_id, None)
 
     async def get_trace(self, run_id: str) -> Any:
@@ -84,7 +90,7 @@ class InMemoryBackend(StateBackend):
         offset: int = 0,
         metadata_filter: Optional[JSONObject] = None,
     ) -> List[JSONObject]:
-        async with self._lock:
+        async with self._get_lock():
             entries: list[tuple[datetime, JSONObject]] = []
             for stored in self._store.values():
                 state = safe_deserialize(stored)
@@ -132,7 +138,7 @@ class InMemoryBackend(StateBackend):
         return None
 
     async def set_system_state(self, key: str, value: JSONObject) -> None:
-        async with self._lock:
+        async with self._get_lock():
             self._system_state[key] = {
                 "key": key,
                 "value": value,
@@ -140,5 +146,5 @@ class InMemoryBackend(StateBackend):
             }
 
     async def get_system_state(self, key: str) -> Optional[JSONObject]:
-        async with self._lock:
+        async with self._get_lock():
             return self._system_state.get(key)

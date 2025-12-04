@@ -1,27 +1,27 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
-import types
 import threading
+import types
+from contextlib import contextmanager
 from typing import (
     Any,
+    Dict,
+    Iterator,
     Optional,
     Type,
-    Union,
-    Dict,
     TypeVar,
+    Union,
     cast,
-    get_type_hints,
     get_args,
-    Iterator,
+    get_type_hints,
 )
-from contextlib import contextmanager
 
 from pydantic import ValidationError
 from pydantic import BaseModel as PydanticBaseModel
 
 from ...infra import telemetry
-from ...domain.models import BaseModel
+from ...domain.models import BaseModel, ExecutedCommandLog
 from ...utils.serialization import (
     register_custom_serializer,
     register_custom_deserializer,
@@ -320,12 +320,28 @@ def _resolve_actual_type(field_type: Any) -> Optional[Type[Any]]:
     if field_type is None:
         return None
 
-    # Handle Union types
-    if isinstance(field_type, types.UnionType) or (
-        hasattr(field_type, "__origin__") and field_type.__origin__ is Union
-    ):
+    # Handle string forward references
+    if isinstance(field_type, str):
+        if field_type == "ExecutedCommandLog":
+            return ExecutedCommandLog
+        resolved = _resolve_type_from_string(field_type)
+        if resolved is not None:
+            return resolved
+
+    # Handle Union types (compatible with Python 3.9+)
+    if hasattr(field_type, "__origin__") and field_type.__origin__ is Union:
         non_none_types = _extract_union_types(field_type)
-        return non_none_types[0] if non_none_types else None
+        if non_none_types:
+            # If the first extracted type is a string, try to resolve it
+            first = non_none_types[0]
+            if isinstance(first, str):
+                if first == "ExecutedCommandLog":
+                    return ExecutedCommandLog
+                resolved = _resolve_type_from_string(first)
+                if resolved is not None:
+                    return resolved
+            return first
+        return None
 
     return cast(Type[Any], field_type)
 
@@ -337,76 +353,67 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
     This centralizes the deserialization logic and integrates with
     Flujo's serialization system.
     """
-    if field_type is None or not isinstance(value, (dict, list)):
+    if field_type is None:
         return value
 
-    # Handle list types
-    if (
-        isinstance(value, list)
-        and hasattr(field_type, "__origin__")
-        and field_type.__origin__ is list
-    ):
-        # Get the element type from list[T]
-        element_type = field_type.__args__[0] if field_type.__args__ else None
-        if element_type is not None:
-            # Resolve the actual element type (handle Union types)
-            resolved_element_type = _resolve_actual_type(element_type)
-            if resolved_element_type is not None:
-                actual_element_type = resolved_element_type
-                # Handle Pydantic models in list
-                if (
-                    hasattr(actual_element_type, "model_validate")
-                    and callable(getattr(actual_element_type, "model_validate", None))
-                    and issubclass(actual_element_type, BaseModel)
-                ):
-                    try:
-                        return [
-                            actual_element_type.model_validate(item)
-                            if isinstance(item, dict)
-                            else item
-                            for item in value
-                        ]
-                    except Exception:
-                        pass
-                else:
-                    # Handle custom deserializers for list elements
-                    from flujo.utils.serialization import lookup_custom_deserializer
-
-                    custom_deserializer = lookup_custom_deserializer(actual_element_type)
-                    if custom_deserializer:
+    origin = getattr(field_type, "__origin__", None)
+    if origin is list and isinstance(value, list):
+        element_args = get_args(field_type)
+        element_type = element_args[0] if element_args else None
+        resolved_element_type = _resolve_actual_type(element_type) or element_type
+        if isinstance(resolved_element_type, type):
+            # Handle Pydantic/Flujo BaseModel items
+            if (
+                hasattr(resolved_element_type, "model_validate")
+                and callable(getattr(resolved_element_type, "model_validate", None))
+                and issubclass(resolved_element_type, BaseModel)
+            ):
+                deserialized: list[Any] = []
+                for item in value:
+                    if isinstance(item, resolved_element_type):
+                        deserialized.append(item)
+                    elif isinstance(item, dict):
                         try:
-                            return [custom_deserializer(item) for item in value]
+                            deserialized.append(resolved_element_type.model_validate(item))
+                            continue
                         except Exception:
-                            pass
-        return value
+                            deserialized.append(item)
+                    else:
+                        deserialized.append(item)
+                return deserialized
 
-    # Handle dict types
-    if isinstance(value, dict):
-        resolved_type = _resolve_actual_type(field_type)
-        if resolved_type is None:
-            return value
-
-        actual_type: Type[Any] = resolved_type
-        # Handle Pydantic models
-        if (
-            hasattr(actual_type, "model_validate")
-            and callable(getattr(actual_type, "model_validate", None))
-            and issubclass(actual_type, BaseModel)
-        ):
-            try:
-                return actual_type.model_validate(value)
-            except Exception:
-                pass
-        else:
-            # Handle custom deserializers
+            # Handle custom deserializers for list elements
             from flujo.utils.serialization import lookup_custom_deserializer
 
-            custom_deserializer = lookup_custom_deserializer(actual_type)
+            custom_deserializer = lookup_custom_deserializer(resolved_element_type)
+            if custom_deserializer:
+                try:
+                    return [custom_deserializer(item) for item in value]
+                except Exception:
+                    return value
+        return value
+
+    if isinstance(value, dict):
+        resolved_type = _resolve_actual_type(field_type) or field_type
+        if isinstance(resolved_type, type):
+            if (
+                hasattr(resolved_type, "model_validate")
+                and callable(getattr(resolved_type, "model_validate", None))
+                and issubclass(resolved_type, BaseModel)
+            ):
+                try:
+                    return resolved_type.model_validate(value)
+                except Exception:
+                    return value
+
+            from flujo.utils.serialization import lookup_custom_deserializer
+
+            custom_deserializer = lookup_custom_deserializer(resolved_type)
             if custom_deserializer:
                 try:
                     return custom_deserializer(value)
                 except Exception:
-                    pass
+                    return value
 
     return value
 

@@ -80,7 +80,7 @@ class DefaultCacheStepExecutor(StepPolicy[CacheStep]):
             )
             cache_key = None
         if cache_key:
-            async with core._cache_locks_lock:
+            async with core._get_cache_locks_lock():
                 if cache_key not in core._cache_locks:
                     core._cache_locks[cache_key] = asyncio.Lock()
             async with core._cache_locks[cache_key]:

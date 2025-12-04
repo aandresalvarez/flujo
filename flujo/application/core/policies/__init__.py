@@ -1,3 +1,3 @@
 """Policy modules for executor implementations."""
 
-__all__ = []
+__all__: list[str] = []
