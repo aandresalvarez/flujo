@@ -396,7 +396,16 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
             cost_usd=float(getattr(pipeline_result, "total_cost_usd", 0.0) or 0.0),
             feedback=None,
             branch_context=(
-                child_final_ctx if step.inherit_context and child_final_ctx is not None else context
+                # When outputs is specified (non-None, non-empty), use parent context
+                # to prevent child values from leaking; the outputs mapping handles the merge.
+                # When outputs is None or empty [], inherit child context if inherit_context=True.
+                context
+                if step.outputs
+                else (
+                    child_final_ctx
+                    if step.inherit_context and child_final_ctx is not None
+                    else context
+                )
             ),
             metadata_={},
             step_history=([inner_sr] if inner_sr is not None else []),
@@ -519,26 +528,41 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
             # Build a minimal context update dict using outputs mapping
             update_data: JSONObject = {}
 
+            # Sentinel to distinguish "path not found" from "path found with None value"
+            _NOT_FOUND: Any = object()
+
             def _traverse_path(obj: Any, parts: list[str]) -> Any:
-                """Traverse a path through an object (context or dict)."""
+                """Traverse a path through an object (context or dict).
+
+                Returns _NOT_FOUND if the path doesn't exist, otherwise returns
+                the value at the path (which may be None).
+                """
                 cur = obj
                 for part in parts:
                     if cur is None:
-                        return None
+                        return _NOT_FOUND
                     if hasattr(cur, part):
                         cur = getattr(cur, part)
                     elif isinstance(cur, dict):
-                        cur = cur.get(part)
+                        if part in cur:
+                            cur = cur[part]
+                        else:
+                            return _NOT_FOUND
                     else:
-                        return None
+                        return _NOT_FOUND
                 return cur
 
             def _get_child(path: str) -> Any:
+                """Get a value from child context or last step output.
+
+                Returns _NOT_FOUND if the path doesn't exist in either location.
+                Returns the actual value (which may be None) if found.
+                """
                 parts = [p for p in path.split(".") if p]
                 # First: try to get from child's final context (branch_context)
                 result = _traverse_path(child_final_ctx, parts)
-                if result is not None:
-                    return result
+                if result is not _NOT_FOUND:
+                    return result  # Found in context (may be None, that's valid)
                 # Second: check the last step's output if context didn't have the value
                 # This handles tool steps that return {"scratchpad": {...}} as output
                 # but haven't had that output merged into context yet.
@@ -546,9 +570,9 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                     inner_output = getattr(inner_sr, "output", None)
                     if isinstance(inner_output, dict):
                         result = _traverse_path(inner_output, parts)
-                        if result is not None:
-                            return result
-                return None
+                        if result is not _NOT_FOUND:
+                            return result  # Found in output (may be None, that's valid)
+                return _NOT_FOUND  # Not found anywhere
 
             def _assign_parent(path: str, value: Any) -> None:
                 parts = [p for p in path.split(".") if p]
@@ -566,8 +590,9 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                     try:
                         parent_path = mapping.parent
                         child_val = _get_child(mapping.child)
-                        # Skip missing child paths
-                        if child_val is None:
+                        # Skip only truly missing child paths (not found in context or output)
+                        # Note: None is a valid value if the path exists
+                        if child_val is _NOT_FOUND:
                             continue
                         _assign_parent(parent_path, child_val)
                     except Exception:
