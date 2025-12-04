@@ -419,7 +419,7 @@ class TestScalabilityValidation:
             print(f"Checks performed: {len(check_times)}")
 
             # Usage limit checking should be consistent (max not dramatically higher than avg)
-            # Allow 10x variance for major regression detection
+            # Allow 20x variance for micro-operations (more lenient due to sub-ms timing noise)
             if avg_check_time > 0:
                 variance_ratio = max_check_time / avg_check_time
                 assert variance_ratio < 20.0, (
