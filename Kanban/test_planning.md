@@ -193,7 +193,7 @@ flake-detection:
 
 ### Medium-term
 - [x] Update `docs/testing.md` with isolation best practices ✅
-- [ ] Add pre-commit check for common test isolation issues (optional)
+- [x] Add pre-commit check for common test isolation issues ✅
 
 ---
 

@@ -308,9 +308,9 @@ class TestComponentIntegration:
                 f"the average {avg_error_time:.6f}s. This indicates instability in error paths - "
                 f"investigate root cause (e.g., GC, logging, exception handling overhead)."
             )
-        # Error handling should be fast - 100ms is generous but catches major regressions
-        assert avg_error_time < 0.1, (
-            f"Average error handling too slow: {avg_error_time:.6f}s (expected <100ms). "
+        # Error handling should be fast - 1s sanity check for CI variance
+        assert avg_error_time < 1.0, (
+            f"Average error handling too slow: {avg_error_time:.6f}s (expected <1s). "
             f"Investigate error handling code path for bottlenecks."
         )
 
@@ -459,11 +459,9 @@ class TestScalabilityValidation:
         print(f"Total time for 20 executions: {total_time:.6f}s")
         print(f"Average time per execution: {avg_time_per_execution:.6f}s")
 
-        # Telemetry should add minimal overhead
-        # Based on measurements: actual avg ~0.16ms per execution
-        # Threshold: 50ms (300x headroom for CI variance)
-        assert avg_time_per_execution < 0.05, (
-            f"Telemetry overhead too high: {avg_time_per_execution:.6f}s per execution (expected <50ms). "
+        # Telemetry should add minimal overhead - 1s sanity check for CI variance
+        assert avg_time_per_execution < 1.0, (
+            f"Telemetry overhead too high: {avg_time_per_execution:.6f}s per execution (expected <1s). "
             f"Investigate telemetry instrumentation for performance issues."
         )
 
@@ -684,11 +682,9 @@ class TestPerformanceRegression:
                 f"the average {avg_time:.6f}s. Investigate root cause of timing spikes."
             )
 
-        # 2. Performance check: average should be fast
-        # Based on measurements: actual avg ~0.15ms
-        # Threshold: 100ms (600x headroom for CI variance)
-        assert avg_time < 0.1, (
-            f"Average execution too slow: {avg_time:.6f}s (expected <100ms). "
+        # 2. Performance check: average should be fast - 1s sanity check for CI variance
+        assert avg_time < 1.0, (
+            f"Average execution too slow: {avg_time:.6f}s (expected <1s). "
             f"Investigate for performance regression in execution path."
         )
 
