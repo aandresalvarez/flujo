@@ -6,6 +6,8 @@ from datetime import datetime
 from flujo.state.backends.sqlite import SQLiteBackend
 
 
+@pytest.mark.slow
+@pytest.mark.serial
 class TestSchemaMigrationRobustness:
     """Test schema migration robustness and error handling."""
 
