@@ -14,6 +14,7 @@ BACKGROUND_SLEEP_SECONDS = 0.5
 
 class TestContext(PipelineContext):
     value: int = 0
+    __test__ = False  # prevent pytest from collecting as a test class
 
 
 async def slow_background_task(data: str, context: Optional[TestContext] = None) -> str:
