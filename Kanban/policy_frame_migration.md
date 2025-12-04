@@ -1,47 +1,125 @@
-# Policy Frame-Only Migration Plan
+# Product Requirements Document: Policy Frame-Only Migration
+**Strategy:** Vertical Slice Refactoring with Runtime Adaptation
 
-Goal: migrate all step policies to a strict `execute(core, frame: ExecutionFrame)` signature, eliminate legacy arg unpacking, and retire the legacy shims/wrappers while keeping tests green.
+## 1. Executive Summary
+This initiative refactors the Flujo orchestration engine to replace the "Function Argument Soup" pattern with a **Parameter Object Pattern**. We will migrate all `StepPolicy.execute` signatures from accepting loose arguments (step, data, context, resources, etc.) to accepting a single, unified `ExecutionFrame[Any]` object.
 
-## Scope
-- Policies: agent, simple, cache, parallel, loop, conditional, dynamic router, HITL, import, any custom policies registered by default.
-- Callers: `StepHandler`, orchestrators, helpers, dispatcher interactions, and any tests/fixtures invoking `_handle_*`/`_execute_*` shims.
-- Compatibility shims: `_handle_*`, `_execute_pipeline*`, `execute_step`, `execute_step_compat`.
+**Why:**
+1.  **Extensibility:** Adding execution parameters (e.g., `trace_id`, `priority`) no longer requires changing signatures across the entire class hierarchy.
+2.  **State Centralization:** The `ExecutionFrame` becomes the canonical snapshot of execution, simplifying features like Pause/Resume and Replay.
+3.  **Type Safety:** Reduces `Any` usage and enforces strict contracts between the Core and Policies.
 
-## Phase 1: Signature Refactor (Policies)
-- Update each `Default*Executor` to accept `(core, frame: ExecutionFrame[Any])` only.
-- Inline frame unpacking at the top of each policy and remove legacy arg lists.
-- Adjust type hints in `StepPolicy.execute` (protocol) to prefer frame signature; keep temporary overloads only if unavoidable.
-- Ensure telemetry/quota/cache key derivation uses frame fields (not legacy args).
+---
 
-## Phase 2: Caller Convergence
-- Update `StepHandler` methods to build an `ExecutionFrame` (when not already framed) and call `policy.execute(core, frame)` directly.
-- Update orchestrators/helpers that currently call `_handle_*` with arg lists to route through dispatcher or construct frames.
-- Normalize cache key handling in handlers to rely on frame data (no ad-hoc params).
+## 2. Architecture: The Frame Pattern
 
-## Phase 3: Remove Legacy Shims/Wrappers
-- Delete `_handle_*`, `_execute_*`, and `execute_step`/`execute_step_compat` shims from `ExecutorCore` and helpers once all call sites are migrated.
-- Remove `executor_wrappers.py` references permanently (already deleted) and scrub residual imports.
-- Clean up `__all__`/exports and tracking docs reflecting shim removal.
+### Current State (Anti-Pattern)
+Policies depend on specific method signatures. Adding a parameter requires touching every policy.
+```python
+# Fragile
+async def execute(self, core, step, data, context, resources, limits, stream, ...)
+```
 
-## Phase 4: Test Updates
-- Update tests invoking `_handle_*`, `_execute_*`, or `execute_step_compat` to:
-  - Use `executor.execute(frame)` with `make_execution_frame`/`ExecutionFrame`, or
-  - Use dispatcher/policy registry directly where appropriate.
-- Adjust fixtures/mocks to pass frames instead of unpacked args.
-- Verify dynamic router/HITL tests still assert pause/resume semantics through dispatcher spans.
+### Target State (Robust)
+Policies depend on a Context Object. The Core passes the frame; the Policy extracts what it needs.
+```python
+# Robust
+async def execute(self, core: ExecutorCore, frame: ExecutionFrame[Any]) -> StepOutcome
+```
 
-## Phase 5: Validation
-- Run `make test-fast`; if failures persist, run targeted suites:
-  - `pytest tests/application/core/test_executor_core_* tests/unit/test_*policy.py tests/unit/test_parallel_step_strategies.py`
-  - HITL/pause paths: `pytest tests/integration/test_conversational_loop_nested_hitl.py tests/integration/test_hitl_integration.py`
-- Run `make typecheck` to confirm signature consistency.
+---
 
-## Risks & Mitigations
-- **Breakage in external callers/tests** expecting shims → mitigate by staging refactor: adjust tests first, keep temporary compatibility adapter until final cleanup.
-- **Cache/telemetry regressions** if frame fields omitted → audit each policy for cache key/telemetry usage post-refactor.
-- **HITL pause/resume semantics** rely on handler orchestration → ensure handler-level orchestration remains intact when calling policies with frames.
+## 3. Migration Risks & Mitigations
 
-## Exit Criteria
-- All policies expose only `execute(core, frame)`; no `isinstance(frame, ExecutionFrame)` branches remain.
-- Dispatcher has no legacy branching (already done) and no shims required in `ExecutorCore`.
-- `make test-fast` and `make typecheck` pass without legacy imports or shims.***
+| Risk | Impact | Mitigation Strategy |
+| :--- | :--- | :--- |
+| **Breaking External Plugins** | High | **Runtime Adapter:** The Dispatcher will inspect custom policies at runtime. If they use the old signature, it will unpack the frame automatically. |
+| **"Shotgun Surgery"** | High | **Vertical Slicing:** We will migrate one policy type at a time (e.g., `SimpleStep` -> verify -> `ParallelStep` -> verify), ensuring the build stays green. |
+| **Recursion State Corruption** | Critical | **Frame Factories:** Container steps (`Loop`, `Parallel`) must create *new* frames for children, never mutate and pass the parent frame. |
+| **Test Fragility** | Medium | **Attribute Assertions:** Tests will be updated to assert on specific frame attributes, not Frame object equality (which is flaky). |
+
+---
+
+## 4. Implementation Plan
+
+### Phase 0: Foundation & Compatibility Adapter
+**Goal:** Enable the engine to support *both* new and old signatures simultaneously.
+
+1.  **Harden `ExecutionFrame`:** Ensure `make_execution_frame` correctly handles all edge cases (quota propagation, stream flags).
+2.  **Update `StepPolicy` Protocol:** Modify the Protocol definition to allow `ExecutionFrame` without breaking existing implementations immediately (use `Union` or `*args` temporarily).
+3.  **Implement Dispatcher Adapter:** Modify `ExecutionDispatcher.dispatch` to inspect the target policy before calling it.
+    *   *Logic:*
+        ```python
+        # Pseudocode for Adapter Logic
+        import inspect
+        sig = inspect.signature(policy.execute)
+        if "frame" in sig.parameters:
+            # New Style
+            return await policy.execute(core, frame)
+        else:
+            # Legacy Style (Backwards Compatibility)
+            return await policy.execute(
+                core,
+                frame.step,
+                frame.data,
+                frame.context,
+                # ... unpack remaining frame attributes
+            )
+        ```
+
+### Phase 1: Vertical Migration (Iterative)
+**Goal:** Migrate internal policies one by one.
+
+**Order of Operations:**
+1.  `SimpleStepExecutor` (The baseline)
+2.  `AgentStepExecutor` (The most common)
+3.  `CacheStepExecutor`
+4.  `ConditionalStepExecutor`
+5.  `ImportStepExecutor`
+
+**Tasks for each Policy:**
+*   **Refactor Policy:** Change `execute` signature to `(core, frame)`. Remove local arg unpacking.
+*   **Refactor Handler:** Update `StepHandler` to construct a `ExecutionFrame` before calling the policy.
+*   **Update Unit Tests:** Update tests specific to this policy.
+*   **Validation:** Run `make test-fast` to ensure no regression.
+
+### Phase 2: Complex Step Migration (Recursion Safety)
+**Goal:** Migrate container steps that spawn child executions.
+
+**Policies:** `ParallelStepExecutor`, `LoopStepExecutor`, `DynamicRouterStepExecutor`, `HitlStepExecutor`.
+
+**Critical Requirement:**
+When a container step executes children, it must instantiate a **new** `ExecutionFrame` for the child using `core._make_execution_frame`.
+*   *Anti-Pattern:* `child_policy.execute(core, self.frame)` (Context pollution).
+*   *Correct:* `child_frame = core._make_execution_frame(...); child_policy.execute(core, child_frame)`.
+
+### Phase 3: Test Suite Stabilization
+**Goal:** Fix test fragility caused by the signature change.
+
+1.  **Audit Mocks:** Find tests mocking `ExecutorCore.execute`.
+2.  **Refactor Assertions:** Stop asserting `called_with(specific_frame_instance)`.
+    *   *Change to:* Capture the `call_args`, extract the frame object, and assert `frame.data == expected` and `frame.step.name == expected`.
+3.  **Verify Dynamic Logic:** Ensure dynamic router and HITL tests still correctly assert pause/resume semantics via the Dispatcher.
+
+### Phase 4: Cleanup & Finalization
+**Goal:** Remove the scaffolding.
+
+1.  **Remove Legacy Shims:** Delete `_handle_*`, `_execute_*`, and `execute_step_compat` from `ExecutorCore`.
+2.  **Strict Protocol:** Update `StepPolicy` Protocol to *only* accept `ExecutionFrame`.
+3.  **Remove Adapter (Internal):** Remove the inspection logic from `ExecutionDispatcher` for internal paths.
+    *   *Note:* You may choose to keep the adapter logic active *only* for external custom policies if you wish to support v0.4 plugins in v0.5.
+
+---
+
+## 5. Validation & Exit Criteria
+
+1.  **Signature Consistency:** All internal policies expose `execute(core, frame: ExecutionFrame)`.
+2.  **No Legacy Branches:** `ExecutorCore` contains no `if isinstance(arg, ExecutionFrame)` checks (except in the Dispatcher adapter).
+3.  **Green Suite:** `make test` passes.
+4.  **Type Safety:** `make typecheck` passes with strict typing on the `ExecutionFrame`.
+
+## 6. Rollback Plan
+
+If `make test` fails significantly during Phase 1 or 2:
+1.  Revert the specific Policy change.
+2.  The **Dispatcher Adapter** (Phase 0) ensures the rest of the system continues to function even if one policy remains legacy. This prevents a "broken main" situation.

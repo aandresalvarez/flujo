@@ -1,8 +1,11 @@
-# Flujo Strategic Roadmap: Enterprise Architecture Evolution
+ 
+# Flujo Strategic Roadmap: Enterprise Architecture Evolution (Revised)
 
-This document outlines a strategic roadmap to evolve Flujo from a robust execution framework into an enterprise-grade Agentic AI Platform. This analysis is based on a comparison with industry standards  and Flujo's current architecture.
-
-The features are prioritized by a **High Impact / Low Effort** ratio to maximize immediate value.
+| Project | Flujo |
+| :--- | :--- |
+| **Version** | 4.0 (Architecturally Hardened) |
+| **Status** | **Ready for Implementation** |
+| **Theme** | **From "Executor" to "Platform"** |
 
 ---
 
@@ -11,30 +14,30 @@ The features are prioritized by a **High Impact / Low Effort** ratio to maximize
 **Impact:** High | **Effort:** Low/Medium
 
 ### Concept
-Currently, Flujo manages *Resource Limits* (Quotas) but lacks *Behavioral Guardrails*. A Governance Policy Layer intercepts inputs and tool usage to enforce security and compliance rules before the LLM executes.
+Currently, Flujo manages *Resource Limits* (Quotas) but lacks *Behavioral Guardrails*. A Governance Policy Layer acts as middleware, intercepting inputs and tool usage to enforce security rules (e.g., PII redaction, tool allow-listing) before the agent executes.
 
 ### Why it is Valuable
-*   **Enterprise Requirement:** Regulated industries (Healthcare, Finance) cannot use agents without guarantees that PII won't leak or that specific tools (e.g., `delete_db`) won't be called in wrong contexts.
-*   **Separation of Concerns:** Keeps prompt engineering separate from security logic.
+*   **Enterprise Requirement:** Regulated industries cannot use agents without guarantees that sensitive data won't leak to LLM providers or that destructive tools (e.g., `drop_table`) won't be called in wrong contexts.
+*   **Architectural Hygiene:** Decouples security logic from prompt engineering.
 
 ### Implementation Strategy
 *   **Location:** `flujo/application/core/step_coordinator.py`
-*   **Mechanism:** Introduce a `PolicyHook` protocol that runs immediately before `_agent_runner.run`.
+*   **Mechanism:** Implement a **Middleware Pattern** within the `StepCoordinator`.
 *   **Action:**
-    1.  Define a `GovernancePolicy` protocol (Input -> Allow/Deny/Redact).
-    2.  Create a default `PIIScrubbingPolicy` using simple regex/presidio.
-    3.  Inject policies into `StepCoordinator.execute_step`.
+    1.  Define a `GovernancePolicy` protocol in `flujo/domain/interfaces.py`.
+    2.  Update `StepCoordinator.execute_step` to iterate through registered policies before delegating to the backend.
+    3.  **Built-in:** Create `PIIScrubbingPolicy` (using simple regex patterns by default, optional `presidio` dependency) to redact sensitive data in logs and prompts.
 
 ```python
-# Pseudo-code for flujo/domain/policy.py
+# flujo/domain/interfaces.py
 class PolicyDecision(Enum):
     ALLOW = "allow"
     DENY = "deny"
     REDACT = "redact"
 
 class GovernancePolicy(Protocol):
-    def check_input(self, context: PipelineContext, input_data: Any) -> PolicyDecision: ...
-    def check_tool(self, tool_name: str) -> PolicyDecision: ...
+    def inspect_input(self, context: PipelineContext, data: Any) -> tuple[PolicyDecision, Any]: ...
+    def inspect_tool_call(self, tool_name: str, args: dict) -> PolicyDecision: ...
 ```
 
 ---
@@ -44,61 +47,61 @@ class GovernancePolicy(Protocol):
 **Impact:** High | **Effort:** Low
 
 ### Concept
-AgentCore creates tools automatically from API specs. Flujo currently requires manual Python coding for every skill in `flujo/infra/skill_registry.py`. This feature would generate Flujo-compatible skill wrappers automatically from a Swagger/OpenAPI JSON file.
+Manual coding of skill wrappers is a bottleneck. This feature generates Flujo-compatible `Agent` or `Step` definitions automatically from Swagger/OpenAPI JSON specifications.
 
 ### Why it is Valuable
-*   **Developer Velocity:** Reduces the time to integrate internal microservices from hours to seconds.
-*   **Reliability:** Auto-generated Pydantic models ensure type safety matches the API spec perfectly.
+*   **Developer Velocity:** instant integration with internal microservices.
+*   **Type Safety:** Auto-generated Pydantic models ensure IO matches the API spec perfectly, leveraging Flujo's strong typing.
 
 ### Implementation Strategy
 *   **Location:** `flujo/cli/dev_commands_experimental.py`
-*   **Mechanism:** A CLI command `flujo dev import-openapi <url>`.
+*   **Mechanism:** Code Generation (not dynamic runtime loading) to preserve IDE support.
 *   **Action:**
-    1.  Use `datamodel-code-generator` to parse OpenAPI specs into Pydantic models.
-    2.  Generate a Python file in `skills/generated/` that wraps `httpx` calls to the API.
-    3.  Auto-register these functions in `SkillRegistry`.
+    1.  New CLI command: `flujo dev import-openapi <url> --output-dir skills/generated`.
+    2.  Use `datamodel-code-generator` to parse schemas.
+    3.  Generate Python files that output standard `AsyncAgentWrapper` factories, ready to be used in `make_agent_async`.
+    4.  Ensure generated code includes `output_type` definitions for validation.
 
 ---
 
 ## 3. Episodic Memory & RAG (The "Second Brain")
 **Priority:** 🧠 Strategic (Medium-term)
-**Impact:** Very High | **Effort:** Medium/High
+**Impact:** Very High | **Effort:** Medium
 
 ### Concept
-Flujo currently relies on `HistoryManager` (`flujo/application/conversation/history_manager.py`), which truncates session history. Episodic memory allows the agent to recall relevant facts from *previous, unrelated sessions* or long-past turns within the current session.
+Agents need to recall facts across different pipeline runs. Unlike short-term conversation history, this is long-term semantic storage.
 
-### Why it is Valuable
-*   **Context Window Efficiency:** Reduces token costs by injecting only relevant memories rather than the whole history.
-*   **Learning:** Agents stop making the same mistakes. If an agent solves a hard coding error, it "remembers" the fix for next time.
+### Architectural Correction: The "Split State" Pattern
+*   **Risk Avoided:** We will **not** bake vector logic into `StateBackend`. Execution state (transactional/write-heavy) must remain distinct from Semantic Memory (analytical/read-heavy).
+*   **Implementation:**
+    1.  **Interface:** Define `VectorStoreProtocol` in `flujo/domain/interfaces.py`.
+    2.  **Infrastructure:** Create `flujo/infra/memory/` for implementations (e.g., `PGVectorStore`, `ChromaStore`, `InMemoryVectorStore`).
+    3.  **Context:** Update `PipelineContext` to hold a reference to the store, exposing a `retrieve(query)` method.
+    4.  **Persistence:** The `StateManager` handles saving execution artifacts; a new `MemoryManager` handles embedding and indexing successful step outputs *asynchronously*.
 
-### Implementation Strategy
-*   **Location:** `flujo/state/backends/postgres.py` (leverage `pgvector`).
-*   **Mechanism:**
-    1.  Update `PipelineContext` to include a `retrieve_memory(query)` method.
-    2.  Create a `MemoryStep` (DSL) that runs a semantic search against the vector store and injects results into `context.scratchpad`.
-    3.  Update `StateManager` to embed and persist successful `StepResult` outputs into a `memories` table.
+```python
+# flujo/domain/interfaces.py
+class VectorStoreProtocol(Protocol):
+    async def search(self, query_vector: list[float], limit: int) -> list[Memory]
+    async def add(self, memories: list[Memory]) -> None
+```
 
 ---
 
-## 4. Sandboxed Code Execution (The "Safety Net")
+## 4. Abstracted Sandboxed Execution (The "Safety Net")
 **Priority:** 🛡️ Strategic (Medium-term)
 **Impact:** High | **Effort:** High
 
 ### Concept
-Flujo executes tools in the main process. If an LLM generates malicious Python code (e.g., `os.system('rm -rf /')`), it runs on the host. AgentCore uses secure sandboxes.
+Safe execution of arbitrary code generated by LLMs.
 
-### Why it is Valuable
-*   **Safety:** Allows safe execution of arbitrary code generation (data analysis, plotting).
-*   **Dependency Isolation:** Agents can install libraries (e.g., `pandas`, `numpy`) dynamically without bloating the main application environment.
-
-### Implementation Strategy
-*   **Location:** `flujo/builtins_extras.py`
-*   **Mechanism:**
-    1.  Create a new builtin skill: `flujo.builtins.docker_code_interpreter`.
-    2.  Use the Docker SDK to spin up an ephemeral container (e.g., `python:3.11-slim`).
-    3.  Mount a shared volume for file I/O.
-    4.  Execute the code, capture stdout/stderr, destroy container.
-    5.  *Alternative (Lower Effort):* Use `e2b` or specialized sandbox APIs if cloud execution is acceptable.
+### Architectural Correction: Interface-First Design
+*   **Risk Avoided:** We will **not** hard-depend on the Docker SDK. Requiring a Docker daemon breaks compatibility with serverless environments (AWS Lambda, Cloud Run) and complicates local dev.
+*   **Implementation:**
+    1.  **Interface:** Define `SandboxProtocol` in `flujo/domain/interfaces.py` with methods like `exec_code(code, lang)`.
+    2.  **Remote-First Default:** Implement `RemoteSandbox` (targeting APIs like E2B or a generic sidecar container) as the primary recommendation for production.
+    3.  **Optional Docker:** Implement `DockerSandbox` as an optional extra (`pip install flujo[docker]`) for local development where the daemon is available.
+    4.  **Skill:** Expose this via a standard skill `flujo.builtins.code_interpreter` that accepts the configured sandbox implementation.
 
 ---
 
@@ -107,28 +110,25 @@ Flujo executes tools in the main process. If an LLM generates malicious Python c
 **Impact:** Medium | **Effort:** Medium
 
 ### Concept
-Evaluating agents usually happens in a separate "Bench" phase. Shadow Evaluations use Flujo's `BackgroundTaskManager` to score production runs asynchronously without slowing down the user experience.
+Asynchronous scoring of production runs using an LLM-as-a-Judge.
 
-### Why it is Valuable
-*   **Production Visibility:** Detect drift in model quality (e.g., "Is GPT-4o getting lazy?") in real-time.
-*   **Dataset Generation:** Automatically flags "bad" interactions for fine-tuning or debugging.
-
-### Implementation Strategy
-*   **Location:** `flujo/application/core/execution_manager.py`
-*   **Mechanism:**
-    1.  Define an `Evaluator` (LLM-as-Judge) in `flujo.toml`.
-    2.  In `_persist_and_finalize`, trigger a background task using `self._background_task_manager`.
-    3.  The task passes the completed `StepHistory` to the Evaluator agent.
-    4.  Score is written to a new `evaluations` table in `flujo_ops.db`.
+### Architectural Correction: Cost Control
+*   **Risk Avoided:** Running evals on *every* production trace effectively doubles inference costs.
+*   **Implementation:**
+    1.  **Configuration:** Add `sampling_rate` (0.0 to 1.0) and `evaluate_on_failure` (bool) to the `[eval]` section of `flujo.toml`.
+    2.  **Mechanism:** In `ExecutionManager.persist_and_finalize`, check the sampling logic.
+    3.  **Async Dispatch:** If sampled, trigger `BackgroundTaskManager` to launch the Evaluator agent.
+    4.  **Storage:** Write scores to a dedicated `evaluations` table linked to `run_id`, keeping the main `workflow_state` table clean.
 
 ---
 
 ## Summary Matrix
 
-| Feature | Impact | Effort | Value Proposition |
+| Feature | Impact | Effort | refined Architecture Note |
 | :--- | :--- | :--- | :--- |
-| **1. Governance Policies** | ⭐⭐⭐⭐⭐ | 🟢 Low | Enterprise security & compliance blocking (PII/Auth). |
-| **2. OpenAPI Importer** | ⭐⭐⭐⭐ | 🟢 Low | accelerated development speed & integration. |
-| **3. Episodic Memory** | ⭐⭐⭐⭐⭐ | 🟡 Med | Long-term intelligence & cost reduction via RAG. |
-| **4. Shadow Evals** | ⭐⭐⭐ | 🟡 Med | Observability & quality assurance in production. |
-| **5. Sandboxing** | ⭐⭐⭐⭐ | 🔴 High | Safety for "Code Interpreter" use cases. |
+| **1. Governance Policies** | ⭐⭐⭐⭐⭐ | 🟢 Low | Implemented as **Middleware** in Coordinator. |
+| **2. OpenAPI Generator** | ⭐⭐⭐⭐ | 🟢 Low | **Code Gen** approach for type-safety. |
+| **3. Episodic Memory** | ⭐⭐⭐⭐⭐ | 🟡 Med | **Decoupled** `VectorStoreProtocol` (separate from State). |
+| **4. Shadow Evals** | ⭐⭐⭐ | 🟡 Med | Added **Sampling Rates** to prevent cost explosion. |
+| **5. Sandboxing** | ⭐⭐⭐⭐ | 🔴 High | **Protocol-based**, treating Docker as an optional plugin. |
+ 
