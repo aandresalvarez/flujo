@@ -416,11 +416,34 @@ class DefaultAgentRunner:
                 if resources is not None:
                     filtered_kwargs["resources"] = resources
 
+        # Handle builtin skill input: syntax - unpack dict payload as kwargs
+        # When builtins are called via step.input instead of agent.params, the dict
+        # payload needs to be unpacked as keyword arguments to match function signatures.
+        _is_builtin = False
+        try:
+            func_module = getattr(executable_func, "__module__", "")
+            _is_builtin = isinstance(func_module, str) and (
+                func_module.startswith("flujo.builtins") or "builtins" in func_module
+            )
+        except Exception:
+            _is_builtin = False
+        if _is_builtin and isinstance(payload, dict):
+            # Unpack the dict payload as kwargs for builtin skills
+            filtered_kwargs.update(payload)
+            payload = None  # Clear payload since we're passing via kwargs
+
+        # Helper to call function with or without payload based on builtin unpacking
+        def _call_args() -> tuple[tuple[Any, ...], dict[str, Any]]:
+            if payload is None:
+                return (), filtered_kwargs
+            return (payload,), filtered_kwargs
+
         try:
             if stream:
                 # Case 1: async generator function
                 if inspect.isasyncgenfunction(executable_func):
-                    async_generator = executable_func(payload, **filtered_kwargs)
+                    args, kwargs = _call_args()
+                    async_generator = executable_func(*args, **kwargs)
                     chunks = []
                     async for chunk in async_generator:
                         chunks.append(chunk)
@@ -436,7 +459,8 @@ class DefaultAgentRunner:
 
                 # Case 2: coroutine function that returns an async iterator
                 if inspect.iscoroutinefunction(executable_func):
-                    result = await executable_func(payload, **filtered_kwargs)
+                    args, kwargs = _call_args()
+                    result = await executable_func(*args, **kwargs)
                     if hasattr(result, "__aiter__"):
                         chunks = []
                         async for chunk in result:
@@ -456,7 +480,8 @@ class DefaultAgentRunner:
                     return result
 
                 # Case 3: regular callable returning an async iterator/generator
-                result = executable_func(payload, **filtered_kwargs)
+                args, kwargs = _call_args()
+                result = executable_func(*args, **kwargs)
                 if hasattr(result, "__aiter__"):
                     chunks = []
                     async for chunk in result:
@@ -476,10 +501,11 @@ class DefaultAgentRunner:
                 return result
 
             # Non-streaming execution
+            args, kwargs = _call_args()
             if inspect.iscoroutinefunction(executable_func):
-                _res = await executable_func(payload, **filtered_kwargs)
+                _res = await executable_func(*args, **kwargs)
             else:
-                _res = executable_func(payload, **filtered_kwargs)
+                _res = executable_func(*args, **kwargs)
                 if inspect.iscoroutine(_res):
                     _res = await _res
 
