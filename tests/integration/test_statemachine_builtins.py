@@ -14,7 +14,7 @@ from tests.conftest import create_test_flujo
 class TestBuiltinSkillConsistency:
     """Test that builtin skills work consistently across step types."""
 
-    @pytest.mark.fast
+    @pytest.mark.serial  # StateMachine tests have race conditions under heavy xdist load
     async def test_context_merge_in_statemachine_with_params(self) -> None:
         """Test context_merge with agent.params in StateMachine."""
         yaml_content = """
@@ -56,7 +56,7 @@ steps:
         # StateMachine reads next_state and transitions, but doesn't update current_state for terminal states
         assert result.final_pipeline_context.scratchpad.get("next_state") == "complete"
 
-    @pytest.mark.fast
+    @pytest.mark.serial  # StateMachine tests have race conditions under heavy xdist load
     async def test_context_merge_in_statemachine_with_input(self) -> None:
         """Test context_merge with input in StateMachine."""
         yaml_content = """
@@ -232,7 +232,7 @@ steps:
         assert result.step_history[0].success
         assert result.final_pipeline_context.scratchpad.get("counter") == 99
 
-    @pytest.mark.fast
+    @pytest.mark.serial  # StateMachine tests have race conditions under heavy xdist load
     async def test_statemachine_dynamic_transitions(self) -> None:
         """Test StateMachine with dynamic next_state transitions."""
         yaml_content = """
