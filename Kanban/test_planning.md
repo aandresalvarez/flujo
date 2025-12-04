@@ -181,14 +181,15 @@ flake-detection:
 ## 📋 Checklist
 
 ### Immediate (This Sprint)
-- [ ] Add config isolation fixture to `conftest.py`
-- [ ] Audit StateMachine tests for missing `@pytest.mark.serial`
+- [x] Add config isolation fixture to `conftest.py` ✅
+- [x] Audit StateMachine tests for missing `@pytest.mark.serial` ✅
+- [x] Create `assert_no_major_regression` helper ✅
 - [ ] Review tests that failed in main after PR merge
 
 ### Short-term (Next Sprint)
 - [ ] Audit all performance tests with `grep`
-- [ ] Create `assert_no_major_regression` helper
 - [ ] Convert remaining micro-benchmarks to log-only
+- [ ] Refactor tests to use `assert_no_major_regression` helper
 
 ### Medium-term
 - [ ] Update `docs/testing.md` with isolation best practices
