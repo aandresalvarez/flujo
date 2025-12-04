@@ -519,10 +519,9 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
             # Build a minimal context update dict using outputs mapping
             update_data: JSONObject = {}
 
-            def _get_child(path: str) -> Any:
-                parts = [p for p in path.split(".") if p]
-                # Prefer the child's final context produced by the imported pipeline
-                cur: Any = child_final_ctx
+            def _traverse_path(obj: Any, parts: list[str]) -> Any:
+                """Traverse a path through an object (context or dict)."""
+                cur = obj
                 for part in parts:
                     if cur is None:
                         return None
@@ -533,6 +532,23 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                     else:
                         return None
                 return cur
+
+            def _get_child(path: str) -> Any:
+                parts = [p for p in path.split(".") if p]
+                # First: try to get from child's final context (branch_context)
+                result = _traverse_path(child_final_ctx, parts)
+                if result is not None:
+                    return result
+                # Second: check the last step's output if context didn't have the value
+                # This handles tool steps that return {"scratchpad": {...}} as output
+                # but haven't had that output merged into context yet.
+                if inner_sr is not None:
+                    inner_output = getattr(inner_sr, "output", None)
+                    if isinstance(inner_output, dict):
+                        result = _traverse_path(inner_output, parts)
+                        if result is not None:
+                            return result
+                return None
 
             def _assign_parent(path: str, value: Any) -> None:
                 parts = [p for p in path.split(".") if p]
