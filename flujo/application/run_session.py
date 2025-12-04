@@ -659,7 +659,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
 
                     await exec_manager.persist_final_state(
                         run_id=run_id_for_state,
-                        context=current_context_instance,
+                        context=cast(Optional[ContextT], current_context_instance),
                         result=pipeline_result_obj,
                         start_idx=start_idx,
                         state_created_at=state_created_at,

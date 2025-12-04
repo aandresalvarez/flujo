@@ -311,7 +311,7 @@ class SQLiteBackendBase(StateBackend):
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure parent directories exist
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
         self._initialized = False
         # Lightweight single-connection pool to reduce connect() overhead on hot paths.
         # Guarded by self._lock for serialized access.
@@ -326,6 +326,12 @@ class SQLiteBackendBase(StateBackend):
             SQLiteBackendBase._instances.add(self)
         except Exception:
             pass
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Lazily create the lock on first access."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def _create_connection(self) -> aiosqlite.Connection:
         """Return a new aiosqlite connection with daemonized worker thread."""
@@ -510,18 +516,6 @@ class SQLiteBackendBase(StateBackend):
                         updated_at TEXT NOT NULL
                     )
                     """
-                )
-
-                # Create indexes for runs table
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_id ON runs(pipeline_id)"
-                )
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at)"
-                )
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_name ON runs(pipeline_name)"
                 )
 
                 # Create the steps table for step tracking
@@ -873,6 +867,7 @@ class SQLiteBackendBase(StateBackend):
                 ("error_message", "TEXT"),
             ]
 
+            new_column_added = False
             for column_name, column_def in runs_new_columns:
                 if column_name not in runs_columns:
                     escaped_name = column_name.replace('"', '""')
@@ -880,6 +875,12 @@ class SQLiteBackendBase(StateBackend):
                     await db.execute(
                         f"ALTER TABLE runs ADD COLUMN {quoted_column_name} {column_def}"
                     )
+                    new_column_added = True
+
+            if new_column_added:
+                cursor = await db.execute("PRAGMA table_info(runs)")
+                runs_columns = {row[1] for row in await cursor.fetchall()}
+                await cursor.close()
 
             # Update existing records with default values for NOT NULL columns
             if "pipeline_id" in runs_columns:
@@ -891,6 +892,22 @@ class SQLiteBackendBase(StateBackend):
             if "updated_at" in runs_columns:
                 await db.execute("UPDATE runs SET updated_at = '' WHERE updated_at IS NULL")
 
+            # Create indexes only when backing columns exist
+            if "status" in runs_columns:
+                await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
+            if "pipeline_id" in runs_columns:
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_id ON runs(pipeline_id)"
+                )
+            if "created_at" in runs_columns:
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at)"
+                )
+            if "pipeline_name" in runs_columns:
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_name ON runs(pipeline_name)"
+                )
+
         except sqlite3.OperationalError:
             # Table doesn't exist yet, which is fine - it will be created with the new schema
             pass
@@ -898,6 +915,8 @@ class SQLiteBackendBase(StateBackend):
     async def _ensure_init(self) -> None:
         if not self._initialized:
             # Use file-level lock to prevent concurrent initialization across instances
+            # Ensure the instance lock exists for callers that access self._lock directly
+            self._get_lock()
             async with self._get_file_lock():
                 if not self._initialized:
                     try:
@@ -945,7 +964,10 @@ class SQLiteBackendBase(StateBackend):
         _run_coro_sync(self.close())
 
     async def __aenter__(self) -> "SQLiteBackendBase":
-        """Async context manager entry."""
+        """Async context manager entry with eager lock/init."""
+        # Ensure the instance lock exists before tests use backend._lock directly.
+        self._get_lock()
+        await self._ensure_init()
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:

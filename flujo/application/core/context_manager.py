@@ -510,7 +510,13 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
                 if p.kind == inspect.Parameter.VAR_KEYWORD:
                     # If the **kwargs parameter is annotated as 'Never', it doesn't accept any parameters
                     # Handle both direct type comparison and string comparison for robustness
-                    from typing import Never
+                    try:
+                        from typing import Never
+                    except ImportError:
+                        try:
+                            from typing_extensions import Never
+                        except ImportError:
+                            from typing import NoReturn as Never
 
                     # Check if the annotation is Never (either as type or string)
                     if p.annotation is Never or str(p.annotation) == "Never":

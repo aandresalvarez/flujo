@@ -625,12 +625,13 @@ class TestBackwardCompatibility:
         assert cache is not None
 
     @pytest.mark.slow  # Mark as slow due to cache operations
-    def test_clear_cache_compatibility(self):
+    @pytest.mark.asyncio
+    async def test_clear_cache_compatibility(self):
         """Test that clear_cache method exists."""
         executor = UltraStepExecutor(enable_cache=True)
 
         # Should not raise an error
-        executor.clear_cache()
+        await executor.clear_cache()
 
 
 # --------------------------------------------------------------------------- #

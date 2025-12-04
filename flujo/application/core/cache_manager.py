@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from ...domain.models import StepOutcome, StepResult, Success
 from ...infra import telemetry
 from .default_cache_components import DefaultCacheKeyGenerator, _LRUCache
+import asyncio
 
 if TYPE_CHECKING:  # pragma: no cover
     from .types import ExecutionFrame
@@ -36,12 +37,15 @@ class CacheManager:
             self._internal_cache = _LRUCache(max_size=1024, ttl=3600)
         return self._internal_cache
 
-    def clear_cache(self) -> None:
+    async def clear_cache(self) -> None:
         """Clear all cached data."""
         if self._internal_cache is not None:
             self._internal_cache.clear()
         if hasattr(self._backend, "clear"):
-            self._backend.clear()
+            if asyncio.iscoroutinefunction(self._backend.clear):
+                await self._backend.clear()
+            else:
+                self._backend.clear()
 
     def generate_cache_key(
         self, step: Any, data: Any, context: Optional[Any], resources: Optional[Any]

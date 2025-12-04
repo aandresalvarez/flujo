@@ -45,7 +45,7 @@ class PipelineOrchestrator:
                     f"[PipelineOrchestrator] executing step {getattr(step, 'name', 'unnamed')}"
                 )
 
-                frame = ExecutionFrame(
+                frame: ExecutionFrame[Any] = ExecutionFrame(
                     step=step,
                     data=current_data,
                     context=current_context,

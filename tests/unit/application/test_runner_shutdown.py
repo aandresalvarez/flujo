@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import threading
 from pathlib import Path
 from typing import Any, Optional
@@ -61,13 +60,14 @@ class _RecordingBackend(InMemoryBackend):
         self.shutdown_calls += 1
 
 
-def test_runner_does_not_shutdown_injected_backend() -> None:
+@pytest.mark.asyncio
+async def test_runner_does_not_shutdown_injected_backend() -> None:
     """Runner should not manage the lifecycle of injected state backends."""
     backend = _RecordingBackend()
     runner = _make_runner(state_backend=backend)
-    runner.run("custom backend")
+    await runner.run_async("custom backend")
     assert backend.shutdown_calls == 0
     # Manual close should be a no-op for injected backends.
     # Users remain responsible for their lifetime management.
-    asyncio.run(runner.aclose())
+    await runner.aclose()
     assert backend.shutdown_calls == 0

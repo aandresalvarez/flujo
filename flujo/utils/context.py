@@ -625,6 +625,16 @@ def safe_merge_context_updates(
                     # For other types, use simple replacement
                     try:
                         if current_value != actual_source_value:
+                            # Protect scratchpad from being overwritten by None
+                            if (
+                                field_name == "scratchpad"
+                                and actual_source_value is None
+                                and current_value is not None
+                            ):
+                                if _VERBOSE_DEBUG:
+                                    logger.debug("Skipping scratchpad overwrite with None")
+                                continue
+
                             # Use setattr to trigger Pydantic validation
                             _force_setattr(target_context, field_name, actual_source_value)
                             updated_count += 1

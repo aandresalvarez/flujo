@@ -89,20 +89,29 @@ class AgentOrchestrator:
         handler = getattr(core, "_fallback_handler", None)
         if handler is None:
             return
-        try:
-            if depth > handler.MAX_CHAIN_LENGTH:
-                telemetry.logfire.warning(
-                    f"Fallback chain length exceeded maximum of {handler.MAX_CHAIN_LENGTH}; resetting chain."
-                )
-                handler.reset()
-                return
-            if depth > 0 and handler.is_step_in_chain(step):
-                handler.reset()
-                return
-            if depth > 0:
-                handler.push_to_chain(step)
-        except Exception:
-            try:
-                handler.reset()
-            except Exception:
-                pass
+
+        # Check chain length first
+        if depth > handler.MAX_CHAIN_LENGTH:
+            from ...exceptions import InfiniteFallbackError
+
+            telemetry.logfire.warning(
+                f"Fallback chain length exceeded maximum of {handler.MAX_CHAIN_LENGTH}"
+            )
+            raise InfiniteFallbackError(
+                f"Fallback chain exceeded maximum length ({handler.MAX_CHAIN_LENGTH})"
+            )
+
+        # Check for cycles
+        if depth > 0 and handler.is_step_in_chain(step):
+            from ...exceptions import InfiniteFallbackError
+
+            telemetry.logfire.warning(
+                f"Infinite fallback loop detected for step '{getattr(step, 'name', '<unnamed>')}'"
+            )
+            raise InfiniteFallbackError(
+                f"Infinite fallback loop detected: step '{getattr(step, 'name', '<unnamed>')}' is already in the chain"
+            )
+
+        # Add to chain if safe
+        if depth > 0:
+            handler.push_to_chain(step)

@@ -33,7 +33,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
             state: Dictionary containing workflow state data
         """
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
 
             async def _save() -> None:
                 conn = await self._create_connection()
@@ -127,7 +127,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
     async def load_state(self, run_id: str) -> Optional[JSONObject]:
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
 
             async def _load() -> Optional[JSONObject]:
                 conn = await self._create_connection()
@@ -186,7 +186,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     async def delete_state(self, run_id: str) -> None:
         """Delete workflow state."""
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             conn = await self._create_connection()
             try:
                 db = conn
@@ -201,7 +201,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         Uses the pooled connection when available to minimize connection overhead.
         """
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             db = self._connection_pool
             _temp_conn = False
             if db is None:
@@ -249,7 +249,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     ) -> List[JSONObject]:
         """List background tasks with optional filtering."""
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             db = self._connection_pool
             _temp_conn = False
             if db is None:
@@ -341,7 +341,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     async def cleanup_stale_background_tasks(self, stale_hours: int = 24) -> int:
         """Mark running background tasks older than the cutoff as failed."""
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             db = self._connection_pool
             _temp_conn = False
             if db is None:
@@ -397,7 +397,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     ) -> List[JSONObject]:
         """Enhanced workflow listing with additional filters and metadata."""
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             # Prefer pooled connection for lower latency; fallback to ad-hoc connection
             db = self._connection_pool
             _temp_conn = False
@@ -484,7 +484,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     ) -> List[JSONObject]:
         """List runs with optional filtering and include workflow metadata."""
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             db = self._connection_pool
             _temp_conn = False
             if db is None:
@@ -576,7 +576,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     async def get_workflow_stats(self) -> JSONObject:
         """Get comprehensive workflow statistics."""
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             conn = await self._create_connection()
             try:
                 db = conn
@@ -653,7 +653,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     async def get_failed_workflows(self, hours_back: int = 24) -> List[JSONObject]:
         """Get failed workflows from the last N hours."""
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             conn = await self._create_connection()
             try:
                 db = conn
@@ -700,7 +700,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     async def cleanup_old_workflows(self, days_old: float = 30) -> int:
         """Delete workflows older than specified days. Returns number of deleted workflows."""
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
 
             async def _cleanup() -> int:
                 conn = await self._create_connection()
@@ -740,7 +740,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     # ------------------------------------------------------------------
 
     async def save_run_start(self, run_data: JSONObject) -> None:
-        async with self._lock:
+        async with self._get_lock():
             # Fast path: if backend not fully initialized yet, bootstrap only the 'runs' table
             # to avoid heavy DDL/PRAGMA costs on first write. Full initialization (other tables,
             # indexes, pragmas) will happen lazily on subsequent calls that need them.
@@ -848,7 +848,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
     async def save_step_result(self, step_data: JSONObject) -> None:
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
 
             async def _save() -> None:
                 # Prefer pooled connection to avoid connection setup overhead on hot paths
@@ -915,7 +915,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
     async def save_run_end(self, run_id: str, end_data: JSONObject) -> None:
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
 
             async def _save() -> None:
                 db = self._connection_pool
@@ -955,7 +955,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
     async def get_run_details(self, run_id: str) -> Optional[JSONObject]:
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             conn = await self._create_connection()
             try:
                 db = conn
@@ -988,7 +988,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
     async def list_run_steps(self, run_id: str) -> List[JSONObject]:
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             conn = await self._create_connection()
             try:
                 db = conn
@@ -1023,7 +1023,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
     async def set_system_state(self, key: str, value: JSONObject) -> None:
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
 
             async def _save() -> None:
                 conn = await self._create_connection()
@@ -1048,7 +1048,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
     async def get_system_state(self, key: str) -> Optional[JSONObject]:
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             conn = await self._create_connection()
             try:
                 cursor = await conn.execute(
@@ -1073,7 +1073,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     async def delete_run(self, run_id: str) -> None:
         """Delete a run from the runs table (cascades to traces). Audit log deletion."""
         await self._ensure_init()
-        async with self._lock:
+        async with self._get_lock():
             try:
                 from flujo.infra.audit import log_audit as _audit
 
