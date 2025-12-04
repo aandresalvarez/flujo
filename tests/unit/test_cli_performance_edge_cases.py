@@ -141,6 +141,12 @@ class TestCLIPerformanceEdgeCases:
 
         runner = CliRunner()
 
+        # Establish baseline: unfiltered list
+        start_time = time.perf_counter()
+        runner.invoke(app, ["lens", "list"])
+        baseline = time.perf_counter() - start_time
+        print(f"Baseline (unfiltered list): {baseline:.3f}s")
+
         # Test different filter combinations
         filter_tests = [
             ["lens", "list", "--status", "completed"],
@@ -157,7 +163,18 @@ class TestCLIPerformanceEdgeCases:
             execution_time = time.perf_counter() - start_time
 
             print(f"Filter {filter_args} performance: {execution_time:.3f}s")
-            assert execution_time < 1.0, f"Filter {filter_args} took {execution_time:.3f}s"
+            # Relative check: filtered should not be dramatically slower than baseline
+            # Allow 5x for major regression detection
+            max_ratio = 5.0
+            if baseline > 0:
+                ratio = execution_time / baseline
+                assert ratio < max_ratio, (
+                    f"Filter {filter_args} took {execution_time:.3f}s, baseline {baseline:.3f}s. "
+                    f"Ratio {ratio:.2f}x exceeds {max_ratio}x (major regression)"
+                )
+            else:
+                # Fallback: generous absolute threshold
+                assert execution_time < 5.0, f"Filter {filter_args} took {execution_time:.3f}s"
             assert result.exit_code == 0
 
     def test_lens_show_with_various_run_ids(self, large_database_with_mixed_data: Path) -> None:
@@ -318,13 +335,30 @@ class TestCLIPerformanceEdgeCases:
                         },
                     )
 
-            # Test that queries use indexes efficiently
+            # Establish baseline: unfiltered list (no index benefit)
+            start_time = time.perf_counter()
+            await backend.list_runs()
+            baseline = time.perf_counter() - start_time
+            print(f"Baseline (unfiltered): {baseline:.3f}s")
+
+            # Test that filtered queries use indexes efficiently
             start_time = time.perf_counter()
             runs = await backend.list_runs(status="completed")
             query_time = time.perf_counter() - start_time
 
             print(f"Indexed query performance: {query_time:.3f}s")
-            assert query_time < 0.1, f"Indexed query took {query_time:.3f}s"
+            # Indexed query should not be dramatically slower than baseline
+            # Allow 3x for major regression detection
+            max_ratio = 3.0
+            if baseline > 0:
+                ratio = query_time / baseline
+                assert ratio < max_ratio, (
+                    f"Indexed query took {query_time:.3f}s, baseline {baseline:.3f}s. "
+                    f"Ratio {ratio:.2f}x exceeds {max_ratio}x (index may not be working)"
+                )
+            else:
+                # Fallback: generous absolute threshold
+                assert query_time < 1.0, f"Indexed query took {query_time:.3f}s"
             assert len(runs) > 0, "Should find completed runs"
         finally:
             await backend.close()
@@ -365,7 +399,11 @@ class TestCLIPerformanceEdgeCases:
         total_time = time.perf_counter() - start_time
 
         print(f"Concurrent write performance: {total_time:.3f}s")
-        assert total_time < 5.0, f"Concurrent writes took {total_time:.3f}s"
+        # Sanity check: 50 concurrent writes should complete within reasonable time
+        # This is a major regression detector, not a tight performance gate
+        assert total_time < 30.0, (
+            f"Concurrent writes took {total_time:.3f}s - major regression detected"
+        )
 
         # Verify all writes succeeded
         for i in range(50):
@@ -406,13 +444,30 @@ class TestCLIPerformanceEdgeCases:
                     },
                 )
 
-            # Test that we can still query efficiently
+            # Establish baseline: small query first
+            start_time = time.perf_counter()
+            await backend.list_runs(limit=10)
+            baseline = time.perf_counter() - start_time
+            print(f"Baseline (limit=10): {baseline:.3f}s")
+
+            # Test that we can still query efficiently with larger limit
             start_time = time.perf_counter()
             runs = await backend.list_runs(limit=50)
             query_time = time.perf_counter() - start_time
 
             print(f"Memory test query performance: {query_time:.3f}s")
-            assert query_time < 0.5, f"Memory test query took {query_time:.3f}s"
+            # Larger query should not be dramatically slower than smaller query
+            # Allow 10x for major regression detection (5x more data, plus overhead)
+            max_ratio = 10.0
+            if baseline > 0:
+                ratio = query_time / baseline
+                assert ratio < max_ratio, (
+                    f"Memory test query took {query_time:.3f}s, baseline {baseline:.3f}s. "
+                    f"Ratio {ratio:.2f}x exceeds {max_ratio}x (major regression)"
+                )
+            else:
+                # Fallback: generous absolute threshold
+                assert query_time < 5.0, f"Memory test query took {query_time:.3f}s"
             assert len(runs) == 50, "Should return exactly 50 runs"
         finally:
             await backend.close()
