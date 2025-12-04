@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import pytest
 
+# Architect tests use StateMachine pipelines with shared state; serial prevents race conditions
+pytestmark = [pytest.mark.serial]
+
 
 @pytest.mark.integration
 def test_architect_plan_rejection_triggers_refinement(monkeypatch: pytest.MonkeyPatch) -> None:

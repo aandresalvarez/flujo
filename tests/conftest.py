@@ -293,6 +293,23 @@ def _reset_config_cache():
 
 
 @pytest.fixture(autouse=True)
+def _reset_skills_base_dir_stack():
+    """Reset the skills base dir stack between tests to prevent state pollution.
+
+    The _skills_base_dir_stack in loader_resolution.py is a module-level list
+    that can leak state if a test fails before calling _pop_skills_base_dir().
+    This fixture ensures the stack is cleared after each test.
+    """
+    yield
+    try:
+        from flujo.domain.blueprint.loader_resolution import _skills_base_dir_stack
+
+        _skills_base_dir_stack.clear()
+    except ImportError:
+        pass
+
+
+@pytest.fixture(autouse=True)
 def _clear_project_root_env(monkeypatch):
     """Avoid FLUJO_PROJECT_ROOT leakage between tests (affects project root helpers)."""
 
