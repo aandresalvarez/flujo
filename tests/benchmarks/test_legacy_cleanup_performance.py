@@ -12,6 +12,8 @@ from unittest.mock import Mock, AsyncMock, patch
 
 import pytest
 
+pytestmark = [pytest.mark.benchmark, pytest.mark.slow]
+
 # step_logic module was intentionally removed during refactoring
 # The functionality has been migrated to ultra_executor
 from flujo.application.core.executor_core import ExecutorCore
@@ -22,7 +24,7 @@ from flujo.domain.models import StepResult
 class TestCleanupPerformanceImpact:
     """Test performance impact of removing legacy code."""
 
-    def test_cleanup_performance_impact(self):
+    def test_cleanup_performance_impact(self) -> None:
         """Test performance impact of removing legacy code."""
         # The step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
@@ -45,7 +47,7 @@ class TestCleanupPerformanceImpact:
         end_time = time.perf_counter()
         return end_time - start_time
 
-    async def test_import_performance_improvement(self):
+    async def test_import_performance_improvement(self) -> None:
         """Test import performance improvement from cleanup."""
         # Test that step_logic module was removed
         with pytest.raises(ModuleNotFoundError):
@@ -55,7 +57,7 @@ class TestCleanupPerformanceImpact:
         executor_import_time = self._measure_import_time("flujo.application.core.executor_core")
         assert executor_import_time < 1.0
 
-    async def test_memory_usage_improvement(self):
+    async def test_memory_usage_improvement(self) -> None:
         """Test memory usage improvement from cleanup."""
         import os
 
@@ -88,7 +90,7 @@ class TestCleanupPerformanceImpact:
 class TestFunctionCallPerformance:
     """Test performance of function calls after cleanup."""
 
-    async def test_delegation_performance(self):
+    async def test_delegation_performance(self) -> None:
         """Test performance of delegation to ExecutorCore."""
         # Test that delegation is fast
         with patch("flujo.application.core.executor_core.ExecutorCore") as mock_executor_class:
@@ -120,7 +122,7 @@ class TestFunctionCallPerformance:
 
         print(f"Delegation performance: {total_time:.4f} seconds for 1000 calls")
 
-    async def test_deprecated_function_performance(self):
+    async def test_deprecated_function_performance(self) -> None:
         """Test performance of deprecated functions."""
         # Test _handle_cache_step performance
         mock_cache_step = Mock(spec=CacheStep)
@@ -159,7 +161,7 @@ class TestFunctionCallPerformance:
 
         print(f"Deprecated function performance: {total_time:.4f} seconds for 100 calls")
 
-    async def test_executor_core_performance(self):
+    async def test_executor_core_performance(self) -> None:
         """Test ExecutorCore performance."""
         executor = ExecutorCore()
 
@@ -185,7 +187,7 @@ class TestFunctionCallPerformance:
 class TestMemoryUsageAnalysis:
     """Test memory usage patterns after cleanup."""
 
-    async def test_module_size_analysis(self):
+    async def test_module_size_analysis(self) -> None:
         """Analyze module size after cleanup."""
         # step_logic module was intentionally removed during refactoring
         # This test verifies that the module no longer exists
