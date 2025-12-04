@@ -167,7 +167,10 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
 
 
 def load_pipeline_blueprint_from_yaml(
-    yaml_text: str, base_dir: Optional[str] = None, source_file: Optional[str] = None
+    yaml_text: str,
+    base_dir: Optional[str] = None,
+    source_file: Optional[str] = None,
+    _visited: Optional[set[str]] = None,
 ) -> Pipeline[Any, Any]:
     import os
     import sys as _sys
@@ -182,6 +185,15 @@ def load_pipeline_blueprint_from_yaml(
                 _pushed_sys_path = True
         except Exception:
             _pushed_sys_path = False
+
+    # Cycle detection
+    if source_file:
+        if _visited is None:
+            _visited = set()
+        real_source = os.path.realpath(source_file)
+        if real_source in _visited:
+            raise BlueprintError(f"Cyclic import detected: {real_source}")
+        _visited.add(real_source)
     try:
         loc_index: dict[str, Tuple[int, int]] = {}
         sup_index: dict[str, List[str]] = {}
@@ -332,7 +344,9 @@ def load_pipeline_blueprint_from_yaml(
 
             if bp.agents or getattr(bp, "imports", None):
                 try:
-                    compiler = DeclarativeBlueprintCompiler(bp, base_dir=base_dir)
+                    compiler = DeclarativeBlueprintCompiler(
+                        bp, base_dir=base_dir, _visited=_visited
+                    )
                     return compiler.compile_to_pipeline()
                 except Exception as e:
                     raise BlueprintError(

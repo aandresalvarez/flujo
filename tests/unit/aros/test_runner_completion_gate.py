@@ -21,11 +21,17 @@ class BadJsonAgent:
 @pytest.mark.anyio
 async def test_runner_does_not_mark_completed_with_missing_step_results() -> None:
     # First step succeeds
-    s1 = Step.from_callable(lambda x: x, name="s1")
+    def s1_func(x: str) -> str:
+        return x
+
+    s1 = Step.from_callable(s1_func, name="s1")
     s1.agent = NoopAgent()
 
     # Second step declares structured output but returns irreparable JSON
-    s2 = Step.from_callable(lambda x: x, name="s2")
+    def s2_func(x: str) -> str:
+        return x
+
+    s2 = Step.from_callable(s2_func, name="s2")
     s2.agent = BadJsonAgent()
     s2.meta = {"processing": {"structured_output": "openai_json"}}
 

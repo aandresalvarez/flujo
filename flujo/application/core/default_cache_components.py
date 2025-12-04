@@ -269,13 +269,19 @@ class InMemoryLRUBackend:
 
     max_size: int = 1024
     ttl_s: int = 3600
-    _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
+    _lock: Optional[asyncio.Lock] = field(init=False, default=None)
     _store: OrderedDict[str, tuple[StepResult, float, int]] = field(
         init=False, default_factory=OrderedDict
     )
 
+    def _get_lock(self) -> asyncio.Lock:
+        """Lazily create the asyncio lock on first access."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
     async def get(self, key: str) -> Optional[StepResult]:
-        async with self._lock:
+        async with self._get_lock():
             if key not in self._store:
                 return None
             result, timestamp, access_count = self._store[key]
@@ -288,7 +294,7 @@ class InMemoryLRUBackend:
             return result.model_copy(deep=True)
 
     async def put(self, key: str, value: StepResult, ttl_s: int) -> None:
-        async with self._lock:
+        async with self._get_lock():
             current_time = time.monotonic()
             while len(self._store) >= self.max_size:
                 self._store.popitem(last=False)
@@ -296,7 +302,7 @@ class InMemoryLRUBackend:
             self._store.move_to_end(key)
 
     async def clear(self) -> None:
-        async with self._lock:
+        async with self._get_lock():
             self._store.clear()
 
 
@@ -307,7 +313,13 @@ class ThreadSafeMeter:
     total_cost_usd: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
+    _lock: Optional[asyncio.Lock] = field(init=False, default=None)
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Lazily create the asyncio lock on first access."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def add(self, cost_usd: float, prompt_tokens: int, completion_tokens: int) -> None:
         self.total_cost_usd += cost_usd

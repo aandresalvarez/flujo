@@ -50,14 +50,20 @@ class PostgresBackend(StateBackend):
         self._pool_min_size = pool_min_size
         self._pool_max_size = pool_max_size
         self._pool: Optional[Pool] = None
-        self._init_lock = asyncio.Lock()
+        self._init_lock: Optional[asyncio.Lock] = None
         self._initialized = False
         self._max_span_depth = 100
+
+    def _get_init_lock(self) -> asyncio.Lock:
+        """Lazily create the init lock on first access."""
+        if self._init_lock is None:
+            self._init_lock = asyncio.Lock()
+        return self._init_lock
 
     async def _ensure_pool(self) -> Pool:
         if self._pool is not None:
             return self._pool
-        async with self._init_lock:
+        async with self._get_init_lock():
             if self._pool is None:
                 pg = _load_asyncpg()
                 pool = await pg.create_pool(
@@ -70,7 +76,7 @@ class PostgresBackend(StateBackend):
         await self._ensure_pool()
         if self._initialized:
             return
-        async with self._init_lock:
+        async with self._get_init_lock():
             if self._initialized:
                 return
             pool = cast("Pool", self._pool)

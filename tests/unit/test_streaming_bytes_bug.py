@@ -51,7 +51,7 @@ class StubLegacyStreamingAgent(StreamingAgentProtocol):
     def __init__(self, chunks: list[Union[str, bytes]]):
         self.chunks = chunks
 
-    async def stream(self, data: Any, **kwargs) -> AsyncIterator[str | bytes]:
+    async def stream(self, data: Any, **kwargs) -> AsyncIterator[Union[str, bytes]]:
         """Stream the configured chunks."""
         for chunk in self.chunks:
             yield chunk

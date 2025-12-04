@@ -19,14 +19,20 @@ class FencedJsonAgent:
 @pytest.mark.anyio
 async def test_finalize_parses_fenced_json_to_object() -> None:
     # Build a Step with structured_output intent
-    s = Step.from_callable(lambda x: x, name="noop")
+    def noop_func(x: str) -> dict[str, str]:
+        return {"value": "ok"}
+
+    s = Step.from_callable(noop_func, name="noop")
     # Replace agent with our fenced-json agent
     s.agent = FencedJsonAgent()
     # Declare structured intent in meta to trigger normalization
     s.meta = {"processing": {"structured_output": "openai_json"}}
 
     # Second step just echoes the previous output
-    echo = Step.from_callable(lambda x: x, name="echo")
+    def echo_func(x: dict[str, str]) -> dict[str, str]:
+        return x
+
+    echo = Step.from_callable(echo_func, name="echo")
 
     p = Pipeline.model_construct(steps=[s, echo])
 

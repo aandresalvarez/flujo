@@ -589,7 +589,13 @@ class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
         )
         self.system_prompt_template: str = template_string
         self.prompt_variables: dict[str, Any] = variables_spec or {}
-        self._prompt_lock = asyncio.Lock()
+        self._prompt_lock: Optional[asyncio.Lock] = None
+
+    def _get_prompt_lock(self) -> asyncio.Lock:
+        """Lazily create the prompt lock on first access."""
+        if self._prompt_lock is None:
+            self._prompt_lock = asyncio.Lock()
+        return self._prompt_lock
 
     async def run_async(self, *args: Any, **kwargs: Any) -> Any:
         # Derive previous_step from args or kwargs
@@ -700,7 +706,7 @@ class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
                 pass
 
             # Temporarily override system prompt with concurrency protection
-            async with self._prompt_lock:
+            async with self._get_prompt_lock():
                 original_prompt = getattr(self._agent, "system_prompt", None)
                 try:
                     setattr(self._agent, "system_prompt", final_system_prompt)

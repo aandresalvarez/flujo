@@ -132,8 +132,11 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
                     # Relaxed check: allow if name matches PipelineContext to avoid import/reloading issues in tests
                     if not any(
                         (isinstance(a, type) and issubclass(a, BaseModel))
-                        or getattr(a, "__name__", "") == "PipelineContext"
-                        or (isinstance(a, str) and ("PipelineContext" in a or "_BaseModel" in a))
+                        or getattr(a, "__name__", "") in ("PipelineContext", "BaseModel")
+                        or (
+                            isinstance(a, str)
+                            and ("PipelineContext" in a or "_BaseModel" in a or "BaseModel" in a)
+                        )
                         for a in args
                     ):
                         raise ConfigurationError(
@@ -141,8 +144,11 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
                         )
                 elif not (
                     (isinstance(ann, type) and issubclass(ann, BaseModel))
-                    or getattr(ann, "__name__", "") == "PipelineContext"
-                    or (isinstance(ann, str) and ("PipelineContext" in ann or "_BaseModel" in ann))
+                    or getattr(ann, "__name__", "") in ("PipelineContext", "BaseModel")
+                    or (
+                        isinstance(ann, str)
+                        and ("PipelineContext" in ann or "_BaseModel" in ann or "BaseModel" in ann)
+                    )
                 ):
                     raise ConfigurationError(
                         f"Parameter '{p.name}' must be annotated with a BaseModel subclass"
@@ -158,11 +164,20 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
                 origin = get_origin(ann)
                 if origin in {Union, getattr(types, "UnionType", Union)}:
                     args = get_args(ann)
-                    if not any(isinstance(a, type) and issubclass(a, AppResources) for a in args):
+                    if not any(
+                        (isinstance(a, type) and issubclass(a, AppResources))
+                        or getattr(a, "__name__", "") == "AppResources"
+                        or (isinstance(a, str) and "AppResources" in a)
+                        for a in args
+                    ):
                         raise ConfigurationError(
                             "Parameter 'resources' must be annotated with an AppResources subclass"
                         )
-                elif not (isinstance(ann, type) and issubclass(ann, AppResources)):
+                elif not (
+                    (isinstance(ann, type) and issubclass(ann, AppResources))
+                    or getattr(ann, "__name__", "") == "AppResources"
+                    or (isinstance(ann, str) and "AppResources" in ann)
+                ):
                     raise ConfigurationError(
                         "Parameter 'resources' must be annotated with an AppResources subclass"
                     )

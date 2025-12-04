@@ -33,6 +33,12 @@ class TestSchemaMigrationRobustness:
             import aiosqlite
 
             async with aiosqlite.connect(backend.db_path) as db:
+                # Drop indexes first so ALTER TABLE DROP COLUMN succeeds on SQLite
+                await db.execute("DROP INDEX IF EXISTS idx_runs_status")
+                await db.execute("DROP INDEX IF EXISTS idx_runs_pipeline_id")
+                await db.execute("DROP INDEX IF EXISTS idx_runs_created_at")
+                await db.execute("DROP INDEX IF EXISTS idx_runs_pipeline_name")
+
                 # Get current columns
                 cursor = await db.execute("PRAGMA table_info(runs)")
                 columns = {row[1] for row in await cursor.fetchall()}

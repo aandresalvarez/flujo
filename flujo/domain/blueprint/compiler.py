@@ -29,11 +29,17 @@ class DeclarativeAgentModel(BaseModel):
 class DeclarativeBlueprintCompiler:
     """Compiler that pre-compiles declarative agents and wires steps using 'uses'."""
 
-    def __init__(self, blueprint: BlueprintPipelineModel, base_dir: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        blueprint: BlueprintPipelineModel,
+        base_dir: Optional[str] = None,
+        _visited: Optional[set[str]] = None,
+    ) -> None:
         self.blueprint = blueprint
         self._compiled_agents: dict[str, Any] = {}
         self._compiled_imports: dict[str, Any] = {}
         self._base_dir: Optional[str] = base_dir
+        self._visited = _visited
 
     def _validate_and_coerce_max_retries(
         self, max_retries_opt: Any, agent_name: str
@@ -316,7 +322,10 @@ class DeclarativeBlueprintCompiler:
                 sub_base_dir = os.path.dirname(real_path)
                 # Use loader entrypoint to ensure same validation and compilation path
                 sub_pipeline = load_pipeline_blueprint_from_yaml(
-                    text, base_dir=sub_base_dir, source_file=real_path
+                    text,
+                    base_dir=sub_base_dir,
+                    source_file=real_path,
+                    _visited=self._visited,
                 )
                 self._compiled_imports[alias] = sub_pipeline
             except Exception as e:

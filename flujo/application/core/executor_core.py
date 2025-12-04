@@ -251,7 +251,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._cache_key_generator = cache_key_generator or DefaultCacheKeyGenerator(self._hasher)
 
         self._cache_locks: Dict[str, asyncio.Lock] = {}
-        self._cache_locks_lock = asyncio.Lock()
+        self._cache_locks_lock: Optional[asyncio.Lock] = None
 
         # Strict behavior settings (defaults can be overridden by global settings)
         self._strict_context_isolation = (
@@ -294,17 +294,12 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self.hitl_step_executor = hitl_step_executor or DefaultHitlStepExecutor()
         self.cache_step_executor = cache_step_executor or DefaultCacheStepExecutor()
         # ImportStep executor (policy-driven)
-        from typing import Optional as _Optional
         from .step_policies import (
             DefaultImportStepExecutor as _DefaultImportStepExecutor,
             ImportStepExecutor as _ImportStepExecutor,
         )
 
-        self.import_step_executor: _Optional[_ImportStepExecutor] = None
-        try:
-            self.import_step_executor = _DefaultImportStepExecutor()
-        except Exception:  # pragma: no cover - defensive
-            self.import_step_executor = None
+        self.import_step_executor: _ImportStepExecutor = _DefaultImportStepExecutor()
         self._import_orchestrator = ImportOrchestrator(self.import_step_executor)
 
         # FSD-010: Initialize and populate the policy registry used for dispatch
@@ -334,12 +329,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         # Initialize orchestrators that depend on executors registered above
 
+    def _get_cache_locks_lock(self) -> asyncio.Lock:
+        """Lazily create the cache locks lock on first access."""
+        if self._cache_locks_lock is None:
+            self._cache_locks_lock = asyncio.Lock()
+        return self._cache_locks_lock
+
     @property
     def cache(self) -> _LRUCache:
         return self._cache_manager.get_internal_cache()
 
-    def clear_cache(self) -> None:
-        self._cache_manager.clear_cache()
+    async def clear_cache(self) -> None:
+        await self._cache_manager.clear_cache()
 
     def _cache_key(self, frame: Any) -> str:
         return self._cache_manager.generate_cache_key(

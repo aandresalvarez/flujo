@@ -17,7 +17,13 @@ class FileBackend(StateBackend):
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self.path.mkdir(parents=True, exist_ok=True)
-        self._lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Lazily create the lock on first access."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     def _resolve_path(self, run_id: str) -> Path:
         """Return an absolute path for the given ``run_id`` within ``self.path``.
@@ -39,7 +45,7 @@ class FileBackend(StateBackend):
         file_path = self._resolve_path(run_id)
         # Use proper serialization that fails fast on non-serializable objects
         data = serialize_to_json(state)
-        async with self._lock:
+        async with self._get_lock():
             await asyncio.to_thread(self._atomic_write, file_path, data.encode())
 
     def _atomic_write(self, file_path: Path, data: bytes) -> None:
@@ -52,7 +58,7 @@ class FileBackend(StateBackend):
 
     async def load_state(self, run_id: str) -> Optional[JSONObject]:
         file_path = self._resolve_path(run_id)
-        async with self._lock:
+        async with self._get_lock():
             if not file_path.exists():
                 return None
             return await asyncio.to_thread(self._read_json, file_path)
@@ -65,7 +71,7 @@ class FileBackend(StateBackend):
 
     async def delete_state(self, run_id: str) -> None:
         file_path = self._resolve_path(run_id)
-        async with self._lock:
+        async with self._get_lock():
             if file_path.exists():
                 await asyncio.to_thread(file_path.unlink)
 

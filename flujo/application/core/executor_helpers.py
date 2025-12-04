@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional, cast, Callable, Awaitable, TypeVar, Union
 
 from pydantic import BaseModel
@@ -241,7 +241,10 @@ async def execute_flow(
         if handled is not None:
             return cast(Outcome, handled)
         raise
-    except (UsageLimitExceededError, MockDetectionError, InfiniteFallbackError):
+    except (UsageLimitExceededError, MockDetectionError):
+        raise
+    except InfiniteFallbackError:
+        # Control-flow exceptions must propagate to allow orchestrators to react.
         raise
     except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
         raise
@@ -683,15 +686,21 @@ class _UsageTracker:
     total_cost_usd: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    _lock: asyncio.Lock = asyncio.Lock()
+    _lock: Optional[asyncio.Lock] = field(init=False, default=None)
+
+    def _get_lock(self) -> asyncio.Lock:
+        """Lazily create the lock on first access."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     async def add(self, cost_usd: float, tokens: int) -> None:
-        async with self._lock:
+        async with self._get_lock():
             self.total_cost_usd += float(cost_usd)
             self.prompt_tokens += int(tokens)
 
     async def guard(self, limits: UsageLimits) -> None:
-        async with self._lock:
+        async with self._get_lock():
             if (
                 limits.total_cost_usd_limit is not None
                 and self.total_cost_usd > limits.total_cost_usd_limit
@@ -702,10 +711,10 @@ class _UsageTracker:
                 raise UsageLimitExceededError("Token limit exceeded")
 
     async def snapshot(self) -> tuple[float, int, int]:
-        async with self._lock:
+        async with self._get_lock():
             return self.total_cost_usd, self.prompt_tokens, self.completion_tokens
 
     async def get_current_totals(self) -> tuple[float, int]:
-        async with self._lock:
+        async with self._get_lock():
             total_tokens = self.prompt_tokens + self.completion_tokens
             return self.total_cost_usd, total_tokens
