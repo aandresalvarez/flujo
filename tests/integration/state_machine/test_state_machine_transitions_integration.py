@@ -31,6 +31,7 @@ def _yaml_pause_self_transition() -> str:
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow  # HITL/stateful resume (uses SQLite backend, interactive steps)
 @pytest.mark.serial  # StateMachine tests have race conditions under xdist
 async def test_yaml_pause_transition_self_reentry() -> None:
     pipeline = load_pipeline_blueprint_from_yaml(_yaml_pause_self_transition())
