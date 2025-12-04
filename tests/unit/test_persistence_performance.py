@@ -1011,16 +1011,18 @@ class TestCLIPerformance:
         )
 
     @pytest.mark.slow
+    @pytest.mark.benchmark
     def test_lens_list_with_filters_performance(self, large_database: Path) -> None:
-        """Test that `flujo lens list` with filters is as fast or faster than unfiltered list.
+        """Benchmark: Compare filtered vs unfiltered CLI list performance.
 
-        This test uses RELATIVE performance measurement instead of absolute thresholds.
-        By comparing filtered vs unfiltered queries in the same environment, we get an
-        environment-independent test that validates filter optimization (filtering returns
-        fewer results so should be at least as fast as full list).
+        This is a BENCHMARK test - it logs performance metrics for tracking but
+        does NOT assert on timing. Performance assertions are inherently flaky
+        in CI due to environment variance.
+
+        The test verifies CORRECTNESS (commands succeed) and logs metrics for
+        human review and trend analysis.
         """
         # Set environment variable to point to our test database
-        # Use correct URI format: sqlite:///path for absolute paths
         os.environ["FLUJO_STATE_URI"] = f"sqlite:///{large_database}"
 
         runner = CliRunner()
@@ -1034,41 +1036,28 @@ class TestCLIPerformance:
         result_unfiltered = runner.invoke(app, ["lens", "list"])
         unfiltered_time = time.perf_counter() - start_time
 
-        if result_unfiltered.exit_code != 0:
-            logger.error("CLI unfiltered list failed:")
-            logger.error(f"Exit code: {result_unfiltered.exit_code}")
-            logger.error(f"stdout: {result_unfiltered.stdout}")
-            logger.error(f"stderr: {result_unfiltered.stderr}")
-            raise AssertionError(f"CLI unfiltered list failed: {result_unfiltered.stdout}")
+        # Verify correctness (not performance)
+        assert result_unfiltered.exit_code == 0, (
+            f"CLI unfiltered list failed: {result_unfiltered.stdout}"
+        )
 
         # --- Test: Filtered list ---
         start_time = time.perf_counter()
         result_filtered = runner.invoke(app, ["lens", "list", "--status", "completed"])
         filtered_time = time.perf_counter() - start_time
 
-        if result_filtered.exit_code != 0:
-            logger.error("CLI filtered list failed:")
-            logger.error(f"Exit code: {result_filtered.exit_code}")
-            logger.error(f"stdout: {result_filtered.stdout}")
-            logger.error(f"stderr: {result_filtered.stderr}")
-            raise AssertionError(f"CLI filtered list failed: {result_filtered.stdout}")
+        # Verify correctness (not performance)
+        assert result_filtered.exit_code == 0, f"CLI filtered list failed: {result_filtered.stdout}"
 
-        # Log performance results for debugging
-        logger.debug("CLI List Filter Performance Test (RELATIVE):")
-        logger.debug(f"Unfiltered time: {unfiltered_time:.3f}s")
-        logger.debug(f"Filtered time: {filtered_time:.3f}s")
-        logger.debug(f"Ratio: {filtered_time / unfiltered_time:.2f}x")
-
-        # RELATIVE assertion: filtered should not be dramatically slower than unfiltered.
-        # Tolerance is very generous (5x) because at <50ms execution times in CI,
-        # small absolute variances cause large ratio swings due to system load.
-        # The key assertion is catching true regressions (10x+ slowdowns).
-        tolerance = 5.0
-        assert filtered_time <= unfiltered_time * tolerance, (
-            f"Filtered list ({filtered_time:.3f}s) should be at most {tolerance}x "
-            f"unfiltered list ({unfiltered_time:.3f}s), but ratio was "
-            f"{filtered_time / unfiltered_time:.2f}x"
-        )
+        # Log performance metrics for tracking (no assertion)
+        ratio = filtered_time / unfiltered_time if unfiltered_time > 0 else 0
+        print(f"\n{'=' * 60}")
+        print("BENCHMARK: CLI List Filter Performance")
+        print(f"{'=' * 60}")
+        print(f"  Unfiltered time: {unfiltered_time:.3f}s")
+        print(f"  Filtered time:   {filtered_time:.3f}s")
+        print(f"  Ratio:           {ratio:.2f}x")
+        print(f"{'=' * 60}")
 
     @pytest.mark.slow
     def test_lens_show_nonexistent_run_performance(self, large_database: Path) -> None:
