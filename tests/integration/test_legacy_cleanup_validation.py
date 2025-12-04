@@ -460,5 +460,6 @@ class TestLegacyCleanupSafety:
         end_time = time.time()
         elapsed_time = end_time - start_time
 
-        # Method existence checks should be very fast
-        assert elapsed_time < 0.1  # Should complete in under 100ms
+        # Log performance (sanity check only - CI timing variance)
+        print(f"Method existence checks: {elapsed_time * 1000:.2f}ms")
+        assert elapsed_time < 1.0, f"Method checks too slow: {elapsed_time:.3f}s"

@@ -253,6 +253,46 @@ def _clear_state_uri_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reset_config_cache():
+    """Reset config manager cache between tests to prevent state pollution.
+
+    Config managers cache on first load. If Test A loads config with certain
+    settings, Test B's environment variable changes are ignored because the
+    cached values are returned. This fixture clears known config caches after
+    each test to ensure proper isolation.
+
+    This is critical for tests that use FLUJO_CONFIG_PATH or mock get_cost_config().
+    """
+    yield
+    # Clear config caches after each test
+    try:
+        from flujo.infra import config
+
+        # Clear cost config cache
+        if hasattr(config, "_cached_cost_config"):
+            config._cached_cost_config = None
+        if hasattr(config, "_cost_config_cache"):
+            config._cost_config_cache = None
+        # Clear settings cache
+        if hasattr(config, "_cached_settings"):
+            config._cached_settings = None
+        if hasattr(config, "_settings_cache"):
+            config._settings_cache = None
+    except ImportError:
+        pass
+    try:
+        from flujo.infra import config_manager
+
+        # Clear config manager singleton/cache
+        if hasattr(config_manager, "_config_manager"):
+            config_manager._config_manager = None
+        if hasattr(config_manager, "_cached_config"):
+            config_manager._cached_config = None
+    except ImportError:
+        pass
+
+
+@pytest.fixture(autouse=True)
 def _clear_project_root_env(monkeypatch):
     """Avoid FLUJO_PROJECT_ROOT leakage between tests (affects project root helpers)."""
 
@@ -293,6 +333,49 @@ def _reset_skill_registry_defaults():
         # Keep tests running even if optional deps for extras are unavailable
         pass
     yield
+
+
+def assert_no_major_regression(
+    actual_time: float,
+    baseline_time: float,
+    operation_name: str,
+    max_ratio: float = 10.0,
+    absolute_max: float = 30.0,
+) -> None:
+    """Assert performance with CI-appropriate thresholds.
+
+    This helper provides generous thresholds suitable for CI environments where
+    timing variance is high due to VM scheduling, resource contention, and cold starts.
+
+    Use this instead of tight ratio assertions like "< 2x" which are inherently flaky.
+
+    Parameters
+    ----------
+    actual_time : float
+        The measured time in seconds
+    baseline_time : float
+        The baseline/reference time in seconds
+    operation_name : str
+        Human-readable name for error messages
+    max_ratio : float, default 10.0
+        Maximum allowed ratio of actual/baseline (catches major regressions)
+    absolute_max : float, default 30.0
+        Absolute maximum time in seconds (sanity check)
+
+    Raises
+    ------
+    AssertionError
+        If the ratio exceeds max_ratio or time exceeds absolute_max
+    """
+    if baseline_time > 0:
+        ratio = actual_time / baseline_time
+        assert ratio < max_ratio, (
+            f"{operation_name}: {actual_time:.3f}s vs baseline {baseline_time:.3f}s. "
+            f"Ratio {ratio:.1f}x exceeds {max_ratio}x threshold (major regression)"
+        )
+    assert actual_time < absolute_max, (
+        f"{operation_name}: {actual_time:.3f}s exceeds {absolute_max}s absolute max"
+    )
 
 
 def create_test_flujo(

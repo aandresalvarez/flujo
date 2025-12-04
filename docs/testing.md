@@ -436,6 +436,106 @@ PYTEST_ADDOPTS='-o log_cli=true --log-cli-level=DEBUG' make test-fast
 make test-collection-only
 ```
 
+## CI Stability & Test Isolation
+
+This section documents patterns to prevent "passes in PR, fails in main" scenarios.
+
+### Test Isolation Fixtures
+
+The following autouse fixtures in `tests/conftest.py` ensure proper test isolation:
+
+1. **`_reset_config_cache`**: Clears config manager caches after each test
+2. **`_clear_state_uri_env`**: Prevents `FLUJO_STATE_URI` leakage
+3. **`_clear_project_root_env`**: Prevents `FLUJO_PROJECT_ROOT` leakage
+4. **`_reset_validation_overrides`**: Resets validation rule caches
+5. **`_reset_skill_registry_defaults`**: Ensures builtins are registered
+
+### Config Mocking Pattern
+
+**❌ Bad Pattern** (relies on config not being cached):
+```python
+m.setenv("FLUJO_CONFIG_PATH", str(config_path))
+# Config may already be cached from a previous test!
+```
+
+**✅ Good Pattern** (mocks at point of use):
+```python
+from flujo.infra.config import ProviderPricing
+
+def mock_get_cost_config():
+    class MockCostConfig:
+        strict = True
+        providers = {"openai": {"gpt-4o": ProviderPricing(...)}}
+    return MockCostConfig()
+
+m.setattr("flujo.infra.config.get_cost_config", mock_get_cost_config)
+```
+
+### Performance Test Guidelines
+
+**Avoid tight timing thresholds** - CI environments have high variance due to VM scheduling.
+
+**❌ Flaky Pattern** (tight thresholds):
+```python
+assert execution_time < 0.01  # 10ms - will fail randomly in CI
+assert ratio < 2.0  # Too tight for micro-timing
+```
+
+**✅ Stable Pattern** (generous thresholds):
+```python
+# Use the helper from conftest.py
+from tests.conftest import assert_no_major_regression
+
+assert_no_major_regression(
+    actual_time=execution_time,
+    baseline_time=baseline,
+    operation_name="HITL step execution",
+    max_ratio=10.0,      # 10x tolerance for CI variance
+    absolute_max=30.0,   # Sanity check only
+)
+
+# Or for micro-benchmarks, log-only pattern:
+print(f"Execution time: {execution_time * 1000:.2f}ms")
+assert execution_time < 1.0, "Major regression detected"  # 1s sanity check
+```
+
+### Threshold Guidelines
+
+| Operation Type | Recommended Threshold |
+|----------------|----------------------|
+| Micro-ops (< 10ms expected) | 1s absolute max, log metrics |
+| Relative comparisons | 10x ratio max |
+| Large operations | 30-60s absolute max |
+| Variance checks | 5x max variance |
+
+### StateMachine Test Isolation
+
+Tests that check `scratchpad.get("current_state")` are prone to race conditions under xdist.
+
+**Required markers for StateMachine integration tests:**
+```python
+@pytest.mark.serial  # Race conditions under xdist
+@pytest.mark.slow    # If using HITL or SQLite
+async def test_state_machine_transitions():
+    ...
+```
+
+**Files that typically need these markers:**
+- Tests checking `current_state` in scratchpad
+- HITL tests with pause/resume
+- Tests using SQLite backends
+
+### Root Causes Reference
+
+| Symptom | Root Cause | Fix |
+|---------|------------|-----|
+| Config not picked up | Config manager cached | Mock `get_cost_config()` directly |
+| `current_state` is None | Race condition in xdist | Mark as `@pytest.mark.serial` |
+| 5.16x > 5.0x threshold | Micro-timing variance | Use 10x+ thresholds or log-only |
+| HITL test fails randomly | State pollution | Mark as `@pytest.mark.slow` + `@pytest.mark.serial` |
+
+---
+
 ## Best Practices
 
 ### For Developers
