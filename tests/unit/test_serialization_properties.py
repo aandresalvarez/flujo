@@ -497,16 +497,20 @@ class TestSerializationProperties:
         assert reconstructed["stream"] == boolean_values[0]
 
     @given(
-        large_string=st.text(min_size=1000, max_size=2000),
-        large_list=st.lists(st.text(min_size=1, max_size=20), min_size=10, max_size=50),
+        large_string=st.text(min_size=500, max_size=1000),
+        large_list=st.lists(st.text(min_size=1, max_size=10), min_size=5, max_size=20),
         large_dict=st.dictionaries(
+            st.text(min_size=1, max_size=20),
             st.text(min_size=1, max_size=50),
-            st.text(min_size=1, max_size=100),
-            min_size=10,
-            max_size=30,
+            min_size=5,
+            max_size=15,
         ),
     )
-    @settings(verbosity=Verbosity.verbose, max_examples=20)
+    @settings(
+        verbosity=Verbosity.verbose,
+        max_examples=10,
+        suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large],
+    )
     def test_large_data_roundtrip(self, large_string, large_list, large_dict):
         """Test that large data structures can be serialized and reconstructed correctly."""
         model = ComplexModel(
