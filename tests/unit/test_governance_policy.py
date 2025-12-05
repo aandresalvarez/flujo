@@ -6,10 +6,8 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from flujo.application.core.agent_orchestrator import AgentOrchestrator
-from flujo.application.core.governance_policy import (
-    GovernanceDecision,
-    GovernanceEngine,
-)
+from flujo.application.core.governance_policy import GovernanceDecision, GovernanceEngine
+from flujo.application.core.runtime_builder import FlujoRuntimeBuilder
 from flujo.exceptions import ConfigurationError
 
 
@@ -136,3 +134,13 @@ async def test_agent_orchestrator_allows_when_policy_allows() -> None:
 
     orchestrator._execution_runner.execute.assert_called_once()
     assert result == "ok"
+
+
+@pytest.mark.asyncio
+async def test_runtime_builder_respects_settings(monkeypatch: Any) -> None:
+    monkeypatch.setenv("FLUJO_GOVERNANCE_MODE", "deny_all")
+    deps = FlujoRuntimeBuilder().build()
+    engine = deps.governance_engine
+    assert isinstance(engine, GovernanceEngine)
+    with pytest.raises(ConfigurationError):
+        await engine.enforce(core=object(), step=Mock(), data=None, context=None, resources=None)

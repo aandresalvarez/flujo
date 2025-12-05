@@ -33,7 +33,12 @@ from .estimation import (
     build_default_estimator_factory,
 )
 from .fallback_handler import FallbackHandler
-from .governance_policy import GovernanceEngine, GovernancePolicy
+from .governance_policy import (
+    AllowAllGovernancePolicy,
+    DenyAllGovernancePolicy,
+    GovernanceEngine,
+    GovernancePolicy,
+)
 from .execution_dispatcher import ExecutionDispatcher
 from .hitl_orchestrator import HitlOrchestrator
 from .hydration_manager import HydrationManager
@@ -74,6 +79,7 @@ from .step_policies import (
     TimeoutRunner,
     ValidatorInvoker,
 )
+from ...utils.config import get_settings
 
 if TYPE_CHECKING:  # pragma: no cover
     from .executor_core import ExecutorCore
@@ -258,9 +264,15 @@ class FlujoRuntimeBuilder:
         )
         step_handler_factory_obj = step_handler_factory or (lambda core: StepHandler(core))
         agent_handler_factory_obj = agent_handler_factory or (lambda core: AgentHandler(core))
-        governance_engine_obj = GovernanceEngine(
-            policies=governance_policies if governance_policies is not None else None
-        )
+        settings = get_settings()
+        policies = governance_policies
+        if policies is None:
+            mode = getattr(settings, "governance_mode", "allow_all")
+            if mode == "deny_all":
+                policies = (DenyAllGovernancePolicy(),)
+            else:
+                policies = (AllowAllGovernancePolicy(),)
+        governance_engine_obj = GovernanceEngine(policies=policies)
 
         return ExecutorCoreDeps(
             agent_runner=agent_runner_obj,

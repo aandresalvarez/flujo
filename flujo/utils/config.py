@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-from typing import Optional
+from typing import Literal, Optional
 
 
 @dataclass
@@ -18,6 +18,7 @@ class Settings:
     pure_quota_mode: bool = True
     test_mode: bool = False
     warn_legacy: bool = False
+    governance_mode: Literal["allow_all", "deny_all"] = "allow_all"
 
 
 _CACHED_SETTINGS: Optional[Settings] = None
@@ -28,11 +29,21 @@ def _load_from_env() -> Settings:
         v = os.getenv(name, "")
         return v.lower() in {"1", "true", "yes"}
 
+    def _mode(
+        name: str, default: Literal["allow_all", "deny_all"]
+    ) -> Literal["allow_all", "deny_all"]:
+        value = os.getenv(name, default)
+        normalized = value.lower().strip()
+        if normalized not in {"allow_all", "deny_all"}:
+            return default
+        return normalized  # type: ignore[return-value]
+
     return Settings(
         # Always use pure quota mode - legacy system removed
         pure_quota_mode=True,
         test_mode=_flag("FLUJO_TEST_MODE"),
         warn_legacy=_flag("FLUJO_WARN_LEGACY"),
+        governance_mode=_mode("FLUJO_GOVERNANCE_MODE", "allow_all"),
     )
 
 
