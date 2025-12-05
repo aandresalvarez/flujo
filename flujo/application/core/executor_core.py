@@ -10,20 +10,8 @@ from ...exceptions import (
 )
 from ...infra.settings import get_settings
 from .quota_manager import QuotaManager
-from .fallback_handler import FallbackHandler
-from .background_task_manager import BackgroundTaskManager
-from .cache_manager import CacheManager
-from .hydration_manager import HydrationManager
 from .execution_dispatcher import ExecutionDispatcher
-from .agent_orchestrator import AgentOrchestrator
-from .conditional_orchestrator import ConditionalOrchestrator
-from .hitl_orchestrator import HitlOrchestrator
-from .loop_orchestrator import LoopOrchestrator
 from .failure_builder import build_failure_outcome
-from .pipeline_orchestrator import PipelineOrchestrator
-from .import_orchestrator import ImportOrchestrator
-from .validation_orchestrator import ValidationOrchestrator
-from .step_history_tracker import StepHistoryTracker
 from .policy_handlers import PolicyHandlers
 from .dispatch_handler import DispatchHandler
 from .result_handler import ResultHandler
@@ -31,6 +19,7 @@ from .telemetry_handler import TelemetryHandler
 from .step_handler import StepHandler
 from .agent_handler import AgentHandler
 from .optimization_config_stub import OptimizationConfig
+from .runtime_builder import ExecutorCoreDeps, FlujoRuntimeBuilder
 from .executor_helpers import (
     _UsageTracker,
     format_feedback,
@@ -64,18 +53,6 @@ from .step_policies import (
     AgentStepExecutor,
     CacheStepExecutor,
     ConditionalStepExecutor,
-    DefaultAgentResultUnpacker,
-    DefaultAgentStepExecutor,
-    DefaultCacheStepExecutor,
-    DefaultConditionalStepExecutor,
-    DefaultDynamicRouterStepExecutor,
-    DefaultHitlStepExecutor,
-    DefaultLoopStepExecutor,
-    DefaultParallelStepExecutor,
-    DefaultPluginRedirector,
-    DefaultSimpleStepExecutor,
-    DefaultTimeoutRunner,
-    DefaultValidatorInvoker,
     DynamicRouterStepExecutor,
     HitlStepExecutor,
     LoopStepExecutor,
@@ -87,12 +64,9 @@ from .step_policies import (
 )
 from .policy_registry import PolicyRegistry, create_default_registry
 from .types import TContext_w_Scratch, ExecutionFrame
-from .context_update_manager import ContextUpdateManager
 from .estimation import (
     UsageEstimator,
-    HeuristicUsageEstimator,
     UsageEstimatorFactory,
-    build_default_estimator_factory,
 )
 from .default_components import (
     DefaultAgentRunner,
@@ -203,6 +177,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         enable_optimized_error_handling: bool = True,
         state_providers: Optional[Dict[str, StateProvider[Any]]] = None,
         state_manager: Optional["StateManager[Any]"] = None,
+        deps: Optional[ExecutorCoreDeps] = None,
     ) -> None:
         # Validate parameters for compatibility
         if cache_size <= 0:
@@ -222,33 +197,72 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 stacklevel=2,
             )
 
-        self._agent_runner = agent_runner or DefaultAgentRunner()
-        self._processor_pipeline = processor_pipeline or DefaultProcessorPipeline()
-        self._validator_runner = validator_runner or DefaultValidatorRunner()
-        self._plugin_runner = plugin_runner or DefaultPluginRunner()
-        self._usage_meter = usage_meter or ThreadSafeMeter()
-        self._cache_manager = CacheManager(
-            backend=cache_backend or InMemoryLRUBackend(max_size=cache_size, ttl_s=cache_ttl),
-            key_generator=cache_key_generator,
+        builder = FlujoRuntimeBuilder()
+        deps_obj = deps or builder.build(
+            agent_runner=agent_runner,
+            processor_pipeline=processor_pipeline,
+            validator_runner=validator_runner,
+            plugin_runner=plugin_runner,
+            usage_meter=usage_meter,
+            telemetry=telemetry,
+            quota_manager=quota_manager,
+            cache_backend=cache_backend,
+            cache_key_generator=cache_key_generator,
+            serializer=serializer,
+            hasher=hasher,
             enable_cache=enable_cache,
+            cache_size=cache_size,
+            cache_ttl=cache_ttl,
+            fallback_handler=None,
+            hydration_manager=None,
+            background_task_manager=None,
+            context_update_manager=None,
+            step_history_tracker=None,
+            estimator_factory=estimator_factory,
+            usage_estimator=usage_estimator,
+            timeout_runner=timeout_runner,
+            unpacker=unpacker,
+            plugin_redirector=plugin_redirector,
+            validator_invoker=validator_invoker,
+            simple_step_executor=simple_step_executor,
+            agent_step_executor=agent_step_executor,
+            loop_step_executor=loop_step_executor,
+            parallel_step_executor=parallel_step_executor,
+            conditional_step_executor=conditional_step_executor,
+            dynamic_router_step_executor=dynamic_router_step_executor,
+            hitl_step_executor=hitl_step_executor,
+            cache_step_executor=cache_step_executor,
+            agent_orchestrator=None,
+            conditional_orchestrator=None,
+            loop_orchestrator=None,
+            hitl_orchestrator=None,
+            import_orchestrator=None,
+            pipeline_orchestrator=None,
+            validation_orchestrator=None,
+            state_providers=state_providers,
         )
+
+        self._agent_runner = deps_obj.agent_runner
+        self._processor_pipeline = deps_obj.processor_pipeline
+        self._validator_runner = deps_obj.validator_runner
+        self._plugin_runner = deps_obj.plugin_runner
+        self._usage_meter = deps_obj.usage_meter
+        self._cache_manager = deps_obj.cache_manager
 
         self._cache_backend = self._cache_manager.backend
-        self._fallback_handler = FallbackHandler()
-        self._telemetry = telemetry or DefaultTelemetry()
+        self._fallback_handler = deps_obj.fallback_handler
+        self._telemetry = deps_obj.telemetry
         self._enable_cache = enable_cache
         # Estimation selection: factory first, then direct estimator, then default
-        self._estimator_factory: UsageEstimatorFactory = (
-            estimator_factory or build_default_estimator_factory()
-        )
-        self._usage_estimator: UsageEstimator = usage_estimator or HeuristicUsageEstimator()
-        self._step_history_tracker = StepHistoryTracker()
-        self._quota_manager = quota_manager or QuotaManager()
+        self._estimator_factory = deps_obj.estimator_factory
+        self._usage_estimator = deps_obj.usage_estimator
+        self._step_history_tracker = deps_obj.step_history_tracker
+        self._quota_manager = deps_obj.quota_manager
         self._concurrency_limit = concurrency_limit
 
-        self._serializer = serializer or OrjsonSerializer()
-        self._hasher = hasher or Blake3Hasher()
-        self._cache_key_generator = cache_key_generator or DefaultCacheKeyGenerator(self._hasher)
+        self._serializer = deps_obj.serializer
+        self._hasher = deps_obj.hasher
+        self._cache_key_generator = deps_obj.cache_key_generator
 
         self._cache_locks: Dict[str, asyncio.Lock] = {}
         self._cache_locks_lock: Optional[asyncio.Lock] = None
@@ -258,55 +272,51 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             bool(strict_context_isolation) or _DEFAULT_STRICT_CONTEXT_ISOLATION
         )
         self._strict_context_merge = bool(strict_context_merge) or _DEFAULT_STRICT_CONTEXT_MERGE
-        self._hydration_manager = HydrationManager(state_providers)
+        self._hydration_manager = deps_obj.hydration_manager
         self._hydration_manager.set_telemetry(self._telemetry)
-        self._background_task_manager = BackgroundTaskManager()
+        self._background_task_manager = deps_obj.background_task_manager
         self.state_manager = state_manager
-        self._context_update_manager = ContextUpdateManager()
-        self._agent_orchestrator = AgentOrchestrator(plugin_runner=self._plugin_runner)
-        self._conditional_orchestrator = ConditionalOrchestrator()
-        self._hitl_orchestrator = HitlOrchestrator()
-        self._loop_orchestrator = LoopOrchestrator()
-        self._pipeline_orchestrator = PipelineOrchestrator()
-        self._validation_orchestrator = ValidationOrchestrator()
+        self._context_update_manager = deps_obj.context_update_manager
+        self._agent_orchestrator = deps_obj.agent_orchestrator
+        self._conditional_orchestrator = deps_obj.conditional_orchestrator
+        self._hitl_orchestrator = deps_obj.hitl_orchestrator
+        self._loop_orchestrator = deps_obj.loop_orchestrator
+        self._pipeline_orchestrator = deps_obj.pipeline_orchestrator
+        self._validation_orchestrator = deps_obj.validation_orchestrator
 
         self._state_providers = self._hydration_manager._state_providers
 
         # Assign policies
-        self.timeout_runner = timeout_runner or DefaultTimeoutRunner()
-        self.unpacker = unpacker or DefaultAgentResultUnpacker()
-        self.plugin_redirector = plugin_redirector or DefaultPluginRedirector(
-            self._plugin_runner, self._agent_runner
-        )
-        self.validator_invoker = validator_invoker or DefaultValidatorInvoker(
-            self._validator_runner
-        )
-        self.simple_step_executor = simple_step_executor or DefaultSimpleStepExecutor()
-        self.agent_step_executor = agent_step_executor or DefaultAgentStepExecutor()
-        self.loop_step_executor = loop_step_executor or DefaultLoopStepExecutor()
-        self.parallel_step_executor = parallel_step_executor or DefaultParallelStepExecutor()
-        self.conditional_step_executor = (
-            conditional_step_executor or DefaultConditionalStepExecutor()
-        )
-        self.dynamic_router_step_executor = (
-            dynamic_router_step_executor or DefaultDynamicRouterStepExecutor()
-        )
-        self.hitl_step_executor = hitl_step_executor or DefaultHitlStepExecutor()
-        self.cache_step_executor = cache_step_executor or DefaultCacheStepExecutor()
-        # ImportStep executor (policy-driven)
-        from .step_policies import (
-            DefaultImportStepExecutor as _DefaultImportStepExecutor,
-            ImportStepExecutor as _ImportStepExecutor,
-        )
-
-        self.import_step_executor: _ImportStepExecutor = _DefaultImportStepExecutor()
-        self._import_orchestrator = ImportOrchestrator(self.import_step_executor)
+        self.timeout_runner = deps_obj.timeout_runner
+        self.unpacker = deps_obj.unpacker
+        self.plugin_redirector = deps_obj.plugin_redirector
+        self.validator_invoker = deps_obj.validator_invoker
+        self.simple_step_executor = deps_obj.simple_step_executor
+        self.agent_step_executor = deps_obj.agent_step_executor
+        self.loop_step_executor = deps_obj.loop_step_executor
+        self.parallel_step_executor = deps_obj.parallel_step_executor
+        self.conditional_step_executor = deps_obj.conditional_step_executor
+        self.dynamic_router_step_executor = deps_obj.dynamic_router_step_executor
+        self.hitl_step_executor = deps_obj.hitl_step_executor
+        self.cache_step_executor = deps_obj.cache_step_executor
+        self.import_step_executor = deps_obj.import_step_executor
+        self._import_orchestrator = deps_obj.import_orchestrator
 
         # FSD-010: Initialize and populate the policy registry used for dispatch
-        self.policy_registry = policy_registry or create_default_registry(self)
+        registry_factory = deps_obj.policy_registry_factory
+        self.policy_registry = policy_registry or (
+            registry_factory(self)
+            if registry_factory is not None
+            else create_default_registry(self)
+        )
 
         # Policy handlers (delegated for composition-root slimming)
-        self._policy_handlers = PolicyHandlers(self)
+        policy_handlers_factory = deps_obj.policy_handlers_factory
+        self._policy_handlers = (
+            policy_handlers_factory(self)
+            if policy_handlers_factory is not None
+            else PolicyHandlers(self)
+        )
         self._policy_cache_step = self._policy_handlers.cache_step
         self._policy_import_step = self._policy_handlers.import_step
         self._policy_parallel_step = self._policy_handlers.parallel_step
@@ -320,12 +330,38 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._policy_handlers.register_all(self.policy_registry)
 
         # Dispatcher delegates to the shared policy registry
-        self._dispatcher = ExecutionDispatcher(self.policy_registry, core=self)
-        self._dispatch_handler = DispatchHandler(self)
-        self._result_handler = ResultHandler(self)
-        self._telemetry_handler = TelemetryHandler(self)
-        self._step_handler = StepHandler(self)
-        self._agent_handler = AgentHandler(self)
+        dispatcher_factory = deps_obj.dispatcher_factory
+        self._dispatcher = (
+            dispatcher_factory(self.policy_registry, self)
+            if dispatcher_factory is not None
+            else ExecutionDispatcher(self.policy_registry, core=self)
+        )
+        dispatch_handler_factory = deps_obj.dispatch_handler_factory
+        self._dispatch_handler = (
+            dispatch_handler_factory(self)
+            if dispatch_handler_factory is not None
+            else DispatchHandler(self)
+        )
+        result_handler_factory = deps_obj.result_handler_factory
+        self._result_handler = (
+            result_handler_factory(self)
+            if result_handler_factory is not None
+            else ResultHandler(self)
+        )
+        telemetry_handler_factory = deps_obj.telemetry_handler_factory
+        self._telemetry_handler = (
+            telemetry_handler_factory(self)
+            if telemetry_handler_factory is not None
+            else TelemetryHandler(self)
+        )
+        step_handler_factory = deps_obj.step_handler_factory
+        self._step_handler = (
+            step_handler_factory(self) if step_handler_factory is not None else StepHandler(self)
+        )
+        agent_handler_factory = deps_obj.agent_handler_factory
+        self._agent_handler = (
+            agent_handler_factory(self) if agent_handler_factory is not None else AgentHandler(self)
+        )
 
         # Initialize orchestrators that depend on executors registered above
 

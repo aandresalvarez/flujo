@@ -71,6 +71,13 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     *   Refactor `ExecutorCore.__init__` to accept instances of `QuotaManager`, `AgentOrchestrator`, etc.
     *   Create a `FlujoRuntimeBuilder` factory to handle wiring.
 *   **DoD:** `ExecutorCore` can be instantiated in a unit test with Mock dependencies.
+*   **Plan (current):**
+    *   Minimal injectable set tracked: runners/pipelines, usage/telemetry/quota, cache & serialization, policy executors/orchestrators, and core-bound registry/dispatcher/handlers (via factories).
+    1. Define an `ExecutorCoreDeps` dataclass to capture injectables (runners, managers, cache/serialization, policy executors, orchestrators, handlers, registry/dispatcher).
+    2. Add `FlujoRuntimeBuilder` that produces `ExecutorCoreDeps` with current defaults; allow targeted overrides (telemetry, quota, cache backend, runners, policy executors).
+    3. Refactor `ExecutorCore.__init__` to accept `deps: ExecutorCoreDeps | None` plus legacy kwargs as thin overrides to keep compatibility.
+    4. Add tests proving `ExecutorCore` can be built with mocks via the builder and that legacy kwargs still work.
+    5. Run `make test-fast` and `make precommit`.
 
 ---
 
