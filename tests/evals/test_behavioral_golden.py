@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from flujo.application.core.execution_dispatcher import ExecutionDispatcher
 from flujo.application.core.policies.import_policy import DefaultImportStepExecutor
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.policy_registry import PolicyRegistry
 from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.types import ExecutionFrame
@@ -205,7 +206,7 @@ async def test_import_step_outputs_mapping_and_context_isolation():
     core = DummyCore(child_ctx, inner_sr)
     executor = DefaultImportStepExecutor()
 
-    outcome = await executor.execute(
+    frame = make_execution_frame(
         core,
         step,
         data=None,
@@ -213,7 +214,13 @@ async def test_import_step_outputs_mapping_and_context_isolation():
         resources=None,
         limits=None,
         context_setter=lambda _pr, _ctx: None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await executor.execute(core, frame)
 
     assert isinstance(outcome.step_result, StepResult)
     sr = outcome.step_result
@@ -226,7 +233,7 @@ async def test_import_step_outputs_mapping_and_context_isolation():
 
     # When outputs is empty list, no merge/output back
     step.outputs = []
-    outcome2 = await executor.execute(
+    frame2 = make_execution_frame(
         core,
         step,
         data=None,
@@ -234,5 +241,11 @@ async def test_import_step_outputs_mapping_and_context_isolation():
         resources=None,
         limits=None,
         context_setter=lambda _pr, _ctx: None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome2 = await executor.execute(core, frame2)
     assert outcome2.step_result.output is None
