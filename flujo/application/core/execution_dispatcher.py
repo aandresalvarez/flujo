@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable, Optional, Type, Union
 
 from ...domain.dsl.step import Step
 from ...domain.models import Failure, StepOutcome, StepResult
+from ...infra import telemetry as _telemetry
 from ...utils.config import get_settings
 from .types import ExecutionFrame
 from .policy_registry import PolicyRegistry, StepPolicy
@@ -95,12 +96,15 @@ class ExecutionDispatcher:
             fallback_depth = 0
         try:
             if get_settings().warn_legacy:
-                warnings.warn(
+                msg = (
                     f"Legacy policy signature detected for {type(policy).__name__}; "
-                    "please migrate execute(core, frame) to ExecutionFrame.",
-                    DeprecationWarning,
-                    stacklevel=3,
+                    "please migrate execute(core, frame) to ExecutionFrame."
                 )
+                warnings.warn(msg, DeprecationWarning, stacklevel=3)
+                try:
+                    _telemetry.logfire.warning(msg)
+                except Exception:
+                    pass
         except Exception:
             pass
 
