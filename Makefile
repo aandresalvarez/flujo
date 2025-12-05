@@ -280,7 +280,7 @@ test-benchmark-marked: .uv ## Show which tests are marked as benchmark
 .PHONY: test-hang-guard
 test-hang-guard: .uv ## Find what's hanging: hard timeouts + stack dumps on stall (enhanced runner)
 	@echo "🧯 Hang guard: hard timeouts + stack dumps (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers 4 --timeout 60 --faulthandler-timeout 60 --tb --pytest-args "-p pytest_forked"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers 4 --timeout 60 --faulthandler-timeout 60 --tb
 
 .PHONY: test-top-slowest
 test-top-slowest: .uv ## Show the slowest test offenders (fast subset)
@@ -340,9 +340,11 @@ test-random-order: .uv ## Run tests in random order to reveal order dependencies
 		-p pytest_randomly
 
 .PHONY: test-forked
-test-forked: .uv ## Run each test in fresh process to isolate state/leaks (enhanced runner)
-	@echo "🔀 Running tests in fresh processes (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers 4 --timeout 60 --pytest-args "--forked -p pytest_forked"
+test-forked: .uv ## Run tests serially for process isolation (pytest-forked removed due to CVE)
+	@echo "🔀 Running tests serially for isolation (pytest-forked unavailable)..."
+	@echo "   Note: pytest-forked was removed due to CVE PYSEC-2022-42969 in 'py' package."
+	@echo "   Using serial execution with strict timeouts as alternative."
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers 1 --timeout 60 --faulthandler-timeout 60 --tb
 
 .PHONY: test-timeout-strict
 test-timeout-strict: .uv ## Run with strict timeouts for debugging hangs (enhanced runner)

@@ -701,7 +701,7 @@ class TestPerformanceRegression:
     @pytest.mark.asyncio
     async def test_memory_regression(self):
         """Test that optimizations don't introduce memory regressions."""
-        import psutil
+        psutil = pytest.importorskip("psutil", reason="psutil not available")
         import os
 
         process = psutil.Process(os.getpid())

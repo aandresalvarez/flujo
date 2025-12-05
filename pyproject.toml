@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 # --------------------------------------------------------------------------- #
 [project]
 name = "flujo"
-version = "0.6.1"  # CI hardening, test stability, serialization improvements
+version = "0.6.2"  # Security: fix CVEs in mcp, starlette, remove pytest-forked
 description = "A modern, type-safe framework for building AI-powered applications with structured outputs and robust error handling."
 readme = "README.md"
 license = {text = "AGPL-3.0"}
@@ -44,6 +44,9 @@ dependencies = [
     "numpy>=1.20.0",
     "PyYAML>=6.0",
     "ruamel.yaml>=0.18",
+    # Security: pin transitive deps to fix CVEs
+    "mcp>=1.23.0",  # Fix GHSA-9h52-p55h-vw2f (DNS rebinding)
+    "starlette>=0.49.1",  # Fix GHSA-7f5h-v6xp-fcq8
 ]
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
 [project.optional-dependencies]
@@ -56,7 +59,7 @@ dev = [
   "pytest-asyncio==0.24.0",
   "pytest-xdist==3.6.1",  # Added for parallel test execution
   "pytest-timeout==2.3.1",  # Hard kill hanging tests
-  "pytest-forked==1.6.0",  # Run each test in fresh process
+  # pytest-forked removed: depends on 'py' package with unfixed CVE PYSEC-2022-42969
   "pytest-randomly==3.15.0",  # Randomize test order
   "pytest-rerunfailures==13.0",
   "pytest-picked==0.4.6",  # Alternative to testmon
@@ -72,8 +75,7 @@ dev = [
   "cyclonedx-python-lib==7.4.0",  # SBOM library (used by pip-audit output)
   "logfire==4.0.0", # Updated for compatibility with pydantic-graph 0.4.7
   "sqlvalidator==0.0.8",
-  "psutil==5.9.0",  # Optional: Used by performance tests and scripts (can be skipped if not available)
-  "types-psutil==7.0.0.20250801",
+  "psutil>=5.9.0",  # Required for memory/stress tests (guards in tests for edge cases)
   "prometheus-client==0.22.1",  # Required for prometheus tests
   "httpx==0.28.1",  # Required for prometheus integration tests (compatible with google-genai)
 ]
@@ -268,8 +270,6 @@ module = [
   "flujo.application.core.loop_executor",
   "flujo.plugins.sql_validator",
   "flujo.application.runner",
-  "flujo.application.core.optimization.performance.algorithms",
-  "flujo.application.core.algorithm_optimizations",
 ]
 disable_error_code = [
   "no-untyped-def",
@@ -438,5 +438,4 @@ ignore_no_config = true
 
 [dependency-groups]
 dev = [
-    "types-psutil>=7.0.0.20250801",
 ]
