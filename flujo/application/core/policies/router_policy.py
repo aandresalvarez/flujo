@@ -184,29 +184,25 @@ class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
         )
         # Use the DefaultParallelStepExecutor policy directly instead of legacy core method
         parallel_executor = DefaultParallelStepExecutor()
-        # Ensure quota is set for the parallel execution block
-        quota_token = None
+        quota = None
         try:
-            if hasattr(core, "_set_current_quota"):
-                quota_token = core._set_current_quota(core._get_current_quota())
+            if hasattr(core, "_get_current_quota"):
+                quota = core._get_current_quota()
         except Exception:
-            quota_token = None
-        try:
-            pr_any = await parallel_executor.execute(
-                core=core,
-                step=temp_parallel_step,
-                data=data,
-                context=context,
-                resources=resources,
-                limits=limits,
-                context_setter=context_setter,
-            )
-        finally:
-            try:
-                if quota_token is not None and hasattr(core, "_reset_current_quota"):
-                    core._reset_current_quota(quota_token)
-            except Exception:
-                pass
+            quota = None
+        frame = ExecutionFrame(
+            step=temp_parallel_step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            quota=quota,
+            stream=False,
+            on_chunk=None,
+            context_setter=context_setter or (lambda _pr, _ctx: None),
+            _fallback_depth=0,
+        )
+        pr_any = await parallel_executor.execute(core=core, frame=frame)
 
         # Normalize StepOutcome from parallel policy to StepResult for router aggregation
         if isinstance(pr_any, StepOutcome):

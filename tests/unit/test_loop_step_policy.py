@@ -5,6 +5,7 @@ from flujo.application.core.step_policies import (
     DefaultLoopStepExecutor,
     DefaultParallelStepExecutor,
 )
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.loop import LoopStep
@@ -134,7 +135,7 @@ async def test_loop_within_parallel_and_parallel_within_loop_quota_composition()
     }
     p2 = ParallelStep(name="outer_p", branches=branches2)
 
-    outcome2 = await DefaultParallelStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         p2,
         data=None,
@@ -142,8 +143,13 @@ async def test_loop_within_parallel_and_parallel_within_loop_quota_composition()
         resources=None,
         limits=None,
         context_setter=None,
-        step_executor=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome2 = await DefaultParallelStepExecutor().execute(core=core, frame=frame)
     assert isinstance(outcome2, Success)
 
 

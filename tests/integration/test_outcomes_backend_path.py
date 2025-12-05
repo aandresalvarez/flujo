@@ -8,18 +8,8 @@ from flujo.domain.models import StepResult, StepOutcome, Success
 
 
 class _FakeParallelExecutor:
-    async def execute(
-        self,
-        core,
-        step,
-        data,
-        context,
-        resources,
-        limits,
-        context_setter,
-        parallel_step=None,
-        step_executor=None,
-    ) -> StepResult:
+    async def execute(self, core, frame) -> StepResult:
+        step = frame.step
         return StepResult(name=getattr(step, "name", "parallel"), success=True, output={"ok": True})
 
 

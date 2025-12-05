@@ -41,18 +41,7 @@ class PolicyHandlers:
         )
 
     async def parallel_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        res_any = await self._core.parallel_step_executor.execute(
-            self._core,
-            step,
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.context_setter,
-            cast(ParallelStep[Any], step),
-            None,
-        )
+        res_any = await self._core.parallel_step_executor.execute(self._core, frame)
         if isinstance(res_any, StepOutcome):
             return res_any
         return (

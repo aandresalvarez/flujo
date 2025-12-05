@@ -26,17 +26,24 @@ class StepHandler:
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         step_executor: Optional[Callable[..., Any]],
     ) -> StepResult:
-        outcome = await self._core.parallel_step_executor.execute(
+        frame = make_execution_frame(
             self._core,
             step,
             data,
             context,
             resources,
             limits,
-            context_setter,
-            step,
-            step_executor,
+            context_setter=context_setter,
+            stream=False,
+            on_chunk=None,
+            fallback_depth=0,
+            result=None,
+            quota=self._core._get_current_quota()
+            if hasattr(self._core, "_get_current_quota")
+            else None,
         )
+        setattr(frame, "step_executor", step_executor)
+        outcome = await self._core.parallel_step_executor.execute(self._core, frame)
         return self._core._unwrap_outcome_to_step_result(outcome, self._core._safe_step_name(step))
 
     async def conditional_step(
