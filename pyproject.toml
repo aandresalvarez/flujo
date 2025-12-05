@@ -48,36 +48,34 @@ dependencies = [
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
 [project.optional-dependencies]
 dev = [
-  "ruff",
-  "mypy",
-  "pip-audit",
-  "pytest",
-  "pytest-cov",
-  "pytest-asyncio",
-  "pytest-xdist",  # Added for parallel test execution
-  "pytest-timeout",  # Hard kill hanging tests
-  "pytest-forked",  # Run each test in fresh process
-  "pytest-randomly",  # Randomize test order
-  "pytest-rerunfailures",  # Auto-rerun flakes
-  "pytest-testmon",  # Run only changed tests
-  "pytest-picked",  # Alternative to testmon
-  "pytest-split",  # Deterministic sharding for CI
-  "pytest-deadfixtures",  # Find unused fixtures
-  "pytest-profiling",  # Profile hot spots
-  "hypothesis",
-  "vcrpy",
-  "build",     # Added for package building
-  "twine",     # Added for package uploading
-  "pytest-benchmark>=4.0.0",
-  "bandit>=1.7.5",
-  "cyclonedx-python-lib>=5.2.0,<9",
-  "cyclonedx-py",  # Added for CycloneDX CLI support
-    "logfire>=4.0.0", # Updated for compatibility with pydantic-graph 0.4.7
-    "sqlvalidator>=0.0.8",
-    "psutil>=5.9.0",  # Optional: Used by performance tests and scripts (can be skipped if not available)
-    "types-psutil>=7.0.0.20250801",
-    "prometheus-client>=0.22.1,<0.23.0",  # Required for prometheus tests
-  "httpx",  # Required for prometheus integration tests
+  "ruff==0.6.9",
+  "mypy==1.12.0",
+  "pip-audit==2.7.3",
+  "pytest==8.3.3",
+  "pytest-cov==5.0.0",
+  "pytest-asyncio==0.24.0",
+  "pytest-xdist==3.6.1",  # Added for parallel test execution
+  "pytest-timeout==2.3.1",  # Hard kill hanging tests
+  "pytest-forked==1.6.0",  # Run each test in fresh process
+  "pytest-randomly==3.15.0",  # Randomize test order
+  "pytest-rerunfailures==13.0",
+  "pytest-picked==0.4.6",  # Alternative to testmon
+  "pytest-split==0.10.0",  # Deterministic sharding for CI
+  "pytest-deadfixtures==2.2.1",  # Find unused fixtures
+  "pytest-profiling==1.7.0",  # Profile hot spots
+  "hypothesis==6.112.0",
+  "vcrpy==6.0.1",
+  "build==1.2.2.post1",     # Added for package building
+  "twine==5.1.1",     # Added for package uploading
+  "pytest-benchmark==4.0.0",
+  "bandit==1.7.9",
+  "cyclonedx-python-lib==7.4.0",  # SBOM library (used by pip-audit output)
+  "logfire==4.0.0", # Updated for compatibility with pydantic-graph 0.4.7
+  "sqlvalidator==0.0.8",
+  "psutil==5.9.0",  # Optional: Used by performance tests and scripts (can be skipped if not available)
+  "types-psutil==7.0.0.20250801",
+  "prometheus-client==0.22.1",  # Required for prometheus tests
+  "httpx==0.28.1",  # Required for prometheus integration tests (compatible with google-genai)
 ]
 "aop-extras" = [
   "pyjson5>=1.6; python_version>='3.8'",

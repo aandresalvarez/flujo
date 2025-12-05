@@ -296,7 +296,9 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
             run_id_for_state = run_id or getattr(current_context_instance, "run_id", None)
 
             if run_id_for_state is None:
-                run_id_for_state = state_manager.get_run_id_from_context(current_context_instance)
+                run_id_for_state = state_manager.get_run_id_from_context(
+                    cast(Optional[ContextT], current_context_instance)
+                )
 
             if run_id_for_state:
                 (
@@ -357,7 +359,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                 if _num_steps > 1:
                     await state_manager.persist_workflow_state_optimized(
                         run_id=run_id_for_state,
-                        context=current_context_instance,
+                        context=cast(Optional[ContextT], current_context_instance),
                         current_step_index=start_idx,
                         last_step_output=data,
                         status="running",
@@ -445,7 +447,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                 async for chunk in self.execute_steps(
                     start_idx,
                     data,
-                    current_context_instance,
+                    cast(Optional[ContextT], current_context_instance),
                     pipeline_result_obj,
                     stream_last=True,
                     run_id=run_id_for_state,

@@ -167,11 +167,11 @@ class AgentFallbackHandler:
                     {"fallback_triggered": True, "original_error": primary_feedback}
                 )
                 try:
-                    fb_tokens = (
-                        int(fallback_result_sr.token_counts["total"])
-                        if isinstance(fallback_result_sr.token_counts, dict)
-                        else int(fallback_result_sr.token_counts or 0)
-                    )
+                    tc = fallback_result_sr.token_counts
+                    if isinstance(tc, dict):
+                        fb_tokens = int(tc.get("total", 0))
+                    else:
+                        fb_tokens = int(tc or 0)
                 except Exception:
                     fb_tokens = 0
                 try:

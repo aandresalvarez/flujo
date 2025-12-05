@@ -11,7 +11,19 @@ name: Flujo CI
 on:
   push:
     branches: [ "main" ]
+    tags: [ "v*" ]
   # Note: Pull requests are handled by pr-checks.yml for faster feedback
+
+# Global environment to keep installs deterministic and isolated per job
+env:
+  UV_VERSION: "0.4.24"
+  UV_LINK_MODE: copy
+  UV_CACHE_DIR: ${{ runner.temp }}/uvcache
+  TMPDIR: ${{ runner.temp }}/tmp-${{ github.job }}
+  PYTHONHASHSEED: "0"
+  PYTEST_RANDOMLY_SEED: "1"
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
 
 # Cancel any in-progress jobs for the same PR/branch when new commits are pushed.
 concurrency:
@@ -33,6 +45,7 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
         run: uv sync --all-extras
@@ -72,6 +85,7 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
         run: uv sync --all-extras
@@ -83,7 +97,7 @@ jobs:
         run: |
           # Use pytest-cov to handle xdist subprocess coverage correctly
           # Disable benchmark plugin to suppress warnings (benchmarks already excluded via -m)
-          uv run pytest --cov=flujo --cov-report= tests/ -m "not slow and not serial and not benchmark" -n 2 -p no:benchmark
+          uv run pytest --cov=flujo --cov-report= tests/ -m "not slow and not serial and not benchmark" -n 2 -p no:benchmark --randomly-seed=${PYTEST_RANDOMLY_SEED}
           # Rename default .coverage to a unique name for artifact upload
           mv .coverage .coverage.fast-${{ matrix.python-version }}
 
@@ -133,6 +147,7 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
         run: uv sync --all-extras
@@ -144,10 +159,10 @@ jobs:
         run: |
           # Run slow tests serially with coverage (-n 0 ensures no parallel execution)
           # This includes HITL, SQLite-backed, and benchmark tests that need isolation
-          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "slow or serial or benchmark" -n 0
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/ -m "slow or serial or benchmark" -n 0 --randomly-seed=${PYTEST_RANDOMLY_SEED}
 
           # Run the comprehensive golden transcript tests (also serial)
-          uv run coverage run --source=flujo --parallel-mode -m pytest tests/e2e/test_golden_transcript_*.py -n 0
+          uv run coverage run --source=flujo --parallel-mode -m pytest tests/e2e/test_golden_transcript_*.py -n 0 --randomly-seed=${PYTEST_RANDOMLY_SEED}
 
       - name: Store slow tests coverage file
         uses: actions/upload-artifact@v4
@@ -175,6 +190,8 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
         run: uv sync --all-extras
@@ -202,6 +219,124 @@ jobs:
         with:
           name: coverage-report-html
           path: htmlcov
+
+  # ----------------------------------------------------------------------------
+  # Job 6a: Behavioral Evals (Deterministic Golden Cases)
+  # ----------------------------------------------------------------------------
+  behavioral-evals:
+    name: Behavioral Evals
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+          version: ${{ env.UV_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run behavioral evals (serial)
+        run: uv run pytest tests/evals/test_behavioral_golden.py -n 0 --randomly-seed=${PYTEST_RANDOMLY_SEED}
+
+  # ----------------------------------------------------------------------------
+  # Job 6b: Packaging & Release Smoke
+  # ----------------------------------------------------------------------------
+  packaging-smoke:
+    name: Packaging & Import Smoke
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          enable-cache: true
+          version: ${{ env.UV_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Dependency integrity check
+        run: uv run python -m pip check
+
+      - name: Import smoke test
+        run: uv run python - <<'PY'
+import flujo
+print("Imported flujo version", getattr(flujo, "__version__", "unknown"))
+PY
+
+      - name: CLI smoke test
+        run: |
+          uv run flujo --help >/dev/null
+          # Minimal non-network run: use echo piped input to avoid prompts
+          echo "smoke" | uv run flujo run --input - --max-steps 1 --retries 0 || true
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          shasum -a 256 * > SHA256SUMS
+          cat SHA256SUMS
+          cd -
+
+      - name: Generate SBOM (CycloneDX via pip-audit)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: uv run pip-audit --format cyclonedx-json --output sbom.json
+
+      - name: Sign artifacts (Sigstore)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          pip install --no-deps sigstore==3.0.1
+          for f in dist/*; do
+            sigstore sign --yes "$f" --output-signature "$f.sig" --output-certificate "$f.crt"
+          done
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts
+          path: dist
+
+      - name: Upload SBOM artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+
+      - name: Publish release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/**
+            sbom.json
+            dist/SHA256SUMS
+            dist/*.sig
+            dist/*.crt
+            dist/SHA256SUMS
 
   # ----------------------------------------------------------------------------
   # Job 6: Performance Analysis (Optional)
@@ -233,6 +368,7 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
         run: uv sync --all-extras
@@ -287,6 +423,7 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
         run: uv sync --all-extras

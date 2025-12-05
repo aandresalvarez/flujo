@@ -419,7 +419,10 @@ async def compute_validity_key(_x: Any = None, *, context: Optional[DomainBaseMo
         val = bool(getattr(context, "yaml_is_valid", False))
     except Exception:
         try:
-            val = bool(context.get("yaml_is_valid", False)) if isinstance(context, dict) else False
+            if isinstance(context, dict):
+                val = bool(context.get("yaml_is_valid", False))
+            else:
+                val = False
         except Exception:
             val = False
     return "valid" if val else "invalid"

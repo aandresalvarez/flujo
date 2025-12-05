@@ -253,6 +253,62 @@ def _clear_state_uri_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _clear_flujo_env(monkeypatch: pytest.MonkeyPatch):
+    """Clear mutable FLUJO_* environment variables between tests.
+
+    Keep only the test-mode/observability toggles that are intentionally set at
+    module import. Everything else resets to avoid cross-test contamination.
+    """
+
+    allowlist = {"FLUJO_TEST_MODE", "FLUJO_DISABLE_MEMORY_MONITOR"}
+    for key in list(os.environ.keys()):
+        if key.startswith("FLUJO_") and key not in allowlist:
+            monkeypatch.delenv(key, raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _isolate_tmpdir(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """Ensure each test writes into its own temp directory.
+
+    Prevents accidental writes to the workspace and avoids cross-test reuse of
+    system temp directories when tests run in parallel.
+    """
+
+    temp_dir = tmp_path
+    for var in ("TMPDIR", "TEMP", "TMP"):
+        monkeypatch.setenv(var, str(temp_dir))
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _enforce_serial_not_parallel(request: pytest.FixtureRequest):
+    """Fail fast if serial-marked tests run under pytest-xdist parallel workers.
+
+    Serial tests are expected to run with ``-n 0``. If xdist parallelism is
+    enabled (numprocesses > 1) and the test is marked serial, raise to surface
+    misconfiguration early.
+    """
+
+    config = request.config
+    numprocesses = getattr(getattr(config, "option", None), "numprocesses", None)
+    if numprocesses is None:
+        return
+    try:
+        # numprocesses can be "auto" or an int; handle both.
+        if str(numprocesses).lower() == "auto":
+            return
+        if int(numprocesses) > 1 and request.node.get_closest_marker("serial"):
+            pytest.fail(
+                "Serial-marked tests must not run with xdist parallelism. "
+                "Use '-n 0' for serial/slow suites."
+            )
+    except Exception:
+        # Never block tests on guard failure; best-effort only.
+        return
+
+
+@pytest.fixture(autouse=True)
 def _reset_config_cache():
     """Reset config manager cache between tests to prevent state pollution.
 
@@ -310,6 +366,48 @@ def _reset_skills_base_dir_stack():
 
 
 @pytest.fixture(autouse=True)
+def _reset_skill_registry_provider_and_resolver():
+    """Reset skill registry provider/resolver and clear cached registries."""
+
+    try:
+        import sys as _sys
+        from flujo.infra import skill_registry as _sr
+
+        # Drop dynamic import modules created during skill blueprint resolution
+        for mod in list(_sys.modules.keys()):
+            if mod.startswith("__flujo_import__"):
+                _sys.modules.pop(mod, None)
+
+        # Reset global provider to force a fresh registry per test
+        if hasattr(_sr, "_GLOBAL_PROVIDER"):
+            _sr._GLOBAL_PROVIDER = None  # type: ignore[attr-defined]
+
+        # Prime a clean provider/registry and re-register builtins for determinism
+        try:
+            provider = _sr.get_skill_registry_provider()
+            reg = provider.get_registry()
+            reg._entries["default"] = {}  # type: ignore[attr-defined]
+            from flujo.builtins import _register_builtins
+
+            _register_builtins()
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    yield
+
+    try:
+        # Ensure provider is cleared after the test to avoid cross-test leakage
+        from flujo.infra import skill_registry as _sr
+
+        if hasattr(_sr, "_GLOBAL_PROVIDER"):
+            _sr._GLOBAL_PROVIDER = None  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
 def _clear_project_root_env(monkeypatch):
     """Avoid FLUJO_PROJECT_ROOT leakage between tests (affects project root helpers)."""
 
@@ -350,6 +448,51 @@ def _reset_skill_registry_defaults():
         # Keep tests running even if optional deps for extras are unavailable
         pass
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_step_result_pool():
+    """Clear the StepResult pooling cache to avoid cross-test contamination."""
+
+    try:
+        from flujo.application.core import step_result_pool as _srp
+
+        if hasattr(_srp, "_STEP_RESULT_POOL"):
+            pool = getattr(_srp, "_STEP_RESULT_POOL", None)
+            if pool is not None and hasattr(pool, "_pool"):
+                pool._pool.clear()  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+    yield
+
+    try:
+        from flujo.application.core import step_result_pool as _srp
+
+        pool = getattr(_srp, "_STEP_RESULT_POOL", None)
+        if pool is not None and hasattr(pool, "_pool"):
+            pool._pool.clear()  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _restore_sys_path():
+    """Ensure tests that mutate sys.path (e.g., blueprint/skill imports) restore it."""
+
+    import sys as _sys
+
+    original = list(_sys.path)
+    # Keep repo root first to stabilize import resolution order across tests
+    if str(_REPO_ROOT) not in original:
+        _sys.path.insert(0, str(_REPO_ROOT))
+    else:
+        original = [str(_REPO_ROOT)] + [p for p in original if p != str(_REPO_ROOT)]
+    yield
+    try:
+        _sys.path[:] = original
+    except Exception:
+        pass
 
 
 def assert_no_major_regression(
