@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultConditionalStepExecutor
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.conditional import ConditionalStep
@@ -30,17 +31,22 @@ async def test_conditional_policy_calls_condition_with_original_data_and_context
 
     data = "test_data"
 
-    # Execute policy
-    await DefaultConditionalStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         cond,
-        data=data,
+        data,
         context=None,
         resources=None,
         limits=None,
         context_setter=None,
-        _fallback_depth=0,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    await DefaultConditionalStepExecutor().execute(core=core, frame=frame)
 
     # Verify the condition received the original data and context
     cond_fn.assert_called_once_with(data, None)

@@ -24,20 +24,9 @@ class _FakeParallelExecutor:
 
 
 class _FakeConditionalExecutor:
-    async def execute(
-        self,
-        core,
-        conditional_step,
-        data,
-        context,
-        resources,
-        limits,
-        context_setter,
-        _fallback_depth=0,
-    ) -> StepResult:
-        return StepResult(
-            name=getattr(conditional_step, "name", "conditional"), success=True, output=42
-        )
+    async def execute(self, core, frame) -> StepResult:
+        step = frame.step
+        return StepResult(name=getattr(step, "name", "conditional"), success=True, output=42)
 
 
 @pytest.mark.asyncio

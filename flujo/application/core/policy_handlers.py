@@ -98,20 +98,9 @@ class PolicyHandlers:
 
     async def conditional_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         step = frame.step
-        _fallback_depth = frame._fallback_depth
-
         # Emit a span around conditional policy execution so tests reliably capture it
         with _telemetry.logfire.span(getattr(step, "name", "<unnamed>")) as _span:
-            res_any = await self._core.conditional_step_executor.execute(
-                self._core,
-                step,
-                frame.data,
-                frame.context,
-                frame.resources,
-                frame.limits,
-                frame.context_setter,
-                _fallback_depth,
-            )
+            res_any = await self._core.conditional_step_executor.execute(self._core, frame)
 
         # Mirror branch selection logs and span attributes for consistency across environments
         try:

@@ -4,6 +4,7 @@ import pytest
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultConditionalStepExecutor
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.conditional import ConditionalStep
@@ -37,16 +38,22 @@ async def test_conditional_policy_coerces_boolean_branch_key_true() -> None:
         },
     )
 
-    out = await DefaultConditionalStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         cond,
-        data={"flag": True},
+        {"flag": True},
         context=None,
         resources=None,
         limits=None,
         context_setter=None,
-        _fallback_depth=0,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    out = await DefaultConditionalStepExecutor().execute(core=core, frame=frame)
     assert isinstance(out, Success)
     assert out.step_result.success is True
     assert out.step_result.output == "It was true"
@@ -68,16 +75,22 @@ async def test_conditional_policy_coerces_boolean_branch_key_false() -> None:
         },
     )
 
-    out = await DefaultConditionalStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         cond,
-        data={"flag": False},
+        {"flag": False},
         context=None,
         resources=None,
         limits=None,
         context_setter=None,
-        _fallback_depth=0,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    out = await DefaultConditionalStepExecutor().execute(core=core, frame=frame)
     assert isinstance(out, Success)
     assert out.step_result.success is True
     assert out.step_result.output == "It was false"
