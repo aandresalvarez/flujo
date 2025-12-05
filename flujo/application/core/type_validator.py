@@ -11,6 +11,13 @@ from .context_manager import _types_compatible
 T = TypeVar("T")
 
 
+def _is_any_type(obj: object) -> bool:
+    try:
+        return obj is Any or getattr(obj, "__name__", None) == "Any"
+    except Exception:
+        return False
+
+
 class TypeValidator:
     """Validates type compatibility between pipeline steps."""
 
@@ -55,7 +62,7 @@ class TypeValidator:
             elif hasattr(types, "UnionType") and isinstance(expected, types.UnionType):
                 if type(None) in expected.__args__:
                     return
-            if expected is Any:
+            if _is_any_type(expected):
                 return
             raise TypeMismatchError(
                 f"Type mismatch: Output of '{step.name}' was None, but '{next_step.name}' expects '{expected}'. "

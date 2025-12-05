@@ -468,6 +468,8 @@ class TestCodeQualityGates:
         """Get the root directory of the Flujo project."""
         return Path(__file__).parent.parent.parent
 
+    @pytest.mark.slow
+    @pytest.mark.serial
     @pytest.mark.timeout(MAKE_ALL_TIMEOUT_SECONDS)
     def test_make_all_passes(self, flujo_root: Path):
         """Verify that `make all` passes with zero errors.

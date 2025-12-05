@@ -110,12 +110,18 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
     params = list(sig.parameters.values())
     if params:
         first_param = params[0]
-        input_type = hints.get(first_param.name, first_param.annotation)
-        if input_type is inspect.Signature.empty:
+        if first_param.name in hints:
+            input_type = hints[first_param.name]
+        elif first_param.annotation is not inspect.Parameter.empty:
+            input_type = first_param.annotation
+        else:
             input_type = Any
     # Extract output_type (return annotation)
-    output_type = hints.get("return", sig.return_annotation)
-    if output_type is inspect.Signature.empty:
+    if "return" in hints:
+        output_type = hints["return"]
+    elif sig.return_annotation is not inspect.Parameter.empty:
+        output_type = sig.return_annotation
+    else:
         output_type = Any
 
     for p in sig.parameters.values():

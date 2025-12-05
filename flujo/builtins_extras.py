@@ -594,11 +594,10 @@ def _register_builtins() -> None:
                 val = bool(getattr(context, "yaml_is_valid", False))
             except Exception:
                 try:
-                    val = (
-                        bool(context.get("yaml_is_valid", False))
-                        if isinstance(context, dict)
-                        else False
-                    )
+                    if isinstance(context, dict):
+                        val = bool(context.get("yaml_is_valid", False))
+                    else:
+                        val = False
                 except Exception:
                     val = False
             return {"yaml_is_valid": val}
