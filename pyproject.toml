@@ -44,9 +44,9 @@ dependencies = [
     "numpy>=1.20.0",
     "PyYAML>=6.0",
     "ruamel.yaml>=0.18",
-    # Security: pin transitive deps to fix CVEs
-    "mcp>=1.23.0",  # Fix GHSA-9h52-p55h-vw2f (DNS rebinding)
-    "starlette>=0.49.1",  # Fix GHSA-7f5h-v6xp-fcq8
+     # Security: pin transitive deps to fix CVEs
+     "mcp>=1.23.0",  # Fix GHSA-9h52-p55h-vw2f (DNS rebinding)
+     "starlette>=0.49.1",  # Fix GHSA-7f5h-v6xp-fcq8
 ]
 # Optional dependency groups (install with: `pip install .[dev]`, etc.)
 [project.optional-dependencies]
@@ -59,7 +59,7 @@ dev = [
   "pytest-asyncio==0.24.0",
   "pytest-xdist==3.6.1",  # Added for parallel test execution
   "pytest-timeout==2.3.1",  # Hard kill hanging tests
-  # pytest-forked removed: depends on 'py' package with unfixed CVE PYSEC-2022-42969
+   # pytest-forked removed: depends on 'py' package with unfixed CVE PYSEC-2022-42969
   "pytest-randomly==3.15.0",  # Randomize test order
   "pytest-rerunfailures==13.0",
   "pytest-picked==0.4.6",  # Alternative to testmon
@@ -73,9 +73,8 @@ dev = [
   "pytest-benchmark==4.0.0",
   "bandit==1.7.9",
   "cyclonedx-python-lib==7.4.0",  # SBOM library (used by pip-audit output)
-  "logfire==4.0.0", # Updated for compatibility with pydantic-graph 0.4.7
-  "sqlvalidator==0.0.8",
-  "psutil>=5.9.0",  # Required for memory/stress tests (guards in tests for edge cases)
+   "logfire==4.0.0", # Updated for compatibility with pydantic-graph 0.4.7
+   "sqlvalidator==0.0.8",
   "prometheus-client==0.22.1",  # Required for prometheus tests
   "httpx==0.28.1",  # Required for prometheus integration tests (compatible with google-genai)
 ]

@@ -4,6 +4,7 @@ import pytest
 
 from flujo.application.core.step_policies import DefaultHitlStepExecutor, PolicyRegistry
 from flujo.domain.models import Paused
+from flujo.exceptions import ConfigurationError
 from flujo.domain.dsl.step import HumanInTheLoopStep, Step
 
 
@@ -59,7 +60,7 @@ async def test_hitl_executor_raises_on_loop_conditional_nesting() -> None:
     core = _CoreWithStack(frames)
     step = HumanInTheLoopStep(name="hitl", message_for_user="Nested error")
 
-    with pytest.raises(RuntimeError) as exc:
+    with pytest.raises(ConfigurationError) as exc:
         await DefaultHitlStepExecutor().execute(
             core=core,
             step=step,
@@ -71,6 +72,7 @@ async def test_hitl_executor_raises_on_loop_conditional_nesting() -> None:
         )
 
     assert "HITL" in str(exc.value)
+    assert "HITL-NESTED-001" in str(exc.value)
 
 
 class DummyStep(Step[Any, Any]):

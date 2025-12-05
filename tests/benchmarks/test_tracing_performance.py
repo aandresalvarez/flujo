@@ -254,7 +254,11 @@ class TestTracingPerformance:
 
     def test_tracing_memory_overhead(self):
         """Test memory overhead of tracing functionality."""
-        import psutil
+        try:
+            import psutil
+            import os
+        except ImportError:
+            pytest.skip("psutil not available")
 
         def measure_memory_usage():
             """Measure memory usage of current process."""

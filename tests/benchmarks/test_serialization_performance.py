@@ -262,8 +262,11 @@ class TestSerializationPerformance:
 
     def test_memory_usage(self):
         """Test memory usage during serialization operations."""
-        import psutil
-        import os
+        try:
+            import psutil
+            import os
+        except ImportError:
+            pytest.skip("psutil not available")
 
         process = psutil.Process(os.getpid())
         initial_memory = process.memory_info().rss / 1024 / 1024  # MB
@@ -394,8 +397,12 @@ class TestSerializationPerformance:
     def test_memory_efficiency(self):
         """Test memory efficiency by measuring memory usage patterns."""
         import gc
-        import psutil
-        import os
+
+        try:
+            import psutil
+            import os
+        except ImportError:
+            pytest.skip("psutil not available")
 
         process = psutil.Process(os.getpid())
 
