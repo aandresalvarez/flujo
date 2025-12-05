@@ -114,6 +114,13 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 **Priority:** 🔵 Low | **Effort:** High | **Tags:** `RAG`, `Architecture`
 *   **Description:** Interface for long-term memory.
 *   **Implementation:** Define `VectorStoreProtocol`. Do **not** hardcode Postgres/pgvector in the core.
+*   **Plan (current):**
+    1. Define vector memory primitives (`MemoryRecord`, `VectorQuery`, `ScoredMemory`) and `VectorStoreProtocol` in `flujo/domain/memory.py`; keep async add/query/delete/close and avoid pgvector coupling.
+    2. Provide defaults: `NullVectorStore` (no-op) and `InMemoryVectorStore` (cosine similarity) in `flujo/infra/memory/`; no external dependencies.
+    3. Wire into DI: expose optional `memory_store`/`memory_manager` via `ExecutorCoreDeps` + `FlujoRuntimeBuilder`; default to Null store; consider a non-serialized handle on `PipelineContext`.
+    4. Tests: protocol conformance, in-memory add/query/delete determinism, DI wiring defaults/null, and mypy strictness.
+    5. Docs/Kanban: document interface intent and defaults; do not bake in pgvector.
+*   **Status:** Implemented. VectorStoreProtocol + MemoryRecord/VectorQuery/ScoredMemory added, NullVectorStore default + InMemoryVectorStore (cosine) available, DI wiring via ExecutorCoreDeps/FlujoRuntimeBuilder with exposed `core.memory_store`; tests and precommit/test-fast passing.
 
 ### [TASK-011] Sandbox Execution Interface
 **Priority:** 🔵 Low | **Effort:** High | **Tags:** `Security`

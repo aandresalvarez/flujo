@@ -80,6 +80,8 @@ from .step_policies import (
     TimeoutRunner,
     ValidatorInvoker,
 )
+from ...domain.memory import VectorStoreProtocol
+from ...infra.memory import NullVectorStore
 from ...utils.config import get_settings
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -103,6 +105,7 @@ class ExecutorCoreDeps:
     cache_key_generator: Any
     fallback_handler: FallbackHandler
     hydration_manager: HydrationManager
+    memory_store: VectorStoreProtocol
     background_task_manager: BackgroundTaskManager
     context_update_manager: ContextUpdateManager
     step_history_tracker: StepHistoryTracker
@@ -190,6 +193,7 @@ class FlujoRuntimeBuilder:
         pipeline_orchestrator: Optional[PipelineOrchestrator] = None,
         validation_orchestrator: Optional[ValidationOrchestrator] = None,
         state_providers: Optional[dict[str, Any]] = None,
+        memory_store: Optional[VectorStoreProtocol] = None,
         policy_registry_factory: Callable[["ExecutorCore[Any]"], PolicyRegistry] | None = None,
         policy_handlers_factory: Callable[["ExecutorCore[Any]"], PolicyHandlers] | None = None,
         dispatcher_factory: Callable[[PolicyRegistry, "ExecutorCore[Any]"], ExecutionDispatcher]
@@ -215,6 +219,8 @@ class FlujoRuntimeBuilder:
             key_generator=cache_key_gen,
             enable_cache=enable_cache,
         )
+        memory_store_obj: VectorStoreProtocol = memory_store or NullVectorStore()
+        background_task_manager_obj = background_task_manager or BackgroundTaskManager()
 
         plugin_runner_obj = plugin_runner or DefaultPluginRunner()
         agent_runner_obj = agent_runner or DefaultAgentRunner()
@@ -309,7 +315,7 @@ class FlujoRuntimeBuilder:
         )
         shadow_evaluator_obj = ShadowEvaluator(
             config=shadow_eval_config,
-            background_task_manager=background_task_manager or BackgroundTaskManager(),
+            background_task_manager=background_task_manager_obj,
         )
 
         return ExecutorCoreDeps(
@@ -321,12 +327,13 @@ class FlujoRuntimeBuilder:
             telemetry=telemetry or DefaultTelemetry(),
             quota_manager=quota_manager or QuotaManager(),
             cache_manager=cache_manager,
+            memory_store=memory_store_obj,
             serializer=serializer_obj,
             hasher=hasher_obj,
             cache_key_generator=cache_key_gen,
             fallback_handler=fallback_handler or FallbackHandler(),
             hydration_manager=hydration_manager or HydrationManager(state_providers),
-            background_task_manager=background_task_manager or BackgroundTaskManager(),
+            background_task_manager=background_task_manager_obj,
             context_update_manager=context_update_manager or ContextUpdateManager(),
             step_history_tracker=step_history_tracker or StepHistoryTracker(),
             estimator_factory=estimator_factory or build_default_estimator_factory(),
