@@ -140,3 +140,34 @@ async def test_agent_quota_denial_uses_legacy_message_with_limits():
         str(exc.value) == "Cost limit of $1 exceeded"
         or str(exc.value) == "Cost limit of $1.0 exceeded"
     )
+
+
+@pytest.mark.asyncio
+async def test_agent_pricing_not_configured_raises_immediately():
+    """Strict pricing errors must propagate without fallback or wrapping."""
+    core = ExecutorCore()
+
+    class _PrimaryAgent:
+        async def run(self, *_args, **_kwargs):
+            from flujo.exceptions import PricingNotConfiguredError
+
+            raise PricingNotConfiguredError(provider="prov", model="m")
+
+    step = Step(name="primary", agent=_PrimaryAgent())
+    execu = DefaultAgentStepExecutor()
+
+    from flujo.exceptions import PricingNotConfiguredError
+
+    with pytest.raises(PricingNotConfiguredError):
+        await execu.execute(
+            core=core,
+            step=step,
+            data=None,
+            context=None,
+            resources=None,
+            limits=None,
+            stream=False,
+            on_chunk=None,
+            cache_key=None,
+            _fallback_depth=0,
+        )
