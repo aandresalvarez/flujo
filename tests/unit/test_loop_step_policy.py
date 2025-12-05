@@ -36,18 +36,21 @@ async def test_loop_policy_returns_failure_outcome_on_iteration_mapper_error():
         max_loops=2,
     )
 
-    outcome = await DefaultLoopStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         loop,
         data="in",
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
-        _fallback_depth=0,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await DefaultLoopStepExecutor().execute(core, frame)
     assert isinstance(outcome, Failure)
     assert "bad-map" in (outcome.feedback or "") or (
         outcome.step_result and "bad-map" in (outcome.step_result.feedback or "")
@@ -70,18 +73,21 @@ async def test_loop_policy_success_simple_exit():
         exit_condition_callable=lambda _o, _c: True,
         max_loops=1,
     )
-    outcome = await DefaultLoopStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         loop,
         data=None,
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
-        _fallback_depth=0,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await DefaultLoopStepExecutor().execute(core, frame)
     assert isinstance(outcome, Success)
 
 
@@ -108,18 +114,21 @@ async def test_loop_within_parallel_and_parallel_within_loop_quota_composition()
         max_loops=1,
     )
 
-    outcome1 = await DefaultLoopStepExecutor().execute(
+    frame_loop = make_execution_frame(
         core,
         loop,
         data={"v": 1},
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
-        _fallback_depth=0,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome1 = await DefaultLoopStepExecutor().execute(core, frame_loop)
     assert isinstance(outcome1, Success)
 
     # Parallel containing loop in one branch
@@ -174,15 +183,18 @@ async def test_loop_policy_raises_paused_exception():
     from flujo.exceptions import PausedException
 
     with pytest.raises(PausedException):
-        _ = await DefaultLoopStepExecutor().execute(
+        frame = make_execution_frame(
             core,
             loop,
             data=None,
             context=None,
             resources=None,
             limits=None,
+            context_setter=None,
             stream=False,
             on_chunk=None,
-            cache_key=None,
-            _fallback_depth=0,
+            fallback_depth=0,
+            result=None,
+            quota=None,
         )
+        _ = await DefaultLoopStepExecutor().execute(core, frame)

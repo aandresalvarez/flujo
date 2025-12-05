@@ -55,24 +55,7 @@ class PolicyHandlers:
         )
 
     async def loop_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        cache_key = self._core._cache_key(frame) if self._core._enable_cache else None
-        try:
-            fb_depth = int(getattr(frame, "_fallback_depth", 0) or 0)
-        except Exception:
-            fb_depth = 0
-        res_any = await self._core.loop_step_executor.execute(
-            self._core,
-            step,
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.stream,
-            frame.on_chunk,
-            cache_key,
-            fb_depth,
-        )
+        res_any = await self._core.loop_step_executor.execute(self._core, frame)
         if isinstance(res_any, StepOutcome):
             return res_any
         return (

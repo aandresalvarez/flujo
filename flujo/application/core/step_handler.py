@@ -158,27 +158,39 @@ class StepHandler:
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         fallback_depth: int = 0,
     ) -> StepResult:
-        core_any: Any = self._core
-        original_context_setter = getattr(core_any, "_context_setter", None)
+        frame = make_execution_frame(
+            self._core,
+            loop_step,
+            data,
+            context,
+            resources,
+            limits,
+            context_setter=context_setter,
+            stream=False,
+            on_chunk=None,
+            fallback_depth=fallback_depth,
+            result=None,
+            quota=(
+                self._core._get_current_quota()
+                if hasattr(self._core, "_get_current_quota")
+                else None
+            ),
+        )
+        original_context_setter = getattr(self._core, "_context_setter", None)
         try:
-            setattr(core_any, "_context_setter", context_setter)
-            outcome = await self._core.loop_step_executor.execute(
-                self._core,
-                loop_step,
-                data,
-                context,
-                resources,
-                limits,
-                False,
-                None,
-                None,
-                fallback_depth,
-            )
+            try:
+                setattr(self._core, "_context_setter", context_setter)
+            except Exception:
+                pass
+            outcome = await self._core.loop_step_executor.execute(self._core, frame)
             return self._core._unwrap_outcome_to_step_result(
                 outcome, self._core._safe_step_name(loop_step)
             )
         finally:
-            setattr(core_any, "_context_setter", original_context_setter)
+            try:
+                setattr(self._core, "_context_setter", original_context_setter)
+            except Exception:
+                pass
 
     async def pipeline(
         self,

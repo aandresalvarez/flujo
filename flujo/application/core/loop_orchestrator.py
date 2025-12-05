@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ...domain.models import PipelineResult, StepResult
+from .executor_helpers import make_execution_frame
 
 if TYPE_CHECKING:  # pragma: no cover
     from .executor_core import ExecutorCore
@@ -31,18 +32,21 @@ class LoopOrchestrator:
             _DSLLoop = None  # type: ignore
 
         if _DSLLoop is not None and isinstance(loop_step, _DSLLoop):
-            outcome = await core.loop_step_executor.execute(
+            frame = make_execution_frame(
                 core,
                 loop_step,
                 data,
                 context,
                 resources,
                 limits,
-                False,
-                None,
-                None,
-                fallback_depth,
+                context_setter=context_setter,
+                stream=False,
+                on_chunk=None,
+                fallback_depth=fallback_depth,
+                result=None,
+                quota=core._get_current_quota() if hasattr(core, "_get_current_quota") else None,
             )
+            outcome = await core.loop_step_executor.execute(core, frame)
             return core._unwrap_outcome_to_step_result(outcome, core._safe_step_name(loop_step))
 
         # Legacy lightweight loop execution for ad-hoc objects used in unit tests
