@@ -25,17 +25,7 @@ class PolicyHandlers:
         self._core: "ExecutorCore[Any]" = core
 
     async def cache_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        return await self._core.cache_step_executor.execute(
-            self._core,
-            cast(CacheStep[Any, Any], step),
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.context_setter,
-            None,
-        )
+        return await self._core.cache_step_executor.execute(self._core, frame)
 
     async def import_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         step = frame.step

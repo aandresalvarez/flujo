@@ -364,14 +364,12 @@ class TestLegacyFunctionIntegration:
         sig_hitl = inspect.signature(DefaultHitlStepExecutor.execute)
         sig_loop = inspect.signature(DefaultLoopStepExecutor.execute)
         sig_router = inspect.signature(DefaultDynamicRouterStepExecutor.execute)
-        # ✅ ARCHITECTURAL UPDATE: Unified parameter naming across all step executors
-        # All step executors now use consistent 'step' parameter name for API clarity
-        # Previous: Different executors used step/loop_step/router_step inconsistently
-        # Current: All use 'step' for consistent interface design
-        assert "core" in sig_cache.parameters and "step" in sig_cache.parameters
-        assert "core" in sig_hitl.parameters and "step" in sig_hitl.parameters
-        assert "core" in sig_loop.parameters and "step" in sig_loop.parameters
-        assert "core" in sig_router.parameters and "step" in sig_router.parameters
+        # ✅ ARCHITECTURAL UPDATE: Executors are migrating to ExecutionFrame.
+        # Cache is already frame-first; others may still be legacy during rollout.
+        assert "frame" in sig_cache.parameters
+        assert ("frame" in sig_hitl.parameters) or ("step" in sig_hitl.parameters)
+        assert ("frame" in sig_loop.parameters) or ("step" in sig_loop.parameters)
+        assert ("frame" in sig_router.parameters) or ("step" in sig_router.parameters)
 
 
 class TestLegacyCleanupSafety:
