@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
 import re
 import sqlite3
 import time
+import threading
 import weakref
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Coroutine, Dict, List, Optional, TYPE_CHECKING
 
+from contextlib import AbstractContextManager
+
 import aiosqlite
 import os
+from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from .base import StateBackend
 from flujo.infra import telemetry
@@ -92,6 +97,42 @@ COLUMN_DEF_PATTERN = re.compile(
     )*$""",
     re.IGNORECASE | re.VERBOSE,
 )
+
+
+_PORTAL_LOCK = threading.Lock()
+_PORTAL_MANAGER: AbstractContextManager[BlockingPortal] | None = None
+_PORTAL: BlockingPortal | None = None
+
+
+def _get_blocking_portal() -> BlockingPortal:
+    """Return a shared BlockingPortal to run coroutines from sync code safely."""
+    global _PORTAL, _PORTAL_MANAGER
+    with _PORTAL_LOCK:
+        if _PORTAL is None:
+            _PORTAL_MANAGER = start_blocking_portal()
+            _PORTAL = _PORTAL_MANAGER.__enter__()
+            atexit.register(_shutdown_blocking_portal)
+        return _PORTAL
+
+
+def _shutdown_blocking_portal() -> None:
+    """Cleanly stop the shared BlockingPortal at interpreter shutdown."""
+    global _PORTAL, _PORTAL_MANAGER
+    portal = _PORTAL
+    manager = _PORTAL_MANAGER
+    _PORTAL = None
+    _PORTAL_MANAGER = None
+    if manager is not None:
+        try:
+            manager.__exit__(None, None, None)
+        except Exception:
+            pass
+        return
+    if portal is not None:
+        try:
+            portal.stop()
+        except Exception:
+            pass
 
 
 def _validate_sql_identifier(identifier: str) -> bool:
@@ -278,25 +319,8 @@ def _run_coro_sync(coro: "Coroutine[Any, Any, Any]") -> Any:
     except RuntimeError:
         return asyncio.run(coro)
 
-    result: Any = None
-    exc: BaseException | None = None
-
-    def _target() -> None:
-        nonlocal result, exc
-        try:
-            result = asyncio.run(coro)
-        except BaseException as e:  # pragma: no cover - unlikely
-            exc = e
-
-    import threading as _threading
-
-    t = _threading.Thread(target=_target, name="sqlite-backend-shutdown")
-    t.daemon = True
-    t.start()
-    t.join()
-    if exc:
-        raise exc
-    return result
+    portal = _get_blocking_portal()
+    return portal.call(lambda: coro)
 
 
 class SQLiteBackendBase(StateBackend):
