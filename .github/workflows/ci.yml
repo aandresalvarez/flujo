@@ -315,7 +315,10 @@ jobs:
 
       - name: Generate SBOM (CycloneDX via pip-audit)
         if: startsWith(github.ref, 'refs/tags/v')
-        run: uv run pip-audit --format cyclonedx-json --output sbom.json
+        run: |
+          # Upgrade pip to fix GHSA-4xh5-x5gv-qwph vulnerability
+          uv run python -m pip install --upgrade pip
+          uv run pip-audit --format cyclonedx-json --output sbom.json
 
       - name: Sign artifacts (Sigstore)
         if: startsWith(github.ref, 'refs/tags/v')
