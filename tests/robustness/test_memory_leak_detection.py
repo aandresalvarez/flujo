@@ -317,7 +317,7 @@ class TestResourceLeakDetection:
 
 def get_memory_usage_mb() -> float:
     """Get current memory usage in MB."""
-    import psutil
+    psutil = pytest.importorskip("psutil", reason="psutil not available")
     import os
 
     process = psutil.Process(os.getpid())
