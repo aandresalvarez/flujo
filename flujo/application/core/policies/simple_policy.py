@@ -46,7 +46,7 @@ class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
         cache_key = None
         if getattr(core, "_enable_cache", False):
             try:
-                cache_key = core._cache_key(frame)  # type: ignore[attr-defined]
+                cache_key = core._cache_key(frame)
             except Exception:
                 cache_key = None
         try:

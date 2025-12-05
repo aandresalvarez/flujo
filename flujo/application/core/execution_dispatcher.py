@@ -83,7 +83,7 @@ class ExecutionDispatcher:
         cache_key = None
         try:
             if getattr(core_obj, "_enable_cache", False):
-                cache_key = core_obj._cache_key(frame)  # type: ignore[attr-defined]
+                cache_key = core_obj._cache_key(frame)
         except Exception:
             cache_key = None
         fallback_depth = 0

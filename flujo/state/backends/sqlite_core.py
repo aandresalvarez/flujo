@@ -16,6 +16,7 @@ from typing import Any, Awaitable, Callable, Coroutine, Dict, List, Optional, TY
 from contextlib import AbstractContextManager
 
 import aiosqlite
+import anyio
 import os
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
@@ -130,7 +131,7 @@ def _shutdown_blocking_portal() -> None:
         return
     if portal is not None:
         try:
-            portal.stop()
+            anyio.run(portal.stop)
         except Exception:
             pass
 
