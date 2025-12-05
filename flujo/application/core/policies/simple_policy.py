@@ -34,36 +34,25 @@ class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
     def handles_type(self) -> Type[Step[Any, Any]]:
         return Step
 
-    async def execute(
-        self,
-        core: Any,
-        step: Any,
-        data: Any | None = None,
-        context: Optional[Any] = None,
-        resources: Optional[Any] = None,
-        limits: Optional[UsageLimits] = None,
-        stream: bool = False,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        cache_key: Optional[str] = None,
-        _fallback_depth: int = 0,
-    ) -> StepOutcome[StepResult]:
-        # Allow ExecutionDispatcher to pass an ExecutionFrame directly
-        if isinstance(step, ExecutionFrame):
-            frame = step
-            step = frame.step
-            data = frame.data
-            context = frame.context
-            resources = frame.resources
-            limits = frame.limits
-            stream = frame.stream
-            on_chunk = frame.on_chunk
-            cache_key = cache_key or (
-                core._cache_key(frame) if getattr(core, "_enable_cache", False) else None
-            )
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+        """Frame-based execution entrypoint for simple steps."""
+        step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        stream = frame.stream
+        on_chunk = frame.on_chunk
+        cache_key = None
+        if getattr(core, "_enable_cache", False):
             try:
-                _fallback_depth = int(getattr(frame, "_fallback_depth", _fallback_depth) or 0)
+                cache_key = core._cache_key(frame)  # type: ignore[attr-defined]
             except Exception:
-                _fallback_depth = _fallback_depth
+                cache_key = None
+        try:
+            fallback_depth = int(getattr(frame, "_fallback_depth", 0) or 0)
+        except Exception:
+            fallback_depth = 0
 
         telemetry.logfire.debug(
             f"[Policy] SimpleStep: delegating to core orchestration for '{getattr(step, 'name', '<unnamed>')}'"
@@ -78,7 +67,7 @@ class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
                 stream,
                 on_chunk,
                 cache_key,
-                _fallback_depth,
+                fallback_depth,
             )
             # Cache successful outcomes here when called directly via policy
             try:

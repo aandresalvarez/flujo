@@ -501,18 +501,22 @@ async def execute_simple_step(
         fb_depth = int(_fallback_depth) if _fallback_depth is not None else 0
     except Exception:
         fb_depth = 0
-    outcome = await core.simple_step_executor.execute(
+
+    frame = make_execution_frame(
         core,
         step,
         data,
         context,
         resources,
         limits,
-        stream,
-        on_chunk,
-        cache_key,
-        fb_depth,
+        context_setter=None,
+        stream=stream,
+        on_chunk=on_chunk,
+        fallback_depth=fb_depth,
+        result=None,
+        quota=None,
     )
+    outcome = await core.simple_step_executor.execute(core, frame)
     return cast(
         StepResult, core._unwrap_outcome_to_step_result(outcome, core._safe_step_name(step))
     )
