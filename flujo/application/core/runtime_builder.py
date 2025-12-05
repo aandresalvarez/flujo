@@ -33,6 +33,7 @@ from .estimation import (
     build_default_estimator_factory,
 )
 from .fallback_handler import FallbackHandler
+from .governance_policy import GovernanceEngine, GovernancePolicy
 from .execution_dispatcher import ExecutionDispatcher
 from .hitl_orchestrator import HitlOrchestrator
 from .hydration_manager import HydrationManager
@@ -130,6 +131,7 @@ class ExecutorCoreDeps:
     telemetry_handler_factory: Callable[["ExecutorCore[Any]"], TelemetryHandler] | None = None
     step_handler_factory: Callable[["ExecutorCore[Any]"], StepHandler] | None = None
     agent_handler_factory: Callable[["ExecutorCore[Any]"], AgentHandler] | None = None
+    governance_engine: GovernanceEngine | None = None
 
 
 class FlujoRuntimeBuilder:
@@ -189,6 +191,7 @@ class FlujoRuntimeBuilder:
         telemetry_handler_factory: Callable[["ExecutorCore[Any]"], TelemetryHandler] | None = None,
         step_handler_factory: Callable[["ExecutorCore[Any]"], StepHandler] | None = None,
         agent_handler_factory: Callable[["ExecutorCore[Any]"], AgentHandler] | None = None,
+        governance_policies: tuple[GovernancePolicy, ...] | None = None,
     ) -> ExecutorCoreDeps:
         serializer_obj = serializer or OrjsonSerializer()
         hasher_obj = hasher or Blake3Hasher()
@@ -255,6 +258,9 @@ class FlujoRuntimeBuilder:
         )
         step_handler_factory_obj = step_handler_factory or (lambda core: StepHandler(core))
         agent_handler_factory_obj = agent_handler_factory or (lambda core: AgentHandler(core))
+        governance_engine_obj = GovernanceEngine(
+            policies=governance_policies if governance_policies is not None else None
+        )
 
         return ExecutorCoreDeps(
             agent_runner=agent_runner_obj,
@@ -304,4 +310,5 @@ class FlujoRuntimeBuilder:
             telemetry_handler_factory=telemetry_handler_factory_obj,
             step_handler_factory=step_handler_factory_obj,
             agent_handler_factory=agent_handler_factory_obj,
+            governance_engine=governance_engine_obj,
         )

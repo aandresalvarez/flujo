@@ -362,6 +362,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._agent_handler = (
             agent_handler_factory(self) if agent_handler_factory is not None else AgentHandler(self)
         )
+        self._governance_engine = deps_obj.governance_engine
 
         # Initialize orchestrators that depend on executors registered above
 

@@ -88,6 +88,11 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 **Priority:** 🟡 Medium | **Effort:** Low | **Tags:** `Security`, `Enterprise`
 *   **Description:** Middleware to intercept/block inputs before agent execution (e.g., PII redaction).
 *   **Implementation:** Add `GovernancePolicy` protocol hooks in `StepCoordinator`.
+*   **Plan (current):**
+    1. Add a `GovernancePolicy` protocol + registry with a default allow-all policy; surface a config hook in settings.
+    2. Insert interception before agent execution (agent handler/orchestrator entry) with fail-fast deny and telemetry (allow/deny decision, reason).
+    3. Provide typed policy input/output models to avoid `Any`; keep frame/context available but immutable.
+    4. Tests: allow path, deny path (raises/halts), telemetry emitted, and no-op when no policy configured.
 
 ### [TASK-008] OpenAPI Skill Generator
 **Priority:** 🟡 Medium | **Effort:** Low | **Tags:** `DX`, `Tooling`
