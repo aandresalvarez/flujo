@@ -93,6 +93,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     2. Insert interception before agent execution (agent handler/orchestrator entry) with fail-fast deny and telemetry (allow/deny decision, reason).
     3. Provide typed policy input/output models to avoid `Any`; keep frame/context available but immutable.
     4. Tests: allow path, deny path (raises/halts), telemetry emitted, and no-op when no policy configured.
+*   **Status:** Implemented governance engine with allow/deny counts, default allow-all; `FLUJO_GOVERNANCE_MODE` (allow_all|deny_all) selects the policy set; telemetry emits allow/deny counts.
 
 ### [TASK-008] OpenAPI Skill Generator
 **Priority:** 🟡 Medium | **Effort:** Low | **Tags:** `DX`, `Tooling`
