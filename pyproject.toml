@@ -344,6 +344,7 @@ per-file-ignores = { "tests/benchmarks/*.py" = ["E402"], "tests/unit/test_extrac
 [tool.pytest.ini_options]
 # Note: asyncio_mode is deprecated in pytest 8+, using pytest-asyncio auto mode
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"  # Explicit scope to avoid future behavior changes
 testpaths = ["tests", "tests/architecture"]
 norecursedirs = [
   ".hypothesis",  # Ensure Hypothesis' workdir is ignored to avoid plugin warnings
