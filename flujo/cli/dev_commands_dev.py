@@ -26,6 +26,73 @@ from .helpers import (
 logfire = telemetry.logfire
 
 
+def import_openapi(
+    spec: Annotated[str, typer.Argument(help="Path or URL to OpenAPI/Swagger spec")],
+    output: Annotated[
+        str, typer.Option("--output", "-o", help="Output directory for generated models")
+    ] = "generated_tools",
+    target_python_version: Annotated[
+        str, typer.Option("--python-version", help="Target Python version (e.g., 3.11)")
+    ] = "3.11",
+    base_class: Annotated[
+        str, typer.Option("--base-class", help="Base class for models (pydantic style)")
+    ] = "pydantic.BaseModel",
+    disable_timestamp: Annotated[
+        bool,
+        typer.Option("--disable-timestamp/--enable-timestamp", help="Toggle generated timestamp"),
+    ] = True,
+) -> None:
+    """
+    Generate Pydantic models/tools from an OpenAPI spec using datamodel-code-generator.
+
+    Requires `datamodel-code-generator` to be installed (pip/uv). Emits a friendly
+    error if the dependency is missing.
+    """
+    try:
+        from datamodel_code_generator import main as dcg_main  # type: ignore
+    except Exception:  # pragma: no cover - dependency not installed
+        print_rich_or_typer(
+            "[red]datamodel-code-generator is not installed. "
+            "Install with `uv add datamodel-code-generator` or "
+            "`pip install datamodel-code-generator`.",
+            stderr=True,
+        )
+        raise typer.Exit(1)
+
+    args = [
+        "--input",
+        spec,
+        "--input-file-type",
+        "openapi",
+        "--output",
+        output,
+        "--target-python-version",
+        target_python_version,
+    ]
+    if disable_timestamp:
+        args.append("--disable-timestamp")
+    if base_class:
+        args.extend(["--base-class", base_class])
+
+    logfire.info(
+        "[OpenAPI] Generating models",
+        extra={"spec": spec, "output": output, "target_python_version": target_python_version},
+    )
+    try:
+        dcg_main(args)
+    except SystemExit as exc:  # datamodel-code-generator uses sys.exit
+        code = exc.code if isinstance(exc.code, int) else 1
+        if code != 0:
+            print_rich_or_typer(f"[red]datamodel-code-generator failed (exit={code})", stderr=True)
+            raise typer.Exit(code)
+    except Exception as exc:  # pragma: no cover - passthrough errors
+        print_rich_or_typer(f"[red]datamodel-code-generator failed: {exc}", stderr=True)
+        raise typer.Exit(1) from exc
+
+
+logfire = telemetry.logfire
+
+
 def version_cmd() -> None:
     """Print the package version."""
     version = get_version_string()
@@ -853,3 +920,4 @@ def register_dev_commands(dev_app: typer.Typer) -> None:
     dev_app.command(name="validate")(validate_dev)
     dev_app.command(name="compile-yaml")(compile)
     dev_app.command(name="visualize")(pipeline_mermaid_cmd)
+    dev_app.command(name="import-openapi")(import_openapi)
