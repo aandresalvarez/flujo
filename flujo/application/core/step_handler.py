@@ -148,19 +148,23 @@ class StepHandler:
         cache_key: Optional[str],
         fallback_depth: int,
     ) -> StepResult:
-        return await self._core._hitl_orchestrator.execute(
-            core=self._core,
-            step=step,
-            data=data,
-            context=context,
-            resources=resources,
-            limits=limits,
+        frame = make_execution_frame(
+            self._core,
+            step,
+            data,
+            context,
+            resources,
+            limits,
             context_setter=context_setter,
             stream=stream,
             on_chunk=on_chunk,
-            cache_key=cache_key,
             fallback_depth=fallback_depth,
+            result=None,
+            quota=self._core._get_current_quota()
+            if hasattr(self._core, "_get_current_quota")
+            else None,
         )
+        return await self._core._hitl_orchestrator.execute(core=self._core, frame=frame)
 
     async def loop_step(
         self,

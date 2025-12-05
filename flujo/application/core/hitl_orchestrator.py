@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Optional, Awaitable
+from typing import TYPE_CHECKING, Any
 
 from ...domain.models import (
-    PipelineResult,
     StepResult,
     StepOutcome,
-    UsageLimits,
     Paused,
     Success,
     Failure,
@@ -17,6 +15,7 @@ from ...exceptions import PausedException
 
 if TYPE_CHECKING:  # pragma: no cover
     from .executor_core import ExecutorCore
+    from .types import ExecutionFrame
 
 
 class HitlOrchestrator:
@@ -26,20 +25,11 @@ class HitlOrchestrator:
         self,
         *,
         core: "ExecutorCore[Any]",
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
-        stream: bool = False,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        cache_key: Optional[str] = None,
-        fallback_depth: int = 0,
+        frame: "ExecutionFrame[Any]",
     ) -> StepResult:
-        outcome: StepOutcome[StepResult] = await core.hitl_step_executor.execute(
-            core, step, data, context, resources, limits, context_setter
-        )
+        step = frame.step
+        context = frame.context
+        outcome: StepOutcome[StepResult] = await core.hitl_step_executor.execute(core, frame)
         if isinstance(outcome, Paused):
             try:
                 if context is not None and hasattr(context, "scratchpad"):

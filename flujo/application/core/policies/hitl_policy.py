@@ -32,16 +32,7 @@ from ..types import ExecutionFrame
 
 
 class HitlStepExecutor(Protocol):
-    async def execute(
-        self,
-        core: Any,
-        step: HumanInTheLoopStep,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-    ) -> StepOutcome[StepResult]: ...
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
 
 
 class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
@@ -49,22 +40,11 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
     def handles_type(self) -> Type[HumanInTheLoopStep]:
         return HumanInTheLoopStep
 
-    async def execute(
-        self,
-        core: Any,
-        step: HumanInTheLoopStep,
-        data: Any | None = None,
-        context: Optional[Any] = None,
-        resources: Optional[Any] = None,
-        limits: Optional[UsageLimits] = None,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
-    ) -> StepOutcome[StepResult]:
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         """Handle Human-In-The-Loop step execution."""
-        if isinstance(step, ExecutionFrame):
-            frame = step
-            step = frame.step
-            data = frame.data
-            context = frame.context
+        step = frame.step
+        data = frame.data
+        context = frame.context
         import time
 
         from flujo.exceptions import TemplateResolutionError

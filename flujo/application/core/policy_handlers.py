@@ -166,16 +166,7 @@ class PolicyHandlers:
         )
 
     async def hitl_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        res_any = await self._core.hitl_step_executor.execute(
-            self._core,
-            cast(HumanInTheLoopStep, step),
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.context_setter,
-        )
+        res_any = await self._core.hitl_step_executor.execute(self._core, frame)
         if isinstance(res_any, StepOutcome):
             return res_any
         return (
