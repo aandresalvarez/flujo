@@ -178,6 +178,12 @@ async def test_import_step_outputs_mapping_and_context_isolation():
             self.child_ctx = child_ctx
             self.inner_sr = inner_sr
 
+            class _QM:
+                def get_current_quota(self_inner) -> Any:
+                    return None
+
+            self._quota_manager = _QM()
+
         async def _execute_pipeline_via_policies(  # type: ignore[no-untyped-def]
             self, *_args, **_kwargs
         ) -> PipelineResult[Ctx]:
