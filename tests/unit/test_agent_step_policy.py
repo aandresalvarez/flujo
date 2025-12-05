@@ -1,6 +1,7 @@
 import pytest
 
 from flujo.application.core.executor_core import ExecutorCore
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.step_policies import DefaultAgentStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import Success
@@ -37,19 +38,23 @@ async def test_agent_quota_reservation_failure_raises_usage_limit_no_fallback():
 
     from flujo.exceptions import UsageLimitExceededError
 
+    frame = make_execution_frame(
+        core,
+        step,
+        data=None,
+        context=None,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+
     with pytest.raises(UsageLimitExceededError) as exc:
-        await execu.execute(
-            core=core,
-            step=step,
-            data=None,
-            context=None,
-            resources=None,
-            limits=None,
-            stream=False,
-            on_chunk=None,
-            cache_key=None,
-            _fallback_depth=0,
-        )
+        await execu.execute(core=core, frame=frame)
     # Message parity: generic when no explicit limits passed
     assert "Insufficient quota" in str(exc.value)
 
@@ -81,18 +86,22 @@ async def test_agent_primary_failure_fallback_success_with_quota_present():
     # Provide ample quota
     core._set_current_quota(Quota(remaining_cost_usd=10.0, remaining_tokens=1000))
 
-    outcome = await execu.execute(
-        core=core,
-        step=step,
+    frame = make_execution_frame(
+        core,
+        step,
         data=None,
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
-        _fallback_depth=0,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    outcome = await execu.execute(core=core, frame=frame)
     assert isinstance(outcome, Success)
     assert outcome.step_result.success is True
     assert outcome.step_result.metadata_.get("fallback_triggered") is True
@@ -122,19 +131,23 @@ async def test_agent_quota_denial_uses_legacy_message_with_limits():
 
     from flujo.exceptions import UsageLimitExceededError
 
+    frame = make_execution_frame(
+        core,
+        step,
+        data=None,
+        context=None,
+        resources=None,
+        limits=limits,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+
     with pytest.raises(UsageLimitExceededError) as exc:
-        await execu.execute(
-            core=core,
-            step=step,
-            data=None,
-            context=None,
-            resources=None,
-            limits=limits,
-            stream=False,
-            on_chunk=None,
-            cache_key=None,
-            _fallback_depth=0,
-        )
+        await execu.execute(core=core, frame=frame)
     # When both exceeded, cost prioritization or most constrained ratio should pick cost here
     assert (
         str(exc.value) == "Cost limit of $1 exceeded"
@@ -158,16 +171,20 @@ async def test_agent_pricing_not_configured_raises_immediately():
 
     from flujo.exceptions import PricingNotConfiguredError
 
+    frame = make_execution_frame(
+        core,
+        step,
+        data=None,
+        context=None,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+
     with pytest.raises(PricingNotConfiguredError):
-        await execu.execute(
-            core=core,
-            step=step,
-            data=None,
-            context=None,
-            resources=None,
-            limits=None,
-            stream=False,
-            on_chunk=None,
-            cache_key=None,
-            _fallback_depth=0,
-        )
+        await execu.execute(core=core, frame=frame)
