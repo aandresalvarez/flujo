@@ -81,7 +81,9 @@ from .step_policies import (
     ValidatorInvoker,
 )
 from ...domain.memory import VectorStoreProtocol
+from ...domain.sandbox import SandboxProtocol
 from ...infra.memory import NullVectorStore
+from ...infra.sandbox import NullSandbox
 from ...utils.config import get_settings
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -106,6 +108,7 @@ class ExecutorCoreDeps:
     fallback_handler: FallbackHandler
     hydration_manager: HydrationManager
     memory_store: VectorStoreProtocol
+    sandbox: SandboxProtocol
     background_task_manager: BackgroundTaskManager
     context_update_manager: ContextUpdateManager
     step_history_tracker: StepHistoryTracker
@@ -167,6 +170,7 @@ class FlujoRuntimeBuilder:
         cache_ttl: int = 3600,
         fallback_handler: Optional[FallbackHandler] = None,
         hydration_manager: Optional[HydrationManager] = None,
+        sandbox: Optional[SandboxProtocol] = None,
         background_task_manager: Optional[BackgroundTaskManager] = None,
         context_update_manager: Optional[ContextUpdateManager] = None,
         step_history_tracker: Optional[StepHistoryTracker] = None,
@@ -221,6 +225,7 @@ class FlujoRuntimeBuilder:
         )
         memory_store_obj: VectorStoreProtocol = memory_store or NullVectorStore()
         background_task_manager_obj = background_task_manager or BackgroundTaskManager()
+        sandbox_obj: SandboxProtocol = sandbox or NullSandbox()
 
         plugin_runner_obj = plugin_runner or DefaultPluginRunner()
         agent_runner_obj = agent_runner or DefaultAgentRunner()
@@ -328,6 +333,7 @@ class FlujoRuntimeBuilder:
             quota_manager=quota_manager or QuotaManager(),
             cache_manager=cache_manager,
             memory_store=memory_store_obj,
+            sandbox=sandbox_obj,
             serializer=serializer_obj,
             hasher=hasher_obj,
             cache_key_generator=cache_key_gen,

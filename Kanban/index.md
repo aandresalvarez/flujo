@@ -126,6 +126,13 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 **Priority:** 🔵 Low | **Effort:** High | **Tags:** `Security`
 *   **Description:** Safe execution of generated code.
 *   **Implementation:** Define `CodeInterpreter` protocol. Implement `RemoteSandbox` (API-based) before Docker-based.
+*   **Plan (current):**
+    1. Define sandbox primitives (`SandboxExecution`, `SandboxResult`, `SandboxProtocol`) in domain; keep async `exec_code`.
+    2. Provide defaults in infra: `NullSandbox` (safe no-op) as the default; keep remote/docker as future optional add-ons.
+    3. Wire into DI: add `sandbox` to `ExecutorCoreDeps` + `FlujoRuntimeBuilder`, expose via `core.sandbox`.
+    4. Tests: default null sandbox, custom injection via builder, and core exposure; ensure type safety.
+    5. Next slices: remote sandbox adapter and optional docker extra (not yet implemented).
+*   **Status:** Protocol + NullSandbox + DI + tests implemented; remote/docker adapters remain TODO.
 
 ### [TASK-012] Formalize Context Typing
 **Priority:** 🔵 Low | **Effort:** Medium | **Tags:** `Type-Safety`

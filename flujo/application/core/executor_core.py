@@ -4,6 +4,7 @@ import warnings
 from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast, TYPE_CHECKING
 
 from ...domain.interfaces import StateProvider
+from ...domain.sandbox import SandboxProtocol
 from ...domain.memory import VectorStoreProtocol
 from ...domain.models import PipelineResult, Quota, StepOutcome, StepResult, UsageLimits
 from ...exceptions import (
@@ -255,6 +256,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._fallback_handler = deps_obj.fallback_handler
         self._telemetry = deps_obj.telemetry
         self._memory_store = deps_obj.memory_store
+        self._sandbox: SandboxProtocol = deps_obj.sandbox
         self._enable_cache = enable_cache
         # Estimation selection: factory first, then direct estimator, then default
         self._estimator_factory = deps_obj.estimator_factory
@@ -384,6 +386,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     def memory_store(self) -> VectorStoreProtocol:
         """Exposed vector store used for long-term memory; defaults to a Null store."""
         return self._memory_store
+
+    @property
+    def sandbox(self) -> SandboxProtocol:
+        """Exposed sandbox implementation used for code execution; defaults to Null sandbox."""
+        return self._sandbox
 
     async def clear_cache(self) -> None:
         """Async version - use this in async contexts with await."""
