@@ -107,6 +107,43 @@ class StepHandler:
         outcome = await self._core.cache_step_executor.execute(self._core, frame)
         return self._core._unwrap_outcome_to_step_result(outcome, self._core._safe_step_name(step))
 
+    async def import_step(
+        self,
+        step: Any,
+        data: Any,
+        context: Optional[Any],
+        resources: Optional[Any],
+        limits: Optional[UsageLimits],
+        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+    ) -> StepResult:
+        frame = make_execution_frame(
+            self._core,
+            step,
+            data,
+            context,
+            resources,
+            limits,
+            context_setter=context_setter,
+            stream=False,
+            on_chunk=None,
+            fallback_depth=0,
+            result=None,
+            quota=self._core._get_current_quota()
+            if hasattr(self._core, "_get_current_quota")
+            else None,
+        )
+        outcome = await self._core._import_orchestrator.execute(
+            core=self._core,
+            step=step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            context_setter=context_setter,
+            frame=frame,
+        )
+        return self._core._unwrap_outcome_to_step_result(outcome, self._core._safe_step_name(step))
+
     async def dynamic_router_step(
         self,
         step: Any,

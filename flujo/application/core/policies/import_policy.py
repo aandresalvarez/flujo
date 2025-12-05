@@ -5,12 +5,10 @@ from typing import Type, cast
 
 from ._shared import (
     Any,
-    Callable,
     ImportStep,
     InfiniteRedirectError,
     NonRetryableError,
     PipelineAbortSignal,
-    Optional,
     Paused,
     PausedException,
     PipelineResult,
@@ -20,7 +18,6 @@ from ._shared import (
     Failure,
     StepOutcome,
     StepResult,
-    UsageLimits,
     UsageLimitExceededError,
     telemetry,
 )
@@ -31,16 +28,7 @@ from ..types import ExecutionFrame
 
 
 class ImportStepExecutor(Protocol):
-    async def execute(
-        self,
-        core: Any,
-        step: ImportStep,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Callable[[PipelineResult[Any], Optional[Any]], None],
-    ) -> StepOutcome[StepResult]: ...
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
 
 
 class DefaultImportStepExecutor(StepPolicy[ImportStep]):
@@ -48,25 +36,13 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
     def handles_type(self) -> Type[ImportStep]:
         return ImportStep
 
-    async def execute(
-        self,
-        core: Any,
-        step: ImportStep,
-        data: Any | None = None,
-        context: Optional[Any] = None,
-        resources: Optional[Any] = None,
-        limits: Optional[UsageLimits] = None,
-        context_setter: Callable[[PipelineResult[Any], Optional[Any]], None] = lambda _pr,
-        _ctx: None,
-    ) -> StepOutcome[StepResult]:
-        if isinstance(step, ExecutionFrame):
-            frame = step
-            step = cast(ImportStep, frame.step)
-            data = frame.data
-            context = frame.context
-            resources = frame.resources
-            limits = frame.limits
-            context_setter = frame.context_setter
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+        step = cast(ImportStep, frame.step)
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        context_setter = frame.context_setter
         from ..context_manager import ContextManager
         import json
         import copy
