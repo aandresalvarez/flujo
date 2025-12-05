@@ -60,7 +60,8 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 *   **Requirements:**
     *   **Strategy:** Vertical Slice (migrate one policy at a time to keep build green).
     *   Update `StepPolicy` protocol.
-    *   Implement `ExecutionDispatcher` adapter to support legacy custom policies during transition.
+    *   Implement `ExecutionDispatcher` adapter to support legacy custom policies during transition. ✅
+    *   Phase 2/3 complete: Agent, Simple, Cache, Conditional, Parallel, Loop, DynamicRouter, HITL, Import policies now take `(core, frame: ExecutionFrame)`; adapter warns on legacy signatures when `FLUJO_WARN_LEGACY=1`.
 *   **DoD:** All internal policies use `frame.context` instead of `*args`.
 
 ### [TASK-006] Dependency Injection for `ExecutorCore`

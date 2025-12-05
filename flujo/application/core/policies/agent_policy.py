@@ -68,18 +68,7 @@ class DefaultAgentStepExecutor(StepPolicy[Step[Any, Any]]):
             on_chunk,
             cache_key,
             _fallback_depth,
-        ) = await prepare_agent_execution(
-            core,
-            frame,
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.stream,
-            frame.on_chunk,
-            None,
-            getattr(frame, "_fallback_depth", 0),
-        )
+        ) = await prepare_agent_execution(core, frame)
         return await run_agent_execution(
             executor=self,
             core=core,
