@@ -152,16 +152,7 @@ class PolicyHandlers:
         )
 
     async def dynamic_router_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        res_any = await self._core.dynamic_router_step_executor.execute(
-            self._core,
-            step,
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.context_setter,
-        )
+        res_any = await self._core.dynamic_router_step_executor.execute(self._core, frame)
         if isinstance(res_any, StepOutcome):
             return res_any
         return (

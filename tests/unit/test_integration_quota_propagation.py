@@ -145,7 +145,7 @@ async def test_quota_propagates_router_to_selected_parallel_with_costs():
 
         core._set_current_quota(Quota(remaining_cost_usd=10.0, remaining_tokens=1000))
 
-        outcome = await DefaultDynamicRouterStepExecutor().execute(
+        frame = make_execution_frame(
             core,
             router,
             data=None,
@@ -153,8 +153,13 @@ async def test_quota_propagates_router_to_selected_parallel_with_costs():
             resources=None,
             limits=None,
             context_setter=None,
-            step=None,
+            stream=False,
+            on_chunk=None,
+            fallback_depth=0,
+            result=None,
+            quota=None,
         )
+        outcome = await DefaultDynamicRouterStepExecutor().execute(core, frame)
         assert isinstance(outcome, Success)
         assert outcome.step_result.metadata_["executed_branches"] == ["x", "y"]
     finally:

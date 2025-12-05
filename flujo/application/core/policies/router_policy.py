@@ -34,18 +34,7 @@ from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
 
 
 class DynamicRouterStepExecutor(Protocol):
-    async def execute(
-        self,
-        core: Any,
-        router_step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        # Backward-compat: expose 'step' in signature for legacy inspection
-        step: Optional[Any] = None,
-    ) -> StepOutcome[StepResult]: ...
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
 
 
 class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
@@ -53,28 +42,14 @@ class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
     def handles_type(self) -> Type[DynamicParallelRouterStep]:
         return DynamicParallelRouterStep
 
-    async def execute(
-        self,
-        core: Any,
-        router_step: Any,
-        data: Any | None = None,
-        context: Optional[Any] = None,
-        resources: Optional[Any] = None,
-        limits: Optional[UsageLimits] = None,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
-        # Backward-compat: expose 'step' in signature for legacy inspection
-        step: Optional[Any] = None,
-    ) -> StepOutcome[StepResult]:
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
-        if isinstance(router_step, ExecutionFrame):
-            frame = router_step
-            router_step = frame.step
-            data = frame.data
-            context = frame.context
-            resources = frame.resources
-            limits = frame.limits
-            context_setter = getattr(frame, "context_setter", None)
-            step = step or router_step
+        router_step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        context_setter = getattr(frame, "context_setter", None)
 
         telemetry.logfire.debug("=== HANDLE DYNAMIC ROUTER STEP ===")
         telemetry.logfire.debug(f"Dynamic router step name: {router_step.name}")
