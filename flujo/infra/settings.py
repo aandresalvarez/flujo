@@ -33,6 +33,34 @@ class BackgroundTaskSettings(BaseModel):
     stale_task_timeout_hours: int = 24
 
 
+class ShadowEvalSettings(BaseModel):
+    """Settings for shadow evaluations (LLM judge)."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable shadow evaluations (async judge scoring on sampled runs).",
+    )
+    sample_rate: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Fraction of runs to sample for shadow evaluation (0-1).",
+    )
+    timeout_seconds: int = Field(
+        default=30,
+        description="Timeout in seconds for a single shadow evaluation task.",
+        ge=1,
+    )
+    judge_model: Optional[str] = Field(
+        default=None,
+        description="LLM model/tool identifier for judge; if None, rely on default evaluator.",
+    )
+    sink: Literal["telemetry"] = Field(
+        default="telemetry",
+        description="Where to record eval results. Currently telemetry-only.",
+    )
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables. Standard names are preferred."""
 
@@ -87,6 +115,7 @@ class Settings(BaseSettings):
     reward_enabled: bool = True
     telemetry_export_enabled: bool = False
     otlp_export_enabled: bool = False
+    shadow_eval: ShadowEvalSettings = ShadowEvalSettings()
 
     # --- Core strictness toggles ---
     # Enforce strict context isolation and merging (CI-friendly). Can be overridden per-executor.

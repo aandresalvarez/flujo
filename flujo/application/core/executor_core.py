@@ -18,6 +18,7 @@ from .result_handler import ResultHandler
 from .telemetry_handler import TelemetryHandler
 from .step_handler import StepHandler
 from .agent_handler import AgentHandler
+from .shadow_evaluator import ShadowEvaluator
 from .optimization_config_stub import OptimizationConfig
 from .runtime_builder import ExecutorCoreDeps, FlujoRuntimeBuilder
 from .executor_helpers import (
@@ -363,6 +364,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             agent_handler_factory(self) if agent_handler_factory is not None else AgentHandler(self)
         )
         self._governance_engine = deps_obj.governance_engine
+        self._shadow_evaluator: ShadowEvaluator | None = getattr(deps_obj, "shadow_evaluator", None)
 
         # Initialize orchestrators that depend on executors registered above
 

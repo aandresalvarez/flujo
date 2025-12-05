@@ -49,6 +49,7 @@ from .policy_registry import PolicyRegistry, create_default_registry
 from .pipeline_orchestrator import PipelineOrchestrator
 from .quota_manager import QuotaManager
 from .result_handler import ResultHandler
+from .shadow_evaluator import ShadowEvalConfig, ShadowEvaluator
 from .step_history_tracker import StepHistoryTracker
 from .step_handler import StepHandler
 from .telemetry_handler import TelemetryHandler
@@ -138,6 +139,7 @@ class ExecutorCoreDeps:
     step_handler_factory: Callable[["ExecutorCore[Any]"], StepHandler] | None = None
     agent_handler_factory: Callable[["ExecutorCore[Any]"], AgentHandler] | None = None
     governance_engine: GovernanceEngine | None = None
+    shadow_evaluator: ShadowEvaluator | None = None
 
 
 class FlujoRuntimeBuilder:
@@ -198,6 +200,11 @@ class FlujoRuntimeBuilder:
         step_handler_factory: Callable[["ExecutorCore[Any]"], StepHandler] | None = None,
         agent_handler_factory: Callable[["ExecutorCore[Any]"], AgentHandler] | None = None,
         governance_policies: tuple[GovernancePolicy, ...] | None = None,
+        shadow_eval_enabled: bool | None = None,
+        shadow_eval_sample_rate: float | None = None,
+        shadow_eval_timeout_s: float | None = None,
+        shadow_eval_judge_model: str | None = None,
+        shadow_eval_sink: str | None = None,
     ) -> ExecutorCoreDeps:
         serializer_obj = serializer or OrjsonSerializer()
         hasher_obj = hasher or Blake3Hasher()
@@ -273,6 +280,37 @@ class FlujoRuntimeBuilder:
             else:
                 policies = (AllowAllGovernancePolicy(),)
         governance_engine_obj = GovernanceEngine(policies=policies)
+        shadow_eval_config = ShadowEvalConfig(
+            enabled=bool(
+                shadow_eval_enabled
+                if shadow_eval_enabled is not None
+                else getattr(settings, "shadow_eval_enabled", False)
+            ),
+            sample_rate=float(
+                shadow_eval_sample_rate
+                if shadow_eval_sample_rate is not None
+                else getattr(settings, "shadow_eval_sample_rate", 0.0)
+            ),
+            timeout_s=float(
+                shadow_eval_timeout_s
+                if shadow_eval_timeout_s is not None
+                else getattr(settings, "shadow_eval_timeout_s", 30.0)
+            ),
+            judge_model=str(
+                shadow_eval_judge_model
+                if shadow_eval_judge_model is not None
+                else getattr(settings, "shadow_eval_judge_model", "openai:gpt-4o-mini")
+            ),
+            sink=str(
+                shadow_eval_sink
+                if shadow_eval_sink is not None
+                else getattr(settings, "shadow_eval_sink", "telemetry")
+            ),
+        )
+        shadow_evaluator_obj = ShadowEvaluator(
+            config=shadow_eval_config,
+            background_task_manager=background_task_manager or BackgroundTaskManager(),
+        )
 
         return ExecutorCoreDeps(
             agent_runner=agent_runner_obj,
@@ -323,4 +361,5 @@ class FlujoRuntimeBuilder:
             step_handler_factory=step_handler_factory_obj,
             agent_handler_factory=agent_handler_factory_obj,
             governance_engine=governance_engine_obj,
+            shadow_evaluator=shadow_evaluator_obj,
         )

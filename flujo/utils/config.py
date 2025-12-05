@@ -19,6 +19,11 @@ class Settings:
     test_mode: bool = False
     warn_legacy: bool = False
     governance_mode: Literal["allow_all", "deny_all"] = "allow_all"
+    shadow_eval_enabled: bool = False
+    shadow_eval_sample_rate: float = 0.0
+    shadow_eval_timeout_s: float = 30.0
+    shadow_eval_judge_model: str = "openai:gpt-4o-mini"
+    shadow_eval_sink: str = "telemetry"
 
 
 _CACHED_SETTINGS: Optional[Settings] = None
@@ -44,6 +49,11 @@ def _load_from_env() -> Settings:
         test_mode=_flag("FLUJO_TEST_MODE"),
         warn_legacy=_flag("FLUJO_WARN_LEGACY"),
         governance_mode=_mode("FLUJO_GOVERNANCE_MODE", "allow_all"),
+        shadow_eval_enabled=_flag("FLUJO_SHADOW_EVAL_ENABLED"),
+        shadow_eval_sample_rate=float(os.getenv("FLUJO_SHADOW_EVAL_SAMPLE_RATE", "0") or "0"),
+        shadow_eval_timeout_s=float(os.getenv("FLUJO_SHADOW_EVAL_TIMEOUT_S", "30") or "30"),
+        shadow_eval_judge_model=os.getenv("FLUJO_SHADOW_EVAL_JUDGE_MODEL", "openai:gpt-4o-mini"),
+        shadow_eval_sink=os.getenv("FLUJO_SHADOW_EVAL_SINK", "telemetry"),
     )
 
 

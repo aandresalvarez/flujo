@@ -104,6 +104,11 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 **Priority:** 🟡 Medium | **Effort:** Medium | **Tags:** `Observability`
 *   **Description:** Async LLM-as-a-judge scoring on production runs.
 *   **Implementation:** Use `BackgroundTaskManager` to sample % of runs and score via Evaluator agent.
+*   **Plan (draft):**
+    1. Add `shadow_eval` settings: enabled flag, sample_rate (0-1), judge model/tool config, timeout, sink choice (telemetry-only or persisted).
+    2. Hook after step/pipeline completion (ResultHandler or PipelineOrchestrator) to enqueue background eval with immutable snapshot of input/output/metadata; isolate from user quota.
+    3. Background worker runs judge agent/tool, records score/reason, emits telemetry counters (sampled/queued/succeeded/failed, latency) and does not affect user path on failure.
+    4. Tests: sampling logic (probabilistic mock), no-op when disabled, enqueue when enabled, judge failure is non-fatal, telemetry metrics emitted.
 
 ### [TASK-010] Abstracted Memory Interface
 **Priority:** 🔵 Low | **Effort:** High | **Tags:** `RAG`, `Architecture`

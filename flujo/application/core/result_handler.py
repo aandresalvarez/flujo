@@ -148,6 +148,12 @@ class ResultHandler:
         await self._core._cache_manager.maybe_persist_step_result(
             step, result, cache_key, ttl_s=3600
         )
+        try:
+            shadow_eval = getattr(self._core, "_shadow_evaluator", None)
+            if shadow_eval is not None:
+                shadow_eval.maybe_schedule(core=self._core, step=step, result=result)
+        except Exception:
+            pass
         if called_with_frame:
             return Success(step_result=result)
         return result
