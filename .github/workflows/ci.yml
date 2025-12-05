@@ -106,6 +106,7 @@ jobs:
         with:
           name: coverage-fast-${{ matrix.python-version }}
           path: .coverage.*
+          if-no-files-found: ignore
 
       - name: Check for stray xdist flags
         run: |
@@ -164,11 +165,21 @@ jobs:
           # Run the comprehensive golden transcript tests (also serial)
           uv run coverage run --source=flujo --parallel-mode -m pytest tests/e2e/test_golden_transcript_*.py -n 0 --randomly-seed=${PYTEST_RANDOMLY_SEED}
 
+      - name: Combine coverage data
+        run: |
+          # Combine parallel coverage files into a single .coverage file
+          uv run coverage combine || true
+          # Rename to unique name for artifact upload
+          if [ -f .coverage ]; then
+            mv .coverage .coverage.slow-${{ matrix.python-version }}
+          fi
+
       - name: Store slow tests coverage file
         uses: actions/upload-artifact@v4
         with:
           name: coverage-slow-${{ matrix.python-version }}
           path: .coverage.*
+          if-no-files-found: ignore
 
   # ----------------------------------------------------------------------------
   # Job 5: Combine and Report Code Coverage

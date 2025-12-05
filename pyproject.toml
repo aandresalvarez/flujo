@@ -378,7 +378,10 @@ markers = [
 filterwarnings = [
   "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
   "ignore::pytest.PytestUnraisableExceptionWarning",
-  "ignore::pytest.PytestDeprecationWarning"
+  "ignore::pytest.PytestDeprecationWarning",
+  "ignore::pytest.PytestUnhandledThreadExceptionWarning",
+  # Suppress aiosqlite event loop cleanup noise (thread tries to report after loop closes)
+  "ignore:Event loop is closed:RuntimeError",
 ]
 # Global test execution guardrails (safe options that don't require plugins)
 addopts = [
