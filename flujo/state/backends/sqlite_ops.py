@@ -25,6 +25,14 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
     async def get_trace(self, run_id: str) -> Optional[JSONObject]:
         return await SQLiteTraceMixin.get_trace(self, run_id)
 
+    async def _borrow_db(self) -> tuple[aiosqlite.Connection, bool]:
+        """Return (connection, close_after) using loop-local pool when available."""
+        db = self._get_pooled_connection()
+        if db is not None:
+            return db, False
+        db = await self._create_connection()
+        return db, True
+
     async def save_state(self, run_id: str, state: JSONObject) -> None:
         """Save workflow state to the database.
 
@@ -192,16 +200,13 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         """
         await self._ensure_init()
         async with self._get_lock():
-            db = self._connection_pool
-            _temp_conn = False
-            if db is None:
-                db = await self._create_connection()
-                _temp_conn = True
-                try:
-                    await db.execute("PRAGMA busy_timeout = 1000")
-                except Exception:
-                    pass
+            db, _temp_conn = await self._borrow_db()
             try:
+                if _temp_conn:
+                    try:
+                        await db.execute("PRAGMA busy_timeout = 1000")
+                    except Exception:
+                        pass
                 if status:
                     async with db.execute(
                         "SELECT run_id, status, created_at, updated_at FROM workflow_state WHERE status = ? ORDER BY created_at DESC",
@@ -240,11 +245,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         """List background tasks with optional filtering."""
         await self._ensure_init()
         async with self._get_lock():
-            db = self._connection_pool
-            _temp_conn = False
-            if db is None:
-                db = await self._create_connection()
-                _temp_conn = True
+            db, _temp_conn = await self._borrow_db()
 
             try:
                 query = """
@@ -332,11 +333,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         """Mark running background tasks older than the cutoff as failed."""
         await self._ensure_init()
         async with self._get_lock():
-            db = self._connection_pool
-            _temp_conn = False
-            if db is None:
-                db = await self._create_connection()
-                _temp_conn = True
+            db, _temp_conn = await self._borrow_db()
 
             try:
                 cutoff = datetime.now() - timedelta(hours=stale_hours)
@@ -389,10 +386,8 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         await self._ensure_init()
         async with self._get_lock():
             # Prefer pooled connection for lower latency; fallback to ad-hoc connection
-            db = self._connection_pool
-            _temp_conn = False
-            if db is None:
-                db = await self._create_connection()
+            db, _temp_conn = await self._borrow_db()
+            if _temp_conn:
                 try:
                     await db.execute("PRAGMA busy_timeout = 1000")
                 except Exception:
@@ -475,15 +470,12 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         """List runs with optional filtering and include workflow metadata."""
         await self._ensure_init()
         async with self._get_lock():
-            db = self._connection_pool
-            _temp_conn = False
-            if db is None:
-                db = await self._create_connection()
+            db, _temp_conn = await self._borrow_db()
+            if _temp_conn:
                 try:
                     await db.execute("PRAGMA busy_timeout = 1000")
                 except Exception:
                     pass
-                _temp_conn = True
             try:
                 query = """
                     SELECT
@@ -794,11 +786,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
             async def _save() -> None:
                 # Use pooled connection when available to avoid connect() overhead
-                db = self._connection_pool
-                temp_conn: Optional[aiosqlite.Connection] = None
-                if db is None:
-                    temp_conn = await self._create_connection()
-                    db = temp_conn
+                db, close_after = await self._borrow_db()
 
                 try:
                     # OPTIMIZATION: Use simplified schema for better performance
@@ -831,8 +819,8 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     )
                     await db.commit()
                 finally:
-                    if temp_conn is not None:
-                        await temp_conn.close()
+                    if close_after:
+                        await db.close()
 
             await self._with_retries(_save)
 
@@ -842,11 +830,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
 
             async def _save() -> None:
                 # Prefer pooled connection to avoid connection setup overhead on hot paths
-                db = self._connection_pool
-                temp_conn: Optional[aiosqlite.Connection] = None
-                if db is None:
-                    temp_conn = await self._create_connection()
-                    db = temp_conn
+                db, close_after = await self._borrow_db()
                 try:
                     await db.execute("PRAGMA foreign_keys = ON")
                     await db.execute("PRAGMA busy_timeout = 1000")
@@ -898,8 +882,8 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     )
                     await db.commit()
                 finally:
-                    if temp_conn is not None:
-                        await temp_conn.close()
+                    if close_after:
+                        await db.close()
 
             await self._with_retries(_save)
 
@@ -908,11 +892,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
         async with self._get_lock():
 
             async def _save() -> None:
-                db = self._connection_pool
-                temp_conn: Optional[aiosqlite.Connection] = None
-                if db is None:
-                    temp_conn = await self._create_connection()
-                    db = temp_conn
+                db, close_after = await self._borrow_db()
                 try:
                     await db.execute("PRAGMA busy_timeout = 1000")
                 except Exception:
@@ -938,8 +918,8 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     )
                     await db.commit()
                 finally:
-                    if temp_conn is not None:
-                        await temp_conn.close()
+                    if close_after:
+                        await db.close()
 
             await self._with_retries(_save)
 
