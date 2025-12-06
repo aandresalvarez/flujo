@@ -756,13 +756,11 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
 
                 if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
                     # Helper: detect conflicts in simple fields between two contexts
-                    seen_leafs: dict[str, Any] = {}
-
-                    def _detect_conflicts(source_ctx: Any) -> None:
+                    def _detect_conflicts(target_ctx: Any, source_ctx: Any) -> None:
+                        """Detect leaf conflicts except for scratchpad/known mutable buckets."""
                         from flujo.exceptions import ConfigurationError as _CfgErr
 
                         try:
-                            # Prefer model_dump when available
                             if hasattr(source_ctx, "model_dump"):
                                 src_fields = source_ctx.model_dump(exclude_none=True)
                             elif hasattr(source_ctx, "dict"):
@@ -776,31 +774,40 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                         except Exception:
                             src_fields = {}
 
-                        def _walk(value: Any, path: str) -> None:
-                            if isinstance(value, dict):
-                                for k, v in value.items():
+                        def _walk(tgt: Any, src: Any, path: str) -> None:
+                            # Skip scratchpad/branch_results/context_updates which are intentionally merged
+                            if path in {"scratchpad", "branch_results", "context_updates"}:
+                                return
+                            if isinstance(tgt, dict) and isinstance(src, dict):
+                                for k in set(src.keys()) & set(tgt.keys()):
                                     if str(k).startswith("_"):
                                         continue
-                                    _walk(v, f"{path}.{k}" if path else str(k))
+                                    _walk(tgt[k], src[k], f"{path}.{k}" if path else str(k))
                                 return
-                            if isinstance(value, (list, tuple, set)):
+                            if isinstance(tgt, (list, tuple, set)) or isinstance(
+                                src, (list, tuple, set)
+                            ):
                                 return
-                            if path in seen_leafs:
+                            if tgt is not None and src is not None:
                                 try:
-                                    differs = seen_leafs[path] != value
+                                    differs = tgt != src
                                 except Exception:
                                     differs = True
                                 if differs:
                                     raise _CfgErr(
-                                        f"Merge conflict for key '{path}'. Set an explicit merge strategy or field_mapping in your ParallelStep."
+                                        f"Merge conflict for key '{path or '<root>'}'. Set an explicit merge strategy or field_mapping in your ParallelStep."
                                     )
-                            else:
-                                seen_leafs[path] = value
 
                         for _fname, _sval in src_fields.items():
                             if str(_fname).startswith("_"):
                                 continue
-                            _walk(_sval, str(_fname))
+                            if hasattr(target_ctx, _fname):
+                                try:
+                                    _tval = getattr(target_ctx, _fname)
+                                    _walk(_tval, _sval, str(_fname))
+                                except Exception:
+                                    # Best-effort conflict detection; skip on access errors
+                                    continue
 
                     for n, bc in branch_ctxs.items():
                         if parallel_step.field_mapping and n in parallel_step.field_mapping:
@@ -809,7 +816,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                     setattr(context, f, getattr(bc, f))
                         else:
                             # Enforce conflict detection before merging, with simple accumulator heuristic
-                            _detect_conflicts(bc)
+                            _detect_conflicts(context, bc)
                             # Then perform safe merge via ContextManager to satisfy observability in tests
                             context = ContextManager.merge(context, bc)
                 elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
