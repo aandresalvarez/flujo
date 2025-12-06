@@ -22,6 +22,7 @@ from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from .base import StateBackend
 from flujo.infra import telemetry
+from flujo.type_definitions.common import JSONObject
 
 # Try to import orjson for faster JSON serialization
 try:
@@ -606,6 +607,28 @@ class SQLiteBackendBase(StateBackend):
                     "CREATE INDEX IF NOT EXISTS idx_spans_parent_span ON spans(parent_span_id)"
                 )
 
+                # Create evaluations table for shadow eval persistence
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS evaluations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id TEXT NOT NULL,
+                        step_name TEXT,
+                        score REAL NOT NULL,
+                        feedback TEXT,
+                        metadata TEXT,
+                        created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+                        FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+                    )
+                    """
+                )
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_evaluations_run_id ON evaluations(run_id)"
+                )
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_evaluations_created_at ON evaluations(created_at)"
+                )
+
                 await db.execute("COMMIT")
 
                 # Run migration to ensure schema is up to date
@@ -842,6 +865,26 @@ class SQLiteBackendBase(StateBackend):
             "UPDATE workflow_state SET updated_at = datetime('now') WHERE updated_at = ''"
         )
 
+        # Ensure evaluations table exists
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS evaluations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                step_name TEXT,
+                score REAL NOT NULL,
+                feedback TEXT,
+                metadata TEXT,
+                created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+            )
+            """
+        )
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_evaluations_run_id ON evaluations(run_id)")
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_evaluations_created_at ON evaluations(created_at)"
+        )
+
     async def _create_indexes(self, db: aiosqlite.Connection) -> None:
         """Create indexes for better query performance, only if columns exist."""
         try:
@@ -1056,3 +1099,38 @@ class SQLiteBackendBase(StateBackend):
         raise RuntimeError(
             f"Operation failed after {max_retries} attempts due to unexpected conditions"
         )
+
+    async def persist_evaluation(
+        self,
+        run_id: str,
+        score: float,
+        feedback: str | None = None,
+        step_name: str | None = None,
+        metadata: JSONObject | None = None,
+    ) -> None:
+        """Persist a shadow evaluation result into SQLite."""
+
+        async def _insert() -> None:
+            conn = self._connection_pool or await self._create_connection()
+            close_after = conn is not self._connection_pool
+            try:
+                await conn.execute(
+                    """
+                    INSERT INTO evaluations (run_id, step_name, score, feedback, metadata, created_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))
+                    """,
+                    (
+                        run_id,
+                        step_name,
+                        score,
+                        feedback,
+                        safe_serialize(metadata),
+                    ),
+                )
+                await conn.commit()
+            finally:
+                if close_after:
+                    await conn.close()
+
+        await self._ensure_init()
+        await self._with_retries(_insert)

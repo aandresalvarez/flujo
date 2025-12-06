@@ -290,6 +290,30 @@ class PostgresBackend(StateBackend):
             # Just execute them directly
             await conn.execute(sql)
 
+    async def persist_evaluation(
+        self,
+        run_id: str,
+        score: float,
+        feedback: str | None = None,
+        step_name: str | None = None,
+        metadata: JSONObject | None = None,
+    ) -> None:
+        """Persist a shadow evaluation result into Postgres."""
+        await self._ensure_init()
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO evaluations (run_id, step_name, score, feedback, metadata, created_at)
+                VALUES ($1, $2, $3, $4, $5, NOW())
+                """,
+                run_id,
+                step_name,
+                score,
+                feedback,
+                _jsonb(metadata),
+            )
+
     def _extract_spans_from_tree(
         self, trace: JSONObject, run_id: str, max_depth: int = 100
     ) -> List[
