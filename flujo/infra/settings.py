@@ -169,6 +169,14 @@ class Settings(BaseSettings):
             "When true, contexts must be Pydantic BaseModel instances; plain dicts are rejected."
         ),
     )
+    governance_policy_module: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FLUJO_GOVERNANCE_POLICY_MODULE",
+            "flujo_governance_policy_module",
+        ),
+        description="Optional module path (pkg.mod:Class) to load a GovernancePolicy implementation.",
+    )
     sandbox: SandboxSettings = SandboxSettings()
     memory_indexing_enabled: bool = Field(
         default=False,

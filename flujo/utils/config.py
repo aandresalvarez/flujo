@@ -22,6 +22,7 @@ class Settings:
     memory_indexing_enabled: bool = False
     memory_embedding_model: str | None = None
     governance_mode: Literal["allow_all", "deny_all"] = "allow_all"
+    governance_policy_module: str | None = None
     shadow_eval_enabled: bool = False
     shadow_eval_sample_rate: float = 0.0
     shadow_eval_timeout_s: float = 30.0
@@ -66,6 +67,7 @@ def _load_from_env() -> Settings:
         memory_indexing_enabled=_flag("FLUJO_MEMORY_INDEXING_ENABLED"),
         memory_embedding_model=os.getenv("FLUJO_MEMORY_EMBEDDING_MODEL"),
         governance_mode=_mode("FLUJO_GOVERNANCE_MODE", "allow_all"),
+        governance_policy_module=os.getenv("FLUJO_GOVERNANCE_POLICY_MODULE"),
         shadow_eval_enabled=_flag("FLUJO_SHADOW_EVAL_ENABLED"),
         shadow_eval_sample_rate=float(os.getenv("FLUJO_SHADOW_EVAL_SAMPLE_RATE", "0") or "0"),
         shadow_eval_timeout_s=float(os.getenv("FLUJO_SHADOW_EVAL_TIMEOUT_S", "30") or "30"),

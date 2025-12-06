@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, cast
+from urllib.parse import urlparse
+import importlib
 
 from .agent_handler import AgentHandler
 from .agent_orchestrator import AgentOrchestrator
@@ -82,9 +85,16 @@ from .step_policies import (
 )
 from ...domain.memory import VectorStoreProtocol
 from ...domain.sandbox import SandboxProtocol
-from ...infra.memory import NullVectorStore, MemoryManager, NullMemoryManager
+from ...infra.memory import (
+    NullVectorStore,
+    MemoryManager,
+    NullMemoryManager,
+    SQLiteVectorStore,
+    PostgresVectorStore,
+)
 from ...infra.sandbox import NullSandbox, RemoteSandbox, DockerSandbox
 from ...utils.config import get_settings
+from ...infra.config_manager import get_state_uri
 
 if TYPE_CHECKING:  # pragma: no cover
     from .executor_core import ExecutorCore
@@ -286,6 +296,17 @@ class FlujoRuntimeBuilder:
         memory_enabled = bool(getattr(settings, "memory_indexing_enabled", False))
         memory_model = getattr(settings, "memory_embedding_model", None)
 
+        if memory_store is None and memory_enabled:
+            state_uri = get_state_uri(force_reload=True)
+            if state_uri:
+                parsed = urlparse(state_uri)
+                scheme = (parsed.scheme or "").lower()
+                if scheme == "sqlite":
+                    path = self._resolve_sqlite_path(parsed.path)
+                    memory_store_obj = SQLiteVectorStore(str(path))
+                elif scheme in {"postgres", "postgresql"}:
+                    memory_store_obj = PostgresVectorStore(state_uri)
+
         embedder_fn = None
         if memory_enabled and memory_model and get_embedding_client is not None:
             try:
@@ -369,10 +390,16 @@ class FlujoRuntimeBuilder:
         policies = governance_policies
         if policies is None:
             mode = getattr(settings, "governance_mode", "allow_all")
-            if mode == "deny_all":
-                policies = (DenyAllGovernancePolicy(),)
-            else:
-                policies = (AllowAllGovernancePolicy(),)
+            custom_module = getattr(settings, "governance_policy_module", None)
+            if custom_module:
+                loaded = self._load_governance_policy(custom_module)
+                if loaded is not None:
+                    policies = (loaded,)
+            if policies is None:
+                if mode == "deny_all":
+                    policies = (DenyAllGovernancePolicy(),)
+                else:
+                    policies = (AllowAllGovernancePolicy(),)
         governance_engine_obj = GovernanceEngine(policies=policies)
         shadow_eval_config = ShadowEvalConfig(
             enabled=bool(
@@ -460,3 +487,33 @@ class FlujoRuntimeBuilder:
             governance_engine=governance_engine_obj,
             shadow_evaluator=shadow_evaluator_obj,
         )
+
+    @staticmethod
+    def _resolve_sqlite_path(raw_path: str) -> Path:
+        """Resolve sqlite path from URI path, keeping relative paths project-local."""
+        if not raw_path:
+            return Path("flujo_ops.db")
+        candidate = Path(raw_path)
+        if candidate.is_absolute():
+            return candidate
+        trimmed = raw_path.lstrip("/\\")
+        return Path.cwd() / trimmed
+
+    @staticmethod
+    def _load_governance_policy(module_path: str) -> GovernancePolicy | None:
+        """Dynamically load a GovernancePolicy from a module path 'pkg.mod:Class'."""
+        try:
+            mod_name, cls_name = module_path.split(":", 1)
+        except ValueError:
+            return None
+        try:
+            module = importlib.import_module(mod_name)
+            policy_cls = getattr(module, cls_name, None)
+            if policy_cls is None:
+                return None
+            obj = policy_cls()
+            if callable(getattr(obj, "evaluate", None)):
+                return cast(GovernancePolicy, obj)
+            return None
+        except Exception:
+            return None

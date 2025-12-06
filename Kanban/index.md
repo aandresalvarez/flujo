@@ -124,6 +124,39 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     5. Docs/Kanban: document interface intent and defaults; do not bake in pgvector.
 *   **Status:** Complete. VectorStoreProtocol + primitives + Null/InMemory stores + DI done; MemoryManager indexing wired with context, and `PipelineContext.retrieve()` shipped. Optional: production stores (pgvector/chroma).
 
+### [TASK-013] Durable Vector Stores (RAG Persistence)
+**Priority:** 🟡 Medium | **Effort:** High | **Tags:** `RAG`, `Persistence`
+*   **Description:** Add durable vector stores so RAG survives restarts.
+*   **Plan:** 
+    1. Implement `SQLiteVectorStore` (no C-ext) storing embeddings as BLOB and cosine search in Python. ✅
+    2. Implement `PostgresVectorStore` using `pgvector` (`embedding <=>` queries) with migration to enable extension/table. ⏳ (store implemented; migration not yet added)
+    3. Update `FlujoRuntimeBuilder` to select store by `state_uri`/settings (`sqlite`→SQLite, `postgres`→pgvector) when memory indexing is enabled. ✅
+*   **Status:** In progress.
+
+### [TASK-014] Governance Policy Module from Config
+**Priority:** 🟡 Medium | **Effort:** Low | **Tags:** `Security`, `DX`
+*   **Description:** Allow loading a custom `GovernancePolicy` from `flujo.toml` without Python launcher code.
+*   **Plan:** Add `[governance] policy_module="pkg.mod:PolicyCls"` parsing in ConfigManager and inject via `FlujoRuntimeBuilder` using dynamic import.
+*   **Status:** Not started.
+
+### [TASK-015] Shadow Eval Persistence & CLI
+**Priority:** 🔵 Low | **Effort:** Medium | **Tags:** `Observability`
+*   **Description:** Make shadow evaluation scores queryable beyond telemetry.
+*   **Plan:** Add `persist_evaluation` to state backend with `evaluations` table (SQLite/Postgres); have `ShadowEvaluator` write when `sink="database"`; add `flujo lens evals` to list/avg scores.
+*   **Status:** Not started.
+
+### [TASK-016] Context Generator CLI (Optional)
+**Priority:** 🔵 Low | **Effort:** Low | **Tags:** `DX`, `Type-Safety`
+*   **Description:** CLI to scaffold a Pydantic context model from pipeline YAML.
+*   **Plan:** `flujo dev gen-context pipeline.yaml` parses template usage and input/output keys to emit a `context.py` model stub.
+*   **Status:** Not started.
+
+### [TASK-017] Docs: Policy Migration & RAG Recipe
+**Priority:** 🔵 Low | **Effort:** Low | **Tags:** `Docs`
+*   **Description:** Documentation to support new architecture and RAG.
+*   **Plan:** Write migration guide for custom policies (`ExecutionFrame` signature) and a RAG recipe using the new vector stores and MemoryManager.
+*   **Status:** Not started.
+
 ### [TASK-011] Sandbox Execution Interface
 **Priority:** 🔵 Low | **Effort:** High | **Tags:** `Security`
 *   **Description:** Safe execution of generated code.
