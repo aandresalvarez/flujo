@@ -93,12 +93,13 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     2. Insert interception before agent execution (agent handler/orchestrator entry) with fail-fast deny and telemetry (allow/deny decision, reason).
     3. Provide typed policy input/output models to avoid `Any`; keep frame/context available but immutable.
     4. Tests: allow path, deny path (raises/halts), telemetry emitted, and no-op when no policy configured.
-*   **Status:** Implemented governance engine with allow/deny counts, default allow-all; `FLUJO_GOVERNANCE_MODE` (allow_all|deny_all) selects the policy set; telemetry emits allow/deny counts.
+*   **Status:** Complete (engine + telemetry + settings). Optional PIIScrubbingPolicy not started (non-blocking).
 
 ### [TASK-008] OpenAPI Skill Generator
 **Priority:** 🟡 Medium | **Effort:** Low | **Tags:** `DX`, `Tooling`
 *   **Description:** CLI command to generate Pydantic-typed Agent Tools from Swagger/OpenAPI specs.
 *   **Implementation:** Wrap `datamodel-code-generator` in `flujo dev import-openapi`.
+*   **Status:** Partial (wrappers added). CLI now optionally generates agent/tool wrappers via `--generate-agents` (default on) with httpx-based tools and `make_openapi_agent` factory. Pending: richer endpoint-to-tool mapping (params/schema typing) and an integration test that imports/generated agents end-to-end.
 
 ### [TASK-009] Shadow Evaluations
 **Priority:** 🟡 Medium | **Effort:** Medium | **Tags:** `Observability`
@@ -109,6 +110,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     2. Hook after step/pipeline completion (ResultHandler or PipelineOrchestrator) to enqueue background eval with immutable snapshot of input/output/metadata; isolate from user quota.
     3. Background worker runs judge agent/tool, records score/reason, emits telemetry counters (sampled/queued/succeeded/failed, latency) and does not affect user path on failure.
     4. Tests: sampling logic (probabilistic mock), no-op when disabled, enqueue when enabled, judge failure is non-fatal, telemetry metrics emitted.
+*   **Status:** Partial (~70%). Sampling + scheduling + telemetry shipped; judge implementation is placeholder. Pending: implement real judge agent scoring and optional persistent sink.
 
 ### [TASK-010] Abstracted Memory Interface
 **Priority:** 🔵 Low | **Effort:** High | **Tags:** `RAG`, `Architecture`
@@ -120,7 +122,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     3. Wire into DI: expose optional `memory_store`/`memory_manager` via `ExecutorCoreDeps` + `FlujoRuntimeBuilder`; default to Null store; consider a non-serialized handle on `PipelineContext`.
     4. Tests: protocol conformance, in-memory add/query/delete determinism, DI wiring defaults/null, and mypy strictness.
     5. Docs/Kanban: document interface intent and defaults; do not bake in pgvector.
-*   **Status:** Implemented. VectorStoreProtocol + MemoryRecord/VectorQuery/ScoredMemory added, NullVectorStore default + InMemoryVectorStore (cosine) available, DI wiring via ExecutorCoreDeps/FlujoRuntimeBuilder with exposed `core.memory_store`; tests and precommit/test-fast passing.
+*   **Status:** Partial (~60%). VectorStoreProtocol + primitives + Null/InMemory stores + DI done. Pending: MemoryManager to index step outputs, context `retrieve()` helper, and any production stores (pgvector/chroma optional).
 
 ### [TASK-011] Sandbox Execution Interface
 **Priority:** 🔵 Low | **Effort:** High | **Tags:** `Security`
@@ -132,7 +134,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     3. Wire into DI: add `sandbox` to `ExecutorCoreDeps` + `FlujoRuntimeBuilder`, expose via `core.sandbox`.
     4. Tests: default null sandbox, custom injection via builder, and core exposure; ensure type safety.
     5. Next slices: remote sandbox adapter and optional docker extra (not yet implemented).
-*   **Status:** Protocol + NullSandbox + DI + tests implemented; remote/docker adapters remain TODO.
+*   **Status:** Partial (~30%). Protocol + NullSandbox + DI + tests done. Pending: RemoteSandbox (API-based), optional DockerSandbox, and a code_interpreter builtin skill.
 
 ### [TASK-012] Formalize Context Typing
 **Priority:** 🔵 Low | **Effort:** Medium | **Tags:** `Type-Safety`
@@ -143,4 +145,4 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     2. Default is advisory (warning + pass-through); strict mode raises on plain dict contexts.
     3. Tests: enforcement-on rejects dict, accepts BaseModel; enforcement-off allows dict.
     4. Next slices: add step input/output key validation and migrate scratchpad usage toward typed fields.
-*   **Status:** Enforcement flag + helper + tests landed; stricter step I/O validation remains TODO.
+*   **Status:** In progress. Typed context enforcement toggle + tests shipped. Step I/O key validation added with missing-key errors (V-CTX1) and root-only warnings (V-CTX2). Pending: deeper scratchpad-to-typed mappings and branch/parallel/import-aware validation.

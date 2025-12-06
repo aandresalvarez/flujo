@@ -29,6 +29,7 @@ def test_import_openapi_invokes_codegen(monkeypatch: Any, capsys: Any) -> None:
         target_python_version="3.11",
         base_class="pydantic.BaseModel",
         disable_timestamp=True,
+        generate_agents=False,
     )
 
     assert called_args["args"][0:6] == [
@@ -54,4 +55,5 @@ def test_import_openapi_missing_dependency(monkeypatch: Any, capsys: Any) -> Non
             target_python_version="3.11",
             base_class="pydantic.BaseModel",
             disable_timestamp=True,
+            generate_agents=False,
         )

@@ -660,7 +660,7 @@ def run_step_validations(
     seen_steps: set[int] = set()
     prev_step: Any | None = None
     prev_out_type: Any = None
-    available_keys: set[str] = {
+    available_roots: set[str] = {
         "initial_prompt",
         "scratchpad",
         "run_id",
@@ -670,6 +670,7 @@ def run_step_validations(
         "steps",
         "call_count",
     }
+    produced_paths: set[str] = set()
 
     def _root_key(key: str) -> str:
         try:
@@ -749,7 +750,17 @@ def run_step_validations(
         required_keys = [
             k for k in getattr(step, "input_keys", []) if isinstance(k, str) and k.strip()
         ]
-        missing_keys = [rk for rk in required_keys if _root_key(rk) not in available_keys]
+        missing_keys: list[str] = []
+        weak_keys: list[str] = []
+        for rk in required_keys:
+            root = _root_key(rk)
+            if rk in produced_paths:
+                continue
+            if root in available_roots:
+                weak_keys.append(rk)
+                continue
+            missing_keys.append(rk)
+
         if missing_keys:
             report.errors.append(
                 ValidationFinding(
@@ -758,6 +769,18 @@ def run_step_validations(
                     message=(
                         f"Step '{step.name}' requires context keys {missing_keys} "
                         "that are not produced earlier in the pipeline."
+                    ),
+                    step_name=step.name,
+                )
+            )
+        if weak_keys:
+            report.warnings.append(
+                ValidationFinding(
+                    rule_id="V-CTX2",
+                    severity="warning",
+                    message=(
+                        f"Step '{step.name}' requires context paths {weak_keys} but only their root keys "
+                        "are available. Declare precise output_keys (e.g., 'scratchpad.field') in producer steps."
                     ),
                     step_name=step.name,
                 )
@@ -842,7 +865,8 @@ def run_step_validations(
         if isinstance(sink_target, str) and sink_target.strip():
             produced_keys.append(sink_target)
         for pk in produced_keys:
-            available_keys.add(_root_key(pk))
+            produced_paths.add(pk)
+            available_roots.add(_root_key(pk))
 
         prev_step = step
         prev_out_type = getattr(step, "__step_output_type__", Any)

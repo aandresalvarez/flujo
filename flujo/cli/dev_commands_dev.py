@@ -12,6 +12,10 @@ from typing_extensions import Annotated
 
 from flujo.infra import telemetry
 from flujo.domain.dsl import Pipeline
+from flujo.cli.generators.openapi_agent_generator import (
+    generate_openapi_agents,
+    load_openapi_spec,
+)
 from .helpers import (
     get_masked_settings_dict,
     get_pipeline_explanation,
@@ -41,6 +45,19 @@ def import_openapi(
         bool,
         typer.Option("--disable-timestamp/--enable-timestamp", help="Toggle generated timestamp"),
     ] = True,
+    generate_agents: Annotated[
+        bool,
+        typer.Option(
+            "--generate-agents/--skip-agents", help="Generate agent wrappers alongside models"
+        ),
+    ] = True,
+    agents_filename: Annotated[
+        str,
+        typer.Option(
+            "--agents-filename",
+            help="Filename for generated agent wrappers (relative to output dir)",
+        ),
+    ] = "openapi_agents.py",
 ) -> None:
     """
     Generate Pydantic models/tools from an OpenAPI spec using datamodel-code-generator.
@@ -88,6 +105,26 @@ def import_openapi(
     except Exception as exc:  # pragma: no cover - passthrough errors
         print_rich_or_typer(f"[red]datamodel-code-generator failed: {exc}", stderr=True)
         raise typer.Exit(1) from exc
+
+    if generate_agents:
+        try:
+            spec_dict = load_openapi_spec(spec)
+            models_package = Path(output).name.replace("-", "_")
+            agents_path = generate_openapi_agents(
+                spec=spec_dict,
+                models_package=models_package,
+                output_dir=Path(output),
+                agents_filename=agents_filename,
+            )
+            logfire.info(
+                "[OpenAPI] Generated agent wrappers",
+                extra={"agents_path": str(agents_path), "models_package": models_package},
+            )
+        except Exception as exc:  # pragma: no cover - passthrough errors
+            print_rich_or_typer(
+                f"[red]Failed to generate OpenAPI agent wrappers: {exc}", stderr=True
+            )
+            raise typer.Exit(1) from exc
 
 
 logfire = telemetry.logfire
