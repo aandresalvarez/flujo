@@ -13,6 +13,15 @@ We will achieve this by keeping a consistent, declarative core (the pipeline DSL
 ### Phase 1 – Perfecting the Developer Experience
 Focus on core stability, speed, and ease of use for a single developer. Address technical debt and make the CLI/authoring experience robust and delightful.
 
+**Current status (completed milestones):**
+- Policy execution uses `ExecutionFrame` across all default executors (frame-only migration).
+- Governance layer shipped with settings-driven allow/deny and telemetry counts.
+- Shadow evaluations shipped with judge agent + telemetry sink (optional DB sink pending).
+- Sandboxed code execution shipped (RemoteSandbox, Python-only DockerSandbox) plus `code_interpreter` skill.
+- Memory interface shipped (VectorStore protocol, in-memory/Null stores, MemoryManager indexing, `PipelineContext.retrieve`).
+- OpenAPI generator extended to emit typed agent/tool wrappers.
+- Context typing and step I/O validation strengthened (branch/parallel/import-aware V-CTX1/V-CTX2).
+
 ### Phase 2 – Building the Bridge to Enterprise
 Introduce a pluggable architecture. Define clear interfaces and add optional backends so Flujo can plug into enterprise infrastructure (databases, servers) without compromising the developer experience.
 

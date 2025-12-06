@@ -12,6 +12,10 @@ from typing_extensions import Annotated
 
 from flujo.infra import telemetry
 from flujo.domain.dsl import Pipeline
+from flujo.cli.generators.openapi_agent_generator import (
+    generate_openapi_agents,
+    load_openapi_spec,
+)
 from .helpers import (
     get_masked_settings_dict,
     get_pipeline_explanation,
@@ -22,6 +26,190 @@ from .helpers import (
     print_rich_or_typer,
     validate_pipeline_file,
 )
+
+logfire = telemetry.logfire
+
+
+def gen_context(
+    pipeline_file: Annotated[
+        Optional[str],
+        typer.Argument(
+            help="Path to pipeline.yaml (defaults to project pipeline.yaml if present)",
+            show_default=False,
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option("--output", "-o", help="Output path for generated context model"),
+    ] = "context.py",
+    model_name: Annotated[
+        str,
+        typer.Option("--model-name", "-m", help="Name of generated Pydantic model"),
+    ] = "GeneratedContext",
+) -> None:
+    """
+    Generate a Pydantic context model by scanning pipeline YAML for context references
+    and declared input/output keys.
+    """
+    import re
+    import yaml
+
+    try:
+        if pipeline_file is None:
+            root = find_project_root()
+            candidate = (Path(root) / "pipeline.yaml").resolve()
+            if not candidate.exists():
+                raise FileNotFoundError("pipeline.yaml not found; pass path explicitly")
+            pipeline_file = str(candidate)
+
+        text = Path(pipeline_file).read_text(encoding="utf-8")
+        data = yaml.safe_load(text) or {}
+    except Exception as e:  # noqa: BLE001
+        print_rich_or_typer(f"[red]Failed to load pipeline: {e}", stderr=True)
+        raise typer.Exit(1) from e
+
+    keys: set[str] = set()
+
+    for match in re.findall(r"context\\.([A-Za-z0-9_\\.]+)", text):
+        root = match.split(".", 1)[0]
+        if root:
+            keys.add(root)
+
+    def _collect(obj: Any) -> None:
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k in {"input_keys", "output_keys"} and isinstance(v, list):
+                    for item in v:
+                        if isinstance(item, str) and item.strip():
+                            keys.add(item.split(".", 1)[0])
+                else:
+                    _collect(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                _collect(item)
+
+    _collect(data)
+
+    if not keys:
+        print_rich_or_typer("[yellow]No context fields detected; generated empty model.[/yellow]")
+
+    lines = [
+        "from __future__ import annotations",
+        "from typing import Any, Optional",
+        "from pydantic import BaseModel",
+        "",
+        f"class {model_name}(BaseModel):",
+    ]
+    if not keys:
+        lines.append("    pass")
+    else:
+        for key in sorted(keys):
+            lines.append(f"    {key}: Optional[Any] = None")
+
+    try:
+        Path(output).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print_rich_or_typer(f"[green]Generated context model at {output}[/green]")
+    except Exception as e:  # noqa: BLE001
+        print_rich_or_typer(f"[red]Failed to write context model: {e}", stderr=True)
+        raise typer.Exit(1) from e
+
+
+def import_openapi(
+    spec: Annotated[str, typer.Argument(help="Path or URL to OpenAPI/Swagger spec")],
+    output: Annotated[
+        str, typer.Option("--output", "-o", help="Output directory for generated models")
+    ] = "generated_tools",
+    target_python_version: Annotated[
+        str, typer.Option("--python-version", help="Target Python version (e.g., 3.11)")
+    ] = "3.11",
+    base_class: Annotated[
+        str, typer.Option("--base-class", help="Base class for models (pydantic style)")
+    ] = "pydantic.BaseModel",
+    disable_timestamp: Annotated[
+        bool,
+        typer.Option("--disable-timestamp/--enable-timestamp", help="Toggle generated timestamp"),
+    ] = True,
+    generate_agents: Annotated[
+        bool,
+        typer.Option(
+            "--generate-agents/--skip-agents", help="Generate agent wrappers alongside models"
+        ),
+    ] = True,
+    agents_filename: Annotated[
+        str,
+        typer.Option(
+            "--agents-filename",
+            help="Filename for generated agent wrappers (relative to output dir)",
+        ),
+    ] = "openapi_agents.py",
+) -> None:
+    """
+    Generate Pydantic models/tools from an OpenAPI spec using datamodel-code-generator.
+
+    Requires `datamodel-code-generator` to be installed (pip/uv). Emits a friendly
+    error if the dependency is missing.
+    """
+    try:
+        from datamodel_code_generator import main as dcg_main  # type: ignore
+    except Exception:  # pragma: no cover - dependency not installed
+        print_rich_or_typer(
+            "[red]datamodel-code-generator is not installed. "
+            "Install with `uv add datamodel-code-generator` or "
+            "`pip install datamodel-code-generator`.",
+            stderr=True,
+        )
+        raise typer.Exit(1)
+
+    args = [
+        "--input",
+        spec,
+        "--input-file-type",
+        "openapi",
+        "--output",
+        output,
+        "--target-python-version",
+        target_python_version,
+    ]
+    if disable_timestamp:
+        args.append("--disable-timestamp")
+    if base_class:
+        args.extend(["--base-class", base_class])
+
+    logfire.info(
+        "[OpenAPI] Generating models",
+        extra={"spec": spec, "output": output, "target_python_version": target_python_version},
+    )
+    try:
+        dcg_main(args)
+    except SystemExit as exc:  # datamodel-code-generator uses sys.exit
+        code = exc.code if isinstance(exc.code, int) else 1
+        if code != 0:
+            print_rich_or_typer(f"[red]datamodel-code-generator failed (exit={code})", stderr=True)
+            raise typer.Exit(code)
+    except Exception as exc:  # pragma: no cover - passthrough errors
+        print_rich_or_typer(f"[red]datamodel-code-generator failed: {exc}", stderr=True)
+        raise typer.Exit(1) from exc
+
+    if generate_agents:
+        try:
+            spec_dict = load_openapi_spec(spec)
+            models_package = Path(output).name.replace("-", "_")
+            agents_path = generate_openapi_agents(
+                spec=spec_dict,
+                models_package=models_package,
+                output_dir=Path(output),
+                agents_filename=agents_filename,
+            )
+            logfire.info(
+                "[OpenAPI] Generated agent wrappers",
+                extra={"agents_path": str(agents_path), "models_package": models_package},
+            )
+        except Exception as exc:  # pragma: no cover - passthrough errors
+            print_rich_or_typer(
+                f"[red]Failed to generate OpenAPI agent wrappers: {exc}", stderr=True
+            )
+            raise typer.Exit(1) from exc
+
 
 logfire = telemetry.logfire
 
@@ -853,3 +1041,5 @@ def register_dev_commands(dev_app: typer.Typer) -> None:
     dev_app.command(name="validate")(validate_dev)
     dev_app.command(name="compile-yaml")(compile)
     dev_app.command(name="visualize")(pipeline_mermaid_cmd)
+    dev_app.command(name="import-openapi")(import_openapi)
+    dev_app.command(name="gen-context")(gen_context)

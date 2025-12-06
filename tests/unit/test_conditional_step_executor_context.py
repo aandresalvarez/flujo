@@ -4,6 +4,7 @@ import pytest
 
 from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.step_policies import DefaultConditionalStepExecutor
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.conditional import ConditionalStep
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step
@@ -41,6 +42,13 @@ async def test_conditional_executor_isolates_and_merges(monkeypatch: pytest.Monk
     )
 
     class _Core:
+        class _QuotaMgr:
+            def get_current_quota(self):
+                return None
+
+        def __init__(self) -> None:
+            self._quota_manager = self._QuotaMgr()
+
         async def execute(
             self,
             step,
@@ -57,15 +65,21 @@ async def test_conditional_executor_isolates_and_merges(monkeypatch: pytest.Monk
             return StepResult(name="A", output=data, success=True, branch_context=context)
 
     execu = DefaultConditionalStepExecutor()
-    res = await execu.execute(
+    frame = make_execution_frame(
         _Core(),
         cond,
-        data=1,
+        1,
         context=type("C", (), {})(),
         resources=None,
         limits=None,
         context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    res = await execu.execute(_Core(), frame)
 
     sr = res.step_result if hasattr(res, "step_result") else res
     assert sr.success is True

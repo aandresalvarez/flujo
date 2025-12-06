@@ -1,7 +1,7 @@
 """Domain models for flujo."""
 
 from __future__ import annotations
-from typing import Any, List, Optional, Literal, Generic, TypeVar, Tuple
+from typing import Any, List, Optional, Literal, Generic, TypeVar, Tuple, cast
 from flujo.type_definitions.common import JSONObject
 from threading import RLock
 from pydantic import Field, ConfigDict, field_validator, PrivateAttr
@@ -11,6 +11,8 @@ import uuid
 from enum import Enum
 
 from .types import ContextT
+from .memory import ScoredMemory
+from .sandbox import SandboxProtocol
 from .base_model import BaseModel
 
 # ---------------------------------------------------------------------------
@@ -552,6 +554,8 @@ class PipelineContext(BaseModel):
     )
     # Utility counter used by test hooks; kept in base context for simplicity
     call_count: int = 0
+    memory_store: Any | None = Field(default=None, exclude=True)
+    _sandbox: SandboxProtocol | None = PrivateAttr(default=None)
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
@@ -567,3 +571,52 @@ class PipelineContext(BaseModel):
         except Exception:
             pass
         return {}
+
+    async def retrieve(
+        self,
+        query_text: str | None = None,
+        *,
+        query_vector: list[float] | None = None,
+        limit: int = 5,
+    ) -> list[ScoredMemory]:
+        """Retrieve memories using the configured memory store.
+
+        If query_vector is not provided, an embedding model will be used when available.
+        Returns an empty list when no memory store is configured.
+        """
+        store = getattr(self, "memory_store", None)
+        if store is None:
+            return []
+        try:
+            from .memory import VectorQuery, ScoredMemory
+            from flujo.embeddings import get_embedding_client
+            from flujo.infra.settings import get_settings
+        except Exception:
+            return []
+
+        vector = query_vector
+        if vector is None:
+            if query_text is None:
+                return []
+            settings = get_settings()
+            model_id = getattr(settings, "memory_embedding_model", None)
+            if not model_id:
+                return []
+            try:
+                client = get_embedding_client(model_id)
+                res = await client.embed([query_text])
+                if not res.embeddings:
+                    return []
+                vector = res.embeddings[0]
+            except Exception:
+                return []
+        try:
+            results = await store.query(VectorQuery(vector=vector or [], limit=limit))
+            return cast(List[ScoredMemory], results)
+        except Exception:
+            return []
+
+    @property
+    def sandbox(self) -> SandboxProtocol | None:
+        """Return the sandbox handle attached to this context when available."""
+        return self._sandbox

@@ -24,6 +24,7 @@ from ._shared import (
     time,
     to_outcome,
 )
+from ..executor_helpers import make_execution_frame
 from flujo.exceptions import PipelineAbortSignal
 from .loop_hitl_orchestrator import clear_hitl_markers, propagate_pause_state
 from .loop_history import (
@@ -419,17 +420,25 @@ async def run_loop_iterations(
                     except Exception:
                         pass
                     if getattr(body_step, "is_complex", False):
-                        outcome = await core.execute(
+                        frame = make_execution_frame(
+                            core,
                             body_step,
                             current_data,
-                            context=iteration_context,
-                            resources=resources,
-                            limits=limits,
+                            iteration_context,
+                            resources,
+                            limits,
+                            context_setter=context_setter,
                             stream=stream,
                             on_chunk=on_chunk,
-                            cache_key=None,
-                            _fallback_depth=_fallback_depth,
+                            fallback_depth=_fallback_depth,
+                            result=None,
+                            quota=(
+                                core._get_current_quota()
+                                if hasattr(core, "_get_current_quota")
+                                else None
+                            ),
                         )
+                        outcome = await core.execute(frame)
                         sr = core._unwrap_outcome_to_step_result(
                             outcome, getattr(body_step, "name", "<step>")
                         )
@@ -605,17 +614,25 @@ async def run_loop_iterations(
                         telemetry.logfire.info(
                             "LoopStep 'ValidateAndRepair' detected failure; executing fallback."
                         )
-                        fallback_result = await core.execute(
-                            step=loop_step.fallback_step,
-                            data=current_data,
-                            context=iteration_context,
-                            resources=resources,
-                            limits=limits,
+                        fb_frame = make_execution_frame(
+                            core,
+                            loop_step.fallback_step,
+                            current_data,
+                            iteration_context,
+                            resources,
+                            limits,
+                            context_setter=context_setter,
                             stream=stream,
                             on_chunk=on_chunk,
-                            cache_key=cache_key,
-                            _fallback_depth=_fallback_depth + 1,
+                            fallback_depth=_fallback_depth + 1,
+                            result=None,
+                            quota=(
+                                core._get_current_quota()
+                                if hasattr(core, "_get_current_quota")
+                                else None
+                            ),
                         )
+                        fallback_result = await core.execute(fb_frame)
                         pipeline_result.step_history.append(fallback_result)
                         iteration_results.append(fallback_result)
                         current_data = getattr(fallback_result, "output", current_data)

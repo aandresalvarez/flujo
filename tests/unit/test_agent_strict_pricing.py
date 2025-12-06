@@ -1,6 +1,7 @@
 import pytest
 
 from flujo.application.core.executor_core import ExecutorCore
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.step_policies import DefaultAgentStepExecutor
 from flujo.domain.dsl.step import Step
 
@@ -43,18 +44,21 @@ async def test_agent_strict_pricing_error_surfaces_post_reservation():
 
     policies_mod.extract_usage_metrics = _raise_pricing
     try:
-        outcome = await execu.execute(
-            core=core,
-            step=step,
+        frame = make_execution_frame(
+            core,
+            step,
             data=None,
             context=None,
             resources=None,
             limits=None,
+            context_setter=None,
             stream=False,
             on_chunk=None,
-            cache_key=None,
-            _fallback_depth=0,
+            fallback_depth=0,
+            result=None,
+            quota=None,
         )
+        outcome = await execu.execute(core=core, frame=frame)
         from flujo.domain.models import Failure as OutcomeFailure
 
         assert isinstance(outcome, OutcomeFailure)

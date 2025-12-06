@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any
 
 from ...infra import telemetry as _telemetry
-from ...domain.models import PipelineResult, StepOutcome, StepResult, UsageLimits
+from ...domain.models import StepOutcome, StepResult
 
 if TYPE_CHECKING:  # pragma: no cover
     from .executor_core import ExecutorCore
+    from .types import ExecutionFrame
 
 
 class ConditionalOrchestrator:
@@ -18,17 +19,17 @@ class ConditionalOrchestrator:
         self,
         *,
         core: "ExecutorCore[Any]",
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        fallback_depth: int = 0,
+        frame: "ExecutionFrame[Any]",
     ) -> StepResult:
+        from .types import ExecutionFrame as _ExecutionFrame
+
+        if not isinstance(frame, _ExecutionFrame):
+            raise TypeError("ConditionalOrchestrator.execute expects an ExecutionFrame")
+
+        step = frame.step
         with _telemetry.logfire.span(getattr(step, "name", "<unnamed>")) as _span:
             outcome: StepOutcome[StepResult] = await core.conditional_step_executor.execute(
-                core, step, data, context, resources, limits, context_setter, fallback_depth
+                core, frame
             )
         sr = core._unwrap_outcome_to_step_result(outcome, core._safe_step_name(step))
         try:

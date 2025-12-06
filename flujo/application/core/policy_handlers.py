@@ -25,17 +25,7 @@ class PolicyHandlers:
         self._core: "ExecutorCore[Any]" = core
 
     async def cache_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        return await self._core.cache_step_executor.execute(
-            self._core,
-            cast(CacheStep[Any, Any], step),
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.context_setter,
-            None,
-        )
+        return await self._core.cache_step_executor.execute(self._core, frame)
 
     async def import_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         step = frame.step
@@ -51,18 +41,7 @@ class PolicyHandlers:
         )
 
     async def parallel_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        res_any = await self._core.parallel_step_executor.execute(
-            self._core,
-            step,
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.context_setter,
-            cast(ParallelStep[Any], step),
-            None,
-        )
+        res_any = await self._core.parallel_step_executor.execute(self._core, frame)
         if isinstance(res_any, StepOutcome):
             return res_any
         return (
@@ -76,24 +55,7 @@ class PolicyHandlers:
         )
 
     async def loop_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        cache_key = self._core._cache_key(frame) if self._core._enable_cache else None
-        try:
-            fb_depth = int(getattr(frame, "_fallback_depth", 0) or 0)
-        except Exception:
-            fb_depth = 0
-        res_any = await self._core.loop_step_executor.execute(
-            self._core,
-            step,
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.stream,
-            frame.on_chunk,
-            cache_key,
-            fb_depth,
-        )
+        res_any = await self._core.loop_step_executor.execute(self._core, frame)
         if isinstance(res_any, StepOutcome):
             return res_any
         return (
@@ -108,20 +70,9 @@ class PolicyHandlers:
 
     async def conditional_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         step = frame.step
-        _fallback_depth = frame._fallback_depth
-
         # Emit a span around conditional policy execution so tests reliably capture it
         with _telemetry.logfire.span(getattr(step, "name", "<unnamed>")) as _span:
-            res_any = await self._core.conditional_step_executor.execute(
-                self._core,
-                step,
-                frame.data,
-                frame.context,
-                frame.resources,
-                frame.limits,
-                frame.context_setter,
-                _fallback_depth,
-            )
+            res_any = await self._core.conditional_step_executor.execute(self._core, frame)
 
         # Mirror branch selection logs and span attributes for consistency across environments
         try:
@@ -201,16 +152,7 @@ class PolicyHandlers:
         )
 
     async def dynamic_router_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        res_any = await self._core.dynamic_router_step_executor.execute(
-            self._core,
-            step,
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.context_setter,
-        )
+        res_any = await self._core.dynamic_router_step_executor.execute(self._core, frame)
         if isinstance(res_any, StepOutcome):
             return res_any
         return (
@@ -224,16 +166,7 @@ class PolicyHandlers:
         )
 
     async def hitl_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = frame.step
-        res_any = await self._core.hitl_step_executor.execute(
-            self._core,
-            cast(HumanInTheLoopStep, step),
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.context_setter,
-        )
+        res_any = await self._core.hitl_step_executor.execute(self._core, frame)
         if isinstance(res_any, StepOutcome):
             return res_any
         return (

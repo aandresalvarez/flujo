@@ -8,7 +8,13 @@ compares against baseline targets, and identifies optimization opportunities.
 
 import asyncio
 import json
-import psutil
+
+try:
+    import psutil
+except ImportError as exc:  # pragma: no cover - optional dependency
+    raise SystemExit(
+        "psutil is required for performance_validation. Install with `pip install psutil`."
+    ) from exc
 import statistics
 import time
 from contextlib import contextmanager

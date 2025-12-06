@@ -35,6 +35,7 @@ from ._shared import (  # noqa: F401
     _normalize_plugin_feedback,
 )
 from ..policy_registry import StepPolicy
+from ..types import ExecutionFrame
 from ....domain.dsl.step import Step
 
 
@@ -44,19 +45,7 @@ from .agent_policy_run import run_agent_execution
 
 # --- Agent Step Executor policy ---
 class AgentStepExecutor(Protocol):
-    async def execute(
-        self,
-        core: Any,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        stream: bool,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
-        cache_key: Optional[str],
-        _fallback_depth: int = 0,
-    ) -> StepOutcome[StepResult]: ...
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
 
 
 class DefaultAgentStepExecutor(StepPolicy[Step[Any, Any]]):
@@ -67,15 +56,7 @@ class DefaultAgentStepExecutor(StepPolicy[Step[Any, Any]]):
     async def execute(
         self,
         core: Any,
-        step: Any,
-        data: Any | None = None,
-        context: Optional[Any] = None,
-        resources: Optional[Any] = None,
-        limits: Optional[UsageLimits] = None,
-        stream: bool = False,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        cache_key: Optional[str] = None,
-        _fallback_depth: int = 0,
+        frame: ExecutionFrame[Any],
     ) -> StepOutcome[StepResult]:
         (
             step,
@@ -87,18 +68,7 @@ class DefaultAgentStepExecutor(StepPolicy[Step[Any, Any]]):
             on_chunk,
             cache_key,
             _fallback_depth,
-        ) = await prepare_agent_execution(
-            core,
-            step,
-            data,
-            context,
-            resources,
-            limits,
-            stream,
-            on_chunk,
-            cache_key,
-            _fallback_depth,
-        )
+        ) = await prepare_agent_execution(core, frame)
         return await run_agent_execution(
             executor=self,
             core=core,

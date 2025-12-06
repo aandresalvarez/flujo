@@ -281,59 +281,27 @@ class BackgroundTaskManager:
                 if enable_state_tracking and state_manager is not None and enable_resumability:
                     metadata["background_error"] = str(e)
                     try:
-                        err_name = type(e).__name__
-                        err_str = str(e)  # Keep original case for pattern matching
-                        err_str_lower = err_str.lower()
-                        # Check for control flow exceptions first
+                        # Priority 1: explicit control-flow signals
                         if isinstance(e, (PausedException, PipelineAbortSignal)):
                             metadata["error_category"] = "control_flow"
-                        # Check for validation errors (ValueError, ValidationError, etc.)
-                        # Also check for wrapped errors like "Agent execution failed with ValueError:"
-                        elif (
-                            err_name in ("ValueError", "ValidationError", "TypeError")
-                            or "validation" in err_str_lower
-                            or "ValueError" in err_str
-                            or "ValidationError" in err_str
-                            or "TypeError" in err_str
-                        ):
-                            metadata["error_category"] = "validation"
-                        # Check for network/connection errors
-                        elif (
-                            "Timeout" in err_name
-                            or "timeout" in err_str_lower
-                            or "Connection" in err_name
-                            or "connection" in err_str_lower
-                            or "network" in err_str_lower
-                        ):
+                        # Priority 2: standard library/network/system types
+                        elif isinstance(e, (asyncio.TimeoutError, ConnectionError)):
                             metadata["error_category"] = "network"
-                        # Check for authentication errors
-                        elif (
-                            "Auth" in err_name
-                            or "auth" in err_str_lower
-                            or "unauthorized" in err_str_lower
-                        ):
-                            metadata["error_category"] = "authentication"
-                        # Check for resource exhaustion
-                        elif (
-                            "Quota" in err_name
-                            or "quota" in err_str_lower
-                            or "limit" in err_str_lower
-                            or "exhausted" in err_str_lower
-                            or "UsageLimit" in err_name
-                        ):
-                            metadata["error_category"] = "resource_exhaustion"
-                        # Check for configuration errors
-                        elif (
-                            "Config" in err_name
-                            or "config" in err_str_lower
-                            or "setting" in err_str_lower
-                        ):
-                            metadata["error_category"] = "configuration"
-                        # Check for system errors (OSError, IOError, etc.)
-                        elif err_name in ("OSError", "IOError", "SystemError", "RuntimeError"):
+                        elif isinstance(e, (ValueError, TypeError, AttributeError)):
+                            metadata["error_category"] = "validation"
+                        elif isinstance(e, (PermissionError, OSError)):
                             metadata["error_category"] = "system"
                         else:
-                            metadata["error_category"] = "unknown"
+                            err_str = str(e).lower()
+                            err_name = type(e).__name__.lower()
+                            if "auth" in err_str or "auth" in err_name:
+                                metadata["error_category"] = "authentication"
+                            elif "quota" in err_str or "limit" in err_str or "exhaust" in err_str:
+                                metadata["error_category"] = "resource_exhaustion"
+                            elif "config" in err_str or "setting" in err_str:
+                                metadata["error_category"] = "configuration"
+                            else:
+                                metadata["error_category"] = "unknown"
                         if final_context is not None and hasattr(final_context, "scratchpad"):
                             final_context.scratchpad["background_error_category"] = metadata[
                                 "error_category"

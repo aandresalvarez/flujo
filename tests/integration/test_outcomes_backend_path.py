@@ -8,36 +8,15 @@ from flujo.domain.models import StepResult, StepOutcome, Success
 
 
 class _FakeParallelExecutor:
-    async def execute(
-        self,
-        core,
-        step,
-        data,
-        context,
-        resources,
-        limits,
-        context_setter,
-        parallel_step=None,
-        step_executor=None,
-    ) -> StepResult:
+    async def execute(self, core, frame) -> StepResult:
+        step = frame.step
         return StepResult(name=getattr(step, "name", "parallel"), success=True, output={"ok": True})
 
 
 class _FakeConditionalExecutor:
-    async def execute(
-        self,
-        core,
-        conditional_step,
-        data,
-        context,
-        resources,
-        limits,
-        context_setter,
-        _fallback_depth=0,
-    ) -> StepResult:
-        return StepResult(
-            name=getattr(conditional_step, "name", "conditional"), success=True, output=42
-        )
+    async def execute(self, core, frame) -> StepResult:
+        step = frame.step
+        return StepResult(name=getattr(step, "name", "conditional"), success=True, output=42)
 
 
 @pytest.mark.asyncio

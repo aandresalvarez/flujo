@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from flujo.application.core.executor_core import ExecutorCore
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.step_policies import DefaultAgentStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.tracing.manager import TraceManager, set_active_trace_manager
@@ -37,18 +38,21 @@ async def test_reasoning_precheck_skipped_when_no_plan_found():
     execu = DefaultAgentStepExecutor()
     core = ExecutorCore()
     # Data without plan delimiters
-    _ = await execu.execute(
-        core=core,
-        step=step,
-        data="no markers here",
+    frame = make_execution_frame(
+        core,
+        step,
+        "no markers here",
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
-        _fallback_depth=0,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    _ = await execu.execute(core=core, frame=frame)
     cur = tm._span_stack[-1]
     # Ensure skipped event was recorded
     found = any(ev.get("name") == "aros.reasoning.precheck.skipped" for ev in cur.events)

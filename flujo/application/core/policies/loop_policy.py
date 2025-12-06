@@ -40,15 +40,7 @@ class LoopStepExecutor(Protocol):
     async def execute(
         self,
         core: Any,
-        loop_step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        stream: bool,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
-        cache_key: Optional[str],
-        _fallback_depth: int = 0,
+        frame: ExecutionFrame[Any],
     ) -> StepOutcome[StepResult]: ...
 
 
@@ -57,35 +49,25 @@ class DefaultLoopStepExecutor(StepPolicy[LoopStep[Any]]):
     def handles_type(self) -> Type[LoopStep[Any]]:
         return LoopStep
 
-    async def execute(
-        self,
-        core: Any,
-        step: Any,
-        data: Any | None = None,
-        context: Optional[Any] = None,
-        resources: Optional[Any] = None,
-        limits: Optional[UsageLimits] = None,
-        stream: bool = False,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        cache_key: Optional[str] = None,
-        _fallback_depth: int = 0,
-    ) -> StepOutcome[StepResult]:
-        if isinstance(step, ExecutionFrame):
-            frame = step
-            step = frame.step
-            data = frame.data
-            context = frame.context
-            resources = frame.resources
-            limits = frame.limits
-            cache_key = cache_key or (
-                core._cache_key(frame) if getattr(core, "_enable_cache", False) else None
-            )
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+        loop_step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        stream = frame.stream
+        on_chunk = frame.on_chunk
+        cache_key = None
+        if getattr(core, "_enable_cache", False):
             try:
-                _fallback_depth = int(getattr(frame, "_fallback_depth", _fallback_depth) or 0)
+                cache_key = core._cache_key(frame)
             except Exception:
-                _fallback_depth = _fallback_depth
-        loop_step = step
-        context_setter = getattr(core, "_context_setter", None)
+                cache_key = None
+        try:
+            _fallback_depth = int(getattr(frame, "_fallback_depth", 0) or 0)
+        except Exception:
+            _fallback_depth = 0
+        context_setter = getattr(frame, "context_setter", getattr(core, "_context_setter", None))
         telemetry.logfire.info(
             f"[POLICY] DefaultLoopStepExecutor executing '{getattr(loop_step, 'name', '<unnamed>')}'"
         )

@@ -5,6 +5,7 @@ from flujo.application.core.step_policies import (
     DefaultConditionalStepExecutor,
     DefaultDynamicRouterStepExecutor,
 )
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.conditional import ConditionalStep
@@ -65,16 +66,21 @@ async def test_quota_propagates_conditional_to_nested_parallel_with_costs():
 
         core._set_current_quota(Quota(remaining_cost_usd=5.0, remaining_tokens=1000))
 
-        outcome = await DefaultConditionalStepExecutor().execute(
+        frame = make_execution_frame(
             core,
             cond,
-            data={},
+            {},
             context=None,
             resources=None,
             limits=None,
             context_setter=None,
-            _fallback_depth=0,
+            stream=False,
+            on_chunk=None,
+            fallback_depth=0,
+            result=None,
+            quota=None,
         )
+        outcome = await DefaultConditionalStepExecutor().execute(core=core, frame=frame)
         assert isinstance(outcome, Success)
         # Validate aggregated cost from inner parallel branches
         assert abs(outcome.step_result.cost_usd - 3.0) < 1e-6
@@ -139,7 +145,7 @@ async def test_quota_propagates_router_to_selected_parallel_with_costs():
 
         core._set_current_quota(Quota(remaining_cost_usd=10.0, remaining_tokens=1000))
 
-        outcome = await DefaultDynamicRouterStepExecutor().execute(
+        frame = make_execution_frame(
             core,
             router,
             data=None,
@@ -147,8 +153,13 @@ async def test_quota_propagates_router_to_selected_parallel_with_costs():
             resources=None,
             limits=None,
             context_setter=None,
-            step=None,
+            stream=False,
+            on_chunk=None,
+            fallback_depth=0,
+            result=None,
+            quota=None,
         )
+        outcome = await DefaultDynamicRouterStepExecutor().execute(core, frame)
         assert isinstance(outcome, Success)
         assert outcome.step_result.metadata_["executed_branches"] == ["x", "y"]
     finally:

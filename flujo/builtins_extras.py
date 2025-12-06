@@ -1,10 +1,12 @@
 from __future__ import annotations
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional, cast
 
 from flujo.domain.models import BaseModel as DomainBaseModel
 from flujo.infra.skill_models import SkillRegistration
 from flujo.infra.skill_registry import get_skill_registry
 from flujo.type_definitions.common import JSONObject
+from flujo.domain.sandbox import SandboxExecution, SandboxProtocol
+from flujo.infra.sandbox import NullSandbox
 from .agents.wrapper import make_agent_async
 from .builtins_support import (
     context_get,
@@ -53,6 +55,19 @@ except Exception:
         _DDGS_CLASS = None
 
 
+def _resolve_sandbox(context: DomainBaseModel | None) -> SandboxProtocol:
+    """Return sandbox from context when available, otherwise a NullSandbox."""
+    if context is not None:
+        for attr in ("sandbox", "_sandbox"):
+            try:
+                sandbox = getattr(context, attr)
+                if sandbox is not None:
+                    return cast(SandboxProtocol, sandbox)
+            except Exception:
+                continue
+    return NullSandbox()
+
+
 async def render_jinja_template(template: str, variables: JSONObject | None = None) -> str:
     """Render a Jinja2 template string with provided variables."""
     if _jinja2 is None:
@@ -64,6 +79,51 @@ async def render_jinja_template(template: str, variables: JSONObject | None = No
     except Exception:
         # Do not raise in CLI flows; return original to avoid breaking pipelines
         return template
+
+
+async def code_interpreter(
+    code: str,
+    *,
+    language: str = "python",
+    files: dict[str, str] | None = None,
+    environment: dict[str, str] | None = None,
+    arguments: list[str] | None = None,
+    timeout_s: float | None = None,
+    context: DomainBaseModel | None = None,
+) -> JSONObject:
+    """Execute code within the configured sandbox and return structured output."""
+    sandbox = _resolve_sandbox(context)
+    request = SandboxExecution(
+        code=code,
+        language=language,
+        files=files,
+        environment=environment,
+        arguments=tuple(arguments or ()),
+        timeout_s=timeout_s,
+    )
+    try:
+        result = await sandbox.exec_code(request)
+    except Exception as exc:
+        return {
+            "stdout": "",
+            "stderr": "",
+            "exit_code": 1,
+            "timed_out": False,
+            "error": str(exc),
+            "sandbox_id": None,
+            "succeeded": False,
+            "artifacts": None,
+        }
+    return {
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "exit_code": result.exit_code,
+        "timed_out": result.timed_out,
+        "error": result.error,
+        "sandbox_id": result.sandbox_id,
+        "succeeded": bool(result.succeeded),
+        "artifacts": result.artifacts,
+    }
 
 
 def _register_builtins() -> None:
@@ -439,6 +499,26 @@ def _register_builtins() -> None:
                 "properties": {"question": {"type": "string"}},
             },
             side_effects=False,
+        )
+        reg.register(
+            **SkillRegistration(
+                id="flujo.builtins.code_interpreter",
+                factory=lambda **_params: code_interpreter,
+                description="Execute code inside the configured sandbox and return stdout/stderr.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "code": {"type": "string"},
+                        "language": {"type": "string", "default": "python"},
+                        "files": {"type": "object"},
+                        "environment": {"type": "object"},
+                        "arguments": {"type": "array", "items": {"type": "string"}},
+                        "timeout_s": {"type": "number"},
+                    },
+                    "required": ["code"],
+                },
+                side_effects=True,
+            ).__dict__
         )
         reg.register(
             "flujo.builtins.always_valid_key",

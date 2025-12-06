@@ -9,7 +9,7 @@ from flujo.domain.models import PipelineContext
 # Shared state for verification
 BACKGROUND_OP_COMPLETED = False
 BACKGROUND_OP_START_TIME = 0.0
-BACKGROUND_SLEEP_SECONDS = 0.5
+BACKGROUND_SLEEP_SECONDS = 1.5
 
 
 class TestContext(PipelineContext):

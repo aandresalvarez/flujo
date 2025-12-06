@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from flujo.application.core.executor_core import ExecutorCore
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.step_policies import DefaultAgentStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.tracing.manager import TraceManager, set_active_trace_manager
@@ -44,18 +45,21 @@ async def test_precheck_passes_max_tokens_to_validator():
 
     execu = DefaultAgentStepExecutor()
     core = ExecutorCore()
-    _ = await execu.execute(
-        core=core,
-        step=step,
-        data="<thinking>plan</thinking>",
+    frame = make_execution_frame(
+        core,
+        step,
+        "<thinking>plan</thinking>",
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
-        _fallback_depth=0,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    _ = await execu.execute(core=core, frame=frame)
 
     # Validator should have seen the max_tokens value
     assert val.last_max == 123

@@ -42,6 +42,11 @@ class AgentOrchestrator:
         telemetry.logfire.debug(
             f"[AgentOrchestrator] Orchestrate simple agent step: {getattr(step, 'name', '<unnamed>')} depth={fallback_depth}"
         )
+        governance = getattr(core, "_governance_engine", None)
+        if governance is not None:
+            await governance.enforce(
+                core=core, step=step, data=data, context=context, resources=resources
+            )
         self.reset_fallback_chain(core, fallback_depth)
         self.guard_fallback_loop(core, step, fallback_depth)
         return await self._execution_runner.execute(

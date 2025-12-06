@@ -196,6 +196,11 @@ completion_tokens_per_1k = 0.015
 
                         return MockConfig()
 
+                    def get_settings(self):
+                        from flujo.infra.settings import settings as _settings
+
+                        return _settings
+
                 return MockConfigManager()
 
             m.setattr("flujo.infra.config_manager.get_config_manager", mock_get_config_manager)

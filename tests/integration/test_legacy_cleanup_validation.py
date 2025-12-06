@@ -80,17 +80,8 @@ class TestFunctionRemovalValidation:
         from flujo.application.core.step_policies import DefaultDynamicRouterStepExecutor
 
         sig = inspect.signature(DefaultDynamicRouterStepExecutor.execute)
-        expected_params = [
-            "core",
-            "router_step",
-            "data",
-            "context",
-            "resources",
-            "limits",
-            "context_setter",
-        ]
-        for param in expected_params:
-            assert param in sig.parameters, f"Missing parameter: {param}"
+        expected_params = ["self", "core", "frame"]
+        assert list(sig.parameters.keys())[:3] == expected_params
 
 
 class TestRemainingFunctionPreservation:
@@ -364,14 +355,12 @@ class TestLegacyFunctionIntegration:
         sig_hitl = inspect.signature(DefaultHitlStepExecutor.execute)
         sig_loop = inspect.signature(DefaultLoopStepExecutor.execute)
         sig_router = inspect.signature(DefaultDynamicRouterStepExecutor.execute)
-        # ✅ ARCHITECTURAL UPDATE: Unified parameter naming across all step executors
-        # All step executors now use consistent 'step' parameter name for API clarity
-        # Previous: Different executors used step/loop_step/router_step inconsistently
-        # Current: All use 'step' for consistent interface design
-        assert "core" in sig_cache.parameters and "step" in sig_cache.parameters
-        assert "core" in sig_hitl.parameters and "step" in sig_hitl.parameters
-        assert "core" in sig_loop.parameters and "step" in sig_loop.parameters
-        assert "core" in sig_router.parameters and "step" in sig_router.parameters
+        # ✅ ARCHITECTURAL UPDATE: Executors are migrating to ExecutionFrame.
+        # Cache, loop, router are frame-first; HITL may still be legacy during rollout.
+        assert "frame" in sig_cache.parameters
+        assert ("frame" in sig_hitl.parameters) or ("step" in sig_hitl.parameters)
+        assert "frame" in sig_loop.parameters
+        assert "frame" in sig_router.parameters
 
 
 class TestLegacyCleanupSafety:
