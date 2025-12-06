@@ -85,25 +85,14 @@ Suppression:
     ```
   - See: FLUJO_TEAM_GUIDE.md Section 2 "The Fatal Anti-Pattern"
 
-## <a id="v-ctx1"></a>V‑CTX1 — Missing context isolation in loop/parallel
-  - Why: Loop and parallel steps with custom Python skills should use `ContextManager.isolate()` to ensure idempotency. Direct context mutation across iterations or branches can lead to context corruption and non-deterministic behavior.
-  - When: This warning appears when a loop or parallel step contains custom skills (referenced via `module:function` syntax) that receive a context parameter. Built-in skills and declarative agents are excluded.
-  - Fix: In your custom skills that are used within loops or parallel steps, avoid direct context mutation. Instead, use context isolation:
-    ```python
-    from flujo.application.core.context_manager import ContextManager
-    
-    async def my_custom_skill(data: Any, context: PipelineContext) -> Any:
-        # ✅ Create isolated context for safe modification
-        isolated_ctx = ContextManager.isolate(context)
-        
-        # Modify isolated_ctx safely
-        isolated_ctx.scratchpad['result'] = data
-        
-        # Return result (executor will merge if needed)
-        return result
-    ```
-  - Alternative: If your skill doesn't need to modify context, you can ignore this warning (it's non-blocking).
-  - See: FLUJO_TEAM_GUIDE.md Section 3.5 "Idempotency in Step Policies"
+## <a id="v-ctx1"></a>V‑CTX1 — Missing required context keys
+  - Why: A step declared `input_keys` that are not produced earlier in the pipeline (including branches/imports).
+  - How availability is computed: context keys produced via `output_keys`/`sink_to` are unioned across conditional branches, parallel branches, and imported pipelines; dotted paths are tracked.
+  - Fix: ensure an upstream step produces the required keys (e.g., set `output_keys=["scratchpad.field"]`) or adjust the consumer’s `input_keys`.
+
+## <a id="v-ctx2"></a>V‑CTX2 — Weak context path (root available only)
+  - Why: A step requires a dotted path (e.g., `scratchpad.field`) but only the root (`scratchpad`) is known to exist so structure is uncertain.
+  - Fix: have the producing step declare the precise `output_keys` path or relax the consumer’s requirement if any shape is acceptable.
 
 ## <a id="v-sm1"></a>V‑SM1 — StateMachine transitions validity
   - Why: invalid states or no path to an end state.
