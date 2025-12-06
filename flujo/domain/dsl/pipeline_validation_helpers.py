@@ -660,6 +660,22 @@ def run_step_validations(
     seen_steps: set[int] = set()
     prev_step: Any | None = None
     prev_out_type: Any = None
+    available_keys: set[str] = {
+        "initial_prompt",
+        "scratchpad",
+        "run_id",
+        "hitl_history",
+        "command_log",
+        "conversation_history",
+        "steps",
+        "call_count",
+    }
+
+    def _root_key(key: str) -> str:
+        try:
+            return key.split(".", 1)[0].strip()
+        except Exception:
+            return key
 
     for step in getattr(pipeline, "steps", []) or []:
         if id(step) in seen_steps:
@@ -729,6 +745,23 @@ def run_step_validations(
                         step_name=step.name,
                     )
                 )
+
+        required_keys = [
+            k for k in getattr(step, "input_keys", []) if isinstance(k, str) and k.strip()
+        ]
+        missing_keys = [rk for rk in required_keys if _root_key(rk) not in available_keys]
+        if missing_keys:
+            report.errors.append(
+                ValidationFinding(
+                    rule_id="V-CTX1",
+                    severity="error",
+                    message=(
+                        f"Step '{step.name}' requires context keys {missing_keys} "
+                        "that are not produced earlier in the pipeline."
+                    ),
+                    step_name=step.name,
+                )
+            )
 
         if prev_step is not None:
             prev_updates_context = bool(getattr(prev_step, "updates_context", False))
@@ -801,6 +834,15 @@ def run_step_validations(
                         ),
                     )
                 )
+
+        produced_keys = [
+            k for k in getattr(step, "output_keys", []) if isinstance(k, str) and k.strip()
+        ]
+        sink_target = getattr(step, "sink_to", None)
+        if isinstance(sink_target, str) and sink_target.strip():
+            produced_keys.append(sink_target)
+        for pk in produced_keys:
+            available_keys.add(_root_key(pk))
 
         prev_step = step
         prev_out_type = getattr(step, "__step_output_type__", Any)

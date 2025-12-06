@@ -166,6 +166,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         default=False,
         description="Whether to validate that step return values match context fields.",
     )
+    input_keys: list[str] = Field(
+        default_factory=list,
+        description="Context keys this step requires before execution.",
+    )
+    output_keys: list[str] = Field(
+        default_factory=list,
+        description="Context keys this step will populate upon completion.",
+    )
     # Optional sink_to for simple steps: store the step's output directly into
     # a context path (e.g., "counter" or "scratchpad.field"). This is useful
     # when the step returns a scalar value that should be persisted in context
