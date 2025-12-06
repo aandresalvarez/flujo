@@ -2,6 +2,7 @@ import pytest
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultConditionalStepExecutor
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.conditional import ConditionalStep
@@ -34,30 +35,39 @@ async def test_conditional_policy_success_and_failure_paths():
         default_branch_pipeline=Pipeline.from_step(Step(name="DEF", agent=_EchoAgent())),
     )
 
-    # When data selects ok branch
-    out1 = await DefaultConditionalStepExecutor().execute(
+    frame_ok = make_execution_frame(
         core,
         cond,
-        data={"branch": "ok"},
+        {"branch": "ok"},
         context=None,
         resources=None,
         limits=None,
         context_setter=None,
-        _fallback_depth=0,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    out1 = await DefaultConditionalStepExecutor().execute(core=core, frame=frame_ok)
     assert isinstance(out1, Success)
 
     # When data selects failing branch
-    out2 = await DefaultConditionalStepExecutor().execute(
+    frame_bad = make_execution_frame(
         core,
         cond,
-        data={"branch": "bad"},
+        {"branch": "bad"},
         context=None,
         resources=None,
         limits=None,
         context_setter=None,
-        _fallback_depth=0,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    out2 = await DefaultConditionalStepExecutor().execute(core=core, frame=frame_bad)
     assert isinstance(out2, Failure)
 
 
@@ -83,17 +93,22 @@ async def test_conditional_policy_returns_failure_on_paused_branch():
 
     from flujo.exceptions import PausedException
 
+    frame = make_execution_frame(
+        core,
+        cond,
+        {"branch": "h"},
+        context=None,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
     with pytest.raises(PausedException):
-        await DefaultConditionalStepExecutor().execute(
-            core,
-            cond,
-            data={"branch": "h"},
-            context=None,
-            resources=None,
-            limits=None,
-            context_setter=None,
-            _fallback_depth=0,
-        )
+        await DefaultConditionalStepExecutor().execute(core=core, frame=frame)
 
 
 @pytest.mark.asyncio
@@ -123,14 +138,19 @@ async def test_conditional_branch_executes_parallel_with_quota_split():
         default_branch_pipeline=Pipeline.from_step(Step(name="DEF", agent=_EchoAgent())),
     )
 
-    out = await DefaultConditionalStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         cond,
-        data={"branch": "p"},
+        {"branch": "p"},
         context=None,
         resources=None,
         limits=None,
         context_setter=None,
-        _fallback_depth=0,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    out = await DefaultConditionalStepExecutor().execute(core=core, frame=frame)
     assert isinstance(out, Success)

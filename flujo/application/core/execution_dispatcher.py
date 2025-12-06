@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import inspect
+import warnings
 from typing import Any, Awaitable, Callable, Optional, Type, Union
 
 from ...domain.dsl.step import Step
 from ...domain.models import Failure, StepOutcome, StepResult
+from ...infra import telemetry as _telemetry
+from ...utils.config import get_settings
 from .types import ExecutionFrame
 from .policy_registry import PolicyRegistry, StepPolicy
 
@@ -50,8 +54,72 @@ class ExecutionDispatcher:
             )
             if core_obj is None:
                 raise TypeError("Executor core is required for policy execution")
-            return await policy.execute(core_obj, frame)
+            if self._expects_frame(policy):
+                return await policy.execute(core_obj, frame)
+            return await self._call_legacy_policy(policy, core_obj, frame)
         return await policy(frame)
+
+    def _expects_frame(self, policy: StepPolicy[Any]) -> bool:
+        """Detect whether a policy prefers the new frame-based signature."""
+        try:
+            sig = inspect.signature(policy.execute)
+            params = list(sig.parameters.values())
+            # Bound method: first param is usually `core`
+            for param in params[1:]:
+                if param.name == "frame":
+                    return True
+                if param.kind is inspect.Parameter.VAR_POSITIONAL:
+                    # Policies using *args typically expect a frame as the first arg
+                    return True
+                ann = param.annotation
+                if ann is ExecutionFrame or getattr(ann, "__name__", "") == "ExecutionFrame":
+                    return True
+        except Exception:
+            # Default to legacy behavior if inspection fails
+            return False
+        return False
+
+    async def _call_legacy_policy(
+        self, policy: StepPolicy[Any], core_obj: Any, frame: ExecutionFrame[Any]
+    ) -> StepOutcome[Any]:
+        """Adapt ExecutionFrame into legacy positional arguments for old policies."""
+        cache_key = None
+        try:
+            if getattr(core_obj, "_enable_cache", False):
+                cache_key = core_obj._cache_key(frame)
+        except Exception:
+            cache_key = None
+        fallback_depth = 0
+        try:
+            fallback_depth = int(getattr(frame, "_fallback_depth", 0) or 0)
+        except Exception:
+            fallback_depth = 0
+        try:
+            if get_settings().warn_legacy:
+                msg = (
+                    f"Legacy policy signature detected for {type(policy).__name__}; "
+                    "please migrate execute(core, frame) to ExecutionFrame."
+                )
+                warnings.warn(msg, DeprecationWarning, stacklevel=3)
+                try:
+                    _telemetry.logfire.warning(msg)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        return await policy.execute(
+            core_obj,
+            frame.step,
+            frame.data,
+            frame.context,
+            frame.resources,
+            frame.limits,
+            frame.stream,
+            frame.on_chunk,
+            cache_key,
+            fallback_depth,
+        )
 
     @property
     def registry(self) -> PolicyRegistry:

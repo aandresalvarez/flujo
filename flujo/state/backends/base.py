@@ -179,6 +179,26 @@ class StateBackend(ABC):
         """Mark stale background tasks as failed (timeout)."""
         return 0
 
+    # --- Shadow evaluation persistence ---
+    async def persist_evaluation(
+        self,
+        run_id: str,
+        score: float,
+        feedback: str | None = None,
+        step_name: str | None = None,
+        metadata: JSONObject | None = None,
+    ) -> None:
+        """Persist shadow evaluation result (default: no-op)."""
+        raise NotImplementedError
+
+    async def list_evaluations(
+        self,
+        limit: int = 20,
+        run_id: str | None = None,
+    ) -> list[JSONObject]:
+        """List persisted shadow evaluation results (default: not implemented)."""
+        raise NotImplementedError
+
     # --- New structured persistence API ---
     async def save_run_start(self, run_data: JSONObject) -> None:
         """Persist initial run metadata."""

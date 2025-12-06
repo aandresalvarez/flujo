@@ -537,8 +537,11 @@ class TestUltraExecutorPerformance:
         resources.model_dump.return_value = {"resources": "data"}
 
         # Run many executions and measure memory usage
-        import psutil
-        import os
+        try:
+            import psutil
+            import os
+        except ImportError:
+            pytest.skip("psutil not available")
 
         process = psutil.Process(os.getpid())
         initial_memory = process.memory_info().rss

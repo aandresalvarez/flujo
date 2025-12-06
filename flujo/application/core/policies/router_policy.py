@@ -34,18 +34,7 @@ from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
 
 
 class DynamicRouterStepExecutor(Protocol):
-    async def execute(
-        self,
-        core: Any,
-        router_step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        # Backward-compat: expose 'step' in signature for legacy inspection
-        step: Optional[Any] = None,
-    ) -> StepOutcome[StepResult]: ...
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
 
 
 class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
@@ -53,28 +42,14 @@ class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
     def handles_type(self) -> Type[DynamicParallelRouterStep]:
         return DynamicParallelRouterStep
 
-    async def execute(
-        self,
-        core: Any,
-        router_step: Any,
-        data: Any | None = None,
-        context: Optional[Any] = None,
-        resources: Optional[Any] = None,
-        limits: Optional[UsageLimits] = None,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
-        # Backward-compat: expose 'step' in signature for legacy inspection
-        step: Optional[Any] = None,
-    ) -> StepOutcome[StepResult]:
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
-        if isinstance(router_step, ExecutionFrame):
-            frame = router_step
-            router_step = frame.step
-            data = frame.data
-            context = frame.context
-            resources = frame.resources
-            limits = frame.limits
-            context_setter = getattr(frame, "context_setter", None)
-            step = step or router_step
+        router_step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        context_setter = getattr(frame, "context_setter", None)
 
         telemetry.logfire.debug("=== HANDLE DYNAMIC ROUTER STEP ===")
         telemetry.logfire.debug(f"Dynamic router step name: {router_step.name}")
@@ -184,29 +159,25 @@ class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
         )
         # Use the DefaultParallelStepExecutor policy directly instead of legacy core method
         parallel_executor = DefaultParallelStepExecutor()
-        # Ensure quota is set for the parallel execution block
-        quota_token = None
+        quota = None
         try:
-            if hasattr(core, "_set_current_quota"):
-                quota_token = core._set_current_quota(core._get_current_quota())
+            if hasattr(core, "_get_current_quota"):
+                quota = core._get_current_quota()
         except Exception:
-            quota_token = None
-        try:
-            pr_any = await parallel_executor.execute(
-                core=core,
-                step=temp_parallel_step,
-                data=data,
-                context=context,
-                resources=resources,
-                limits=limits,
-                context_setter=context_setter,
-            )
-        finally:
-            try:
-                if quota_token is not None and hasattr(core, "_reset_current_quota"):
-                    core._reset_current_quota(quota_token)
-            except Exception:
-                pass
+            quota = None
+        frame = ExecutionFrame(
+            step=temp_parallel_step,
+            data=data,
+            context=context,
+            resources=resources,
+            limits=limits,
+            quota=quota,
+            stream=False,
+            on_chunk=None,
+            context_setter=context_setter or (lambda _pr, _ctx: None),
+            _fallback_depth=0,
+        )
+        pr_any = await parallel_executor.execute(core=core, frame=frame)
 
         # Normalize StepOutcome from parallel policy to StepResult for router aggregation
         if isinstance(pr_any, StepOutcome):

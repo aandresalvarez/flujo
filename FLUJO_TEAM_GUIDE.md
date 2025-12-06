@@ -398,6 +398,7 @@ The framework standardizes on proactive quota budgeting. When touching older cod
   - Enable in CI to detect newly introduced legacy usage in contributions.
   - Optionally enable locally during refactors or onboarding.
 - Behavior: OFF by default; no user-facing impact. Only warnings are emitted when enabled.
+- Governance: set `FLUJO_GOVERNANCE_MODE=allow_all|deny_all` to select the default governance policy set. Governance checks run before agent orchestration; allow/deny decisions are counted and emitted via telemetry logs. Default is `allow_all`.
 
 ---
 

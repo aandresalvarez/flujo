@@ -29,17 +29,7 @@ from flujo.domain.dsl.conditional import ConditionalStep
 
 
 class ConditionalStepExecutor(Protocol):
-    async def execute(
-        self,
-        core: Any,
-        conditional_step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        _fallback_depth: int = 0,
-    ) -> StepOutcome[StepResult]: ...
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
 
 
 class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
@@ -50,27 +40,19 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
     async def execute(
         self,
         core: Any,
-        conditional_step: Any,
-        data: Any | None = None,
-        context: Optional[Any] = None,
-        resources: Optional[Any] = None,
-        limits: Optional[UsageLimits] = None,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
-        _fallback_depth: int = 0,
+        frame: ExecutionFrame[Any],
     ) -> StepOutcome[StepResult]:
         """Handle ConditionalStep execution with proper context isolation and merging."""
-        if isinstance(conditional_step, ExecutionFrame):
-            frame = conditional_step
-            conditional_step = frame.step
-            data = frame.data
-            context = frame.context
-            resources = frame.resources
-            limits = frame.limits
-            context_setter = frame.context_setter
-            try:
-                _fallback_depth = int(getattr(frame, "_fallback_depth", _fallback_depth) or 0)
-            except Exception:
-                _fallback_depth = _fallback_depth
+        conditional_step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        context_setter = frame.context_setter
+        try:
+            _fallback_depth = int(getattr(frame, "_fallback_depth", 0) or 0)
+        except Exception:
+            _fallback_depth = 0
 
         telemetry.logfire.debug("=== HANDLE CONDITIONAL STEP ===")
         telemetry.logfire.debug(

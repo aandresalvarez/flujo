@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock
 
 from flujo.application.core.executor_core import ExecutorCore
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.step_policies import DefaultSimpleStepExecutor
 from flujo.domain.dsl.step import Step
 from flujo.testing.utils import StubAgent, DummyPlugin
@@ -15,19 +16,22 @@ async def test_simple_policy_owned_execution():
     policy = DefaultSimpleStepExecutor()
 
     step = Step(name="s", agent=StubAgent(["ok"]))
-
-    res = await policy.execute(
+    frame = make_execution_frame(
         core,
         step,
-        data="in",
+        "in",
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
-        _fallback_depth=0,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    res = await policy.execute(core, frame)
 
     assert isinstance(res, Success)
     assert res.step_result.success is True
@@ -146,17 +150,22 @@ async def test_retry_attempt_counts(monkeypatch):
         core._agent_runner, "run", AsyncMock(side_effect=[Exception("first"), "ok"])
     )
 
-    res = await policy.execute(
+    frame = make_execution_frame(
         core,
         step,
-        data="in",
+        "in",
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    res = await policy.execute(core, frame)
     assert isinstance(res, Success)
     assert res.step_result.success is True
     assert res.step_result.attempts == 2
@@ -182,17 +191,22 @@ async def test_fallback_success_path(monkeypatch):
 
     monkeypatch.setattr(core, "execute", execute_fallback)
 
-    res = await policy.execute(
+    frame = make_execution_frame(
         core,
         primary,
-        data="in",
+        "in",
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    res = await policy.execute(core, frame)
     assert isinstance(res, Success)
     assert res.step_result.success is True
     assert res.step_result.output == "fb_ok"
@@ -223,17 +237,22 @@ async def test_fallback_failure_path(monkeypatch):
 
     monkeypatch.setattr(core, "execute", execute_fallback)
 
-    res = await policy.execute(
+    frame = make_execution_frame(
         core,
         primary,
-        data="in",
+        "in",
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    res = await policy.execute(core, frame)
     assert isinstance(res, Failure)
     assert res.step_result is not None
     assert res.step_result.success is False
@@ -264,17 +283,22 @@ async def test_streaming_invokes_on_chunk(monkeypatch):
     monkeypatch.setattr(core._agent_runner, "run", runner)
     on_chunk = AsyncMock()
 
-    res = await policy.execute(
+    frame = make_execution_frame(
         core,
         step,
-        data="in",
+        "in",
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=True,
         on_chunk=on_chunk,
-        cache_key=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    res = await policy.execute(core, frame)
     on_chunk.assert_called_once()
     sr = res.step_result if hasattr(res, "step_result") else res
     assert sr.success is True
@@ -290,17 +314,22 @@ async def test_usage_guard_not_called_in_quota_mode(monkeypatch):
     guard = AsyncMock()
     monkeypatch.setattr(core._usage_meter, "guard", guard)
 
-    res = await policy.execute(
+    frame = make_execution_frame(
         core,
         step,
-        data="in",
+        "in",
         context=None,
         resources=None,
         limits=limits,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    res = await policy.execute(core, frame)
     # In pure quota mode, guard is not used; enforcement happens via quotas
     guard.assert_not_called()
     sr = res.step_result if hasattr(res, "step_result") else res
@@ -317,17 +346,22 @@ async def test_cache_put_called_on_success(monkeypatch):
     cache_put = AsyncMock()
     monkeypatch.setattr(core._cache_backend, "put", cache_put)
 
-    res = await policy.execute(
+    frame = make_execution_frame(
         core,
         step,
-        data="in",
+        "in",
         context=None,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key="key",
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    res = await policy.execute(core, frame)
     sr = res.step_result if hasattr(res, "step_result") else res
     assert sr.success is True
     cache_put.assert_called_once()

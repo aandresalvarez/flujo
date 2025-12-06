@@ -2,6 +2,7 @@ import pytest
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultParallelStepExecutor
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.parallel import ParallelStep
@@ -27,7 +28,7 @@ async def test_parallel_quota_split_with_infinite_cost_propagates_inf_to_childre
     parent_quota = Quota(remaining_cost_usd=float("inf"), remaining_tokens=10)
     core._set_current_quota(parent_quota)
 
-    outcome = await DefaultParallelStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         p,
         data=None,
@@ -35,8 +36,14 @@ async def test_parallel_quota_split_with_infinite_cost_propagates_inf_to_childre
         resources=None,
         limits=None,
         context_setter=None,
-        step_executor=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+
+    outcome = await DefaultParallelStepExecutor().execute(core=core, frame=frame)
     assert isinstance(outcome, Success)
     # Parent tokens should be zeroed after split
     rem_cost, rem_tokens = parent_quota.get_remaining()

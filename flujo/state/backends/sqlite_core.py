@@ -3,19 +3,29 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import json
+import logging
 import re
 import sqlite3
 import time
+import threading
 import weakref
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Coroutine, Dict, List, Optional, TYPE_CHECKING
 
+from contextlib import AbstractContextManager
+
 import aiosqlite
+import anyio
 import os
+from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from .base import StateBackend
 from flujo.infra import telemetry
+from flujo.type_definitions.common import JSONObject
+
+logger = logging.getLogger(__name__)
 
 # Try to import orjson for faster JSON serialization
 try:
@@ -92,6 +102,43 @@ COLUMN_DEF_PATTERN = re.compile(
     )*$""",
     re.IGNORECASE | re.VERBOSE,
 )
+
+
+_PORTAL_LOCK = threading.Lock()
+_PORTAL_MANAGER: AbstractContextManager[BlockingPortal] | None = None
+_PORTAL: BlockingPortal | None = None
+
+
+def _get_blocking_portal() -> BlockingPortal:
+    """Return a shared BlockingPortal to run coroutines from sync code safely."""
+    global _PORTAL, _PORTAL_MANAGER
+    with _PORTAL_LOCK:
+        if _PORTAL is None:
+            _PORTAL_MANAGER = start_blocking_portal()
+            _PORTAL = _PORTAL_MANAGER.__enter__()
+            atexit.register(_shutdown_blocking_portal)
+        return _PORTAL
+
+
+def _shutdown_blocking_portal() -> None:
+    """Cleanly stop the shared BlockingPortal at interpreter shutdown."""
+    global _PORTAL, _PORTAL_MANAGER
+    with _PORTAL_LOCK:
+        portal = _PORTAL
+        manager = _PORTAL_MANAGER
+        _PORTAL = None
+        _PORTAL_MANAGER = None
+    if manager is not None:
+        try:
+            manager.__exit__(None, None, None)
+        except Exception as exc:
+            logger.debug(f"Non-fatal error stopping BlockingPortal manager: {exc}")
+        return
+    if portal is not None:
+        try:
+            anyio.run(portal.stop)
+        except Exception as exc:
+            logger.debug(f"Non-fatal error stopping BlockingPortal: {exc}")
 
 
 def _validate_sql_identifier(identifier: str) -> bool:
@@ -278,25 +325,8 @@ def _run_coro_sync(coro: "Coroutine[Any, Any, Any]") -> Any:
     except RuntimeError:
         return asyncio.run(coro)
 
-    result: Any = None
-    exc: BaseException | None = None
-
-    def _target() -> None:
-        nonlocal result, exc
-        try:
-            result = asyncio.run(coro)
-        except BaseException as e:  # pragma: no cover - unlikely
-            exc = e
-
-    import threading as _threading
-
-    t = _threading.Thread(target=_target, name="sqlite-backend-shutdown")
-    t.daemon = True
-    t.start()
-    t.join()
-    if exc:
-        raise exc
-    return result
+    portal = _get_blocking_portal()
+    return portal.call(lambda: coro)
 
 
 class SQLiteBackendBase(StateBackend):
@@ -581,6 +611,28 @@ class SQLiteBackendBase(StateBackend):
                     "CREATE INDEX IF NOT EXISTS idx_spans_parent_span ON spans(parent_span_id)"
                 )
 
+                # Create evaluations table for shadow eval persistence
+                await db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS evaluations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id TEXT NOT NULL,
+                        step_name TEXT,
+                        score REAL NOT NULL,
+                        feedback TEXT,
+                        metadata TEXT,
+                        created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+                        FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+                    )
+                    """
+                )
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_evaluations_run_id ON evaluations(run_id)"
+                )
+                await db.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_evaluations_created_at ON evaluations(created_at)"
+                )
+
                 await db.execute("COMMIT")
 
                 # Run migration to ensure schema is up to date
@@ -817,6 +869,26 @@ class SQLiteBackendBase(StateBackend):
             "UPDATE workflow_state SET updated_at = datetime('now') WHERE updated_at = ''"
         )
 
+        # Ensure evaluations table exists
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS evaluations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                step_name TEXT,
+                score REAL NOT NULL,
+                feedback TEXT,
+                metadata TEXT,
+                created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
+            )
+            """
+        )
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_evaluations_run_id ON evaluations(run_id)")
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_evaluations_created_at ON evaluations(created_at)"
+        )
+
     async def _create_indexes(self, db: aiosqlite.Connection) -> None:
         """Create indexes for better query performance, only if columns exist."""
         try:
@@ -1031,3 +1103,94 @@ class SQLiteBackendBase(StateBackend):
         raise RuntimeError(
             f"Operation failed after {max_retries} attempts due to unexpected conditions"
         )
+
+    async def persist_evaluation(
+        self,
+        run_id: str,
+        score: float,
+        feedback: str | None = None,
+        step_name: str | None = None,
+        metadata: JSONObject | None = None,
+    ) -> None:
+        """Persist a shadow evaluation result into SQLite."""
+
+        async def _insert() -> None:
+            conn = self._connection_pool or await self._create_connection()
+            close_after = conn is not self._connection_pool
+            try:
+                metadata_json = None if metadata is None else json.dumps(safe_serialize(metadata))
+                await conn.execute(
+                    """
+                    INSERT INTO evaluations (run_id, step_name, score, feedback, metadata, created_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))
+                    """,
+                    (
+                        run_id,
+                        step_name,
+                        score,
+                        feedback,
+                        metadata_json,
+                    ),
+                )
+                await conn.commit()
+            finally:
+                if close_after:
+                    await conn.close()
+
+        await self._ensure_init()
+        await self._with_retries(_insert)
+
+    async def list_evaluations(
+        self,
+        limit: int = 20,
+        run_id: str | None = None,
+    ) -> list[JSONObject]:
+        """Return recent evaluations."""
+
+        async def _select() -> list[JSONObject]:
+            conn = self._connection_pool or await self._create_connection()
+            close_after = conn is not self._connection_pool
+            try:
+                if run_id:
+                    cursor = await conn.execute(
+                        """
+                        SELECT run_id, step_name, score, feedback, metadata, created_at
+                        FROM evaluations
+                        WHERE run_id = ?
+                        ORDER BY datetime(created_at) DESC
+                        LIMIT ?
+                        """,
+                        (run_id, limit),
+                    )
+                else:
+                    cursor = await conn.execute(
+                        """
+                        SELECT run_id, step_name, score, feedback, metadata, created_at
+                        FROM evaluations
+                        ORDER BY datetime(created_at) DESC
+                        LIMIT ?
+                        """,
+                        (limit,),
+                    )
+                rows = await cursor.fetchall()
+                await cursor.close()
+                records: list[JSONObject] = []
+                for row in rows:
+                    records.append(
+                        {
+                            "run_id": row[0],
+                            "step_name": row[1],
+                            "score": row[2],
+                            "feedback": row[3],
+                            "metadata": json.loads(row[4]) if row[4] else None,
+                            "created_at": row[5],
+                        }
+                    )
+                return records
+            finally:
+                if close_after:
+                    await conn.close()
+
+        await self._ensure_init()
+        result = await self._with_retries(_select)
+        return list(result) if isinstance(result, list) else []

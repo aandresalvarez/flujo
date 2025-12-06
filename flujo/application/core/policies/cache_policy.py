@@ -31,17 +31,7 @@ from ..types import ExecutionFrame
 
 
 class CacheStepExecutor(Protocol):
-    async def execute(
-        self,
-        core: Any,
-        cache_step: CacheStep[Any, Any],
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        step_executor: Optional[Callable[..., Awaitable[StepResult]]],
-    ) -> StepOutcome[StepResult]: ...
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
 
 
 class DefaultCacheStepExecutor(StepPolicy[CacheStep]):
@@ -49,28 +39,14 @@ class DefaultCacheStepExecutor(StepPolicy[CacheStep]):
     def handles_type(self) -> Type[CacheStep]:
         return CacheStep
 
-    async def execute(
-        self,
-        core: Any,
-        cache_step: CacheStep[Any, Any],
-        data: Any | None = None,
-        context: Optional[Any] = None,
-        resources: Optional[Any] = None,
-        limits: Optional[UsageLimits] = None,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
-        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
-        # Backward-compat: retain 'step' parameter for legacy inspection tooling
-        step: Optional[Any] = None,
-    ) -> StepOutcome[StepResult]:
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         """Handle CacheStep execution with concurrency control and resilience."""
-        if isinstance(cache_step, ExecutionFrame):
-            frame = cache_step
-            cache_step = frame.step  # type: ignore[assignment]
-            data = frame.data
-            context = frame.context
-            resources = frame.resources
-            limits = frame.limits
-            context_setter = getattr(frame, "context_setter", None)
+        cache_step = frame.step  # type: ignore[assignment]
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        context_setter = getattr(frame, "context_setter", None)
 
         try:
             cache_key = _generate_cache_key(cache_step.wrapped_step, data, context, resources)
@@ -131,7 +107,7 @@ class DefaultCacheStepExecutor(StepPolicy[CacheStep]):
                 except Exception:
                     quota = None
 
-                frame = ExecutionFrame(
+                child_frame = ExecutionFrame(
                     step=cache_step.wrapped_step,
                     data=data,
                     context=context,
@@ -145,7 +121,7 @@ class DefaultCacheStepExecutor(StepPolicy[CacheStep]):
                     ),
                     _fallback_depth=0,
                 )
-                result = await core.execute(frame)
+                result = await core.execute(child_frame)
                 # Normalize to StepResult if policy returned typed outcome
                 if isinstance(result, StepOutcome):
                     if isinstance(result, Success):
@@ -215,7 +191,7 @@ class DefaultCacheStepExecutor(StepPolicy[CacheStep]):
                 except Exception:
                     pass
                 return to_outcome(result)
-        frame = ExecutionFrame(
+        child_frame = ExecutionFrame(
             step=cache_step.wrapped_step,
             data=data,
             context=context,
@@ -230,7 +206,7 @@ class DefaultCacheStepExecutor(StepPolicy[CacheStep]):
             _fallback_depth=0,
         )
         # Ensure we return according to requested mode
-        result = await core.execute(frame)
+        result = await core.execute(child_frame)
         if isinstance(result, StepOutcome):
             return result
         return to_outcome(result)

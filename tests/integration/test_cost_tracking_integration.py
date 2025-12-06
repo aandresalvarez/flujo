@@ -199,7 +199,17 @@ completion_tokens_per_1k = 0.015
 
                     return MockConfig()
 
-            return MockConfigManager()
+                def get_settings(self):
+                    from flujo.infra.settings import settings as _settings
+
+                    return _settings
+
+            mock = MockConfigManager()
+            if not hasattr(mock, "get_settings"):
+                from flujo.infra.settings import settings as _settings
+
+                mock.get_settings = lambda: _settings  # type: ignore[attr-defined]
+            return mock
 
         monkeypatch.setattr(
             "flujo.infra.config_manager.get_config_manager", mock_get_config_manager
@@ -268,7 +278,12 @@ completion_tokens_per_1k = 0.002
 
                     return MockConfig()
 
-            return MockConfigManager()
+            mock = MockConfigManager()
+            if not hasattr(mock, "get_settings"):
+                from flujo.infra.settings import settings as _settings
+
+                mock.get_settings = lambda: _settings  # type: ignore[attr-defined]
+            return mock
 
         monkeypatch.setattr(
             "flujo.infra.config_manager.get_config_manager", mock_get_config_manager
@@ -337,7 +352,12 @@ completion_tokens_per_1k = 0.002
 
                     return MockConfig()
 
-            return MockConfigManager()
+            mock = MockConfigManager()
+            if not hasattr(mock, "get_settings"):
+                from flujo.infra.settings import settings as _settings
+
+                mock.get_settings = lambda: _settings  # type: ignore[attr-defined]
+            return mock
 
         monkeypatch.setattr(
             "flujo.infra.config_manager.get_config_manager", mock_get_config_manager
@@ -406,7 +426,12 @@ completion_tokens_per_1k = 0.015
 
                     return MockConfig()
 
-            return MockConfigManager()
+            mock = MockConfigManager()
+            if not hasattr(mock, "get_settings"):
+                from flujo.infra.settings import settings as _settings
+
+                mock.get_settings = lambda: _settings  # type: ignore[attr-defined]
+            return mock
 
         monkeypatch.setattr(
             "flujo.infra.config_manager.get_config_manager", mock_get_config_manager
@@ -468,7 +493,17 @@ completion_tokens_per_1k = 0.015
 
                     return MockConfig()
 
-            return MockConfigManager()
+                def get_settings(self):
+                    from flujo.infra.settings import settings as _settings
+
+                    return _settings
+
+            mock = MockConfigManager()
+            if not hasattr(mock, "get_settings"):
+                from flujo.infra.settings import settings as _settings
+
+                mock.get_settings = lambda: _settings  # type: ignore[attr-defined]
+            return mock
 
         monkeypatch.setattr(
             "flujo.infra.config_manager.get_config_manager", mock_get_config_manager

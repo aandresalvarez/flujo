@@ -10,7 +10,13 @@ import json
 import datetime
 import subprocess
 import time
-import psutil
+
+try:
+    import psutil
+except ImportError as exc:  # pragma: no cover - optional dependency
+    raise SystemExit(
+        "psutil is required to run test_health_monitor. Install with `pip install psutil`."
+    ) from exc
 from pathlib import Path
 from typing import Any, Optional
 

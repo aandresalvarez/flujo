@@ -42,22 +42,9 @@ class TestExecutorCoreLoopStep:
         import inspect
 
         sig = inspect.signature(DefaultLoopStepExecutor.execute)
-        # Updated to match Flujo team guide standardized policy signature
-        expected_params = {
-            "self",
-            "core",
-            "step",
-            "data",
-            "context",
-            "resources",
-            "limits",
-            "stream",
-            "on_chunk",
-            "cache_key",
-            "_fallback_depth",
-        }
+        expected_params = {"self", "core", "frame"}
         actual_params = set(sig.parameters.keys())
-        assert expected_params.issubset(actual_params)
+        assert expected_params == actual_params
 
     async def test_handle_loop_step_basic_execution(self, executor_core, mock_loop_step):
         """Test basic LoopStep execution through ExecutorCore."""

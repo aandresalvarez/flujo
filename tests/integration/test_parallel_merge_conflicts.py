@@ -4,6 +4,8 @@ import pytest
 from pydantic import BaseModel, Field
 
 from flujo.application.core.executor_core import ExecutorCore
+from flujo.application.core.executor_helpers import make_execution_frame
+from flujo.application.core.step_policies import DefaultParallelStepExecutor
 from flujo.domain.dsl import Step, Pipeline
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.step import BranchFailureStrategy, MergeStrategy
@@ -53,19 +55,24 @@ async def test_parallel_default_context_update_conflict_fails():
         return create_test_step_result(name="?", output=input_data, success=True)
 
     core = ExecutorCore()
-    from flujo.application.core.step_policies import DefaultParallelStepExecutor
 
     execu = DefaultParallelStepExecutor()
-    outcome = await execu.execute(
+    frame = make_execution_frame(
         core,
         p,
-        data={"x": 1},
+        {"x": 1},
         context=base_ctx,
         resources=None,
         limits=None,
         context_setter=None,
-        step_executor=fake_step_executor,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    setattr(frame, "step_executor", fake_step_executor)
+    outcome = await execu.execute(core=core, frame=frame)
 
     sr = outcome.step_result if hasattr(outcome, "step_result") else outcome
     assert not sr.success
@@ -108,16 +115,23 @@ async def test_parallel_overwrite_allows_conflict():
     from flujo.application.core.step_policies import DefaultParallelStepExecutor
 
     execu = DefaultParallelStepExecutor()
-    outcome = await execu.execute(
-        ExecutorCore(),
+    core = ExecutorCore()
+    frame = make_execution_frame(
+        core,
         p,
-        data={"x": 1},
+        {"x": 1},
         context=base_ctx,
         resources=None,
         limits=None,
         context_setter=None,
-        step_executor=fake_step_executor,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    setattr(frame, "step_executor", fake_step_executor)
+    outcome = await execu.execute(core=core, frame=frame)
 
     sr = outcome.step_result if hasattr(outcome, "step_result") else outcome
     assert sr.success

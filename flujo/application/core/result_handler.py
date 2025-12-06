@@ -143,11 +143,29 @@ class ResultHandler:
         result: StepResult,
         cache_key: Optional[str],
         called_with_frame: bool,
+        frame: ExecutionFrame[Any] | None = None,
     ) -> StepOutcome[StepResult] | StepResult:
         """Persist cache if applicable and return standardized result."""
         await self._core._cache_manager.maybe_persist_step_result(
             step, result, cache_key, ttl_s=3600
         )
+        try:
+            shadow_eval = getattr(self._core, "_shadow_evaluator", None)
+            if shadow_eval is not None:
+                shadow_eval.maybe_schedule(core=self._core, step=step, result=result, frame=frame)
+        except Exception:
+            pass
+        try:
+            memory_manager = getattr(self._core, "_memory_manager", None)
+            if memory_manager is not None:
+                # Best-effort indexing; non-blocking if manager uses background tasks
+                await memory_manager.index_step_output(
+                    step_name=self._core._safe_step_name(step),
+                    result=result,
+                    context=getattr(frame, "context", None) if frame is not None else None,
+                )
+        except Exception:
+            pass
         if called_with_frame:
             return Success(step_result=result)
         return result

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from ...exceptions import UsageLimitExceededError
 from ...domain.models import UsageLimits, Quota
+from ...domain.sandbox import SandboxProtocol
 from .default_cache_components import OrjsonSerializer, Blake3Hasher
 from .context_manager import ContextManager
 from .types import ExecutionFrame
@@ -26,6 +27,7 @@ from ...exceptions import (
     InfiniteRedirectError,
 )
 from ...domain.models import PipelineResult, StepResult, StepOutcome, Failure, Success
+from ...infra.settings import get_settings
 from .failure_builder import build_failure_outcome
 
 Outcome = Union[StepOutcome[StepResult], StepResult]
@@ -126,6 +128,92 @@ def normalize_frame_context(frame: Any) -> None:
     _ = getattr(frame, "resources", None)
     _ = getattr(frame, "limits", None)
     _ = getattr(frame, "on_chunk", None)
+
+
+def enforce_typed_context(context: Any) -> Any:
+    """Optionally enforce that context is a Pydantic BaseModel when configured.
+
+    When FLUJO_ENFORCE_TYPED_CONTEXT=1 (or settings.enforce_typed_context), plain
+    dict contexts are rejected to steer users toward typed models. By default,
+    the check is advisory and logs a warning.
+    """
+    if context is None:
+        return None
+    if isinstance(context, BaseModel):
+        return context
+
+    try:
+        settings = get_settings()
+        enforce = bool(getattr(settings, "enforce_typed_context", False))
+    except Exception:
+        enforce = False
+
+    if not enforce:
+        try:
+            from ...infra import telemetry as _telemetry
+
+            _telemetry.logfire.warning(
+                "Context is not a Pydantic BaseModel; typed contexts are recommended "
+                "(set FLUJO_ENFORCE_TYPED_CONTEXT=1 to enforce)."
+            )
+        except Exception:
+            pass
+        return context
+
+    raise TypeError("Context must be a Pydantic BaseModel when FLUJO_ENFORCE_TYPED_CONTEXT=1.")
+
+
+def attach_sandbox_to_context(context: Any, sandbox: SandboxProtocol | None) -> None:
+    """Attach sandbox handle to context when present without mutating dict contexts."""
+    if context is None or sandbox is None:
+        return
+    if isinstance(context, dict):
+        return
+    try:
+        existing = getattr(context, "sandbox", None)
+        if existing is not None:
+            return
+    except Exception:
+        pass
+    try:
+        existing = getattr(context, "_sandbox", None)
+        if existing is not None:
+            return
+    except Exception:
+        pass
+    try:
+        object.__setattr__(context, "_sandbox", sandbox)
+        return
+    except Exception:
+        pass
+    try:
+        setattr(context, "sandbox", sandbox)
+    except Exception:
+        pass
+
+
+def attach_memory_store_to_context(context: Any, store: Any) -> None:
+    """Attach memory store handle to context when present without mutating dict contexts."""
+    if context is None or store is None:
+        return
+    if isinstance(context, dict):
+        return
+    for attr in ("memory_store", "_memory_store"):
+        try:
+            existing = getattr(context, attr)
+            if existing is not None:
+                return
+        except Exception:
+            continue
+    try:
+        object.__setattr__(context, "_memory_store", store)
+        return
+    except Exception:
+        pass
+    try:
+        setattr(context, "memory_store", store)
+    except Exception:
+        pass
 
 
 async def set_quota_and_hydrate(frame: Any, quota_manager: Any, hydration_manager: Any) -> None:
@@ -263,7 +351,11 @@ async def execute_flow(
     return cast(
         Outcome,
         await core._persist_and_finalize(
-            step=step, result=result, cache_key=cache_key, called_with_frame=called_with_frame
+            step=step,
+            result=result,
+            cache_key=cache_key,
+            called_with_frame=called_with_frame,
+            frame=frame if called_with_frame else None,
         ),
     )
 
@@ -305,12 +397,17 @@ async def persist_and_finalize(
     result: StepResult,
     cache_key: Optional[str],
     called_with_frame: bool,
+    frame: ExecutionFrame[Any] | None = None,
 ) -> StepOutcome[StepResult] | StepResult:
     """Delegate cache persist/finalize."""
     return cast(
         Outcome,
         await core._result_handler.persist_and_finalize(
-            step=step, result=result, cache_key=cache_key, called_with_frame=called_with_frame
+            step=step,
+            result=result,
+            cache_key=cache_key,
+            called_with_frame=called_with_frame,
+            frame=frame,
         ),
     )
 
@@ -467,6 +564,13 @@ def make_execution_frame(
     result: Optional[StepResult] = None,
 ) -> ExecutionFrame[Any]:
     """Create an ExecutionFrame with the current quota context."""
+    context = enforce_typed_context(context)
+    sandbox = getattr(core, "sandbox", None)
+    attach_sandbox_to_context(context, sandbox)
+    try:
+        attach_memory_store_to_context(context, getattr(core, "memory_store", None))
+    except Exception:
+        pass
     return ExecutionFrame(
         step=step,
         data=data,
@@ -501,18 +605,22 @@ async def execute_simple_step(
         fb_depth = int(_fallback_depth) if _fallback_depth is not None else 0
     except Exception:
         fb_depth = 0
-    outcome = await core.simple_step_executor.execute(
+
+    frame = make_execution_frame(
         core,
         step,
         data,
         context,
         resources,
         limits,
-        stream,
-        on_chunk,
-        cache_key,
-        fb_depth,
+        context_setter=None,
+        stream=stream,
+        on_chunk=on_chunk,
+        fallback_depth=fb_depth,
+        result=None,
+        quota=None,
     )
+    outcome = await core.simple_step_executor.execute(core, frame)
     return cast(
         StepResult, core._unwrap_outcome_to_step_result(outcome, core._safe_step_name(step))
     )

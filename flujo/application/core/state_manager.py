@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
 
 from flujo.domain.models import StepResult, BaseModel, PipelineResult
+from flujo.infra import telemetry
 from flujo.state.backends import StateBackend
 from flujo.state.models import WorkflowState
 from .state_serializer import StateSerializer
@@ -617,11 +618,48 @@ class StateManager(Generic[ContextT]):
             # Proactively drop serialization cache to reduce memory retention
             try:
                 self._serializer.clear_cache(run_id)
-            except Exception:
-                pass
-            # Memory cleanup is handled by Python's garbage collector
+            except Exception as cache_error:
+                telemetry.logfire.debug(
+                    f"Non-fatal error clearing serializer cache for {run_id}: {cache_error}"
+                )
         except NotImplementedError:
+            # Some backends may not implement record_run_end; ignore if so.
             pass
+        except Exception as exc:
+            telemetry.logfire.debug(
+                f"Non-fatal error in record_run_end for {run_id}: {exc}"
+            )
+
+    async def persist_evaluation(
+        self,
+        run_id: str,
+        score: float,
+        feedback: str | None = None,
+        step_name: str | None = None,
+        metadata: JSONObject | None = None,
+    ) -> None:
+        """Persist shadow evaluation result via backend if available."""
+        if self.state_backend is None:
+            return
+        persist = getattr(self.state_backend, "persist_evaluation", None)
+        if persist is None or not callable(persist):
+            return
+        try:
+            await persist(
+                run_id=run_id,
+                score=score,
+                feedback=feedback,
+                step_name=step_name,
+                metadata=metadata,
+            )
+        except NotImplementedError:
+            # Backend opted out of evaluation persistence.
+            return
+        except Exception as exc:
+            telemetry.logfire.warning(
+                "[StateManager] persist_evaluation failed",
+                extra={"error": str(exc)},
+            )
 
     def _convert_trace_to_dict(self, trace_tree: Any) -> JSONObject:
         """Convert trace tree to dictionary format for JSON serialization."""

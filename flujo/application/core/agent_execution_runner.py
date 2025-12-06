@@ -895,6 +895,7 @@ class AgentExecutionRunner:
                 return Success(step_result=result)
 
             except PricingNotConfiguredError:
+                # Strict pricing mode: must halt immediately
                 raise
             except UsageLimitExceededError:
                 raise

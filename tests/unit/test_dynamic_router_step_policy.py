@@ -2,6 +2,7 @@ import pytest
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultDynamicRouterStepExecutor
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.models import Success, Paused
@@ -26,7 +27,7 @@ async def test_dynamic_router_paused_returns_paused():
         branches={},
     )
 
-    outcome = await DefaultDynamicRouterStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         router,
         data=None,
@@ -34,8 +35,13 @@ async def test_dynamic_router_paused_returns_paused():
         resources=None,
         limits=None,
         context_setter=None,
-        step=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await DefaultDynamicRouterStepExecutor().execute(core, frame)
     assert isinstance(outcome, Paused)
 
 
@@ -65,7 +71,7 @@ async def test_dynamic_router_executes_selected_branches_in_order():
         branches=branches,
     )
 
-    outcome = await DefaultDynamicRouterStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         router,
         data=None,
@@ -73,8 +79,13 @@ async def test_dynamic_router_executes_selected_branches_in_order():
         resources=None,
         limits=None,
         context_setter=None,
-        step=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await DefaultDynamicRouterStepExecutor().execute(core, frame)
     assert isinstance(outcome, Success)
     assert outcome.step_result.metadata_["executed_branches"] == ["a", "b"]
 
@@ -97,7 +108,7 @@ async def test_dynamic_router_no_selected_branches_returns_empty():
         },
     )
 
-    outcome = await DefaultDynamicRouterStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         router,
         data=None,
@@ -105,8 +116,13 @@ async def test_dynamic_router_no_selected_branches_returns_empty():
         resources=None,
         limits=None,
         context_setter=None,
-        step=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await DefaultDynamicRouterStepExecutor().execute(core, frame)
     assert isinstance(outcome, Success)
     assert isinstance(outcome.step_result.output, dict)
     assert outcome.step_result.output == {}

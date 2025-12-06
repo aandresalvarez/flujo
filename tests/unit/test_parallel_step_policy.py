@@ -2,6 +2,7 @@ import pytest
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultParallelStepExecutor
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.parallel import ParallelStep
@@ -22,7 +23,7 @@ async def test_parallel_policy_success_aggregates_outputs():
     }
     p = ParallelStep(name="p", branches=branches)
 
-    outcome = await DefaultParallelStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         p,
         data=None,
@@ -30,8 +31,13 @@ async def test_parallel_policy_success_aggregates_outputs():
         resources=None,
         limits=None,
         context_setter=None,
-        step_executor=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await DefaultParallelStepExecutor().execute(core=core, frame=frame)
     assert isinstance(outcome, Success)
     assert outcome.step_result.success is True
 
@@ -56,7 +62,7 @@ async def test_parallel_policy_failure_does_not_merge_context():
             self.scratchpad = {}
 
     ctx = _Ctx()
-    outcome = await DefaultParallelStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         p,
         data=None,
@@ -64,8 +70,13 @@ async def test_parallel_policy_failure_does_not_merge_context():
         resources=None,
         limits=None,
         context_setter=None,
-        step_executor=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await DefaultParallelStepExecutor().execute(core=core, frame=frame)
     assert isinstance(outcome, Failure)
     # On failure, branch_context should be None or not merged into original context
     if outcome.step_result is not None:
@@ -87,7 +98,7 @@ async def test_parallel_policy_yields_failure_on_paused_branch():
     branches = {"h": Pipeline.from_step(Step(name="H", agent=_HitlAgent()))}
     p = ParallelStep(name="p", branches=branches)
 
-    outcome = await DefaultParallelStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         p,
         data=None,
@@ -95,8 +106,13 @@ async def test_parallel_policy_yields_failure_on_paused_branch():
         resources=None,
         limits=None,
         context_setter=None,
-        step_executor=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await DefaultParallelStepExecutor().execute(core=core, frame=frame)
     # Parallel policy should propagate Paused so the runner pauses
     assert isinstance(outcome, Paused)
 
@@ -148,7 +164,7 @@ async def test_parallel_policy_deterministic_quota_split_and_accounting():
     cost_mod.extract_usage_metrics = fake_extract_usage_metrics
     policies_mod.extract_usage_metrics = fake_extract_usage_metrics
     try:
-        outcome = await DefaultParallelStepExecutor().execute(
+        frame = make_execution_frame(
             core,
             p,
             data=None,
@@ -156,8 +172,13 @@ async def test_parallel_policy_deterministic_quota_split_and_accounting():
             resources=None,
             limits=None,
             context_setter=None,
-            step_executor=None,
+            stream=False,
+            on_chunk=None,
+            fallback_depth=0,
+            result=None,
+            quota=None,
         )
+        outcome = await DefaultParallelStepExecutor().execute(core=core, frame=frame)
         assert isinstance(outcome, Success)
         # Sum of branch costs equals 4.0
         assert abs(outcome.step_result.cost_usd - 4.0) < 1e-6
@@ -190,7 +211,7 @@ async def test_parallel_policy_propagates_usage_errors_and_mock_detection():
     }
     p = ParallelStep(name="p_errs", branches=branches)
 
-    outcome = await DefaultParallelStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         p,
         data=None,
@@ -198,8 +219,13 @@ async def test_parallel_policy_propagates_usage_errors_and_mock_detection():
         resources=None,
         limits=None,
         context_setter=None,
-        step_executor=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await DefaultParallelStepExecutor().execute(core=core, frame=frame)
     # Framework converts most branch exceptions to Failure at the parallel level
     from flujo.domain.models import Failure as OutcomeFailure
 
@@ -226,7 +252,7 @@ async def test_parallel_policy_quota_splitting_zero_parent_after_split():
     parent_quota = Quota(remaining_cost_usd=9.0, remaining_tokens=9)
     core._set_current_quota(parent_quota)
 
-    outcome = await DefaultParallelStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         p,
         data=None,
@@ -234,8 +260,13 @@ async def test_parallel_policy_quota_splitting_zero_parent_after_split():
         resources=None,
         limits=None,
         context_setter=None,
-        step_executor=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await DefaultParallelStepExecutor().execute(core=core, frame=frame)
     assert isinstance(outcome, Success)
     rem_cost, rem_tokens = parent_quota.get_remaining()
     # Parent should be zero after split

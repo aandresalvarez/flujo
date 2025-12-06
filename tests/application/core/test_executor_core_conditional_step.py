@@ -44,13 +44,7 @@ class TestExecutorCoreConditionalStep:
         params = list(sig.parameters.keys())
         expected_params = [
             "core",
-            "conditional_step",
-            "data",
-            "context",
-            "resources",
-            "limits",
-            "context_setter",
-            "_fallback_depth",
+            "frame",
         ]
         assert all(p in params for p in expected_params)
 

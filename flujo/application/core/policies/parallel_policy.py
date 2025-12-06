@@ -44,18 +44,7 @@ from ..types import ExecutionFrame
 
 # --- Parallel Step Executor policy ---
 class ParallelStepExecutor(Protocol):
-    async def execute(
-        self,
-        core: Any,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        parallel_step: Optional[ParallelStep[Any]] = None,
-        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
-    ) -> StepOutcome[StepResult]: ...
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
 
 
 class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
@@ -66,27 +55,17 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
     async def execute(
         self,
         core: Any,
-        step: Any,
-        data: Any | None = None,
-        context: Optional[Any] = None,
-        resources: Optional[Any] = None,
-        limits: Optional[UsageLimits] = None,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
-        parallel_step: Optional[ParallelStep[Any]] = None,
-        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
+        frame: ExecutionFrame[Any],
     ) -> StepOutcome[StepResult]:
-        if isinstance(step, ExecutionFrame):
-            frame = step
-            step = frame.step
-            data = frame.data
-            context = frame.context
-            resources = frame.resources
-            limits = frame.limits
-            context_setter = getattr(frame, "context_setter", None)
+        step = frame.step
+        data = frame.data
+        context = frame.context
+        resources = frame.resources
+        limits = frame.limits
+        context_setter = getattr(frame, "context_setter", None)
+        step_executor = getattr(frame, "step_executor", None)
 
-        # Actual parallel-step execution logic extracted from legacy `_handle_parallel_step`
-        if parallel_step is not None:
-            step = parallel_step
+        parallel_step: ParallelStep[Any] | None = step if isinstance(step, ParallelStep) else None
         if not isinstance(step, ParallelStep):
             raise ValueError(f"Expected ParallelStep, got {type(step)}")
         parallel_step = step

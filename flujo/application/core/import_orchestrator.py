@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ...domain.dsl.import_step import ImportStep
 from ...domain.models import PipelineResult, StepOutcome, StepResult, UsageLimits
+from .executor_helpers import make_execution_frame
 
 if TYPE_CHECKING:  # pragma: no cover
     from .executor_core import ExecutorCore
@@ -29,25 +30,25 @@ class ImportOrchestrator:
         context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
         frame: Optional[Any] = None,
     ) -> StepOutcome[StepResult]:
+        if frame is None:
+            frame = make_execution_frame(
+                core,
+                step,
+                data,
+                context,
+                resources,
+                limits,
+                context_setter=context_setter,
+                stream=False,
+                on_chunk=None,
+                fallback_depth=0,
+                result=None,
+                quota=core._get_current_quota() if hasattr(core, "_get_current_quota") else None,
+            )
         if self._executor is None:
-            if frame is not None:
-                result: StepOutcome[StepResult] = await core._policy_default_step(frame)
-            else:
-                result = await core._policy_default_step(
-                    core._make_execution_frame(
-                        step, data, context, resources, limits, context_setter
-                    )
-                )
+            result = await core._policy_default_step(frame)
             return result
-        executor_result: StepOutcome[StepResult] = await self._executor.execute(
-            core,
-            step,
-            data,
-            context,
-            resources,
-            limits,
-            context_setter,
-        )
+        executor_result: StepOutcome[StepResult] = await self._executor.execute(core, frame)
         # ImportStep semantics: if the child run returned no output but the child context
         # carries scratchpad updates, merge them back to the parent context to preserve
         # side effects (e.g., computed SQL or state machine transitions).

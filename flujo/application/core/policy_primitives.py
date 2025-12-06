@@ -4,7 +4,7 @@ from flujo.type_definitions.common import JSONObject
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple
 
-from flujo.exceptions import MockDetectionError
+from flujo.exceptions import ConfigurationError, MockDetectionError
 from flujo.infra import telemetry
 from .policy_registry import PolicyRegistry, StepPolicy
 
@@ -188,41 +188,22 @@ def _check_hitl_nesting_safety(step: Any, core: Any) -> None:
         if has_loop and has_conditional:
             context_desc = " > ".join(context_chain)
             error_msg = (
-                "\n\n"
-                f"🚨 CRITICAL ERROR: HITL step '{getattr(step, 'name', 'unnamed')}' "
-                "cannot execute in nested context.\n\n"
-                f"Context: {context_desc}\n\n"
-                "This is a known limitation: HITL steps in conditional branches inside loops "
-                "are SILENTLY SKIPPED at runtime with no error message, causing data loss.\n\n"
-                "This should have been caught by validation (rule HITL-NESTED-001).\n"
-                "If you see this error, validation may have been bypassed or disabled.\n\n"
-                "Required actions:\n"
-                "  1. Move the HITL step outside the loop (RECOMMENDED).\n"
-                "  2. Remove the conditional wrapper if the HITL must stay in the loop.\n"
-                "  3. Use flujo.builtins.ask_user skill instead.\n\n"
-                "Example fix:\n"
-                "  # ❌ THIS FAILS\n"
-                "  - kind: loop\n"
-                "    body:\n"
-                "      - kind: conditional\n"
-                "        branches:\n"
-                "          true:\n"
-                "            - kind: hitl  # ← WILL NOT WORK!\n\n"
-                "  # ✅ THIS WORKS\n"
-                "  - kind: hitl\n"
-                "    name: get_input\n"
-                "    sink_to: 'user_answer'\n"
-                "  - kind: loop\n"
-                "    body:\n"
-                "      - kind: step\n"
-                "        input: '{{ context.user_answer }}'\n\n"
-                "Documentation: https://flujo.dev/docs/known-issues/hitl-nested\n"
-                "Report: https://github.com/aandresalvarez/flujo/issues\n"
+                f"HITL step '{getattr(step, 'name', 'unnamed')}' cannot run inside a "
+                f"conditional that is nested within a loop (context: {context_desc}). "
+                "This structure is unsupported and will skip HITL execution, causing data loss. "
+                "Move the HITL outside the loop or remove the conditional wrapper."
             )
             telemetry.logfire.error(f"HITL nesting safety check failed: {error_msg}")
-            raise RuntimeError(error_msg)
+            raise ConfigurationError(
+                error_msg,
+                suggestion=(
+                    "Place HITL steps at the top level of the loop body or remove the "
+                    "conditional wrapper to avoid being skipped."
+                ),
+                code="HITL-NESTED-001",
+            )
 
-    except RuntimeError:
+    except (RuntimeError, ConfigurationError):
         raise
     except Exception as exc:
         telemetry.logfire.debug(f"HITL nesting safety check skipped due to error: {exc}")

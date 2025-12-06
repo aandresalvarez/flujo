@@ -81,6 +81,9 @@ class FlujoConfig(BaseModel):
     # Template configuration
     template: Optional[TemplateConfig] = None
 
+    # Governance policy module (shortcut at top level)
+    governance_policy_module: Optional[str] = None
+
 
 class ValidationConfig(BaseModel):
     """Validation settings including named rule profiles.
@@ -153,6 +156,11 @@ class SettingsOverrides(BaseModel):
 
     # Template filter controls
     enabled_template_filters: Optional[list[str]] = None
+
+    # Governance and shadow eval overrides
+    governance_mode: Optional[str] = None
+    governance_policy_module: Optional[str] = None
+    shadow_eval_sink: Optional[str] = None
 
 
 class BudgetConfig(BaseModel):
@@ -364,6 +372,12 @@ class ConfigManager:
             # Template configuration
             if "template" in data:
                 config_data["template"] = data["template"]
+
+            # Governance policy module shortcut
+            if "governance_policy_module" in data:
+                cfg_settings = dict(config_data.get("settings", {}))
+                cfg_settings["governance_policy_module"] = data["governance_policy_module"]
+                config_data["settings"] = cfg_settings
 
             # Environment override for template filters (env > file)
             try:

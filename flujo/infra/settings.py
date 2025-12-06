@@ -33,6 +33,75 @@ class BackgroundTaskSettings(BaseModel):
     stale_task_timeout_hours: int = 24
 
 
+class ShadowEvalSettings(BaseModel):
+    """Settings for shadow evaluations (LLM judge)."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable shadow evaluations (async judge scoring on sampled runs).",
+    )
+    sample_rate: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Fraction of runs to sample for shadow evaluation (0-1).",
+    )
+    timeout_seconds: int = Field(
+        default=30,
+        description="Timeout in seconds for a single shadow evaluation task.",
+        ge=1,
+    )
+    judge_model: Optional[str] = Field(
+        default=None,
+        description="LLM model/tool identifier for judge; if None, rely on default evaluator.",
+    )
+    sink: Literal["telemetry", "database"] = Field(
+        default="telemetry",
+        description="Where to record eval results. telemetry or database.",
+    )
+
+
+class SandboxSettings(BaseModel):
+    """Settings for sandboxed code execution."""
+
+    mode: Literal["null", "remote", "docker"] = Field(
+        default="null",
+        validation_alias=AliasChoices("FLUJO_SANDBOX_MODE", "flujo_sandbox_mode"),
+        description="Sandbox provider to use: null (disabled), remote, or docker.",
+    )
+    api_url: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("FLUJO_SANDBOX_API_URL", "flujo_sandbox_api_url"),
+        description="Base URL for remote sandbox API (required for remote mode).",
+    )
+    api_key: Optional[SecretStr] = Field(
+        default=None,
+        validation_alias=AliasChoices("FLUJO_SANDBOX_API_KEY", "flujo_sandbox_api_key"),
+        description="API key for remote sandbox (optional).",
+    )
+    timeout_seconds: int = Field(
+        default=60,
+        validation_alias=AliasChoices("FLUJO_SANDBOX_TIMEOUT_S", "flujo_sandbox_timeout_s"),
+        description="Request timeout in seconds for sandbox executions.",
+        ge=1,
+    )
+    verify_ssl: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("FLUJO_SANDBOX_VERIFY_SSL", "flujo_sandbox_verify_ssl"),
+        description="Whether to verify TLS certificates for remote sandbox.",
+    )
+    docker_image: str = Field(
+        default="python:3.11-slim",
+        validation_alias=AliasChoices("FLUJO_SANDBOX_DOCKER_IMAGE", "flujo_sandbox_docker_image"),
+        description="Docker image to use for docker sandbox executions.",
+    )
+    docker_pull: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("FLUJO_SANDBOX_DOCKER_PULL", "flujo_sandbox_docker_pull"),
+        description="Pull the docker image if not present locally.",
+    )
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables. Standard names are preferred."""
 
@@ -87,11 +156,42 @@ class Settings(BaseSettings):
     reward_enabled: bool = True
     telemetry_export_enabled: bool = False
     otlp_export_enabled: bool = False
+    shadow_eval: ShadowEvalSettings = ShadowEvalSettings()
 
     # --- Core strictness toggles ---
     # Enforce strict context isolation and merging (CI-friendly). Can be overridden per-executor.
     strict_context_isolation: bool = False
     strict_context_merge: bool = False
+    enforce_typed_context: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("FLUJO_ENFORCE_TYPED_CONTEXT", "flujo_enforce_typed_context"),
+        description=(
+            "When true, contexts must be Pydantic BaseModel instances; plain dicts are rejected."
+        ),
+    )
+    governance_policy_module: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FLUJO_GOVERNANCE_POLICY_MODULE",
+            "flujo_governance_policy_module",
+        ),
+        description="Optional module path (pkg.mod:Class) to load a GovernancePolicy implementation.",
+    )
+    sandbox: SandboxSettings = SandboxSettings()
+    memory_indexing_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "FLUJO_MEMORY_INDEXING_ENABLED", "flujo_memory_indexing_enabled"
+        ),
+        description="Enable indexing of successful step outputs into the configured vector store.",
+    )
+    memory_embedding_model: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FLUJO_MEMORY_EMBEDDING_MODEL", "flujo_memory_embedding_model"
+        ),
+        description="Embedding model id (e.g., openai:text-embedding-3-small) used for memory indexing.",
+    )
 
     # --- Background task management ---
     background_tasks: BackgroundTaskSettings = BackgroundTaskSettings()

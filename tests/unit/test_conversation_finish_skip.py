@@ -2,6 +2,7 @@ import pytest
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.step_policies import DefaultLoopStepExecutor
+from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.loop import LoopStep
@@ -37,18 +38,21 @@ async def test_conversation_history_skips_finish_artifact():
     # Seed an initial goal input to appear as first user turn in history
     data = "find patients"
 
-    outcome = await DefaultLoopStepExecutor().execute(
+    frame = make_execution_frame(
         core,
         loop,
         data=data,
         context=ctx,
         resources=None,
         limits=None,
+        context_setter=None,
         stream=False,
         on_chunk=None,
-        cache_key=None,
-        _fallback_depth=0,
+        fallback_depth=0,
+        result=None,
+        quota=None,
     )
+    outcome = await DefaultLoopStepExecutor().execute(core, frame)
 
     assert isinstance(outcome, Success)
     final_ctx = outcome.step_result.branch_context

@@ -473,9 +473,10 @@ async def test_hitl_in_loop_multiple_iterations():
     # Resume iteration 3
     result = await runner.resume_async(result, "yes")
     # Should complete (counter >= 3)
-    assert result.status in ["completed", "paused"], (
-        f"Should complete or pause. Got: {result.status}"
-    )
+    assert result.status in [
+        "completed",
+        "paused",
+    ], f"Should complete or pause. Got: {result.status}"
 
     # Verify we went through 3 distinct iterations (not nested)
     assert len(iteration_data) == 3, (
@@ -616,14 +617,16 @@ async def test_hitl_in_loop_resume_at_correct_step():
     assert result1.status == "paused"
 
     # Verify step0 executed in iteration 0
-    assert (0, "step0") in executed_steps, (
-        f"step0 should execute before pause. Got: {executed_steps}"
-    )
+    assert (
+        0,
+        "step0",
+    ) in executed_steps, f"step0 should execute before pause. Got: {executed_steps}"
 
     # Verify step2 has NOT executed yet
-    assert (0, "step2") not in executed_steps, (
-        f"step2 should NOT execute before pause. Got: {executed_steps}"
-    )
+    assert (
+        0,
+        "step2",
+    ) not in executed_steps, f"step2 should NOT execute before pause. Got: {executed_steps}"
 
     # Verify saved position
     ctx1 = result1.final_pipeline_context
@@ -647,6 +650,7 @@ async def test_hitl_in_loop_resume_at_correct_step():
     )
 
     # Verify execution order is correct
-    assert executed_steps == [(0, "step0"), (0, "step2")], (
-        f"Execution order should be step0, then step2 (skipping HITL). Got: {executed_steps}"
-    )
+    assert executed_steps == [
+        (0, "step0"),
+        (0, "step2"),
+    ], f"Execution order should be step0, then step2 (skipping HITL). Got: {executed_steps}"
