@@ -298,8 +298,9 @@ class StateManager(Generic[ContextT]):
                 )
 
         # Serialize step history with error handling
-        # Use minimal representation to avoid expensive deep serialization on large runs
-        serialized_step_history = self._serializer.serialize_step_history_minimal(step_history)
+        # Persist full history for correctness (tests rely on exact entries); callers can
+        # choose the optimized path when they want minimal snapshots.
+        serialized_step_history = self._serializer.serialize_step_history_full(step_history)
         metadata_dict: JSONObject = metadata or {}
 
         state_data = {
@@ -378,7 +379,7 @@ class StateManager(Generic[ContextT]):
 
         # Keep step_history: include minimal entries when provided (for crash recovery), else empty list
         if step_history:
-            serialized_step_history = self._serializer.serialize_step_history_minimal(step_history)
+            serialized_step_history = self._serializer.serialize_step_history_full(step_history)
         else:
             serialized_step_history = []
 
@@ -626,9 +627,7 @@ class StateManager(Generic[ContextT]):
             # Some backends may not implement record_run_end; ignore if so.
             pass
         except Exception as exc:
-            telemetry.logfire.debug(
-                f"Non-fatal error in record_run_end for {run_id}: {exc}"
-            )
+            telemetry.logfire.debug(f"Non-fatal error in record_run_end for {run_id}: {exc}")
 
     async def persist_evaluation(
         self,

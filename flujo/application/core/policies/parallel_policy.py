@@ -756,7 +756,9 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
 
                 if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
                     # Helper: detect conflicts in simple fields between two contexts
-                    def _detect_conflicts(target_ctx: Any, source_ctx: Any) -> None:
+                    seen_leafs: dict[str, Any] = {}
+
+                    def _detect_conflicts(source_ctx: Any) -> None:
                         from flujo.exceptions import ConfigurationError as _CfgErr
 
                         try:
@@ -774,38 +776,31 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                         except Exception:
                             src_fields = {}
 
-                        def _compare(target_val: Any, source_val: Any, path: str) -> None:
-                            # Recurse into dicts to detect leaf conflicts
-                            if isinstance(target_val, dict) and isinstance(source_val, dict):
-                                shared_keys = set(target_val.keys()) & set(source_val.keys())
-                                for key in shared_keys:
-                                    if str(key).startswith("_"):
+                        def _walk(value: Any, path: str) -> None:
+                            if isinstance(value, dict):
+                                for k, v in value.items():
+                                    if str(k).startswith("_"):
                                         continue
-                                    _compare(target_val[key], source_val[key], f"{path}.{key}")
+                                    _walk(v, f"{path}.{k}" if path else str(k))
                                 return
-
-                            # Skip container/list conflicts for now; deep merge handles lists elsewhere
-                            if isinstance(target_val, (list, tuple)) or isinstance(
-                                source_val, (list, tuple)
-                            ):
+                            if isinstance(value, (list, tuple, set)):
                                 return
-
-                            if target_val is not None and source_val is not None:
+                            if path in seen_leafs:
                                 try:
-                                    differs = target_val != source_val
+                                    differs = seen_leafs[path] != value
                                 except Exception:
                                     differs = True
                                 if differs:
                                     raise _CfgErr(
                                         f"Merge conflict for key '{path}'. Set an explicit merge strategy or field_mapping in your ParallelStep."
                                     )
+                            else:
+                                seen_leafs[path] = value
 
                         for _fname, _sval in src_fields.items():
                             if str(_fname).startswith("_"):
                                 continue
-                            if hasattr(target_ctx, _fname):
-                                _tval = getattr(target_ctx, _fname)
-                                _compare(_tval, _sval, str(_fname))
+                            _walk(_sval, str(_fname))
 
                     for n, bc in branch_ctxs.items():
                         if parallel_step.field_mapping and n in parallel_step.field_mapping:
@@ -814,7 +809,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                     setattr(context, f, getattr(bc, f))
                         else:
                             # Enforce conflict detection before merging, with simple accumulator heuristic
-                            _detect_conflicts(context, bc)
+                            _detect_conflicts(bc)
                             # Then perform safe merge via ContextManager to satisfy observability in tests
                             context = ContextManager.merge(context, bc)
                 elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
