@@ -129,9 +129,9 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 *   **Description:** Add durable vector stores so RAG survives restarts.
 *   **Plan:** 
     1. Implement `SQLiteVectorStore` (no C-ext) storing embeddings as BLOB and cosine search in Python. ✅
-    2. Implement `PostgresVectorStore` using `pgvector` (`embedding <=>` queries) with migration to enable extension/table. ⏳ (store implemented; migration not yet added)
+    2. Implement `PostgresVectorStore` using `pgvector` (`embedding <=>` queries) with migration to enable extension/table. ✅ (migration added)
     3. Update `FlujoRuntimeBuilder` to select store by `state_uri`/settings (`sqlite`→SQLite, `postgres`→pgvector) when memory indexing is enabled. ✅
-*   **Status:** In progress.
+*   **Status:** Complete (pending adoption in deployments).
 
 ### [TASK-014] Governance Policy Module from Config
 **Priority:** 🟡 Medium | **Effort:** Low | **Tags:** `Security`, `DX`
@@ -143,7 +143,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 **Priority:** 🔵 Low | **Effort:** Medium | **Tags:** `Observability`
 *   **Description:** Make shadow evaluation scores queryable beyond telemetry.
 *   **Plan:** Add `persist_evaluation` to state backend with `evaluations` table (SQLite/Postgres); have `ShadowEvaluator` write when `sink="database"`; add `flujo lens evals` to list/avg scores.
-*   **Status:** Not started.
+*   **Status:** Complete.
 
 ### [TASK-016] Context Generator CLI (Optional)
 **Priority:** 🔵 Low | **Effort:** Low | **Tags:** `DX`, `Type-Safety`
@@ -155,7 +155,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 **Priority:** 🔵 Low | **Effort:** Low | **Tags:** `Docs`
 *   **Description:** Documentation to support new architecture and RAG.
 *   **Plan:** Write migration guide for custom policies (`ExecutionFrame` signature) and a RAG recipe using the new vector stores and MemoryManager.
-*   **Status:** Not started.
+*   **Status:** Complete (policy migration guide, RAG recipe added).
 
 ### [TASK-011] Sandbox Execution Interface
 **Priority:** 🔵 Low | **Effort:** High | **Tags:** `Security`
