@@ -2,18 +2,24 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import Field
 
 from flujo.agents import make_agent_async
 from flujo.domain.dsl import Pipeline, Step
+from flujo.domain.memory import ScoredMemory
+from flujo.domain.models import PipelineContext
 
 
-class RAGContext(BaseModel):
+class RAGContext(PipelineContext):
     run_id: str | None = None
-    scratchpad: dict[str, Any] = {}
+    scratchpad: dict[str, Any] = Field(default_factory=dict)
     summary: str | None = None
     query: str | None = None
-    retrieved: list[Any] = []
+    retrieved: list[Any] = Field(default_factory=list)
+
+    async def retrieve(self, query_text: str, limit: int = 3) -> list[ScoredMemory]:
+        # Delegate to base context retrieval; keeps example type-safe.
+        return await super().retrieve(query_text=query_text, limit=limit)
 
 
 async def summarize(data: dict[str, Any], context: RAGContext) -> dict[str, Any]:
@@ -27,7 +33,7 @@ async def summarize(data: dict[str, Any], context: RAGContext) -> dict[str, Any]
     return {"summary": out}
 
 
-async def recall(data: dict[str, Any], context: RAGContext) -> dict[str, Any]:
+async def recall(_data: dict[str, Any], context: RAGContext) -> dict[str, Any]:
     results = await context.retrieve(query_text=context.query or "latest", limit=3)
     context.retrieved = [r.record.payload for r in results]
     return {"retrieved": context.retrieved}

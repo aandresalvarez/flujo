@@ -617,10 +617,17 @@ class StateManager(Generic[ContextT]):
             # Proactively drop serialization cache to reduce memory retention
             try:
                 self._serializer.clear_cache(run_id)
-            except Exception:
-                pass
-        except Exception:
+            except Exception as cache_error:
+                telemetry.logfire.debug(
+                    f"Non-fatal error clearing serializer cache for {run_id}: {cache_error}"
+                )
+        except NotImplementedError:
+            # Some backends may not implement record_run_end; ignore if so.
             pass
+        except Exception as exc:
+            telemetry.logfire.debug(
+                f"Non-fatal error in record_run_end for {run_id}: {exc}"
+            )
 
     async def persist_evaluation(
         self,
