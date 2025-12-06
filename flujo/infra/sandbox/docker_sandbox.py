@@ -40,16 +40,17 @@ class DockerSandbox(SandboxProtocol):
         except Exception as exc:  # pragma: no cover
             raise RuntimeError(f"Docker from_env failed: {exc}") from exc
 
-    def _build_command(self, request: SandboxExecution) -> list[str]:
-        if request.language.lower() != "python":
-            return []
+    def _build_command(self, request: SandboxExecution) -> tuple[list[str], str]:
+        lang = request.language.lower()
+        if lang != "python":
+            return [], ""
         args: list[str] = ["python", "main.py"]
         if request.arguments:
             args.extend(list(request.arguments))
-        return args
+        return args, "main.py"
 
     async def exec_code(self, request: SandboxExecution) -> SandboxResult:
-        command = self._build_command(request)
+        command, entry_name = self._build_command(request)
         if not command:
             return SandboxResult(
                 stdout="",
@@ -64,7 +65,8 @@ class DockerSandbox(SandboxProtocol):
         with tempfile.TemporaryDirectory() as tmpdir:
             workdir = Path(tmpdir)
             try:
-                (workdir / "main.py").write_text(request.code, encoding="utf-8")
+                target_entry = workdir / entry_name
+                target_entry.write_text(request.code, encoding="utf-8")
                 for name, content in (request.files or {}).items():
                     dest = workdir / name
                     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -136,12 +138,27 @@ class DockerSandbox(SandboxProtocol):
             except Exception:
                 pass
 
+            artifacts = self._collect_artifacts(workdir / "artifacts")
+
             return SandboxResult(
                 stdout=stdout,
                 stderr=stderr,
                 exit_code=exit_code,
-                artifacts=None,
+                artifacts=artifacts,
                 sandbox_id=None,
                 timed_out=timed_out,
                 error="Execution timed out" if timed_out else None,
             )
+
+    def _collect_artifacts(self, path: Path) -> dict[str, bytes] | None:
+        if not path.exists():
+            return None
+        collected: dict[str, bytes] = {}
+        for item in path.rglob("*"):
+            if item.is_file():
+                try:
+                    rel = item.relative_to(path).as_posix()
+                    collected[rel] = item.read_bytes()
+                except Exception:
+                    continue
+        return collected or None
