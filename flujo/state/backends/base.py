@@ -191,6 +191,14 @@ class StateBackend(ABC):
         """Persist shadow evaluation result (default: no-op)."""
         raise NotImplementedError
 
+    async def list_evaluations(
+        self,
+        limit: int = 20,
+        run_id: str | None = None,
+    ) -> list[JSONObject]:
+        """List persisted shadow evaluation results (default: not implemented)."""
+        raise NotImplementedError
+
     # --- New structured persistence API ---
     async def save_run_start(self, run_data: JSONObject) -> None:
         """Persist initial run metadata."""

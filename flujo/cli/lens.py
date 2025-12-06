@@ -584,3 +584,36 @@ def show_statistics(
             if data["count"] > 0:
                 duration_table.add_row(name, f"{data['average']:.2f}s", str(data["count"]))
         console.print(duration_table)
+
+
+@lens_app.command("evals")
+def list_evaluations(
+    run_id: Optional[str] = typer.Option(None, "--run-id", help="Filter by run_id"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Number of evaluations to show"),
+) -> None:
+    """List shadow evaluation scores."""
+    backend = load_backend_from_config()
+    try:
+        evals = asyncio.run(backend.list_evaluations(limit=limit, run_id=run_id))
+    except NotImplementedError:
+        typer.echo("Backend does not support listing evaluations", err=True)
+        return
+    except Exception as e:
+        typer.echo(f"Error accessing backend: {e}", err=True)
+        return
+
+    if not evals:
+        typer.echo("No evaluations found.")
+        return
+
+    table = Table("run_id", "step", "score", "feedback", "created_at")
+    for item in evals:
+        table.add_row(
+            str(item.get("run_id", "")),
+            str(item.get("step_name", "")),
+            f"{item.get('score', '')}",
+            (item.get("feedback") or "")[:60],
+            str(item.get("created_at", "")),
+        )
+
+    Console().print(table)

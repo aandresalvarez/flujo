@@ -314,6 +314,51 @@ class PostgresBackend(StateBackend):
                 _jsonb(metadata),
             )
 
+    async def list_evaluations(
+        self,
+        limit: int = 20,
+        run_id: str | None = None,
+    ) -> list[JSONObject]:
+        """Return recent evaluations."""
+        await self._ensure_init()
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            if run_id:
+                rows = await conn.fetch(
+                    """
+                    SELECT run_id, step_name, score, feedback, metadata, created_at
+                    FROM evaluations
+                    WHERE run_id = $1
+                    ORDER BY created_at DESC
+                    LIMIT $2
+                    """,
+                    run_id,
+                    limit,
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT run_id, step_name, score, feedback, metadata, created_at
+                    FROM evaluations
+                    ORDER BY created_at DESC
+                    LIMIT $1
+                    """,
+                    limit,
+                )
+        records: list[JSONObject] = []
+        for row in rows:
+            records.append(
+                {
+                    "run_id": row["run_id"],
+                    "step_name": row["step_name"],
+                    "score": row["score"],
+                    "feedback": row["feedback"],
+                    "metadata": row["metadata"],
+                    "created_at": row["created_at"],
+                }
+            )
+        return records
+
     def _extract_spans_from_tree(
         self, trace: JSONObject, run_id: str, max_depth: int = 100
     ) -> List[

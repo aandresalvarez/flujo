@@ -34,7 +34,9 @@ class ShadowEvaluator:
         self._succeeded: int = 0
         self._failed: int = 0
 
-    def maybe_schedule(self, *, core: Any, step: Any, result: Any) -> None:
+    def maybe_schedule(
+        self, *, core: Any, step: Any, result: Any, frame: Any | None = None
+    ) -> None:
         cfg = self._config
         if not cfg.enabled or cfg.sample_rate <= 0.0:
             return
@@ -46,11 +48,22 @@ class ShadowEvaluator:
 
         self._sampled += 1
         step_name = getattr(step, "name", "<unnamed>")
+        run_id = None
+        try:
+            if frame is not None and hasattr(frame, "context"):
+                ctx = getattr(frame, "context", None)
+                run_id = getattr(ctx, "run_id", None)
+            if run_id is None:
+                ctx2 = getattr(core, "context", None)
+                run_id = getattr(ctx2, "run_id", None)
+        except Exception:
+            run_id = None
         payload = {
             "step_name": step_name,
             "success": getattr(result, "success", None),
             "feedback": getattr(result, "feedback", None),
             "output": getattr(result, "output", None),
+            "run_id": run_id,
         }
 
         async def _run_eval() -> None:
@@ -95,6 +108,7 @@ class ShadowEvaluator:
     async def _run_judge(self, *, core: Any, payload: dict[str, Any]) -> None:
         model = self._config.judge_model
         step_name = payload.get("step_name")
+        run_id = payload.get("run_id")
         judge_prompt = (
             "You are a strict evaluator of step outputs.\n"
             "Provide a numeric score between 0.0 and 1.0 where 1.0 is perfect.\n"
@@ -138,7 +152,7 @@ class ShadowEvaluator:
             )
             return
 
-        if self._config.sink == "database":
+        if self._config.sink == "database" and run_id:
             try:
                 state_manager = getattr(core, "state_manager", None)
                 if state_manager is None:
@@ -147,10 +161,11 @@ class ShadowEvaluator:
                 if persist is None or not callable(persist):
                     raise RuntimeError("persist_evaluation not available on state_manager")
                 await persist(
+                    run_id=run_id,
                     step_name=step_name,
-                    score=float(score_value) if score_value is not None else None,
-                    reasoning=reasoning,
-                    criteria=criteria if isinstance(criteria, dict) else None,
+                    score=float(score_value) if score_value is not None else 0.0,
+                    feedback=reasoning,
+                    metadata=criteria if isinstance(criteria, dict) else None,
                 )
                 return
             except Exception as exc:

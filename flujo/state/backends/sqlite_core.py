@@ -1134,3 +1134,58 @@ class SQLiteBackendBase(StateBackend):
 
         await self._ensure_init()
         await self._with_retries(_insert)
+
+    async def list_evaluations(
+        self,
+        limit: int = 20,
+        run_id: str | None = None,
+    ) -> list[JSONObject]:
+        """Return recent evaluations."""
+
+        async def _select() -> list[JSONObject]:
+            conn = self._connection_pool or await self._create_connection()
+            close_after = conn is not self._connection_pool
+            try:
+                if run_id:
+                    cursor = await conn.execute(
+                        """
+                        SELECT run_id, step_name, score, feedback, metadata, created_at
+                        FROM evaluations
+                        WHERE run_id = ?
+                        ORDER BY datetime(created_at) DESC
+                        LIMIT ?
+                        """,
+                        (run_id, limit),
+                    )
+                else:
+                    cursor = await conn.execute(
+                        """
+                        SELECT run_id, step_name, score, feedback, metadata, created_at
+                        FROM evaluations
+                        ORDER BY datetime(created_at) DESC
+                        LIMIT ?
+                        """,
+                        (limit,),
+                    )
+                rows = await cursor.fetchall()
+                await cursor.close()
+                records: list[JSONObject] = []
+                for row in rows:
+                    records.append(
+                        {
+                            "run_id": row[0],
+                            "step_name": row[1],
+                            "score": row[2],
+                            "feedback": row[3],
+                            "metadata": json.loads(row[4]) if row[4] else None,
+                            "created_at": row[5],
+                        }
+                    )
+                return records
+            finally:
+                if close_after:
+                    await conn.close()
+
+        await self._ensure_init()
+        result = await self._with_retries(_select)
+        return list(result) if isinstance(result, list) else []

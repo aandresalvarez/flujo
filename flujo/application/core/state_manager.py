@@ -619,9 +619,30 @@ class StateManager(Generic[ContextT]):
                 self._serializer.clear_cache(run_id)
             except Exception:
                 pass
-            # Memory cleanup is handled by Python's garbage collector
-        except NotImplementedError:
+        except Exception:
             pass
+
+    async def persist_evaluation(
+        self,
+        run_id: str,
+        score: float,
+        feedback: str | None = None,
+        step_name: str | None = None,
+        metadata: JSONObject | None = None,
+    ) -> None:
+        """Persist shadow evaluation result via backend if available."""
+        if self.state_backend is None:
+            return
+        persist = getattr(self.state_backend, "persist_evaluation", None)
+        if persist is None or not callable(persist):
+            return
+        await persist(
+            run_id=run_id,
+            score=score,
+            feedback=feedback,
+            step_name=step_name,
+            metadata=metadata,
+        )
 
     def _convert_trace_to_dict(self, trace_tree: Any) -> JSONObject:
         """Convert trace tree to dictionary format for JSON serialization."""

@@ -55,9 +55,9 @@ class ShadowEvalSettings(BaseModel):
         default=None,
         description="LLM model/tool identifier for judge; if None, rely on default evaluator.",
     )
-    sink: Literal["telemetry"] = Field(
+    sink: Literal["telemetry", "database"] = Field(
         default="telemetry",
-        description="Where to record eval results. Currently telemetry-only.",
+        description="Where to record eval results. telemetry or database.",
     )
 
 

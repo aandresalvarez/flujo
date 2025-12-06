@@ -152,7 +152,7 @@ class ResultHandler:
         try:
             shadow_eval = getattr(self._core, "_shadow_evaluator", None)
             if shadow_eval is not None:
-                shadow_eval.maybe_schedule(core=self._core, step=step, result=result)
+                shadow_eval.maybe_schedule(core=self._core, step=step, result=result, frame=frame)
         except Exception:
             pass
         try:
