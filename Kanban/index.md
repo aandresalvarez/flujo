@@ -136,8 +136,8 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 ### [TASK-014] Governance Policy Module from Config
 **Priority:** 🟡 Medium | **Effort:** Low | **Tags:** `Security`, `DX`
 *   **Description:** Allow loading a custom `GovernancePolicy` from `flujo.toml` without Python launcher code.
-*   **Plan:** Add `[governance] policy_module="pkg.mod:PolicyCls"` parsing in ConfigManager and inject via `FlujoRuntimeBuilder` using dynamic import.
-*   **Status:** Not started.
+*   **Plan:** Add `[settings].governance_policy_module="pkg.mod:PolicyCls"` parsing in ConfigManager and inject via `FlujoRuntimeBuilder` using dynamic import.
+*   **Status:** Complete (config hook + example policy stub).
 
 ### [TASK-015] Shadow Eval Persistence & CLI
 **Priority:** 🔵 Low | **Effort:** Medium | **Tags:** `Observability`
@@ -149,7 +149,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 **Priority:** 🔵 Low | **Effort:** Low | **Tags:** `DX`, `Type-Safety`
 *   **Description:** CLI to scaffold a Pydantic context model from pipeline YAML.
 *   **Plan:** `flujo dev gen-context pipeline.yaml` parses template usage and input/output keys to emit a `context.py` model stub.
-*   **Status:** Not started.
+*   **Status:** Complete (`flujo dev gen-context` added).
 
 ### [TASK-017] Docs: Policy Migration & RAG Recipe
 **Priority:** 🔵 Low | **Effort:** Low | **Tags:** `Docs`

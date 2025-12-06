@@ -49,4 +49,3 @@ pipeline = Pipeline.from_steps(
         Step(name="answer", agent=answer, input_keys=["retrieved"]),
     ]
 )
-

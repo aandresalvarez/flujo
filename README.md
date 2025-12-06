@@ -406,6 +406,10 @@ sandbox_mode = "docker"  # or "remote"/"null"
 governance_policy_module = "my_project.policies:MyPolicy"
 # Enable shadow eval DB sink if desired
 shadow_eval_sink = "telemetry"  # or "database"
+
+# Example governance policy
+# examples/governance_policy.py
+# governance_policy_module = "examples.governance_policy:DenyIfContainsSecret"
 ```
 
 This architecture ensures that:
