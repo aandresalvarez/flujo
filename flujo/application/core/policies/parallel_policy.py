@@ -818,7 +818,9 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                             # Enforce conflict detection before merging, with simple accumulator heuristic
                             _detect_conflicts(context, bc)
                             # Then perform safe merge via ContextManager to satisfy observability in tests
-                            context = ContextManager.merge(context, bc)
+                            merged = ContextManager.merge(context, bc)
+                            if merged is not None:
+                                context = merged
                 elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
                     if not hasattr(context, "scratchpad"):
                         setattr(context, "scratchpad", {})
@@ -840,6 +842,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                             if hasattr(branch_ctx, f):
                                 setattr(context, f, getattr(branch_ctx, f))
                     else:
+                        # Default overwrite merges only scratchpad to preserve isolation of scalars.
                         if hasattr(context, "scratchpad"):
                             for bn in sorted(branch_ctxs):
                                 bc = branch_ctxs[bn]

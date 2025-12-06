@@ -660,6 +660,14 @@ async def run_loop_iterations(
                 telemetry.logfire.warning(
                     f"LoopStep '{loop_step.name}' merge of iteration_context failed: {e}"
                 )
+
+        # Ensure loop exit condition is re-evaluated with the latest context flags
+        try:
+            if hasattr(iteration_context, "is_complete") and iteration_context.is_complete:
+                if hasattr(current_context, "is_complete"):
+                    current_context.is_complete = True
+        except Exception:
+            pass
         sync_conversation_history(
             current_context=current_context,
             iteration_context=iteration_context,
