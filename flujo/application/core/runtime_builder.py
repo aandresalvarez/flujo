@@ -82,7 +82,7 @@ from .step_policies import (
 )
 from ...domain.memory import VectorStoreProtocol
 from ...domain.sandbox import SandboxProtocol
-from ...infra.memory import NullVectorStore
+from ...infra.memory import NullVectorStore, MemoryManager, NullMemoryManager
 from ...infra.sandbox import NullSandbox
 from ...utils.config import get_settings
 
@@ -109,6 +109,7 @@ class ExecutorCoreDeps:
     hydration_manager: HydrationManager
     memory_store: VectorStoreProtocol
     sandbox: SandboxProtocol
+    memory_manager: MemoryManager
     background_task_manager: BackgroundTaskManager
     context_update_manager: ContextUpdateManager
     step_history_tracker: StepHistoryTracker
@@ -226,6 +227,40 @@ class FlujoRuntimeBuilder:
         memory_store_obj: VectorStoreProtocol = memory_store or NullVectorStore()
         background_task_manager_obj = background_task_manager or BackgroundTaskManager()
         sandbox_obj: SandboxProtocol = sandbox or NullSandbox()
+        # Memory manager wiring (optional, disabled by default)
+        try:
+            from ...embeddings import get_embedding_client
+        except Exception:  # pragma: no cover - optional dependency
+            get_embedding_client = None  # type: ignore
+
+        settings = get_settings()
+        memory_enabled = bool(getattr(settings, "memory_indexing_enabled", False))
+        memory_model = getattr(settings, "memory_embedding_model", None)
+
+        embedder_fn = None
+        if memory_enabled and memory_model and get_embedding_client is not None:
+            try:
+                client = get_embedding_client(memory_model)
+
+                async def _embed(texts: list[str]) -> list[list[float]]:
+                    res = await client.embed(texts)
+                    return res.embeddings
+
+                embedder_fn = _embed
+            except Exception:
+                embedder_fn = None
+                memory_enabled = False
+
+        memory_manager_obj: MemoryManager = (
+            MemoryManager(
+                store=memory_store_obj,
+                embedder=embedder_fn,
+                enabled=memory_enabled,
+                background_task_manager=background_task_manager_obj,
+            )
+            if memory_enabled and embedder_fn is not None
+            else NullMemoryManager()
+        )
 
         plugin_runner_obj = plugin_runner or DefaultPluginRunner()
         agent_runner_obj = agent_runner or DefaultAgentRunner()
@@ -282,7 +317,6 @@ class FlujoRuntimeBuilder:
         )
         step_handler_factory_obj = step_handler_factory or (lambda core: StepHandler(core))
         agent_handler_factory_obj = agent_handler_factory or (lambda core: AgentHandler(core))
-        settings = get_settings()
         policies = governance_policies
         if policies is None:
             mode = getattr(settings, "governance_mode", "allow_all")
@@ -334,6 +368,7 @@ class FlujoRuntimeBuilder:
             cache_manager=cache_manager,
             memory_store=memory_store_obj,
             sandbox=sandbox_obj,
+            memory_manager=memory_manager_obj,
             serializer=serializer_obj,
             hasher=hasher_obj,
             cache_key_generator=cache_key_gen,

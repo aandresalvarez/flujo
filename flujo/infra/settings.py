@@ -128,6 +128,20 @@ class Settings(BaseSettings):
             "When true, contexts must be Pydantic BaseModel instances; plain dicts are rejected."
         ),
     )
+    memory_indexing_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "FLUJO_MEMORY_INDEXING_ENABLED", "flujo_memory_indexing_enabled"
+        ),
+        description="Enable indexing of successful step outputs into the configured vector store.",
+    )
+    memory_embedding_model: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FLUJO_MEMORY_EMBEDDING_MODEL", "flujo_memory_embedding_model"
+        ),
+        description="Embedding model id (e.g., openai:text-embedding-3-small) used for memory indexing.",
+    )
 
     # --- Background task management ---
     background_tasks: BackgroundTaskSettings = BackgroundTaskSettings()

@@ -154,6 +154,17 @@ class ResultHandler:
                 shadow_eval.maybe_schedule(core=self._core, step=step, result=result)
         except Exception:
             pass
+        try:
+            memory_manager = getattr(self._core, "_memory_manager", None)
+            if memory_manager is not None:
+                # Best-effort indexing; non-blocking if manager uses background tasks
+                await memory_manager.index_step_output(
+                    step_name=self._core._safe_step_name(step),
+                    result=result,
+                    context=None,
+                )
+        except Exception:
+            pass
         if called_with_frame:
             return Success(step_result=result)
         return result

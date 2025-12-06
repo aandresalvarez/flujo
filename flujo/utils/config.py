@@ -19,6 +19,8 @@ class Settings:
     test_mode: bool = False
     warn_legacy: bool = False
     enforce_typed_context: bool = False
+    memory_indexing_enabled: bool = False
+    memory_embedding_model: str | None = None
     governance_mode: Literal["allow_all", "deny_all"] = "allow_all"
     shadow_eval_enabled: bool = False
     shadow_eval_sample_rate: float = 0.0
@@ -50,6 +52,8 @@ def _load_from_env() -> Settings:
         test_mode=_flag("FLUJO_TEST_MODE"),
         warn_legacy=_flag("FLUJO_WARN_LEGACY"),
         enforce_typed_context=_flag("FLUJO_ENFORCE_TYPED_CONTEXT"),
+        memory_indexing_enabled=_flag("FLUJO_MEMORY_INDEXING_ENABLED"),
+        memory_embedding_model=os.getenv("FLUJO_MEMORY_EMBEDDING_MODEL"),
         governance_mode=_mode("FLUJO_GOVERNANCE_MODE", "allow_all"),
         shadow_eval_enabled=_flag("FLUJO_SHADOW_EVAL_ENABLED"),
         shadow_eval_sample_rate=float(os.getenv("FLUJO_SHADOW_EVAL_SAMPLE_RATE", "0") or "0"),

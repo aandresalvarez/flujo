@@ -256,6 +256,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._fallback_handler = deps_obj.fallback_handler
         self._telemetry = deps_obj.telemetry
         self._memory_store = deps_obj.memory_store
+        self._memory_manager = getattr(deps_obj, "memory_manager", None)
         self._sandbox: SandboxProtocol = deps_obj.sandbox
         self._enable_cache = enable_cache
         # Estimation selection: factory first, then direct estimator, then default
@@ -386,6 +387,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     def memory_store(self) -> VectorStoreProtocol:
         """Exposed vector store used for long-term memory; defaults to a Null store."""
         return self._memory_store
+
+    @property
+    def memory_manager(self) -> Any:
+        """Exposed memory manager; may be NullMemoryManager when disabled."""
+        return self._memory_manager
 
     @property
     def sandbox(self) -> SandboxProtocol:
