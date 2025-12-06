@@ -233,19 +233,34 @@ class FlujoRuntimeBuilder:
             get_embedding_client = None  # type: ignore
 
         settings = get_settings()
-        sandbox_mode = getattr(settings, "sandbox_mode", "null")
+        sandbox_cfg = getattr(settings, "sandbox", settings)
+        sandbox_mode = getattr(sandbox_cfg, "mode", getattr(settings, "sandbox_mode", "null"))
         sandbox_obj: SandboxProtocol
         if sandbox is not None:
             sandbox_obj = sandbox
         elif sandbox_mode == "remote":
-            api_url = getattr(settings, "sandbox_api_url", None)
+            api_url = getattr(sandbox_cfg, "api_url", getattr(settings, "sandbox_api_url", None))
             if api_url:
                 try:
                     sandbox_obj = RemoteSandbox(
                         api_url=api_url,
-                        api_key=getattr(settings, "sandbox_api_key", None),
-                        timeout_s=float(getattr(settings, "sandbox_timeout_s", 60.0)),
-                        verify_ssl=bool(getattr(settings, "sandbox_verify_ssl", True)),
+                        api_key=getattr(
+                            sandbox_cfg, "api_key", getattr(settings, "sandbox_api_key", None)
+                        ),
+                        timeout_s=float(
+                            getattr(
+                                sandbox_cfg,
+                                "timeout_seconds",
+                                getattr(settings, "sandbox_timeout_s", 60.0),
+                            )
+                        ),
+                        verify_ssl=bool(
+                            getattr(
+                                sandbox_cfg,
+                                "verify_ssl",
+                                getattr(settings, "sandbox_verify_ssl", True),
+                            )
+                        ),
                     )
                 except Exception:
                     sandbox_obj = NullSandbox()
@@ -253,7 +268,17 @@ class FlujoRuntimeBuilder:
                 sandbox_obj = NullSandbox()
         elif sandbox_mode == "docker":
             try:
-                sandbox_obj = DockerSandbox()
+                sandbox_obj = DockerSandbox(
+                    image=getattr(sandbox_cfg, "docker_image", "python:3.11-slim"),
+                    pull=bool(getattr(sandbox_cfg, "docker_pull", True)),
+                    timeout_s=float(
+                        getattr(
+                            sandbox_cfg,
+                            "timeout_seconds",
+                            getattr(settings, "sandbox_timeout_s", 60.0),
+                        )
+                    ),
+                )
             except Exception:
                 sandbox_obj = NullSandbox()
         else:

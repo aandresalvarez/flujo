@@ -1,22 +1,51 @@
 from __future__ import annotations
 
 import base64
-from typing import Final, Mapping, MutableMapping
+from typing import Any, Final, Mapping, MutableMapping
 
 import httpx
 
 from ...domain.sandbox import SandboxExecution, SandboxProtocol, SandboxResult
 
 
-def _decode_artifacts(data: Mapping[str, str] | None) -> MutableMapping[str, bytes] | None:
+async def _materialize_artifacts(
+    data: Mapping[str, Any] | None,
+    client: httpx.AsyncClient,
+    timeout_s: float,
+) -> MutableMapping[str, bytes] | None:
     if not data:
         return None
     decoded: dict[str, bytes] = {}
     for key, value in data.items():
         try:
-            decoded[key] = base64.b64decode(value)
+            if isinstance(value, str):
+                try:
+                    decoded[key] = base64.b64decode(value)
+                except Exception:
+                    decoded[key] = value.encode("utf-8")
+                continue
+            if isinstance(value, Mapping):
+                if "base64" in value:
+                    try:
+                        decoded[key] = base64.b64decode(str(value["base64"]))
+                        continue
+                    except Exception:
+                        decoded[key] = b""
+                        continue
+                if "data" in value:
+                    decoded[key] = str(value["data"]).encode("utf-8")
+                    continue
+                if "url" in value:
+                    url = str(value["url"])
+                    try:
+                        resp = await client.get(url, timeout=timeout_s)
+                        decoded[key] = resp.content
+                        continue
+                    except Exception:
+                        decoded[key] = b""
+                        continue
+            decoded[key] = b""
         except Exception:
-            # Preserve undecodable payloads as empty bytes to keep contract
             decoded[key] = b""
     return decoded
 
@@ -91,7 +120,9 @@ class RemoteSandbox(SandboxProtocol):
         sandbox_id = data.get("sandbox_id")
         timed_out = bool(data.get("timed_out", False))
         error = data.get("error")
-        artifacts = _decode_artifacts(data.get("artifacts"))
+        artifacts = await _materialize_artifacts(
+            data.get("artifacts"), self._client, self._timeout_s
+        )
 
         if resp.status_code >= 400 and error is None:
             error = f"Remote sandbox HTTP {resp.status_code}"

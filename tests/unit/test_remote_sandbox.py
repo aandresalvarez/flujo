@@ -35,6 +35,40 @@ async def test_remote_sandbox_success() -> None:
 
 
 @pytest.mark.asyncio
+async def test_remote_sandbox_artifact_variants() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "stdout": "",
+                "stderr": "",
+                "exit_code": 0,
+                "artifacts": {
+                    "plain.txt": "hello",  # utf-8 string
+                    "b64.txt": {"base64": "ZGF0YQ=="},
+                    "url.txt": {"url": "https://sandbox/file"},
+                },
+            },
+        )
+
+    async def artifact_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"from-url")
+
+    transport = httpx.MockTransport(
+        lambda req: handler(req) if req.url.path == "/execute" else artifact_handler(req)
+    )
+    client = httpx.AsyncClient(transport=transport, base_url="https://sandbox")
+    sandbox = RemoteSandbox(api_url="https://sandbox", client=client)
+
+    result = await sandbox.exec_code(SandboxExecution(code="x", language="python"))
+
+    assert result.artifacts is not None
+    assert result.artifacts["plain.txt"] == b"hello"
+    assert result.artifacts["b64.txt"] == b"data"
+    assert result.artifacts["url.txt"] == b"from-url"
+
+
+@pytest.mark.asyncio
 async def test_remote_sandbox_http_error() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, json={"error": "boom"})

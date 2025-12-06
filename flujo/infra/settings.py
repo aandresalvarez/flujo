@@ -90,6 +90,16 @@ class SandboxSettings(BaseModel):
         validation_alias=AliasChoices("FLUJO_SANDBOX_VERIFY_SSL", "flujo_sandbox_verify_ssl"),
         description="Whether to verify TLS certificates for remote sandbox.",
     )
+    docker_image: str = Field(
+        default="python:3.11-slim",
+        validation_alias=AliasChoices("FLUJO_SANDBOX_DOCKER_IMAGE", "flujo_sandbox_docker_image"),
+        description="Docker image to use for docker sandbox executions.",
+    )
+    docker_pull: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("FLUJO_SANDBOX_DOCKER_PULL", "flujo_sandbox_docker_pull"),
+        description="Pull the docker image if not present locally.",
+    )
 
 
 class Settings(BaseSettings):
