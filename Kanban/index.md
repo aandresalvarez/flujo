@@ -133,8 +133,9 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     2. Provide defaults in infra: `NullSandbox` (safe no-op) as the default; keep remote/docker as future optional add-ons.
     3. Wire into DI: add `sandbox` to `ExecutorCoreDeps` + `FlujoRuntimeBuilder`, expose via `core.sandbox`.
     4. Tests: default null sandbox, custom injection via builder, and core exposure; ensure type safety.
-    5. Next slices: remote sandbox adapter and optional docker extra (not yet implemented).
-*   **Status:** Partial (~30%). Protocol + NullSandbox + DI + tests done. Pending: RemoteSandbox (API-based), optional DockerSandbox, and a code_interpreter builtin skill.
+    5. Builtin `code_interpreter` skill wired to the sandbox; returns structured stdout/stderr/exit-code.
+    6. Next slices: remote sandbox adapter and optional docker extra (not yet implemented).
+*   **Status:** Partial (~45%). Protocol + NullSandbox + DI + tests done; `code_interpreter` skill shipped. Pending: RemoteSandbox (API-based) and optional DockerSandbox.
 
 ### [TASK-012] Formalize Context Typing
 **Priority:** 🔵 Low | **Effort:** Medium | **Tags:** `Type-Safety`

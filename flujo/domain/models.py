@@ -12,6 +12,7 @@ from enum import Enum
 
 from .types import ContextT
 from .memory import ScoredMemory
+from .sandbox import SandboxProtocol
 from .base_model import BaseModel
 
 # ---------------------------------------------------------------------------
@@ -554,6 +555,7 @@ class PipelineContext(BaseModel):
     # Utility counter used by test hooks; kept in base context for simplicity
     call_count: int = 0
     memory_store: Any | None = Field(default=None, exclude=True)
+    _sandbox: SandboxProtocol | None = PrivateAttr(default=None)
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
@@ -613,3 +615,8 @@ class PipelineContext(BaseModel):
             return cast(List[ScoredMemory], results)
         except Exception:
             return []
+
+    @property
+    def sandbox(self) -> SandboxProtocol | None:
+        """Return the sandbox handle attached to this context when available."""
+        return self._sandbox

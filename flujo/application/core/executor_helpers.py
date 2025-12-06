@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from ...exceptions import UsageLimitExceededError
 from ...domain.models import UsageLimits, Quota
+from ...domain.sandbox import SandboxProtocol
 from .default_cache_components import OrjsonSerializer, Blake3Hasher
 from .context_manager import ContextManager
 from .types import ExecutionFrame
@@ -160,6 +161,35 @@ def enforce_typed_context(context: Any) -> Any:
         return context
 
     raise TypeError("Context must be a Pydantic BaseModel when FLUJO_ENFORCE_TYPED_CONTEXT=1.")
+
+
+def attach_sandbox_to_context(context: Any, sandbox: SandboxProtocol | None) -> None:
+    """Attach sandbox handle to context when present without mutating dict contexts."""
+    if context is None or sandbox is None:
+        return
+    if isinstance(context, dict):
+        return
+    try:
+        existing = getattr(context, "sandbox", None)
+        if existing is not None:
+            return
+    except Exception:
+        pass
+    try:
+        existing = getattr(context, "_sandbox", None)
+        if existing is not None:
+            return
+    except Exception:
+        pass
+    try:
+        object.__setattr__(context, "_sandbox", sandbox)
+        return
+    except Exception:
+        pass
+    try:
+        setattr(context, "sandbox", sandbox)
+    except Exception:
+        pass
 
 
 async def set_quota_and_hydrate(frame: Any, quota_manager: Any, hydration_manager: Any) -> None:
@@ -502,6 +532,8 @@ def make_execution_frame(
 ) -> ExecutionFrame[Any]:
     """Create an ExecutionFrame with the current quota context."""
     context = enforce_typed_context(context)
+    sandbox = getattr(core, "sandbox", None)
+    attach_sandbox_to_context(context, sandbox)
     return ExecutionFrame(
         step=step,
         data=data,
