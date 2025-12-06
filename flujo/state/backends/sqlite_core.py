@@ -1118,6 +1118,7 @@ class SQLiteBackendBase(StateBackend):
             conn = self._connection_pool or await self._create_connection()
             close_after = conn is not self._connection_pool
             try:
+                metadata_json = None if metadata is None else json.dumps(safe_serialize(metadata))
                 await conn.execute(
                     """
                     INSERT INTO evaluations (run_id, step_name, score, feedback, metadata, created_at)
@@ -1128,7 +1129,7 @@ class SQLiteBackendBase(StateBackend):
                         step_name,
                         score,
                         feedback,
-                        safe_serialize(metadata),
+                        metadata_json,
                     ),
                 )
                 await conn.commit()

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from ...domain.sandbox import SandboxExecution, SandboxProtocol, SandboxResult
+
+logger = logging.getLogger(__name__)
 
 
 class DockerSandbox(SandboxProtocol):
@@ -26,19 +29,20 @@ class DockerSandbox(SandboxProtocol):
         if self._pull:
             try:
                 self._client.images.pull(self._image)
-            except Exception:
-                # Non-fatal: proceed with whatever is available locally
-                pass
+            except Exception:  # noqa: BLE001,S110
+                logger.warning(
+                    "Failed to pull Docker image %s; using local if available", self._image
+                )
 
     def _get_client(self) -> object:
         try:
             import docker  # type: ignore
         except Exception as exc:  # pragma: no cover - import-time path
-            raise RuntimeError(f"Docker client unavailable: {exc}") from exc
+            raise RuntimeError(f"Docker client unavailable: {exc}") from exc  # noqa: TRY003
         try:
             return docker.from_env()
         except Exception as exc:  # pragma: no cover
-            raise RuntimeError(f"Docker from_env failed: {exc}") from exc
+            raise RuntimeError(f"Docker from_env failed: {exc}") from exc  # noqa: TRY003
 
     def _build_command(self, request: SandboxExecution) -> tuple[list[str], str]:
         lang = request.language.lower()

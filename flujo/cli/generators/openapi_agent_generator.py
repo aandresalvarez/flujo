@@ -125,9 +125,13 @@ async def {fname}(
         )
 
     func_list = ", ".join(_safe_name(op.get("operationId") or f"{m}_{p}") for p, m, op in ops)
+    def _resp_model_literal(model: str) -> str:
+        if model in {"dict", "list"}:
+            return model
+        return f'"{model}"'
+
     resp_map_lines = "\n".join(
-        f'    "{name}": {model if model in {"dict", "list"} else model},'
-        for name, model in response_models.items()
+        f'    "{name}": {_resp_model_literal(model)},' for name, model in response_models.items()
     )
     op_func_lines = "\n".join(f'    "{name}": {name},' for name in response_models.keys())
     content = f'''"""
