@@ -86,13 +86,13 @@ Suppression:
   - See: FLUJO_TEAM_GUIDE.md Section 2 "The Fatal Anti-Pattern"
 
 ## <a id="v-ctx1"></a>V‑CTX1 — Missing required context keys
-  - Why: A step declared `input_keys` that are not produced earlier in the pipeline (including branches/imports).
-  - How availability is computed: context keys produced via `output_keys`/`sink_to` are unioned across conditional branches, parallel branches, and imported pipelines; dotted paths are tracked.
-  - Fix: ensure an upstream step produces the required keys (e.g., set `output_keys=["scratchpad.field"]`) or adjust the consumer’s `input_keys`.
+- Why: A step declared `input_keys` that are not produced earlier in the pipeline (including branches/imports).
+- How availability is computed: context keys produced via `output_keys`/`sink_to` are unioned across conditional branches, parallel branches, and imported pipelines; dotted paths are tracked.
+- Fix: ensure an upstream step produces the required keys (e.g., set `output_keys=["scratchpad.field"]`) or adjust the consumer’s `input_keys`.
 
 ## <a id="v-ctx2"></a>V‑CTX2 — Weak context path (root available only)
-  - Why: A step requires a dotted path (e.g., `scratchpad.field`) but only the root (`scratchpad`) is known to exist so structure is uncertain.
-  - Fix: have the producing step declare the precise `output_keys` path or relax the consumer’s requirement if any shape is acceptable.
+- Why: A step requires a dotted path (e.g., `scratchpad.field`) but only the root (`scratchpad`) is known to exist so structure is uncertain.
+- Fix: have the producing step declare the precise `output_keys` path or relax the consumer’s requirement if any shape is acceptable.
 
 ## <a id="v-sm1"></a>V‑SM1 — StateMachine transitions validity
   - Why: invalid states or no path to an end state.

@@ -81,7 +81,7 @@ class RemoteSandbox(SandboxProtocol):
             "files": request.files or {},
             "environment": request.environment or {},
             "arguments": list(request.arguments or ()),
-            "timeout_s": request.timeout_s,
+            "timeout_s": request.timeout_s or self._timeout_s,
         }
         headers: dict[str, str] = {}
         if self._api_key:

@@ -107,7 +107,12 @@ async def {fname}(
     body: Any | None = None,
 ) -> dict[str, Any]:
     \"\"\"Call {method.upper()} {path} from the generated agent.\"\"\"
-    url_path = "{path}".format(**(path_params or {{}}))
+    import re
+
+    _path = "{path}"
+    for _k, _v in (path_params or {{}}).items():
+        _path = re.sub(r"\\{{" + _k + r"\\}}", str(_v), _path)
+    url_path = _path
     return await _http_request(
         method="{method.upper()}",
         base_url=base_url,

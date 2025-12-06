@@ -11,6 +11,7 @@ class NullSandbox(SandboxProtocol):
     _SANDBOX_DISABLED_MSG: Final[str] = "Sandbox execution disabled (NullSandbox)."
 
     async def exec_code(self, request: SandboxExecution) -> SandboxResult:
+        del request
         return SandboxResult(
             stdout="",
             stderr="",

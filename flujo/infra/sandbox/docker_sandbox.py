@@ -68,7 +68,17 @@ class DockerSandbox(SandboxProtocol):
                 target_entry = workdir / entry_name
                 target_entry.write_text(request.code, encoding="utf-8")
                 for name, content in (request.files or {}).items():
-                    dest = workdir / name
+                    dest = (workdir / name).resolve()
+                    if not str(dest).startswith(str(workdir.resolve())):
+                        return SandboxResult(
+                            stdout="",
+                            stderr="",
+                            exit_code=1,
+                            artifacts=None,
+                            sandbox_id=None,
+                            timed_out=False,
+                            error=f"Invalid file path: {name}",
+                        )
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     dest.write_text(content, encoding="utf-8")
             except Exception as exc:
@@ -105,8 +115,9 @@ class DockerSandbox(SandboxProtocol):
                 )
 
             timed_out = False
+            wait_result: dict[str, int] | None = None
             try:
-                await asyncio.wait_for(
+                wait_result = await asyncio.wait_for(
                     asyncio.to_thread(container.wait),
                     timeout=request.timeout_s or self._timeout_s,
                 )
@@ -128,7 +139,7 @@ class DockerSandbox(SandboxProtocol):
                 stderr = ""
 
             try:
-                status = container.wait()
+                status = wait_result if wait_result is not None else {"StatusCode": 1}
                 exit_code = int(status.get("StatusCode", 1))
             except Exception:
                 exit_code = 1

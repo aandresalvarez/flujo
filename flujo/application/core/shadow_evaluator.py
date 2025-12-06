@@ -94,16 +94,14 @@ class ShadowEvaluator:
                     },
                 )
 
-        # Fire-and-forget via background task manager
-        coro = _run_eval
+        # Fire-and-forget via background task manager; keep a handle to avoid GC.
         try:
-            asyncio.create_task(coro(), name=f"shadow_eval_{step_name}")
+            task = asyncio.create_task(_run_eval(), name=f"shadow_eval_{step_name}")
+            if self._bg is not None:
+                self._bg.add_task(task)
         except Exception:
-            try:
-                # fallback to manager if available
-                self._bg.add_task(asyncio.create_task(coro()))
-            except Exception:
-                pass
+            # Shadow eval is best-effort; swallow failures quietly.
+            pass
 
     async def _run_judge(self, *, core: Any, payload: dict[str, Any]) -> None:
         model = self._config.judge_model

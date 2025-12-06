@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import json
+import logging
 import re
 import sqlite3
 import time
@@ -23,6 +24,8 @@ from anyio.from_thread import BlockingPortal, start_blocking_portal
 from .base import StateBackend
 from flujo.infra import telemetry
 from flujo.type_definitions.common import JSONObject
+
+logger = logging.getLogger(__name__)
 
 # Try to import orjson for faster JSON serialization
 try:
@@ -120,21 +123,22 @@ def _get_blocking_portal() -> BlockingPortal:
 def _shutdown_blocking_portal() -> None:
     """Cleanly stop the shared BlockingPortal at interpreter shutdown."""
     global _PORTAL, _PORTAL_MANAGER
-    portal = _PORTAL
-    manager = _PORTAL_MANAGER
-    _PORTAL = None
-    _PORTAL_MANAGER = None
+    with _PORTAL_LOCK:
+        portal = _PORTAL
+        manager = _PORTAL_MANAGER
+        _PORTAL = None
+        _PORTAL_MANAGER = None
     if manager is not None:
         try:
             manager.__exit__(None, None, None)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"Non-fatal error stopping BlockingPortal manager: {exc}")
         return
     if portal is not None:
         try:
             anyio.run(portal.stop)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(f"Non-fatal error stopping BlockingPortal: {exc}")
 
 
 def _validate_sql_identifier(identifier: str) -> bool:
