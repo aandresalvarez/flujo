@@ -98,7 +98,18 @@ class BackgroundTaskManager:
                 parent_run_id = cast(Optional[str], getattr(parent_context, "run_id", None))
             bg_run_id = f"{parent_run_id}_bg_{task_id}" if parent_run_id else task_id
 
-            isolated_context = ContextManager.isolate(getattr(frame, "context", None))
+            try:
+                isolated_context = ContextManager.isolate_strict(
+                    getattr(frame, "context", None), purpose="background_task"
+                )
+            except Exception:
+                try:
+                    telemetry.logfire.warning(
+                        "Background task using lenient context isolation; potential shared-state risk"
+                    )
+                except Exception:
+                    pass
+                isolated_context = ContextManager.isolate(getattr(frame, "context", None))
             if isolated_context is not None:
                 ctx_any = cast(Any, isolated_context)
                 try:

@@ -755,6 +755,31 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         """Wait for all background tasks to complete with a timeout."""
         await self._background_task_manager.wait_for_completion(timeout)
 
+    async def aclose(self) -> None:
+        """Best-effort cleanup of executor-owned resources."""
+        try:
+            await self.wait_for_background_tasks()
+        except Exception:
+            pass
+
+        # Close memory indexing manager first (flush pending tasks)
+        try:
+            if self._memory_manager is not None and hasattr(self._memory_manager, "close"):
+                res = self._memory_manager.close()
+                if asyncio.iscoroutine(res):
+                    await res
+        except Exception:
+            pass
+
+        # Close vector store if it exposes close/cleanup
+        try:
+            if self._memory_store is not None and hasattr(self._memory_store, "close"):
+                res = self._memory_store.close()
+                if asyncio.iscoroutine(res):
+                    await res
+        except Exception:
+            pass
+
     async def execute(
         self,
         frame_or_step: ExecutionFrame[Any] | Any | None = None,

@@ -717,6 +717,8 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                 if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
                     # Helper: detect conflicts in simple fields between two contexts
                     def _detect_conflicts(target_ctx: Any, source_ctx: Any) -> None:
+                        from flujo.exceptions import ConfigurationError as _CfgErr
+
                         try:
                             # Prefer model_dump when available
                             if hasattr(source_ctx, "model_dump"):
@@ -731,28 +733,39 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                 }
                         except Exception:
                             src_fields = {}
+
+                        def _compare(target_val: Any, source_val: Any, path: str) -> None:
+                            # Recurse into dicts to detect leaf conflicts
+                            if isinstance(target_val, dict) and isinstance(source_val, dict):
+                                shared_keys = set(target_val.keys()) & set(source_val.keys())
+                                for key in shared_keys:
+                                    if str(key).startswith("_"):
+                                        continue
+                                    _compare(target_val[key], source_val[key], f"{path}.{key}")
+                                return
+
+                            # Skip container/list conflicts for now; deep merge handles lists elsewhere
+                            if isinstance(target_val, (list, tuple)) or isinstance(
+                                source_val, (list, tuple)
+                            ):
+                                return
+
+                            if target_val is not None and source_val is not None:
+                                try:
+                                    differs = target_val != source_val
+                                except Exception:
+                                    differs = True
+                                if differs:
+                                    raise _CfgErr(
+                                        f"Merge conflict for key '{path}'. Set an explicit merge strategy or field_mapping in your ParallelStep."
+                                    )
+
                         for _fname, _sval in src_fields.items():
                             if str(_fname).startswith("_"):
                                 continue
                             if hasattr(target_ctx, _fname):
                                 _tval = getattr(target_ctx, _fname)
-                                # Only consider non-container simple conflicts
-                                if not isinstance(_tval, (dict, list)) and not isinstance(
-                                    _sval, (dict, list)
-                                ):
-                                    if _tval is not None and _sval is not None:
-                                        try:
-                                            differs = _tval != _sval
-                                        except Exception:
-                                            differs = True
-                                        if differs:
-                                            from flujo.exceptions import (
-                                                ConfigurationError as _CfgErr,
-                                            )
-
-                                            raise _CfgErr(
-                                                f"Merge conflict for key '{_fname}'. Set an explicit merge strategy or field_mapping in your ParallelStep."
-                                            )
+                                _compare(_tval, _sval, str(_fname))
 
                     for n, bc in branch_ctxs.items():
                         if parallel_step.field_mapping and n in parallel_step.field_mapping:
