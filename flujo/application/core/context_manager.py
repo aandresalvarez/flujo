@@ -4,6 +4,7 @@ import inspect
 import os
 import weakref
 import types
+import logging
 from pydantic import BaseModel
 from ...utils.context import safe_merge_context_updates
 from ...exceptions import ContextMutationError
@@ -568,6 +569,7 @@ def _should_pass_context(spec: Any, context: Optional[Any], func: Callable[..., 
 
 def _clone_context(obj: Optional[BaseModel]) -> Optional[BaseModel]:
     """Efficient deep clone favoring Pydantic's model_copy over stdlib deepcopy."""
+    log = logging.getLogger("flujo.context")
     if obj is None:
         return None
     if isinstance(obj, BaseModel):
@@ -578,9 +580,20 @@ def _clone_context(obj: Optional[BaseModel]) -> Optional[BaseModel]:
     try:
         return copy.deepcopy(obj)
     except Exception:
+        # Shallow copy as a last resort; log to surface potential shared-state risk.
         try:
-            return copy.copy(obj)
+            cloned = copy.copy(obj)
+            if cloned is obj:
+                log.warning(
+                    "Context isolation fallback returned original object; potential shared state risk",
+                    extra={"context_type": type(obj).__name__},
+                )
+            return cloned
         except Exception:
+            log.warning(
+                "Context isolation failed to copy object; returning original (shared) reference",
+                extra={"context_type": type(obj).__name__},
+            )
             return obj
 
 

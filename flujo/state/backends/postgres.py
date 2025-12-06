@@ -435,13 +435,13 @@ class PostgresBackend(StateBackend):
                 """
                 INSERT INTO workflow_state (
                     run_id, pipeline_id, pipeline_name, pipeline_version,
-                    current_step_index, pipeline_context, last_step_output, step_history,
+                    current_step_index, pipeline_context, last_step_output,
                     status, created_at, updated_at, total_steps, error_message,
                     execution_time_ms, memory_usage_mb, metadata, is_background_task,
                     parent_run_id, task_id, background_error
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9,
-                    $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $18, $19, $20
+                    $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8,
+                    $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18, $19
                 )
                 ON CONFLICT (run_id) DO UPDATE SET
                     pipeline_id = EXCLUDED.pipeline_id,
@@ -450,7 +450,6 @@ class PostgresBackend(StateBackend):
                     current_step_index = EXCLUDED.current_step_index,
                     pipeline_context = EXCLUDED.pipeline_context,
                     last_step_output = EXCLUDED.last_step_output,
-                    step_history = EXCLUDED.step_history,
                     status = EXCLUDED.status,
                     updated_at = EXCLUDED.updated_at,
                     total_steps = EXCLUDED.total_steps,
@@ -470,7 +469,6 @@ class PostgresBackend(StateBackend):
                 state["current_step_index"],
                 _jsonb(state.get("pipeline_context")),
                 _jsonb(state.get("last_step_output")),
-                _jsonb(state.get("step_history")),
                 state.get("status", "running"),
                 created_at,
                 updated_at,
@@ -492,7 +490,7 @@ class PostgresBackend(StateBackend):
             record = await conn.fetchrow(
                 """
                 SELECT run_id, pipeline_id, pipeline_name, pipeline_version, current_step_index,
-                       pipeline_context, last_step_output, step_history, status, created_at,
+                       pipeline_context, last_step_output, status, created_at,
                        updated_at, total_steps, error_message, execution_time_ms,
                        memory_usage_mb, metadata, is_background_task, parent_run_id, task_id,
                        background_error
@@ -510,7 +508,6 @@ class PostgresBackend(StateBackend):
                 "current_step_index": record["current_step_index"],
                 "pipeline_context": safe_deserialize(record["pipeline_context"]) or {},
                 "last_step_output": safe_deserialize(record["last_step_output"]),
-                "step_history": safe_deserialize(record["step_history"]) or [],
                 "status": record["status"],
                 "created_at": record["created_at"],
                 "updated_at": record["updated_at"],

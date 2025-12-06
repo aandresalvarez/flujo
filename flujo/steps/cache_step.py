@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional, TypeVar, Set
+import re
 import hashlib
 import json
 import logging
@@ -198,7 +199,11 @@ def _serialize_for_cache_key(
                     hash(obj)
                 except Exception:
                     return f"<unserializable: {type(obj).__name__}>"
-            return str(obj)
+            rep = str(obj)
+            # Avoid memory-address-bearing reprs that thrash cache keys
+            if re.search(r"<[^>]+ at 0x[0-9a-fA-F]+>", rep):
+                return f"<unstable_repr:{type(obj).__name__}>"
+            return rep
         except Exception:
             return f"<unserializable: {type(obj).__name__}>"
 

@@ -62,18 +62,8 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     else:
                         last_step_output_json = None
 
-                    step_history = state.get("step_history")
-                    if step_history is not None:
-                        if isinstance(step_history, list) and all(
-                            isinstance(item, dict) for item in step_history
-                        ):
-                            # For simple list of dicts, use direct JSON serialization
-                            step_history_json = _fast_json_dumps(step_history)
-                        else:
-                            # For complex objects, use robust serialization
-                            step_history_json = _fast_json_dumps(robust_serialize(step_history))
-                    else:
-                        step_history_json = None
+                    # Avoid storing full step_history blob to prevent unbounded growth; rely on steps table.
+                    step_history_json = None
 
                     # Get execution_time_ms directly from state
                     execution_time_ms = state.get("execution_time_ms")
