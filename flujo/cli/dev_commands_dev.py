@@ -30,6 +30,90 @@ from .helpers import (
 logfire = telemetry.logfire
 
 
+def gen_context(
+    pipeline_file: Annotated[
+        Optional[str],
+        typer.Argument(
+            help="Path to pipeline.yaml (defaults to project pipeline.yaml if present)",
+            show_default=False,
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option("--output", "-o", help="Output path for generated context model"),
+    ] = "context.py",
+    model_name: Annotated[
+        str,
+        typer.Option("--model-name", "-m", help="Name of generated Pydantic model"),
+    ] = "GeneratedContext",
+) -> None:
+    """
+    Generate a Pydantic context model by scanning pipeline YAML for context references
+    and declared input/output keys.
+    """
+    import re
+    import yaml
+
+    try:
+        if pipeline_file is None:
+            root = find_project_root()
+            candidate = (Path(root) / "pipeline.yaml").resolve()
+            if not candidate.exists():
+                raise FileNotFoundError("pipeline.yaml not found; pass path explicitly")
+            pipeline_file = str(candidate)
+
+        text = Path(pipeline_file).read_text(encoding="utf-8")
+        data = yaml.safe_load(text) or {}
+    except Exception as e:  # noqa: BLE001
+        print_rich_or_typer(f"[red]Failed to load pipeline: {e}", stderr=True)
+        raise typer.Exit(1) from e
+
+    keys: set[str] = set()
+
+    for match in re.findall(r"context\\.([A-Za-z0-9_\\.]+)", text):
+        root = match.split(".", 1)[0]
+        if root:
+            keys.add(root)
+
+    def _collect(obj: Any) -> None:
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k in {"input_keys", "output_keys"} and isinstance(v, list):
+                    for item in v:
+                        if isinstance(item, str) and item.strip():
+                            keys.add(item.split(".", 1)[0])
+                else:
+                    _collect(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                _collect(item)
+
+    _collect(data)
+
+    if not keys:
+        print_rich_or_typer("[yellow]No context fields detected; generated empty model.[/yellow]")
+
+    lines = [
+        "from __future__ import annotations",
+        "from typing import Any, Optional",
+        "from pydantic import BaseModel",
+        "",
+        f"class {model_name}(BaseModel):",
+    ]
+    if not keys:
+        lines.append("    pass")
+    else:
+        for key in sorted(keys):
+            lines.append(f"    {key}: Optional[Any] = None")
+
+    try:
+        Path(output).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print_rich_or_typer(f"[green]Generated context model at {output}[/green]")
+    except Exception as e:  # noqa: BLE001
+        print_rich_or_typer(f"[red]Failed to write context model: {e}", stderr=True)
+        raise typer.Exit(1) from e
+
+
 def import_openapi(
     spec: Annotated[str, typer.Argument(help="Path or URL to OpenAPI/Swagger spec")],
     output: Annotated[
@@ -958,3 +1042,4 @@ def register_dev_commands(dev_app: typer.Typer) -> None:
     dev_app.command(name="compile-yaml")(compile)
     dev_app.command(name="visualize")(pipeline_mermaid_cmd)
     dev_app.command(name="import-openapi")(import_openapi)
+    dev_app.command(name="gen-context")(gen_context)
