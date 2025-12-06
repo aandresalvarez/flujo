@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
 
 from flujo.domain.models import StepResult, BaseModel, PipelineResult
+from flujo.infra import telemetry
 from flujo.state.backends import StateBackend
 from flujo.state.models import WorkflowState
 from .state_serializer import StateSerializer
@@ -643,13 +644,22 @@ class StateManager(Generic[ContextT]):
         persist = getattr(self.state_backend, "persist_evaluation", None)
         if persist is None or not callable(persist):
             return
-        await persist(
-            run_id=run_id,
-            score=score,
-            feedback=feedback,
-            step_name=step_name,
-            metadata=metadata,
-        )
+        try:
+            await persist(
+                run_id=run_id,
+                score=score,
+                feedback=feedback,
+                step_name=step_name,
+                metadata=metadata,
+            )
+        except NotImplementedError:
+            # Backend opted out of evaluation persistence.
+            return
+        except Exception as exc:
+            telemetry.logfire.warning(
+                "[StateManager] persist_evaluation failed",
+                extra={"error": str(exc)},
+            )
 
     def _convert_trace_to_dict(self, trace_tree: Any) -> JSONObject:
         """Convert trace tree to dictionary format for JSON serialization."""

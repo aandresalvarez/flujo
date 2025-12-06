@@ -48,10 +48,10 @@ async def answer(data: dict[str, Any], context: RAGContext) -> dict[str, Any]:
     return {"answer": resp}
 
 
-pipeline = Pipeline.from_steps(
-    [
+pipeline = Pipeline(
+    steps=[
         Step(name="summarize", agent=summarize, output_keys=["scratchpad.summary"]),
         Step(name="recall", agent=recall, input_keys=["scratchpad.summary"]),
-        Step(name="answer", agent=answer, input_keys=["retrieved"]),
+        Step(name="answer", agent=answer, input_keys=["question", "retrieved"]),
     ]
 )
