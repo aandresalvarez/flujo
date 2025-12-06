@@ -18,6 +18,7 @@ class Settings:
     pure_quota_mode: bool = True
     test_mode: bool = False
     warn_legacy: bool = False
+    enforce_typed_context: bool = False
     governance_mode: Literal["allow_all", "deny_all"] = "allow_all"
     shadow_eval_enabled: bool = False
     shadow_eval_sample_rate: float = 0.0
@@ -48,6 +49,7 @@ def _load_from_env() -> Settings:
         pure_quota_mode=True,
         test_mode=_flag("FLUJO_TEST_MODE"),
         warn_legacy=_flag("FLUJO_WARN_LEGACY"),
+        enforce_typed_context=_flag("FLUJO_ENFORCE_TYPED_CONTEXT"),
         governance_mode=_mode("FLUJO_GOVERNANCE_MODE", "allow_all"),
         shadow_eval_enabled=_flag("FLUJO_SHADOW_EVAL_ENABLED"),
         shadow_eval_sample_rate=float(os.getenv("FLUJO_SHADOW_EVAL_SAMPLE_RATE", "0") or "0"),

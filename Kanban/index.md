@@ -138,3 +138,9 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 **Priority:** 🔵 Low | **Effort:** Medium | **Tags:** `Type-Safety`
 *   **Description:** Move away from `scratchpad: Dict[str, Any]`.
 *   **Implementation:** Force users to define Pydantic models for Context and validate Step I/O against them.
+*   **Plan (current):**
+    1. Introduce typed context enforcement flag (`FLUJO_ENFORCE_TYPED_CONTEXT`) and helper to require Pydantic BaseModel contexts.
+    2. Default is advisory (warning + pass-through); strict mode raises on plain dict contexts.
+    3. Tests: enforcement-on rejects dict, accepts BaseModel; enforcement-off allows dict.
+    4. Next slices: add step input/output key validation and migrate scratchpad usage toward typed fields.
+*   **Status:** Enforcement flag + helper + tests landed; stricter step I/O validation remains TODO.

@@ -26,6 +26,7 @@ from ...exceptions import (
     InfiniteRedirectError,
 )
 from ...domain.models import PipelineResult, StepResult, StepOutcome, Failure, Success
+from ...infra.settings import get_settings
 from .failure_builder import build_failure_outcome
 
 Outcome = Union[StepOutcome[StepResult], StepResult]
@@ -126,6 +127,39 @@ def normalize_frame_context(frame: Any) -> None:
     _ = getattr(frame, "resources", None)
     _ = getattr(frame, "limits", None)
     _ = getattr(frame, "on_chunk", None)
+
+
+def enforce_typed_context(context: Any) -> Any:
+    """Optionally enforce that context is a Pydantic BaseModel when configured.
+
+    When FLUJO_ENFORCE_TYPED_CONTEXT=1 (or settings.enforce_typed_context), plain
+    dict contexts are rejected to steer users toward typed models. By default,
+    the check is advisory and logs a warning.
+    """
+    if context is None:
+        return None
+    if isinstance(context, BaseModel):
+        return context
+
+    try:
+        settings = get_settings()
+        enforce = bool(getattr(settings, "enforce_typed_context", False))
+    except Exception:
+        enforce = False
+
+    if not enforce:
+        try:
+            from ...infra import telemetry as _telemetry
+
+            _telemetry.logfire.warning(
+                "Context is not a Pydantic BaseModel; typed contexts are recommended "
+                "(set FLUJO_ENFORCE_TYPED_CONTEXT=1 to enforce)."
+            )
+        except Exception:
+            pass
+        return context
+
+    raise TypeError("Context must be a Pydantic BaseModel when FLUJO_ENFORCE_TYPED_CONTEXT=1.")
 
 
 async def set_quota_and_hydrate(frame: Any, quota_manager: Any, hydration_manager: Any) -> None:
@@ -467,6 +501,7 @@ def make_execution_frame(
     result: Optional[StepResult] = None,
 ) -> ExecutionFrame[Any]:
     """Create an ExecutionFrame with the current quota context."""
+    context = enforce_typed_context(context)
     return ExecutionFrame(
         step=step,
         data=data,

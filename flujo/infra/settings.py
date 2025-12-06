@@ -121,6 +121,13 @@ class Settings(BaseSettings):
     # Enforce strict context isolation and merging (CI-friendly). Can be overridden per-executor.
     strict_context_isolation: bool = False
     strict_context_merge: bool = False
+    enforce_typed_context: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("FLUJO_ENFORCE_TYPED_CONTEXT", "flujo_enforce_typed_context"),
+        description=(
+            "When true, contexts must be Pydantic BaseModel instances; plain dicts are rejected."
+        ),
+    )
 
     # --- Background task management ---
     background_tasks: BackgroundTaskSettings = BackgroundTaskSettings()
