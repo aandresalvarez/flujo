@@ -191,12 +191,18 @@ def status(
     # State backend configuration insight (SQLite and PostgreSQL)
     try:
         from ..infra.config_manager import get_state_uri as _get_state_uri
+        from ..infra.config_manager import get_config_manager as _get_cfg_mgr
         from .config import _normalize_sqlite_path as _norm_sqlite
         from urllib.parse import urlparse as _urlparse
         from pathlib import Path
         import sqlite3 as _sql
 
         uri = _get_state_uri(force_reload=True)
+        try:
+            cfg_mgr = _get_cfg_mgr(force_reload=False)
+            config_path = getattr(cfg_mgr, "config_path", None)
+        except Exception:
+            config_path = None
         sqlite_info: JSONObject = {"configured": False}
         postgres_info: JSONObject = {"configured": False}
         if uri:
@@ -210,7 +216,9 @@ def status(
                 scheme_lower = parsed.scheme.lower()
                 if scheme_lower.startswith("sqlite"):
                     try:
-                        db_path = _norm_sqlite(uri, Path.cwd())
+                        db_path = _norm_sqlite(
+                            uri, Path.cwd(), config_dir=config_path.parent if config_path else None
+                        )
                         sqlite_info = {
                             "configured": True,
                             "path": db_path.as_posix(),

@@ -24,6 +24,7 @@ from ._shared import (
     time,
     to_outcome,
 )
+from ..executor_core import _CACHE_OVERRIDE
 from ..executor_helpers import make_execution_frame
 from flujo.exceptions import PipelineAbortSignal
 from .loop_hitl_orchestrator import clear_hitl_markers, propagate_pause_state
@@ -249,15 +250,13 @@ async def run_loop_iterations(
                                 pass
                 except Exception:
                     pass
-                prev_cache_enabled = bool(getattr(core, "_enable_cache", True))
+                token = _CACHE_OVERRIDE.set(False)
                 try:
-                    # Disable cache within loop iterations to avoid reusing stale results
-                    setattr(core, "_enable_cache", False)
                     pipeline_result: PipelineResult[Any] = await core._execute_pipeline(
                         body_pipeline, current_data, iteration_context, resources, limits, stream
                     )
                 finally:
-                    setattr(core, "_enable_cache", prev_cache_enabled)
+                    _CACHE_OVERRIDE.reset(token)
                 try:
                     scratch = getattr(iteration_context, "scratchpad", None)
                     if isinstance(scratch, dict):

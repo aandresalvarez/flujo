@@ -303,26 +303,25 @@ class StateSerializer(Generic[ContextT]):
     def serialize_step_history_minimal(
         self, step_history: Optional[list[StepResult]]
     ) -> list[JSONObject]:
-        out: list[JSONObject] = []
+        """Serialize only the most recent step to avoid quadratic growth."""
         if not step_history:
-            return out
-        for step_result in step_history:
-            try:
-                out.append(
-                    {
-                        "name": step_result.name,
-                        "output": step_result.output,
-                        "success": step_result.success,
-                        "cost_usd": step_result.cost_usd,
-                        "token_counts": step_result.token_counts,
-                        "attempts": step_result.attempts,
-                        "latency_s": step_result.latency_s,
-                        "feedback": step_result.feedback,
-                    }
-                )
-            except Exception:
-                continue
-        return out
+            return []
+        latest = step_history[-1]
+        try:
+            return [
+                {
+                    "name": latest.name,
+                    "output": latest.output,
+                    "success": latest.success,
+                    "cost_usd": latest.cost_usd,
+                    "token_counts": latest.token_counts,
+                    "attempts": latest.attempts,
+                    "latency_s": latest.latency_s,
+                    "feedback": latest.feedback,
+                }
+            ]
+        except Exception:
+            return []
 
     # -------------------------- Deserialization ---------------------------
 

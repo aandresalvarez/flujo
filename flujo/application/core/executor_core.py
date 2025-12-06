@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 import warnings
+from contextvars import ContextVar
 from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast, TYPE_CHECKING
 
 from ...domain.interfaces import StateProvider
@@ -119,6 +120,9 @@ try:
 except Exception:
     _DEFAULT_STRICT_CONTEXT_ISOLATION = False
     _DEFAULT_STRICT_CONTEXT_MERGE = False
+
+# Cache enable override to avoid mutating shared core state (used by loop/state-machine policies).
+_CACHE_OVERRIDE: ContextVar[bool | None] = ContextVar("CACHE_OVERRIDE", default=None)
 
 if TYPE_CHECKING:
     from .state_manager import StateManager
@@ -431,6 +435,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._cache_manager.generate_cache_key(
             frame.step, frame.data, frame.context, getattr(frame, "resources", None)
         )
+
+    def _cache_enabled(self) -> bool:
+        """Return whether cache is enabled, honoring task-local overrides."""
+        override = _CACHE_OVERRIDE.get(None)
+        if override is not None:
+            return bool(override)
+        return bool(self._enable_cache)
 
     _normalize_frame_context = staticmethod(normalize_frame_context)
 

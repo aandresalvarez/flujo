@@ -515,7 +515,14 @@ def _inject_context_with_deep_merge(
                     return None
                 except ValidationError as e:
                     for k, v in _original_fast.items():
-                        setattr(context, k, v)
+                        try:
+                            setattr(context, k, v)
+                        except Exception:
+                            try:
+                                object.__setattr__(context, k, v)
+                            except Exception:
+                                # Best-effort rollback; continue restoring other fields
+                                pass
                     return str(e)
     except Exception:
         # Fall through to the general path on any error

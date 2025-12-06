@@ -35,6 +35,20 @@ class TaskClient:
             self._backend = load_backend_from_config()
             self._owns_backend = True
         self._state_manager: StateManager[PipelineContext] = StateManager(self._backend)
+        self._closed = False
+
+    def __del__(self) -> None:
+        # Best-effort warning for unclosed clients; avoid raising during GC.
+        try:
+            if self._owns_backend and not self._closed:
+                import warnings
+
+                warnings.warn(
+                    "TaskClient was not closed; resources may be leaked. Use 'async with TaskClient()' or call close().",
+                    ResourceWarning,
+                )
+        except Exception:
+            pass
 
     @property
     def backend(self) -> StateBackend:
@@ -228,6 +242,34 @@ class TaskClient:
             return None
         return self._build_system_state(stored)
 
+    async def close(self) -> None:
+        """Cleanly shutdown the backend connection if owned by this client.
+
+        If the backend was injected externally (passed into __init__), this method
+        will not close it, as the caller owns the lifecycle.
+        """
+        if self._closed:
+            return
+        if not self._owns_backend:
+            self._closed = True
+            return
+
+        shutdown_fn = getattr(self._backend, "shutdown", None)
+        if shutdown_fn is not None and callable(shutdown_fn):
+            result = shutdown_fn()
+            if inspect.isawaitable(result):
+                await result
+            self._closed = True
+            return
+
+        close_fn = getattr(self._backend, "close", None)
+        if close_fn is not None and callable(close_fn):
+            result = close_fn()
+            if inspect.isawaitable(result):
+                await result
+
+        self._closed = True
+
     def _build_system_state(self, record: JSONObject) -> SystemState:
         value = self._coerce_json_object(record.get("value"))
         updated_at = self._coerce_datetime(record.get("updated_at"))
@@ -324,28 +366,6 @@ class TaskClient:
                     if isinstance(schema, dict):
                         return schema
         return None
-
-    async def close(self) -> None:
-        """Cleanly shutdown the backend connection if owned by this client.
-
-        If the backend was injected externally (passed into __init__), this method
-        will not close it, as the caller owns the lifecycle.
-        """
-        if not self._owns_backend:
-            return
-
-        shutdown_fn = getattr(self._backend, "shutdown", None)
-        if shutdown_fn is not None and callable(shutdown_fn):
-            result = shutdown_fn()
-            if inspect.isawaitable(result):
-                await result
-            return
-
-        close_fn = getattr(self._backend, "close", None)
-        if close_fn is not None and callable(close_fn):
-            result = close_fn()
-            if inspect.isawaitable(result):
-                await result
 
     async def __aenter__(self) -> "TaskClient":
         """Async context manager entry."""

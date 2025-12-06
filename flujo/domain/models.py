@@ -304,6 +304,8 @@ class Quota:
         # Use non-negative values; infinity allowed for cost
         self._remaining_cost_usd = float(remaining_cost_usd)
         self._remaining_tokens = int(remaining_tokens)
+        # Quota methods are synchronous/non-blocking; RLock is adequate in the single-threaded
+        # asyncio model we run in. If await points are added in the future, switch to asyncio.Lock.
         self._lock: RLock = RLock()
 
     def get_remaining(self) -> Tuple[float, int]:

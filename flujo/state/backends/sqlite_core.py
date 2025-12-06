@@ -746,21 +746,24 @@ class SQLiteBackendBase(StateBackend):
                 break
 
         try:
-            # Try to move the corrupted file to backup location using Path.rename
-            self.db_path.rename(backup_path)
+            # Try to move the corrupted file to backup location using Path.rename (offloaded)
+            await asyncio.to_thread(self.db_path.rename, backup_path)
             telemetry.logfire.warning(f"Corrupted database backed up to {backup_path}")
         except (OSError, IOError):
-            # If move fails, try to copy and then remove
+            # If move fails, try to copy and then remove (offloaded to avoid blocking loop)
             try:
                 import shutil
 
-                shutil.copy2(str(self.db_path), str(backup_path))
-                self.db_path.unlink()
+                def _copy_and_remove() -> None:
+                    shutil.copy2(str(self.db_path), str(backup_path))
+                    self.db_path.unlink()
+
+                await asyncio.to_thread(_copy_and_remove)
                 telemetry.logfire.warning(f"Corrupted database copied to {backup_path} and removed")
             except (OSError, IOError) as copy_error:
                 # If all else fails, just remove the corrupted file
                 try:
-                    self.db_path.unlink()
+                    await asyncio.to_thread(self.db_path.unlink)
                     telemetry.logfire.warning(f"Corrupted database removed: {copy_error}")
                 except (OSError, IOError) as remove_error:
                     telemetry.logfire.error(f"Failed to remove corrupted database: {remove_error}")

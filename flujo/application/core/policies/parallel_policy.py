@@ -543,7 +543,15 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                         p.cancel()
                     try:
                         if pending:
-                            await asyncio.gather(*pending, return_exceptions=True)
+                            results = await asyncio.gather(*pending, return_exceptions=True)
+                            for r in results:
+                                if isinstance(r, Exception) and not isinstance(
+                                    r, asyncio.CancelledError
+                                ):
+                                    telemetry.logfire.error(
+                                        "Parallel branch task error during cancellation",
+                                        extra={"error": str(r)},
+                                    )
                     except Exception:
                         pass
                     raise
@@ -555,7 +563,15 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     p.cancel()
                 try:
                     if pending:
-                        await asyncio.gather(*pending, return_exceptions=True)
+                        results = await asyncio.gather(*pending, return_exceptions=True)
+                        for r in results:
+                            if isinstance(r, Exception) and not isinstance(
+                                r, asyncio.CancelledError
+                            ):
+                                telemetry.logfire.error(
+                                    "Parallel branch task error during cancellation",
+                                    extra={"error": str(r)},
+                                )
                 except Exception:
                     pass
                 if pause_branch:
@@ -569,7 +585,15 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     p.cancel()
                 try:
                     if pending:
-                        await asyncio.gather(*pending, return_exceptions=True)
+                        results = await asyncio.gather(*pending, return_exceptions=True)
+                        for r in results:
+                            if isinstance(r, Exception) and not isinstance(
+                                r, asyncio.CancelledError
+                            ):
+                                telemetry.logfire.error(
+                                    "Parallel branch task error during cancellation",
+                                    extra={"error": str(r)},
+                                )
                 except Exception:
                     pass
                 if abort_branch:
@@ -585,7 +609,15 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     p.cancel()
                 try:
                     if pending:
-                        await asyncio.gather(*pending, return_exceptions=True)
+                        results = await asyncio.gather(*pending, return_exceptions=True)
+                        for r in results:
+                            if isinstance(r, Exception) and not isinstance(
+                                r, asyncio.CancelledError
+                            ):
+                                telemetry.logfire.error(
+                                    "Parallel branch task error during cancellation",
+                                    extra={"error": str(r)},
+                                )
                 except Exception:
                     pass
                 # Build a PipelineResult with any branch results we have so far
@@ -618,7 +650,15 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                             p.cancel()
                         if pending:
                             try:
-                                await asyncio.gather(*pending, return_exceptions=True)
+                                results = await asyncio.gather(*pending, return_exceptions=True)
+                                for r in results:
+                                    if isinstance(r, Exception) and not isinstance(
+                                        r, asyncio.CancelledError
+                                    ):
+                                        telemetry.logfire.error(
+                                            "Parallel branch task error during cancellation",
+                                            extra={"error": str(r)},
+                                        )
                             except Exception:
                                 pass
                         pipeline_result: PipelineResult[Any] = PipelineResult(

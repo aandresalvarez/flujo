@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import heapq
 import json
 import sqlite3
 import struct
-from pathlib import Path
-from typing import Sequence, Any
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Sequence
 
 from ...domain.memory import (
     MemoryRecord,
@@ -16,6 +17,8 @@ from ...domain.memory import (
     _assign_id,
     _cosine_similarity,
 )
+
+FETCH_CHUNK_SIZE = 512
 
 
 def _ensure_directory(db_path: Path) -> None:
@@ -102,44 +105,62 @@ class SQLiteVectorStore(VectorStoreProtocol):
 
     async def query(self, query: VectorQuery) -> list[ScoredMemory]:
         await self._init()
-        rows = await asyncio.to_thread(self._fetch_all)
-        results: list[ScoredMemory] = []
-        for row in rows:
-            rec_id, blob, payload_json, metadata_json, created_at = row
-            vector = _deserialize_vector(blob)
-            score = _cosine_similarity(query.vector, vector)
-            payload: Any | None = json.loads(payload_json) if payload_json else None
-            metadata = json.loads(metadata_json) if metadata_json else None
-            if isinstance(created_at, str):
-                ts = datetime.fromisoformat(created_at)
-            elif created_at is None:
-                ts = datetime.now()
-            else:
-                ts = datetime.fromtimestamp(float(created_at))
-            record = MemoryRecord(
-                id=rec_id,
-                vector=vector,
-                payload=payload,
-                metadata=metadata,
-                timestamp=ts,
-            )
-            if query.filter_metadata and metadata:
-                matches = True
-                for key, value in query.filter_metadata.items():
-                    if metadata.get(key) != value:
-                        matches = False
-                        break
-                if not matches:
-                    continue
-            results.append(ScoredMemory(record=record, score=score))
-        results.sort(key=lambda item: (-item.score, item.record.id or ""))
-        return results[: max(query.limit, 0)]
+        limit = max(query.limit, 0)
+        if limit == 0:
+            return []
 
-    def _fetch_all(self) -> list[tuple[str, bytes, str | None, str | None, str | None]]:
+        return await asyncio.to_thread(self._query_top_k_sync, query, limit)
+
+    def _query_top_k_sync(self, query: VectorQuery, limit: int) -> list[ScoredMemory]:
+        """Compute top-k cosine similarities without loading entire table into memory."""
         conn = sqlite3.connect(self._db_path)
         try:
             cur = conn.execute("SELECT id, vector, payload, metadata, created_at FROM memories")
-            return list(cur.fetchall())
+            heap: list[tuple[float, ScoredMemory]] = []
+            while True:
+                rows = cur.fetchmany(FETCH_CHUNK_SIZE)
+                if not rows:
+                    break
+                for rec_id, blob, payload_json, metadata_json, created_at in rows:
+                    vector = _deserialize_vector(blob)
+                    score = _cosine_similarity(query.vector, vector)
+                    payload: Any | None = json.loads(payload_json) if payload_json else None
+                    metadata = json.loads(metadata_json) if metadata_json else None
+                    ts = (
+                        datetime.fromisoformat(created_at)
+                        if isinstance(created_at, str)
+                        else datetime.now()
+                        if created_at is None
+                        else datetime.fromtimestamp(float(created_at))
+                    )
+                    if query.filter_metadata and metadata:
+                        matches = True
+                        for key, value in query.filter_metadata.items():
+                            if metadata.get(key) != value:
+                                matches = False
+                                break
+                        if not matches:
+                            continue
+
+                    record = MemoryRecord(
+                        id=rec_id,
+                        vector=vector,
+                        payload=payload,
+                        metadata=metadata,
+                        timestamp=ts,
+                    )
+                    scored = ScoredMemory(record=record, score=score)
+
+                    if len(heap) < limit:
+                        heapq.heappush(heap, (score, scored))
+                    else:
+                        # Maintain min-heap of top-k
+                        if heap and score > heap[0][0]:
+                            heapq.heapreplace(heap, (score, scored))
+
+            # Sort by score desc then id for deterministic ordering
+            heap.sort(key=lambda item: (-item[0], item[1].record.id or ""))
+            return [item[1] for item in heap]
         finally:
             conn.close()
 
