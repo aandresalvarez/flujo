@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 
 
 @dataclass
@@ -27,6 +27,11 @@ class Settings:
     shadow_eval_timeout_s: float = 30.0
     shadow_eval_judge_model: str = "openai:gpt-4o-mini"
     shadow_eval_sink: str = "telemetry"
+    sandbox_mode: Literal["null", "remote", "docker"] = "null"
+    sandbox_api_url: str | None = None
+    sandbox_api_key: str | None = None
+    sandbox_timeout_s: float = 60.0
+    sandbox_verify_ssl: bool = True
 
 
 _CACHED_SETTINGS: Optional[Settings] = None
@@ -46,6 +51,10 @@ def _load_from_env() -> Settings:
             return default
         return normalized  # type: ignore[return-value]
 
+    _sandbox_mode = os.getenv("FLUJO_SANDBOX_MODE", "null").lower().strip() or "null"
+    if _sandbox_mode not in {"null", "remote", "docker"}:
+        _sandbox_mode = "null"
+
     return Settings(
         # Always use pure quota mode - legacy system removed
         pure_quota_mode=True,
@@ -60,6 +69,13 @@ def _load_from_env() -> Settings:
         shadow_eval_timeout_s=float(os.getenv("FLUJO_SHADOW_EVAL_TIMEOUT_S", "30") or "30"),
         shadow_eval_judge_model=os.getenv("FLUJO_SHADOW_EVAL_JUDGE_MODEL", "openai:gpt-4o-mini"),
         shadow_eval_sink=os.getenv("FLUJO_SHADOW_EVAL_SINK", "telemetry"),
+        sandbox_mode=cast(Literal["null", "remote", "docker"], _sandbox_mode),
+        sandbox_api_url=os.getenv("FLUJO_SANDBOX_API_URL"),
+        sandbox_api_key=os.getenv("FLUJO_SANDBOX_API_KEY"),
+        sandbox_timeout_s=float(os.getenv("FLUJO_SANDBOX_TIMEOUT_S", "60") or "60"),
+        sandbox_verify_ssl=_flag("FLUJO_SANDBOX_VERIFY_SSL")
+        if "FLUJO_SANDBOX_VERIFY_SSL" in os.environ
+        else True,
     )
 
 

@@ -61,6 +61,37 @@ class ShadowEvalSettings(BaseModel):
     )
 
 
+class SandboxSettings(BaseModel):
+    """Settings for sandboxed code execution."""
+
+    mode: Literal["null", "remote", "docker"] = Field(
+        default="null",
+        validation_alias=AliasChoices("FLUJO_SANDBOX_MODE", "flujo_sandbox_mode"),
+        description="Sandbox provider to use: null (disabled), remote, or docker.",
+    )
+    api_url: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("FLUJO_SANDBOX_API_URL", "flujo_sandbox_api_url"),
+        description="Base URL for remote sandbox API (required for remote mode).",
+    )
+    api_key: Optional[SecretStr] = Field(
+        default=None,
+        validation_alias=AliasChoices("FLUJO_SANDBOX_API_KEY", "flujo_sandbox_api_key"),
+        description="API key for remote sandbox (optional).",
+    )
+    timeout_seconds: int = Field(
+        default=60,
+        validation_alias=AliasChoices("FLUJO_SANDBOX_TIMEOUT_S", "flujo_sandbox_timeout_s"),
+        description="Request timeout in seconds for sandbox executions.",
+        ge=1,
+    )
+    verify_ssl: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("FLUJO_SANDBOX_VERIFY_SSL", "flujo_sandbox_verify_ssl"),
+        description="Whether to verify TLS certificates for remote sandbox.",
+    )
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables. Standard names are preferred."""
 
@@ -128,6 +159,7 @@ class Settings(BaseSettings):
             "When true, contexts must be Pydantic BaseModel instances; plain dicts are rejected."
         ),
     )
+    sandbox: SandboxSettings = SandboxSettings()
     memory_indexing_enabled: bool = Field(
         default=False,
         validation_alias=AliasChoices(

@@ -1,9 +1,10 @@
 import pytest
+from typing import Any
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.runtime_builder import FlujoRuntimeBuilder
 from flujo.domain.sandbox import SandboxExecution, SandboxProtocol, SandboxResult
-from flujo.infra.sandbox import NullSandbox
+from flujo.infra.sandbox import NullSandbox, RemoteSandbox
 
 
 class DummySandbox(SandboxProtocol):
@@ -49,3 +50,10 @@ def test_executor_core_exposes_sandbox() -> None:
     deps = FlujoRuntimeBuilder().build(sandbox=custom)
     core = ExecutorCore(deps=deps)
     assert core.sandbox is custom
+
+
+def test_runtime_builder_selects_remote_sandbox(monkeypatch: Any) -> None:
+    monkeypatch.setenv("FLUJO_SANDBOX_MODE", "remote")
+    monkeypatch.setenv("FLUJO_SANDBOX_API_URL", "https://sandbox")
+    deps = FlujoRuntimeBuilder().build()
+    assert isinstance(deps.sandbox, RemoteSandbox)

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from flujo.application.core.shadow_evaluator import ShadowEvalConfig, ShadowEvaluator
+from flujo.domain.evaluation import EvaluationScore
 
 
 class DummyBg:
@@ -78,3 +79,38 @@ def test_shadow_eval_disabled(monkeypatch: Any) -> None:
         core=object(), step=SimpleNamespace(name="s1"), result=SimpleNamespace(success=True)
     )
     assert created == []
+
+
+@pytest.mark.asyncio
+async def test_run_judge_invokes_agent(monkeypatch: Any) -> None:
+    calls: list[dict[str, Any]] = []
+
+    class DummyAgent:
+        def __init__(self) -> None:
+            self.seen = calls
+
+        async def run(self, payload: dict[str, Any]) -> EvaluationScore:
+            self.seen.append(payload)
+            return EvaluationScore(score=0.8, reasoning="ok", criteria={"quality": 0.8})
+
+    def fake_make_agent_async(**_: Any) -> DummyAgent:
+        return DummyAgent()
+
+    monkeypatch.setattr(
+        "flujo.application.core.shadow_evaluator.make_agent_async", fake_make_agent_async
+    )
+
+    evaluator = ShadowEvaluator(
+        config=ShadowEvalConfig(
+            enabled=True,
+            sample_rate=1.0,
+            timeout_s=1.0,
+            judge_model="test-model",
+            sink="telemetry",
+        ),
+        background_task_manager=DummyBg(),
+    )
+
+    await evaluator._run_judge(core=object(), payload={"step_name": "s1", "output": "x"})
+
+    assert calls and calls[0]["step_name"] == "s1"

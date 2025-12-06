@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...infra import telemetry
+from ...agents.wrapper import make_agent_async
+from ...domain.evaluation import EvaluationScore
 
 
 @dataclass
@@ -91,13 +93,46 @@ class ShadowEvaluator:
                 pass
 
     async def _run_judge(self, *, core: Any, payload: dict[str, Any]) -> None:
-        # Placeholder: future implementation can invoke Evaluator agent.
-        # Today we log telemetry for observability without modifying user flows.
-        telemetry.logfire.info(
-            "[ShadowEval] judge invoked",
-            extra={
-                "model": self._config.judge_model,
-                "sink": self._config.sink,
-                "step": payload.get("step_name"),
-            },
+        model = self._config.judge_model
+        step_name = payload.get("step_name")
+        judge_prompt = (
+            "You are a strict evaluator of step outputs.\n"
+            "Provide a numeric score between 0.0 and 1.0 where 1.0 is perfect.\n"
+            "Respond as JSON matching the schema: "
+            '{"score": <float>, "reasoning": <string>, "criteria": {"<name>": <float>}}.\n'
+            "Focus on correctness and safety; be concise."
         )
+
+        agent = make_agent_async(
+            model=model,
+            system_prompt=judge_prompt,
+            output_type=EvaluationScore,
+            max_retries=1,
+            timeout=int(self._config.timeout_s),
+            auto_repair=True,
+        )
+
+        try:
+            result = await agent.run(payload)
+        except Exception as exc:
+            telemetry.logfire.warning(
+                "[ShadowEval] judge error",
+                extra={"step": step_name, "error": str(exc)},
+            )
+            return
+
+        score_obj = result if isinstance(result, EvaluationScore) else None
+        score_value = getattr(score_obj, "score", None)
+        reasoning = getattr(score_obj, "reasoning", None)
+        criteria = getattr(score_obj, "criteria", None)
+
+        if self._config.sink == "telemetry":
+            telemetry.logfire.info(
+                "[ShadowEval] judge score",
+                extra={
+                    "step": step_name,
+                    "score": score_value,
+                    "reasoning": reasoning,
+                    "criteria": criteria if isinstance(criteria, dict) else None,
+                },
+            )

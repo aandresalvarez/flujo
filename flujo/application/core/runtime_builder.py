@@ -83,7 +83,7 @@ from .step_policies import (
 from ...domain.memory import VectorStoreProtocol
 from ...domain.sandbox import SandboxProtocol
 from ...infra.memory import NullVectorStore, MemoryManager, NullMemoryManager
-from ...infra.sandbox import NullSandbox
+from ...infra.sandbox import NullSandbox, RemoteSandbox, DockerSandbox
 from ...utils.config import get_settings
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -226,7 +226,6 @@ class FlujoRuntimeBuilder:
         )
         memory_store_obj: VectorStoreProtocol = memory_store or NullVectorStore()
         background_task_manager_obj = background_task_manager or BackgroundTaskManager()
-        sandbox_obj: SandboxProtocol = sandbox or NullSandbox()
         # Memory manager wiring (optional, disabled by default)
         try:
             from ...embeddings import get_embedding_client
@@ -234,6 +233,31 @@ class FlujoRuntimeBuilder:
             get_embedding_client = None  # type: ignore
 
         settings = get_settings()
+        sandbox_mode = getattr(settings, "sandbox_mode", "null")
+        sandbox_obj: SandboxProtocol
+        if sandbox is not None:
+            sandbox_obj = sandbox
+        elif sandbox_mode == "remote":
+            api_url = getattr(settings, "sandbox_api_url", None)
+            if api_url:
+                try:
+                    sandbox_obj = RemoteSandbox(
+                        api_url=api_url,
+                        api_key=getattr(settings, "sandbox_api_key", None),
+                        timeout_s=float(getattr(settings, "sandbox_timeout_s", 60.0)),
+                        verify_ssl=bool(getattr(settings, "sandbox_verify_ssl", True)),
+                    )
+                except Exception:
+                    sandbox_obj = NullSandbox()
+            else:
+                sandbox_obj = NullSandbox()
+        elif sandbox_mode == "docker":
+            try:
+                sandbox_obj = DockerSandbox()
+            except Exception:
+                sandbox_obj = NullSandbox()
+        else:
+            sandbox_obj = NullSandbox()
         memory_enabled = bool(getattr(settings, "memory_indexing_enabled", False))
         memory_model = getattr(settings, "memory_embedding_model", None)
 

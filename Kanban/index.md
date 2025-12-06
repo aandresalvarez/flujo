@@ -110,7 +110,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     2. Hook after step/pipeline completion (ResultHandler or PipelineOrchestrator) to enqueue background eval with immutable snapshot of input/output/metadata; isolate from user quota.
     3. Background worker runs judge agent/tool, records score/reason, emits telemetry counters (sampled/queued/succeeded/failed, latency) and does not affect user path on failure.
     4. Tests: sampling logic (probabilistic mock), no-op when disabled, enqueue when enabled, judge failure is non-fatal, telemetry metrics emitted.
-*   **Status:** Partial (~70%). Sampling + scheduling + telemetry shipped; judge implementation is placeholder. Pending: implement real judge agent scoring and optional persistent sink.
+*   **Status:** Partial (~85%). Sampling + scheduling + telemetry shipped; judge agent now implemented with `make_agent_async` + `EvaluationScore` schema. Pending: optional persistent sink/storage if needed.
 
 ### [TASK-010] Abstracted Memory Interface
 **Priority:** 🔵 Low | **Effort:** High | **Tags:** `RAG`, `Architecture`
@@ -135,7 +135,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     4. Tests: default null sandbox, custom injection via builder, and core exposure; ensure type safety.
     5. Builtin `code_interpreter` skill wired to the sandbox; returns structured stdout/stderr/exit-code.
     6. Next slices: remote sandbox adapter and optional docker extra (not yet implemented).
-*   **Status:** Partial (~45%). Protocol + NullSandbox + DI + tests done; `code_interpreter` skill shipped. Pending: RemoteSandbox (API-based) and optional DockerSandbox.
+*   **Status:** Partial (~70%). Protocol + NullSandbox + DI + `code_interpreter` skill shipped. RemoteSandbox implemented (API-based) with settings. DockerSandbox placeholder added; full docker integration remains optional.
 
 ### [TASK-012] Formalize Context Typing
 **Priority:** 🔵 Low | **Effort:** Medium | **Tags:** `Type-Safety`
