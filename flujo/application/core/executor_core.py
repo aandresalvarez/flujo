@@ -450,9 +450,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         result: StepResult,
         cache_key: Optional[str],
         called_with_frame: bool,
+        frame: ExecutionFrame[Any] | None = None,
     ) -> StepOutcome[StepResult] | StepResult:
         return await persist_and_finalize(
-            self, step=step, result=result, cache_key=cache_key, called_with_frame=called_with_frame
+            self,
+            step=step,
+            result=result,
+            cache_key=cache_key,
+            called_with_frame=called_with_frame,
+            frame=frame,
         )
 
     def _handle_unexpected_exception(

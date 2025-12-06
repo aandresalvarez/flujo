@@ -143,6 +143,7 @@ class ResultHandler:
         result: StepResult,
         cache_key: Optional[str],
         called_with_frame: bool,
+        frame: ExecutionFrame[Any] | None = None,
     ) -> StepOutcome[StepResult] | StepResult:
         """Persist cache if applicable and return standardized result."""
         await self._core._cache_manager.maybe_persist_step_result(
@@ -161,7 +162,7 @@ class ResultHandler:
                 await memory_manager.index_step_output(
                     step_name=self._core._safe_step_name(step),
                     result=result,
-                    context=None,
+                    context=getattr(frame, "context", None) if frame is not None else None,
                 )
         except Exception:
             pass

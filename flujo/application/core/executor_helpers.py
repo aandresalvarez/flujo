@@ -327,7 +327,11 @@ async def execute_flow(
     return cast(
         Outcome,
         await core._persist_and_finalize(
-            step=step, result=result, cache_key=cache_key, called_with_frame=called_with_frame
+            step=step,
+            result=result,
+            cache_key=cache_key,
+            called_with_frame=called_with_frame,
+            frame=frame if called_with_frame else None,
         ),
     )
 
@@ -369,12 +373,17 @@ async def persist_and_finalize(
     result: StepResult,
     cache_key: Optional[str],
     called_with_frame: bool,
+    frame: ExecutionFrame[Any] | None = None,
 ) -> StepOutcome[StepResult] | StepResult:
     """Delegate cache persist/finalize."""
     return cast(
         Outcome,
         await core._result_handler.persist_and_finalize(
-            step=step, result=result, cache_key=cache_key, called_with_frame=called_with_frame
+            step=step,
+            result=result,
+            cache_key=cache_key,
+            called_with_frame=called_with_frame,
+            frame=frame,
         ),
     )
 

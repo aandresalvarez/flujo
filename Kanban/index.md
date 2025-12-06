@@ -122,7 +122,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     3. Wire into DI: expose optional `memory_store`/`memory_manager` via `ExecutorCoreDeps` + `FlujoRuntimeBuilder`; default to Null store; consider a non-serialized handle on `PipelineContext`.
     4. Tests: protocol conformance, in-memory add/query/delete determinism, DI wiring defaults/null, and mypy strictness.
     5. Docs/Kanban: document interface intent and defaults; do not bake in pgvector.
-*   **Status:** Partial (~60%). VectorStoreProtocol + primitives + Null/InMemory stores + DI done. Pending: MemoryManager to index step outputs, context `retrieve()` helper, and any production stores (pgvector/chroma optional).
+*   **Status:** Partial (~95%). VectorStoreProtocol + primitives + Null/InMemory stores + DI done; MemoryManager indexing wired with context, and `PipelineContext.retrieve()` shipped. Pending: optional production stores (pgvector/chroma).
 
 ### [TASK-011] Sandbox Execution Interface
 **Priority:** 🔵 Low | **Effort:** High | **Tags:** `Security`
@@ -134,8 +134,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     3. Wire into DI: add `sandbox` to `ExecutorCoreDeps` + `FlujoRuntimeBuilder`, expose via `core.sandbox`.
     4. Tests: default null sandbox, custom injection via builder, and core exposure; ensure type safety.
     5. Builtin `code_interpreter` skill wired to the sandbox; returns structured stdout/stderr/exit-code.
-    6. Next slices: remote sandbox adapter and optional docker extra (not yet implemented).
-*   **Status:** Partial (~70%). Protocol + NullSandbox + DI + `code_interpreter` skill shipped. RemoteSandbox implemented (API-based) with settings. DockerSandbox placeholder added; full docker integration remains optional.
+*   **Status:** Partial (~95%). Protocol + NullSandbox + DI + `code_interpreter` skill shipped. RemoteSandbox implemented (API-based) with artifact support; DockerSandbox implemented for python workloads. Optional enhancements: multi-language docker images or richer artifact capture.
 
 ### [TASK-012] Formalize Context Typing
 **Priority:** 🔵 Low | **Effort:** Medium | **Tags:** `Type-Safety`
