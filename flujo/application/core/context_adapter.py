@@ -428,7 +428,7 @@ def _build_context_update(output: BaseModel | dict[str, Any] | Any) -> dict[str,
             result = output.final_pipeline_context.model_dump(exclude_unset=False)
             return result if isinstance(result, dict) else None
         # Handle regular BaseModel objects
-        result = output.model_dump(exclude_unset=True)
+        result = output.model_dump(exclude_unset=True, exclude_none=False)
         return result if isinstance(result, dict) else None
     if isinstance(output, dict):
         return output

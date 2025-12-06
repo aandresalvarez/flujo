@@ -56,6 +56,12 @@ class OpenTelemetryHook:
         self._active_spans: Dict[str, Span] = {}
         # Monotonic start times for step spans (fallback latency computation)
         self._mono_start: Dict[str, float] = {}
+        try:
+            from flujo.utils.redact import summarize_and_redact_prompt
+
+            self._redact = summarize_and_redact_prompt
+        except Exception:
+            self._redact = lambda x: "<redacted>"
 
     async def hook(self, payload: HookPayload) -> None:
         if getattr(payload, "is_background", False):
@@ -133,7 +139,8 @@ class OpenTelemetryHook:
         span = self.tracer.start_span(name_for_span, context=ctx)
         # Canonical attributes (best-effort)
         try:
-            span.set_attribute("step_input", str(getattr(payload, "step_input", "")))
+            raw_input = str(getattr(payload, "step_input", ""))
+            span.set_attribute("step_input", self._redact(raw_input))
         except Exception:
             pass
         try:
@@ -220,6 +227,12 @@ class OpenTelemetryHook:
             span.set_attribute(
                 "flujo.budget.actual_tokens", getattr(payload.step_result, "token_counts", 0)
             )
+            try:
+                span.set_attribute(
+                    "step_output", self._redact(str(getattr(payload.step_result, "output", "")))
+                )
+            except Exception:
+                pass
             # Emit fallback event if metadata indicates it
             try:
                 md = getattr(payload.step_result, "metadata_", {}) or {}

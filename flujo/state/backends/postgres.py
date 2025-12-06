@@ -724,26 +724,31 @@ class PostgresBackend(StateBackend):
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO steps (
-                    run_id, step_name, step_index, status, output, raw_response, cost_usd,
-                    token_counts, execution_time_ms, created_at
-                ) VALUES (
-                    $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO steps (
+                        run_id, step_name, step_index, status, output, raw_response, cost_usd,
+                        token_counts, execution_time_ms, created_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10
+                    )
+                    """,
+                    step_data["run_id"],
+                    step_data["step_name"],
+                    step_data["step_index"],
+                    step_data.get("status", "completed"),
+                    _jsonb(step_data.get("output")),
+                    _jsonb(step_data.get("raw_response")),
+                    step_data.get("cost_usd"),
+                    step_data.get("token_counts"),
+                    step_data.get("execution_time_ms"),
+                    step_data.get("created_at", datetime.now(timezone.utc)),
                 )
-                """,
-                step_data["run_id"],
-                step_data["step_name"],
-                step_data["step_index"],
-                step_data.get("status", "completed"),
-                _jsonb(step_data.get("output")),
-                _jsonb(step_data.get("raw_response")),
-                step_data.get("cost_usd"),
-                step_data.get("token_counts"),
-                step_data.get("execution_time_ms"),
-                step_data.get("created_at", datetime.now(timezone.utc)),
-            )
+                await conn.execute(
+                    "UPDATE runs SET updated_at = NOW() WHERE run_id = $1",
+                    step_data["run_id"],
+                )
 
     async def save_run_end(self, run_id: str, end_data: JSONObject) -> None:
         await self._ensure_init()

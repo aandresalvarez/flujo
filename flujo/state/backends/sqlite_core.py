@@ -783,7 +783,18 @@ class SQLiteBackendBase(StateBackend):
 
                 def _copy_and_remove() -> None:
                     shutil.copy2(str(self.db_path), str(backup_path))
-                    self.db_path.unlink()
+                    wal = self.db_path.with_suffix(self.db_path.suffix + "-wal")
+                    shm = self.db_path.with_suffix(self.db_path.suffix + "-shm")
+                    if wal.exists():
+                        shutil.copy2(str(wal), str(backup_path) + "-wal")
+                    if shm.exists():
+                        shutil.copy2(str(shm), str(backup_path) + "-shm")
+                    self.db_path.unlink(missing_ok=True)
+                    try:
+                        wal.unlink(missing_ok=True)
+                        shm.unlink(missing_ok=True)
+                    except Exception:
+                        pass
 
                 await asyncio.to_thread(_copy_and_remove)
                 telemetry.logfire.warning(f"Corrupted database copied to {backup_path} and removed")
