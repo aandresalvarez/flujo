@@ -1,7 +1,6 @@
 from __future__ import annotations
 import asyncio
 import warnings
-from contextvars import ContextVar
 from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast, TYPE_CHECKING
 
 from ...domain.interfaces import StateProvider
@@ -121,8 +120,7 @@ except Exception:
     _DEFAULT_STRICT_CONTEXT_ISOLATION = False
     _DEFAULT_STRICT_CONTEXT_MERGE = False
 
-# Cache enable override to avoid mutating shared core state (used by loop/state-machine policies).
-_CACHE_OVERRIDE: ContextVar[bool | None] = ContextVar("CACHE_OVERRIDE", default=None)
+from .executor_helpers import _CACHE_OVERRIDE
 
 if TYPE_CHECKING:
     from .state_manager import StateManager
