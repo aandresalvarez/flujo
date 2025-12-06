@@ -62,9 +62,40 @@ def generate_openapi_agents(
         raise ValueError("No operations found in OpenAPI spec")
 
     functions: list[str] = []
+    response_models: dict[str, str] = {}
     for path, method, op in ops:
         op_id = op.get("operationId") or f"{method}_{path}"
         fname = _safe_name(op_id)
+        resp_model = "dict"
+        try:
+            responses = op.get("responses") or {}
+            for status_code in ("200", "201", "202"):
+                resp_obj = responses.get(status_code)
+                if not isinstance(resp_obj, dict):
+                    continue
+                content = resp_obj.get("content") or {}
+                if not isinstance(content, dict):
+                    continue
+                json_content = content.get("application/json")
+                if not isinstance(json_content, dict):
+                    continue
+                schema = json_content.get("schema")
+                if not isinstance(schema, dict):
+                    continue
+                ref = schema.get("$ref")
+                if isinstance(ref, str):
+                    resp_model = ref.split("/")[-1]
+                    break
+                type_hint = schema.get("type")
+                if type_hint == "array":
+                    resp_model = "list"
+                    break
+                if type_hint == "object":
+                    resp_model = "dict"
+                    break
+        except Exception:
+            resp_model = "dict"
+        response_models[fname] = resp_model
         functions.append(
             f"""
 async def {fname}(
@@ -89,6 +120,11 @@ async def {fname}(
         )
 
     func_list = ", ".join(_safe_name(op.get("operationId") or f"{m}_{p}") for p, m, op in ops)
+    resp_map_lines = "\n".join(
+        f'    "{name}": {model if model in {"dict", "list"} else model},'
+        for name, model in response_models.items()
+    )
+    op_func_lines = "\n".join(f'    "{name}": {name},' for name in response_models.keys())
     content = f'''"""
 Auto-generated OpenAPI agent wrappers.
 
@@ -101,6 +137,12 @@ from typing import Any
 import httpx
 
 from flujo.agents.wrapper import make_agent_async, AsyncAgentWrapper
+from .generated_models import *  # noqa: F401,F403
+
+# Response models per operation (if schema was detected)
+RESPONSE_MODELS = {{
+{resp_map_lines}
+}}
 
 
 async def _http_request(
@@ -124,6 +166,11 @@ async def _http_request(
 
 {"".join(functions)}
 
+OPERATION_FUNCS = {{
+{op_func_lines}
+}}
+
+
 def make_openapi_agent(
     *,
     base_url: str,
@@ -139,6 +186,28 @@ def make_openapi_agent(
         tools=tools,
         output_type=dict,
         metadata={{"openapi_models_package": "{models_package}"}},
+    )
+
+
+def make_openapi_operation_agent(
+    *,
+    base_url: str,
+    operation: str,
+    model: str = "openai:gpt-4o-mini",
+    system_prompt: str | None = None,
+) -> AsyncAgentWrapper:
+    \"\"\"Create an agent for a single OpenAPI operation with typed output when known.\"\"\"
+    if operation not in OPERATION_FUNCS:
+        raise ValueError(f"Unknown operation: {{operation}}")
+    tool = OPERATION_FUNCS[operation]
+    prompt = system_prompt or "You are an API caller for this OpenAPI operation."
+    output_type = RESPONSE_MODELS.get(operation, dict)
+    return make_agent_async(
+        model=model,
+        system_prompt=prompt,
+        tools=[tool],
+        output_type=output_type,
+        metadata={{"openapi_models_package": "{models_package}", "operation": operation}},
     )
 '''
     agents_path.write_text(content, encoding="utf-8")

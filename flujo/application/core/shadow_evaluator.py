@@ -136,3 +136,34 @@ class ShadowEvaluator:
                     "criteria": criteria if isinstance(criteria, dict) else None,
                 },
             )
+            return
+
+        if self._config.sink == "database":
+            try:
+                state_manager = getattr(core, "state_manager", None)
+                if state_manager is None:
+                    raise RuntimeError("state_manager not available")
+                persist = getattr(state_manager, "persist_evaluation", None)
+                if persist is None or not callable(persist):
+                    raise RuntimeError("persist_evaluation not available on state_manager")
+                await persist(
+                    step_name=step_name,
+                    score=float(score_value) if score_value is not None else None,
+                    reasoning=reasoning,
+                    criteria=criteria if isinstance(criteria, dict) else None,
+                )
+                return
+            except Exception as exc:
+                telemetry.logfire.warning(
+                    "[ShadowEval] database sink failed; falling back to telemetry",
+                    extra={"step": step_name, "error": str(exc)},
+                )
+            telemetry.logfire.info(
+                "[ShadowEval] judge score (fallback telemetry)",
+                extra={
+                    "step": step_name,
+                    "score": score_value,
+                    "reasoning": reasoning,
+                    "criteria": criteria if isinstance(criteria, dict) else None,
+                },
+            )

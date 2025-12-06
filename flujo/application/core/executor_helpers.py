@@ -192,6 +192,30 @@ def attach_sandbox_to_context(context: Any, sandbox: SandboxProtocol | None) -> 
         pass
 
 
+def attach_memory_store_to_context(context: Any, store: Any) -> None:
+    """Attach memory store handle to context when present without mutating dict contexts."""
+    if context is None or store is None:
+        return
+    if isinstance(context, dict):
+        return
+    for attr in ("memory_store", "_memory_store"):
+        try:
+            existing = getattr(context, attr)
+            if existing is not None:
+                return
+        except Exception:
+            continue
+    try:
+        object.__setattr__(context, "_memory_store", store)
+        return
+    except Exception:
+        pass
+    try:
+        setattr(context, "memory_store", store)
+    except Exception:
+        pass
+
+
 async def set_quota_and_hydrate(frame: Any, quota_manager: Any, hydration_manager: Any) -> None:
     """Assign quota to the execution context and hydrate managed state."""
     try:
@@ -543,6 +567,10 @@ def make_execution_frame(
     context = enforce_typed_context(context)
     sandbox = getattr(core, "sandbox", None)
     attach_sandbox_to_context(context, sandbox)
+    try:
+        attach_memory_store_to_context(context, getattr(core, "memory_store", None))
+    except Exception:
+        pass
     return ExecutionFrame(
         step=step,
         data=data,
