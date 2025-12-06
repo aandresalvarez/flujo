@@ -99,7 +99,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 **Priority:** 🟡 Medium | **Effort:** Low | **Tags:** `DX`, `Tooling`
 *   **Description:** CLI command to generate Pydantic-typed Agent Tools from Swagger/OpenAPI specs.
 *   **Implementation:** Wrap `datamodel-code-generator` in `flujo dev import-openapi`.
-*   **Status:** Partial (wrappers added). CLI now optionally generates agent/tool wrappers via `--generate-agents` (default on) with httpx-based tools and `make_openapi_agent` factory. Pending: richer endpoint-to-tool mapping (params/schema typing) and an integration test that imports/generated agents end-to-end.
+*   **Status:** Complete (wrappers + agent generation + typed response inference). Optional: richer endpoint-to-tool mapping and a full integration test for generated agents.
 
 ### [TASK-009] Shadow Evaluations
 **Priority:** 🟡 Medium | **Effort:** Medium | **Tags:** `Observability`
@@ -122,7 +122,7 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
     3. Wire into DI: expose optional `memory_store`/`memory_manager` via `ExecutorCoreDeps` + `FlujoRuntimeBuilder`; default to Null store; consider a non-serialized handle on `PipelineContext`.
     4. Tests: protocol conformance, in-memory add/query/delete determinism, DI wiring defaults/null, and mypy strictness.
     5. Docs/Kanban: document interface intent and defaults; do not bake in pgvector.
-*   **Status:** Partial (~95%). VectorStoreProtocol + primitives + Null/InMemory stores + DI done; MemoryManager indexing wired with context, and `PipelineContext.retrieve()` shipped. Pending: optional production stores (pgvector/chroma).
+*   **Status:** Complete. VectorStoreProtocol + primitives + Null/InMemory stores + DI done; MemoryManager indexing wired with context, and `PipelineContext.retrieve()` shipped. Optional: production stores (pgvector/chroma).
 
 ### [TASK-011] Sandbox Execution Interface
 **Priority:** 🔵 Low | **Effort:** High | **Tags:** `Security`
