@@ -280,34 +280,39 @@ class BackgroundTaskManager:
                     quota.reclaim(reserved_estimate, UsageEstimate(cost_usd=0.0, tokens=0))
                 if enable_state_tracking and state_manager is not None and enable_resumability:
                     metadata["background_error"] = str(e)
-                    try:
-                        # Priority 1: explicit control-flow signals
-                        if isinstance(e, (PausedException, PipelineAbortSignal)):
-                            metadata["error_category"] = "control_flow"
-                        # Priority 2: standard library/network/system types
-                        elif isinstance(e, (asyncio.TimeoutError, ConnectionError)):
-                            metadata["error_category"] = "network"
-                        elif isinstance(e, (ValueError, TypeError, AttributeError)):
-                            metadata["error_category"] = "validation"
-                        elif isinstance(e, (PermissionError, OSError)):
-                            metadata["error_category"] = "system"
-                        else:
-                            err_str = str(e).lower()
-                            err_name = type(e).__name__.lower()
+
+                    def _classify_error(exc: Exception) -> str:
+                        """Deterministically classify background errors without raising."""
+                        try:
+                            if isinstance(exc, (PausedException, PipelineAbortSignal)):
+                                return "control_flow"
+                            if isinstance(exc, (asyncio.TimeoutError, ConnectionError)):
+                                return "network"
+                            if isinstance(exc, (ValueError, TypeError, AttributeError)):
+                                return "validation"
+                            if isinstance(exc, (PermissionError, OSError)):
+                                return "system"
+                            err_str = str(exc).lower()
+                            err_name = type(exc).__name__.lower()
                             if "auth" in err_str or "auth" in err_name:
-                                metadata["error_category"] = "authentication"
-                            elif "quota" in err_str or "limit" in err_str or "exhaust" in err_str:
-                                metadata["error_category"] = "resource_exhaustion"
-                            elif "config" in err_str or "setting" in err_str:
-                                metadata["error_category"] = "configuration"
-                            else:
-                                metadata["error_category"] = "unknown"
-                        if final_context is not None and hasattr(final_context, "scratchpad"):
+                                return "authentication"
+                            if "quota" in err_str or "limit" in err_str or "exhaust" in err_str:
+                                return "resource_exhaustion"
+                            if "config" in err_str or "setting" in err_str:
+                                return "configuration"
+                            return "unknown"
+                        except Exception:
+                            return "unknown"
+
+                    metadata["error_category"] = _classify_error(e)
+                    if final_context is not None and hasattr(final_context, "scratchpad"):
+                        try:
                             final_context.scratchpad["background_error_category"] = metadata[
                                 "error_category"
                             ]
-                    except Exception:
-                        metadata["error_category"] = "unknown"
+                        except Exception:
+                            pass
+
                     await core._mark_background_task_failed(
                         task_id=task_id,
                         context=final_context,
