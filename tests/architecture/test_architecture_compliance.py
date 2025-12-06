@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import List, Optional
 import pytest
 
-# Mark the entire module as slow and allow ample time for the heavy quality gates
-pytestmark = [pytest.mark.slow, pytest.mark.timeout(300)]
+# Mark the entire module as slow and allow ample time for the heavy quality gates.
+# The subprocess stack (mypy + ruff + unit tests) can exceed 5 minutes under CI load,
+# so we give a generous window to avoid false timeouts.
+pytestmark = [pytest.mark.slow, pytest.mark.timeout(900)]
 
 
 class TestArchitectureCompliance:
