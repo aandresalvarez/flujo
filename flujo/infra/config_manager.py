@@ -223,6 +223,7 @@ class ConfigManager:
                 self._config_source = "none"
         self._cached_config: Optional[FlujoConfig] = None
         self._config_file_mtime: Optional[float] = None
+        self._env_signature: Optional[str] = None
 
     def _find_config_file(self, config_path: Optional[Union[str, Path]]) -> Optional[Path]:
         """Find the configuration file to use."""
@@ -297,14 +298,20 @@ class ConfigManager:
                 return self._cached_config
             self._cached_config = FlujoConfig()
             self._config_file_mtime = None
+            self._env_signature = self._compute_env_signature()
             return self._cached_config
 
         # Check if we can use cached config
         if not force_reload and self._cached_config is not None:
             try:
-                # Check if file has been modified since last load
+                # Check if file has been modified since last load or env changed
                 current_mtime = self.config_path.stat().st_mtime
-                if self._config_file_mtime is not None and current_mtime == self._config_file_mtime:
+                current_env_sig = self._compute_env_signature()
+                if (
+                    self._config_file_mtime is not None
+                    and current_mtime == self._config_file_mtime
+                    and self._env_signature == current_env_sig
+                ):
                     return self._cached_config
             except (OSError, AttributeError):
                 # If we can't check modification time, proceed with reload
@@ -400,6 +407,7 @@ class ConfigManager:
                 self._config_file_mtime = self.config_path.stat().st_mtime
             except (OSError, AttributeError):
                 self._config_file_mtime = None
+            self._env_signature = self._compute_env_signature()
 
             return config
 
@@ -426,6 +434,26 @@ class ConfigManager:
             raise ConfigurationError(
                 f"An unexpected error occurred during configuration loading: {e}"
             )
+
+    def _compute_env_signature(self) -> str:
+        """Compute a stable signature of env vars that influence settings."""
+        relevant: dict[str, str] = {}
+        try:
+            for k, v in os.environ.items():
+                if k.startswith("FLUJO_") or k in {
+                    "OPENAI_API_KEY",
+                    "ANTHROPIC_API_KEY",
+                    "AZURE_OPENAI_API_KEY",
+                    "HF_TOKEN",
+                    "PINECONE_API_KEY",
+                    "REDIS_URL",
+                    "DATABASE_URL",
+                }:
+                    relevant[k] = v
+        except Exception:
+            relevant = {}
+        items = [f"{k}={relevant[k]}" for k in sorted(relevant)]
+        return "|".join(items)
 
     def get_settings(self, force_reload: bool = False) -> Any:
         """Get settings with configuration file overrides applied.

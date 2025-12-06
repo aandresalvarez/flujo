@@ -124,7 +124,8 @@ class HistoryManager:
         # Use a conservative estimate to avoid undercounting tokens which
         # could lead to overshooting the limit in tests/CI environments.
         txt = f"{turn.role.value}: {turn.content}"
-        fallback = max(1, len(txt) // 4)  # ~4 chars per token heuristic
+        # Conservative fallback: assume ~2.5 chars per token to avoid overflow on JSON/code.
+        fallback = max(1, int(len(txt) / 2.5))
         # Fast path: when no model_id is provided, avoid tokenizer imports entirely
         # and use the conservative heuristic. This dramatically reduces overhead
         # in tight loops (e.g., CI benchmarks) while keeping bounds safe.

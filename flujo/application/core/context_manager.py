@@ -573,8 +573,21 @@ def _clone_context(obj: Optional[BaseModel]) -> Optional[BaseModel]:
     if obj is None:
         return None
     if isinstance(obj, BaseModel):
+        # Try fastest safe path
         try:
             return obj.model_copy(deep=True)
+        except Exception:
+            pass
+        # Field-wise deepcopy with skip-on-failure to avoid shared mutable resources
+        try:
+            data: dict[str, Any] = {}
+            for name in getattr(obj, "model_fields", {}):
+                val = getattr(obj, name, None)
+                try:
+                    data[name] = copy.deepcopy(val)
+                except Exception:
+                    data[name] = None  # Drop non-pickleable resource
+            return type(obj).model_validate(data)  # type: ignore[arg-type]
         except Exception:
             pass
     try:

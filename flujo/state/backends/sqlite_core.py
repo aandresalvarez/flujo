@@ -343,9 +343,9 @@ class SQLiteBackendBase(StateBackend):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure parent directories exist
         self._lock: Optional[asyncio.Lock] = None
         self._initialized = False
-        # Lightweight single-connection pool to reduce connect() overhead on hot paths.
+        # Per-event-loop pooled connections to avoid cross-loop reuse issues in async apps.
         # Guarded by self._lock for serialized access.
-        self._connection_pool: Optional[aiosqlite.Connection] = None
+        self._connection_pool: Dict[int, aiosqlite.Connection] = {}
 
         # Event-loop-local file-level lock - will be initialized lazily
         self._file_lock: Optional[asyncio.Lock] = None
@@ -363,6 +363,32 @@ class SQLiteBackendBase(StateBackend):
             self._lock = asyncio.Lock()
         return self._lock
 
+    def _current_loop_id(self) -> Optional[int]:
+        try:
+            return id(asyncio.get_running_loop())
+        except RuntimeError:
+            return None
+
+    def _get_pooled_connection(self) -> Optional[aiosqlite.Connection]:
+        loop_id = self._current_loop_id()
+        if loop_id is None:
+            return None
+        return self._connection_pool.get(loop_id)
+
+    def _set_pooled_connection(self, conn: aiosqlite.Connection) -> None:
+        loop_id = self._current_loop_id()
+        if loop_id is None:
+            return
+        self._connection_pool[loop_id] = conn
+
+    async def _acquire_connection(self) -> tuple[aiosqlite.Connection, bool]:
+        """Return (connection, close_after) respecting loop-local pooling."""
+        pooled = self._get_pooled_connection()
+        if pooled is not None:
+            return pooled, False
+        conn = await self._create_connection()
+        return conn, True
+
     async def _create_connection(self) -> aiosqlite.Connection:
         """Return a new aiosqlite connection with daemonized worker thread."""
         conn = aiosqlite.connect(self.db_path)
@@ -376,12 +402,13 @@ class SQLiteBackendBase(StateBackend):
     async def shutdown(self) -> None:
         """Close connection pool and release resources to avoid lingering threads."""
         try:
-            # Close pooled async connection if present
-            if self._connection_pool is not None:
+            # Close pooled async connections if present
+            for conn in list(self._connection_pool.values()):
                 try:
-                    await self._connection_pool.close()
-                finally:
-                    self._connection_pool = None
+                    await conn.close()
+                except Exception:
+                    pass
+            self._connection_pool.clear()
         except Exception:
             # Defensive: never raise during shutdown
             pass
@@ -998,18 +1025,19 @@ class SQLiteBackendBase(StateBackend):
                         await self._init_db()
                         # Lazily create a pooled connection with optimized pragmas for subsequent writes
                         try:
-                            self._connection_pool = await self._create_connection()
-                            await self._connection_pool.execute("PRAGMA journal_mode = WAL")
-                            await self._connection_pool.execute("PRAGMA synchronous = NORMAL")
-                            await self._connection_pool.execute("PRAGMA temp_store = MEMORY")
-                            await self._connection_pool.execute("PRAGMA cache_size = 10000")
-                            await self._connection_pool.execute("PRAGMA mmap_size = 268435456")
-                            await self._connection_pool.execute("PRAGMA page_size = 4096")
-                            await self._connection_pool.execute("PRAGMA busy_timeout = 1000")
-                            await self._connection_pool.commit()
+                            conn = await self._create_connection()
+                            await conn.execute("PRAGMA journal_mode = WAL")
+                            await conn.execute("PRAGMA synchronous = NORMAL")
+                            await conn.execute("PRAGMA temp_store = MEMORY")
+                            await conn.execute("PRAGMA cache_size = 10000")
+                            await conn.execute("PRAGMA mmap_size = 268435456")
+                            await conn.execute("PRAGMA page_size = 4096")
+                            await conn.execute("PRAGMA busy_timeout = 1000")
+                            await conn.commit()
+                            self._set_pooled_connection(conn)
                         except Exception:
                             # If pool creation fails, fall back to per-call connections
-                            self._connection_pool = None
+                            pass
                         self._initialized = True
                     except sqlite3.DatabaseError as e:
                         telemetry.logfire.error(f"Failed to initialize DB: {e}")
@@ -1017,12 +1045,13 @@ class SQLiteBackendBase(StateBackend):
 
     async def close(self) -> None:
         """Close database connections and cleanup resources."""
-        conn = getattr(self, "_connection_pool", None)
-        if conn:
+        # Close all loop-local pooled connections
+        for conn in list(self._connection_pool.values()):
             try:
                 await conn.close()
-            finally:
-                self._connection_pool = None
+            except Exception:
+                pass
+        self._connection_pool.clear()
         self._initialized = False
 
         # No global locks to clean up
@@ -1118,8 +1147,7 @@ class SQLiteBackendBase(StateBackend):
         """Persist a shadow evaluation result into SQLite."""
 
         async def _insert() -> None:
-            conn = self._connection_pool or await self._create_connection()
-            close_after = conn is not self._connection_pool
+            conn, close_after = await self._acquire_connection()
             try:
                 metadata_json = None if metadata is None else json.dumps(safe_serialize(metadata))
                 await conn.execute(
@@ -1151,8 +1179,7 @@ class SQLiteBackendBase(StateBackend):
         """Return recent evaluations."""
 
         async def _select() -> list[JSONObject]:
-            conn = self._connection_pool or await self._create_connection()
-            close_after = conn is not self._connection_pool
+            conn, close_after = await self._acquire_connection()
             try:
                 if run_id:
                     cursor = await conn.execute(
