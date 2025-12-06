@@ -192,17 +192,10 @@ class ContextManager:
             try:
                 return cast(Optional[BaseModel], context.model_copy(deep=True))
             except Exception:
-                # Fall through to deepcopy
+                # Fall through to generic clone
                 pass
 
-        try:
-            return copy.deepcopy(context)
-        except Exception:
-            # As a last resort, attempt a shallow copy; if that fails, return original reference
-            try:
-                return copy.copy(context)
-            except Exception:
-                return context
+        return _clone_context(context)
 
     @staticmethod
     def isolate_strict(
@@ -291,21 +284,21 @@ class ContextManager:
                         setattr(isolated, "scratchpad", getattr(context, "scratchpad"))
                 return isolated
         except Exception as e:
-            # Fallthrough to deepcopy
             last_error = e
         else:
             last_error = None
 
         try:
-            return copy.deepcopy(context)
+            cloned = _clone_context(context)
+            if cloned is None:
+                raise ContextManager.ContextIsolationError(
+                    f"Deep isolation returned None for context type {type(context).__name__}"
+                )
+            return cloned
         except Exception as e:
             raise ContextManager.ContextIsolationError(
                 f"Deep isolation failed for context type {type(context).__name__}: {e or last_error}"
             ) from e
-        except Exception:
-            from typing import cast
-
-            return cast(Optional[BaseModel], copy.deepcopy(context))
 
     @staticmethod
     def verify_isolation(
@@ -461,13 +454,11 @@ class ContextManager:
             raise ContextManager.ContextMergeError(f"Manual context merge failed: {e}") from e
 
 
-# Cache for parameter acceptance checks
+# Cache for parameter acceptance checks. We only cache weak-ref-able callables to avoid
+# id()-based collisions when Python reuses memory addresses after garbage collection.
 _accepts_param_cache_weak: weakref.WeakKeyDictionary[
     Callable[..., Any], Dict[str, Optional[bool]]
 ] = weakref.WeakKeyDictionary()
-_accepts_param_cache_id: weakref.WeakValueDictionary[int, Dict[str, Optional[bool]]] = (
-    weakref.WeakValueDictionary()
-)
 
 
 def _get_validation_flags(step: Any) -> tuple[bool, bool]:
@@ -494,10 +485,12 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
     """Return True if callable's signature includes ``param`` or ``**kwargs``."""
     try:
         cache = _accepts_param_cache_weak.setdefault(func, {})
-    except TypeError:  # For unhashable callables
-        func_id = id(func)
-        cache = _accepts_param_cache_id.setdefault(func_id, {})
-    if param in cache:
+    except TypeError:
+        # Unhashable / non-weakref-able callables (e.g., bound methods) are not cached to
+        # avoid id()-based collisions when memory addresses are reused.
+        cache = None
+
+    if cache is not None and param in cache:
         return cache[param]
 
     try:
@@ -533,7 +526,8 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
     except (TypeError, ValueError):
         result = None
 
-    cache[param] = result
+    if cache is not None:
+        cache[param] = result
     return result
 
 
@@ -570,6 +564,24 @@ def _should_pass_context(spec: Any, context: Optional[Any], func: Callable[..., 
     # bool(accepts_context) verifies if the function can dynamically accept the context parameter.
     accepts_context = _accepts_param(func, "context")
     return spec.needs_context or (context is not None and bool(accepts_context))
+
+
+def _clone_context(obj: Optional[BaseModel]) -> Optional[BaseModel]:
+    """Efficient deep clone favoring Pydantic's model_copy over stdlib deepcopy."""
+    if obj is None:
+        return None
+    if isinstance(obj, BaseModel):
+        try:
+            return obj.model_copy(deep=True)
+        except Exception:
+            pass
+    try:
+        return copy.deepcopy(obj)
+    except Exception:
+        try:
+            return copy.copy(obj)
+        except Exception:
+            return obj
 
 
 def _types_compatible(a: Any, b: Any) -> bool:

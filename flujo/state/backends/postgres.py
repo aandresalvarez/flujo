@@ -20,6 +20,10 @@ else:  # pragma: no cover - runtime checked import
     Pool = Any
     Record = Any
 
+# Advisory lock key used to serialize schema migrations across concurrent workers/pods.
+# Must fit in signed bigint; keep stable for all deployments.
+MIGRATION_LOCK_KEY = 0xF1F0C0DE
+
 
 def _load_asyncpg() -> Any:
     spec = importlib.util.find_spec("asyncpg")
@@ -109,6 +113,13 @@ class PostgresBackend(StateBackend):
 
     async def _init_schema(self, pool: Pool) -> None:
         async with pool.acquire() as conn:
+            # Serialize migrations across processes/containers using a Postgres advisory lock.
+            # This prevents migration stampedes on scale-up.
+            try:
+                await conn.execute("SELECT pg_advisory_xact_lock($1)", MIGRATION_LOCK_KEY)
+            except Exception:
+                # If advisory lock fails (e.g., permissions), continue without it to maintain backward compatibility.
+                pass
             # Create base schema (version 1)
             await conn.execute(
                 """

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import os
 from typing import (
     Any,
     Sequence,
@@ -125,6 +126,18 @@ def _log_hook_error(msg: str) -> None:
         pass  # Absolute last resort
 
 
+def _should_reraise_hook_errors() -> bool:
+    """Return True when running in test mode to surface hook bugs."""
+    try:
+        return bool(
+            os.getenv("FLUJO_TEST_MODE")
+            or os.getenv("PYTEST_CURRENT_TEST")
+            or os.getenv("PYTEST_RUNNING")
+        )
+    except Exception:
+        return False
+
+
 async def _dispatch_hook(
     hooks: Sequence[HookCallable],
     event_name: Literal[
@@ -177,3 +190,5 @@ async def _dispatch_hook(
             name = getattr(hook, "__name__", str(hook))
             msg = f"Error in hook '{name}': {e}"
             _log_hook_error(msg)
+            if _should_reraise_hook_errors():
+                raise

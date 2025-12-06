@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Optional, Union, cast
 import os
+import os as _os
 
 try:
     import tomllib
@@ -566,6 +567,22 @@ class ConfigManager:
 
 _CONFIG_MANAGER_LOCK = threading.Lock()
 _CONFIG_MANAGER_CACHE: dict[int, ConfigManager] = {}
+
+
+def _reset_config_cache_and_lock() -> None:
+    """Reinitialize lock/cache after a fork to avoid inherited locked state."""
+    global _CONFIG_MANAGER_LOCK
+    _CONFIG_MANAGER_LOCK = threading.Lock()
+    _CONFIG_MANAGER_CACHE.clear()
+
+
+# Protect prefork servers (gunicorn/uvicorn with workers) from inheriting a locked mutex.
+if hasattr(_os, "register_at_fork"):
+    try:
+        _os.register_at_fork(after_in_child=_reset_config_cache_and_lock)
+    except Exception:
+        # If registration fails, we still proceed; worst case we fall back to runtime checks.
+        pass
 
 
 def get_config_manager(force_reload: bool = False) -> ConfigManager:
