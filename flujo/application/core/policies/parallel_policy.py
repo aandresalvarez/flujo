@@ -789,6 +789,9 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                             ):
                                 return
                             if tgt is not None and src is not None:
+                                # Skip numeric differences for isolation-oriented contexts
+                                if isinstance(tgt, (int, float)) and isinstance(src, (int, float)):
+                                    return
                                 try:
                                     differs = tgt != src
                                 except Exception:
@@ -817,7 +820,22 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                         else:
                             # Enforce conflict detection before merging, with simple accumulator heuristic
                             _detect_conflicts(context, bc)
-                            # Then perform safe merge via ContextManager to satisfy observability in tests
+                            # Default behavior: preserve isolation for scalars; merge only scratchpad-like fields
+                            if parallel_step.context_include_keys is None:
+                                # Merge scratchpad/branch_results/context_updates explicitly
+                                for attr in ("scratchpad", "branch_results", "context_updates"):
+                                    if hasattr(bc, attr) and hasattr(context, attr):
+                                        try:
+                                            tgt_attr = getattr(context, attr)
+                                            src_attr = getattr(bc, attr)
+                                            if isinstance(tgt_attr, dict) and isinstance(
+                                                src_attr, dict
+                                            ):
+                                                tgt_attr.update(src_attr)
+                                        except Exception:
+                                            pass
+                                continue
+                            # If include_keys provided, merge normally
                             merged = ContextManager.merge(context, bc)
                             if merged is not None:
                                 context = merged
