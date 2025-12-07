@@ -390,15 +390,7 @@ _SCRATCHPAD_ALLOWED_KEYS: set[str] = {
     "pipeline_name",
     "pipeline_version",
     "run_id",
-    # Legacy/import projections that still route through scratchpad (being migrated off)
-    "concept_sets",
-    "cohort_definition",
-    "captured",
-    "child_echo",
-    "final_sql",
-    "foo",
-    "value",
-    "echo",
+    # Legacy/import projections handled via redirect
     "_loop_iteration_active",
     "_loop_iteration_index",
     "result",
@@ -819,9 +811,11 @@ def _inject_context_with_deep_merge(
                         "captured",
                         "child_echo",
                         "foo",
+                        "value",
+                        "echo",
                     }
                     legacy_payload = {
-                        k: value[k] for k in list(value.keys()) if k in legacy_import_keys
+                        k: value.pop(k) for k in list(value.keys()) if k in legacy_import_keys
                     }
                     if legacy_payload:
                         artifacts = getattr(context, "import_artifacts", None)

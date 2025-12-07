@@ -34,9 +34,9 @@ async def test_import_step_outputs_none_merges_full_child_context() -> None:
     res = await gather_result(runner, "ignored")
     ctx = res.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    # Legacy scratchpad keys are also mirrored into import_artifacts; scratchpad may retain legacy data.
+    # Legacy keys are redirected into import_artifacts; scratchpad should stay clean.
     assert ctx.import_artifacts.get("foo") == 42
-    assert ctx.scratchpad.get("foo") == 42
+    assert ctx.scratchpad.get("foo") is None
 
 
 @pytest.mark.asyncio
