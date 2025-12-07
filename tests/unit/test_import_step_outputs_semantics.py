@@ -115,14 +115,14 @@ async def test_import_step_outputs_preserves_explicit_none_values() -> None:
         ]
     )
 
-    # Create import step that maps child's scratchpad.value to parent
+    # Create import step that maps child's scratchpad.value to parent import artifacts
     import_step = ImportStep(
         name="run_child",
         pipeline=child,
         inherit_context=True,
         outputs=[
-            OutputMapping(child="scratchpad.value", parent="scratchpad.result"),
-            OutputMapping(child="scratchpad.marker", parent="scratchpad.marker"),
+            OutputMapping(child="scratchpad.value", parent="result"),
+            OutputMapping(child="scratchpad.marker", parent="marker"),
         ],
         updates_context=True,
     )
@@ -135,8 +135,8 @@ async def test_import_step_outputs_preserves_explicit_none_values() -> None:
 
     # The key assertion: explicit None from child context should be preserved,
     # NOT replaced by "from_output" from the last step's output
-    assert "result" in ctx.scratchpad, "result key should exist even if value is None"
-    assert ctx.scratchpad.get("result") is None, (
+    assert "result" in ctx.import_artifacts, "result key should exist even if value is None"
+    assert ctx.import_artifacts.get("result") is None, (
         "Explicit None from context should be preserved, not replaced by output"
     )
-    assert ctx.scratchpad.get("marker") == "step1_ran"
+    assert ctx.import_artifacts.get("marker") == "step1_ran"

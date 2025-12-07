@@ -532,6 +532,8 @@ class PipelineContext(BaseModel):
         default_factory=dict,
         description="Framework-reserved metadata bag (user data disallowed).",
     )
+    # Structured slot for import-related artifacts to avoid scratchpad usage.
+    import_artifacts: dict[str, Any] = Field(default_factory=dict)
     hitl_history: List[HumanInteraction] = Field(default_factory=list)
     command_log: List[ExecutedCommandLog] = Field(
         default_factory=list,

@@ -89,5 +89,5 @@ async def test_yaml_import_step_with_config(tmp_path, monkeypatch):
     payload = {"cohort_definition": {"name": "demo"}, "concept_sets": [1, 2, 3]}
     res = await gather_result(runner, payload, initial_context_data={"initial_prompt": "goal"})
     ctx = res.final_pipeline_context
-    assert "final_sql" in ctx.scratchpad
-    assert str(ctx.scratchpad["final_sql"]).startswith("-- cohorts:")
+    assert "final_sql" in ctx.import_artifacts
+    assert str(ctx.import_artifacts["final_sql"]).startswith("-- cohorts:")

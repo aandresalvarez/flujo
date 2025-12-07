@@ -550,16 +550,41 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                             return result  # Found in output (may be None, that's valid)
                 return _NOT_FOUND  # Not found anywhere
 
+            parent_ctx = context
+
             def _assign_parent(path: str, value: Any) -> None:
+                # Route mapped outputs into import_artifacts to avoid scratchpad usage
                 parts = [p for p in path.split(".") if p]
                 if not parts:
                     return
-                tgt = update_data
+                if parts[0] == "scratchpad":
+                    parts = parts[1:]
+                    if not parts:
+                        return
+                tgt = update_data.setdefault("import_artifacts", {})
                 for part in parts[:-1]:
                     if part not in tgt or not isinstance(tgt[part], dict):
                         tgt[part] = {}
                     tgt = tgt[part]
                 tgt[parts[-1]] = value
+                if parent_ctx is not None and hasattr(parent_ctx, "import_artifacts"):
+                    pc_artifacts = getattr(parent_ctx, "import_artifacts", None)
+                    if isinstance(pc_artifacts, dict):
+                        cur = pc_artifacts
+                        for part in parts[:-1]:
+                            if part not in cur or not isinstance(cur[part], dict):
+                                cur[part] = {}
+                            cur = cur[part]
+                        cur[parts[-1]] = value
+                if parent_ctx is not None and hasattr(parent_ctx, "scratchpad"):
+                    sp = getattr(parent_ctx, "scratchpad", None)
+                    if isinstance(sp, dict):
+                        cur_sp = sp
+                        for part in parts[:-1]:
+                            if part not in cur_sp or not isinstance(cur_sp[part], dict):
+                                cur_sp[part] = {}
+                            cur_sp = cur_sp[part]
+                        cur_sp[parts[-1]] = value
 
             try:
                 for mapping in step.outputs:
