@@ -36,3 +36,11 @@ def test_import_interfaces_and_infra_hooks():
         get_skills_discovery,
         get_config_provider,
     )
+
+
+def test_import_cli_entrypoints():
+    # Smoke CLI import surfaces (validate circular import hardening)
+    from flujo.cli import helpers_io  # noqa: F401
+    from flujo.cli import helpers_validation  # noqa: F401
+    from flujo.cli import run_command  # noqa: F401
+    from flujo.cli import dev_commands_dev  # noqa: F401
