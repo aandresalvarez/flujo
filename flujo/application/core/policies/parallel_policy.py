@@ -868,19 +868,11 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                                     tgt_attr.append(item)
                                     except Exception:
                                         pass
-                            # If include_keys provided, do full merge
-                            if parallel_step.context_include_keys is not None:
-                                merged = ContextManager.merge(context, bc)
-                                if merged is not None:
-                                    context = merged
-                            else:
-                                # Also merge nested_dict and nested_list for complex contexts
-                                for attr in ("nested_dict", "nested_list"):
-                                    if hasattr(bc, attr) and hasattr(context, attr):
-                                        try:
-                                            setattr(context, attr, getattr(bc, attr))
-                                        except Exception:
-                                            pass
+                            # Use ContextManager.merge() for ALL fields (not just hardcoded ones)
+                            # This follows the framework's context management patterns.
+                            # Note: We already merged scratchpad/branch_results/context_updates
+                            # explicitly above for special list/dict semantics.
+                            ContextManager.merge(context, bc)
                 elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
                     if not hasattr(context, "scratchpad"):
                         setattr(context, "scratchpad", {})

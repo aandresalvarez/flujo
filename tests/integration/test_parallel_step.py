@@ -32,7 +32,11 @@ async def test_parallel_step_context_isolation() -> None:
         "a": Step.model_validate({"name": "a", "agent": AddAgent(1)}),
         "b": Step.model_validate({"name": "b", "agent": AddAgent(2)}),
     }
-    parallel = Step.parallel("par", branches)
+    parallel = Step.parallel(
+        "par",
+        branches,
+        merge_strategy=MergeStrategy.NO_MERGE,
+    )
     runner = create_test_flujo(parallel, context_model=Ctx)
     result = await gather_result(runner, 0)
     step_result = result.step_history[-1]

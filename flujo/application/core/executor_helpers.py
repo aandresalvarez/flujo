@@ -29,12 +29,13 @@ from ...exceptions import (
 from ...domain.models import PipelineResult, StepResult, StepOutcome, Failure, Success
 from ...infra.settings import get_settings
 from .failure_builder import build_failure_outcome
+from .context_vars import _CACHE_OVERRIDE
+
+__all__ = ["_CACHE_OVERRIDE"]  # Re-export for backward compatibility
 
 Outcome = Union[StepOutcome[StepResult], StepResult]
 
 TContext = TypeVar("TContext")
-
-# Import cache enable override from shared module (used by loop/state-machine policies).
 
 
 # Backward-compatible error types used by other modules
