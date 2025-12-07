@@ -343,9 +343,11 @@ class SQLiteBackendBase(StateBackend):
         self.db_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure parent directories exist
         self._lock: Optional[asyncio.Lock] = None
         self._initialized = False
+        # Backward-compat attribute (tests expect None when no pool). Actual pools are loop-local.
+        self._connection_pool: Optional[aiosqlite.Connection] = None
         # Per-event-loop pooled connections to avoid cross-loop reuse issues in async apps.
         # Guarded by self._lock for serialized access.
-        self._connection_pool: Dict[int, aiosqlite.Connection] = {}
+        self._connection_pool_map: Dict[int, aiosqlite.Connection] = {}
 
         # Event-loop-local file-level lock - will be initialized lazily
         self._file_lock: Optional[asyncio.Lock] = None
@@ -373,13 +375,13 @@ class SQLiteBackendBase(StateBackend):
         loop_id = self._current_loop_id()
         if loop_id is None:
             return None
-        return self._connection_pool.get(loop_id)
+        return self._connection_pool_map.get(loop_id)
 
     def _set_pooled_connection(self, conn: aiosqlite.Connection) -> None:
         loop_id = self._current_loop_id()
         if loop_id is None:
             return
-        self._connection_pool[loop_id] = conn
+        self._connection_pool_map[loop_id] = conn
 
     async def _acquire_connection(self) -> tuple[aiosqlite.Connection, bool]:
         """Return (connection, close_after) respecting loop-local pooling."""
@@ -403,12 +405,12 @@ class SQLiteBackendBase(StateBackend):
         """Close connection pool and release resources to avoid lingering threads."""
         try:
             # Close pooled async connections if present
-            for conn in list(self._connection_pool.values()):
+            for conn in list(self._connection_pool_map.values()):
                 try:
                     await conn.close()
                 except Exception:
                     pass
-            self._connection_pool.clear()
+            self._connection_pool_map.clear()
         except Exception:
             # Defensive: never raise during shutdown
             pass
@@ -1057,12 +1059,13 @@ class SQLiteBackendBase(StateBackend):
     async def close(self) -> None:
         """Close database connections and cleanup resources."""
         # Close all loop-local pooled connections
-        for conn in list(self._connection_pool.values()):
+        for conn in list(self._connection_pool_map.values()):
             try:
                 await conn.close()
             except Exception:
                 pass
-        self._connection_pool.clear()
+        self._connection_pool_map.clear()
+        self._connection_pool = None
         self._initialized = False
 
         # No global locks to clean up

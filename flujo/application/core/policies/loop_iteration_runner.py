@@ -775,9 +775,6 @@ async def run_loop_iterations(
                             pass
                 except Exception:
                     pass
-                # Enforce a minimum of 3 iterations for robustness in perf regression tests.
-                if iteration_count < 3:
-                    should_exit = False
                 if should_exit:
                     telemetry.logfire.info(
                         f"LoopStep '{loop_step.name}' exit condition met at iteration {iteration_count}."

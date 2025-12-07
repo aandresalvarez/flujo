@@ -832,6 +832,13 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                                 src_attr, dict
                                             ):
                                                 tgt_attr.update(src_attr)
+                                            elif isinstance(tgt_attr, list) and isinstance(
+                                                src_attr, list
+                                            ):
+                                                # Extend lists, avoiding duplicates
+                                                for item in src_attr:
+                                                    if item not in tgt_attr:
+                                                        tgt_attr.append(item)
                                         except Exception:
                                             pass
                                 continue
