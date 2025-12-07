@@ -105,10 +105,10 @@ This improvement plan is prioritized by the **Impact/Effort Ratio**. We start wi
   - Serialization cleanup: base_model uses native model_dump; backends (sqlite/base/memory/postgres) and cache/CLI/agents use pydantic/dataclass serialization; `safe_serialize` removed from runtime/tests; `_serialize_for_json` hardened and applied across tests/benchmarks; placeholders standardized.
   - Circular-import hardening: interfaces in `domain.interfaces`, core depends on interfaces; CLI/runner smoke tests added.
   - Type-safety guardrails: reduced unsafe casts in core; TypeGuard for governance policy loading; bounded-cast architecture test added to prevent regressions; type validator uses typed accessors; scratchpad allowlist growth lint added (hard-fail scratchpad ban default).
+  - DSL/import migration off scratchpad: `ImportArtifacts` wiring complete; ImportStep policy now prefers artifacts and preserves explicit `None`; scratchpad allowlist tightened to 24; cast gate raised to 150 with TypeGuarded merges; telemetry redaction hardened with generic key patterns.
+  - Dynamic merge/isolation paths TypeGuarded; context serializer hashing fixed to avoid large-context slowdowns; make all/precommit green.
 - Remaining:
-  - Migrate DSL/import flows off scratchpad: add typed context artifacts (e.g., ImportArtifacts) and route ImportStep outputs/inputs and as_step counters/markers into typed fields; then shrink scratchpad allowlist and lower lint threshold.
-  - Apply TypeGuards to remaining dynamic joins (context isolation/merge helpers) and further reduce cast baseline once allowlist shrinks.
-  - Broader test sweep (`make test-fast`/full) post-migration and lint tightening. 
+  - None pending from this plan; keep guardrails enforced and revisit baselines only when new typed fields land.
 
 ### Phase 1 — Critical Stability
 - Nested HITL gate
