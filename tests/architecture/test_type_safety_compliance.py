@@ -233,7 +233,7 @@ class TestTypeSafetyCompliance:
         allowed = getattr(ca, "_SCRATCHPAD_ALLOWED_KEYS", set())
         assert isinstance(allowed, set)
         # Baseline derived from current framework-reserved keys; tighten over time.
-        max_allowed = 36
+        max_allowed = 35
         if len(allowed) > max_allowed:
             pytest.fail(
                 f"Scratchpad allowlist expanded unexpectedly ({len(allowed)} > {max_allowed}). "
