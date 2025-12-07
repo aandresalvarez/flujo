@@ -61,10 +61,8 @@ def _set_nested(target: Any, path: str, value: Any) -> None:
                 try:
                     setattr(current, part, next_val)
                 except Exception:
-                    try:
-                        current[part] = next_val  # type: ignore[index]
-                    except Exception:
-                        pass
+                    if isinstance(current, MutableMapping):
+                        current[part] = next_val
         current = next_val
     if isinstance(current, MutableMapping):
         current[parts[-1]] = value
@@ -72,10 +70,11 @@ def _set_nested(target: Any, path: str, value: Any) -> None:
         try:
             setattr(current, parts[-1], value)
         except Exception:
-            try:
-                current[parts[-1]] = value  # type: ignore[index]
-            except Exception:
-                pass
+            if isinstance(current, MutableMapping):
+                try:
+                    current[parts[-1]] = value
+                except Exception:
+                    pass
 
 
 class ImportStep(Step[Any, Any]):

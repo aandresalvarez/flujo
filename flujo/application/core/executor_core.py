@@ -1,7 +1,8 @@
 from __future__ import annotations
 import asyncio
+import typing
 import warnings
-from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, Generic, Optional, TYPE_CHECKING
 
 from ...domain.interfaces import StateProvider
 from ...domain.sandbox import SandboxProtocol
@@ -682,7 +683,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     def _isolate_context(
         self, context: Optional[TContext_w_Scratch]
     ) -> Optional[TContext_w_Scratch]:
-        return cast(
+        return typing.cast(
             Optional[TContext_w_Scratch],
             isolate_context(context, strict_context_isolation=bool(self._strict_context_isolation)),
         )
@@ -692,7 +693,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         main_context: Optional[TContext_w_Scratch],
         branch_context: Optional[TContext_w_Scratch],
     ) -> Optional[TContext_w_Scratch]:
-        return cast(
+        return typing.cast(
             Optional[TContext_w_Scratch],
             merge_context_updates(
                 main_context,
@@ -706,7 +707,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         current_context: Optional[TContext_w_Scratch],
         iteration_context: Optional[TContext_w_Scratch],
     ) -> Optional[TContext_w_Scratch]:
-        return cast(
+        return typing.cast(
             Optional[TContext_w_Scratch],
             accumulate_loop_context(
                 current_context,

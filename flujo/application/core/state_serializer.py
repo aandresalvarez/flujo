@@ -159,11 +159,12 @@ class StateSerializer(Generic[ContextT]):
                     val_repr = _fingerprint_scalar(value)
                 hash_input.append(f"{key}:{type(value).__name__}:{val_repr}")
             context_str = "|".join(hash_input)
-        else:
-            if raw_mapping is None:
-                # Use cache-friendly serialization path only for small contexts to avoid overhead
-                raw_mapping = context.model_dump() if hasattr(context, "model_dump") else {}
-            filtered_data = {k: v for k, v in raw_mapping.items() if k not in fields_to_exclude}
+            return hashlib.md5(context_str.encode()).hexdigest()
+
+        if raw_mapping is None:
+            # Use cache-friendly serialization path only for small contexts to avoid overhead
+            raw_mapping = context.model_dump() if hasattr(context, "model_dump") else {}
+        filtered_data = {k: v for k, v in raw_mapping.items() if k not in fields_to_exclude}
 
         normalized = _serialize_for_json(filtered_data)
         context_str = json.dumps(normalized, sort_keys=True, separators=(",", ":"))

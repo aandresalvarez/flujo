@@ -7,6 +7,7 @@ from typing import Any, List, Optional, Tuple, TYPE_CHECKING, Set
 import dataclasses
 import uuid
 import math
+from typing import Callable
 from enum import Enum
 
 from flujo.type_definitions.common import JSONObject
@@ -48,10 +49,13 @@ def _serialize_for_json(
         return placeholder
 
     # Custom serializer registry (best-effort)
+    lookup_custom_serializer: Optional[Callable[[Any], Callable[[Any], Any] | None]] = None
     try:
-        from flujo.utils.serialization import lookup_custom_serializer
+        from flujo.utils.serialization import lookup_custom_serializer as _lookup_custom_serializer
+
+        lookup_custom_serializer = _lookup_custom_serializer
     except Exception:
-        lookup_custom_serializer = None
+        pass
 
     if lookup_custom_serializer is not None:
         serializer = lookup_custom_serializer(obj)

@@ -1,12 +1,25 @@
 """Domain models for flujo."""
 
 from __future__ import annotations
-from typing import Any, List, Optional, Literal, Generic, TypeVar, Tuple, cast
-from collections.abc import MutableMapping
+from typing import (
+    Any,
+    ClassVar,
+    Generic,
+    Iterator,
+    ItemsView,
+    KeysView,
+    List,
+    Literal,
+    MutableMapping,
+    Optional,
+    Tuple,
+    TypeVar,
+    ValuesView,
+    cast,
+)
 from flujo.type_definitions.common import JSONObject
 from threading import RLock
 from pydantic import Field, ConfigDict, field_validator, PrivateAttr
-from typing import ClassVar
 from datetime import datetime, timezone
 import uuid
 from enum import Enum
@@ -521,7 +534,7 @@ class ImportArtifacts(BaseModel, MutableMapping[str, Any]):
 
     def _data(self) -> dict[str, Any]:
         data: dict[str, Any] = {}
-        fields_set = getattr(self, "__pydantic_fields_set__", set())
+        fields_set: set[str] = getattr(self, "__pydantic_fields_set__", set())
         fields_def = type(self).model_fields
         for name in fields_def:
             val = getattr(self, name)
@@ -556,7 +569,7 @@ class ImportArtifacts(BaseModel, MutableMapping[str, Any]):
         if isinstance(extra, dict):
             extra.pop(key, None)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:  # type: ignore[override]
         return iter(self._data())
 
     def __len__(self) -> int:
@@ -571,18 +584,22 @@ class ImportArtifacts(BaseModel, MutableMapping[str, Any]):
         self[key] = default
         return default
 
-    def update(self, other: MutableMapping[str, Any] | dict[str, Any], **kwargs: Any) -> None:
-        merged = dict(other, **kwargs)
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        merged: dict[str, Any] = {}
+        if args:
+            merged.update(dict(*args))
+        if kwargs:
+            merged.update(kwargs)
         for k, v in merged.items():
             self[k] = v
 
-    def items(self):
+    def items(self) -> ItemsView[str, Any]:
         return self._data().items()
 
-    def keys(self):
+    def keys(self) -> KeysView[str]:
         return self._data().keys()
 
-    def values(self):
+    def values(self) -> ValuesView[Any]:
         return self._data().values()
 
 

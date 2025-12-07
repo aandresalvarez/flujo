@@ -556,7 +556,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         return _NOT_FOUND
                 return cur
 
-            def _get_child(path: str) -> Any:
+            def _get_child(path: str) -> tuple[Any, str] | Any:
                 """Get a value from child context or last step output.
 
                 Returns _NOT_FOUND if the path doesn't exist in either location.
@@ -572,8 +572,21 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         art = getattr(child_final_ctx, "import_artifacts", None)
                         if _is_import_artifacts(art) and len(artifact_path) == 1:
                             name = artifact_path[0]
-                            if name in getattr(art, "__pydantic_fields_set__", set()):
-                                return getattr(art, name, None)
+                            value = getattr(art, name, None)
+                            try:
+                                field = getattr(art.__class__, "model_fields", {}).get(name)
+                                default_val = (
+                                    field.default_factory()
+                                    if field is not None and field.default_factory is not None
+                                    else (field.default if field is not None else None)
+                                )
+                            except Exception:
+                                default_val = None
+                            if value is None or value == default_val:
+                                return _NOT_FOUND
+                            return value
+                        if _is_import_artifacts(art):
+                            return _NOT_FOUND
                         if isinstance(art, MutableMapping):
                             cur_art: Any = art
                             for part in artifact_path:
@@ -586,32 +599,41 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         pass
                     return _NOT_FOUND
 
+                inner_candidate = _NOT_FOUND
+                if inner_sr is not None:
+                    inner_output = getattr(inner_sr, "output", None)
+                    if isinstance(inner_output, dict):
+                        inner_candidate = _traverse_path(inner_output, parts)
+
                 if parts and parts[0] == "scratchpad":
                     # Prefer redirected import artifacts when scratchpad keys were migrated.
                     artifact_value = _get_from_artifacts(parts[1:])
                     if artifact_value is not _NOT_FOUND:
                         if artifact_value is not None:
-                            return artifact_value
+                            return artifact_value, "artifacts"
                         # If artifacts contain an explicit None, still fall back to scratchpad in case
                         # the scratchpad has a concrete value.
                         result_ctx = _traverse_path(child_final_ctx, parts)
                         if result_ctx is not _NOT_FOUND:
-                            return result_ctx
-                        return None
+                            return result_ctx, "context"
+                        return None, "artifacts"
 
                 # First: try to get from child's final context (branch_context)
                 result = _traverse_path(child_final_ctx, parts)
                 if result is not _NOT_FOUND:
-                    return result  # Found in context (may be None, that's valid)
+                    # If context path exists but is empty (not None), prefer richer inner step output.
+                    if (
+                        result in ({}, [])
+                        and inner_candidate is not _NOT_FOUND
+                        and inner_candidate not in ({}, None)
+                    ):
+                        return inner_candidate, "output"
+                    return result, "context"  # Found in context (may be None, that's valid)
                 # Second: check the last step's output if context didn't have the value
                 # This handles tool steps that return {"scratchpad": {...}} as output
                 # but haven't had that output merged into context yet.
-                if inner_sr is not None:
-                    inner_output = getattr(inner_sr, "output", None)
-                    if isinstance(inner_output, dict):
-                        result = _traverse_path(inner_output, parts)
-                        if result is not _NOT_FOUND:
-                            return result  # Found in output (may be None, that's valid)
+                if inner_candidate is not _NOT_FOUND:
+                    return inner_candidate, "output"  # Found in output (may be None, that's valid)
                 return _NOT_FOUND  # Not found anywhere
 
             parent_ctx = context
@@ -637,7 +659,15 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                     if part not in tgt or not isinstance(tgt[part], dict):
                         tgt[part] = {}
                     tgt = tgt[part]
-                tgt[parts[-1]] = value
+                normalized = value
+                if isinstance(value, dict):
+                    try:
+                        from flujo.state.backends.base import _serialize_for_json as _normalize_json
+
+                        normalized = _normalize_json(value)
+                    except Exception:
+                        normalized = value
+                tgt[parts[-1]] = normalized
                 if parent_ctx is not None and hasattr(parent_ctx, "import_artifacts"):
                     pc_artifacts = getattr(parent_ctx, "import_artifacts", None)
                     if isinstance(pc_artifacts, MutableMapping):
@@ -648,7 +678,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                                 nxt = {}
                                 cur[part] = nxt
                             cur = nxt
-                        cur[parts[-1]] = value
+                        cur[parts[-1]] = normalized
 
             try:
                 for mapping in step.outputs:
@@ -659,7 +689,26 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         # Note: None is a valid value if the path exists
                         if child_val is _NOT_FOUND:
                             continue
-                        _assign_parent(parent_path, child_val)
+                        if isinstance(child_val, tuple):
+                            child_value, source = child_val
+                        else:
+                            child_value, source = child_val, "context"
+
+                        # Preserve explicit None on parent artifacts over non-context outputs.
+                        if (
+                            source == "output"
+                            and parent_ctx is not None
+                            and hasattr(parent_ctx, "import_artifacts")
+                        ):
+                            try:
+                                existing = getattr(parent_ctx.import_artifacts, parent_path, None)
+                                if existing is None:
+                                    _assign_parent(parent_path, None)
+                                    continue
+                            except Exception:
+                                pass
+
+                        _assign_parent(parent_path, child_value)
                     except Exception:
                         continue
                 parent_sr.output = update_data

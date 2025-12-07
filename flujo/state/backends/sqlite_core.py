@@ -21,30 +21,16 @@ import anyio
 import os
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
-from .base import StateBackend
+from .base import StateBackend, _serialize_for_json as _serialize_for_json_base
 from flujo.infra import telemetry
 from flujo.type_definitions.common import JSONObject
 
 logger = logging.getLogger(__name__)
 
 
-# Serialize objects for persistence using Pydantic model_dump when available.
+# Serialize objects for persistence using the shared normalization logic.
 def _serialize_for_json(obj: Any) -> Any:
-    try:
-        from pydantic import BaseModel as _BM
-
-        if isinstance(obj, _BM):
-            return obj.model_dump(mode="json")
-    except Exception:
-        pass
-    try:
-        import dataclasses as _dc
-
-        if _dc.is_dataclass(obj) and not isinstance(obj, type):
-            return _dc.asdict(obj)
-    except Exception:
-        pass
-    return obj
+    return _serialize_for_json_base(obj)
 
 
 # Try to import orjson for faster JSON serialization

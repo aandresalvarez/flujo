@@ -260,6 +260,7 @@ class ContextManager:
     def _isolate_strict_impl(
         context: Optional[BaseModel], include_keys: Optional[List[str]] = None
     ) -> Optional[BaseModel]:
+        last_error: Exception | None = None
         if context is None:
             return None
         # Allow mocks without isolation for performance tests
@@ -287,8 +288,6 @@ class ContextManager:
                 return isolated
         except Exception as e:
             last_error = e
-        else:
-            last_error = None
 
         try:
             cloned = _clone_context(context)

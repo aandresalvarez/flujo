@@ -3,7 +3,7 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timezone
-from typing import Any, Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
+from typing import Any, Generic, Optional, TypeVar, Tuple, TYPE_CHECKING, cast
 
 from flujo.domain.models import StepResult, BaseModel, PipelineResult
 from flujo.infra import telemetry
@@ -327,7 +327,7 @@ class StateManager(Generic[ContextT]):
             "background_error": metadata_dict.get("background_error"),
         }
 
-        normalized_state = _serialize_for_json(state_data)
+        normalized_state = cast(dict[str, Any], _serialize_for_json(state_data))
         await self.state_backend.save_state(run_id, normalized_state)
 
     async def persist_workflow_state_optimized(
@@ -416,7 +416,7 @@ class StateManager(Generic[ContextT]):
 
         # OPTIMIZATION: Use async persistence to avoid blocking
         try:
-            normalized_state = _serialize_for_json(state_data)
+            normalized_state = cast(dict[str, Any], _serialize_for_json(state_data))
             await self.state_backend.save_state(run_id, normalized_state)
         except Exception as e:
             logger.warning(f"Failed to persist state for run {run_id}: {e}")
@@ -553,7 +553,9 @@ class StateManager(Generic[ContextT]):
                     if result.final_pipeline_context
                     else None,
                 }
-                await self.state_backend.save_run_end(run_id, _serialize_for_json(end_payload))
+                await self.state_backend.save_run_end(
+                    run_id, cast(dict[str, Any], _serialize_for_json(end_payload))
+                )
             try:
                 from ...infra.audit import log_audit as _audit
 
