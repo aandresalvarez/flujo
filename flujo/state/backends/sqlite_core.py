@@ -341,7 +341,15 @@ class SQLiteBackendBase(StateBackend):
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure parent directories exist
+        # Locks must be loop-local to avoid cross-loop binding errors when the same backend
+        # instance is used from multiple event loops (e.g., threads running asyncio.run()).
+        # We keep _lock for backward compatibility but populate it with the current loop's
+        # lock on demand via _get_lock().
         self._lock: Optional[asyncio.Lock] = None
+        self._loop_locks: "weakref.WeakKeyDictionary[AbstractEventLoop, asyncio.Lock]" = (
+            weakref.WeakKeyDictionary()
+        )
+        self._thread_locks: Dict[int, asyncio.Lock] = {}
         self._initialized = False
         # Backward-compat attribute (tests expect None when no pool). Actual pools are loop-local.
         self._connection_pool: Optional[aiosqlite.Connection] = None
@@ -360,10 +368,31 @@ class SQLiteBackendBase(StateBackend):
             pass
 
     def _get_lock(self) -> asyncio.Lock:
-        """Lazily create the lock on first access."""
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-        return self._lock
+        """Return an event-loop-local lock to avoid cross-loop binding errors.
+
+        asyncio.Lock instances are bound to the loop that creates them. When the same
+        SQLiteBackend is used from different threads/loops (e.g., concurrent asyncio.run
+        calls), sharing a single lock causes RuntimeError: Task attached to a different
+        loop. We therefore allocate one lock per loop (and per thread when no loop is
+        running) and reuse it on subsequent calls from that context.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            thread_id = threading.get_ident()
+            lock = self._thread_locks.get(thread_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._thread_locks[thread_id] = lock
+            self._lock = lock
+            return lock
+
+        lock = self._loop_locks.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._loop_locks[loop] = lock
+        self._lock = lock
+        return lock
 
     def _current_loop_id(self) -> Optional[int]:
         try:

@@ -24,6 +24,35 @@ class TestSQLiteBackupFix:
     """Test the backup fix for platform-specific issues."""
 
     @pytest.mark.asyncio
+    async def test_sqlite_backup_integrity_wal_mode(self, tmp_path: Path) -> None:
+        """Backup should include WAL/SHM files when present."""
+
+        db_path = tmp_path / "test.db"
+        backend = SQLiteBackend(db_path)
+
+        # Create corrupted db and WAL/SHM sidecars
+        db_path.write_bytes(b"corrupted")
+        wal_path = db_path.with_suffix(db_path.suffix + "-wal")
+        shm_path = db_path.with_suffix(db_path.suffix + "-shm")
+        wal_path.write_bytes(b"wal-bytes")
+        shm_path.write_bytes(b"shm-bytes")
+
+        # Force the backup path to go through copy branch (rename failure)
+        with patch("pathlib.Path.rename", side_effect=OSError("fail-rename")):
+            await backend._backup_corrupted_database()
+
+        backups = [
+            p for p in tmp_path.glob("test.db.corrupt.*") if not p.name.endswith(("-wal", "-shm"))
+        ]
+        assert backups, "Expected backup file to be created"
+        backup_base = backups[0]
+        wal_backup = Path(str(backup_base) + "-wal")
+        shm_backup = Path(str(backup_base) + "-shm")
+
+        assert wal_backup.exists(), "WAL sidecar should be backed up"
+        assert shm_backup.exists(), "SHM sidecar should be backed up"
+
+    @pytest.mark.asyncio
     async def test_backup_creates_unique_filenames(self, tmp_path: Path) -> None:
         """Test that backup creates unique filenames with timestamps."""
         db_path = tmp_path / "test.db"

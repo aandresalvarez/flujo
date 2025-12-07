@@ -64,11 +64,15 @@ def _import_object(path: str) -> Any:
             allowed = getattr(cfg, "blueprint_allowed_imports", None)
         if allowed is not None and not isinstance(allowed, list):
             allowed = None
-        if allowed is not None:
-            if not any(module_name == a or module_name.startswith(f"{a}.") for a in allowed or []):
-                raise BlueprintError(
-                    f"Import of module '{module_name}' is not allowed. Configure 'blueprint_allowed_imports' in flujo.toml."
-                )
+        # Default-deny: require explicit allow-list
+        if not allowed:
+            raise BlueprintError(
+                "Blueprint imports are disallowed by default. Configure 'blueprint_allowed_imports' in flujo.toml."
+            )
+        if not any(module_name == a or module_name.startswith(f"{a}.") for a in allowed):
+            raise BlueprintError(
+                f"Import of module '{module_name}' is not allowed. Configure 'blueprint_allowed_imports' in flujo.toml."
+            )
     except Exception:
         raise BlueprintError(
             "Failed to verify allowed imports from configuration; refusing to import modules from YAML."

@@ -69,11 +69,15 @@ def _resolve_sandbox(context: DomainBaseModel | None) -> SandboxProtocol:
 
 
 async def render_jinja_template(template: str, variables: JSONObject | None = None) -> str:
-    """Render a Jinja2 template string with provided variables."""
+    """Render a Jinja2 template string with provided variables using sandboxing."""
     if _jinja2 is None:
         return template
     try:
-        env = _jinja2.Environment(undefined=_jinja2.StrictUndefined, autoescape=False)
+        try:
+            from jinja2.sandbox import SandboxedEnvironment
+        except Exception:
+            SandboxedEnvironment = _jinja2.Environment  # type: ignore[assignment]
+        env = SandboxedEnvironment(undefined=_jinja2.StrictUndefined, autoescape=False)
         tmpl = env.from_string(template)
         return str(tmpl.render(**(variables or {})))
     except Exception:

@@ -122,7 +122,11 @@ def register_optional_builtins() -> None:
         if _jinja2 is None:
             return template
         try:
-            env = _jinja2.Environment(undefined=_jinja2.StrictUndefined, autoescape=False)
+            try:
+                from jinja2.sandbox import SandboxedEnvironment
+            except Exception:
+                SandboxedEnvironment = _jinja2.Environment  # type: ignore[assignment]
+            env = SandboxedEnvironment(undefined=_jinja2.StrictUndefined, autoescape=False)
             tmpl = env.from_string(template)
             result = tmpl.render(**(variables or {}))
             return str(result)
