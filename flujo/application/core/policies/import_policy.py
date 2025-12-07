@@ -2,6 +2,7 @@ from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
 from typing import Type, cast
+from collections.abc import MutableMapping
 
 from ._shared import (
     Any,
@@ -113,6 +114,32 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         )
                 except Exception:
                     pass
+
+        # Seed child import artifacts from parent and mirror for legacy scratchpad readers.
+        try:
+            if context is not None and sub_context is not None:
+                parent_artifacts = getattr(context, "import_artifacts", None)
+                if isinstance(parent_artifacts, MutableMapping):
+                    try:
+                        child_artifacts = getattr(sub_context, "import_artifacts", None)
+                        if isinstance(child_artifacts, MutableMapping):
+                            child_artifacts.update(parent_artifacts)
+                        else:
+                            setattr(sub_context, "import_artifacts", parent_artifacts)
+                    except Exception:
+                        pass
+                    try:
+                        child_sp = getattr(sub_context, "scratchpad", None)
+                        if isinstance(child_sp, dict):
+                            for k, v in parent_artifacts.items():
+                                if v is None:
+                                    continue
+                                child_sp.setdefault(k, v)
+                            setattr(sub_context, "scratchpad", child_sp)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
         # Project input into child run and compute the child's initial_input explicitly,
         # honoring explicit inputs over inherited conversation or parent data.
@@ -562,6 +589,13 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                     if not parts:
                         return
                 tgt = update_data.setdefault("import_artifacts", {})
+                if not tgt and parent_ctx is not None and hasattr(parent_ctx, "import_artifacts"):
+                    pa = getattr(parent_ctx, "import_artifacts", None)
+                    if isinstance(pa, MutableMapping):
+                        try:
+                            tgt.update(dict(pa))
+                        except Exception:
+                            pass
                 for part in parts[:-1]:
                     if part not in tgt or not isinstance(tgt[part], dict):
                         tgt[part] = {}
@@ -569,22 +603,15 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                 tgt[parts[-1]] = value
                 if parent_ctx is not None and hasattr(parent_ctx, "import_artifacts"):
                     pc_artifacts = getattr(parent_ctx, "import_artifacts", None)
-                    if isinstance(pc_artifacts, dict):
+                    if isinstance(pc_artifacts, MutableMapping):
                         cur = pc_artifacts
                         for part in parts[:-1]:
-                            if part not in cur or not isinstance(cur[part], dict):
-                                cur[part] = {}
-                            cur = cur[part]
+                            nxt = cur.get(part)
+                            if not isinstance(nxt, MutableMapping):
+                                nxt = {}
+                                cur[part] = nxt
+                            cur = nxt
                         cur[parts[-1]] = value
-                if parent_ctx is not None and hasattr(parent_ctx, "scratchpad"):
-                    sp = getattr(parent_ctx, "scratchpad", None)
-                    if isinstance(sp, dict):
-                        cur_sp = sp
-                        for part in parts[:-1]:
-                            if part not in cur_sp or not isinstance(cur_sp[part], dict):
-                                cur_sp[part] = {}
-                            cur_sp = cur_sp[part]
-                        cur_sp[parts[-1]] = value
 
             try:
                 for mapping in step.outputs:

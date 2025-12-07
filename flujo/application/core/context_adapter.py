@@ -16,12 +16,13 @@ from typing import (
     get_args,
     get_type_hints,
 )
+from collections.abc import MutableMapping
 
 from pydantic import ValidationError
 from pydantic import BaseModel as PydanticBaseModel
 
 from ...infra import telemetry
-from ...domain.models import BaseModel, ExecutedCommandLog
+from ...domain.models import BaseModel, ExecutedCommandLog, ImportArtifacts
 from ...utils.serialization import register_custom_serializer, register_custom_deserializer
 
 __all__ = [
@@ -725,6 +726,16 @@ def _inject_context_with_deep_merge(
                         if not isinstance(value, dict):
                             return f"Field '{key}' expects dict but got {type(value).__name__}: {value}"
 
+                    # ImportArtifacts: coerce dicts into the typed container
+                    elif field_type is ImportArtifacts:
+                        if isinstance(value, dict):
+                            value = ImportArtifacts.model_validate(value)
+                        elif not isinstance(value, ImportArtifacts):
+                            return (
+                                f"Field '{key}' expects ImportArtifacts but got "
+                                f"{type(value).__name__}: {value}"
+                            )
+
                     # For other types, use Pydantic's validation
                     else:
                         # Try to validate the value against the field type.
@@ -762,6 +773,24 @@ def _inject_context_with_deep_merge(
                         continue
                 except Exception:
                     # Fall back to normal assignment below if anything goes wrong
+                    pass
+
+            if key == "import_artifacts":
+                try:
+                    if isinstance(value, dict):
+                        value = ImportArtifacts.model_validate(value)
+                    existing_artifacts = (
+                        getattr(context, "import_artifacts", None)
+                        if hasattr(context, "import_artifacts")
+                        else None
+                    )
+                    if isinstance(existing_artifacts, MutableMapping):
+                        if isinstance(value, MutableMapping):
+                            existing_artifacts.update(value)
+                            value = existing_artifacts
+                        else:
+                            value = existing_artifacts
+                except Exception:
                     pass
 
             if key == "scratchpad" and isinstance(value, dict) and hasattr(context, "scratchpad"):

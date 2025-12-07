@@ -102,7 +102,7 @@ async def test_import_input_to_initial_prompt_has_precedence() -> None:
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    captured = ctx.scratchpad.get("captured")
+    captured = ctx.import_artifacts.get("captured") or ctx.scratchpad.get("captured")
     assert isinstance(captured, str)
     assert json.loads(captured) == expected_obj
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional, Literal, List
+from collections.abc import MutableMapping
 
 from ..base_model import BaseModel
 from ..models import PipelineContext
@@ -25,7 +26,7 @@ def _get_nested(source: Any, path: str) -> Any:
         return None
     current = source
     for part in path.split("."):
-        if isinstance(current, dict):
+        if isinstance(current, MutableMapping):
             if part not in current:
                 return None
             current = current[part]
@@ -37,19 +38,44 @@ def _get_nested(source: Any, path: str) -> Any:
     return current
 
 
-def _set_nested(target: dict[str, Any], path: str, value: Any) -> None:
-    """Set a dotted path inside a dictionary, creating intermediates as needed."""
+def _set_nested(target: Any, path: str, value: Any) -> None:
+    """Set a dotted path inside a mapping/object, creating intermediates as needed."""
     if not path:
         return
-    current: dict[str, Any] = target
+    current: Any = target
     parts = path.split(".")
     for part in parts[:-1]:
-        next_val = current.get(part)
-        if not isinstance(next_val, dict):
-            next_val = {}
-            current[part] = next_val
+        next_val: Any = None
+        if isinstance(current, MutableMapping):
+            next_val = current.get(part)
+            if not isinstance(next_val, MutableMapping):
+                next_val = {}
+                current[part] = next_val
+        else:
+            try:
+                next_val = getattr(current, part)
+            except Exception:
+                next_val = None
+            if not isinstance(next_val, MutableMapping):
+                next_val = {}
+                try:
+                    setattr(current, part, next_val)
+                except Exception:
+                    try:
+                        current[part] = next_val  # type: ignore[index]
+                    except Exception:
+                        pass
         current = next_val
-    current[parts[-1]] = value
+    if isinstance(current, MutableMapping):
+        current[parts[-1]] = value
+    else:
+        try:
+            setattr(current, parts[-1], value)
+        except Exception:
+            try:
+                current[parts[-1]] = value  # type: ignore[index]
+            except Exception:
+                pass
 
 
 class ImportStep(Step[Any, Any]):

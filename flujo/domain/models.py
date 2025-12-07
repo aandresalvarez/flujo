@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from typing import Any, List, Optional, Literal, Generic, TypeVar, Tuple, cast
+from collections.abc import MutableMapping
 from flujo.type_definitions.common import JSONObject
 from threading import RLock
 from pydantic import Field, ConfigDict, field_validator, PrivateAttr
@@ -126,6 +127,7 @@ __all__ = [
     "UsageEstimate",
     "Quota",
     "ExecutedCommandLog",
+    "ImportArtifacts",
     "PipelineContext",
     "HumanInteraction",
     "ConversationTurn",
@@ -495,6 +497,95 @@ class ExecutedCommandLog(BaseModel):
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
 
+class ImportArtifacts(BaseModel, MutableMapping[str, Any]):
+    """Typed container for import projections to avoid scratchpad for user data."""
+
+    result: Any | None = None
+    marker: Any | None = None
+    counter: int | None = None
+    value: Any | None = None
+    initial_input: Any | None = None
+    child_echo: Any | None = None
+    final_sql: Any | None = None
+    concept_sets: list[Any] = Field(default_factory=list)
+    cohort_definition: dict[str, Any] | None = None
+    captured: Any | None = None
+    captured_sp: dict[str, Any] = Field(default_factory=dict)
+    captured_prompt: Any | None = None
+    extras: dict[str, Any] = Field(default_factory=dict)
+
+    model_config: ClassVar[ConfigDict] = {
+        "arbitrary_types_allowed": True,
+        "extra": "allow",
+    }
+
+    def _data(self) -> dict[str, Any]:
+        data: dict[str, Any] = {}
+        fields_set = getattr(self, "__pydantic_fields_set__", set())
+        fields_def = type(self).model_fields
+        for name in fields_def:
+            val = getattr(self, name)
+            if val is not None or name in fields_set:
+                data[name] = val
+        extra = getattr(self, "__pydantic_extra__", None)
+        if isinstance(extra, dict):
+            data.update(extra)
+        data.update(self.extras)
+        return data
+
+    # MutableMapping interface
+    def __getitem__(self, key: str) -> Any:
+        return self._data()[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        if key in type(self).model_fields:
+            setattr(self, key, value)
+            return
+        extra = getattr(self, "__pydantic_extra__", None)
+        if not isinstance(extra, dict):
+            extra = {}
+            object.__setattr__(self, "__pydantic_extra__", extra)
+        extra[key] = value
+        self.extras[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        if key in type(self).model_fields:
+            object.__setattr__(self, key, None)
+        self.extras.pop(key, None)
+        extra = getattr(self, "__pydantic_extra__", None)
+        if isinstance(extra, dict):
+            extra.pop(key, None)
+
+    def __iter__(self):
+        return iter(self._data())
+
+    def __len__(self) -> int:
+        return len(self._data())
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data().get(key, default)
+
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        if key in self._data():
+            return self._data()[key]
+        self[key] = default
+        return default
+
+    def update(self, other: MutableMapping[str, Any] | dict[str, Any], **kwargs: Any) -> None:
+        merged = dict(other, **kwargs)
+        for k, v in merged.items():
+            self[k] = v
+
+    def items(self):
+        return self._data().items()
+
+    def keys(self):
+        return self._data().keys()
+
+    def values(self):
+        return self._data().values()
+
+
 class ConversationRole(str, Enum):
     """Canonical roles for conversational turns.
 
@@ -533,7 +624,7 @@ class PipelineContext(BaseModel):
         description="Framework-reserved metadata bag (user data disallowed).",
     )
     # Structured slot for import-related artifacts to avoid scratchpad usage.
-    import_artifacts: dict[str, Any] = Field(default_factory=dict)
+    import_artifacts: ImportArtifacts = Field(default_factory=ImportArtifacts)
     hitl_history: List[HumanInteraction] = Field(default_factory=list)
     command_log: List[ExecutedCommandLog] = Field(
         default_factory=list,
