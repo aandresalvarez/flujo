@@ -1,11 +1,14 @@
 """Cache management for step execution results."""
 
 from __future__ import annotations
+import asyncio
 from typing import TYPE_CHECKING, Any, Optional
 from ...domain.models import StepOutcome, StepResult, Success
 from ...infra import telemetry
 from .default_cache_components import DefaultCacheKeyGenerator, _LRUCache
-import asyncio
+
+# Import the cache override context variable from shared module
+from .context_vars import _CACHE_OVERRIDE
 
 if TYPE_CHECKING:  # pragma: no cover
     from .types import ExecutionFrame
@@ -51,17 +54,21 @@ class CacheManager:
         self, step: Any, data: Any, context: Optional[Any], resources: Optional[Any]
     ) -> str:
         """Generate a cache key for the given step execution parameters."""
-        if not self._enable_cache:
+        if not self.is_cache_enabled():
             return ""
         return self._key_generator.generate_key(step, data, context, resources)
 
     def is_cache_enabled(self) -> bool:
-        """Check if caching is enabled."""
+        """Check if caching is enabled, respecting task-local overrides."""
+        # Check task-local override first (used by loop iteration runner)
+        override = _CACHE_OVERRIDE.get(None)
+        if override is not None:
+            return bool(override)
         return self._enable_cache
 
     async def get_cached_result(self, key: str) -> Optional[Any]:
         """Retrieve a cached result by key."""
-        if not self._enable_cache or not key:
+        if not self.is_cache_enabled() or not key:
             return None
 
         # Try backend first, then internal cache
@@ -92,7 +99,7 @@ class CacheManager:
 
     async def set_cached_result(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
         """Store a result in cache."""
-        if not self._enable_cache or not key:
+        if not self.is_cache_enabled() or not key:
             return
 
         # Store in backend first, then internal cache
@@ -118,7 +125,7 @@ class CacheManager:
 
     def _should_cache_step_result(self, step: Any, result: Optional[StepResult]) -> bool:
         """Determine if a result should be cached for the given step."""
-        if not self._enable_cache or result is None or not getattr(result, "success", False):
+        if not self.is_cache_enabled() or result is None or not getattr(result, "success", False):
             return False
         try:
             from ...domain.dsl.loop import LoopStep
@@ -157,7 +164,7 @@ class CacheManager:
 
     async def maybe_fetch_step_result(self, frame: "ExecutionFrame[Any]") -> Optional[StepResult]:
         """Return a cached StepResult for the frame when enabled (skips loops/adapters)."""
-        if not self._enable_cache:
+        if not self.is_cache_enabled():
             return None
         step = getattr(frame, "step", None)
         try:

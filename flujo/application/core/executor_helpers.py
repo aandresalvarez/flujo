@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Optional, cast, Callable, Awaitable, TypeVar, Union
 
@@ -35,8 +34,7 @@ Outcome = Union[StepOutcome[StepResult], StepResult]
 
 TContext = TypeVar("TContext")
 
-# Cache enable override to avoid mutating shared core state (used by loop/state-machine policies).
-_CACHE_OVERRIDE: ContextVar[bool | None] = ContextVar("CACHE_OVERRIDE", default=None)
+# Import cache enable override from shared module (used by loop/state-machine policies).
 
 
 # Backward-compatible error types used by other modules

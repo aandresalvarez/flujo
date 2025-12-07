@@ -372,7 +372,7 @@ async def test_regression_performance_under_load():
     loop_body = Pipeline.from_step(performance_test_step)
 
     loop_step = Step.loop_until(
-        name="performance_test",
+        name="perf_load_test",  # Avoid name collision with inner step name
         loop_body_pipeline=loop_body,
         exit_condition_callable=regression_exit_condition,
         max_loops=5,

@@ -755,97 +755,132 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     }
 
                 if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
-                    # Helper: detect conflicts in simple fields between two contexts
-                    def _detect_conflicts(target_ctx: Any, source_ctx: Any) -> None:
-                        """Detect leaf conflicts except for scratchpad/known mutable buckets."""
+                    # Helper: detect conflicts between TWO branch contexts (NOT parent vs branch)
+                    def _detect_branch_conflicts(
+                        ctx_a: Any, ctx_b: Any, name_a: str, name_b: str
+                    ) -> None:
+                        """Detect leaf conflicts between two branch contexts."""
                         from flujo.exceptions import ConfigurationError as _CfgErr
 
                         try:
-                            if hasattr(source_ctx, "model_dump"):
-                                src_fields = source_ctx.model_dump(exclude_none=True)
-                            elif hasattr(source_ctx, "dict"):
-                                src_fields = source_ctx.dict(exclude_none=True)
+                            if hasattr(ctx_a, "model_dump"):
+                                fields_a = ctx_a.model_dump(exclude_none=True)
+                            elif hasattr(ctx_a, "dict"):
+                                fields_a = ctx_a.dict(exclude_none=True)
                             else:
-                                src_fields = {
+                                fields_a = {
                                     k: v
-                                    for k, v in getattr(source_ctx, "__dict__", {}).items()
+                                    for k, v in getattr(ctx_a, "__dict__", {}).items()
+                                    if not str(k).startswith("_")
+                                }
+
+                            if hasattr(ctx_b, "model_dump"):
+                                fields_b = ctx_b.model_dump(exclude_none=True)
+                            elif hasattr(ctx_b, "dict"):
+                                fields_b = ctx_b.dict(exclude_none=True)
+                            else:
+                                fields_b = {
+                                    k: v
+                                    for k, v in getattr(ctx_b, "__dict__", {}).items()
                                     if not str(k).startswith("_")
                                 }
                         except Exception:
-                            src_fields = {}
+                            return  # Can't compare, skip
 
-                        def _walk(tgt: Any, src: Any, path: str) -> None:
+                        def _walk(val_a: Any, val_b: Any, path: str) -> None:
                             # Skip scratchpad/branch_results/context_updates which are intentionally merged
                             if path in {"scratchpad", "branch_results", "context_updates"}:
                                 return
-                            if isinstance(tgt, dict) and isinstance(src, dict):
-                                for k in set(src.keys()) & set(tgt.keys()):
+                            if isinstance(val_a, dict) and isinstance(val_b, dict):
+                                for k in set(val_a.keys()) & set(val_b.keys()):
                                     if str(k).startswith("_"):
                                         continue
-                                    _walk(tgt[k], src[k], f"{path}.{k}" if path else str(k))
+                                    _walk(val_a[k], val_b[k], f"{path}.{k}" if path else str(k))
                                 return
-                            if isinstance(tgt, (list, tuple, set)) or isinstance(
-                                src, (list, tuple, set)
+                            if isinstance(val_a, (list, tuple, set)) or isinstance(
+                                val_b, (list, tuple, set)
                             ):
                                 return
-                            if tgt is not None and src is not None:
-                                # Skip numeric differences for isolation-oriented contexts
-                                if isinstance(tgt, (int, float)) and isinstance(src, (int, float)):
+                            if val_a is not None and val_b is not None:
+                                # Skip numeric differences
+                                if isinstance(val_a, (int, float)) and isinstance(
+                                    val_b, (int, float)
+                                ):
                                     return
                                 try:
-                                    differs = tgt != src
+                                    differs = val_a != val_b
                                 except Exception:
                                     differs = True
                                 if differs:
                                     raise _CfgErr(
-                                        f"Merge conflict for key '{path or '<root>'}'. Set an explicit merge strategy or field_mapping in your ParallelStep."
+                                        f"Merge conflict for key '{path or '<root>'}'. Branches '{name_a}' and '{name_b}' set different values. "
+                                        "Set an explicit merge strategy or field_mapping in your ParallelStep."
                                     )
 
-                        for _fname, _sval in src_fields.items():
-                            if str(_fname).startswith("_"):
+                        # Compare common fields
+                        for fname in set(fields_a.keys()) & set(fields_b.keys()):
+                            if str(fname).startswith("_"):
                                 continue
-                            if hasattr(target_ctx, _fname):
-                                try:
-                                    _tval = getattr(target_ctx, _fname)
-                                    _walk(_tval, _sval, str(_fname))
-                                except Exception:
-                                    # Best-effort conflict detection; skip on access errors
-                                    continue
+                            try:
+                                _walk(fields_a[fname], fields_b[fname], str(fname))
+                            except _CfgErr:
+                                raise
+                            except (AttributeError, TypeError, KeyError):
+                                continue
 
+                    # Phase 1: Detect conflicts between sibling branches (if multiple branches)
+                    branch_names_list = list(branch_ctxs.keys())
+                    if len(branch_names_list) > 1:
+                        from flujo.exceptions import ConfigurationError as _CfgErr
+
+                        for i, name_a in enumerate(branch_names_list):
+                            for name_b in branch_names_list[i + 1 :]:
+                                ctx_a = branch_ctxs[name_a]
+                                ctx_b = branch_ctxs[name_b]
+                                try:
+                                    _detect_branch_conflicts(ctx_a, ctx_b, name_a, name_b)
+                                except _CfgErr:
+                                    raise
+
+                    # Phase 2: Merge all branch contexts (branch values override parent)
                     for n, bc in branch_ctxs.items():
                         if parallel_step.field_mapping and n in parallel_step.field_mapping:
                             for f in parallel_step.field_mapping[n]:
                                 if hasattr(bc, f):
                                     setattr(context, f, getattr(bc, f))
                         else:
-                            # Enforce conflict detection before merging, with simple accumulator heuristic
-                            _detect_conflicts(context, bc)
-                            # Default behavior: preserve isolation for scalars; merge only scratchpad-like fields
-                            if parallel_step.context_include_keys is None:
-                                # Merge scratchpad/branch_results/context_updates explicitly
-                                for attr in ("scratchpad", "branch_results", "context_updates"):
+                            # Merge scratchpad/branch_results/context_updates explicitly
+                            for attr in ("scratchpad", "branch_results", "context_updates"):
+                                if hasattr(bc, attr) and hasattr(context, attr):
+                                    try:
+                                        tgt_attr = getattr(context, attr)
+                                        src_attr = getattr(bc, attr)
+                                        if isinstance(tgt_attr, dict) and isinstance(
+                                            src_attr, dict
+                                        ):
+                                            tgt_attr.update(src_attr)
+                                        elif isinstance(tgt_attr, list) and isinstance(
+                                            src_attr, list
+                                        ):
+                                            # Extend lists, avoiding duplicates
+                                            for item in src_attr:
+                                                if item not in tgt_attr:
+                                                    tgt_attr.append(item)
+                                    except Exception:
+                                        pass
+                            # If include_keys provided, do full merge
+                            if parallel_step.context_include_keys is not None:
+                                merged = ContextManager.merge(context, bc)
+                                if merged is not None:
+                                    context = merged
+                            else:
+                                # Also merge nested_dict and nested_list for complex contexts
+                                for attr in ("nested_dict", "nested_list"):
                                     if hasattr(bc, attr) and hasattr(context, attr):
                                         try:
-                                            tgt_attr = getattr(context, attr)
-                                            src_attr = getattr(bc, attr)
-                                            if isinstance(tgt_attr, dict) and isinstance(
-                                                src_attr, dict
-                                            ):
-                                                tgt_attr.update(src_attr)
-                                            elif isinstance(tgt_attr, list) and isinstance(
-                                                src_attr, list
-                                            ):
-                                                # Extend lists, avoiding duplicates
-                                                for item in src_attr:
-                                                    if item not in tgt_attr:
-                                                        tgt_attr.append(item)
+                                            setattr(context, attr, getattr(bc, attr))
                                         except Exception:
                                             pass
-                                continue
-                            # If include_keys provided, merge normally
-                            merged = ContextManager.merge(context, bc)
-                            if merged is not None:
-                                context = merged
                 elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
                     if not hasattr(context, "scratchpad"):
                         setattr(context, "scratchpad", {})
