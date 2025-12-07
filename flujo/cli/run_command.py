@@ -768,7 +768,10 @@ state_uri = "sqlite:///flujo_ops.db"
                 def _serialize_obj(obj: Any) -> Any:
                     try:
                         if isinstance(obj, _BM):
-                            return obj.model_dump(mode="json")
+                            try:
+                                return obj.model_dump(mode="json")
+                            except TypeError:
+                                return obj.model_dump()
                     except Exception:
                         pass
                     try:
@@ -824,11 +827,13 @@ state_uri = "sqlite:///flujo_ops.db"
                     if ctx is None:
                         return {}
                     try:
-                        base = (
-                            ctx.model_dump(mode="json")
-                            if hasattr(ctx, "model_dump")
-                            else _serialize_obj(ctx)
-                        )
+                        if hasattr(ctx, "model_dump"):
+                            try:
+                                base = ctx.model_dump(mode="json")
+                            except TypeError:
+                                base = ctx.model_dump()
+                        else:
+                            base = _serialize_obj(ctx)
                     except Exception:
                         base = {}
                     # Augment with common transient fields for debugging

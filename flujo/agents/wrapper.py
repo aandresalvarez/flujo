@@ -28,7 +28,6 @@ from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponen
 from ..domain.agent_protocol import AsyncAgentProtocol, AgentInT, AgentOutT
 from ..domain.processors import AgentProcessors
 from ..exceptions import AgentIOValidationError, ExecutionError, OrchestratorRetryError
-from ..utils.serialization import safe_serialize
 from .repair import DeterministicRepairProcessor
 from ..infra.telemetry import logfire
 from ..tracing.manager import get_active_trace_manager
@@ -412,11 +411,23 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     else:
                         try:
                             if tm is not None:
-                                out_str = (
-                                    unpacked_output
-                                    if isinstance(unpacked_output, str)
-                                    else safe_serialize(unpacked_output)
-                                )
+                                if isinstance(unpacked_output, str):
+                                    out_str = unpacked_output
+                                else:
+                                    try:
+                                        if isinstance(unpacked_output, PydanticBaseModel):
+                                            out_str = unpacked_output.model_dump(mode="json")
+                                        else:
+                                            import dataclasses as _dc
+
+                                            if _dc.is_dataclass(unpacked_output) and not isinstance(
+                                                unpacked_output, type
+                                            ):
+                                                out_str = _dc.asdict(unpacked_output)
+                                            else:
+                                                out_str = unpacked_output
+                                    except Exception:
+                                        out_str = unpacked_output
                                 out_prev = summarize_and_redact_prompt(
                                     out_str, max_length=preview_len_env
                                 )

@@ -12,7 +12,7 @@ from typing_extensions import Annotated
 
 from flujo.exceptions import ConfigurationError
 from flujo.infra import telemetry
-from flujo.utils.serialization import safe_serialize, safe_deserialize
+from flujo.utils.serialization import safe_deserialize
 from .helpers import (
     run_benchmark_pipeline,
     create_benchmark_table,
@@ -137,7 +137,11 @@ def solve(
         )
 
         # Output result
-        typer.echo(json.dumps(safe_serialize(best.model_dump()), indent=2))
+        try:
+            payload = best.model_dump(mode="json")
+        except TypeError:
+            payload = best.model_dump()
+        typer.echo(json.dumps(payload, indent=2))
 
     except KeyboardInterrupt:
         logfire.info("Aborted by user (KeyboardInterrupt). Closing spans and exiting.")

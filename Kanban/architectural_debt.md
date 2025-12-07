@@ -95,6 +95,21 @@ This improvement plan is prioritized by the **Impact/Effort Ratio**. We start wi
 
 ## Implementation Plan (actionable)
 
+### Progress snapshot
+- Done:
+  - Fail-fast nested HITL validation (always raises) and runtime guard retained.
+  - Pricing exception propagation regression test (AgentExecutionRunner).
+  - Sync/async bridge hardened (`_run_coro_sync` via BlockingPortal); sqlite bridge tests pass.
+  - Executor DI accepts injected deps/builder; regression tests added.
+  - Typed contexts groundwork: scratchpad reserved for framework metadata; enforcement tests; typed-context enforcement helper.
+  - Serialization cleanup: base_model uses native model_dump; backends (sqlite/base/memory/postgres) and cache/CLI/agents use pydantic/dataclass serialization; `safe_serialize` largely removed from runtime paths.
+- Remaining:
+  - Circular-import hardening: extract interfaces, reduce import-inside hacks, expand smoke tests.
+  - Full `safe_serialize` removal in tests/docs and remaining modules (`utils/serialization` tests, testing utils).
+  - Typed context enforcement across core flows (ban user data in scratchpad at runtime) and lints.
+  - Type-safety guardrails: TypeGuards replacing casts, CI lint for new `Any`/casts in core/DSL.
+  - Broader test sweep (`make test-fast`/full) post-cleanup.
+
 ### Phase 1 — Critical Stability
 - Nested HITL gate
   - Update `_check_hitl_nesting_safety` to raise `ConfigurationError` during validation (no runtime soft paths).

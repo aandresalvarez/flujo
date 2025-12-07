@@ -10,6 +10,13 @@ Purpose: deliver compile-time confidence without breaking core architectural rul
 - Config remains centralized via `infra.config_manager`; no env/toml reads in domain logic.
 - Serialization changes must honor Pydantic v2 and existing custom serialization rules.
 
+### Strict Defaults & Adapter Constraints (agent pipelines)
+- Strict-only stance: no loose mode, no implicit `Any` paths. `strict_dsl` and `context_strict_mode` are always on (CI and local); opt-outs are removed.
+- Adapters as last resort: `Unknown`/`TypedAny`, `DictContextAdapter`, `SchemaAdapter` exist only for explicit, narrow bridges (e.g., integrating an external schema boundary). They are not a legacy compatibility layer and require justification.
+- Ergonomics: provide decorators/helpers to derive step IO types from agent signatures, a light `TypedContext` helper for concise context declarations, and typed fakes for tests to prevent mock leakage.
+- Tests: regression coverage for strict paths plus the narrow adapter paths; ensure adapters cannot reintroduce silent `Any` flows. Validate policy-driven dispatch/control-flow exceptions remain unchanged.
+- Docs: remove legacy loose-mode guidance; all examples use strict typing, typed contexts, and explicit adapters only where justified.
+
 ### Phase 0 — Baseline Hardening (Non-breaking; preparatory)
 - Actions:
   - Add TypeGuards for step outcomes and replace unchecked `cast(...)` in executor/policies.
@@ -30,7 +37,7 @@ Purpose: deliver compile-time confidence without breaking core architectural rul
   - Enforce `input_keys` / `output_keys` linting between steps and context models; violations fail validation.
   - Remove legacy fallback behaviors that permit untyped context access.
 - Impact on Flujo:
-  - Developers get guided contracts for context data; existing pipelines keep working.
+  - Developers get guided contracts for context data; legacy untyped contexts must be updated (breaking).
   - Improved lint feedback reduces runtime `KeyError`/shape mismatches.
 - Alignment & Need:
   - Respects context idempotency (ContextManager patterns unchanged).
@@ -43,7 +50,7 @@ Purpose: deliver compile-time confidence without breaking core architectural rul
   - Add TypeGuard-backed helpers for outcomes/results to eliminate remaining casts in policies/executor.
 - Impact on Flujo:
   - IDE/mypy catches incompatible chains; pipelines become self-describing.
-  - Legacy users have an escape hatch to avoid sudden breakage.
+  - Adapters exist only for justified boundaries, not for preserving legacy loose typing.
 - Alignment & Need:
   - Maintains policy dispatch model; no isinstance branching in executor.
   - Drives down `Any` usage (goal: major reduction in DSL/core).
@@ -71,9 +78,10 @@ Purpose: deliver compile-time confidence without breaking core architectural rul
   - Pipeline typing/linting (no loose-mode shim)
   - Scratchpad ban + docs + removal of unused code paths
 - Toggles/config:
-  - `strict_dsl` profile flag (CI default on; local opt-out removed post-release)
-  - `context_strict_mode` flag (CI default on; local opt-out removed post-release)
-- Tests: unit (TypeGuards, pipeline validation, context lints), integration (strict vs loose pipelines), regression for mocks→fakes.
+  - `strict_dsl` profile flag (always on; no opt-out)
+  - `context_strict_mode` flag (always on; no opt-out)
+- Tests: unit (TypeGuards, pipeline validation, context lints), integration (strict path plus justified adapter path), regression for mocks→fakes.
+- Docs cleanup: remove or rewrite any legacy loose-mode documentation; ensure public docs show only strict typing, typed contexts, and explicit adapters where justified.
 
 ### Success Metrics
 - `cast(...)` in core: driven to 0 (replaced by TypeGuards).

@@ -297,7 +297,10 @@ def status(
             from pydantic import BaseModel as _BM
 
             if isinstance(payload, _BM):
-                payload_data = payload.model_dump(mode="json")
+                try:
+                    payload_data = payload.model_dump(mode="json")
+                except TypeError:
+                    payload_data = payload.model_dump()
             else:
                 payload_data = payload
         except Exception:

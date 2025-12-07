@@ -448,6 +448,7 @@ def safe_serialize(
 
     Handles circular references robustly with mode-specific behavior:
     - "default" mode: Returns appropriate placeholders (None for objects, {} for dicts, [] for lists)
+    - "python" mode: Mirrors "default" for circulars to align with BaseModel.model_dump
     - "cache" mode: Returns "<ClassName circular>" placeholders
     - Custom modes: Uses the circular_ref_placeholder parameter
 
@@ -481,7 +482,7 @@ def safe_serialize(
 
     # Handle datetime objects with mode-aware behavior
     if isinstance(obj, (datetime, date, time)):
-        # Preserve native types in "python" mode (used for model field fidelity)
+        # Preserve native types in python mode; cast to ISO string otherwise
         return obj if mode == "python" else obj.isoformat()
 
     # Handle Enum objects specifically - don't add to _seen
@@ -508,6 +509,16 @@ def safe_serialize(
     except Exception:
         pass
 
+    # Determine if this is a Flujo BaseModel (used in multiple branches)
+    is_flujo_model = False
+    if HAS_PYDANTIC:
+        try:
+            from flujo.domain.base_model import BaseModel as FlujoBaseModel
+
+            is_flujo_model = isinstance(obj, FlujoBaseModel)
+        except ImportError:
+            is_flujo_model = False
+
     # Handle circular references for non-primitive types
     if not isinstance(obj, PRIMITIVE_TYPES):
         obj_id = id(obj)
@@ -521,15 +532,7 @@ def safe_serialize(
                 # Generate class-specific circular reference marker
                 class_name = getattr(obj.__class__, "__name__", type(obj).__name__)
                 return f"<{class_name} circular>"
-            elif mode == "default":
-                # For default mode, check if this is a Flujo BaseModel for special handling
-                try:
-                    from flujo.domain.base_model import BaseModel as FlujoBaseModel
-
-                    is_flujo_model = isinstance(obj, FlujoBaseModel)
-                except ImportError:
-                    is_flujo_model = False
-
+            elif mode in {"default", "python"}:
                 if is_flujo_model:
                     return None
                 elif isinstance(obj, dict):
@@ -539,7 +542,7 @@ def safe_serialize(
                 elif isinstance(obj, (set, frozenset)):
                     return []
                 else:
-                    # For other objects in default mode, use the circular_ref_placeholder
+                    # For other objects in default/python modes, use the circular_ref_placeholder
                     return circular_ref_placeholder
             else:
                 # For other modes, use the provided placeholder
@@ -571,16 +574,21 @@ def safe_serialize(
                 # For other exceptions, fall through to default handling
                 pass
 
-        # Prefer Pydantic model_dump for BaseModel instances
-        if HAS_PYDANTIC and isinstance(obj, PydanticBaseModel):
-            model_dump_kwargs = {"mode": "json"} if mode != "python" else {"mode": "python"}
+        # Prefer Pydantic model_dump for BaseModel instances; then serialize recursively
+        if HAS_PYDANTIC and isinstance(obj, PydanticBaseModel) and not is_flujo_model:
+            # Avoid recursive model_dump (may trigger circular errors); serialize __dict__ using python mode
             try:
-                return obj.model_dump(**model_dump_kwargs)
+                raw = getattr(obj, "__dict__", obj)
+                return safe_serialize(
+                    raw,
+                    default_serializer,
+                    _seen,
+                    _recursion_depth + 1,
+                    circular_ref_placeholder,
+                    "python",
+                )
             except Exception:
-                try:
-                    return obj.dict()
-                except Exception:
-                    pass
+                pass
 
         if obj is None:
             return None
@@ -650,14 +658,6 @@ def safe_serialize(
             }
         # Handle Pydantic models with enhanced Flujo BaseModel support
         if hasattr(obj, "model_dump") or (HAS_PYDANTIC and isinstance(obj, PydanticBaseModel)):
-            # Check if this is a subclass of our custom BaseModel (from flujo.domain.base_model)
-            try:
-                from flujo.domain.base_model import BaseModel as FlujoBaseModel
-
-                is_flujo_model = isinstance(obj, FlujoBaseModel)
-            except ImportError:
-                is_flujo_model = False
-
             if is_flujo_model:
                 # This is a Flujo BaseModel - build a dict manually from declared fields
                 # to avoid triggering Pydantic's strict serializer (which emits warnings
