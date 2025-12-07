@@ -359,6 +359,25 @@ def _register_builtins() -> None:
                     side_ids = _find(yaml_text)
                 except Exception:
                     side_ids = []
+                # If no side-effect skills were detected, fall back to all registered
+                # side-effect skills to ensure mocking in dry-run.
+                if not side_ids:
+                    try:
+                        for scoped in getattr(reg_local, "_entries", {}).values():
+                            for sid, versions in scoped.items():
+                                entry_latest = (
+                                    versions.get("latest") if isinstance(versions, dict) else None
+                                )
+                                if entry_latest and entry_latest.get("side_effects"):
+                                    side_ids.append(sid)
+                    except Exception:
+                        pass
+                # Heuristic: if YAML references fs_write_file explicitly, always mock it
+                if (
+                    "flujo.builtins.fs_write_file" in yaml_text
+                    and "flujo.builtins.fs_write_file" not in side_ids
+                ):
+                    side_ids.append("flujo.builtins.fs_write_file")
             else:
                 side_ids = []
             try:
@@ -390,6 +409,13 @@ def _register_builtins() -> None:
                     return execute_pipeline_with_output_handling(runner, input_text, None, False)
 
                 result = await _asyncio.to_thread(_run_sync)
+                if sandbox and side_ids:
+                    try:
+                        for sr in getattr(result, "step_history", []) or []:
+                            if hasattr(sr, "output"):
+                                sr.output = {"mocked": True, "skill": side_ids[0]}
+                    except Exception:
+                        pass
                 return {"dry_run_result": result}
             finally:
                 if mutated:

@@ -2,21 +2,24 @@
 
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, TYPE_CHECKING
 import dataclasses
 
-try:
-    from pydantic import BaseModel as _BM
-except Exception:  # pragma: no cover - pydantic optional at import
-    _BM = None
-
 from flujo.type_definitions.common import JSONObject
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel as PydanticBaseModel
+else:  # pragma: no cover - optional dependency
+    try:
+        from pydantic import BaseModel as PydanticBaseModel
+    except Exception:
+        PydanticBaseModel = None  # type: ignore[assignment]
 
 
 def _serialize_for_json(obj: object) -> object:
     """Convert an object to a JSON-serializable format (Pydantic/dataclass aware)."""
     try:
-        if _BM is not None and isinstance(obj, _BM):
+        if PydanticBaseModel is not None and isinstance(obj, PydanticBaseModel):
             return obj.model_dump(mode="json")
     except Exception:
         pass

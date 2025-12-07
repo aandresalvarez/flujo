@@ -344,8 +344,8 @@ class FlujoRuntimeBuilder:
         validator_invoker_obj: ValidatorInvoker = validator_invoker or DefaultValidatorInvoker(
             validator_runner_obj
         )
-        simple_step_executor_obj: SimpleStepExecutor = cast(
-            SimpleStepExecutor, simple_step_executor or DefaultSimpleStepExecutor()
+        simple_step_executor_obj: SimpleStepExecutor = (
+            simple_step_executor or DefaultSimpleStepExecutor()
         )
         agent_step_executor_obj: AgentStepExecutor = (
             agent_step_executor or DefaultAgentStepExecutor()

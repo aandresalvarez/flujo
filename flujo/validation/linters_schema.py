@@ -39,6 +39,13 @@ class SchemaLinter(BaseLinter):
                             )
                         )
                 schema = getattr(ag, "_declared_output_schema", None)
+                if schema is None:
+                    try:
+                        candidate = getattr(ag, "output_schema", None)
+                        if isinstance(candidate, dict):
+                            schema = candidate
+                    except Exception:
+                        schema = None
                 if (
                     isinstance(schema, dict)
                     and str(schema.get("type", "")).strip().lower() == "string"
@@ -68,7 +75,16 @@ class SchemaLinter(BaseLinter):
                 try:
                     ag_prev = getattr(prev, "agent", None)
                     prev_schema = getattr(ag_prev, "_declared_output_schema", None)
-                    prev_structured = isinstance(prev_schema, dict) and bool(prev_schema)
+                    if prev_schema is None:
+                        try:
+                            candidate = getattr(ag_prev, "output_schema", None)
+                            if isinstance(candidate, dict):
+                                prev_schema = candidate
+                        except Exception:
+                            prev_schema = None
+                    prev_structured = (isinstance(prev_schema, dict) and bool(prev_schema)) or bool(
+                        getattr(ag_prev, "_schema_warnings", None)
+                    )
                     if not prev_structured:
                         continue
                     next_in = getattr(cur, "__step_input_type__", Any)
@@ -87,7 +103,22 @@ class SchemaLinter(BaseLinter):
                     is_stringify_agent = (
                         isinstance(agent_id, str) and "stringify" in agent_id.lower()
                     )
-                    if is_str_in or is_str_out or is_stringify_agent:
+                    templated_input = None
+                    try:
+                        meta_cur = getattr(cur, "meta", None)
+                        if isinstance(meta_cur, dict):
+                            templated_input = meta_cur.get("templated_input")
+                    except Exception:
+                        templated_input = None
+                    templated_hits_prev = False
+                    try:
+                        if isinstance(templated_input, str):
+                            prev_name = getattr(prev, "name", "")
+                            if prev_name and f"steps.{prev_name}.output" in templated_input:
+                                templated_hits_prev = True
+                    except Exception:
+                        templated_hits_prev = False
+                    if is_str_in or is_str_out or is_stringify_agent or templated_hits_prev:
                         meta = getattr(cur, "meta", None)
                         yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
                         loc_path = (yloc or {}).get("path") or f"steps[{i}]"

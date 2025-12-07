@@ -135,8 +135,10 @@ def get_skill_registry(scope: str | None = None) -> SkillRegistryProtocol:
 class _SkillRegistryResolver:
     """Adapter exposing SkillRegistry through the domain SkillResolver protocol."""
 
-    def get(self, skill_id: str, *, scope: str | None = None) -> Optional[dict[str, Any]]:
-        return get_skill_registry().get(skill_id, scope=scope)
+    def get(
+        self, skill_id: str, *, scope: str | None = None, version: str | None = None
+    ) -> Optional[dict[str, Any]]:
+        return get_skill_registry().get(skill_id, scope=scope, version=version)
 
 
 class SkillRegistryProvider(SkillRegistryProviderProtocol):

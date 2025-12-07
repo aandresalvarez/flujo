@@ -292,24 +292,22 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     try:
                         if tm is not None:
                             prompt_payload = processed_args[0] if processed_args else None
-                            # stringify and redact
-                            if isinstance(prompt_payload, str):
-                                prompt_str = prompt_payload
-                            else:
-                                try:
-                                    if isinstance(prompt_payload, PydanticBaseModel):
-                                        prompt_str = prompt_payload.model_dump(mode="json")
-                                    else:
-                                        import dataclasses as _dc
+                            prompt_raw: Any = prompt_payload
+                            try:
+                                if isinstance(prompt_raw, PydanticBaseModel):
+                                    prompt_raw = prompt_raw.model_dump(mode="json")
+                                else:
+                                    import dataclasses as _dc
 
-                                        if _dc.is_dataclass(prompt_payload) and not isinstance(
-                                            prompt_payload, type
-                                        ):
-                                            prompt_str = _dc.asdict(prompt_payload)
-                                        else:
-                                            prompt_str = prompt_payload
-                                except Exception:
-                                    prompt_str = prompt_payload
+                                    if _dc.is_dataclass(prompt_raw) and not isinstance(
+                                        prompt_raw, type
+                                    ):
+                                        prompt_raw = _dc.asdict(prompt_raw)
+                            except Exception:
+                                pass
+                            prompt_str = (
+                                prompt_raw if isinstance(prompt_raw, str) else str(prompt_raw)
+                            )
                             prompt_preview = summarize_and_redact_prompt(
                                 prompt_str, max_length=preview_len_env
                             )
@@ -360,23 +358,20 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         # Trace the response with preview and usage
                         try:
                             if tm is not None:
-                                if isinstance(unpacked_output, str):
-                                    out_str = unpacked_output
-                                else:
-                                    try:
-                                        if isinstance(unpacked_output, PydanticBaseModel):
-                                            out_str = unpacked_output.model_dump(mode="json")
-                                        else:
-                                            import dataclasses as _dc
+                                out_raw2: Any = unpacked_output
+                                try:
+                                    if isinstance(out_raw2, PydanticBaseModel):
+                                        out_raw2 = out_raw2.model_dump(mode="json")
+                                    else:
+                                        import dataclasses as _dc
 
-                                            if _dc.is_dataclass(unpacked_output) and not isinstance(
-                                                unpacked_output, type
-                                            ):
-                                                out_str = _dc.asdict(unpacked_output)
-                                            else:
-                                                out_str = unpacked_output
-                                    except Exception:
-                                        out_str = unpacked_output
+                                        if _dc.is_dataclass(out_raw2) and not isinstance(
+                                            out_raw2, type
+                                        ):
+                                            out_raw2 = _dc.asdict(out_raw2)
+                                except Exception:
+                                    pass
+                                out_str = out_raw2 if isinstance(out_raw2, str) else str(out_raw2)
                                 out_prev = summarize_and_redact_prompt(
                                     out_str, max_length=preview_len_env
                                 )
@@ -411,23 +406,20 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     else:
                         try:
                             if tm is not None:
-                                if isinstance(unpacked_output, str):
-                                    out_str = unpacked_output
-                                else:
-                                    try:
-                                        if isinstance(unpacked_output, PydanticBaseModel):
-                                            out_str = unpacked_output.model_dump(mode="json")
-                                        else:
-                                            import dataclasses as _dc
+                                out_raw: Any = unpacked_output
+                                try:
+                                    if isinstance(out_raw, PydanticBaseModel):
+                                        out_raw = out_raw.model_dump(mode="json")
+                                    else:
+                                        import dataclasses as _dc
 
-                                            if _dc.is_dataclass(unpacked_output) and not isinstance(
-                                                unpacked_output, type
-                                            ):
-                                                out_str = _dc.asdict(unpacked_output)
-                                            else:
-                                                out_str = unpacked_output
-                                    except Exception:
-                                        out_str = unpacked_output
+                                        if _dc.is_dataclass(out_raw) and not isinstance(
+                                            out_raw, type
+                                        ):
+                                            out_raw = _dc.asdict(out_raw)
+                                except Exception:
+                                    pass
+                                out_str = out_raw if isinstance(out_raw, str) else str(out_raw)
                                 out_prev = summarize_and_redact_prompt(
                                     out_str, max_length=preview_len_env
                                 )
@@ -465,14 +457,11 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                 except (ValidationError, ValueError, TypeError):
                     logfire.warn("Deterministic repair failed. Escalating to LLM repair.")
                 try:
-                    schema = TypeAdapter(
-                        _unwrap_type_adapter(self.target_output_type)
-                    ).json_schema()
                     prompt_data = {
                         "json_schema": json.dumps(
-                            schema.model_dump(mode="json")
-                            if isinstance(schema, PydanticBaseModel)
-                            else schema,
+                            TypeAdapter(
+                                _unwrap_type_adapter(self.target_output_type)
+                            ).json_schema(),
                             ensure_ascii=False,
                         ),
                         "original_prompt": str(args[0]) if args else "",

@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 from typing import Any, Awaitable, Callable, Optional, Type, Union
 
-from ...domain.dsl.step import Step
 from ...domain.models import Failure, StepOutcome, StepResult
 from .types import ExecutionFrame
 from .policy_registry import PolicyRegistry, StepPolicy
@@ -24,15 +23,13 @@ class ExecutionDispatcher:
         self._registry: PolicyRegistry = registry or PolicyRegistry()
         self._core = core
 
-    def register(self, step_type: Type[Step[Any, Any]], policy: PolicyCallable) -> None:
+    def register(self, step_type: Type[Any], policy: PolicyCallable) -> None:
         """Register a policy; thin wrapper around PolicyRegistry."""
         self._registry.register(step_type, policy)
 
-    def get_policy(self, step: Step[Any, Any]) -> Optional[RegisteredPolicy]:
+    def get_policy(self, step: Any) -> Optional[RegisteredPolicy]:
         """Return the policy callable for a step instance, if any."""
         policy = self._registry.get(type(step))
-        if policy is None:
-            policy = self._registry.get(Step)
         return policy
 
     async def dispatch(self, frame: ExecutionFrame[Any]) -> StepOutcome[Any]:

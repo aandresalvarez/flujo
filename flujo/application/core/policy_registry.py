@@ -7,7 +7,7 @@ from ...domain.dsl.step import Step
 from ...domain.models import StepOutcome
 from .types import ExecutionFrame
 
-TStep = TypeVar("TStep", bound=Step[Any, Any])
+TStep = TypeVar("TStep", bound="Step[Any, Any]")
 PolicyCallable = Callable[[ExecutionFrame[Any]], Awaitable[StepOutcome[Any]]]
 
 
