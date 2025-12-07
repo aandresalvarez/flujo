@@ -17,10 +17,7 @@ class BaseModel(PydanticBaseModel):
 
     def model_dump(self, *, mode: str = "default", **kwargs: Any) -> Any:
         """
-        Unified model serialization using flujo.utils.serialization.
-
-        This method delegates to the centralized serialization system to ensure
-        consistent behavior across all domain models.
+        Unified model serialization using native Pydantic serialization.
 
         Args:
             mode: Serialization mode, supports "default" and "cache" modes
@@ -29,11 +26,7 @@ class BaseModel(PydanticBaseModel):
         Returns:
             Serialized representation of the model
         """
-        from flujo.utils.serialization import safe_serialize
-
-        # Delegate all serialization to the centralized utility.
-        # We pass `self` to be serialized.
-        return safe_serialize(self, mode=mode)
+        return super().model_dump(mode=mode, **kwargs)
 
     def model_dump_json(self, **kwargs: Any) -> str:
         """

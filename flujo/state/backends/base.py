@@ -1,9 +1,11 @@
 """Base classes for state backends."""
 
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 from typing import Any, List, Optional, Tuple, TYPE_CHECKING
 import dataclasses
+import uuid
 
 from flujo.type_definitions.common import JSONObject
 
@@ -18,6 +20,31 @@ else:  # pragma: no cover - optional dependency
 
 def _serialize_for_json(obj: object) -> object:
     """Convert an object to a JSON-serializable format (Pydantic/dataclass aware)."""
+    # Common primitives and numerics
+    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        return obj
+
+    # Time-related objects → ISO8601 strings
+    if isinstance(obj, (datetime, date, time)):
+        return obj.isoformat()
+
+    # Decimal / UUID → strings for JSON safety
+    if isinstance(obj, Decimal):
+        return str(obj)
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+
+    # Complex numbers → structured dict
+    if isinstance(obj, complex):
+        return {"real": obj.real, "imag": obj.imag}
+
+    # Bytes → UTF-8 with replacement to avoid errors
+    if isinstance(obj, (bytes, bytearray, memoryview)):
+        try:
+            return bytes(obj).decode("utf-8")
+        except Exception:
+            return bytes(obj).decode("utf-8", errors="replace")
+
     try:
         if PydanticBaseModel is not None and isinstance(obj, PydanticBaseModel):
             return obj.model_dump(mode="json")
