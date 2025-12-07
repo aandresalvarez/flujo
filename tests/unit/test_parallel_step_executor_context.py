@@ -80,25 +80,6 @@ async def test_parallel_executor_isolates_context_per_branch(
     setattr(frame, "step_executor", fake_step_executor)
 
     res = await execu.execute(core, frame)
-    execu = DefaultParallelStepExecutor()
-    core = _Core()
-    frame = make_execution_frame(
-        core,
-        p,
-        {"x": 1},
-        context=base_context,
-        resources=None,
-        limits=None,
-        context_setter=None,
-        stream=False,
-        on_chunk=None,
-        fallback_depth=0,
-        result=None,
-        quota=None,
-    )
-    setattr(frame, "step_executor", fake_step_executor)
-
-    res = await execu.execute(core, frame)
 
     res_sr = res.step_result if hasattr(res, "step_result") else res
     assert isinstance(res_sr, StepResult)

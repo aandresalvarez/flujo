@@ -295,6 +295,11 @@ class ContextManager:
                 raise ContextManager.ContextIsolationError(
                     f"Deep isolation returned None for context type {type(context).__name__}"
                 )
+            if cloned is context:
+                raise ContextManager.ContextIsolationError(
+                    f"Strict isolation fell back to shared reference for context type "
+                    f"{type(context).__name__}"
+                )
             return cloned
         except Exception as e:
             raise ContextManager.ContextIsolationError(

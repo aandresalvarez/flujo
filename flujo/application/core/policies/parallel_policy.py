@@ -443,8 +443,13 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                 else branch_execution_result
             )
             branch_results[branch_name_local] = branch_result
-            print(
-                f"DEBUG: branch={branch_name_local}, success={branch_result.success}, cost={branch_result.cost_usd}, feedback={branch_result.feedback}"
+            telemetry.logfire.debug(
+                "Parallel branch result",
+                extra={
+                    "branch": branch_name_local,
+                    "success": branch_result.success,
+                    "cost_usd": branch_result.cost_usd,
+                },
             )
             if branch_result.success:
                 total_cost += branch_result.cost_usd

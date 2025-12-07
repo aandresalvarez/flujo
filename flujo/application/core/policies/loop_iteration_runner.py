@@ -663,12 +663,10 @@ async def run_loop_iterations(
                 )
 
         # Ensure loop exit condition is re-evaluated with the latest context flags
-        try:
-            if hasattr(iteration_context, "is_complete") and iteration_context.is_complete:
-                if hasattr(current_context, "is_complete"):
-                    current_context.is_complete = True
-        except Exception:
-            pass
+        if getattr(iteration_context, "is_complete", False) and hasattr(
+            current_context, "is_complete"
+        ):
+            current_context.is_complete = True
         sync_conversation_history(
             current_context=current_context,
             iteration_context=iteration_context,

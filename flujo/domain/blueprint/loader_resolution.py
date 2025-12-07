@@ -73,6 +73,8 @@ def _import_object(path: str) -> Any:
             raise BlueprintError(
                 f"Import of module '{module_name}' is not allowed. Configure 'blueprint_allowed_imports' in flujo.toml."
             )
+    except BlueprintError:
+        raise
     except Exception:
         raise BlueprintError(
             "Failed to verify allowed imports from configuration; refusing to import modules from YAML."

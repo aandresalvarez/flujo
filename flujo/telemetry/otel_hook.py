@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Awaitable, Callable, Dict, Literal, Optional, cast
 import time
 
@@ -30,6 +31,9 @@ except Exception:  # pragma: no cover - optional dependency
     OTEL_AVAILABLE = False
 
 
+logger = logging.getLogger("flujo.telemetry.otel")
+
+
 class OpenTelemetryHook:
     """Hook that exports Flujo lifecycle events as OpenTelemetry spans."""
 
@@ -56,12 +60,23 @@ class OpenTelemetryHook:
         self._active_spans: Dict[str, Span] = {}
         # Monotonic start times for step spans (fallback latency computation)
         self._mono_start: Dict[str, float] = {}
+        self._redact: Callable[[str], str]
         try:
             from flujo.utils.redact import summarize_and_redact_prompt
 
-            self._redact = summarize_and_redact_prompt
-        except Exception:
-            self._redact = lambda prompt_text, max_length=0, settings=None: "<redacted>"
+            # Normalize to a single-argument callable; use defaults for optional params.
+            self._redact = lambda prompt_text: summarize_and_redact_prompt(prompt_text)
+        except ImportError:  # pragma: no cover - optional dependency
+            # Best-effort fallback when redaction helpers are unavailable.
+            self._redact = lambda _prompt_text: "<redacted>"
+
+    def _safe_redact(self, text: str) -> str:
+        """Best-effort redaction that never raises."""
+        try:
+            return self._redact(text)
+        except Exception as exc:  # noqa: BLE001 - defensive best-effort path
+            logger.debug("Redaction failed; using fallback placeholder", exc_info=exc)
+            return "<redaction-error>"
 
     async def hook(self, payload: HookPayload) -> None:
         if getattr(payload, "is_background", False):
@@ -138,11 +153,8 @@ class OpenTelemetryHook:
         ctx = trace.set_span_in_context(run_span)
         span = self.tracer.start_span(name_for_span, context=ctx)
         # Canonical attributes (best-effort)
-        try:
-            raw_input = str(getattr(payload, "step_input", ""))
-            span.set_attribute("step_input", self._redact(raw_input))
-        except Exception:
-            pass
+        raw_input = str(getattr(payload, "step_input", ""))
+        span.set_attribute("step_input", self._safe_redact(raw_input))
         try:
             span.set_attribute(
                 "flujo.step.type",
@@ -227,12 +239,9 @@ class OpenTelemetryHook:
             span.set_attribute(
                 "flujo.budget.actual_tokens", getattr(payload.step_result, "token_counts", 0)
             )
-            try:
-                span.set_attribute(
-                    "step_output", self._redact(str(getattr(payload.step_result, "output", "")))
-                )
-            except Exception:
-                pass
+            span.set_attribute(
+                "step_output", self._safe_redact(str(getattr(payload.step_result, "output", "")))
+            )
             # Emit fallback event if metadata indicates it
             try:
                 md = getattr(payload.step_result, "metadata_", {}) or {}

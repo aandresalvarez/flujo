@@ -1088,15 +1088,17 @@ class SQLiteBackendBase(StateBackend):
 
     async def close(self) -> None:
         """Close database connections and cleanup resources."""
-        # Close all loop-local pooled connections
-        for conn in list(self._connection_pool_map.values()):
-            try:
-                await conn.close()
-            except Exception:
-                pass
-        self._connection_pool_map.clear()
-        self._connection_pool = None
-        self._initialized = False
+        lock = self._get_lock()
+        async with lock:
+            # Close all loop-local pooled connections
+            for conn in list(self._connection_pool_map.values()):
+                try:
+                    await conn.close()
+                except Exception:
+                    pass
+            self._connection_pool_map.clear()
+            self._connection_pool = None
+            self._initialized = False
 
         # No global locks to clean up
 

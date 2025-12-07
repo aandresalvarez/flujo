@@ -120,33 +120,30 @@ class DockerSandbox(SandboxProtocol):
 
             timed_out = False
             wait_result: dict[str, int] | None = None
-            container_obj: Any | None = container
+            container_obj: Any = container
             try:
-                if container_obj:
+                try:
+                    wait_result = await asyncio.wait_for(
+                        asyncio.to_thread(container_obj.wait),
+                        timeout=request.timeout_s or self._timeout_s,
+                    )
+                except asyncio.TimeoutError:
+                    timed_out = True
                     try:
-                        wait_result = await asyncio.wait_for(
-                            asyncio.to_thread(container_obj.wait),
-                            timeout=request.timeout_s or self._timeout_s,
-                        )
-                    except asyncio.TimeoutError:
-                        timed_out = True
-                        try:
-                            container_obj.kill()
-                        except Exception:
-                            pass
-                    except asyncio.CancelledError:
-                        try:
-                            container_obj.kill()
-                        except Exception:
-                            pass
-                        raise
+                        container_obj.kill()
                     except Exception:
                         pass
+                except asyncio.CancelledError:
+                    try:
+                        container_obj.kill()
+                    except Exception:
+                        pass
+                    raise
+                except Exception:
+                    pass
 
                 try:
-                    logs = (
-                        container_obj.logs(stdout=True, stderr=True) if container_obj else b""
-                    ) or b""
+                    logs = container_obj.logs(stdout=True, stderr=True) or b""
                     stdout = logs.decode("utf-8", errors="replace")
                     stderr = ""
                 except Exception:
@@ -172,8 +169,7 @@ class DockerSandbox(SandboxProtocol):
                 )
             finally:
                 try:
-                    if container_obj:
-                        container_obj.remove(force=True)
+                    container_obj.remove(force=True)
                 except Exception:
                     pass
 
