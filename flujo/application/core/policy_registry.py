@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Awaitable, Callable, Dict, Generic, Optional, Type, TypeVar, cast
+from typing import Any, Awaitable, Callable, Dict, Generic, Optional, Type, TypeVar
 
 from ...domain.dsl.step import Step
 from ...domain.models import StepOutcome
@@ -21,8 +21,8 @@ class StepPolicy(ABC, Generic[TStep]):
         raise NotImplementedError
 
     @abstractmethod
-    async def execute(self, core: Any, *args: Any, **kwargs: Any) -> StepOutcome[Any]:
-        """Execute a step for the given core + parameters (frame or legacy args)."""
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[Any]:
+        """Execute a step for the given core + execution frame."""
         raise NotImplementedError
 
 
@@ -37,10 +37,7 @@ class CallableStepPolicy(StepPolicy[Step[Any, Any]]):
     def handles_type(self) -> Type[Step[Any, Any]]:
         return self._handles_type
 
-    async def execute(self, core: Any, *args: Any, **kwargs: Any) -> StepOutcome[Any]:
-        if not args:
-            raise TypeError("ExecutionFrame is required for callable policies")
-        frame = cast(ExecutionFrame[Any], args[0])
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[Any]:
         return await self._func(frame)
 
 

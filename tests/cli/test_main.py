@@ -3,6 +3,7 @@ from __future__ import annotations
 import textwrap
 import subprocess
 import sys
+import os
 from pathlib import Path
 
 
@@ -76,6 +77,12 @@ def test_yaml_validate_strict_exits_nonzero(tmp_path: Path) -> None:
     """
     p = tmp_path / "invalid.yaml"
     p.write_text(yaml_text)
+
+    # Allow tests modules to be imported by the subprocess
+    (tmp_path / "flujo.toml").write_text('blueprint_allowed_imports = ["tests", "flujo"]')
+
+    env = os.environ.copy()
+    env["FLUJO_CONFIG_PATH"] = str(tmp_path / "flujo.toml")
     result = subprocess.run(
         [
             sys.executable,
@@ -88,6 +95,7 @@ def test_yaml_validate_strict_exits_nonzero(tmp_path: Path) -> None:
         ],
         capture_output=True,
         text=True,
+        env=env,
     )
     assert result.returncode != 0
 
@@ -105,10 +113,17 @@ def test_yaml_run_aborts_on_invalid_pipeline(tmp_path: Path) -> None:
     """
     p = tmp_path / "invalid_run.yaml"
     p.write_text(yaml_text)
+
+    # Allow tests modules to be imported
+    (tmp_path / "flujo.toml").write_text('blueprint_allowed_imports = ["tests", "flujo"]')
+    env = os.environ.copy()
+    env["FLUJO_CONFIG_PATH"] = str(tmp_path / "flujo.toml")
+
     result = subprocess.run(
         [sys.executable, "-m", "flujo.cli.main", "run", str(p), "--input", "hi"],
         capture_output=True,
         text=True,
+        env=env,
     )
     assert result.returncode != 0
 
@@ -294,17 +309,25 @@ def test_yaml_plugins_and_validators(tmp_path: Path) -> None:
     """
     src = tmp_path / "pipe.yaml"
     src.write_text(yaml_text)
+
+    # Allow tests modules to be imported
+    (tmp_path / "flujo.toml").write_text('blueprint_allowed_imports = ["tests", "flujo"]')
+    env = os.environ.copy()
+    env["FLUJO_CONFIG_PATH"] = str(tmp_path / "flujo.toml")
+
     result = subprocess.run(
         [
             sys.executable,
             "-m",
             "flujo.cli.main",
-            "dev",
-            "compile-yaml",
+            "run",
             str(src),
+            "--input",
+            "hi",
         ],
         capture_output=True,
         text=True,
+        env=env,
     )
     assert result.returncode == 0
 

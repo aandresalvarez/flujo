@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Docs
 - Documented the new runner cleanup pattern in the user guide.
 
+### Removed
+- Optimization layer deleted (including `adaptive_resource_manager`, `circuit_breaker`, `performance_monitor`, and `optimized_error_handler`); `psutil` dependency dropped. `ExecutorCore` still accepts `optimization_config` via the stub for backward compatibility but it is ignored, and module isolation is verified via subprocess tests.
+
 ## [0.4.38] - 2025-10-04
 
 ### Fixed
