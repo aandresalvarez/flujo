@@ -56,9 +56,10 @@ async def _ensure_object_builtin(data: Any, *, key: str = "value") -> dict[str, 
         pass
 
     try:
-        payload = json.loads(json.dumps(data, default=_serialize_for_json, ensure_ascii=False))
+        payload = _serialize_for_json(data, strict=False)
+        payload = json.loads(json.dumps(payload, ensure_ascii=False))
     except Exception:
-        payload = _serialize_for_json(data)
+        payload = _serialize_for_json(data, strict=False)
     return {str(key) if key is not None else "value": payload}
 
 
@@ -791,8 +792,8 @@ class NoOpStateBackend(StateBackend):
 
     async def save_state(self, run_id: str, state: JSONObject) -> None:
         # Simulate real backend behavior by serializing and storing state
-        serialized = json.loads(json.dumps(state, default=_serialize_for_json, ensure_ascii=False))
-        self._store[run_id] = serialized
+        normalized = _serialize_for_json(state)
+        self._store[run_id] = json.loads(json.dumps(normalized, ensure_ascii=False))
 
     async def load_state(self, run_id: str) -> Optional[JSONObject]:
         # Simulate real backend behavior by deserializing stored state
@@ -815,8 +816,8 @@ class NoOpStateBackend(StateBackend):
 
     async def save_trace(self, run_id: str, trace: Any) -> None:
         # Simulate real backend behavior by storing trace data
-        serialized = json.loads(json.dumps(trace, default=_serialize_for_json, ensure_ascii=False))
-        self._trace_store[run_id] = serialized
+        normalized = _serialize_for_json(trace)
+        self._trace_store[run_id] = json.loads(json.dumps(normalized, ensure_ascii=False))
 
     async def list_runs(
         self,

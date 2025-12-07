@@ -36,9 +36,8 @@ class InMemoryBackend(StateBackend):
     async def save_state(self, run_id: str, state: JSONObject) -> None:
         async with self._get_lock():
             # Serialize state so custom types are handled consistently without safe_serialize
-            serialized = json.loads(
-                json.dumps(state, default=_serialize_for_json, ensure_ascii=False)
-            )
+            normalized = _serialize_for_json(state)
+            serialized = json.loads(json.dumps(normalized, ensure_ascii=False))
             self._store[run_id] = serialized
 
     async def load_state(self, run_id: str) -> Optional[JSONObject]:

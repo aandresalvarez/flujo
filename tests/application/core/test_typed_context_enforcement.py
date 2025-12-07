@@ -68,3 +68,30 @@ def test_enforce_typed_context_accepts_pydantic(monkeypatch):
     )
 
     assert frame.context is ctx
+
+
+def test_scratchpad_enforcement_rejects_user_keys(monkeypatch):
+    monkeypatch.setenv("FLUJO_ENFORCE_SCRATCHPAD_BAN", "1")
+    monkeypatch.setenv("FLUJO_SCRATCHPAD_BAN_STRICT", "1")
+    from flujo.domain.models import PipelineContext
+    from flujo.application.core import context_adapter as ca
+
+    ctx = PipelineContext()
+    with pytest.raises(ValueError):
+        ca._inject_context_with_deep_merge(
+            ctx, {"scratchpad": {"user_note": "forbidden"}}, PipelineContext
+        )
+
+
+def test_scratchpad_enforcement_allows_framework_keys(monkeypatch):
+    monkeypatch.setenv("FLUJO_ENFORCE_SCRATCHPAD_BAN", "1")
+    from flujo.domain.models import PipelineContext
+    from flujo.application.core import context_adapter as ca
+
+    ctx = PipelineContext()
+    err = ca._inject_context_with_deep_merge(
+        ctx, {"scratchpad": {"status": "paused", "steps": {"s1": "out"}}}, PipelineContext
+    )
+    assert err is None
+    assert ctx.scratchpad["status"] == "paused"
+    assert ctx.scratchpad["steps"] == {"s1": "out"}

@@ -87,6 +87,15 @@ class PolicyRegistry:
 
         if not isinstance(step_type, type):
             raise TypeError("step_type must be a type")
+        # Runtime guard to reject non-Step registrations (maintain policy safety)
+        try:
+            from ...domain.dsl.step import Step as DSLStep
+        except (ImportError, ModuleNotFoundError):
+            if policy is None:
+                raise
+        else:
+            if not issubclass(step_type, DSLStep):
+                raise TypeError("step_type must be a subclass of Step")
         if policy is None:
             raise TypeError("policy is required when registering by step type")
         self._registry[step_type] = policy

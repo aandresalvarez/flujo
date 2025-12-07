@@ -6,6 +6,8 @@ from decimal import Decimal
 from typing import Any, List, Optional, Tuple, TYPE_CHECKING, Set
 import dataclasses
 import uuid
+import math
+from enum import Enum
 
 from flujo.type_definitions.common import JSONObject
 
@@ -18,7 +20,9 @@ else:  # pragma: no cover - optional dependency
         PydanticBaseModel = None  # type: ignore[assignment]
 
 
-def _serialize_for_json(obj: object, *, _seen: Optional[Set[int]] = None) -> object:
+def _serialize_for_json(
+    obj: object, *, _seen: Optional[Set[int]] = None, strict: bool = True
+) -> object:
     """Convert an object to a JSON-serializable format (Pydantic/dataclass aware).
 
     Includes basic circular-reference protection for containers.
@@ -26,11 +30,54 @@ def _serialize_for_json(obj: object, *, _seen: Optional[Set[int]] = None) -> obj
     if _seen is None:
         _seen = set()
     obj_id = id(obj)
+    typed_placeholder = False
+    try:
+        from flujo.domain.base_model import BaseModel as DomainBaseModel
+
+        typed_placeholder = isinstance(obj, DomainBaseModel)
+    except Exception:
+        typed_placeholder = False
+
+    if typed_placeholder:
+        placeholder = f"<{type(obj).__name__} circular>"
+    elif PydanticBaseModel is not None and isinstance(obj, PydanticBaseModel):
+        placeholder = "<circular>"
+    else:
+        placeholder = "<circular-ref>"
     if obj_id in _seen:
-        return "<circular>"
-    # Common primitives and numerics
-    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        return placeholder
+
+    # Custom serializer registry (best-effort)
+    try:
+        from flujo.utils.serialization import lookup_custom_serializer
+    except Exception:
+        lookup_custom_serializer = None
+
+    if lookup_custom_serializer is not None:
+        serializer = lookup_custom_serializer(obj)
+        if serializer is not None:
+            try:
+                serialized = serializer(obj)
+                # If serializer returns the same object, fall through to standard handling
+                if serialized is not obj:
+                    _seen.add(obj_id)
+                    return _serialize_for_json(serialized, _seen=_seen, strict=strict)
+            except Exception:
+                if strict:
+                    raise
+    if isinstance(obj, float):
+        if math.isnan(obj):
+            return "nan"
+        if math.isinf(obj):
+            return "inf" if obj > 0 else "-inf"
         return obj
+
+    # Common primitives and numerics
+    if isinstance(obj, (str, int, bool)) or obj is None:
+        return obj
+
+    if isinstance(obj, Enum):
+        return obj.value if hasattr(obj, "value") else str(obj)
 
     # Time-related objects → ISO8601 strings
     if isinstance(obj, (datetime, date, time)):
@@ -55,25 +102,58 @@ def _serialize_for_json(obj: object, *, _seen: Optional[Set[int]] = None) -> obj
 
     try:
         if PydanticBaseModel is not None and isinstance(obj, PydanticBaseModel):
-            return obj.model_dump(mode="json")
+            _seen.add(obj_id)
+            try:
+                data = PydanticBaseModel.model_dump(obj, mode="json")  # bypass override recursion
+            except Exception:
+                safe_dict = dict(getattr(obj, "__dict__", {}))
+                return _serialize_for_json(safe_dict, _seen=_seen, strict=strict)
+            return _serialize_for_json(data, _seen=_seen, strict=strict)
     except Exception:
         pass
     try:
         if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
-            return dataclasses.asdict(obj)
+            _seen.add(obj_id)
+            data = dataclasses.asdict(obj)
+            return _serialize_for_json(data, _seen=_seen, strict=strict)
     except Exception:
         pass
 
     # Collections with circular protection
     if isinstance(obj, dict):
         _seen.add(obj_id)
-        return {str(k): _serialize_for_json(v, _seen=_seen) for k, v in obj.items()}
+
+        def _stringify_key(key: Any) -> str:
+            try:
+                serialized_key = _serialize_for_json(key, _seen=_seen, strict=strict)
+            except Exception:
+                serialized_key = key
+            if isinstance(serialized_key, (dict, list)):
+                return str(serialized_key)
+            return str(serialized_key)
+
+        return {
+            _stringify_key(k): _serialize_for_json(v, _seen=_seen, strict=strict)
+            for k, v in obj.items()
+        }
     if isinstance(obj, (list, tuple, set, frozenset)):
         _seen.add(obj_id)
-        seq = [_serialize_for_json(v, _seen=_seen) for v in obj]
+        seq = [_serialize_for_json(v, _seen=_seen, strict=strict) for v in obj]
         return seq if isinstance(obj, list) else list(seq)
 
-    return obj
+    if not strict:
+        try:
+            if hasattr(obj, "__dict__"):
+                _seen.add(obj_id)
+                return _serialize_for_json(obj.__dict__, _seen=_seen, strict=strict)
+        except Exception:
+            pass
+        try:
+            return str(obj)
+        except Exception:
+            return repr(obj)
+
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 def _to_jsonable(obj: object) -> object:

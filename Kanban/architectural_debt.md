@@ -101,14 +101,14 @@ This improvement plan is prioritized by the **Impact/Effort Ratio**. We start wi
   - Pricing exception propagation regression test (AgentExecutionRunner).
   - Sync/async bridge hardened (`_run_coro_sync` via BlockingPortal); sqlite bridge tests pass.
   - Executor DI accepts injected deps/builder; regression tests added.
-  - Typed contexts groundwork: scratchpad reserved for framework metadata; enforcement tests; typed-context enforcement helper.
-  - Serialization cleanup: base_model uses native model_dump; backends (sqlite/base/memory/postgres) and cache/CLI/agents use pydantic/dataclass serialization; `safe_serialize` largely removed from runtime paths.
+  - Typed contexts: scratchpad reserved for framework metadata, runtime enforcement flag (`FLUJO_ENFORCE_SCRATCHPAD_BAN`) and tests.
+  - Serialization cleanup: base_model uses native model_dump; backends (sqlite/base/memory/postgres) and cache/CLI/agents use pydantic/dataclass serialization; `safe_serialize` removed from runtime/tests; `_serialize_for_json` hardened and applied across tests/benchmarks; placeholders standardized.
+  - Circular-import hardening: interfaces in `domain.interfaces`, core depends on interfaces; CLI/runner smoke tests added.
+  - Type-safety guardrails: reduced unsafe casts in core; TypeGuard for governance policy loading; bounded-cast architecture test added to prevent regressions; type validator uses typed accessors; scratchpad allowlist growth lint added (hard-fail scratchpad ban default).
 - Remaining:
-  - Circular-import hardening: extract interfaces, reduce import-inside hacks, expand smoke tests.
-  - Full `safe_serialize` removal in tests/docs and remaining modules (`utils/serialization` tests, testing utils).
-  - Typed context enforcement across core flows (ban user data in scratchpad at runtime) and lints.
-  - Type-safety guardrails: TypeGuards replacing casts, CI lint for new `Any`/casts in core/DSL.
-  - Broader test sweep (`make test-fast`/full) post-cleanup.
+  - Migrate DSL/import flows off scratchpad: add typed context artifacts (e.g., ImportArtifacts) and route ImportStep outputs/inputs and as_step counters/markers into typed fields; then shrink scratchpad allowlist and lower lint threshold.
+  - Apply TypeGuards to remaining dynamic joins (context isolation/merge helpers) and further reduce cast baseline once allowlist shrinks.
+  - Broader test sweep (`make test-fast`/full) post-migration and lint tightening. 
 
 ### Phase 1 — Critical Stability
 - Nested HITL gate
@@ -146,7 +146,7 @@ This improvement plan is prioritized by the **Impact/Effort Ratio**. We start wi
 - Type-safety: add TypeGuards for outcomes, eliminate unchecked `cast(...)`, fail CI on new `Any` in core/DSL.
 
 ### Acceptance checks
-- `make test-fast` and `make typecheck` green after each phase.
+- `make test-fast` and `make precommit` green after each phase.
 - Validation blocks nested HITL and pricing misconfig at build/graph time.
 - Executor DI usable with fakes in tests.
 - No legacy scratchpad usage for user data; lint/validation catches violations.

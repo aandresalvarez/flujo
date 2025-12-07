@@ -332,9 +332,13 @@ class TestTypeResolution:
         instance = _UserCustomModel(custom_field="test", number=42)
 
         # Test serialization
-        from flujo.utils.serialization import safe_serialize, safe_deserialize
+        from flujo.utils.serialization import safe_deserialize
+        from flujo.state.backends.base import _serialize_for_json
+        import json
 
-        serialized = safe_serialize(instance)
+        serialized = json.loads(
+            json.dumps(instance, default=_serialize_for_json, ensure_ascii=False)
+        )
         deserialized = safe_deserialize(serialized, _UserCustomModel)
 
         assert isinstance(deserialized, _UserCustomModel)

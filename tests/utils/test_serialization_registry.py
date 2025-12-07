@@ -10,10 +10,16 @@ from flujo.utils.serialization import (
     register_custom_deserializer,
     lookup_custom_serializer,
     lookup_custom_deserializer,
-    safe_serialize,
     safe_deserialize,
     reset_custom_serializer_registry,
 )
+from flujo.state.backends.base import _serialize_for_json
+import json
+
+
+def _serialize(obj: Any) -> Any:
+    normalized = _serialize_for_json(obj)
+    return json.loads(json.dumps(normalized, ensure_ascii=False))
 
 
 class MockCustomType:
@@ -117,7 +123,7 @@ class TestSerializationRegistry:
         original_obj = MockCustomType("test_value", {"key": "value", "number": 42})
 
         # Serialize
-        serialized = safe_serialize(original_obj)
+        serialized = _serialize(original_obj)
         assert isinstance(serialized, dict)
         assert serialized["type"] == "MockCustomType"
         assert serialized["value"] == "test_value"
@@ -155,7 +161,7 @@ class TestSerializationRegistry:
         custom_obj = MockCustomType("test_value", {"enum": enum_obj})
 
         # Serialize
-        serialized = safe_serialize(custom_obj)
+        serialized = _serialize(custom_obj)
         assert isinstance(serialized, dict)
         assert serialized["type"] == "MockCustomType"
         assert serialized["metadata"]["enum"]["type"] == "MockEnum"
@@ -193,7 +199,7 @@ class TestSerializationRegistry:
         original_obj = MockDataclass("test", 42, ["item1", "item2"])
 
         # Serialize
-        serialized = safe_serialize(original_obj)
+        serialized = _serialize(original_obj)
         assert isinstance(serialized, dict)
         assert serialized["type"] == "MockDataclass"
         assert serialized["field1"] == "test"
@@ -309,7 +315,7 @@ class TestSerializationRegistry:
         # Try to serialize - should raise ValueError from the bad serializer
         obj = MockCustomType("test_value", {"key": "value"})
         with pytest.raises(ValueError, match="Serialization failed"):
-            safe_serialize(obj)
+            _serialize(obj)
 
     def test_deserialization_error_handling(self):
         """Test that deserialization errors are handled gracefully."""
@@ -343,7 +349,7 @@ class TestSerializationRegistry:
         obj2.metadata["ref"] = obj1
 
         # Serialize - should handle circular reference gracefully
-        serialized = safe_serialize(obj1)
+        serialized = _serialize(obj1)
         assert isinstance(serialized, dict)
         assert serialized["type"] == "MockCustomType"
         assert serialized["value"] == "value1"

@@ -47,6 +47,12 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 conn = await self._create_connection()
                 try:
                     db = conn
+
+                    def _to_iso(ts: Any) -> str:
+                        if isinstance(ts, datetime):
+                            return ts.isoformat()
+                        return str(ts)
+
                     # OPTIMIZATION: Use more efficient serialization for performance-critical scenarios
                     # Skip expensive robust_serialize for simple data types
                     pipeline_context = state["pipeline_context"]
@@ -109,8 +115,8 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                             last_step_output_json,
                             step_history_json,
                             state["status"],
-                            state["created_at"].isoformat(),
-                            state["updated_at"].isoformat(),
+                            _to_iso(state["created_at"]),
+                            _to_iso(state["updated_at"]),
                             state.get("total_steps", 0),
                             state.get("error_message"),
                             execution_time_ms,

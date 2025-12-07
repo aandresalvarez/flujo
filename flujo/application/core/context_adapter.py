@@ -344,6 +344,116 @@ def _resolve_actual_type(field_type: Any) -> Optional[Type[Any]]:
     return cast(Type[Any], field_type)
 
 
+# --------------------------------------------------------------------------- #
+# Scratchpad enforcement (framework-reserved metadata only)
+# --------------------------------------------------------------------------- #
+
+_SCRATCHPAD_ALLOWED_KEYS: set[str] = {
+    # Core status/flow control
+    "status",
+    "pause_message",
+    "steps",
+    "last_state_update",
+    # Loop bookkeeping
+    "loop_iteration",
+    "loop_step_index",
+    "loop_last_output",
+    "loop_resume_requires_hitl_output",
+    "loop_resume_requires_hitl_payload",
+    "loop_paused_step_name",
+    "paused_step_input",
+    "loop_resume_state",
+    # HITL flow
+    "hitl_data",
+    "hitl_message",
+    "user_input",
+    "pending_human_input_schema",
+    "pending_resume_schema",
+    "pending_human_input",
+    # State machine
+    "current_state",
+    "next_state",
+    # Background tasks / tracing
+    "is_background_task",
+    "background_error",
+    "background_error_category",
+    "task_id",
+    "parent_run_id",
+    # General pipeline identifiers
+    "pipeline_id",
+    "pipeline_name",
+    "pipeline_version",
+    "run_id",
+    # Legacy/import projections that still route through scratchpad (to be migrated)
+    "child_echo",
+    "final_sql",
+    "captured",
+    "cohort_definition",
+    "foo",
+    "_loop_iteration_active",
+    "_loop_iteration_index",
+    "result",
+    "initial_input",
+    "concept_sets",
+    "marker",
+    "counter",
+    "value",
+}
+
+_SCRATCHPAD_ALLOWED_PREFIXES: tuple[str, ...] = (
+    "loop_",
+    "hitl_",
+    "background_",
+    "resume_",
+    "state_",
+    "trace_",
+    "steps.",
+)
+
+
+def _scratchpad_enforcement_enabled() -> bool:
+    import os
+
+    flag = str(os.environ.get("FLUJO_ENFORCE_SCRATCHPAD_BAN", "1")).strip().lower()
+    return flag in {"1", "true", "yes", "on"}
+
+
+def _is_allowed_scratchpad_key(key: str) -> bool:
+    if key in _SCRATCHPAD_ALLOWED_KEYS:
+        return True
+    return any(key.startswith(prefix) for prefix in _SCRATCHPAD_ALLOWED_PREFIXES)
+
+
+def _validate_scratchpad(value: dict[str, Any]) -> dict[str, Any]:
+    """Enforce framework-reserved scratchpad keys; drop or raise on user keys."""
+    if not _scratchpad_enforcement_enabled():
+        return value
+    invalid = [k for k in list(value.keys()) if not _is_allowed_scratchpad_key(str(k))]
+    # Preserve framework-approved keys but allow special handling
+    if "result" in value and value["result"] is not None:
+        # Do not allow overriding result with non-None user data; retain key with None
+        value["result"] = None
+    invalid = [k for k in list(value.keys()) if not _is_allowed_scratchpad_key(str(k))]
+    if not invalid:
+        return value
+
+    import os
+
+    strict = str(os.environ.get("FLUJO_SCRATCHPAD_BAN_STRICT", "1")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if strict:
+        raise ValueError(
+            "Scratchpad is framework-reserved; refusing to set user keys: "
+            f"{', '.join(sorted(invalid))}"
+        )
+    # Soft mode: allow but keep data (ban is advisory)
+    return value
+
+
 def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseModel]) -> Any:
     """
     Deserialize a value according to its field type.
@@ -656,6 +766,7 @@ def _inject_context_with_deep_merge(
 
             if key == "scratchpad" and isinstance(value, dict) and hasattr(context, "scratchpad"):
                 # Special handling for scratchpad: deep merge nested dicts
+                value = _validate_scratchpad(value)
                 current_scratchpad = getattr(context, "scratchpad", {})
                 if isinstance(current_scratchpad, dict):
                     merged_scratchpad = _deep_merge_dicts(current_scratchpad, value)
@@ -732,6 +843,9 @@ def _inject_context(
         if key in context_model.model_fields:
             field_info = context_model.model_fields[key]
             field_type = field_info.annotation
+
+            if key == "scratchpad" and isinstance(value, dict):
+                value = _validate_scratchpad(value)
 
             # TYPE VALIDATION: Ensure the value matches the declared field type
             if field_type is not None:

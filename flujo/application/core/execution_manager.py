@@ -674,24 +674,22 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     if step_result:
                         if step_result.success:
                             # Merge branch context from complex step handlers
-                            if step_result.branch_context is not None and context is not None:
-                                # Merge with explicit cast to satisfy generic ContextT
-                                from typing import cast
-
-                                merged = ContextManager.merge(
-                                    context, cast(Any, step_result.branch_context)
-                                )
-                                context = cast(Optional[ContextT], merged)
+                            if (
+                                step_result.branch_context is not None
+                                and context is not None
+                                and isinstance(step_result.branch_context, type(context))
+                            ):
+                                merged = ContextManager.merge(context, step_result.branch_context)
+                                context = merged
                             # For context-updating simple steps, prefer the branch_context snapshot
                             try:
                                 if (
                                     hasattr(step, "updates_context")
                                     and bool(getattr(step, "updates_context"))
                                     and step_result.branch_context is not None
+                                    and isinstance(step_result.branch_context, type(context))
                                 ):
-                                    from typing import cast as _cast
-
-                                    context = _cast(Optional[ContextT], step_result.branch_context)
+                                    context = step_result.branch_context
                             except Exception:
                                 pass
                             # --- CONTEXT UPDATE PATCH (deep merge + resilient fallback) ---
