@@ -146,7 +146,7 @@ This improvement plan is prioritized by the **Impact/Effort Ratio**. We start wi
 - Type-safety: add TypeGuards for outcomes, eliminate unchecked `cast(...)`, fail CI on new `Any` in core/DSL.
 
 ### Acceptance checks
-- `make test-fast` and `make precommit` green after each phase.
+- `make all` and `make precommit` green after each phase.
 - Validation blocks nested HITL and pricing misconfig at build/graph time.
 - Executor DI usable with fakes in tests.
 - No legacy scratchpad usage for user data; lint/validation catches violations.

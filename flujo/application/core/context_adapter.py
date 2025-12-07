@@ -10,6 +10,7 @@ from typing import (
     Iterator,
     Optional,
     Type,
+    TypeGuard,
     TypeVar,
     Union,
     cast,
@@ -33,6 +34,10 @@ __all__ = [
 ]
 
 T = TypeVar("T")
+
+
+def _is_import_artifacts(obj: object) -> TypeGuard[ImportArtifacts]:
+    return isinstance(obj, ImportArtifacts)
 
 
 # Thread-safe type resolution context
@@ -785,8 +790,8 @@ def _inject_context_with_deep_merge(
                         if hasattr(context, "import_artifacts")
                         else None
                     )
-                    if existing_artifacts is not None and not isinstance(
-                        existing_artifacts, ImportArtifacts
+                    if existing_artifacts is not None and not _is_import_artifacts(
+                        existing_artifacts
                     ):
                         try:
                             existing_artifacts = ImportArtifacts.model_validate(
