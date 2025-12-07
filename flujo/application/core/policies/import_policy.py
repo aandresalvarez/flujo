@@ -1,7 +1,7 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
-from typing import Type, cast
+from typing import Type, TypeGuard, cast
 from collections.abc import MutableMapping
 from flujo.domain.models import ImportArtifacts
 
@@ -564,10 +564,13 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                 """
                 parts = [p for p in path.split(".") if p]
 
+                def _is_import_artifacts(obj: object) -> TypeGuard[ImportArtifacts]:
+                    return isinstance(obj, ImportArtifacts)
+
                 def _get_from_artifacts(artifact_path: list[str]) -> Any:
                     try:
                         art = getattr(child_final_ctx, "import_artifacts", None)
-                        if isinstance(art, ImportArtifacts) and len(artifact_path) == 1:
+                        if _is_import_artifacts(art) and len(artifact_path) == 1:
                             name = artifact_path[0]
                             if name in getattr(art, "__pydantic_fields_set__", set()):
                                 return getattr(art, name, None)
