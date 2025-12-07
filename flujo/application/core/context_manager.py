@@ -1,4 +1,14 @@
-from typing import Optional, List, Any, Callable, Dict, Union, get_args, get_origin
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TypeGuard,
+    Union,
+    get_args,
+    get_origin,
+)
 import copy
 import inspect
 import os
@@ -32,6 +42,25 @@ class ContextManager:
 
     # Module-level flag for strict context mutation detection (Phase 1)
     ENFORCE_ISOLATION: bool = os.environ.get("FLUJO_STRICT_CONTEXT", "0") == "1"
+
+    @staticmethod
+    def _is_base_model(obj: object) -> TypeGuard[BaseModel]:
+        return isinstance(obj, BaseModel)
+
+    @staticmethod
+    def _is_mock_context(obj: object) -> bool:
+        try:
+            from unittest.mock import Mock, MagicMock
+
+            try:
+                from unittest.mock import AsyncMock as _AsyncMock
+
+                _mock_types: tuple[type[Any], ...] = (Mock, MagicMock, _AsyncMock)
+            except Exception:
+                _mock_types = (Mock, MagicMock)
+            return isinstance(obj, _mock_types)
+        except Exception:
+            return False
 
     class ContextIsolationError(Exception):
         """Raised when context isolation fails under strict settings."""
@@ -105,21 +134,8 @@ class ContextManager:
         if context is None:
             return None
         # Fast path: skip isolation for unittest.mock contexts used in performance tests
-        try:
-            from unittest.mock import Mock, MagicMock
-
-            try:
-                from unittest.mock import AsyncMock as _AsyncMock
-
-                _mock_types: tuple[type[Any], ...] = (Mock, MagicMock, _AsyncMock)
-            except Exception:
-                _mock_types = (Mock, MagicMock)
-            if isinstance(context, _mock_types):
-                from typing import cast
-
-                return cast(Optional[BaseModel], context)
-        except Exception:
-            pass
+        if ContextManager._is_mock_context(context):
+            return context
         # Selective isolation: include only specified keys if requested
         if include_keys:
             try:
@@ -187,11 +203,9 @@ class ContextManager:
                 except Exception:
                     pass
         # Use pydantic's deep copy when available; otherwise fall back safely
-        if isinstance(context, BaseModel):
-            from typing import cast
-
+        if ContextManager._is_base_model(context):
             try:
-                return cast(Optional[BaseModel], context.model_copy(deep=True))
+                return context.model_copy(deep=True)
             except Exception:
                 # Fall through to generic clone
                 pass
@@ -249,21 +263,8 @@ class ContextManager:
         if context is None:
             return None
         # Allow mocks without isolation for performance tests
-        try:
-            from unittest.mock import Mock as _Mock, MagicMock as _MagicMock
-
-            try:
-                from unittest.mock import AsyncMock as _AsyncMock
-
-                _mock_types: tuple[type[Any], ...] = (_Mock, _MagicMock, _AsyncMock)
-            except Exception:
-                _mock_types = (_Mock, _MagicMock)
-            if isinstance(context, _mock_types):
-                from typing import cast
-
-                return cast(Optional[BaseModel], context)
-        except Exception:
-            pass
+        if ContextManager._is_mock_context(context):
+            return context
 
         # Selective isolation if keys provided (reuse non-strict which is safe)
         if include_keys:
@@ -274,7 +275,7 @@ class ContextManager:
 
         # Pydantic deep copy preferred
         try:
-            if isinstance(context, BaseModel):
+            if ContextManager._is_base_model(context):
                 isolated = context.model_copy(deep=True)
                 # Deep-copy scratchpad when possible
                 if hasattr(isolated, "scratchpad") and hasattr(context, "scratchpad"):
