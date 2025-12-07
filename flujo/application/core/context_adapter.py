@@ -360,18 +360,9 @@ _SCRATCHPAD_ALLOWED_KEYS: set[str] = {
     "pause_message",
     "steps",
     "last_state_update",
-    # Loop bookkeeping
-    "loop_iteration",
-    "loop_step_index",
-    "loop_last_output",
-    "loop_resume_requires_hitl_output",
-    "loop_resume_requires_hitl_payload",
-    "loop_paused_step_name",
+    # Loop bookkeeping (prefix guarded)
     "paused_step_input",
-    "loop_resume_state",
-    # HITL flow
-    "hitl_data",
-    "hitl_message",
+    # HITL flow (prefix guarded)
     "user_input",
     "pending_human_input_schema",
     "pending_resume_schema",
@@ -379,10 +370,8 @@ _SCRATCHPAD_ALLOWED_KEYS: set[str] = {
     # State machine
     "current_state",
     "next_state",
-    # Background tasks / tracing
+    # Background tasks / tracing (prefix guarded)
     "is_background_task",
-    "background_error",
-    "background_error_category",
     "task_id",
     "parent_run_id",
     # General pipeline identifiers
