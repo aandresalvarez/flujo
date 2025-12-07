@@ -152,7 +152,6 @@ class TestPerformanceRegression:
 
     def test_serialization_performance(self, baseline_thresholds: dict[str, float]):
         """Test that serialization performance stays within bounds."""
-        from flujo.utils.serialization import safe_serialize
         from flujo.domain.models import StepResult
 
         def serialize_object():
@@ -161,7 +160,7 @@ class TestPerformanceRegression:
                 output={"data": "test" * 100},  # Larger object
                 success=True,
             )
-            return safe_serialize(result)
+            return result.model_dump(mode="json")
 
         # Warm up
         serialize_object()

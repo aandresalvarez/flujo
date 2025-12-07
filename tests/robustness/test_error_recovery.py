@@ -198,7 +198,8 @@ class TestErrorRecovery:
 
     def test_circular_reference_recovery(self):
         """Test recovery from circular reference issues."""
-        from flujo.utils.serialization import safe_serialize
+        import json
+        from flujo.state.backends.base import _serialize_for_json
 
         # Create circular reference
         obj1 = {"name": "obj1"}
@@ -206,14 +207,9 @@ class TestErrorRecovery:
         obj1["ref"] = obj2
         obj2["ref"] = obj1
 
-        # Should handle circular references gracefully
-        try:
-            result = safe_serialize(obj1)
-            # Should either succeed with placeholders or handle gracefully
-            assert isinstance(result, (dict, str))
-        except RecursionError:
-            # If it hits recursion limit, that's also acceptable behavior
-            pass
+        # Should handle circular references gracefully via json-friendly serialization
+        serialized = json.loads(json.dumps(obj1, default=_serialize_for_json, ensure_ascii=False))
+        assert serialized["ref"]["ref"] == "<circular>"
 
     def test_invalid_configuration_recovery(self):
         """Test recovery from invalid configuration."""

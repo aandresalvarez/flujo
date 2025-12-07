@@ -5,10 +5,11 @@ import importlib.util as _importlib_util
 from pathlib import Path
 from typing import Any, Optional
 from datetime import datetime, timezone
+import json
 from flujo import Flujo
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl import Step
-from flujo.state.backends.base import StateBackend
+from flujo.state.backends.base import StateBackend, _serialize_for_json
 from flujo.utils.serialization import register_custom_serializer, reset_custom_serializer_registry
 from collections import OrderedDict, Counter, defaultdict
 from enum import Enum
@@ -33,6 +34,33 @@ if _current_pp:
         os.environ["PYTHONPATH"] = os.pathsep.join([str(_REPO_ROOT), _current_pp])
 else:
     os.environ["PYTHONPATH"] = str(_REPO_ROOT)
+
+
+async def _ensure_object_builtin(data: Any, *, key: str = "value") -> dict[str, Any]:
+    """Coerce arbitrary data to a JSON-serializable object for builtins."""
+    if isinstance(data, dict):
+        return data
+    try:
+        if hasattr(data, "model_dump"):
+            return data.model_dump()  # type: ignore[call-arg]
+    except Exception:
+        pass
+    try:
+        import json as _json
+
+        if isinstance(data, (str, bytes)):
+            parsed = _json.loads(data.decode() if isinstance(data, bytes) else data)
+            if isinstance(parsed, dict):
+                return parsed
+    except Exception:
+        pass
+
+    try:
+        payload = json.loads(json.dumps(data, default=_serialize_for_json, ensure_ascii=False))
+    except Exception:
+        payload = _serialize_for_json(data)
+    return {str(key) if key is not None else "value": payload}
+
 
 # Provide a lightweight fallback for the pytest-benchmark fixture when the
 # plugin isn't installed OR when plugin autoloading is disabled.
@@ -725,43 +753,9 @@ def get_registered_factory(skill_id: str):
                     description="Wrap any input under a provided key (default 'value').",
                 )
             else:
-                try:
-                    from pydantic import BaseModel as PydanticBaseModel  # type: ignore
-                except Exception:  # pragma: no cover - fallback only
-                    PydanticBaseModel = type("PydanticBaseModel", (), {})  # type: ignore
-                try:
-                    from flujo.domain.base_model import BaseModel as DomainBaseModel  # type: ignore
-                except Exception:  # pragma: no cover - fallback only
-                    DomainBaseModel = PydanticBaseModel  # type: ignore
-
-                async def _ensure_object(data: Any, *, key: str = "value") -> dict[str, Any]:
-                    if isinstance(data, dict):
-                        return data
-                    try:
-                        if isinstance(data, (PydanticBaseModel, DomainBaseModel)):
-                            return data.model_dump()
-                    except Exception:
-                        pass
-                    try:
-                        import json as _json
-
-                        if isinstance(data, (str, bytes)):
-                            parsed = _json.loads(data.decode() if isinstance(data, bytes) else data)
-                            if isinstance(parsed, dict):
-                                return parsed
-                    except Exception:
-                        pass
-                    try:
-                        from flujo.utils.serialization import safe_serialize as _safe
-
-                        payload = _safe(data)
-                    except Exception:
-                        payload = data
-                    return {str(key) if key is not None else "value": payload}
-
                 reg.register(
                     "flujo.builtins.ensure_object",
-                    lambda: _ensure_object,
+                    lambda: _ensure_object_builtin,
                     description="Coerce input to an object or wrap under key.",
                 )
             entry = reg.get(skill_id)
@@ -797,20 +791,18 @@ class NoOpStateBackend(StateBackend):
 
     async def save_state(self, run_id: str, state: JSONObject) -> None:
         # Simulate real backend behavior by serializing and storing state
-        from flujo.utils.serialization import safe_serialize
-
-        self._store[run_id] = safe_serialize(state)
+        serialized = json.loads(json.dumps(state, default=_serialize_for_json, ensure_ascii=False))
+        self._store[run_id] = serialized
 
     async def load_state(self, run_id: str) -> Optional[JSONObject]:
         # Simulate real backend behavior by deserializing stored state
         stored = self._store.get(run_id)
         if stored is None:
             return None
-        from flujo.utils.serialization import safe_deserialize
         from copy import deepcopy
 
         # Return a deserialized copy to avoid accidental mutation
-        return deepcopy(safe_deserialize(stored))
+        return deepcopy(stored)
 
     async def delete_state(self, run_id: str) -> None:
         # Simulate real backend behavior by removing stored state
@@ -823,9 +815,8 @@ class NoOpStateBackend(StateBackend):
 
     async def save_trace(self, run_id: str, trace: Any) -> None:
         # Simulate real backend behavior by storing trace data
-        from flujo.utils.serialization import safe_serialize
-
-        self._trace_store[run_id] = safe_serialize(trace)
+        serialized = json.loads(json.dumps(trace, default=_serialize_for_json, ensure_ascii=False))
+        self._trace_store[run_id] = serialized
 
     async def list_runs(
         self,

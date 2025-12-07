@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
-from typing import Any, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, List, Optional, Tuple, TYPE_CHECKING, Set
 import dataclasses
 import uuid
 
@@ -18,8 +18,16 @@ else:  # pragma: no cover - optional dependency
         PydanticBaseModel = None  # type: ignore[assignment]
 
 
-def _serialize_for_json(obj: object) -> object:
-    """Convert an object to a JSON-serializable format (Pydantic/dataclass aware)."""
+def _serialize_for_json(obj: object, *, _seen: Optional[Set[int]] = None) -> object:
+    """Convert an object to a JSON-serializable format (Pydantic/dataclass aware).
+
+    Includes basic circular-reference protection for containers.
+    """
+    if _seen is None:
+        _seen = set()
+    obj_id = id(obj)
+    if obj_id in _seen:
+        return "<circular>"
     # Common primitives and numerics
     if isinstance(obj, (str, int, float, bool)) or obj is None:
         return obj
@@ -55,6 +63,16 @@ def _serialize_for_json(obj: object) -> object:
             return dataclasses.asdict(obj)
     except Exception:
         pass
+
+    # Collections with circular protection
+    if isinstance(obj, dict):
+        _seen.add(obj_id)
+        return {str(k): _serialize_for_json(v, _seen=_seen) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set, frozenset)):
+        _seen.add(obj_id)
+        seq = [_serialize_for_json(v, _seen=_seen) for v in obj]
+        return seq if isinstance(obj, list) else list(seq)
+
     return obj
 
 
