@@ -8,7 +8,6 @@ from typing_extensions import Annotated
 
 from flujo.type_definitions.common import JSONObject
 from .exit_codes import EX_CONFIG_ERROR, EX_OK, EX_RUNTIME_ERROR
-from flujo.utils.serialization import safe_serialize
 
 
 def status(
@@ -294,7 +293,16 @@ def status(
 
     # Emit output
     if (format or "text").lower() == "json":
-        typer.echo(json.dumps(safe_serialize(payload)))
+        try:
+            from pydantic import BaseModel as _BM
+
+            if isinstance(payload, _BM):
+                payload_data = payload.model_dump(mode="json")
+            else:
+                payload_data = payload
+        except Exception:
+            payload_data = payload
+        typer.echo(json.dumps(payload_data))
     else:
         try:
             from rich.console import Console as _Console

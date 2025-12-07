@@ -566,14 +566,12 @@ def run_hitl_nesting_validation(
                         location_path=chain,
                     )
                 )
-                if raise_on_error:
-                    raise ConfigurationError(
-                        f"HITL nesting violation detected at {chain}",
-                        suggestion=(
-                            "Move the HITL step outside the loop or remove the conditional."
-                        ),
-                        code="HITL-NESTED-001",
-                    )
+                # Fail fast regardless of raise_on_error to prevent silent data loss.
+                raise ConfigurationError(
+                    f"HITL nesting violation detected at {chain}",
+                    suggestion=("Move the HITL step outside the loop or remove the conditional."),
+                    code="HITL-NESTED-001",
+                )
             if isinstance(st, _LoopStep):
                 body = getattr(st, "loop_body_pipeline", None)
                 if isinstance(body, pipeline.__class__):

@@ -294,11 +294,23 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         if tm is not None:
                             prompt_payload = processed_args[0] if processed_args else None
                             # stringify and redact
-                            prompt_str = (
-                                prompt_payload
-                                if isinstance(prompt_payload, str)
-                                else safe_serialize(prompt_payload)
-                            )
+                            if isinstance(prompt_payload, str):
+                                prompt_str = prompt_payload
+                            else:
+                                try:
+                                    if isinstance(prompt_payload, PydanticBaseModel):
+                                        prompt_str = prompt_payload.model_dump(mode="json")
+                                    else:
+                                        import dataclasses as _dc
+
+                                        if _dc.is_dataclass(prompt_payload) and not isinstance(
+                                            prompt_payload, type
+                                        ):
+                                            prompt_str = _dc.asdict(prompt_payload)
+                                        else:
+                                            prompt_str = prompt_payload
+                                except Exception:
+                                    prompt_str = prompt_payload
                             prompt_preview = summarize_and_redact_prompt(
                                 prompt_str, max_length=preview_len_env
                             )
@@ -349,11 +361,23 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         # Trace the response with preview and usage
                         try:
                             if tm is not None:
-                                out_str = (
-                                    unpacked_output
-                                    if isinstance(unpacked_output, str)
-                                    else safe_serialize(unpacked_output)
-                                )
+                                if isinstance(unpacked_output, str):
+                                    out_str = unpacked_output
+                                else:
+                                    try:
+                                        if isinstance(unpacked_output, PydanticBaseModel):
+                                            out_str = unpacked_output.model_dump(mode="json")
+                                        else:
+                                            import dataclasses as _dc
+
+                                            if _dc.is_dataclass(unpacked_output) and not isinstance(
+                                                unpacked_output, type
+                                            ):
+                                                out_str = _dc.asdict(unpacked_output)
+                                            else:
+                                                out_str = unpacked_output
+                                    except Exception:
+                                        out_str = unpacked_output
                                 out_prev = summarize_and_redact_prompt(
                                     out_str, max_length=preview_len_env
                                 )
@@ -434,7 +458,12 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         _unwrap_type_adapter(self.target_output_type)
                     ).json_schema()
                     prompt_data = {
-                        "json_schema": json.dumps(safe_serialize(schema), ensure_ascii=False),
+                        "json_schema": json.dumps(
+                            schema.model_dump(mode="json")
+                            if isinstance(schema, PydanticBaseModel)
+                            else schema,
+                            ensure_ascii=False,
+                        ),
                         "original_prompt": str(args[0]) if args else "",
                         "failed_output": raw_output,
                         "validation_error": str(last_exc),

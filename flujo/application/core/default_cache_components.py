@@ -28,9 +28,29 @@ class OrjsonSerializer:
             self._use_orjson = False
 
     def serialize(self, obj: Any) -> bytes:
-        from flujo.utils.serialization import safe_serialize
+        try:
+            from pydantic import BaseModel as _BM
 
-        serialized_obj = safe_serialize(obj, mode="default")
+            if isinstance(obj, _BM):
+                return (
+                    self._orjson.dumps(obj.model_dump(mode="json"))
+                    if self._use_orjson
+                    else (
+                        self._json.dumps(
+                            obj.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+                        ).encode("utf-8")
+                    )
+                )
+        except Exception:
+            pass
+        try:
+            import dataclasses as _dc
+
+            if _dc.is_dataclass(obj) and not isinstance(obj, type):
+                obj = _dc.asdict(obj)
+        except Exception:
+            pass
+        serialized_obj = obj
         if self._use_orjson:
             blob: bytes = self._orjson.dumps(serialized_obj, option=self._orjson.OPT_SORT_KEYS)
             return blob
@@ -163,13 +183,28 @@ class DefaultCacheKeyGenerator:
         }
 
     def _build_payload(self, step: Any, data: Any, context: Any, resources: Any) -> dict[str, Any]:
-        from flujo.utils.serialization import safe_serialize as _safe_serialize
+        def _serialize(obj: Any) -> Any:
+            try:
+                from pydantic import BaseModel as _BM
+
+                if isinstance(obj, _BM):
+                    return obj.model_dump(mode="json")
+            except Exception:
+                pass
+            try:
+                import dataclasses as _dc
+
+                if _dc.is_dataclass(obj) and not isinstance(obj, type):
+                    return _dc.asdict(obj)
+            except Exception:
+                pass
+            return obj
 
         return {
             "step": self._build_step_section(step),
-            "data": _safe_serialize(data, mode="cache"),
-            "context": _safe_serialize(context, mode="cache"),
-            "resources": _safe_serialize(resources, mode="cache"),
+            "data": _serialize(data),
+            "context": _serialize(context),
+            "resources": _serialize(resources),
         }
 
     def generate_key(self, step: Any, data: Any, context: Any, resources: Any) -> str:
@@ -194,24 +229,30 @@ class DefaultCacheKeyGenerator:
             return _hashlib.sha256(blob).hexdigest()
         except Exception:
             step_name = getattr(step, "name", str(type(step).__name__))
-            try:
-                from flujo.utils.serialization import safe_serialize as _safe_serialize
 
-                data_repr = _safe_serialize(data, mode="cache")
-            except Exception:
-                data_repr = str(data)
-            try:
-                from flujo.utils.serialization import safe_serialize as _safe_serialize
+            def _safe_repr(obj: Any) -> Any:
+                try:
+                    from pydantic import BaseModel as _BM
 
-                ctx_repr = _safe_serialize(context, mode="cache")
-            except Exception:
-                ctx_repr = str(context)
-            try:
-                from flujo.utils.serialization import safe_serialize as _safe_serialize
+                    if isinstance(obj, _BM):
+                        return obj.model_dump(mode="json")
+                except Exception:
+                    pass
+                try:
+                    import dataclasses as _dc
 
-                res_repr = _safe_serialize(resources, mode="cache")
-            except Exception:
-                res_repr = str(resources)
+                    if _dc.is_dataclass(obj) and not isinstance(obj, type):
+                        return _dc.asdict(obj)
+                except Exception:
+                    pass
+                try:
+                    return obj
+                except Exception:
+                    return str(obj)
+
+            data_repr = _safe_repr(data)
+            ctx_repr = _safe_repr(context)
+            res_repr = _safe_repr(resources)
             seed = _json.dumps(
                 {
                     "name": step_name,

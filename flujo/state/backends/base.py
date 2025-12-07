@@ -3,22 +3,34 @@
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional, Tuple
+import dataclasses
+
+try:
+    from pydantic import BaseModel as _BM
+except Exception:  # pragma: no cover - pydantic optional at import
+    _BM = None
 
 from flujo.type_definitions.common import JSONObject
 
-from ...utils.serialization import safe_serialize
+
+def _serialize_for_json(obj: object) -> object:
+    """Convert an object to a JSON-serializable format (Pydantic/dataclass aware)."""
+    try:
+        if _BM is not None and isinstance(obj, _BM):
+            return obj.model_dump(mode="json")
+    except Exception:
+        pass
+    try:
+        if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+            return dataclasses.asdict(obj)
+    except Exception:
+        pass
+    return obj
 
 
 def _to_jsonable(obj: object) -> object:
-    """Convert an object to a JSON-serializable format.
-
-    This function handles Pydantic models and nested structures by converting
-    them to dictionaries and lists that can be serialized to JSON.
-
-    DEPRECATED: Use safe_serialize from flujo.utils.serialization instead.
-    This function is kept for backward compatibility.
-    """
-    return safe_serialize(obj)
+    """Convert an object to a JSON-serializable format (backward-compatible shim)."""
+    return _serialize_for_json(obj)
 
 
 class StateBackend(ABC):

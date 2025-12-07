@@ -521,27 +521,17 @@ class PipelineContext(BaseModel):
     models should inherit from this class to add application specific fields
     while retaining the built in ones.
 
-    Attributes
-    ----------
-    run_id:
-        Unique identifier for the pipeline run.
-    initial_prompt:
-        First input provided to the run. Useful for logging and telemetry.
-    scratchpad:
-        Free form dictionary for transient state between steps.
-    hitl_history:
-        Records each human interaction when using HITL steps.
-    command_log:
-        Stores commands executed by an :class:`~flujo.recipes.AgenticLoop`.
-    conversation_history:
-        Ordered list of conversational turns (user/assistant) maintained when
-        a loop is configured with ``conversation: true``. Persisted with the
-        context to support pause/resume and restarts.
+    User data MUST NOT be stored in ``scratchpad``; it is reserved for framework
+    metadata only. Use typed context fields for application data.
     """
 
     run_id: str = Field(default_factory=lambda: f"run_{uuid.uuid4().hex}")
     initial_prompt: Optional[str] = None
-    scratchpad: JSONObject = Field(default_factory=dict)
+    # Reserved for framework metadata only; user data is disallowed.
+    scratchpad: JSONObject = Field(
+        default_factory=dict,
+        description="Framework-reserved metadata bag (user data disallowed).",
+    )
     hitl_history: List[HumanInteraction] = Field(default_factory=list)
     command_log: List[ExecutedCommandLog] = Field(
         default_factory=list,

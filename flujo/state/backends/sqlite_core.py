@@ -27,30 +27,40 @@ from flujo.type_definitions.common import JSONObject
 
 logger = logging.getLogger(__name__)
 
+
+# Serialize objects for persistence using Pydantic model_dump when available.
+def _serialize_for_json(obj: Any) -> Any:
+    try:
+        from pydantic import BaseModel as _BM
+
+        if isinstance(obj, _BM):
+            return obj.model_dump(mode="json")
+    except Exception:
+        pass
+    try:
+        import dataclasses as _dc
+
+        if _dc.is_dataclass(obj) and not isinstance(obj, type):
+            return _dc.asdict(obj)
+    except Exception:
+        pass
+    return obj
+
+
 # Try to import orjson for faster JSON serialization
 try:
     import orjson
-    from flujo.utils.serialization import safe_serialize
 
     def _fast_json_dumps(obj: Any) -> str:
-        """Use orjson for faster JSON serialization with robust serialization.
-
-        Note: avoid key-sorting to reduce CPU overhead on hot paths.
-        """
-        serialized_obj = safe_serialize(obj)
-        blob: bytes = orjson.dumps(serialized_obj)
+        """Use orjson for faster JSON serialization with typed model support."""
+        blob: bytes = orjson.dumps(_serialize_for_json(obj))
         return blob.decode("utf-8")
 
 except ImportError:
-    from flujo.utils.serialization import safe_serialize
 
     def _fast_json_dumps(obj: Any) -> str:
-        """Fallback to standard json for JSON serialization with robust serialization.
-
-        Note: avoid key-sorting to reduce CPU overhead on hot paths.
-        """
-        serialized_obj = safe_serialize(obj)
-        s: str = json.dumps(serialized_obj, separators=(",", ":"))
+        """Fallback to standard json for JSON serialization with typed model support."""
+        s: str = json.dumps(_serialize_for_json(obj), separators=(",", ":"))
         return s
 
 
@@ -314,11 +324,16 @@ def validate_column_definition_or_raise(column_def: str) -> None:
         raise ValueError(f"Invalid column definition: {column_def}")
 
 
+async def _await_coro(coro: "Coroutine[Any, Any, Any]") -> Any:
+    """Helper to await a coroutine inside the blocking portal."""
+    return await coro
+
+
 def _run_coro_sync(coro: "Coroutine[Any, Any, Any]") -> Any:
     """Run an async coroutine from sync context, even if a loop exists.
 
-    This mirrors the safe pattern used elsewhere in the project to ensure we can
-    close resources at interpreter shutdown without hanging.
+    Uses a shared anyio BlockingPortal to avoid ad-hoc event loops/threads and
+    prevent "Event loop is closed" shutdown flakiness.
     """
     try:
         asyncio.get_running_loop()
@@ -326,7 +341,7 @@ def _run_coro_sync(coro: "Coroutine[Any, Any, Any]") -> Any:
         return asyncio.run(coro)
 
     portal = _get_blocking_portal()
-    return portal.call(lambda: coro)
+    return portal.call(_await_coro, coro)
 
 
 class SQLiteBackendBase(StateBackend):
@@ -1192,7 +1207,9 @@ class SQLiteBackendBase(StateBackend):
         async def _insert() -> None:
             conn, close_after = await self._acquire_connection()
             try:
-                metadata_json = None if metadata is None else json.dumps(safe_serialize(metadata))
+                metadata_json = (
+                    None if metadata is None else json.dumps(_serialize_for_json(metadata))
+                )
                 await conn.execute(
                     """
                     INSERT INTO evaluations (run_id, step_name, score, feedback, metadata, created_at)

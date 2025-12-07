@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional, Tuple, cast
 
 from flujo.type_definitions.common import JSONObject
-from ...utils.serialization import safe_deserialize, safe_serialize
+from ...utils.serialization import safe_deserialize
 
-from .base import StateBackend
+from .base import StateBackend, _to_jsonable
 from ._filters import metadata_contains
 
 
@@ -36,7 +36,7 @@ class InMemoryBackend(StateBackend):
     async def save_state(self, run_id: str, state: JSONObject) -> None:
         async with self._get_lock():
             # Serialize state so custom types are handled consistently
-            self._store[run_id] = safe_serialize(state)
+            self._store[run_id] = _to_jsonable(state)
 
     async def load_state(self, run_id: str) -> Optional[JSONObject]:
         async with self._get_lock():

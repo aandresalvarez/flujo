@@ -22,10 +22,7 @@ from pydantic import BaseModel as PydanticBaseModel
 
 from ...infra import telemetry
 from ...domain.models import BaseModel, ExecutedCommandLog
-from ...utils.serialization import (
-    register_custom_serializer,
-    register_custom_deserializer,
-)
+from ...utils.serialization import register_custom_serializer, register_custom_deserializer
 
 __all__ = [
     "_build_context_update",
@@ -184,28 +181,29 @@ def register_custom_type(type_class: Type[T]) -> None:
         # Check if this is a Flujo BaseModel to avoid circular dependency
         from flujo.domain.base_model import BaseModel as FlujoBaseModel
 
-        def safe_serialize_custom_type(obj: Any) -> Any:
-            """Safe serializer that avoids circular dependency with Flujo BaseModel."""
+        def serialize_custom_type(obj: Any) -> Any:
+            """Serializer that avoids circular dependency with Flujo BaseModel."""
             if isinstance(obj, FlujoBaseModel):
-                # For Flujo BaseModel, manually serialize fields to avoid circular dependency
-                # since FlujoBaseModel.model_dump() delegates to safe_serialize
+                try:
+                    return obj.model_dump(mode="json")
+                except Exception:
+                    pass
                 try:
                     result = {}
                     for field_name in getattr(obj.__class__, "model_fields", {}):
                         result[field_name] = getattr(obj, field_name, None)
                     return result
                 except Exception:
-                    # Fallback to __dict__ if field access fails
-                    return obj.__dict__
-            elif hasattr(obj, "model_dump"):
-                # For regular Pydantic models, use model_dump
-                return obj.model_dump()
-            else:
-                # For other objects, use __dict__
-                return obj.__dict__
+                    return getattr(obj, "__dict__", obj)
+            if hasattr(obj, "model_dump"):
+                try:
+                    return obj.model_dump(mode="json")
+                except Exception:
+                    pass
+            return getattr(obj, "__dict__", obj)
 
         # Register for serialization
-        register_custom_serializer(type_class, safe_serialize_custom_type)
+        register_custom_serializer(type_class, serialize_custom_type)
 
         # Register deserializer if it's a Pydantic model
         if hasattr(type_class, "model_validate") and callable(

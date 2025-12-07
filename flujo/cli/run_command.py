@@ -758,11 +758,25 @@ state_uri = "sqlite:///flujo_ops.db"
             try:
                 from pathlib import Path as _Path
                 from datetime import datetime as _dt
-                from flujo.utils.serialization import safe_serialize as _safe
                 import os as _os
+                from pydantic import BaseModel as _BM
+                import dataclasses as _dc
 
                 export_path_obj = _Path(export_path).expanduser().resolve()
                 export_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+                def _serialize_obj(obj: Any) -> Any:
+                    try:
+                        if isinstance(obj, _BM):
+                            return obj.model_dump(mode="json")
+                    except Exception:
+                        pass
+                    try:
+                        if _dc.is_dataclass(obj) and not isinstance(obj, type):
+                            return _dc.asdict(obj)
+                    except Exception:
+                        pass
+                    return obj
 
                 def _span_to_dict(span: Any) -> dict[str, Any]:
                     if span is None:
@@ -801,7 +815,7 @@ state_uri = "sqlite:///flujo_ops.db"
                         "token_counts": getattr(sr, "token_counts", None),
                         "cost_usd": getattr(sr, "cost_usd", None),
                         "feedback": getattr(sr, "feedback", None),
-                        "output": _safe(getattr(sr, "output", None)),
+                        "output": _serialize_obj(getattr(sr, "output", None)),
                         "metadata": getattr(sr, "metadata_", {}) or {},
                         "step_history": nested,
                     }
@@ -810,12 +824,16 @@ state_uri = "sqlite:///flujo_ops.db"
                     if ctx is None:
                         return {}
                     try:
-                        base = ctx.model_dump() if hasattr(ctx, "model_dump") else _safe(ctx)
+                        base = (
+                            ctx.model_dump(mode="json")
+                            if hasattr(ctx, "model_dump")
+                            else _serialize_obj(ctx)
+                        )
                     except Exception:
                         base = {}
                     # Augment with common transient fields for debugging
                     try:
-                        base["scratchpad"] = _safe(getattr(ctx, "scratchpad", {}))
+                        base["scratchpad"] = _serialize_obj(getattr(ctx, "scratchpad", {}))
                     except Exception:
                         pass
                     try:
@@ -829,11 +847,11 @@ state_uri = "sqlite:///flujo_ops.db"
                     except Exception:
                         pass
                     try:
-                        base["hitl_history"] = _safe(getattr(ctx, "hitl_history", []))
+                        base["hitl_history"] = _serialize_obj(getattr(ctx, "hitl_history", []))
                     except Exception:
                         pass
                     try:
-                        base["command_log"] = _safe(getattr(ctx, "command_log", []))
+                        base["command_log"] = _serialize_obj(getattr(ctx, "command_log", []))
                     except Exception:
                         pass
                     return base if isinstance(base, dict) else {"context": base}

@@ -571,6 +571,17 @@ def safe_serialize(
                 # For other exceptions, fall through to default handling
                 pass
 
+        # Prefer Pydantic model_dump for BaseModel instances
+        if HAS_PYDANTIC and isinstance(obj, PydanticBaseModel):
+            model_dump_kwargs = {"mode": "json"} if mode != "python" else {"mode": "python"}
+            try:
+                return obj.model_dump(**model_dump_kwargs)
+            except Exception:
+                try:
+                    return obj.dict()
+                except Exception:
+                    pass
+
         if obj is None:
             return None
         if isinstance(obj, (str, int, bool)):

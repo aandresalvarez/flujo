@@ -183,6 +183,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         state_providers: Optional[Dict[str, StateProvider[Any]]] = None,
         state_manager: Optional["StateManager[Any]"] = None,
         deps: Optional[ExecutorCoreDeps] = None,
+        builder: Optional[FlujoRuntimeBuilder] = None,
     ) -> None:
         # Validate parameters for compatibility
         if cache_size <= 0:
@@ -202,8 +203,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 stacklevel=2,
             )
 
-        builder = FlujoRuntimeBuilder()
-        deps_obj = deps or builder.build(
+        builder_obj = builder or FlujoRuntimeBuilder()
+        deps_obj = deps or builder_obj.build(
             agent_runner=agent_runner,
             processor_pipeline=processor_pipeline,
             validator_runner=validator_runner,

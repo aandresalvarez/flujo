@@ -8,9 +8,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple, cast
 
-from flujo.state.backends.base import StateBackend
+from flujo.state.backends.base import StateBackend, _to_jsonable
 from flujo.type_definitions.common import JSONObject
-from flujo.utils.serialization import safe_deserialize, safe_serialize
+from flujo.utils.serialization import safe_deserialize
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import asyncpg
@@ -36,8 +36,7 @@ def _load_asyncpg() -> Any:
 def _jsonb(value: Any) -> Optional[str]:
     if value is None:
         return None
-    serialized = safe_serialize(value)
-    return json.dumps(serialized)
+    return json.dumps(_to_jsonable(value))
 
 
 class PostgresBackend(StateBackend):

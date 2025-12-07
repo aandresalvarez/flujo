@@ -90,3 +90,49 @@ This improvement plan is prioritized by the **Impact/Effort Ratio**. We start wi
 | **5** | **Fix Circular Imports** | 🟨 Med | 🟥 High | Stabilize codebase structure. |
 | **6** | **Typed Contexts** | 🟨 Med | 🟨 Med | Improve DX and safety. |
 | **7** | **Pydantic V2 Native Serialization** | 🟨 Med | 🟨 Med | Remove maintenance debt. |
+
+---
+
+## Implementation Plan (actionable)
+
+### Phase 1 — Critical Stability
+- Nested HITL gate
+  - Update `_check_hitl_nesting_safety` to raise `ConfigurationError` during validation (no runtime soft paths).
+  - Add validation tests for loop+conditional HITL graphs; add negative test ensuring run is blocked.
+- Pricing exception handling
+  - In `application/core/agent_execution_runner.py`, explicitly catch and re-raise `PricingNotConfiguredError` before generic handlers.
+  - Ensure `ExecutorCore` surfaces it; add regression test.
+- Sync/async bridge
+  - Replace `_run_coro_sync` thread spawning with a single supported strategy (anyio or async-only entrypoint); deprecate broad `run_sync`.
+  - Add shutdown/signal-handling tests to prevent “Event loop is closed.”
+
+### Phase 2 — Architectural Refactoring
+- Executor DI
+  - Refactor `ExecutorCore.__init__` to accept injected managers; create `FlujoRuntimeBuilder` to wire defaults.
+  - Add unit tests using fakes for injected dependencies.
+- Circular imports
+  - Extract interfaces/Protocols to a dedicated module; move `Step/Pipeline/Context` definitions out of execution logic.
+  - Remove `import-inside` hacks where feasible; smoke-test DSL creation and run lint/typecheck to confirm imports are stable.
+
+### Phase 3 — Code Hygiene & DX
+- Typed contexts, no user data in scratchpad
+  - Introduce typed context models/mixins; enforce `input_keys`/`output_keys` validation and fail on violations.
+  - Reserve `scratchpad` for framework metadata only; add validation/tests to guard.
+- Serialization standardization
+  - Deprecate `safe_serialize`; switch to `model.model_dump(mode="json")`.
+  - Add `@field_serializer` where needed; add round-trip serialization tests for core models.
+
+### Cross-cutting guardrails (must hold throughout)
+- Policy-driven execution only; no type-based branching in executor.
+- Control-flow exceptions (`PausedException`, `PipelineAbortSignal`, `InfiniteRedirectError`) are not swallowed or coerced.
+- Context idempotency via `ContextManager.isolate()` for loops/parallel remains intact.
+- Quota pattern stays proactive (Reserve → Execute → Reconcile); no reactive checks.
+- Config stays centralized via `infra.config_manager`; no env/toml reads in domain logic.
+- Type-safety: add TypeGuards for outcomes, eliminate unchecked `cast(...)`, fail CI on new `Any` in core/DSL.
+
+### Acceptance checks
+- `make test-fast` and `make typecheck` green after each phase.
+- Validation blocks nested HITL and pricing misconfig at build/graph time.
+- Executor DI usable with fakes in tests.
+- No legacy scratchpad usage for user data; lint/validation catches violations.
+- No lingering `safe_serialize` references; serialization tests pass. 

@@ -800,11 +800,26 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         # ✅ CRITICAL FIX: Persist state AFTER successful step execution for crash recovery
                         # This ensures the current_step_index reflects the next step to be executed
                         if persist_state_after_step and step_result.success:
-                            # Serialize the step output to avoid Pydantic serialization warnings during state persistence
-                            from flujo.utils.serialization import safe_serialize
+                            # Serialize the step output with model-aware dump during state persistence
+                            def _to_jsonable(obj: Any) -> Any:
+                                try:
+                                    from pydantic import BaseModel as _BM
+
+                                    if isinstance(obj, _BM):
+                                        return obj.model_dump(mode="json")
+                                except Exception:
+                                    pass
+                                try:
+                                    import dataclasses as _dc
+
+                                    if _dc.is_dataclass(obj) and not isinstance(obj, type):
+                                        return _dc.asdict(obj)
+                                except Exception:
+                                    pass
+                                return obj
 
                             serialized_output = (
-                                safe_serialize(step_result.output)
+                                _to_jsonable(step_result.output)
                                 if step_result.output is not None
                                 else None
                             )
