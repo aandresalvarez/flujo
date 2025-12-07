@@ -385,20 +385,21 @@ _SCRATCHPAD_ALLOWED_KEYS: set[str] = {
     "pipeline_name",
     "pipeline_version",
     "run_id",
-    # Legacy/import projections that still route through scratchpad (to be migrated)
+    # Legacy/import projections that still route through scratchpad (being migrated off)
+    "concept_sets",
+    "cohort_definition",
+    "captured",
     "child_echo",
     "final_sql",
-    "captured",
-    "cohort_definition",
     "foo",
+    "value",
+    "echo",
     "_loop_iteration_active",
     "_loop_iteration_index",
     "result",
     "initial_input",
-    "concept_sets",
     "marker",
     "counter",
-    "value",
 }
 
 _SCRATCHPAD_ALLOWED_PREFIXES: tuple[str, ...] = (
@@ -784,6 +785,16 @@ def _inject_context_with_deep_merge(
                         if hasattr(context, "import_artifacts")
                         else None
                     )
+                    if existing_artifacts is not None and not isinstance(
+                        existing_artifacts, ImportArtifacts
+                    ):
+                        try:
+                            existing_artifacts = ImportArtifacts.model_validate(
+                                dict(existing_artifacts)
+                            )
+                        except Exception:
+                            existing_artifacts = ImportArtifacts(**dict(existing_artifacts))
+                        setattr(context, "import_artifacts", existing_artifacts)
                     if isinstance(existing_artifacts, MutableMapping):
                         if isinstance(value, MutableMapping):
                             existing_artifacts.update(value)
@@ -794,6 +805,32 @@ def _inject_context_with_deep_merge(
                     pass
 
             if key == "scratchpad" and isinstance(value, dict) and hasattr(context, "scratchpad"):
+                # Redirect legacy import-projection keys into import_artifacts to avoid scratchpad growth.
+                try:
+                    legacy_import_keys = {
+                        "cohort_definition",
+                        "concept_sets",
+                        "final_sql",
+                        "captured",
+                        "child_echo",
+                        "foo",
+                    }
+                    legacy_payload = {
+                        k: value[k] for k in list(value.keys()) if k in legacy_import_keys
+                    }
+                    if legacy_payload:
+                        artifacts = getattr(context, "import_artifacts", None)
+                        if isinstance(artifacts, MutableMapping):
+                            artifacts.update(legacy_payload)
+                        else:
+                            try:
+                                new_artifacts = ImportArtifacts.model_validate(legacy_payload)
+                            except Exception:
+                                new_artifacts = ImportArtifacts(**legacy_payload)
+                            setattr(context, "import_artifacts", new_artifacts)
+                except Exception:
+                    pass
+
                 # Special handling for scratchpad: deep merge nested dicts
                 value = _validate_scratchpad(value)
                 current_scratchpad = getattr(context, "scratchpad", {})

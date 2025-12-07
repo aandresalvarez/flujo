@@ -3,6 +3,7 @@ from flujo.type_definitions.common import JSONObject
 
 from typing import Type, cast
 from collections.abc import MutableMapping
+from flujo.domain.models import ImportArtifacts
 
 from ._shared import (
     Any,
@@ -562,6 +563,39 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                 Returns the actual value (which may be None) if found.
                 """
                 parts = [p for p in path.split(".") if p]
+
+                def _get_from_artifacts(artifact_path: list[str]) -> Any:
+                    try:
+                        art = getattr(child_final_ctx, "import_artifacts", None)
+                        if isinstance(art, ImportArtifacts) and len(artifact_path) == 1:
+                            name = artifact_path[0]
+                            if name in getattr(art, "__pydantic_fields_set__", set()):
+                                return getattr(art, name, None)
+                        if isinstance(art, MutableMapping):
+                            cur_art: Any = art
+                            for part in artifact_path:
+                                if isinstance(cur_art, MutableMapping) and part in cur_art:
+                                    cur_art = cur_art[part]
+                                else:
+                                    return _NOT_FOUND
+                            return _NOT_FOUND if cur_art is None else cur_art
+                    except Exception:
+                        pass
+                    return _NOT_FOUND
+
+                if parts and parts[0] == "scratchpad":
+                    # Prefer redirected import artifacts when scratchpad keys were migrated.
+                    artifact_value = _get_from_artifacts(parts[1:])
+                    if artifact_value is not _NOT_FOUND:
+                        if artifact_value is not None:
+                            return artifact_value
+                        # If artifacts contain an explicit None, still fall back to scratchpad in case
+                        # the scratchpad has a concrete value.
+                        result_ctx = _traverse_path(child_final_ctx, parts)
+                        if result_ctx is not _NOT_FOUND:
+                            return result_ctx
+                        return None
+
                 # First: try to get from child's final context (branch_context)
                 result = _traverse_path(child_final_ctx, parts)
                 if result is not _NOT_FOUND:
