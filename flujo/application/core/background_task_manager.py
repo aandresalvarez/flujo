@@ -99,9 +99,7 @@ class BackgroundTaskManager:
             bg_run_id = f"{parent_run_id}_bg_{task_id}" if parent_run_id else task_id
 
             try:
-                isolated_context = ContextManager.isolate_strict(
-                    getattr(frame, "context", None), purpose="background_task"
-                )
+                isolated_context = ContextManager.isolate_strict(getattr(frame, "context", None))
             except Exception:
                 try:
                     telemetry.logfire.warning(

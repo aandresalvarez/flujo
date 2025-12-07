@@ -122,28 +122,31 @@ class DockerSandbox(SandboxProtocol):
             wait_result: dict[str, int] | None = None
             container_obj: Any | None = container
             try:
-                try:
-                    wait_result = await asyncio.wait_for(
-                        asyncio.to_thread(container_obj.wait),
-                        timeout=request.timeout_s or self._timeout_s,
-                    )
-                except asyncio.TimeoutError:
-                    timed_out = True
+                if container_obj:
                     try:
-                        container_obj.kill()
+                        wait_result = await asyncio.wait_for(
+                            asyncio.to_thread(container_obj.wait),
+                            timeout=request.timeout_s or self._timeout_s,
+                        )
+                    except asyncio.TimeoutError:
+                        timed_out = True
+                        try:
+                            container_obj.kill()
+                        except Exception:
+                            pass
+                    except asyncio.CancelledError:
+                        try:
+                            container_obj.kill()
+                        except Exception:
+                            pass
+                        raise
                     except Exception:
                         pass
-                except asyncio.CancelledError:
-                    try:
-                        container_obj.kill()
-                    except Exception:
-                        pass
-                    raise
-                except Exception:
-                    pass
 
                 try:
-                    logs = container_obj.logs(stdout=True, stderr=True) or b""
+                    logs = (
+                        container_obj.logs(stdout=True, stderr=True) if container_obj else b""
+                    ) or b""
                     stdout = logs.decode("utf-8", errors="replace")
                     stderr = ""
                 except Exception:
@@ -169,7 +172,8 @@ class DockerSandbox(SandboxProtocol):
                 )
             finally:
                 try:
-                    container_obj.remove(force=True)
+                    if container_obj:
+                        container_obj.remove(force=True)
                 except Exception:
                     pass
 

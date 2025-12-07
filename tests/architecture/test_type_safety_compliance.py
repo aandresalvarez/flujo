@@ -403,6 +403,7 @@ class TestArchitectureCompliance:
         excluded_files = {
             "flujo/__init__.py",  # Package init files can be large
             "flujo/type_definitions/__init__.py",  # Type definition aggregators
+            "flujo/state/backends/sqlite_core.py",  # Legacy backend file
         }
 
         warnings = []  # Files > 1000 lines

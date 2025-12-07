@@ -125,7 +125,7 @@ def register_optional_builtins() -> None:
             try:
                 from jinja2.sandbox import SandboxedEnvironment
             except Exception:
-                SandboxedEnvironment = _jinja2.Environment  # type: ignore[assignment]
+                SandboxedEnvironment = _jinja2.Environment  # type: ignore[misc]
             env = SandboxedEnvironment(undefined=_jinja2.StrictUndefined, autoescape=False)
             tmpl = env.from_string(template)
             result = tmpl.render(**(variables or {}))

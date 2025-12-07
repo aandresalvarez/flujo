@@ -7,6 +7,22 @@ from flujo.domain.blueprint.loader import (
     load_pipeline_blueprint_from_yaml,
 )
 from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
+from unittest import mock
+import pytest
+from flujo.infra.config_manager import FlujoConfig
+
+
+@pytest.fixture(autouse=True)
+def mock_allowed_imports():
+    """Allow test modules to be imported during blueprint loading."""
+    with mock.patch("flujo.domain.blueprint.loader_resolution.get_config_provider") as mock_get:
+        mock_config = mock.Mock(spec=FlujoConfig)
+        mock_config.blueprint_allowed_imports = ["tests.unit.test_yaml_dynamic_router"]
+        mock_config.settings = mock.Mock()
+        mock_config.settings.blueprint_allowed_imports = ["tests.unit.test_yaml_dynamic_router"]
+
+        mock_get.return_value.load_config.return_value = mock_config
+        yield
 
 
 def dummy_router_agent(*_args: Any, **_kwargs: Any) -> list[str]:

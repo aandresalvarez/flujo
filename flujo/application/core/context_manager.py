@@ -587,7 +587,7 @@ def _clone_context(obj: Optional[BaseModel]) -> Optional[BaseModel]:
                     data[name] = copy.deepcopy(val)
                 except Exception:
                     data[name] = None  # Drop non-pickleable resource
-            return type(obj).model_validate(data)  # type: ignore[arg-type]
+            return type(obj).model_validate(data)
         except Exception:
             pass
     try:

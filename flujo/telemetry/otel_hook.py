@@ -61,7 +61,7 @@ class OpenTelemetryHook:
 
             self._redact = summarize_and_redact_prompt
         except Exception:
-            self._redact = lambda x: "<redacted>"
+            self._redact = lambda prompt_text, max_length=0, settings=None: "<redacted>"
 
     async def hook(self, payload: HookPayload) -> None:
         if getattr(payload, "is_background", False):

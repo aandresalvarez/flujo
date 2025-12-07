@@ -3,6 +3,24 @@ from __future__ import annotations
 from pathlib import Path
 
 
+from unittest import mock
+import pytest
+from flujo.infra.config_manager import FlujoConfig
+
+
+@pytest.fixture(autouse=True)
+def mock_allowed_imports():
+    """Allow test modules to be imported during blueprint loading."""
+    with mock.patch("flujo.domain.blueprint.loader_resolution.get_config_provider") as mock_get:
+        mock_config = mock.Mock(spec=FlujoConfig)
+        mock_config.blueprint_allowed_imports = ["tests", "skills"]
+        mock_config.settings = mock.Mock()
+        mock_config.settings.blueprint_allowed_imports = ["tests", "skills"]
+
+        mock_get.return_value.load_config.return_value = mock_config
+        yield
+
+
 def _write_child_project(base: Path, name: str, tool_src: str, pipeline_yaml: str) -> Path:
     d = base / name
     (d / "skills").mkdir(parents=True, exist_ok=True)
