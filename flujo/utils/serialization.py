@@ -293,7 +293,7 @@ def safe_deserialize(
     - Enums
     - Special float values (inf, -inf, nan)
     - Primitives (str, int, bool, None)
-    - Datetime objects (datetime, date, time) when target_type is not explicitly a datetime type
+    - Datetime objects (datetime, date, time) when target_type explicitly requests a datetime type
     - Bytes and memoryview objects (base64-decoded when target_type requests bytes-like)
     - Complex numbers
     - Custom types registered via register_custom_deserializer
@@ -323,26 +323,31 @@ def safe_deserialize(
     if isinstance(serialized_data, (bool, int, float)):
         return serialized_data
 
-    # Handle strings with special cases (nan/inf, datetime, base64)
+    # Handle strings with special cases only when target_type explicitly requires it
     if isinstance(serialized_data, str):
-        if target_type is not None:
-            from datetime import date, datetime, time
+        from datetime import date, datetime, time
 
-            if target_type in {datetime, date, time}:
+        if target_type in {datetime, date, time}:
+            try:
+                dt = datetime.fromisoformat(serialized_data.replace("Z", "+00:00"))
+                # If a pure date/time is requested, convert appropriately
+                if target_type is date:
+                    return dt.date()
+                if target_type is time:
+                    return dt.timetz()
+                return dt
+            except (ValueError, TypeError):
                 return serialized_data
-        if serialized_data == "nan":
-            return float("nan")
-        if serialized_data == "inf":
-            return float("inf")
-        if serialized_data == "-inf":
-            return float("-inf")
-        try:
-            from datetime import datetime
 
-            dt = datetime.fromisoformat(serialized_data.replace("Z", "+00:00"))
-            return dt
-        except (ValueError, TypeError):
-            pass
+        if target_type is float:
+            if serialized_data == "nan":
+                return float("nan")
+            if serialized_data == "inf":
+                return float("inf")
+            if serialized_data == "-inf":
+                return float("-inf")
+            return serialized_data
+
         if target_type in {bytes, bytearray, memoryview}:
             try:
                 import base64
@@ -355,7 +360,10 @@ def safe_deserialize(
                     return memoryview(decoded)
                 return decoded
             except (ValueError, binascii.Error):
-                pass
+                return serialized_data
+
+        # Default: leave string as-is when no explicit target coercion requested
+        return serialized_data
         return serialized_data
 
     # Handle lists
