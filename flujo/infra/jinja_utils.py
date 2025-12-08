@@ -14,9 +14,13 @@ def create_jinja_environment(jinja_mod: Any) -> Any:
     """
     try:
         try:
-            from jinja2.sandbox import SandboxedEnvironment
+            from jinja2.sandbox import SandboxedEnvironment as _SandboxedEnv
+
+            env_cls: Any = _SandboxedEnv
         except Exception:
-            SandboxedEnvironment = jinja_mod.Environment  # type: ignore[misc, assignment]
-        return SandboxedEnvironment(undefined=jinja_mod.StrictUndefined, autoescape=False)
+            env_cls = getattr(jinja_mod, "Environment", None)
+        if env_cls is None:
+            raise RuntimeError("Jinja environment class not available")
+        return env_cls(undefined=jinja_mod.StrictUndefined, autoescape=False)
     except Exception:
         return jinja_mod.Environment(undefined=jinja_mod.StrictUndefined, autoescape=False)
