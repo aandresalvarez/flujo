@@ -208,8 +208,14 @@ class TestErrorRecovery:
         obj2["ref"] = obj1
 
         # Should handle circular references gracefully via json-friendly serialization
-        serialized = json.loads(json.dumps(obj1, default=_serialize_for_json, ensure_ascii=False))
-        assert serialized["ref"]["ref"] == "<circular>"
+        normalized = _serialize_for_json(obj1, _seen=set(), strict=False)
+        serialized = json.loads(json.dumps(normalized, ensure_ascii=False))
+        assert serialized["ref"]["ref"] is None
+
+        # Strict mode should use the placeholder strings
+        strict_normalized = _serialize_for_json(obj1, _seen=set(), strict=True)
+        strict_serialized = json.loads(json.dumps(strict_normalized, ensure_ascii=False))
+        assert strict_serialized["ref"]["ref"] in ("<circular>", "<circular-ref>")
 
     def test_invalid_configuration_recovery(self):
         """Test recovery from invalid configuration."""

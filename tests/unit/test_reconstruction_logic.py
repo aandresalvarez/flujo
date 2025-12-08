@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Any
 
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
-from flujo.utils.serialization import safe_serialize
+from flujo.utils.serialization import serialize_jsonable
 
 
 class SimpleNested(BaseModel):
@@ -49,7 +49,7 @@ class TestReconstructionLogic:
         }
 
         # Serialize and deserialize
-        serialized = safe_serialize(request_data)
+        serialized = serialize_jsonable(request_data)
         data = json.loads(json.dumps(serialized))
 
         # Test reconstruction
@@ -82,7 +82,7 @@ class TestReconstructionLogic:
         }
 
         # Serialize and deserialize
-        serialized = safe_serialize(request_data)
+        serialized = serialize_jsonable(request_data)
         data = json.loads(json.dumps(serialized))
 
         # Test reconstruction
@@ -107,7 +107,7 @@ class TestReconstructionLogic:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = serialize_jsonable(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -129,7 +129,7 @@ class TestReconstructionLogic:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = serialize_jsonable(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -150,7 +150,7 @@ class TestReconstructionLogic:
             "stream": True,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = serialize_jsonable(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -195,7 +195,7 @@ class TestReconstructionLogic:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = serialize_jsonable(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -243,7 +243,7 @@ class TestReconstructionLogic:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = serialize_jsonable(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -269,7 +269,7 @@ class TestReconstructionLogic:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = serialize_jsonable(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)

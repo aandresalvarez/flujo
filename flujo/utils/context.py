@@ -300,9 +300,15 @@ def safe_merge_context_updates(
                 except Exception:
 
                     def _robust_serialize(
-                        obj: Any, circular_ref_placeholder: Any = "<circular-ref>"
-                    ) -> Any:
-                        return obj
+                        obj: Any,
+                        *,
+                        circular_ref_placeholder: str | None = "<circular-ref>",
+                    ) -> str | int | float | bool | dict[str, Any] | list[Any] | None:
+                        return (
+                            obj
+                            if isinstance(obj, (str, int, float, bool, dict, list))
+                            else str(obj)
+                        )
 
                 def _stable_item_hash(v: Any) -> str:
                     try:

@@ -46,7 +46,7 @@ def _serialize_for_json(
     else:
         placeholder = "<circular-ref>"
     if obj_id in _seen:
-        return placeholder
+        return None if not strict else placeholder
 
     # Custom serializer registry (best-effort)
     lookup_custom_serializer: Optional[Callable[[Any], Callable[[Any], Any] | None]] = None

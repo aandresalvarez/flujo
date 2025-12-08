@@ -220,6 +220,10 @@ async def test_task_client_registry_resume_fallback_to_latest(sqlite_backend):
 @pytest.mark.asyncio
 @pytest.mark.slow
 @pytest.mark.integration
+@pytest.mark.skipif(
+    "FLUJO_TEST_POSTGRES_URI" not in __import__("os").environ,
+    reason="Postgres backend not configured (set FLUJO_TEST_POSTGRES_URI or enable testcontainers)",
+)
 async def test_postgres_metadata_index_created(postgres_backend):
     """Test Case 3: Postgres Indexing
 

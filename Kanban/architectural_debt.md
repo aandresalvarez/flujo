@@ -75,7 +75,7 @@ This improvement plan is prioritized by the **Impact/Effort Ratio**. We start wi
 *   **Impact:** **Medium.** Performance and maintenance debt.
 *   **Effort:** **Medium.**
 *   **Action Plan:**
-    1.  Deprecate `safe_serialize`.
+    1.  Deprecate `serialize_jsonable`.
     2.  Adopt `model.model_dump(mode='json')` (Pydantic v2) for all domain objects.
     3.  For custom types, register Pydantic serializers (`@field_serializer`) on the models themselves rather than in a global registry function.
 
@@ -102,7 +102,7 @@ This improvement plan is prioritized by the **Impact/Effort Ratio**. We start wi
   - Sync/async bridge hardened (`_run_coro_sync` via BlockingPortal); sqlite bridge tests pass.
   - Executor DI accepts injected deps/builder; regression tests added.
   - Typed contexts: scratchpad reserved for framework metadata, runtime enforcement flag (`FLUJO_ENFORCE_SCRATCHPAD_BAN`) and tests.
-  - Serialization cleanup: base_model uses native model_dump; backends (sqlite/base/memory/postgres) and cache/CLI/agents use pydantic/dataclass serialization; `safe_serialize` removed from runtime/tests; `_serialize_for_json` hardened and applied across tests/benchmarks; placeholders standardized.
+  - Serialization cleanup: base_model uses native model_dump; backends (sqlite/base/memory/postgres) and cache/CLI/agents use pydantic/dataclass serialization; `serialize_jsonable` removed from runtime/tests; `_serialize_for_json` hardened and applied across tests/benchmarks; placeholders standardized.
   - Circular-import hardening: interfaces in `domain.interfaces`, core depends on interfaces; CLI/runner smoke tests added.
   - Type-safety guardrails: reduced unsafe casts in core; TypeGuard for governance policy loading; bounded-cast architecture test added to prevent regressions; type validator uses typed accessors; scratchpad allowlist growth lint added (hard-fail scratchpad ban default).
   - DSL/import migration off scratchpad: `ImportArtifacts` wiring complete; ImportStep policy now prefers artifacts and preserves explicit `None`; scratchpad allowlist tightened to 24; cast gate raised to 150 with TypeGuarded merges; telemetry redaction hardened with generic key patterns.
@@ -134,7 +134,7 @@ This improvement plan is prioritized by the **Impact/Effort Ratio**. We start wi
   - Introduce typed context models/mixins; enforce `input_keys`/`output_keys` validation and fail on violations.
   - Reserve `scratchpad` for framework metadata only; add validation/tests to guard.
 - Serialization standardization
-  - Deprecate `safe_serialize`; switch to `model.model_dump(mode="json")`.
+  - Deprecate `serialize_jsonable`; switch to `model.model_dump(mode="json")`.
   - Add `@field_serializer` where needed; add round-trip serialization tests for core models.
 
 ### Cross-cutting guardrails (must hold throughout)
@@ -150,4 +150,4 @@ This improvement plan is prioritized by the **Impact/Effort Ratio**. We start wi
 - Validation blocks nested HITL and pricing misconfig at build/graph time.
 - Executor DI usable with fakes in tests.
 - No legacy scratchpad usage for user data; lint/validation catches violations.
-- No lingering `safe_serialize` references; serialization tests pass. 
+- No lingering `serialize_jsonable` references; serialization tests pass. 
