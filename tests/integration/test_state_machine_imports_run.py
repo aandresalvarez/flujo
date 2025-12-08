@@ -60,6 +60,9 @@ def test_state_machine_with_import_step_executes_and_merges_context(tmp_path: Pa
     from flujo.domain.blueprint.loader import load_pipeline_blueprint_from_yaml
     from flujo.application.runner import Flujo
 
+    import os
+
+    os.environ["FLUJO_BLUEPRINT_ALLOWED_IMPORTS"] = "*"
     pipeline = load_pipeline_blueprint_from_yaml(parent_yaml, base_dir=str(tmp_path))
     runner = Flujo(pipeline)
     result = runner.run("")

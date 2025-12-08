@@ -69,6 +69,9 @@ async def test_regression_state_machine_import_step_no_missing_agent(tmp_path: P
     from flujo.domain.dsl.state_machine import StateMachineStep
     from flujo.domain.dsl.import_step import ImportStep
 
+    import os
+
+    os.environ["FLUJO_BLUEPRINT_ALLOWED_IMPORTS"] = "*"
     pipeline = load_pipeline_blueprint_from_yaml(parent_yaml, base_dir=str(tmp_path))
     # Ensure ImportStep compiled inside the state
     sm = pipeline.steps[0]
