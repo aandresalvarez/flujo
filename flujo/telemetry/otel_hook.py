@@ -210,12 +210,14 @@ class OpenTelemetryHook:
         # Try to find the span using the step result name first
         key = self._get_step_span_key(payload.step_result.name)
         span = self._active_spans.pop(key, None)
+        actual_key = key
 
         # If not found, try to find any span that matches the step name pattern
         if span is None:
             for k in list(self._active_spans.keys()):
                 if k.startswith(f"step:{payload.step_result.name}"):
                     span = self._active_spans.pop(k)
+                    actual_key = k
                     break
 
         if span is not None:
@@ -224,9 +226,7 @@ class OpenTelemetryHook:
             # Prefer provided latency; fallback to monotonic delta when missing
             latency = payload.step_result.latency_s
             if not latency:
-                # Use the same key as pre_step if available
-                pre_key = self._get_step_span_key(payload.step_result.name)
-                start = self._mono_start.pop(pre_key, None)
+                start = self._mono_start.pop(actual_key, None)
                 if start is not None:
                     latency = max(0.0, time.monotonic() - start)
             span.set_attribute("latency_s", latency)
@@ -251,7 +251,7 @@ class OpenTelemetryHook:
                 except Exception as exc:  # noqa: BLE001 - telemetry must not fail user runs
                     logger.debug("Failed to add fallback event to span: %s", exc)
             # Cleanup monotonic start entry if any
-            self._mono_start.pop(self._get_step_span_key(payload.step_result.name), None)
+            self._mono_start.pop(actual_key, None)
             span.end()
 
     async def _handle_step_failure(self, payload: OnStepFailurePayload) -> None:

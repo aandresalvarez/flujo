@@ -4,6 +4,7 @@ import importlib
 import re
 from typing import Any, List, Optional, Tuple, Union
 
+from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 from ..interfaces import get_config_provider, get_skill_resolver
 from .loader_models import BlueprintError
 from flujo.type_definitions.common import JSONObject
@@ -58,12 +59,18 @@ def _import_object(path: str) -> Any:
     allowed: Optional[list[str]] = None
     try:
         cfg = get_config_provider().load_config()
-        if cfg is not None and getattr(cfg, "settings", None) and isinstance(cfg.settings, object):
-            allowed = getattr(cfg.settings, "blueprint_allowed_imports", None)
-        if allowed is None:
-            allowed = getattr(cfg, "blueprint_allowed_imports", None)
+        if cfg is not None:
+            settings = getattr(cfg, "settings", None)
+            if settings is not None:
+                allowed = getattr(settings, "blueprint_allowed_imports", None)
+            if allowed is None:
+                allowed = getattr(cfg, "blueprint_allowed_imports", None)
         if allowed is not None and not isinstance(allowed, list):
-            allowed = None
+            raise BlueprintError(
+                "Configuration 'blueprint_allowed_imports' must be a list of module prefixes."
+            )
+    except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+        raise
     except BlueprintError:
         raise
     except Exception as exc:

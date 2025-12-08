@@ -21,6 +21,7 @@ import anyio
 import os
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
+from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 from .base import StateBackend, _serialize_for_json as _serialize_for_json_base
 from flujo.infra import telemetry
 from flujo.type_definitions.common import JSONObject
@@ -1072,18 +1073,44 @@ class SQLiteBackendBase(StateBackend):
                         # Lazily create a pooled connection with optimized pragmas for subsequent writes
                         try:
                             conn = await self._create_connection()
-                            await conn.execute("PRAGMA journal_mode = WAL")
-                            await conn.execute("PRAGMA synchronous = NORMAL")
-                            await conn.execute("PRAGMA temp_store = MEMORY")
-                            await conn.execute("PRAGMA cache_size = 10000")
-                            await conn.execute("PRAGMA mmap_size = 268435456")
-                            await conn.execute("PRAGMA page_size = 4096")
-                            await conn.execute("PRAGMA busy_timeout = 1000")
-                            await conn.commit()
-                            self._set_pooled_connection(conn)
-                        except Exception:
-                            # If pool creation fails, fall back to per-call connections
-                            pass
+                            try:
+                                await conn.execute("PRAGMA journal_mode = WAL")
+                                await conn.execute("PRAGMA synchronous = NORMAL")
+                                await conn.execute("PRAGMA temp_store = MEMORY")
+                                await conn.execute("PRAGMA cache_size = 10000")
+                                await conn.execute("PRAGMA mmap_size = 268435456")
+                                await conn.execute("PRAGMA page_size = 4096")
+                                await conn.execute("PRAGMA busy_timeout = 1000")
+                                await conn.commit()
+                                lock = self._get_lock()
+                                async with lock:
+                                    self._set_pooled_connection(conn)
+                            except (sqlite3.Error, aiosqlite.Error):
+                                try:
+                                    await conn.close()
+                                except Exception as close_exc:  # noqa: BLE001 - best-effort cleanup
+                                    logger.debug(
+                                        "Non-fatal error closing pooled connection: %s", close_exc
+                                    )
+                                # Fall back to per-call connections
+                            except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+                                try:
+                                    await conn.close()
+                                except Exception as close_exc:  # noqa: BLE001 - best-effort cleanup
+                                    logger.debug(
+                                        "Non-fatal error closing pooled connection: %s", close_exc
+                                    )
+                                raise
+                            except Exception:
+                                try:
+                                    await conn.close()
+                                except Exception as close_exc:  # noqa: BLE001 - best-effort cleanup
+                                    logger.debug(
+                                        "Non-fatal error closing pooled connection: %s", close_exc
+                                    )
+                                raise
+                        except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+                            raise
                         self._initialized = True
                     except sqlite3.DatabaseError as e:
                         telemetry.logfire.error(f"Failed to initialize DB: {e}")

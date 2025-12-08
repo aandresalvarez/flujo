@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Optional, cast
 
 from flujo.domain.models import BaseModel as DomainBaseModel
+from flujo.infra.jinja_utils import create_jinja_environment
 from flujo.infra.skill_models import SkillRegistration
 from flujo.infra.skill_registry import get_skill_registry
 from flujo.type_definitions.common import JSONObject
@@ -73,11 +74,7 @@ async def render_jinja_template(template: str, variables: JSONObject | None = No
     if _jinja2 is None:
         return template
     try:
-        try:
-            from jinja2.sandbox import SandboxedEnvironment
-        except Exception:
-            SandboxedEnvironment = _jinja2.Environment  # type: ignore[misc]
-        env = SandboxedEnvironment(undefined=_jinja2.StrictUndefined, autoescape=False)
+        env = create_jinja_environment(_jinja2)
         tmpl = env.from_string(template)
         return str(tmpl.render(**(variables or {})))
     except Exception:

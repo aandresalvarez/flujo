@@ -680,23 +680,19 @@ def safe_serialize(
             else:
                 # For other Pydantic models, use their native model_dump and process carefully
                 try:
-                    # Prefer python-mode dump to preserve Python types (datetime, UUID, Decimal)
                     if hasattr(obj, "model_dump"):
                         try:
-                            model_dict = obj.model_dump(mode="python")
+                            dump_mode = "python" if mode == "python" else "json"
+                            model_dict = obj.model_dump(mode=dump_mode)
                         except TypeError:
-                            # Older signatures without mode parameter
                             model_dict = obj.model_dump()
+                    elif hasattr(obj, "dict"):
+                        model_dict = obj.dict()
                     else:
-                        if hasattr(obj, "dict"):
-                            model_dict = obj.dict()
-                        else:
-                            model_dict = {}
-                    # For each value in the model dict, serialize recursively with per-field fallback
+                        model_dict = {}
                     result = {}
                     for k, v in model_dict.items():
                         if v is None or isinstance(v, (str, int, float, bool, list, dict)):
-                            # Basic types - keep as-is
                             result[k] = v
                         else:
                             try:
@@ -706,7 +702,7 @@ def safe_serialize(
                                     _seen,
                                     _recursion_depth + 1,
                                     circular_ref_placeholder,
-                                    "python",
+                                    mode,
                                 )
                             except TypeError as e:
                                 if "not serializable" in str(e):
@@ -1047,7 +1043,9 @@ def serialize_to_json(obj: Any, mode: str = "default", **kwargs: Any) -> str:
 
     Args:
         obj: The object to serialize
-        mode: Serialization mode ("default" or "cache")
+        mode: Serialization mode ("default" or "cache" or "python"). Non-json-safe
+            types (e.g., datetime, UUID, Decimal) are normalized to strings in
+            non-"python" modes to guarantee JSON-serializable output.
         **kwargs: Additional arguments to pass to json.dumps
 
     Returns:

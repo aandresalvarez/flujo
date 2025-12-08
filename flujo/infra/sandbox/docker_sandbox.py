@@ -141,6 +141,15 @@ class DockerSandbox(SandboxProtocol):
                     raise
                 except Exception as exc:  # noqa: BLE001 - unexpected wait failure
                     logger.debug("Container wait failed: %s", exc)
+                    return SandboxResult(
+                        stdout="",
+                        stderr="",
+                        exit_code=1,
+                        artifacts=None,
+                        sandbox_id=None,
+                        timed_out=False,
+                        error=f"Container wait failed: {exc}",
+                    )
 
                 try:
                     logs = container_obj.logs(stdout=True, stderr=True) or b""

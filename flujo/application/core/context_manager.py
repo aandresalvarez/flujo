@@ -590,8 +590,15 @@ def _clone_context(obj: Optional[BaseModel]) -> Optional[BaseModel]:
                 val = getattr(obj, name, None)
                 try:
                     data[name] = copy.deepcopy(val)
-                except Exception:
-                    data[name] = None  # Drop non-pickleable resource
+                except Exception as exc:
+                    # Skip non-copyable field so default_factory/default can populate during validate
+                    log.debug(
+                        "Context isolation skipped non-copyable field %s on %s: %s",
+                        name,
+                        type(obj).__name__,
+                        exc,
+                    )
+                    continue
             return type(obj).model_validate(data)
         except Exception:
             pass

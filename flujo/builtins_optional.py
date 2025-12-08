@@ -5,6 +5,7 @@ from typing import Any, Optional, Type
 from flujo.type_definitions.common import JSONObject
 
 from flujo.infra.skill_registry import get_skill_registry
+from flujo.infra.jinja_utils import create_jinja_environment
 
 _DDGSAsync: Optional[Type[Any]] = None
 _DDGS_CLASS: Optional[Type[Any]] = None
@@ -122,11 +123,7 @@ def register_optional_builtins() -> None:
         if _jinja2 is None:
             return template
         try:
-            try:
-                from jinja2.sandbox import SandboxedEnvironment
-            except Exception:
-                SandboxedEnvironment = _jinja2.Environment  # type: ignore[misc]
-            env = SandboxedEnvironment(undefined=_jinja2.StrictUndefined, autoescape=False)
+            env = create_jinja_environment(_jinja2)
             tmpl = env.from_string(template)
             result = tmpl.render(**(variables or {}))
             return str(result)

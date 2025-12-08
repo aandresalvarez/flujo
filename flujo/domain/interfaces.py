@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from typing import Any, Callable, Optional, Protocol, TypeAlias, TypeVar, cast, runtime_checkable
 
 from flujo.type_definitions.common import JSONObject
@@ -94,7 +95,7 @@ def get_telemetry_sink() -> TelemetrySink:
             logger.debug(message, *args, **kwargs)
 
         def span(self, name: str, *args: Any, **kwargs: Any) -> Any:
-            return logger.debug  # no-op span surrogate
+            return nullcontext(self)  # no-op span surrogate as context manager
 
     return _LoggerSink()
 
