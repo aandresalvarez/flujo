@@ -4,7 +4,7 @@ Purpose: address the remaining gaps highlighted in the architectural debt review
 sequenced, low-risk rollout. Optimizes for correctness first, then DX/maintainability.
 
 ### Current Status (per track)
-- Serialization: Runtime migrated to `model_dump(mode="json")` / `_serialize_for_json`; **tests still reference `serialize_jsonable`**; function not yet removed.
+- Serialization: ✅ **COMPLETE**. Runtime, tests, and docs migrated to `model_dump(mode="json")` / `_serialize_for_json`. Function deleted; `rg serialize_jsonable flujo/ tests/ docs/` returns zero.
 - Async/Sync Bridge: Prometheus path migrated to shared bridge; further verification ongoing.
 - Circular Imports: DSL now uses interfaces; continue tightening architecture checks.
 - Typed Context: Scratchpad enforcement in place; mapping helpers in progress.
