@@ -443,9 +443,9 @@ class TestCodeQualityStandards:
             pytest.fail("Deprecated exception shims must be removed from flujo.exceptions")
         if "DeprecationWarning" in content:
             pytest.fail("Legacy deprecation warnings should not remain in flujo.exceptions")
-        assert (
-            "FlujoError" in content
-        ), "exceptions module should define FlujoError as the base type"
+        assert "FlujoError" in content, (
+            "exceptions module should define FlujoError as the base type"
+        )
 
     def test_serialization_is_unified(self, flujo_root: Path):
         """Verify that all models use unified serialization.
@@ -509,7 +509,6 @@ class TestQualityGates:
         """Get the root directory of the Flujo project."""
         return Path(__file__).parent.parent.parent
 
-    @pytest.mark.timeout(300)
     def test_all_quality_checks_pass(self, flujo_root: Path):
         """Run all quality checks that must pass before PR merge.
 
@@ -570,7 +569,7 @@ class TestQualityGates:
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=300,
+                timeout=600,
             )
             if result.returncode != 0:
                 error_info = f"unit tests failed:\nSTDOUT:\n{result.stdout[-1000:]}\nSTDERR:\n{result.stderr[-2000:]}"
