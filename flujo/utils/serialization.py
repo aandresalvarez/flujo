@@ -6,6 +6,7 @@ import dataclasses
 import json
 import math
 import threading
+import warnings
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime, time
 from decimal import Decimal
@@ -247,14 +248,28 @@ def serialize_jsonable(
     circular_ref_placeholder: str | None = "<circular-ref>",
     _seen: Optional[Set[int]] = None,
     _depth: int = 0,
+    _suppress_deprecation: bool = False,
 ) -> JsonValue:
     """Convert arbitrary objects into JSON-safe structures.
+
+    .. deprecated::
+        This function is deprecated. Use ``model_dump(mode="json")`` for Pydantic
+        models or the internal ``_serialize_for_json`` for primitives.
 
     - Pydantic models use ``model_dump`` with ``mode="json"`` by default.
     - Dataclasses are converted via ``asdict``.
     - Enums, UUID, Decimal, datetime/date/time are normalized to string (unless ``mode="python"``).
     - Circular references return "<circular-ref>".
     """
+    # Emit deprecation warning only at the top-level call (depth 0) and unless suppressed
+    if _depth == 0 and not _suppress_deprecation:
+        warnings.warn(
+            "serialize_jsonable is deprecated. Use model_dump(mode='json') for Pydantic "
+            "models or use the model's native serialization. This function will be "
+            "removed in a future version.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     if _seen is None:
         _seen = set()
@@ -493,24 +508,114 @@ def serialize_jsonable(
 def robust_serialize(
     obj: Any, *, circular_ref_placeholder: str | None = "<circular-ref>"
 ) -> JsonValue | str:
-    """Logging-friendly serializer that never raises."""
+    """Logging-friendly serializer that never raises.
 
+    .. deprecated::
+        This function is deprecated. Use ``model_dump(mode="json")`` for Pydantic
+        models or use the model's native serialization.
+    """
+    warnings.warn(
+        "robust_serialize is deprecated. Use model_dump(mode='json') for Pydantic "
+        "models or use the model's native serialization.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     try:
-        return serialize_jsonable(obj, circular_ref_placeholder=circular_ref_placeholder)
+        return serialize_jsonable(
+            obj, circular_ref_placeholder=circular_ref_placeholder, _suppress_deprecation=True
+        )
     except Exception:
         return f"<unserializable: {type(obj).__name__}>"
 
 
 def serialize_to_json(obj: Any, *, mode: str = "json", **kwargs: Any) -> str:
-    """Serialize ``obj`` to a JSON string using :func:`serialize_jsonable`."""
+    """Serialize ``obj`` to a JSON string using :func:`serialize_jsonable`.
 
-    return json.dumps(serialize_jsonable(obj, mode=mode), sort_keys=True, **kwargs)
+    .. deprecated::
+        This function is deprecated. Use ``model.model_dump_json()`` for Pydantic
+        models or use the model's native serialization.
+    """
+    warnings.warn(
+        "serialize_to_json is deprecated. Use model_dump_json() for Pydantic models.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return json.dumps(
+        serialize_jsonable(obj, mode=mode, _suppress_deprecation=True), sort_keys=True, **kwargs
+    )
 
 
 def serialize_to_json_robust(obj: Any, **kwargs: Any) -> str:
-    """Serialize using :func:`robust_serialize`, guaranteeing JSON output."""
+    """Serialize using :func:`robust_serialize`, guaranteeing JSON output.
 
-    return json.dumps(robust_serialize(obj), **kwargs)
+    .. deprecated::
+        This function is deprecated. Use ``model.model_dump_json()`` for Pydantic
+        models or use the model's native serialization.
+    """
+    warnings.warn(
+        "serialize_to_json_robust is deprecated. Use model_dump_json() for Pydantic models.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    # Use serialize_jsonable directly here with suppression to avoid double warning
+    try:
+        serialized = serialize_jsonable(obj, _suppress_deprecation=True)
+    except Exception:
+        serialized = f"<unserializable: {type(obj).__name__}>"
+    return json.dumps(serialized, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Internal-use functions (no deprecation warnings)
+# These are for flujo internals during the migration period.
+# External users should use model_dump(mode="json") directly.
+# ---------------------------------------------------------------------------
+
+
+def _serialize_for_json(
+    obj: Any,
+    *,
+    mode: str = "json",
+    default_serializer: Optional[Callable[[Any], Any]] = None,
+    circular_ref_placeholder: str | None = "<circular-ref>",
+) -> JsonValue:
+    """Internal serialization without deprecation warning.
+
+    This is for flujo internals that need robust serialization during
+    the migration period. External code should use model_dump(mode="json").
+    """
+    return serialize_jsonable(
+        obj,
+        mode=mode,
+        default_serializer=default_serializer,
+        circular_ref_placeholder=circular_ref_placeholder,
+        _suppress_deprecation=True,
+    )
+
+
+def _robust_serialize_internal(
+    obj: Any, *, circular_ref_placeholder: str | None = "<circular-ref>"
+) -> JsonValue | str:
+    """Internal robust serializer without deprecation warning.
+
+    For flujo internals that need never-raise serialization.
+    """
+    try:
+        return serialize_jsonable(
+            obj, circular_ref_placeholder=circular_ref_placeholder, _suppress_deprecation=True
+        )
+    except Exception:
+        return f"<unserializable: {type(obj).__name__}>"
+
+
+def _serialize_to_json_internal(obj: Any, *, mode: str = "json", **kwargs: Any) -> str:
+    """Internal JSON string serializer without deprecation warning.
+
+    For flujo internals that need JSON string output.
+    """
+    return json.dumps(
+        serialize_jsonable(obj, mode=mode, _suppress_deprecation=True), sort_keys=True, **kwargs
+    )
 
 
 __all__ = [
@@ -527,4 +632,8 @@ __all__ = [
     "serialize_to_json",
     "serialize_to_json_robust",
     "serializable_field",
+    # Internal functions (for flujo modules only, not public API)
+    "_serialize_for_json",
+    "_robust_serialize_internal",
+    "_serialize_to_json_internal",
 ]

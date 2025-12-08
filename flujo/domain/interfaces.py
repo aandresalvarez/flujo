@@ -276,3 +276,33 @@ __all__ += [
     "set_default_config_provider",
     "get_config_provider",
 ]
+
+
+# ---- Parameter introspection utilities ----
+# These allow DSL modules to introspect callables without importing from core.
+
+
+def accepts_param(func: Any, param_name: str) -> bool:
+    """Check if a callable accepts a parameter with the given name.
+
+    This utility enables DSL modules to check parameter signatures without
+    importing from flujo.application.core, helping decouple DSL from execution.
+
+    Args:
+        func: The callable to inspect.
+        param_name: The parameter name to check for.
+
+    Returns:
+        True if the callable accepts the parameter, False otherwise.
+    """
+    import inspect
+
+    try:
+        sig = inspect.signature(func)
+        return param_name in sig.parameters
+    except (ValueError, TypeError):
+        # Cannot inspect (e.g., built-in, C extension)
+        return False
+
+
+__all__ += ["accepts_param"]

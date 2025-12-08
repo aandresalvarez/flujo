@@ -296,7 +296,9 @@ def safe_merge_context_updates(
                 import hashlib as _hashlib
 
                 try:
-                    from flujo.utils.serialization import robust_serialize as _robust_serialize
+                    from flujo.utils.serialization import (
+                        _robust_serialize_internal as _robust_serialize,
+                    )
                 except Exception:
 
                     def _robust_serialize(

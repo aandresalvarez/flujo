@@ -461,9 +461,14 @@ def replay_command(
         result = asyncio.run(_run())
 
         if json_output:
-            from flujo.utils.serialization import serialize_to_json_robust
+            from flujo.utils.serialization import _robust_serialize_internal
+            import json as _json
 
-            typer.echo(serialize_to_json_robust(result, indent=2))
+            try:
+                serialized = _robust_serialize_internal(result)
+            except Exception:
+                serialized = f"<unserializable: {type(result).__name__}>"
+            typer.echo(_json.dumps(serialized, indent=2))
         else:
             display_pipeline_results(result, run_id, json_output)
 

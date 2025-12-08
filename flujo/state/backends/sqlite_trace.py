@@ -122,7 +122,7 @@ class SQLiteTraceMixin:
             ):
                 return
 
-            from flujo.utils.serialization import robust_serialize
+            from flujo.utils.serialization import _robust_serialize_internal as robust_serialize
 
             try:
                 start_time = float(span_data.get("start_time", 0.0))

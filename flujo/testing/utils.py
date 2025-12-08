@@ -13,10 +13,37 @@ from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.infra.backends import LocalBackend
 from flujo.domain.resources import AppResources
 from flujo.domain.models import StepResult, UsageLimits, BaseModel as FlujoBaseModel
-from flujo.utils.serialization import serialize_jsonable
 from flujo.domain.models import StepOutcome, Success, Failure, Paused, PipelineResult
 from flujo.type_definitions.common import JSONObject
 from flujo.exceptions import PausedException
+
+
+def _serialize_for_test(obj: Any) -> Any:
+    """Serialize an object for testing purposes using native Pydantic/JSON.
+
+    This replaces the deprecated serialize_jsonable for test utilities.
+    Uses model_dump(mode="json") for Pydantic models and handles primitives natively.
+    """
+    if obj is None:
+        return None
+    if isinstance(obj, (str, int, float, bool)):
+        return obj
+    if hasattr(obj, "model_dump"):
+        try:
+            return obj.model_dump(mode="json")
+        except TypeError:
+            return obj.model_dump()
+    if isinstance(obj, dict):
+        return {k: _serialize_for_test(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_serialize_for_test(item) for item in obj]
+    # Fallback for unknown types
+    try:
+        # Test if JSON-serializable
+        json.dumps(obj)
+        return obj
+    except (TypeError, ValueError):
+        return str(obj)
 
 
 def assert_pipeline_result(result: Any, expected_output: Optional[Any] = None) -> None:
@@ -143,7 +170,7 @@ class DummyRemoteBackend:
         }
 
         # Use robust serialization for nested structures
-        serialized = serialize_jsonable(payload)
+        serialized = _serialize_for_test(payload)
         data = json.loads(json.dumps(serialized))
 
         # Don't apply _parse_dict_like_strings to the entire data object
@@ -435,8 +462,8 @@ class SimpleDummyRemoteBackend(ExecutionBackend):
     def store(self, key: str, value: Any) -> None:
         """Store a value with robust serialization."""
         self.call_count += 1
-        # Use the new robust serialization
-        serialized = serialize_jsonable(value)
+        # Use the Pydantic-native serialization pattern
+        serialized = _serialize_for_test(value)
         self.storage[key] = serialized
 
     def retrieve(self, key: str) -> Any:

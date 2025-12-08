@@ -12,8 +12,12 @@ import atexit
 
 from flujo.infra import telemetry
 from flujo.type_definitions.common import JSONObject
-from flujo.utils.serialization import robust_serialize, safe_deserialize
+from flujo.utils.serialization import (
+    _robust_serialize_internal as robust_serialize,
+    safe_deserialize,
+)
 from .sqlite_core import SQLiteBackendBase, _fast_json_dumps
+
 from .sqlite_trace import SQLiteTraceMixin
 from ._filters import metadata_contains
 
