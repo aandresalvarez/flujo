@@ -354,26 +354,30 @@ def _register_builtins() -> None:
             # Identify and (optionally) mock side-effect skills referenced in YAML
             referenced_side_ids: list[str] = []
             if sandbox:
+                side_ids: list[str] = []
                 try:
                     from flujo.cli.helpers import find_side_effect_skills_in_yaml as _find
-
+                except ImportError:
+                    _find = None
+                else:
                     side_ids = _find(yaml_text)
                     referenced_side_ids = list(side_ids)
-                except Exception:
-                    side_ids = []
                 # If no side-effect skills were detected, fall back to all registered
                 # side-effect skills to ensure mocking in dry-run.
                 if not side_ids:
-                    try:
-                        for scoped in getattr(reg_local, "_entries", {}).values():
+                    entries = getattr(reg_local, "_entries", {})
+                    if isinstance(entries, dict):
+                        for scoped in entries.values():
+                            if not isinstance(scoped, dict):
+                                continue
                             for sid, versions in scoped.items():
-                                entry_latest = (
-                                    versions.get("latest") if isinstance(versions, dict) else None
-                                )
-                                if entry_latest and entry_latest.get("side_effects"):
+                                if not isinstance(versions, dict):
+                                    continue
+                                entry_latest = versions.get("latest")
+                                if isinstance(entry_latest, dict) and entry_latest.get(
+                                    "side_effects"
+                                ):
                                     side_ids.append(sid)
-                    except Exception:
-                        pass
                 # Heuristic: if YAML references fs_write_file explicitly, always mock it
                 if "flujo.builtins.fs_write_file" in yaml_text:
                     if "flujo.builtins.fs_write_file" not in side_ids:
@@ -388,7 +392,14 @@ def _register_builtins() -> None:
                         entry = reg_local.get(sid)
                         if not entry:
                             continue
-                        restore[sid] = dict(entry)
+                        # Capture scoped/latest entry for proper restore
+                        versions = (
+                            getattr(reg_local, "_entries", {}).get("default", {}).get(sid, {})
+                        )
+                        original_latest = (
+                            versions.get("latest") if isinstance(versions, dict) else None
+                        )
+                        restore[sid] = {"scope": "default", "latest": original_latest}
 
                         def _make_factory(
                             _sid: str,
@@ -411,22 +422,18 @@ def _register_builtins() -> None:
                     return execute_pipeline_with_output_handling(runner, input_text, None, False)
 
                 result = await _asyncio.to_thread(_run_sync)
-                # Only decorate outputs when the YAML actually referenced side-effect skills.
-                if sandbox and referenced_side_ids:
-                    try:
-                        for sr in getattr(result, "step_history", []) or []:
-                            if hasattr(sr, "output"):
-                                sr.output = {"mocked": True, "skill": referenced_side_ids[0]}
-                    except Exception:
-                        pass
+                # Do not clobber outputs; optional decoration could be added per-step if needed.
                 return {"dry_run_result": result}
             finally:
                 if mutated:
-                    try:
-                        for sid, entry in restore.items():
-                            reg_local._entries[sid] = entry
-                    except Exception:
-                        pass
+                    for sid, snapshot in restore.items():
+                        versions = (
+                            getattr(reg_local, "_entries", {})
+                            .get(snapshot.get("scope", "default"), {})
+                            .get(sid)
+                        )
+                        if isinstance(versions, dict):
+                            versions["latest"] = snapshot.get("latest")
 
         reg.register(
             "flujo.builtins.run_pipeline_in_memory",

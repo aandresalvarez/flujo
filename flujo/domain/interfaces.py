@@ -141,8 +141,6 @@ class SkillResolver(Protocol):
 
 
 class SkillRegistry(Protocol):
-    _entries: dict[str, dict[str, JSONObject]]
-
     def register(
         self,
         id: str,

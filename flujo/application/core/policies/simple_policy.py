@@ -66,7 +66,8 @@ class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
                     and cache_key
                     and getattr(core, "_enable_cache", False)
                 ):
-                    await core._cache_backend.put(cache_key, outcome.step_result, ttl_s=3600)
+                    ttl_s = getattr(core, "_cache_ttl_s", 3600)
+                    await core._cache_backend.put(cache_key, outcome.step_result, ttl_s=ttl_s)
             except Exception:
                 pass
             return cast(StepOutcome[StepResult], outcome)

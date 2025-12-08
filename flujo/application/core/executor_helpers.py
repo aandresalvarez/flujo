@@ -171,13 +171,8 @@ def _is_context_with_scratchpad(obj: object) -> TypeGuard[ContextWithScratchpad]
     """Narrow to contexts that expose scratchpad/branch bookkeeping."""
     if not isinstance(obj, BaseModel):
         return False
-    try:
-        # Protocol guard: scratchpad + executed_branches must exist
-        getattr(obj, "scratchpad")
-        getattr(obj, "executed_branches")
-        return True
-    except Exception:
-        return False
+    # Protocol guard: scratchpad + executed_branches must exist
+    return hasattr(obj, "scratchpad") and hasattr(obj, "executed_branches")
 
 
 def _coerce_context_with_scratchpad(

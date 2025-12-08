@@ -828,8 +828,8 @@ class SQLiteBackendBase(StateBackend):
                     try:
                         wal.unlink(missing_ok=True)
                         shm.unlink(missing_ok=True)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug("Could not remove WAL/SHM sidecars: %s", exc)
 
                 await asyncio.to_thread(_copy_and_remove)
                 telemetry.logfire.warning(f"Corrupted database copied to {backup_path} and removed")

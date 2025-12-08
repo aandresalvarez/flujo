@@ -42,7 +42,7 @@ class CallableStepPolicy(StepPolicy[StepType]):
     def handles_type(self) -> Type[StepType]:
         return self._handles_type
 
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[Any]:
+    async def execute(self, _core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[Any]:
         return await self._func(frame)
 
 

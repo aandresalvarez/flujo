@@ -55,29 +55,31 @@ def _import_object(path: str) -> Any:
         else:
             module_name, attr_name = ".".join(parts[:-1]), parts[-1]
 
+    allowed: Optional[list[str]] = None
     try:
         cfg = get_config_provider().load_config()
-        allowed: Optional[list[str]] = None
         if cfg is not None and getattr(cfg, "settings", None) and isinstance(cfg.settings, object):
             allowed = getattr(cfg.settings, "blueprint_allowed_imports", None)
         if allowed is None:
             allowed = getattr(cfg, "blueprint_allowed_imports", None)
         if allowed is not None and not isinstance(allowed, list):
             allowed = None
-        # Default-deny: require explicit allow-list
-        if not allowed:
-            raise BlueprintError(
-                "Blueprint imports are disallowed by default. Configure 'blueprint_allowed_imports' in flujo.toml."
-            )
-        if not any(module_name == a or module_name.startswith(f"{a}.") for a in allowed):
-            raise BlueprintError(
-                f"Import of module '{module_name}' is not allowed. Configure 'blueprint_allowed_imports' in flujo.toml."
-            )
     except BlueprintError:
         raise
-    except Exception:
+    except Exception as exc:
         raise BlueprintError(
             "Failed to verify allowed imports from configuration; refusing to import modules from YAML."
+        ) from exc
+
+    # Default-deny: require explicit allow-list in configuration.
+    if allowed is None:
+        raise BlueprintError(
+            "Blueprint imports are disallowed by default. Configure 'blueprint_allowed_imports' in configuration."
+        )
+
+    if not any(module_name == a or module_name.startswith(f"{a}.") for a in allowed):
+        raise BlueprintError(
+            f"Import of module '{module_name}' is not allowed. Configure 'blueprint_allowed_imports' in configuration."
         )
 
     if module_name == "skills" or module_name.startswith("skills."):

@@ -789,7 +789,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                     for k, v in getattr(ctx_b, "__dict__", {}).items()
                                     if not str(k).startswith("_")
                                 }
-                        except Exception:
+                        except Exception:  # noqa: BLE001
                             return  # Can't compare, skip
 
                         def _walk(val_a: Any, val_b: Any, path: str) -> None:
@@ -811,10 +811,10 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                 if isinstance(val_a, (int, float)) and isinstance(
                                     val_b, (int, float)
                                 ):
-                                    return
+                                    return  # numeric counters intentionally not conflict-checked
                                 try:
                                     differs = val_a != val_b
-                                except Exception:
+                                except Exception:  # noqa: BLE001
                                     differs = True
                                 if differs:
                                     raise _CfgErr(
@@ -871,12 +871,8 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                             for item in src_attr:
                                                 if item not in tgt_attr:
                                                     tgt_attr.append(item)
-                                    except Exception:
+                                    except Exception:  # noqa: BLE001, S110
                                         pass
-                            # Use ContextManager.merge() for ALL fields (not just hardcoded ones)
-                            # This follows the framework's context management patterns.
-                            # Note: We already merged scratchpad/branch_results/context_updates
-                            # explicitly above for special list/dict semantics.
                             ContextManager.merge(context, bc)
                 elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
                     if not hasattr(context, "scratchpad"):

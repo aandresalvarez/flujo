@@ -328,16 +328,8 @@ def safe_deserialize(
         from datetime import date, datetime, time
 
         if target_type in {datetime, date, time}:
-            try:
-                dt = datetime.fromisoformat(serialized_data.replace("Z", "+00:00"))
-                # If a pure date/time is requested, convert appropriately
-                if target_type is date:
-                    return dt.date()
-                if target_type is time:
-                    return dt.timetz()
-                return dt
-            except (ValueError, TypeError):
-                return serialized_data
+            # Preserve string unless a custom deserializer is registered
+            return serialized_data
 
         if target_type is float:
             if serialized_data == "nan":
@@ -364,7 +356,6 @@ def safe_deserialize(
 
         # Default: leave string as-is when no explicit target coercion requested
         return serialized_data
-        return serialized_data
 
     # Handle lists
     if isinstance(serialized_data, list):
@@ -372,13 +363,20 @@ def safe_deserialize(
 
     # Handle dictionaries
     if isinstance(serialized_data, dict):
+        # Check if this looks like a serialized complex number
+        if "real" in serialized_data and "imag" in serialized_data and len(serialized_data) == 2:
+            try:
+                return complex(serialized_data["real"], serialized_data["imag"])
+            except (ValueError, TypeError):
+                pass
+
         # Check if this looks like a serialized custom type
         if target_type is not None:
             custom_deserializer = lookup_custom_deserializer(target_type)
             if custom_deserializer:
                 try:
                     return custom_deserializer(serialized_data)
-                except Exception:
+                except (TypeError, ValueError):
                     pass  # Fall back to dict reconstruction
 
         # Reconstruct as dict
@@ -388,28 +386,6 @@ def safe_deserialize(
             )
             for k, v in serialized_data.items()
         }
-
-    # Handle complex numbers (from dict with 'real' and 'imag' keys)
-    if (
-        isinstance(serialized_data, dict)
-        and "real" in serialized_data
-        and "imag" in serialized_data
-    ):
-        try:
-            return complex(serialized_data["real"], serialized_data["imag"])
-        except (ValueError, TypeError):
-            pass
-
-    # Handle bytes (from base64 strings)
-    if isinstance(serialized_data, str):
-        try:
-            import base64
-
-            # Try to decode as base64
-            decoded = base64.b64decode(serialized_data)
-            return decoded
-        except Exception:
-            pass
 
     # Handle enums
     if target_type is not None and hasattr(target_type, "__members__"):
@@ -595,7 +571,7 @@ def safe_serialize(
 
         # Prefer Pydantic model_dump for BaseModel instances; then serialize recursively
         if HAS_PYDANTIC and isinstance(obj, PydanticBaseModel) and not is_flujo_model:
-            # Avoid recursive model_dump (may trigger circular errors); serialize __dict__ using python mode
+            # Avoid recursive model_dump (may trigger circular errors); serialize __dict__ using caller mode
             try:
                 raw = getattr(obj, "__dict__", obj)
                 return safe_serialize(
@@ -604,9 +580,9 @@ def safe_serialize(
                     _seen,
                     _recursion_depth + 1,
                     circular_ref_placeholder,
-                    "python",
+                    mode,
                 )
-            except Exception:
+            except (AttributeError, TypeError, RecursionError):
                 pass
 
         if obj is None:

@@ -112,16 +112,20 @@ class PostgresBackend(StateBackend):
 
     async def _init_schema(self, pool: Pool) -> None:
         async with pool.acquire() as conn:
-            # Serialize migrations across processes/containers using a Postgres advisory lock.
-            # This prevents migration stampedes on scale-up.
-            try:
-                await conn.execute("SELECT pg_advisory_xact_lock($1)", MIGRATION_LOCK_KEY)
-            except Exception:
-                # If advisory lock fails (e.g., permissions), continue without it to maintain backward compatibility.
-                pass
-            # Create base schema (version 1)
-            await conn.execute(
-                """
+            async with conn.transaction():
+                # Serialize migrations across processes/containers using a Postgres advisory lock.
+                # This prevents migration stampedes on scale-up.
+                try:
+                    await conn.execute("SELECT pg_advisory_xact_lock($1)", MIGRATION_LOCK_KEY)
+                except Exception as e:
+                    import logging
+
+                    logging.getLogger(__name__).warning(
+                        "Advisory lock acquisition failed, continuing without serialization: %s", e
+                    )
+                # Create base schema (version 1)
+                await conn.execute(
+                    """
                 CREATE TABLE IF NOT EXISTS workflow_state (
                     run_id TEXT PRIMARY KEY,
                     pipeline_id TEXT NOT NULL,
@@ -145,7 +149,7 @@ class PostgresBackend(StateBackend):
                     background_error TEXT
                 )
                 """
-            )
+                )
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS runs (
@@ -438,13 +442,13 @@ class PostgresBackend(StateBackend):
                 """
                 INSERT INTO workflow_state (
                     run_id, pipeline_id, pipeline_name, pipeline_version,
-                    current_step_index, pipeline_context, last_step_output,
+                    current_step_index, pipeline_context, last_step_output, step_history,
                     status, created_at, updated_at, total_steps, error_message,
                     execution_time_ms, memory_usage_mb, metadata, is_background_task,
                     parent_run_id, task_id, background_error
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8,
-                    $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18, $19
+                    $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9,
+                    $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18, $19, $20
                 )
                 ON CONFLICT (run_id) DO UPDATE SET
                     pipeline_id = EXCLUDED.pipeline_id,
@@ -453,6 +457,7 @@ class PostgresBackend(StateBackend):
                     current_step_index = EXCLUDED.current_step_index,
                     pipeline_context = EXCLUDED.pipeline_context,
                     last_step_output = EXCLUDED.last_step_output,
+                    step_history = EXCLUDED.step_history,
                     status = EXCLUDED.status,
                     updated_at = EXCLUDED.updated_at,
                     total_steps = EXCLUDED.total_steps,
@@ -472,6 +477,7 @@ class PostgresBackend(StateBackend):
                 state["current_step_index"],
                 _jsonb(state.get("pipeline_context")),
                 _jsonb(state.get("last_step_output")),
+                _jsonb(state.get("step_history")),
                 state.get("status", "running"),
                 created_at,
                 updated_at,
@@ -493,7 +499,7 @@ class PostgresBackend(StateBackend):
             record = await conn.fetchrow(
                 """
                 SELECT run_id, pipeline_id, pipeline_name, pipeline_version, current_step_index,
-                       pipeline_context, last_step_output, status, created_at,
+                       pipeline_context, last_step_output, step_history, status, created_at,
                        updated_at, total_steps, error_message, execution_time_ms,
                        memory_usage_mb, metadata, is_background_task, parent_run_id, task_id,
                        background_error
@@ -511,6 +517,7 @@ class PostgresBackend(StateBackend):
                 "current_step_index": record["current_step_index"],
                 "pipeline_context": safe_deserialize(record["pipeline_context"]) or {},
                 "last_step_output": safe_deserialize(record["last_step_output"]),
+                "step_history": safe_deserialize(record["step_history"]) or [],
                 "status": record["status"],
                 "created_at": record["created_at"],
                 "updated_at": record["updated_at"],
