@@ -174,6 +174,8 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
     prompt_tokens = 0
     completion_tokens = 0
     cost_usd = 0.0
+    provider: Optional[str] = None
+    model_name: Optional[str] = None
 
     from .infra import telemetry
 
@@ -250,10 +252,12 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
 
                 if mid:
                     prov, mname = _extract_pm(mid)
+                    provider, model_name = prov, mname
                     if prov is None:
                         # Attempt provider inference for bare model ids to ensure strict pricing surfaces
                         try:
                             prov = CostCalculator()._infer_provider_from_model(mname)
+                            provider = prov
                         except Exception:
                             prov = None
                     if prov is not None:
@@ -317,6 +321,16 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                         _model_cache[cache_key] = extract_provider_and_model(model_id)
 
                     provider, model_name = _model_cache[cache_key]
+                    if provider is None:
+                        try:
+                            inferred_provider = CostCalculator()._infer_provider_from_model(
+                                model_name
+                            )
+                        except Exception:
+                            inferred_provider = None
+                        if inferred_provider is not None:
+                            provider = inferred_provider
+                            _model_cache[cache_key] = (provider, model_name)
 
                     # Pre-check pricing availability only when provider is known
                     # to surface strict-mode errors deterministically while
