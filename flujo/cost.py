@@ -387,41 +387,6 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                 )
                 cost_usd = 0.0
 
-        # Secondary safeguard: if tokens were extracted but cost is still zero,
-        # retry with default pricing to avoid silently under-reporting known models.
-        if (prompt_tokens > 0 or completion_tokens > 0) and cost_usd == 0.0 and model_name:
-            try:
-                provider_hint = provider or CostCalculator()._infer_provider_from_model(model_name)
-                pricing = None
-                if provider_hint:
-                    try:
-                        pricing = flujo.infra.config.get_provider_pricing(provider_hint, model_name)
-                    except PricingNotConfiguredError:
-                        # Honor strict-mode failure expectations
-                        raise
-                    except Exception:
-                        pricing = None
-                    if pricing is None:
-                        try:
-                            from .infra.config import _get_default_pricing
-
-                            pricing = _get_default_pricing(provider_hint, model_name)
-                        except Exception:
-                            pricing = None
-                if pricing is not None:
-                    cost_usd = (prompt_tokens / 1000.0) * pricing.prompt_tokens_per_1k
-                    cost_usd += (completion_tokens / 1000.0) * pricing.completion_tokens_per_1k
-                    telemetry.logfire.info(
-                        f"Fallback cost calculation for step '{step_name}': {cost_usd} USD for model {model_name}"
-                    )
-            except PricingNotConfiguredError:
-                # Preserve strict behavior when pricing is intentionally absent
-                raise
-            except Exception as e:
-                telemetry.logfire.debug(
-                    f"Fallback cost calculation skipped for step '{step_name}': {type(e).__name__}: {e}"
-                )
-
     # Final safety net: if we had meaningful tokens but could not compute cost and
     # no earlier missing-model warning was emitted, check model_id and emit a
     # critical warning to satisfy strict test expectations and aid diagnostics.
