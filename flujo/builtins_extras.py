@@ -355,11 +355,12 @@ def _register_builtins() -> None:
             referenced_side_ids: list[str] = []
             if sandbox:
                 side_ids: list[str] = []
+                _find: Callable[[str], list[str]] | None = None
                 try:
                     from flujo.cli.helpers import find_side_effect_skills_in_yaml as _find
                 except ImportError:
                     _find = None
-                else:
+                if _find is not None:
                     side_ids = _find(yaml_text)
                     referenced_side_ids = list(side_ids)
                 # If no side-effect skills were detected, fall back to all registered
