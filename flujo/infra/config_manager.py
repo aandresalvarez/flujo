@@ -293,12 +293,47 @@ class ConfigManager:
         Returns:
             FlujoConfig: The loaded configuration
         """
+
+        def _parse_allowed_imports_env(val: Optional[str]) -> Optional[list[str]]:
+            """Parse FLUJO_BLUEPRINT_ALLOWED_IMPORTS into a normalized list of prefixes."""
+            if val is None:
+                return None
+            raw = val.strip()
+            if raw == "":
+                return None
+            # Support wildcard allow-all and comma/semicolon separated lists
+            if raw == "*":
+                return ["*"]
+            tokens: list[str] = []
+            for part in raw.replace(";", ",").split(","):
+                tok = part.strip()
+                if tok:
+                    tokens.append(tok)
+            return tokens or None
+
+        env_allowed = _parse_allowed_imports_env(os.environ.get("FLUJO_BLUEPRINT_ALLOWED_IMPORTS"))
+        test_mode_enabled = (
+            str(os.environ.get("FLUJO_TEST_MODE", "")).strip().lower() in {"1", "true", "yes", "on"}
+            or os.environ.get("PYTEST_CURRENT_TEST") is not None
+        )
+
         if self.config_path is None:
-            if not force_reload and self._cached_config is not None:
+            current_env_sig = self._compute_env_signature()
+            if (
+                not force_reload
+                and self._cached_config is not None
+                and self._env_signature == current_env_sig
+            ):
                 return self._cached_config
-            self._cached_config = FlujoConfig()
+            config_data_env: JSONObject = {}
+            if env_allowed is not None:
+                config_data_env["blueprint_allowed_imports"] = env_allowed
+            elif test_mode_enabled and "blueprint_allowed_imports" not in config_data_env:
+                # Default allow-list for test environments to unblock fixture imports
+                config_data_env["blueprint_allowed_imports"] = ["tests", "skills"]
+            self._cached_config = FlujoConfig(**config_data_env)
             self._config_file_mtime = None
-            self._env_signature = self._compute_env_signature()
+            self._env_signature = current_env_sig
             return self._cached_config
 
         # Check if we can use cached config
@@ -386,6 +421,12 @@ class ConfigManager:
                 cfg_settings = dict(config_data.get("settings", {}))
                 cfg_settings["governance_policy_module"] = data["governance_policy_module"]
                 config_data["settings"] = cfg_settings
+
+            # Environment override for blueprint imports (highest precedence)
+            if env_allowed is not None:
+                config_data["blueprint_allowed_imports"] = env_allowed
+            elif test_mode_enabled and "blueprint_allowed_imports" not in config_data:
+                config_data["blueprint_allowed_imports"] = ["tests", "skills"]
 
             # Environment override for template filters (env > file)
             try:

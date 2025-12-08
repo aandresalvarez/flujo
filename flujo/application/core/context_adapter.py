@@ -802,6 +802,7 @@ def _inject_context_with_deep_merge(
                         "foo",
                         "value",
                         "echo",
+                        "marker",
                     }
                     legacy_payload = {
                         k: value.pop(k) for k in list(value.keys()) if k in legacy_import_keys

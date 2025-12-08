@@ -84,7 +84,12 @@ def _import_object(path: str) -> Any:
             "Blueprint imports are disallowed by default. Configure 'blueprint_allowed_imports' in configuration."
         )
 
-    if not any(module_name == a or module_name.startswith(f"{a}.") for a in allowed):
+    normalized_allowed = [a.strip() for a in allowed if isinstance(a, str) and a.strip()]
+    allow_all = any(a == "*" for a in normalized_allowed)
+
+    if not allow_all and not any(
+        module_name == a or module_name.startswith(f"{a}.") for a in normalized_allowed
+    ):
         raise BlueprintError(
             f"Import of module '{module_name}' is not allowed. Configure 'blueprint_allowed_imports' in configuration."
         )
