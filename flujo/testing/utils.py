@@ -13,7 +13,7 @@ from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.infra.backends import LocalBackend
 from flujo.domain.resources import AppResources
 from flujo.domain.models import StepResult, UsageLimits, BaseModel as FlujoBaseModel
-from flujo.utils.serialization import safe_serialize
+from flujo.utils.serialization import serialize_jsonable
 from flujo.domain.models import StepOutcome, Success, Failure, Paused, PipelineResult
 from flujo.type_definitions.common import JSONObject
 from flujo.exceptions import PausedException
@@ -143,7 +143,7 @@ class DummyRemoteBackend:
         }
 
         # Use robust serialization for nested structures
-        serialized = safe_serialize(payload)
+        serialized = serialize_jsonable(payload)
         data = json.loads(json.dumps(serialized))
 
         # Don't apply _parse_dict_like_strings to the entire data object
@@ -436,7 +436,7 @@ class SimpleDummyRemoteBackend(ExecutionBackend):
         """Store a value with robust serialization."""
         self.call_count += 1
         # Use the new robust serialization
-        serialized = safe_serialize(value)
+        serialized = serialize_jsonable(value)
         self.storage[key] = serialized
 
     def retrieve(self, key: str) -> Any:

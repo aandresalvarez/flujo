@@ -18,7 +18,7 @@ from flujo.utils.serialization import register_custom_serializer
 
 
 def _serialize(obj: Any) -> Any:
-    """JSON-friendly serialization used by tests (replaces safe_serialize)."""
+    """JSON-friendly serialization used by tests (replaces serialize_jsonable)."""
     normalized = _serialize_for_json(obj)
     return json.loads(json.dumps(normalized, ensure_ascii=False))
 

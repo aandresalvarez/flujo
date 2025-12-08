@@ -1,6 +1,6 @@
-"""Comprehensive unit tests for safe_serialize function.
+"""Comprehensive unit tests for serialize_jsonable function.
 
-This module tests all edge cases and special types that should be handled by safe_serialize,
+This module tests all edge cases and special types that should be handled by serialize_jsonable,
 ensuring it's capable of handling all scenarios previously handled by BaseModel.model_dump.
 """
 
@@ -21,7 +21,7 @@ from flujo.domain.base_model import BaseModel as FlujoBaseModel
 from flujo.utils.serialization import (
     register_custom_serializer,
     reset_custom_serializer_registry,
-    safe_serialize,
+    serialize_jsonable,
     serialize_to_json,
 )
 
@@ -91,71 +91,71 @@ class SampleCallable:
 
 
 class TestSafeSerializeComprehensive:
-    """Comprehensive tests for safe_serialize function."""
+    """Comprehensive tests for serialize_jsonable function."""
 
     def test_primitive_types(self):
         """Test serialization of primitive types."""
         # String
-        assert safe_serialize("hello") == "hello"
-        assert safe_serialize("") == ""
-        assert safe_serialize("🚀🌟✨") == "🚀🌟✨"
+        assert serialize_jsonable("hello") == "hello"
+        assert serialize_jsonable("") == ""
+        assert serialize_jsonable("🚀🌟✨") == "🚀🌟✨"
 
         # Integer
-        assert safe_serialize(0) == 0
-        assert safe_serialize(42) == 42
-        assert safe_serialize(-1) == -1
-        assert safe_serialize(2**63 - 1) == 2**63 - 1
+        assert serialize_jsonable(0) == 0
+        assert serialize_jsonable(42) == 42
+        assert serialize_jsonable(-1) == -1
+        assert serialize_jsonable(2**63 - 1) == 2**63 - 1
 
         # Float
-        assert safe_serialize(0.0) == 0.0
-        assert safe_serialize(3.14) == 3.14
-        assert safe_serialize(-1.5) == -1.5
+        assert serialize_jsonable(0.0) == 0.0
+        assert serialize_jsonable(3.14) == 3.14
+        assert serialize_jsonable(-1.5) == -1.5
 
         # Special float values
-        assert safe_serialize(float("inf")) == "inf"
-        assert safe_serialize(float("-inf")) == "-inf"
-        assert safe_serialize(float("nan")) == "nan"
+        assert serialize_jsonable(float("inf")) == "inf"
+        assert serialize_jsonable(float("-inf")) == "-inf"
+        assert serialize_jsonable(float("nan")) == "nan"
 
         # Boolean
-        assert safe_serialize(True) is True
-        assert safe_serialize(False) is False
+        assert serialize_jsonable(True) is True
+        assert serialize_jsonable(False) is False
 
         # None
-        assert safe_serialize(None) is None
+        assert serialize_jsonable(None) is None
 
     def test_datetime_objects(self):
         """Test serialization of datetime objects."""
         dt = datetime(2023, 1, 1, 12, 0, 0)
-        result = safe_serialize(dt)
+        result = serialize_jsonable(dt)
         assert isinstance(result, str)
         assert "2023-01-01T12:00:00" in result
 
         d = date(2023, 1, 1)
-        result = safe_serialize(d)
+        result = serialize_jsonable(d)
         assert isinstance(result, str)
         assert "2023-01-01" in result
 
         t = time(12, 0, 0)
-        result = safe_serialize(t)
+        result = serialize_jsonable(t)
         assert isinstance(result, str)
         assert "12:00:00" in result
 
     def test_enum_serialization(self):
         """Test serialization of enum objects."""
-        assert safe_serialize(SampleEnum.ALPHA) == "alpha"
-        assert safe_serialize(SampleEnum.BETA) == "beta"
-        assert safe_serialize(SampleEnum.GAMMA) == 42
+        assert serialize_jsonable(SampleEnum.ALPHA) == "alpha"
+        assert serialize_jsonable(SampleEnum.BETA) == "beta"
+        assert serialize_jsonable(SampleEnum.GAMMA) == 42
 
     def test_complex_numbers(self):
         """Test serialization of complex numbers."""
         c = complex(3, 4)
-        result = safe_serialize(c)
+        result = serialize_jsonable(c)
         assert result == {"real": 3.0, "imag": 4.0}
 
     def test_bytes_and_memoryview(self):
         """Test serialization of bytes and memoryview objects."""
         data = b"hello world"
-        result = safe_serialize(data)
+        result = serialize_jsonable(data)
         assert isinstance(result, str)
         # Should be base64 encoded
         import base64
@@ -164,33 +164,33 @@ class TestSafeSerializeComprehensive:
 
         # Test memoryview
         mv = memoryview(data)
-        result = safe_serialize(mv)
+        result = serialize_jsonable(mv)
         assert isinstance(result, str)
         assert base64.b64decode(result) == data
 
     def test_collections(self):
         """Test serialization of various collection types."""
         # List
-        assert safe_serialize([1, 2, 3]) == [1, 2, 3]
-        assert safe_serialize([]) == []
+        assert serialize_jsonable([1, 2, 3]) == [1, 2, 3]
+        assert serialize_jsonable([]) == []
 
         # Tuple
-        assert safe_serialize((1, 2, 3)) == [1, 2, 3]
-        assert safe_serialize(()) == []
+        assert serialize_jsonable((1, 2, 3)) == [1, 2, 3]
+        assert serialize_jsonable(()) == []
 
         # Set
-        result = safe_serialize({1, 2, 3})
+        result = serialize_jsonable({1, 2, 3})
         assert isinstance(result, list)
         assert set(result) == {1, 2, 3}
 
         # Frozenset
-        result = safe_serialize(frozenset([1, 2, 3]))
+        result = serialize_jsonable(frozenset([1, 2, 3]))
         assert isinstance(result, list)
         assert set(result) == {1, 2, 3}
 
         # Dict
-        assert safe_serialize({"a": 1, "b": 2}) == {"a": 1, "b": 2}
-        assert safe_serialize({}) == {}
+        assert serialize_jsonable({"a": 1, "b": 2}) == {"a": 1, "b": 2}
+        assert serialize_jsonable({}) == {}
 
     def test_nested_collections(self):
         """Test serialization of nested collections."""
@@ -200,7 +200,7 @@ class TestSafeSerializeComprehensive:
             "tuple": ([1, 2], {"key": "value"}),
         }
 
-        result = safe_serialize(nested)
+        result = serialize_jsonable(nested)
         assert result["list"][0] == 1
         assert result["list"][1] == [2, 3]
         assert result["list"][2] == {"nested": "dict"}
@@ -210,7 +210,7 @@ class TestSafeSerializeComprehensive:
     def test_pydantic_models(self):
         """Test serialization of Pydantic models."""
         model = SamplePydanticModel(name="test", value=42, optional_field="optional")
-        result = safe_serialize(model)
+        result = serialize_jsonable(model)
 
         assert isinstance(result, dict)
         assert result["name"] == "test"
@@ -220,7 +220,7 @@ class TestSafeSerializeComprehensive:
     def test_flujo_models(self):
         """Test serialization of Flujo models with circular reference handling."""
         model = SampleFlujoModel(name="test", value=42)
-        result = safe_serialize(model)
+        result = serialize_jsonable(model)
 
         assert isinstance(result, dict)
         assert result["name"] == "test"
@@ -230,7 +230,7 @@ class TestSafeSerializeComprehensive:
     def test_dataclass_serialization(self):
         """Test serialization of dataclass objects."""
         dc = SampleDataclass(name="test", value=42, items=["a", "b"])
-        result = safe_serialize(dc)
+        result = serialize_jsonable(dc)
 
         assert isinstance(result, dict)
         assert result["name"] == "test"
@@ -244,19 +244,19 @@ class TestSafeSerializeComprehensive:
             pass
 
         # Function with __name__
-        result = safe_serialize(test_func)
+        result = serialize_jsonable(test_func)
         assert result == "test_func"
 
         # Callable object with __name__
         callable_obj = SampleCallable("test_callable")
-        result = safe_serialize(callable_obj)
+        result = serialize_jsonable(callable_obj)
         assert result == "test_callable"
 
         # Lambda (no __name__)
         def lambda_func(x):
             return x
 
-        result = safe_serialize(lambda_func)
+        result = serialize_jsonable(lambda_func)
         assert "lambda" in result or "function" in result
 
     def test_mock_objects(self):
@@ -265,7 +265,7 @@ class TestSafeSerializeComprehensive:
         mock.name = "test_mock"
         mock.value = 42
 
-        result = safe_serialize(mock)
+        result = serialize_jsonable(mock)
         # Mock objects might be serialized differently, let's check the actual behavior
         if isinstance(result, dict):
             assert result.get("type") == "Mock" or "Mock" in str(result)
@@ -277,7 +277,7 @@ class TestSafeSerializeComprehensive:
         magic_mock = MagicMock()
         magic_mock.attr = "value"
 
-        result = safe_serialize(magic_mock)
+        result = serialize_jsonable(magic_mock)
         if isinstance(result, dict):
             assert result.get("type") == "Mock" or "Mock" in str(result)
         else:
@@ -290,7 +290,7 @@ class TestSafeSerializeComprehensive:
         model1.nested = model2
         model2.nested = model1
 
-        result = safe_serialize(model1, mode="default")
+        result = serialize_jsonable(model1, mode="default")
         assert isinstance(result, dict)
         assert result["name"] == "model1"
         assert result["value"] == 1
@@ -303,7 +303,7 @@ class TestSafeSerializeComprehensive:
         model1 = SampleFlujoModel(name="model1", value=1)
         model1.nested = model1  # Self-reference
 
-        result = safe_serialize(model1, mode="cache")
+        result = serialize_jsonable(model1, mode="cache")
         assert isinstance(result, dict)
         assert result["name"] == "model1"
         assert result["value"] == 1
@@ -316,7 +316,7 @@ class TestSafeSerializeComprehensive:
         register_custom_serializer(SampleCustomType, lambda obj: obj.to_dict())
 
         custom_obj = SampleCustomType("test_data")
-        result = safe_serialize(custom_obj)
+        result = serialize_jsonable(custom_obj)
 
         assert result == {"data": "test_data"}
 
@@ -325,13 +325,13 @@ class TestSafeSerializeComprehensive:
         # OrderedDict
         register_custom_serializer(OrderedDict, lambda obj: dict(obj))
         od = OrderedDict([("a", 1), ("b", 2), ("c", 3)])
-        result = safe_serialize(od)
+        result = serialize_jsonable(od)
         assert result == {"a": 1, "b": 2, "c": 3}
 
         # Counter
         register_custom_serializer(Counter, lambda obj: dict(obj))
         counter = Counter(["a", "b", "a", "c", "b", "a"])
-        result = safe_serialize(counter)
+        result = serialize_jsonable(counter)
         assert result == {"a": 3, "b": 2, "c": 1}
 
         # defaultdict
@@ -339,7 +339,7 @@ class TestSafeSerializeComprehensive:
         dd = defaultdict(list)
         dd["key1"].append("value1")
         dd["key2"].append("value2")
-        result = safe_serialize(dd)
+        result = serialize_jsonable(dd)
         assert result == {"key1": ["value1"], "key2": ["value2"]}
 
     def test_dict_with_complex_keys(self):
@@ -355,7 +355,7 @@ class TestSafeSerializeComprehensive:
             "simple": "simple_value",
         }
 
-        result = safe_serialize(complex_dict)
+        result = serialize_jsonable(complex_dict)
         assert isinstance(result, dict)
         assert "simple_value" in result.values()
         # Complex keys should be converted to strings
@@ -369,7 +369,7 @@ class TestSafeSerializeComprehensive:
             current["nested"] = {"level": i}
             current = current["nested"]
 
-        result = safe_serialize(deep_data)
+        result = serialize_jsonable(deep_data)
         assert result["level"] == 1
         assert result["nested"]["level"] == 2
         # Should handle deep nesting without stack overflow
@@ -388,7 +388,7 @@ class TestSafeSerializeComprehensive:
             current["nested"] = {"level": i}
             current = current["nested"]
 
-        result = safe_serialize(deep_data)
+        result = serialize_jsonable(deep_data)
         # Should not crash and should contain max-depth-exceeded marker somewhere
         str(result)
         # The exact structure may vary, but it should handle deep recursion gracefully
@@ -405,7 +405,7 @@ class TestSafeSerializeComprehensive:
 
         # Should raise TypeError for objects without custom serializers
         with pytest.raises(TypeError) as excinfo:
-            safe_serialize(non_serializable)
+            serialize_jsonable(non_serializable)
 
         assert "not serializable" in str(excinfo.value)
         assert "register_custom_serializer" in str(excinfo.value)
@@ -422,7 +422,7 @@ class TestSafeSerializeComprehensive:
         def default_serializer(obj):
             return f"<{type(obj).__name__}: {getattr(obj, 'value', 'unknown')}>"
 
-        result = safe_serialize(custom_obj, default_serializer=default_serializer)
+        result = serialize_jsonable(custom_obj, default_serializer=default_serializer)
         assert result == "<CustomObject: test>"
 
     def test_mode_specific_behavior(self):
@@ -430,15 +430,15 @@ class TestSafeSerializeComprehensive:
         data = {"key": "value", "number": 42}
 
         # Default mode
-        result_default = safe_serialize(data, mode="default")
+        result_default = serialize_jsonable(data, mode="default")
         assert result_default == data
 
         # Cache mode
-        result_cache = safe_serialize(data, mode="cache")
+        result_cache = serialize_jsonable(data, mode="cache")
         assert result_cache == data
 
         # Custom mode with placeholder
-        result_custom = safe_serialize(data, mode="custom", circular_ref_placeholder="<custom>")
+        result_custom = serialize_jsonable(data, mode="custom", circular_ref_placeholder="<custom>")
         assert result_custom == data
 
     def test_json_serialization_roundtrip(self):
@@ -455,7 +455,7 @@ class TestSafeSerializeComprehensive:
             "datetime": datetime(2023, 1, 1, 12, 0, 0),
         }
 
-        serialized = safe_serialize(complex_data)
+        serialized = serialize_jsonable(complex_data)
         json_str = json.dumps(serialized)
         parsed = json.loads(json_str)
 
@@ -492,7 +492,7 @@ class TestSafeSerializeComprehensive:
             }
 
         # Should complete without timeout or memory issues
-        result = safe_serialize(large_data)
+        result = serialize_jsonable(large_data)
         assert isinstance(result, dict)
         assert len(result) == 1000
         assert "key_0" in result
@@ -514,7 +514,7 @@ class TestSafeSerializeComprehensive:
         register_custom_serializer(uuid.UUID, lambda obj: str(obj))
         register_custom_serializer(Decimal, lambda obj: str(obj))
 
-        result = safe_serialize(data)
+        result = serialize_jsonable(data)
 
         assert isinstance(result["uuid"], str)
         assert isinstance(result["decimal"], str)
@@ -532,7 +532,7 @@ class TestSafeSerializeComprehensive:
                 )()
 
         response = MockAgentResponse()
-        result = safe_serialize(response)
+        result = serialize_jsonable(response)
 
         # Should be handled by the AgentResponse serialization logic
         # Check if it contains the serialized structure we expect
@@ -570,7 +570,7 @@ class TestSafeSerializeComprehensive:
             except Exception:
                 return f"<error-serializing: {type(obj).__name__}>"
 
-        result = safe_serialize(problematic, default_serializer=error_handling_serializer)
+        result = serialize_jsonable(problematic, default_serializer=error_handling_serializer)
         assert "ProblematicObject" in str(result)
 
     def test_comprehensive_edge_cases(self):
@@ -610,7 +610,7 @@ class TestSafeSerializeComprehensive:
             "dataclass": SampleDataclass(name="test", value=42, items=["a", "b"]),
         }
 
-        result = safe_serialize(edge_cases)
+        result = serialize_jsonable(edge_cases)
 
         # Verify all edge cases are handled correctly
         assert result["string"] == "test"

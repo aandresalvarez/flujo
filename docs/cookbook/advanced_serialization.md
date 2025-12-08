@@ -227,7 +227,7 @@ class MyModel(BaseModel):
 For reusable serialization logic, create custom serializer functions:
 
 ```python
-from flujo.utils import create_serializer_for_type, safe_serialize
+from flujo.utils import create_serializer_for_type, serialize_jsonable
 
 # Create a serializer for a specific type
 def serialize_my_type(obj: MyType) -> dict:
@@ -235,8 +235,8 @@ def serialize_my_type(obj: MyType) -> dict:
 
 MyTypeSerializer = create_serializer_for_type(MyType, serialize_my_type)
 
-# Use safe_serialize for general-purpose serialization
-serialized = safe_serialize(complex_object)
+# Use serialize_jsonable for general-purpose serialization
+serialized = serialize_jsonable(complex_object)
 ```
 
 ## Handling Non-Serializable Types
@@ -386,14 +386,14 @@ serialized = model.model_dump()
 
 ### Debugging Serialization
 
-Use the `safe_serialize` utility to test serialization:
+Use the `serialize_jsonable` utility to test serialization:
 
 ```python
-from flujo.utils import safe_serialize
+from flujo.utils import serialize_jsonable
 
 # Test if an object can be serialized
 try:
-    result = safe_serialize(my_object)
+    result = serialize_jsonable(my_object)
     print(f"Serialized: {result}")
 except Exception as e:
     print(f"Serialization failed: {e}")
@@ -457,7 +457,7 @@ This approach provides maximum flexibility while maintaining backward compatibil
 
 ## Safe Deserialization
 
-Flujo offers a matching `safe_deserialize` helper to reconstruct objects previously serialized with `safe_serialize`. Use it together with the custom deserializer registry when reading JSON back into Python objects.
+Flujo offers a matching `safe_deserialize` helper to reconstruct objects previously serialized with `serialize_jsonable`. Use it together with the custom deserializer registry when reading JSON back into Python objects.
 
 ### Registering Custom Deserializers
 
@@ -465,7 +465,7 @@ Flujo offers a matching `safe_deserialize` helper to reconstruct objects previou
 from flujo.utils import (
     register_custom_serializer,
     register_custom_deserializer,
-    safe_serialize,
+    serialize_jsonable,
     safe_deserialize,
 )
 
@@ -483,7 +483,7 @@ class Widget:
 register_custom_serializer(Widget, lambda w: w.to_dict())
 register_custom_deserializer(Widget, Widget.from_dict)
 
-serialized = safe_serialize(Widget("demo"))
+serialized = serialize_jsonable(Widget("demo"))
 restored = safe_deserialize(serialized, Widget)
 assert isinstance(restored, Widget)
 ```

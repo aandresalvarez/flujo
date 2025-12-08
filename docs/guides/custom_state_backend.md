@@ -21,7 +21,7 @@ class StateBackend(ABC):
 import json
 import redis.asyncio as redis
 from flujo.state.backends.base import StateBackend
-from flujo.utils.serialization import safe_serialize, safe_deserialize
+from flujo.utils.serialization import serialize_jsonable, safe_deserialize
 
 class RedisBackend(StateBackend):
     def __init__(self, url: str) -> None:
@@ -36,7 +36,7 @@ class RedisBackend(StateBackend):
     async def save_state(self, run_id: str, state: dict) -> None:
         r = await self._conn()
         # Use enhanced serialization for custom types
-        serialized_state = safe_serialize(state)
+        serialized_state = serialize_jsonable(state)
         await r.set(run_id, json.dumps(serialized_state))
 
     async def load_state(self, run_id: str) -> dict | None:
@@ -71,18 +71,18 @@ register_custom_deserializer(MyCustomType, lambda d: MyCustomType(**d))
 If you need custom serialization for specific types in your backend:
 
 ```python
-from flujo.utils import safe_serialize
+from flujo.utils import serialize_jsonable
 
 class CustomBackend(StateBackend):
     async def save_state(self, run_id: str, state: dict) -> None:
-        # Use safe_serialize for robust handling of custom types
-        serialized = safe_serialize(state)
+        # Use serialize_jsonable for robust handling of custom types
+        serialized = serialize_jsonable(state)
         # Your storage logic here...
 ```
 
 ## Best Practices
 
-1. **Use `safe_serialize` and `safe_deserialize`**: Together they handle custom types round-trip
+1. **Use `serialize_jsonable` and `safe_deserialize`**: Together they handle custom types round-trip
 2. **Register global serializers/deserializers**: Keep your type conversions centralized
 3. **Handle errors gracefully**: The enhanced serialization includes error handling and fallbacks
 4. **Test with complex objects**: Ensure your backend works with nested Pydantic models and custom types
@@ -103,9 +103,9 @@ def pydantic_default(obj):
 serialized = orjson.dumps(state, default=pydantic_default)
 
 # After (with enhanced serialization)
-from flujo.utils import safe_serialize
+from flujo.utils import serialize_jsonable
 
-serialized = safe_serialize(state)
+serialized = serialize_jsonable(state)
 json_string = json.dumps(serialized)
 ```
 

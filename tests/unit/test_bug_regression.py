@@ -19,7 +19,11 @@ from typing import List, Optional, Any
 from flujo.domain.models import BaseModel, PipelineResult
 from flujo.application.core.execution_manager import ExecutionManager
 from flujo.state.backends.sqlite import SQLiteBackend
-from flujo.utils.serialization import safe_serialize, robust_serialize, register_custom_serializer
+from flujo.utils.serialization import (
+    serialize_jsonable,
+    robust_serialize,
+    register_custom_serializer,
+)
 from flujo.domain import Step
 
 # This module aggregates regression and performance edge cases; mark as slow
@@ -228,8 +232,8 @@ class TestSerializationEdgeCases:
 
         obj = UnknownType("test")
 
-        # Test safe_serialize with unknown type - should now serialize objects with __dict__
-        result_safe = safe_serialize(obj)
+        # Test serialize_jsonable with unknown type - should now serialize objects with __dict__
+        result_safe = serialize_jsonable(obj)
         assert isinstance(result_safe, dict)
         assert result_safe["value"] == "test"
 

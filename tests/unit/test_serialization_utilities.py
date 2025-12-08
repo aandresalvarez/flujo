@@ -7,7 +7,6 @@ from enum import Enum
 from typing import Any, Optional
 from unittest.mock import patch
 
-import pytest
 from hypothesis import given, strategies as st
 from pydantic import BaseModel
 
@@ -21,7 +20,7 @@ from flujo.utils.serialization import (
     reset_custom_serializer_registry,
     robust_serialize,
     safe_deserialize,
-    safe_serialize,
+    serialize_jsonable,
     serialize_to_json,
     serialize_to_json_robust,
 )
@@ -140,72 +139,72 @@ class TestSerializerFactories:
         assert result == "HELLO"
 
 
-class TestSafeSerialize:
-    """Test safe_serialize function."""
+class TestSerializeJsonable:
+    """Test serialize_jsonable function."""
 
-    def test_safe_serialize_basic_types(self):
+    def test_serialize_jsonable_basic_types(self):
         """Test serializing basic types."""
         # String
-        result = safe_serialize("hello")
+        result = serialize_jsonable("hello")
         assert result == "hello"
 
         # Integer
-        result = safe_serialize(42)
+        result = serialize_jsonable(42)
         assert result == 42
 
         # Float
-        result = safe_serialize(3.14)
+        result = serialize_jsonable(3.14)
         assert result == 3.14
 
         # Boolean
-        result = safe_serialize(True)
+        result = serialize_jsonable(True)
         assert result is True
 
         # None
-        result = safe_serialize(None)
+        result = serialize_jsonable(None)
         assert result is None
 
-    def test_safe_serialize_datetime_objects(self):
+    def test_serialize_jsonable_datetime_objects(self):
         """Test serializing datetime objects."""
         dt = datetime(2023, 1, 1, 12, 0, 0)
-        result = safe_serialize(dt)
+        result = serialize_jsonable(dt)
         assert isinstance(result, str)
         assert "2023-01-01T12:00:00" in result
 
         d = date(2023, 1, 1)
-        result = safe_serialize(d)
+        result = serialize_jsonable(d)
         assert isinstance(result, str)
         assert "2023-01-01" in result
 
         t = time(12, 0, 0)
-        result = safe_serialize(t)
+        result = serialize_jsonable(t)
         assert isinstance(result, str)
         assert "12:00:00" in result
 
-    def test_safe_serialize_enum(self):
+    def test_serialize_jsonable_enum(self):
         """Test serializing enum values."""
         # Should serialize to .value, not .name
-        result = safe_serialize(MyEnum.VALUE1)
+        result = serialize_jsonable(MyEnum.VALUE1)
         assert result == "value1"
 
-    def test_safe_serialize_pydantic_model(self):
+    def test_serialize_jsonable_pydantic_model(self):
         """Test serializing Pydantic models."""
         model = MyPydanticModel(name="test", value=42)
-        result = safe_serialize(model)
+        result = serialize_jsonable(model)
         assert isinstance(result, dict)
         assert result["name"] == "test"
         assert result["value"] == 42
 
-    def test_safe_serialize_list(self):
+    def test_serialize_jsonable_list(self):
         """Test serializing lists."""
         data = [1, "hello", MyEnum.VALUE1]
-        result = safe_serialize(data)
+        result = serialize_jsonable(data)
         assert isinstance(result, list)
         assert result[0] == 1
         assert result[1] == "hello"
         assert result[2] == "value1"
 
-    def test_safe_serialize_dict(self):
+    def test_serialize_jsonable_dict(self):
         """Test serializing dictionaries."""
         data = {
             "string": "hello",
@@ -213,28 +212,28 @@ class TestSafeSerialize:
             "enum": MyEnum.VALUE1,
             "datetime": datetime(2023, 1, 1, 12, 0, 0),
         }
-        result = safe_serialize(data)
+        result = serialize_jsonable(data)
         assert isinstance(result, dict)
         assert result["string"] == "hello"
         assert result["number"] == 42
         assert result["enum"] == "value1"
         assert isinstance(result["datetime"], str)
 
-    def test_safe_serialize_set(self):
+    def test_serialize_jsonable_set(self):
         """Test serializing sets."""
         data = {1, 2, 3}
-        result = safe_serialize(data)
+        result = serialize_jsonable(data)
         assert isinstance(result, list)
         assert set(result) == {1, 2, 3}
 
-    def test_safe_serialize_custom_object(self):
+    def test_serialize_jsonable_custom_object(self):
         """Test serializing custom objects."""
-        # Should raise TypeError unless a custom serializer is registered
         obj = MyCustomObject("test")
-        with pytest.raises(TypeError):
-            safe_serialize(obj)
+        # Without custom serializer we fall back to string representation
+        result = serialize_jsonable(obj)
+        assert isinstance(result, str)
 
-    def test_safe_serialize_with_custom_serializer(self):
+    def test_serialize_jsonable_with_custom_serializer(self):
         """Test serializing with custom serializer."""
 
         def custom_serializer(obj: MyCustomObject) -> JSONObject:
@@ -243,26 +242,26 @@ class TestSafeSerialize:
         register_custom_serializer(MyCustomObject, custom_serializer)
 
         obj = MyCustomObject("test")
-        result = safe_serialize(obj)
+        result = serialize_jsonable(obj)
         assert result == {"custom_data": "test"}
 
         # Clean up
         reset_custom_serializer_registry()
 
-    def test_safe_serialize_circular_reference(self):
+    def test_serialize_jsonable_circular_reference(self):
         """Test serializing objects with circular references."""
         # Create circular reference
         data = {"key": "value"}
         data["self"] = data
 
-        result = safe_serialize(data)
+        result = serialize_jsonable(data)
         # Should handle circular reference gracefully
         assert isinstance(result, dict)
         assert result["key"] == "value"
         # The circular reference should be handled (might be string representation)
         assert "self" in result
 
-    def test_safe_serialize_with_default_serializer(self):
+    def test_serialize_jsonable_with_default_serializer(self):
         """Test serializing with default serializer."""
 
         # Only used for unknown types, not primitives
@@ -270,7 +269,7 @@ class TestSafeSerialize:
             return f"custom_{str(obj)}"
 
         # For a primitive, should return as is
-        result = safe_serialize("test", default_serializer=default_serializer)
+        result = serialize_jsonable("test", default_serializer=default_serializer)
         assert result == "test"
 
         # For unknown type, should use default_serializer
@@ -278,10 +277,10 @@ class TestSafeSerialize:
             pass
 
         unknown = Unknown()
-        result = safe_serialize(unknown, default_serializer=default_serializer)
+        result = serialize_jsonable(unknown, default_serializer=default_serializer)
         assert result == f"custom_{str(unknown)}"
 
-    def test_safe_serialize_nested_structures(self):
+    def test_serialize_jsonable_nested_structures(self):
         """Test serializing nested data structures."""
         data = {
             "list": [1, 2, {"nested": "value"}],
@@ -289,13 +288,13 @@ class TestSafeSerialize:
             "set": {1, 2, 3},
         }
 
-        result = safe_serialize(data)
+        result = serialize_jsonable(data)
         assert isinstance(result, dict)
         assert isinstance(result["list"], list)
         assert isinstance(result["dict"], dict)
         assert isinstance(result["set"], list)
 
-    def test_safe_serialize_deep_circular_reference(self):
+    def test_serialize_jsonable_deep_circular_reference(self):
         """Test that deep nested circular references are handled and _seen is only cleared at the top level."""
         # Create a deeply nested structure with a circular reference
         a = {}
@@ -303,14 +302,14 @@ class TestSafeSerialize:
         a["parent"] = b  # Circular reference
         a["self"] = a  # Self-reference
         # Should not raise RecursionError or leak _seen state
-        result = safe_serialize(a)
+        result = serialize_jsonable(a)
         assert isinstance(result, dict)
         assert "parent" in result
         assert "self" in result
         # The circular reference should be handled (should be None or similar for the cycle)
         assert result["parent"]["child"] is not None
         # Serializing again should not be affected by previous call
-        result2 = safe_serialize(a)
+        result2 = serialize_jsonable(a)
         assert isinstance(result2, dict)
         assert result2["parent"]["child"] is not None
 
@@ -442,7 +441,9 @@ class TestRobustSerialize:
         def fallback_serializer(obj: Any) -> str:
             return f"fallback_{str(obj)}"
 
-        with patch("flujo.utils.serialization.safe_serialize", side_effect=Exception("Test error")):
+        with patch(
+            "flujo.utils.serialization.serialize_jsonable", side_effect=Exception("Test error")
+        ):
             result = robust_serialize(object())
             assert result.startswith("<unserializable: ")
 
@@ -485,40 +486,40 @@ class TestSerializationProperties:
     """Property-based tests for serialization functions."""
 
     @given(st.text())
-    def test_safe_serialize_text_roundtrip(self, text):
+    def test_serialize_jsonable_text_roundtrip(self, text):
         """Test that text serialization is idempotent."""
-        result = safe_serialize(text)
+        result = serialize_jsonable(text)
         assert result == text
 
     @given(st.integers())
-    def test_safe_serialize_integer_roundtrip(self, integer):
+    def test_serialize_jsonable_integer_roundtrip(self, integer):
         """Test that integer serialization is idempotent."""
-        result = safe_serialize(integer)
+        result = serialize_jsonable(integer)
         assert result == integer
 
     @given(st.floats(allow_nan=False, allow_infinity=False))
-    def test_safe_serialize_float_roundtrip(self, float_val):
+    def test_serialize_jsonable_float_roundtrip(self, float_val):
         """Test that float serialization is idempotent."""
-        result = safe_serialize(float_val)
+        result = serialize_jsonable(float_val)
         assert result == float_val
 
     @given(st.booleans())
-    def test_safe_serialize_boolean_roundtrip(self, boolean):
+    def test_serialize_jsonable_boolean_roundtrip(self, boolean):
         """Test that boolean serialization is idempotent."""
-        result = safe_serialize(boolean)
+        result = serialize_jsonable(boolean)
         assert result == boolean
 
     @given(st.lists(st.text()))
-    def test_safe_serialize_list_roundtrip(self, text_list):
+    def test_serialize_jsonable_list_roundtrip(self, text_list):
         """Test that list serialization preserves structure."""
-        result = safe_serialize(text_list)
+        result = serialize_jsonable(text_list)
         assert isinstance(result, list)
         assert len(result) == len(text_list)
 
     @given(st.dictionaries(st.text(), st.text()))
-    def test_safe_serialize_dict_roundtrip(self, text_dict):
+    def test_serialize_jsonable_dict_roundtrip(self, text_dict):
         """Test that dict serialization preserves structure."""
-        result = safe_serialize(text_dict)
+        result = serialize_jsonable(text_dict)
         assert isinstance(result, dict)
         assert set(result.keys()) == set(text_dict.keys())
 

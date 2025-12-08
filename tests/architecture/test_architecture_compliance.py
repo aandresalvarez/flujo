@@ -465,7 +465,7 @@ class TestCodeQualityStandards:
 
                     # Check for unified serialization
                     uses_unified_serialization = (
-                        "safe_serialize" in content
+                        "serialize_jsonable" in content
                         or "model_dump" in content
                         or "from .base_model import BaseModel" in content
                     )
@@ -481,6 +481,21 @@ class TestCodeQualityStandards:
                 + "\n".join(violations)
                 + "\n\nAll models must use flujo.utils.serialization for consistency."
             )
+
+    def test_legacy_safe_serialize_removed(self, flujo_root: Path) -> None:
+        """Ensure the legacy safe_serialize helper is not reintroduced."""
+
+        hits: list[str] = []
+        for path in flujo_root.rglob("*.py"):
+            try:
+                content = path.read_text()
+            except (UnicodeDecodeError, OSError):
+                continue
+            if "safe_serialize" in content:
+                hits.append(str(path.relative_to(flujo_root)))
+
+        if hits:
+            pytest.fail("Legacy safe_serialize references found:\n" + "\n".join(sorted(hits)))
 
 
 class TestQualityGates:
