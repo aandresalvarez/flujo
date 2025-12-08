@@ -248,7 +248,7 @@ def register_mock_serializers():
         return str(obj)
 
     # Note: The serialization system already handles objects with __dict__ automatically
-    # in the serialize_jsonable function, so we don't need a fallback serializer
+    # in the _serialize_for_json function, so we don't need a fallback serializer
 
     # Yield to allow tests to run
     yield

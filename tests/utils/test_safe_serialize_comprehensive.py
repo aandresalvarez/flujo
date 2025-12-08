@@ -91,7 +91,7 @@ class SampleCallable:
 
 
 class TestSafeSerializeComprehensive:
-    """Comprehensive tests for serialize_jsonable function."""
+    """Comprehensive tests for _serialize_for_json function."""
 
     def test_primitive_types(self):
         """Test serialization of primitive types."""

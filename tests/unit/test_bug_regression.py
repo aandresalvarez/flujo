@@ -232,7 +232,7 @@ class TestSerializationEdgeCases:
 
         obj = UnknownType("test")
 
-        # Test serialize_jsonable with unknown type - should now serialize objects with __dict__
+        # Test _serialize_for_json with unknown type - should now serialize objects with __dict__
         result_safe = _serialize_for_json(obj)
         assert isinstance(result_safe, dict)
         assert result_safe["value"] == "test"
