@@ -438,7 +438,9 @@ class TestSafeSerializeComprehensive:
         assert result_cache == data
 
         # Custom mode with placeholder
-        result_custom = _serialize_for_json(data, mode="custom", circular_ref_placeholder="<custom>")
+        result_custom = _serialize_for_json(
+            data, mode="custom", circular_ref_placeholder="<custom>"
+        )
         assert result_custom == data
 
     def test_json_serialization_roundtrip(self):
