@@ -20,8 +20,8 @@ class StateBackend(ABC):
 ```python
 import json
 import redis.asyncio as redis
-from flujo.state.backends.base import StateBackend
-from flujo.utils.serialization import serialize_jsonable, safe_deserialize
+from flujo.state.backends.base import StateBackend, _serialize_for_json
+from flujo.utils.serialization import safe_deserialize
 
 class RedisBackend(StateBackend):
     def __init__(self, url: str) -> None:
@@ -35,8 +35,8 @@ class RedisBackend(StateBackend):
 
     async def save_state(self, run_id: str, state: dict) -> None:
         r = await self._conn()
-        # Use enhanced serialization for custom types
-        serialized_state = serialize_jsonable(state)
+        # Use _serialize_for_json for JSON-safe serialization
+        serialized_state = _serialize_for_json(state)
         await r.set(run_id, json.dumps(serialized_state))
 
     async def load_state(self, run_id: str) -> dict | None:
@@ -49,9 +49,25 @@ class RedisBackend(StateBackend):
         await r.delete(run_id)
 ```
 
-### Enhanced Serialization
+### Pydantic Model Serialization
 
-The enhanced serialization approach automatically handles custom types through the global registry:
+For Pydantic models, use `model_dump(mode="json")` for native JSON-safe output:
+
+```python
+from pydantic import BaseModel
+
+class MyModel(BaseModel):
+    name: str
+    value: int
+
+# Serialize Pydantic models directly
+model = MyModel(name="test", value=42)
+json_data = model.model_dump(mode="json")
+```
+
+### Enhanced Serialization for Custom Types
+
+For mixed payloads or custom types, register serializers in the global registry:
 
 ```python
 from flujo.utils import register_custom_serializer, register_custom_deserializer
@@ -71,46 +87,43 @@ register_custom_deserializer(MyCustomType, lambda d: MyCustomType(**d))
 If you need custom serialization for specific types in your backend:
 
 ```python
-from flujo.utils import serialize_jsonable
+from flujo.state.backends.base import _serialize_for_json
 
 class CustomBackend(StateBackend):
     async def save_state(self, run_id: str, state: dict) -> None:
-        # Use serialize_jsonable for robust handling of custom types
-        serialized = serialize_jsonable(state)
+        # Use _serialize_for_json for robust handling of custom types
+        serialized = _serialize_for_json(state)
         # Your storage logic here...
 ```
 
 ## Best Practices
 
-1. **Use `serialize_jsonable` and `safe_deserialize`**: Together they handle custom types round-trip
-2. **Register global serializers/deserializers**: Keep your type conversions centralized
-3. **Handle errors gracefully**: The enhanced serialization includes error handling and fallbacks
-4. **Test with complex objects**: Ensure your backend works with nested Pydantic models and custom types
+1. **Use `model_dump(mode="json")` for Pydantic models**: Native, fast serialization
+2. **Use `_serialize_for_json` for mixed payloads**: Handles primitives and custom types
+3. **Register global serializers/deserializers**: Keep your type conversions centralized
+4. **Handle errors gracefully**: The serialization utilities include error handling and fallbacks
+5. **Test with complex objects**: Ensure your backend works with nested Pydantic models and custom types
 
-## Migration from orjson
+## Migration from Legacy Serialization
 
-If you were previously using orjson, the enhanced serialization approach provides better compatibility:
+If you were previously using deprecated serialization functions:
 
 ```python
-# Before (with orjson)
-import orjson
-
-def pydantic_default(obj):
-    if isinstance(obj, BaseModel):
-        return obj.model_dump()
-    raise TypeError
-
-serialized = orjson.dumps(state, default=pydantic_default)
-
-# After (with enhanced serialization)
+# Before (deprecated)
 from flujo.utils import serialize_jsonable
-
 serialized = serialize_jsonable(state)
-json_string = json.dumps(serialized)
+
+# After (recommended)
+# For Pydantic models:
+serialized = model.model_dump(mode="json")
+
+# For mixed payloads:
+from flujo.state.backends.base import _serialize_for_json
+serialized = _serialize_for_json(state)
 ```
 
-The enhanced approach provides:
-- **Better error handling**: Graceful fallbacks for unsupported types
-- **Global registry**: Consistent serialization across your application
-- **Automatic Pydantic support**: No need for custom default handlers
-- **Backward compatibility**: Works with existing code
+The new approach provides:
+- **Better performance**: Native Pydantic serialization
+- **Cleaner API**: Use standard Pydantic methods
+- **Global registry**: Consistent custom type handling
+- **Internal consistency**: Matches Flujo's internal implementation

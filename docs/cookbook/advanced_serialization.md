@@ -227,7 +227,7 @@ class MyModel(BaseModel):
 For reusable serialization logic, create custom serializer functions:
 
 ```python
-from flujo.utils import create_serializer_for_type, serialize_jsonable
+from flujo.utils import create_serializer_for_type, model_dump(mode="json")
 
 # Create a serializer for a specific type
 def serialize_my_type(obj: MyType) -> dict:
@@ -235,8 +235,8 @@ def serialize_my_type(obj: MyType) -> dict:
 
 MyTypeSerializer = create_serializer_for_type(MyType, serialize_my_type)
 
-# Use serialize_jsonable for general-purpose serialization
-serialized = serialize_jsonable(complex_object)
+# Use model_dump(mode="json") for general-purpose serialization
+serialized = model_dump(mode="json")(complex_object)
 ```
 
 ## Handling Non-Serializable Types
@@ -386,14 +386,14 @@ serialized = model.model_dump()
 
 ### Debugging Serialization
 
-Use the `serialize_jsonable` utility to test serialization:
+Use the `model_dump(mode="json")` utility to test serialization:
 
 ```python
-from flujo.utils import serialize_jsonable
+from flujo.utils import model_dump(mode="json")
 
 # Test if an object can be serialized
 try:
-    result = serialize_jsonable(my_object)
+    result = model_dump(mode="json")(my_object)
     print(f"Serialized: {result}")
 except Exception as e:
     print(f"Serialization failed: {e}")
@@ -457,7 +457,7 @@ This approach provides maximum flexibility while maintaining backward compatibil
 
 ## Safe Deserialization
 
-Flujo offers a matching `safe_deserialize` helper to reconstruct objects previously serialized with `serialize_jsonable`. Use it together with the custom deserializer registry when reading JSON back into Python objects.
+Flujo offers a matching `safe_deserialize` helper to reconstruct objects previously serialized with `model_dump(mode="json")`. Use it together with the custom deserializer registry when reading JSON back into Python objects.
 
 ### Registering Custom Deserializers
 
@@ -465,7 +465,7 @@ Flujo offers a matching `safe_deserialize` helper to reconstruct objects previou
 from flujo.utils import (
     register_custom_serializer,
     register_custom_deserializer,
-    serialize_jsonable,
+    model_dump(mode="json"),
     safe_deserialize,
 )
 
@@ -483,7 +483,7 @@ class Widget:
 register_custom_serializer(Widget, lambda w: w.to_dict())
 register_custom_deserializer(Widget, Widget.from_dict)
 
-serialized = serialize_jsonable(Widget("demo"))
+serialized = model_dump(mode="json")(Widget("demo"))
 restored = safe_deserialize(serialized, Widget)
 assert isinstance(restored, Widget)
 ```
