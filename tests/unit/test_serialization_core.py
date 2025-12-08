@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 from flujo.steps.cache_step import _generate_cache_key, _serialize_for_cache_key
 from flujo.utils.serialization import (
-    serialize_jsonable,
+    _serialize_for_json as serialize_jsonable,
     register_custom_serializer,
     reset_custom_serializer_registry,
 )

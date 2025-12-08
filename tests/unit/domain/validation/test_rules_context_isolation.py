@@ -60,9 +60,9 @@ steps:
 
     # Should NOT have V-CTX1 warnings for built-ins
     v_ctx1_findings = [f for f in report.warnings if f.rule_id == "V-CTX1"]
-    assert len(v_ctx1_findings) == 0, (
-        f"Expected 0 V-CTX1 warnings for built-ins, got {len(v_ctx1_findings)}"
-    )
+    assert (
+        len(v_ctx1_findings) == 0
+    ), f"Expected 0 V-CTX1 warnings for built-ins, got {len(v_ctx1_findings)}"
 
 
 def test_vctx1_detects_custom_skill_in_parallel():
@@ -132,9 +132,9 @@ steps:
 
     # Should NOT have V-CTX1 warnings for declarative agents
     v_ctx1_findings = [f for f in report.warnings if f.rule_id == "V-CTX1"]
-    assert len(v_ctx1_findings) == 0, (
-        f"Expected 0 V-CTX1 warnings for agents, got {len(v_ctx1_findings)}"
-    )
+    assert (
+        len(v_ctx1_findings) == 0
+    ), f"Expected 0 V-CTX1 warnings for agents, got {len(v_ctx1_findings)}"
 
 
 def test_vctx1_message_shows_skill_references():

@@ -390,9 +390,9 @@ class TestUltraExecutorPerformance:
         # Validate correctness under concurrency
         assert all(r.success for r in results), "All concurrent tasks should succeed"
         # Sanity check: should complete (not hang)
-        assert concurrent_time < 30.0, (
-            f"Concurrent execution took too long: {concurrent_time:.3f}s (max 30s sanity check)"
-        )
+        assert (
+            concurrent_time < 30.0
+        ), f"Concurrent execution took too long: {concurrent_time:.3f}s (max 30s sanity check)"
 
         # Test 4: Usage tracking
         usage_agent = AsyncMock()
@@ -479,9 +479,9 @@ class TestUltraExecutorPerformance:
         print(f"Cached execution: {cached_execution_time:.6f}s")
         print(f"Cache speedup: {cache_speedup:.2f}x")
 
-        assert cache_speedup >= 1.8, (
-            f"Cache should provide significant speedup, got {cache_speedup:.2f}x"
-        )
+        assert (
+            cache_speedup >= 1.8
+        ), f"Cache should provide significant speedup, got {cache_speedup:.2f}x"
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -521,9 +521,9 @@ class TestUltraExecutorPerformance:
         # Concurrent execution should be faster than sequential would be.
         # With 50 concurrent operations, we expect significant parallelism benefit.
         # Sanity check: should complete within reasonable time (not hang)
-        assert total_time < 30.0, (
-            f"Concurrent execution took too long: {total_time:.3f}s (max 30s sanity check)"
-        )
+        assert (
+            total_time < 30.0
+        ), f"Concurrent execution took too long: {total_time:.3f}s (max 30s sanity check)"
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -566,9 +566,9 @@ class TestUltraExecutorPerformance:
         print(f"Memory per execution: {memory_increase / iterations / 1024:.2f} KB")
 
         # Memory increase should be reasonable
-        assert memory_increase < 50 * 1024 * 1024, (
-            f"Memory increase too high: {memory_increase / 1024 / 1024:.2f} MB"
-        )
+        assert (
+            memory_increase < 50 * 1024 * 1024
+        ), f"Memory increase too high: {memory_increase / 1024 / 1024:.2f} MB"
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -644,9 +644,9 @@ class TestUltraExecutorPerformance:
         print(f"Keys per second: {iterations / total_time:.0f}")
 
         # Sanity check: cache key generation should complete (not hang)
-        assert total_time < 30.0, (
-            f"Cache key generation took too long: {total_time:.3f}s (max 30s sanity check)"
-        )
+        assert (
+            total_time < 30.0
+        ), f"Cache key generation took too long: {total_time:.3f}s (max 30s sanity check)"
 
         # Verify key uniqueness
         unique_keys = set(keys)
@@ -671,9 +671,9 @@ class TestUltraExecutorPerformance:
             print(f"Additions per second: {iterations / total_time:.0f}")
 
             # Sanity check: usage tracking should complete (not hang)
-            assert total_time < 30.0, (
-                f"Usage tracking took too long: {total_time:.3f}s (max 30s sanity check)"
-            )
+            assert (
+                total_time < 30.0
+            ), f"Usage tracking took too long: {total_time:.3f}s (max 30s sanity check)"
 
             # Verify final values
             assert ultra_executor._usage.total_cost > 0

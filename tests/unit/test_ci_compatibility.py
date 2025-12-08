@@ -19,7 +19,7 @@ import json
 
 from flujo.type_definitions.common import JSONObject
 from flujo.state.backends.base import _serialize_for_json
-from flujo.utils.serialization import robust_serialize
+from flujo.utils.serialization import _robust_serialize_internal as robust_serialize
 
 
 class TestCISerializationCompatibility:
@@ -157,9 +157,9 @@ class TestCIResourceConstraints:
             thread.join()
 
         # Check results
-        assert errors.empty(), (
-            f"Errors in concurrent test: {[errors.get() for _ in range(errors.qsize())]}"
-        )
+        assert (
+            errors.empty()
+        ), f"Errors in concurrent test: {[errors.get() for _ in range(errors.qsize())]}"
         assert results.qsize() == 3, f"Expected 3 results, got {results.qsize()}"
 
 

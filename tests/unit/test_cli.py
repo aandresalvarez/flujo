@@ -163,9 +163,9 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
 
                 print("Exception:", "".join(traceback.format_exception(*result.exc_info)))
 
-        assert result.exit_code == 0, (
-            f"CLI command failed. Output: {result.stdout}, Error: {result.stderr}"
-        )
+        assert (
+            result.exit_code == 0
+        ), f"CLI command failed. Output: {result.stdout}, Error: {result.stderr}"
 
     finally:
         if weights_file and os.path.exists(weights_file):

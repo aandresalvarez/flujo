@@ -26,14 +26,14 @@ def test_normalize_sqlite_path_relative(uri, expected_rel):
         result = _normalize_sqlite_path(uri, cwd)
         if expected_rel.startswith("/"):
             # Absolute path
-            assert result.resolve() == Path(expected_rel).resolve(), (
-                f"Expected absolute path {Path(expected_rel).resolve()}, got {result.resolve()}"
-            )
+            assert (
+                result.resolve() == Path(expected_rel).resolve()
+            ), f"Expected absolute path {Path(expected_rel).resolve()}, got {result.resolve()}"
         else:
             # Relative path
-            assert result.resolve() == (cwd / Path(expected_rel)).resolve(), (
-                f"Expected {(cwd / Path(expected_rel)).resolve()}, got {result.resolve()}"
-            )
+            assert (
+                result.resolve() == (cwd / Path(expected_rel)).resolve()
+            ), f"Expected {(cwd / Path(expected_rel)).resolve()}, got {result.resolve()}"
 
 
 def test_normalize_sqlite_path_absolute():
@@ -44,9 +44,9 @@ def test_normalize_sqlite_path_absolute():
     with tempfile.TemporaryDirectory() as tmpdir:
         cwd = Path(tmpdir)
         result = _normalize_sqlite_path(uri, cwd)
-        assert result.resolve() == Path("/tmp/abs.db").resolve(), (
-            f"Expected {Path('/tmp/abs.db').resolve()}, got {result.resolve()}"
-        )
+        assert (
+            result.resolve() == Path("/tmp/abs.db").resolve()
+        ), f"Expected {Path('/tmp/abs.db').resolve()}, got {result.resolve()}"
 
 
 def test_normalize_sqlite_path_edge_cases():

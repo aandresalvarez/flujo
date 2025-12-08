@@ -562,9 +562,9 @@ def assert_no_major_regression(
             f"{operation_name}: {actual_time:.3f}s vs baseline {baseline_time:.3f}s. "
             f"Ratio {ratio:.1f}x exceeds {max_ratio}x threshold (major regression)"
         )
-    assert actual_time < absolute_max, (
-        f"{operation_name}: {actual_time:.3f}s exceeds {absolute_max}s absolute max"
-    )
+    assert (
+        actual_time < absolute_max
+    ), f"{operation_name}: {actual_time:.3f}s exceeds {absolute_max}s absolute max"
 
 
 def create_test_flujo(

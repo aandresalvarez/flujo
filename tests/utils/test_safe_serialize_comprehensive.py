@@ -1,7 +1,7 @@
-"""Comprehensive unit tests for serialize_jsonable function.
+"""Comprehensive unit tests for serialization functions.
 
-This module tests all edge cases and special types that should be handled by serialize_jsonable,
-ensuring it's capable of handling all scenarios previously handled by BaseModel.model_dump.
+This module tests all edge cases and special types that should be handled by the internal
+serialization functions, ensuring they're capable of handling all scenarios.
 """
 
 import dataclasses
@@ -21,8 +21,8 @@ from flujo.domain.base_model import BaseModel as FlujoBaseModel
 from flujo.utils.serialization import (
     register_custom_serializer,
     reset_custom_serializer_registry,
-    serialize_jsonable,
-    serialize_to_json,
+    _serialize_for_json as serialize_jsonable,
+    _serialize_to_json_internal as serialize_to_json,
 )
 
 

@@ -526,9 +526,9 @@ class TestSerializationEdgeCases:
 
         # Test that serialization handles circular references gracefully
         serialized = _serialize(request_data)
-        assert serialized is not None, (
-            "serialization should not return None for circular references"
-        )
+        assert (
+            serialized is not None
+        ), "serialization should not return None for circular references"
         # Ensure placeholder was inserted
         assert serialized["input_data"]["nested_dict"]["self_ref"]["parent"] == "<circular>"
 

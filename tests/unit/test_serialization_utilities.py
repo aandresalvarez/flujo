@@ -18,11 +18,10 @@ from flujo.utils.serialization import (
     register_custom_deserializer,
     register_custom_serializer,
     reset_custom_serializer_registry,
-    robust_serialize,
+    _robust_serialize_internal as robust_serialize,
     safe_deserialize,
-    serialize_jsonable,
-    serialize_to_json,
-    serialize_to_json_robust,
+    _serialize_for_json as serialize_jsonable,
+    _serialize_to_json_internal as serialize_to_json,
 )
 
 
@@ -442,7 +441,8 @@ class TestRobustSerialize:
             return f"fallback_{str(obj)}"
 
         with patch(
-            "flujo.utils.serialization.serialize_jsonable", side_effect=Exception("Test error")
+            "flujo.utils.serialization._serialize_jsonable_impl",
+            side_effect=Exception("Test error"),
         ):
             result = robust_serialize(object())
             assert result.startswith("<unserializable: ")
@@ -472,7 +472,7 @@ class TestSerializeToJson:
     def test_serialize_to_json_robust(self):
         """Test robust JSON serialization."""
         data = {"key": "value", "datetime": datetime(2023, 1, 1, 12, 0, 0)}
-        result = serialize_to_json_robust(data)
+        result = serialize_to_json(data)
         assert isinstance(result, str)
 
         # Verify it's valid JSON
@@ -535,6 +535,6 @@ class TestSerializationProperties:
     def test_serialize_to_json_robust_roundtrip(self, text):
         """Test that robust JSON serialization can be parsed back."""
         data = {"text": text}
-        json_str = serialize_to_json_robust(data)
+        json_str = serialize_to_json(data)
         parsed = json.loads(json_str)
         assert parsed["text"] == text

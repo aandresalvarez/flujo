@@ -339,22 +339,22 @@ async def test_precise_breach_on_final_step():
 
     # This assertion is expected to fail initially because the step_history
     # will be missing the final, breaching step. This is the bug we're testing.
-    assert len(result.step_history) == 2, (
-        f"Expected 2 steps in history, got {len(result.step_history)}"
-    )
+    assert (
+        len(result.step_history) == 2
+    ), f"Expected 2 steps in history, got {len(result.step_history)}"
 
     # Verify the costs are correct
-    assert result.step_history[0].cost_usd == 0.50, (
-        f"Step 1 should cost $0.50, got ${result.step_history[0].cost_usd}"
-    )
-    assert result.step_history[1].cost_usd == 0.75, (
-        f"Step 2 should cost $0.75, got ${result.step_history[1].cost_usd}"
-    )
+    assert (
+        result.step_history[0].cost_usd == 0.50
+    ), f"Step 1 should cost $0.50, got ${result.step_history[0].cost_usd}"
+    assert (
+        result.step_history[1].cost_usd == 0.75
+    ), f"Step 2 should cost $0.75, got ${result.step_history[1].cost_usd}"
 
     # Verify the total cost
-    assert result.total_cost_usd == 1.25, (
-        f"Total cost should be $1.25, got ${result.total_cost_usd}"
-    )
+    assert (
+        result.total_cost_usd == 1.25
+    ), f"Total cost should be $1.25, got ${result.total_cost_usd}"
 
     # Verify both steps are in the history
     assert result.step_history[0].name == "step_1"

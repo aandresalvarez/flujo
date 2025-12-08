@@ -212,9 +212,9 @@ class TestMemoryLeakDetection:
 
         # After processing, memory should not be excessively high
         max_final_growth_mb = 20  # Allow 20MB final growth
-        assert final_growth <= max_final_growth_mb, (
-            f"Final memory growth {final_growth:.1f}MB exceeds threshold {max_final_growth_mb}MB"
-        )
+        assert (
+            final_growth <= max_final_growth_mb
+        ), f"Final memory growth {final_growth:.1f}MB exceeds threshold {max_final_growth_mb}MB"
 
     def test_async_task_cleanup_in_background_execution(self):
         """Test that background tasks are properly cleaned up."""
@@ -254,18 +254,18 @@ class TestMemoryLeakDetection:
             cache.set(key, value)
 
         # Cache should respect size limits
-        assert len(cache._store) <= cache.max_size, (
-            f"Cache size {len(cache._store)} exceeds max_size {cache.max_size}"
-        )
+        assert (
+            len(cache._store) <= cache.max_size
+        ), f"Cache size {len(cache._store)} exceeds max_size {cache.max_size}"
 
         # Memory usage should be bounded
         # (This is a basic check - in production you'd want more sophisticated monitoring)
         cache_memory_estimate = sum(len(str(k)) + len(str(v)) for k, (v, _) in cache._store.items())
 
         max_memory_kb = 1024  # 1MB max for cache
-        assert cache_memory_estimate <= max_memory_kb * 1024, (
-            f"Cache memory usage {cache_memory_estimate} bytes exceeds {max_memory_kb}KB limit"
-        )
+        assert (
+            cache_memory_estimate <= max_memory_kb * 1024
+        ), f"Cache memory usage {cache_memory_estimate} bytes exceeds {max_memory_kb}KB limit"
 
 
 class TestResourceLeakDetection:

@@ -129,12 +129,12 @@ class TestDSLCoreDecoupling:
             pytest.skip("interfaces.py not found")
 
         content = interfaces_file.read_text()
-        assert "def accepts_param(" in content, (
-            "domain.interfaces must provide accepts_param function"
-        )
-        assert '"accepts_param"' in content or "'accepts_param'" in content, (
-            "accepts_param must be exported in __all__"
-        )
+        assert (
+            "def accepts_param(" in content
+        ), "domain.interfaces must provide accepts_param function"
+        assert (
+            '"accepts_param"' in content or "'accepts_param'" in content
+        ), "accepts_param must be exported in __all__"
 
 
 class TestAsyncBridgeUnification:
@@ -161,10 +161,10 @@ class TestAsyncBridgeUnification:
 
         content = prometheus_file.read_text()
         # Should import from async_bridge
-        assert "from" in content and "async_bridge" in content, (
-            "prometheus.py should import from async_bridge"
-        )
+        assert (
+            "from" in content and "async_bridge" in content
+        ), "prometheus.py should import from async_bridge"
         # Should NOT define its own run_coroutine implementation
-        assert "def run_coroutine(" not in content, (
-            "prometheus.py should not define its own run_coroutine; use run_sync"
-        )
+        assert (
+            "def run_coroutine(" not in content
+        ), "prometheus.py should not define its own run_coroutine; use run_sync"

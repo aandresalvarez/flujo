@@ -121,9 +121,9 @@ class TestPerformanceRegression:
         avg_time = sum(results) / len(results)
         threshold = baseline_thresholds["pipeline_creation"]
 
-        assert avg_time <= threshold, (
-            f"Pipeline creation time {avg_time:.2f}ms exceeds threshold {threshold}ms"
-        )
+        assert (
+            avg_time <= threshold
+        ), f"Pipeline creation time {avg_time:.2f}ms exceeds threshold {threshold}ms"
 
     def test_context_isolation_performance(self, baseline_thresholds: dict[str, float]):
         """Test that context isolation performance stays within bounds."""
@@ -146,9 +146,9 @@ class TestPerformanceRegression:
         avg_time = sum(results) / len(results)
         threshold = baseline_thresholds["context_isolation"]
 
-        assert avg_time <= threshold, (
-            f"Context isolation time {avg_time:.2f}ms exceeds threshold {threshold}ms"
-        )
+        assert (
+            avg_time <= threshold
+        ), f"Context isolation time {avg_time:.2f}ms exceeds threshold {threshold}ms"
 
     def test_serialization_performance(self, baseline_thresholds: dict[str, float]):
         """Test that serialization performance stays within bounds."""
@@ -174,9 +174,9 @@ class TestPerformanceRegression:
         avg_time = sum(results) / len(results)
         threshold = baseline_thresholds["serialization"]
 
-        assert avg_time <= threshold, (
-            f"Serialization time {avg_time:.2f}ms exceeds threshold {threshold}ms"
-        )
+        assert (
+            avg_time <= threshold
+        ), f"Serialization time {avg_time:.2f}ms exceeds threshold {threshold}ms"
 
     def test_context_hash_performance(self):
         """Ensure context hashing stays fast for large contexts."""
@@ -206,9 +206,9 @@ class TestPerformanceRegression:
             serializer.compute_context_hash(context)
         total_time = (time.perf_counter() - start_time) * 1000  # ms
 
-        assert total_time < 75, (
-            f"Context hashing took {total_time:.1f}ms for 5 runs, expected < 75ms"
-        )
+        assert (
+            total_time < 75
+        ), f"Context hashing took {total_time:.1f}ms for 5 runs, expected < 75ms"
 
     def test_memory_overhead_monitoring(self, baseline_thresholds: dict[str, float]):
         """Test that memory overhead stays within acceptable bounds."""
@@ -331,12 +331,12 @@ class TestPerformanceRegression:
                 # --- Validate correctness (NOT performance) ---
                 assert len(sequential_results) == num_operations, "Sequential: not all completed"
                 assert len(concurrent_results) == num_operations, "Concurrent: not all completed"
-                assert all(isinstance(r, StepResult) for r in sequential_results), (
-                    "Invalid sequential results"
-                )
-                assert all(isinstance(r, StepResult) for r in concurrent_results), (
-                    "Invalid concurrent results"
-                )
+                assert all(
+                    isinstance(r, StepResult) for r in sequential_results
+                ), "Invalid sequential results"
+                assert all(
+                    isinstance(r, StepResult) for r in concurrent_results
+                ), "Invalid concurrent results"
 
                 # Calculate speedup for logging
                 speedup = sequential_time / concurrent_time if concurrent_time > 0 else float("inf")
@@ -525,12 +525,12 @@ class TestScalabilityRegression:
             # --- Validate correctness ---
             assert len(sequential_results) == num_operations, "Sequential: not all completed"
             assert len(concurrent_results) == num_operations, "Concurrent: not all completed"
-            assert all(isinstance(r, StepResult) for r in sequential_results), (
-                "Invalid sequential results"
-            )
-            assert all(isinstance(r, StepResult) for r in concurrent_results), (
-                "Invalid concurrent results"
-            )
+            assert all(
+                isinstance(r, StepResult) for r in sequential_results
+            ), "Invalid sequential results"
+            assert all(
+                isinstance(r, StepResult) for r in concurrent_results
+            ), "Invalid concurrent results"
 
             # --- Validate RELATIVE performance (environment-independent) ---
             # Concurrent execution should provide speedup over sequential.

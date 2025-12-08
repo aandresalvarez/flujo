@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Any
 
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
-from flujo.utils.serialization import serialize_jsonable
+from flujo.utils.serialization import _serialize_for_json as serialize_jsonable
 
 
 class SimpleNested(BaseModel):

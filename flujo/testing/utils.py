@@ -21,8 +21,7 @@ from flujo.exceptions import PausedException
 def _serialize_for_test(obj: Any) -> Any:
     """Serialize an object for testing purposes using native Pydantic/JSON.
 
-    This replaces the deprecated serialize_jsonable for test utilities.
-    Uses model_dump(mode="json") for Pydantic models and handles primitives natively.
+    Uses model_dump(mode=\"json\") for Pydantic models and handles primitives natively.
     """
     if obj is None:
         return None

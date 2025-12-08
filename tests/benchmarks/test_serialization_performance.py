@@ -445,9 +445,9 @@ class TestSerializationPerformance:
         print(f"  Memory delta: {memory_delta:.2f} MB")
 
         # Memory usage should not increase significantly after garbage collection
-        assert memory_delta < 100, (
-            f"Memory leak detected: {memory_delta:.2f} MB increase"
-        )  # Increased from 50MB to 100MB
+        assert (
+            memory_delta < 100
+        ), f"Memory leak detected: {memory_delta:.2f} MB increase"  # Increased from 50MB to 100MB
 
 
 # Add the reconstruction method to DummyRemoteBackend for testing

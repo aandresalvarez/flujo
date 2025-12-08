@@ -1,36 +1,31 @@
-## Strategic Remediation Plan (Pending Items)
+## Strategic Remediation Plan (Pending Items) — Zero-Shim Edition
 
 Purpose: address the remaining gaps highlighted in the architectural debt review with a
 sequenced, low-risk rollout. Optimizes for correctness first, then DX/maintainability.
 
+### Current Status (per track)
+- Serialization: Runtime migrated to `model_dump(mode="json")` / `_serialize_for_json`; **tests still reference `serialize_jsonable`**; function not yet removed.
+- Async/Sync Bridge: Prometheus path migrated to shared bridge; further verification ongoing.
+- Circular Imports: DSL now uses interfaces; continue tightening architecture checks.
+- Typed Context: Scratchpad enforcement in place; mapping helpers in progress.
+
 ### Prioritized Tracks
 
-1) Serialization Standardization (Highest Impact/Medium Effort)
-- Goal: remove `serialize_jsonable` from runtime; standardize on Pydantic v2
-  `model_dump(mode="json")` + field serializers.
+1) Serialization Standardization (Highest Impact/Medium Effort, Zero Shim)
+- Goal: remove `serialize_jsonable` entirely (no shim); standardize on Pydantic v2 `model_dump(mode="json")` and `_serialize_for_json`.
 - Risks mitigated: inconsistent serialization, hidden circular refs, performance drift.
 - Approach:
-  - Inventory: `rg serialize_jsonable flujo/ tests/` to produce a callsite matrix (runtime
-    vs tests; hot paths vs fixtures).
-  - API plan: mark `serialize_jsonable` as deprecated (warnings), introduce
-    `serialize_to_jsonable` adapter that delegates to `model_dump` for models and to
-    `_serialize_for_json` for primitives; keep behavior stable during migration.
+  - Inventory: `rg serialize_jsonable flujo/ tests/` (expect only tests/defs remaining).
   - Migration slices:
-    1) Core/state/backends and cache → replace with `_serialize_for_json` or
-       `model_dump(mode="json")`.
-    2) Application/core + processors/agents.
-    3) Tests/benchmarks/fixtures (convert to new helpers or direct `model_dump`).
-  - Hardening: add regression tests that forbid new `serialize_jsonable` imports in core,
-    allow only in `tests/legacy_serialization/` during transition.
-  - Exit: remove helper, delete legacy tests, keep cookbook updated.
+    1) Runtime ✅ (done).
+    2) Tests/benchmarks/fixtures → replace with `model_dump(mode="json")` (models) or `_serialize_for_json` (mixed/primitives); delete serializer-spec tests.
+  - Hardening: architecture/lint tests forbid any `serialize_jsonable` in repo.
+  - Exit: delete function and exports; update cookbook.
 
 2) Async/Sync Bridge Unification (High Impact/Low-Med Effort)
 - Goal: single, battle-tested strategy (anyio BlockingPortal) for running async from sync.
-- Risks mitigated: “Event loop is closed” flakiness, shutdown leaks.
 - Approach:
-  - Replace ad-hoc thread spawning (e.g., `flujo/telemetry/prometheus.py::run_coroutine`)
-    with shared portal utility (same as sqlite bridge) or enforce async-only entrypoints
-    where appropriate.
+  - Replace ad-hoc thread spawning with shared portal utility; enforce async-only entrypoints where appropriate.
   - Add unit tests: running under existing loop, shutdown paths, double-invoke safety.
   - Docs: clarify sync entrypoints vs async-only APIs.
 
@@ -38,8 +33,7 @@ sequenced, low-risk rollout. Optimizes for correctness first, then DX/maintainab
 - Goal: finish decoupling DSL from execution with stable interfaces.
 - Approach:
   - Create a target interfaces surface map (Step, Pipeline, Context, Agent protocols).
-  - Slice migrations: move remaining TYPE_CHECKING/lazy imports out of DSL modules; depend
-    on `domain.interfaces` from core; ensure DSL modules avoid core imports.
+  - Move remaining TYPE_CHECKING/lazy imports out of DSL; depend on `domain.interfaces`.
   - Add architecture test: forbid core imports inside DSL modules; allow only interfaces.
   - Validate with `make all` + smoke CLI/runner creation.
 
@@ -54,42 +48,34 @@ sequenced, low-risk rollout. Optimizes for correctness first, then DX/maintainab
 
 5) Verification & Guardrails (Always-On)
 - Run `make all` before closeout of each track.
-- Add lint/checks to block reintroduction: no new `serialize_jsonable`, no ad-hoc
-  thread-based coroutine runners, enforce interfaces-only imports in DSL.
+- Lint/checks block reintroduction: no `serialize_jsonable`, no ad-hoc thread-based coroutine runners, enforce interfaces-only imports in DSL.
 
-### Execution Order & Milestones
-- Week 1: Track 1 (serialization) slice 1 + Track 2 prometheus fix; add guardrail tests.
-- Week 2: Track 1 slices 2–3; begin Track 3 interface mapping draft.
-- Week 3: Track 3 migrations (incremental, with architecture tests).
-- Week 4: Track 4 validations/mappings; stabilize tests; final `make all`.
+### Execution Order & Milestones (updated)
+- Week 1: Serialization tests cleanup (zero shim) + guardrail checks; Async bridge verification.
+- Week 2: Circular-import interface mapping draft; continue serialization test removal if needed.
+- Week 3: Circular-import migrations (incremental, with architecture tests).
+- Week 4: Typed-context validations/mappings; stabilize tests; final `make all`.
 
 ### Definition of Done (per track)
-- Serialization: zero runtime references to `serialize_jsonable`; tests updated; docs
-  reflect new pattern.
-- Async bridge: no thread-spawned asyncio runs remain; portal utility shared; tests cover
-  running-loop and shutdown paths.
-- Circular imports: DSL imports are interface-only; architecture test passes; no lazy
-  imports needed for core separation.
-- Typed context: branch/parallel/import validation active; scratchpad reserved keys
-  enforced; new guidance documented.
+- Serialization: `rg serialize_jsonable flujo/ tests/` returns zero; function deleted; tests/docs updated to new pattern.
+- Async bridge: no thread-spawned asyncio runs remain; portal utility shared; tests cover running-loop and shutdown paths.
+- Circular imports: DSL imports are interface-only; architecture test passes; no lazy imports needed for core separation.
+- Typed context: branch/parallel/import validation active; scratchpad reserved keys enforced; new guidance documented.
 
-### Executable Tickets (owners & acceptance)
+### Executable Tickets (owners, scope, status)
 
-1) Serialization Standardization (Owner: @core-runtime)
-- Scope: Replace runtime usages of `serialize_jsonable` with `model_dump(mode="json")`
-  or `_serialize_for_json`; add deprecation warning shim; migrate tests/fixtures.
-- AC: `rg serialize_jsonable flujo/` yields zero; core/tests pass; cookbook updated; lint
-  blocks new imports outside legacy fixtures (if any remain temporarily).
+1) Serialization Standardization — Zero Shim (Owner: @core-runtime)
+- Scope: Replace all test/fixture/benchmark usages with `model_dump(mode="json")` or `_serialize_for_json`; delete serializer-spec tests; remove `serialize_jsonable` and exports.
+- Status: Runtime done; **tests/benchmarks pending**; function still present.
+- AC: `rg serialize_jsonable flujo/ tests/` yields zero; function removed; docs updated; guardrail tests enforce zero presence.
 
 2) Interfaces/Import Cleanup (Owner: @core-arch)
-- Scope: Consolidate DSL imports to use `domain.interfaces`; remove TYPE_CHECKING shims
-  and lazy imports from DSL modules; add architecture test banning core imports inside DSL.
-- AC: Architecture test passes; no DSL module imports core directly; `make all` green; no
-  new lazy imports added.
+- Scope: Consolidate DSL imports to `domain.interfaces`; remove TYPE_CHECKING shims and lazy imports from DSL modules; add architecture test banning core imports inside DSL.
+- Status: In progress.
+- AC: Architecture test passes; no DSL module imports core directly; `make all` green; no new lazy imports added.
 
 3) Typed-Context Validation Depth (Owner: @core-validation)
-- Scope: Extend input/output key contract validation to branch/parallel/import routers;
-  add mappings/guided errors for legacy scratchpad keys; expand tests.
-- AC: Branch/parallel/import validation enforced; scratchpad conflicts yield explicit
-  errors; new tests cover positive/negative paths; docs updated.
+- Scope: Extend input/output key contract validation to branch/parallel/import routers; add mappings/guided errors for legacy scratchpad keys; expand tests.
+- Status: In progress (scratchpad enforcement added; mapping helpers ongoing).
+- AC: Branch/parallel/import validation enforced; scratchpad conflicts yield explicit errors; new tests cover positive/negative paths; docs updated.
 

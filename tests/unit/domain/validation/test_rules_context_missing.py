@@ -58,9 +58,9 @@ def test_v_c2_scratchpad_shape_conflicts_warns() -> None:
         }
     )
     report = Pipeline.model_validate({"steps": [imp]}).validate_graph()
-    assert any(w.rule_id == "V-C2" and w.step_name == "RunChild" for w in report.warnings), (
-        report.model_dump()
-    )
+    assert any(
+        w.rule_id == "V-C2" and w.step_name == "RunChild" for w in report.warnings
+    ), report.model_dump()
 
 
 def test_v_c3_large_literal_templates_todo() -> None:

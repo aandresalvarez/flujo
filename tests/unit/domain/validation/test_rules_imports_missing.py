@@ -35,9 +35,9 @@ def test_v_i4_child_aggregation_summary(tmp_path: Path) -> None:
     )
     p = load_pipeline_blueprint_from_yaml(parent, base_dir=str(tmp_path))
     report = p.validate_graph(include_imports=True)
-    assert any(w.rule_id == "V-I4" and w.step_name == "RunChild" for w in report.warnings), (
-        report.model_dump()
-    )
+    assert any(
+        w.rule_id == "V-I4" and w.step_name == "RunChild" for w in report.warnings
+    ), report.model_dump()
 
 
 def test_v_i5_input_projection_coherence_warns_initial_prompt_vs_object() -> None:
@@ -78,9 +78,9 @@ def test_v_i5_input_projection_coherence_warns_initial_prompt_vs_object() -> Non
     )
     p = load_pipeline_blueprint_from_yaml(parent_yaml, base_dir=str(tmp))
     report = p.validate_graph(include_imports=True)
-    assert any(w.rule_id == "V-I5" and w.step_name == "RunChild" for w in report.warnings), (
-        report.model_dump()
-    )
+    assert any(
+        w.rule_id == "V-I5" and w.step_name == "RunChild" for w in report.warnings
+    ), report.model_dump()
 
 
 def test_v_i6_inherit_conversation_consistency_warns(tmp_path: Path) -> None:
@@ -112,6 +112,6 @@ def test_v_i6_inherit_conversation_consistency_warns(tmp_path: Path) -> None:
     )
     p = load_pipeline_blueprint_from_yaml(parent, base_dir=str(tmp_path))
     rep = p.validate_graph(include_imports=True)
-    assert any(w.rule_id == "V-I6" and w.step_name == "RunChild" for w in rep.warnings), (
-        rep.model_dump()
-    )
+    assert any(
+        w.rule_id == "V-I6" and w.step_name == "RunChild" for w in rep.warnings
+    ), rep.model_dump()

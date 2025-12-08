@@ -4,7 +4,7 @@ from flujo.type_definitions.common import JSONObject
 import pytest
 
 from flujo.utils.serialization import (
-    serialize_jsonable,
+    _serialize_for_json as serialize_jsonable,
     safe_deserialize,
     register_custom_serializer,
     register_custom_deserializer,

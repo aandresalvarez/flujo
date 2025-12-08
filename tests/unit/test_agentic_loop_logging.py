@@ -241,9 +241,9 @@ class TestAgenticLoopLoggingRegressionPrevention:
         ctx = result.final_pipeline_context
 
         # This should be exactly 1, not 2 (which would indicate double logging)
-        assert len(ctx.command_log) == 1, (
-            "Double logging detected - commands are being logged twice"
-        )
+        assert (
+            len(ctx.command_log) == 1
+        ), "Double logging detected - commands are being logged twice"
 
     @pytest.mark.asyncio
     async def test_logging_consistency(self):
@@ -264,9 +264,9 @@ class TestAgenticLoopLoggingRegressionPrevention:
             result = await run_agentic_loop_pipeline(pipeline, "goal")
             ctx = result.final_pipeline_context
 
-            assert len(ctx.command_log) >= expected_count, (
-                f"Failed for {description}: expected at least {expected_count}, got {len(ctx.command_log)}"
-            )
+            assert (
+                len(ctx.command_log) >= expected_count
+            ), f"Failed for {description}: expected at least {expected_count}, got {len(ctx.command_log)}"
 
     @pytest.mark.asyncio
     async def test_logging_order(self):
@@ -341,14 +341,14 @@ class TestAgenticLoopLoggingRegressionGuard:
         assert turns == sorted(turns), f"Log turns out of order: {turns}"
 
         # Validation error should be present
-        assert any("Invalid command" in log.execution_result for log in logs), (
-            "Validation error not logged"
-        )
+        assert any(
+            "Invalid command" in log.execution_result for log in logs
+        ), "Validation error not logged"
         # Agent not found error should be present
-        assert any("not found" in log.execution_result for log in logs), (
-            "Agent not found error not logged"
-        )
+        assert any(
+            "not found" in log.execution_result for log in logs
+        ), "Agent not found error not logged"
         # Finish command should be present
-        assert any(getattr(log.generated_command, "type", None) == "finish" for log in logs), (
-            "Finish command not logged"
-        )
+        assert any(
+            getattr(log.generated_command, "type", None) == "finish" for log in logs
+        ), "Finish command not logged"

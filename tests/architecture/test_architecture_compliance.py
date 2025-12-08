@@ -443,9 +443,9 @@ class TestCodeQualityStandards:
             pytest.fail("Deprecated exception shims must be removed from flujo.exceptions")
         if "DeprecationWarning" in content:
             pytest.fail("Legacy deprecation warnings should not remain in flujo.exceptions")
-        assert "FlujoError" in content, (
-            "exceptions module should define FlujoError as the base type"
-        )
+        assert (
+            "FlujoError" in content
+        ), "exceptions module should define FlujoError as the base type"
 
     def test_serialization_is_unified(self, flujo_root: Path):
         """Verify that all models use unified serialization.

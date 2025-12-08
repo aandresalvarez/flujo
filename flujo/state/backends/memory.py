@@ -17,7 +17,7 @@ class InMemoryBackend(StateBackend):
 
     This backend mirrors the serialization logic of the persistent backends by
     storing a serialized copy of the workflow state. Values are serialized with
-    ``serialize_jsonable`` on save and reconstructed with ``safe_deserialize`` when
+    ``_serialize_for_json`` on save and reconstructed with ``safe_deserialize`` when
     loaded.
     """
 
@@ -35,7 +35,7 @@ class InMemoryBackend(StateBackend):
 
     async def save_state(self, run_id: str, state: JSONObject) -> None:
         async with self._get_lock():
-            # Serialize state so custom types are handled consistently without serialize_jsonable
+            # Serialize state so custom types are handled consistently
             normalized = _serialize_for_json(state)
             serialized = json.loads(json.dumps(normalized, ensure_ascii=False))
             self._store[run_id] = serialized

@@ -4,7 +4,7 @@ import pytest
 pytest.importorskip("pytest_benchmark")
 
 from flujo.domain.models import Candidate, Checklist, ChecklistItem
-from flujo.utils.serialization import serialize_jsonable
+from flujo.utils.serialization import _serialize_for_json as serialize_jsonable
 
 complex_candidate = Candidate(
     solution="This is a very long solution string...",

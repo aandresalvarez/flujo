@@ -20,8 +20,8 @@ from flujo.domain.models import BaseModel, PipelineResult
 from flujo.application.core.execution_manager import ExecutionManager
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.utils.serialization import (
-    serialize_jsonable,
-    robust_serialize,
+    _serialize_for_json as serialize_jsonable,
+    _robust_serialize_internal as robust_serialize,
     register_custom_serializer,
 )
 from flujo.domain import Step
