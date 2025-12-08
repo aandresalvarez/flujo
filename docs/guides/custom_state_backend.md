@@ -104,26 +104,17 @@ class CustomBackend(StateBackend):
 4. **Handle errors gracefully**: The serialization utilities include error handling and fallbacks
 5. **Test with complex objects**: Ensure your backend works with nested Pydantic models and custom types
 
-## Migration from Legacy Serialization
+## Serialization Summary
 
-If you were previously using deprecated serialization functions:
+Flujo provides two recommended serialization approaches:
 
-```python
-# Before (deprecated)
-from flujo.utils import serialize_jsonable
-serialized = serialize_jsonable(state)
+| Use Case | Recommended Approach |
+|----------|---------------------|
+| Pydantic models | `model.model_dump(mode="json")` |
+| Mixed payloads / primitives | `_serialize_for_json(data)` |
 
-# After (recommended)
-# For Pydantic models:
-serialized = model.model_dump(mode="json")
-
-# For mixed payloads:
-from flujo.state.backends.base import _serialize_for_json
-serialized = _serialize_for_json(state)
-```
-
-The new approach provides:
-- **Better performance**: Native Pydantic serialization
-- **Cleaner API**: Use standard Pydantic methods
-- **Global registry**: Consistent custom type handling
-- **Internal consistency**: Matches Flujo's internal implementation
+The `_serialize_for_json` helper is available from `flujo.state.backends.base` and handles:
+- **Pydantic models**: Via `model_dump(mode="json")`
+- **Primitives**: Passed through unchanged
+- **Custom types**: Via the global serializer registry
+- **Edge cases**: Datetime, enums, complex numbers, bytes, etc.
