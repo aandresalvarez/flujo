@@ -441,7 +441,7 @@ class TestRobustSerialize:
             return f"fallback_{str(obj)}"
 
         with patch(
-            "flujo.utils.serialization._serialize_jsonable_impl",
+            "flujo.utils.serialization._json_serialize_impl",
             side_effect=Exception("Test error"),
         ):
             result = _robust_serialize_internal(object())

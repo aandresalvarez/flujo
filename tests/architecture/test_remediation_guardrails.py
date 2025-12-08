@@ -17,17 +17,17 @@ pytestmark = [pytest.mark.slow]
 
 
 class TestSerializationGuardrails:
-    """Prevent reintroduction of deprecated serialize_jsonable in core modules."""
+    """Prevent reintroduction of deprecated deprecated_serializer in core modules."""
 
     @pytest.fixture
     def flujo_root(self) -> Path:
         """Get the root directory of the Flujo project."""
         return Path(__file__).parent.parent.parent
 
-    def test_no_serialize_jsonable_in_runtime_core(self, flujo_root: Path) -> None:
-        """Core runtime modules must not use serialize_jsonable directly.
+    def test_no_deprecated_serializer_in_runtime_core(self, flujo_root: Path) -> None:
+        """Core runtime modules must not use deprecated_serializer directly.
 
-        serialize_jsonable is deprecated; core modules should use:
+        deprecated_serializer is deprecated; core modules should use:
         - model_dump(mode="json") for Pydantic models
         - _serialize_for_json for primitives
         """
@@ -47,13 +47,13 @@ class TestSerializationGuardrails:
                     continue
 
                 # Check for direct usage (not just definition/export)
-                if "serialize_jsonable(" in content:
+                if "deprecated_serializer(" in content:
                     # Skip if it's in a comment or docstring context
                     lines = content.split("\n")
                     for i, line in enumerate(lines, 1):
                         stripped = line.strip()
                         if (
-                            "serialize_jsonable(" in stripped
+                            "deprecated_serializer(" in stripped
                             and not stripped.startswith("#")
                             and not stripped.startswith('"""')
                             and not stripped.startswith("'''")
@@ -63,7 +63,7 @@ class TestSerializationGuardrails:
 
         if violations:
             pytest.fail(
-                f"Found serialize_jsonable usage in {len(violations)} core locations:\n"
+                f"Found deprecated_serializer usage in {len(violations)} core locations:\n"
                 + "\n".join(violations[:10])
                 + ("\n..." if len(violations) > 10 else "")
                 + "\n\nUse model_dump(mode='json') or _serialize_for_json instead."

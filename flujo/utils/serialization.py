@@ -239,7 +239,7 @@ def _normalize_float(value: float) -> float | str:
     return value
 
 
-def _serialize_jsonable_impl(
+def _json_serialize_impl(
     obj: Any,
     *,
     mode: str = "json",
@@ -272,7 +272,7 @@ def _serialize_jsonable_impl(
             custom_result = None
         else:
             if custom_result is not obj:
-                return _serialize_jsonable_impl(
+                return _json_serialize_impl(
                     custom_result,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -297,7 +297,7 @@ def _serialize_jsonable_impl(
     _seen.add(obj_id)
     try:
         if isinstance(obj, Enum):
-            return _serialize_jsonable_impl(
+            return _json_serialize_impl(
                 obj.value,
                 mode=mode,
                 default_serializer=default_serializer,
@@ -339,7 +339,7 @@ def _serialize_jsonable_impl(
                         if mode == "cache"
                         else circular_ref_placeholder
                     )
-                return _serialize_jsonable_impl(
+                return _json_serialize_impl(
                     dumped,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -351,7 +351,7 @@ def _serialize_jsonable_impl(
                 fallback_data = {k: v for k, v in vars(obj).items() if not k.startswith("_")}
                 if not fallback_data:
                     return f"<unserializable: {type(obj).__name__}>"
-                return _serialize_jsonable_impl(
+                return _json_serialize_impl(
                     fallback_data,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -365,7 +365,7 @@ def _serialize_jsonable_impl(
                 raise TypeError(
                     f"Cannot serialize dataclass type {obj.__name__}; provide an instance instead."
                 )
-            return _serialize_jsonable_impl(
+            return _json_serialize_impl(
                 dataclasses.asdict(obj),
                 mode=mode,
                 default_serializer=default_serializer,
@@ -378,7 +378,7 @@ def _serialize_jsonable_impl(
             out: Dict[str, Any] = {}
             for key, value in obj.items():
                 key_str = str(
-                    _serialize_jsonable_impl(
+                    _json_serialize_impl(
                         key,
                         mode=mode,
                         default_serializer=default_serializer,
@@ -387,7 +387,7 @@ def _serialize_jsonable_impl(
                         _depth=_depth + 1,
                     )
                 )
-                out[key_str] = _serialize_jsonable_impl(
+                out[key_str] = _json_serialize_impl(
                     value,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -399,7 +399,7 @@ def _serialize_jsonable_impl(
 
         if isinstance(obj, (set, frozenset)):
             return [
-                _serialize_jsonable_impl(
+                _json_serialize_impl(
                     item,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -412,7 +412,7 @@ def _serialize_jsonable_impl(
 
         if isinstance(obj, Sequence) and not isinstance(obj, (str, bytes, bytearray, memoryview)):
             return [
-                _serialize_jsonable_impl(
+                _json_serialize_impl(
                     item,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -432,7 +432,7 @@ def _serialize_jsonable_impl(
 
         if default_serializer is not None:
             try:
-                return _serialize_jsonable_impl(
+                return _json_serialize_impl(
                     default_serializer(obj),
                     mode=mode,
                     default_serializer=default_serializer,
@@ -446,7 +446,7 @@ def _serialize_jsonable_impl(
         if hasattr(obj, "model_dump"):
             try:
                 dumped = obj.model_dump()
-                return _serialize_jsonable_impl(
+                return _json_serialize_impl(
                     dumped,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -462,7 +462,7 @@ def _serialize_jsonable_impl(
             }
             if _depth == 0:
                 if data and ("output" in data or "content" in data):
-                    return _serialize_jsonable_impl(
+                    return _json_serialize_impl(
                         data,
                         mode=mode,
                         default_serializer=default_serializer,
@@ -511,7 +511,7 @@ def _serialize_for_json(
 
     External code should use model_dump(mode="json") for Pydantic models.
     """
-    return _serialize_jsonable_impl(
+    return _json_serialize_impl(
         obj,
         mode=mode,
         default_serializer=default_serializer,
@@ -528,7 +528,7 @@ def _robust_serialize_internal(
     For flujo internals that need never-raise serialization.
     """
     try:
-        return _serialize_jsonable_impl(obj, circular_ref_placeholder=circular_ref_placeholder)
+        return _json_serialize_impl(obj, circular_ref_placeholder=circular_ref_placeholder)
     except Exception:
         return f"<unserializable: {type(obj).__name__}>"
 
@@ -538,7 +538,7 @@ def _serialize_to_json_internal(obj: Any, *, mode: str = "json", **kwargs: Any) 
 
     For flujo internals that need JSON string output.
     """
-    return json.dumps(_serialize_jsonable_impl(obj, mode=mode), sort_keys=True, **kwargs)
+    return json.dumps(_json_serialize_impl(obj, mode=mode), sort_keys=True, **kwargs)
 
 
 __all__ = [

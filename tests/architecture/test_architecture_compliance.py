@@ -465,7 +465,7 @@ class TestCodeQualityStandards:
 
                     # Check for unified serialization
                     uses_unified_serialization = (
-                        "serialize_jsonable" in content
+                        "_serialize_for_json" in content
                         or "model_dump" in content
                         or "from .base_model import BaseModel" in content
                     )
