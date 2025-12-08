@@ -51,9 +51,7 @@ async def make_plan_from_goal(*_: Any, context: _BaseModel | None = None) -> JSO
     except Exception:
         save_path = None
 
-    if ("http" in g or url) and (
-        not available or skill_available("flujo.builtins.http_get", available=available)
-    ):
+    if ("http" in g or url) and skill_available("flujo.builtins.http_get", available=available):
         params = {"url": url} if url else {}
         chosen = {
             "name": "Fetch URL",

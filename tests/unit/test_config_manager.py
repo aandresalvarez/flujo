@@ -361,6 +361,21 @@ env_file = ".secrets"
         assert s.openai_api_key is not None
         assert s.openai_api_key.get_secret_value() == "sk-env-override"
 
+    def test_env_overrides_blueprint_allowed_imports(self, monkeypatch, tmp_path):
+        """FLUJO_BLUEPRINT_ALLOWED_IMPORTS provides an allow-list even without a config file."""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("FLUJO_BLUEPRINT_ALLOWED_IMPORTS", "skills, tests.utils")
+
+        cm = ConfigManager()
+        cfg = cm.load_config(force_reload=True)
+        assert cfg.blueprint_allowed_imports == ["skills", "tests.utils"]
+
+        # Wildcard allow-all support
+        monkeypatch.setenv("FLUJO_BLUEPRINT_ALLOWED_IMPORTS", "*")
+        cm2 = ConfigManager()
+        cfg2 = cm2.load_config(force_reload=True)
+        assert cfg2.blueprint_allowed_imports == ["*"]
+
     def test_env_file_missing_is_non_fatal(self, monkeypatch, tmp_path):
         """Missing env_file should not crash and leaves settings as default when no env vars set."""
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)

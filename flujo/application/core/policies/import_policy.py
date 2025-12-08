@@ -639,26 +639,22 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
             parent_ctx = context
 
             def _assign_parent(path: str, value: Any) -> None:
-                # Route mapped outputs into import_artifacts to avoid scratchpad usage
                 parts = [p for p in path.split(".") if p]
                 if not parts:
                     return
-                if parts[0] == "scratchpad":
-                    parts = parts[1:]
-                    if not parts:
-                        return
-                tgt = update_data.setdefault("import_artifacts", {})
-                if not tgt and parent_ctx is not None and hasattr(parent_ctx, "import_artifacts"):
-                    pa = getattr(parent_ctx, "import_artifacts", None)
-                    if isinstance(pa, MutableMapping):
-                        try:
-                            tgt.update(dict(pa))
-                        except Exception:
-                            pass
-                for part in parts[:-1]:
-                    if part not in tgt or not isinstance(tgt[part], dict):
-                        tgt[part] = {}
-                    tgt = tgt[part]
+
+                def _assign_nested(
+                    target: MutableMapping[str, Any], keys: list[str], val: Any
+                ) -> None:
+                    cur = target
+                    for k in keys[:-1]:
+                        nxt = cur.get(k)
+                        if not isinstance(nxt, MutableMapping):
+                            nxt = {}
+                            cur[k] = nxt
+                        cur = nxt
+                    cur[keys[-1]] = val
+
                 normalized = value
                 if isinstance(value, dict):
                     try:
@@ -667,18 +663,36 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         normalized = _normalize_json(value)
                     except Exception:
                         normalized = value
-                tgt[parts[-1]] = normalized
+
+                # Preserve scratchpad mapping when explicitly requested
+                scratch_keys = None
+                if parts[0] == "scratchpad":
+                    scratch_keys = parts[1:]
+                    if scratch_keys:
+                        sp_target = update_data.setdefault("scratchpad", {})
+                        if isinstance(sp_target, MutableMapping):
+                            _assign_nested(sp_target, scratch_keys, normalized)
+
+                # Route mapped outputs into import_artifacts for deterministic propagation
+                tgt_parts = parts[1:] if parts[0] == "scratchpad" else parts
+                if not tgt_parts:
+                    return
+
+                tgt = update_data.setdefault("import_artifacts", {})
+                if not tgt and parent_ctx is not None and hasattr(parent_ctx, "import_artifacts"):
+                    pa = getattr(parent_ctx, "import_artifacts", None)
+                    if isinstance(pa, MutableMapping):
+                        try:
+                            tgt.update(dict(pa))
+                        except Exception:
+                            pass
+                if isinstance(tgt, MutableMapping):
+                    _assign_nested(tgt, tgt_parts, normalized)
+
                 if parent_ctx is not None and hasattr(parent_ctx, "import_artifacts"):
                     pc_artifacts = getattr(parent_ctx, "import_artifacts", None)
                     if isinstance(pc_artifacts, MutableMapping):
-                        cur = pc_artifacts
-                        for part in parts[:-1]:
-                            nxt = cur.get(part)
-                            if not isinstance(nxt, MutableMapping):
-                                nxt = {}
-                                cur[part] = nxt
-                            cur = nxt
-                        cur[parts[-1]] = normalized
+                        _assign_nested(pc_artifacts, tgt_parts, normalized)
 
             try:
                 for mapping in step.outputs:
