@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Awaitable, Callable, Sequence
+from typing import Any, Awaitable, Callable, Sequence, List
 
 from ...domain.memory import MemoryRecord, VectorQuery, VectorStoreProtocol, ScoredMemory
 from ...infra import telemetry
@@ -40,6 +40,7 @@ class MemoryManager:
         self._embedder = embedder
         self._enabled = enabled and embedder is not None
         self._bgm = background_task_manager
+        self._pending_tasks: List[asyncio.Task[Any]] = []
 
     async def index_step_output(
         self, *, step_name: str, result: Any, context: Any | None = None
@@ -84,14 +85,41 @@ class MemoryManager:
                 except Exception:
                     pass
 
+        task = asyncio.create_task(_run(), name=f"flujo_memory_index_{step_name}")
+        self._track_task(task)
         if self._bgm is not None:
-            task = asyncio.create_task(_run(), name=f"flujo_memory_index_{step_name}")
             try:
                 self._bgm.add_task(task)
             except Exception:
                 pass
             return
-        await _run()
+        # Without a background task manager, await completion to avoid silent loss
+        await task
+
+    def _track_task(self, task: asyncio.Task[Any]) -> None:
+        self._pending_tasks.append(task)
+
+        def _cleanup(fut: asyncio.Future[Any]) -> None:
+            try:
+                self._pending_tasks.remove(task)
+            except ValueError:
+                pass
+
+        task.add_done_callback(_cleanup)
+
+    async def close(self) -> None:
+        """Drain pending indexing tasks and close the underlying store."""
+        if self._pending_tasks:
+            try:
+                await asyncio.gather(*self._pending_tasks, return_exceptions=True)
+            except Exception:
+                pass
+        try:
+            res = self._store.close()
+            if asyncio.iscoroutine(res):
+                await res
+        except Exception:
+            pass
 
 
 class NullMemoryManager(MemoryManager):

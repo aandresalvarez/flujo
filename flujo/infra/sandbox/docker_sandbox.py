@@ -120,50 +120,69 @@ class DockerSandbox(SandboxProtocol):
 
             timed_out = False
             wait_result: dict[str, int] | None = None
+            container_obj: Any = container
             try:
-                wait_result = await asyncio.wait_for(
-                    asyncio.to_thread(container.wait),
-                    timeout=request.timeout_s or self._timeout_s,
-                )
-            except asyncio.TimeoutError:
-                timed_out = True
                 try:
-                    container.kill()
-                except Exception:
-                    pass
-            except Exception:
-                pass
+                    wait_result = await asyncio.wait_for(
+                        asyncio.to_thread(container_obj.wait),
+                        timeout=request.timeout_s or self._timeout_s,
+                    )
+                except asyncio.TimeoutError:
+                    timed_out = True
+                    try:
+                        container_obj.kill()
+                    except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                        logger.debug("Failed to kill timed-out container: %s", exc)
+                except asyncio.CancelledError:
+                    try:
+                        container_obj.kill()
+                    except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                        logger.debug("Failed to kill cancelled container: %s", exc)
+                    raise
+                except Exception as exc:  # noqa: BLE001 - unexpected wait failure
+                    logger.debug("Container wait failed: %s", exc)
+                    return SandboxResult(
+                        stdout="",
+                        stderr="",
+                        exit_code=1,
+                        artifacts=None,
+                        sandbox_id=None,
+                        timed_out=False,
+                        error=f"Container wait failed: {exc}",
+                    )
 
-            try:
-                logs = container.logs(stdout=True, stderr=True) or b""
-                stdout = logs.decode("utf-8", errors="replace")
-                stderr = ""
-            except Exception:
-                stdout = ""
-                stderr = ""
+                try:
+                    logs = container_obj.logs(stdout=True, stderr=True) or b""
+                    stdout = logs.decode("utf-8", errors="replace")
+                    stderr = ""
+                except Exception as exc:  # noqa: BLE001 - logs are best-effort
+                    logger.debug("Failed to read container logs: %s", exc)
+                    stdout = ""
+                    stderr = ""
 
-            try:
-                status = wait_result if wait_result is not None else {"StatusCode": 1}
-                exit_code = int(status.get("StatusCode", 1))
-            except Exception:
-                exit_code = 1
+                try:
+                    status = wait_result if wait_result is not None else {"StatusCode": 1}
+                    exit_code = int(status.get("StatusCode", 1))
+                except Exception as exc:  # noqa: BLE001 - fall back to exit_code=1
+                    logger.debug("Failed to extract container exit code: %s", exc)
+                    exit_code = 1
 
-            try:
-                container.remove(force=True)
-            except Exception:
-                pass
+                artifacts = self._collect_artifacts(workdir / "artifacts")
 
-            artifacts = self._collect_artifacts(workdir / "artifacts")
-
-            return SandboxResult(
-                stdout=stdout,
-                stderr=stderr,
-                exit_code=exit_code,
-                artifacts=artifacts,
-                sandbox_id=None,
-                timed_out=timed_out,
-                error="Execution timed out" if timed_out else None,
-            )
+                return SandboxResult(
+                    stdout=stdout,
+                    stderr=stderr,
+                    exit_code=exit_code,
+                    artifacts=artifacts,
+                    sandbox_id=None,
+                    timed_out=timed_out,
+                    error="Execution timed out" if timed_out else None,
+                )
+            finally:
+                try:
+                    container_obj.remove(force=True)
+                except Exception as exc:  # noqa: BLE001 - cleanup best-effort
+                    logger.debug("Failed to remove container: %s", exc)
 
     def _collect_artifacts(self, path: Path) -> dict[str, bytes] | None:
         if not path.exists():

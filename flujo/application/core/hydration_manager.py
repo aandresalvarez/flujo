@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from typing import Any, Dict, Optional
+import asyncio
 from pydantic import BaseModel
 
 from ...domain.models import ContextReference
@@ -39,22 +40,30 @@ class HydrationManager:
         # Iterate over fields to find ContextReference
         # We check top-level fields of Pydantic models
         if isinstance(context, BaseModel):
+            tasks = []
+            refs: list[tuple[str, ContextReference[Any], StateProvider[Any]]] = []
             for field_name, field_value in context:
                 if isinstance(field_value, ContextReference):
                     provider = self._state_providers.get(field_value.provider_id)
                     if provider:
-                        try:
-                            data = await provider.load(field_value.key)
-                            field_value.set(data)
-                        except Exception as e:
-                            # Log warning but don't crash, let step handle missing data if needed
-                            # or maybe we should crash? The plan said "Executor failed to load data" in ValueError
-                            # so we assume it should have been loaded.
-                            # For now, we log to telemetry if available
-                            if self._telemetry:
-                                warning_fn = getattr(self._telemetry, "warning", None)
-                                if warning_fn:
-                                    warning_fn(f"Failed to hydrate reference {field_name}: {e}")
+                        refs.append((field_name, field_value, provider))
+            for field_name, ref, provider in refs:
+
+                async def _load_and_set(
+                    fn: str, r: ContextReference[Any], p: StateProvider[Any]
+                ) -> None:
+                    try:
+                        data = await p.load(r.key)
+                        r.set(data)
+                    except Exception as e:
+                        if self._telemetry:
+                            warning_fn = getattr(self._telemetry, "warning", None)
+                            if warning_fn:
+                                warning_fn(f"Failed to hydrate reference {fn}: {e}")
+
+                tasks.append(_load_and_set(field_name, ref, provider))
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     async def persist_context(self, context: Optional[Any]) -> None:
         """Persist ContextReference fields in the context using registered providers."""

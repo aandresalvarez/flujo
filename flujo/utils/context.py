@@ -386,6 +386,18 @@ def safe_merge_context_updates(
                 if not key.startswith("_")
             }
 
+        # Preserve scratchpad entries even when they contain explicit None values.
+        try:
+            if hasattr(source_context, "scratchpad"):
+                sp = getattr(source_context, "scratchpad")
+                if isinstance(sp, dict):
+                    scratch_target = source_fields.setdefault("scratchpad", {})
+                    if isinstance(scratch_target, dict):
+                        for k, v in sp.items():
+                            scratch_target[k] = v
+        except Exception:
+            pass
+
         # Include dynamically added attributes that model_dump/model.dict may skip
         try:
             extra_attrs = getattr(source_context, "__dict__", {})

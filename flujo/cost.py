@@ -242,8 +242,20 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
                 )
 
                 mid = _extract_model_id(agent, step_name)
+                # Fallback: if extraction fails but the agent exposes model_id/model, use it directly
+                if not mid:
+                    direct_mid = getattr(agent, "model_id", None) or getattr(agent, "model", None)
+                    if isinstance(direct_mid, str) and direct_mid.strip():
+                        mid = str(direct_mid).strip()
+
                 if mid:
                     prov, mname = _extract_pm(mid)
+                    if prov is None:
+                        # Attempt provider inference for bare model ids to ensure strict pricing surfaces
+                        try:
+                            prov = CostCalculator()._infer_provider_from_model(mname)
+                        except Exception:
+                            prov = None
                     if prov is not None:
                         # Will raise in strict mode when unconfigured
                         _ = flujo.infra.config.get_provider_pricing(prov, mname)

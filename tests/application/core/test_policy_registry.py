@@ -1,4 +1,5 @@
 import pytest
+from typing import Any
 
 from flujo.application.core.factories import ExecutorFactory
 from flujo.application.core.executor_core import ExecutorCore
@@ -22,11 +23,7 @@ class _FactoryPolicy(StepPolicy[DummyStep]):
     def handles_type(self) -> type[DummyStep]:
         return DummyStep
 
-    async def execute(
-        self, _core: ExecutorCore[object], *args: object, **_: object
-    ) -> Success[StepResult]:
-        frame = args[0]
-        assert isinstance(frame, ExecutionFrame)
+    async def execute(self, core: Any, frame: ExecutionFrame[object]) -> Success[StepResult]:
         return Success(step_result=StepResult(name=frame.step.name, success=True, output="factory"))
 
 

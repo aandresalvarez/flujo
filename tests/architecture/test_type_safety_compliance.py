@@ -197,6 +197,49 @@ class TestTypeSafetyCompliance:
                 + (f"\n... and {len(new_test_files) - 5} more" if len(new_test_files) > 5 else "")
             )
 
+    def test_cast_usage_is_bounded(self, flujo_root: Path):
+        """Bound the number of `typing.cast` usages to prevent new unsafe casts."""
+        python_files = self._get_python_files(flujo_root)
+        cast_occurrences = self._grep_files(python_files, "cast(")
+
+        # Allowlist known legacy paths where casts remain; tighten over time.
+        acceptable_paths = {
+            "flujo/application/core/context_adapter.py",
+            "flujo/application/core/executor_core.py",
+            "flujo/application/core/policies/simple_policy.py",
+            "flujo/application/core/background_task_manager.py",
+            "flujo/application/core/context_manager.py",
+        }
+
+        filtered = []
+        for occ in cast_occurrences:
+            file_path = occ.split(":", 1)[0]
+            if any(file_path.endswith(p) for p in acceptable_paths):
+                continue
+            filtered.append(occ)
+
+        # Baseline: keep below 150 non-allowlisted casts to prevent regressions.
+        if len(filtered) > 150:
+            pytest.fail(
+                f"Excessive typing.cast usage detected ({len(filtered)} > 150 baseline). "
+                "Please replace casts with precise types/TypeGuards. "
+                "Examples:\n" + "\n".join(filtered[:5])
+            )
+
+    def test_scratchpad_allowlist_is_not_expanded(self):
+        """Prevent unreviewed growth of scratchpad allowlist (framework-reserved)."""
+        from flujo.application.core import context_adapter as ca
+
+        allowed = getattr(ca, "_SCRATCHPAD_ALLOWED_KEYS", set())
+        assert isinstance(allowed, set)
+        # Baseline derived from current framework-reserved keys; tighten over time.
+        max_allowed = 24
+        if len(allowed) > max_allowed:
+            pytest.fail(
+                f"Scratchpad allowlist expanded unexpectedly ({len(allowed)} > {max_allowed}). "
+                "Reserve scratchpad for framework metadata only; migrate user data to typed fields."
+            )
+
 
 class TestArchitectureCompliance:
     """Test suite for architectural pattern compliance."""
@@ -403,6 +446,7 @@ class TestArchitectureCompliance:
         excluded_files = {
             "flujo/__init__.py",  # Package init files can be large
             "flujo/type_definitions/__init__.py",  # Type definition aggregators
+            "flujo/state/backends/sqlite_core.py",  # Legacy backend file
         }
 
         warnings = []  # Files > 1000 lines

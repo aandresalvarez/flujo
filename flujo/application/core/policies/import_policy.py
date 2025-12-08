@@ -1,7 +1,9 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
-from typing import Type, cast
+from typing import Type, TypeGuard, cast
+from collections.abc import MutableMapping
+from flujo.domain.models import ImportArtifacts
 
 from ._shared import (
     Any,
@@ -113,6 +115,32 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         )
                 except Exception:
                     pass
+
+        # Seed child import artifacts from parent and mirror for legacy scratchpad readers.
+        try:
+            if context is not None and sub_context is not None:
+                parent_artifacts = getattr(context, "import_artifacts", None)
+                if isinstance(parent_artifacts, MutableMapping):
+                    try:
+                        child_artifacts = getattr(sub_context, "import_artifacts", None)
+                        if isinstance(child_artifacts, MutableMapping):
+                            child_artifacts.update(parent_artifacts)
+                        else:
+                            setattr(sub_context, "import_artifacts", parent_artifacts)
+                    except Exception:
+                        pass
+                    try:
+                        child_sp = getattr(sub_context, "scratchpad", None)
+                        if isinstance(child_sp, dict):
+                            for k, v in parent_artifacts.items():
+                                if v is None:
+                                    continue
+                                child_sp.setdefault(k, v)
+                            setattr(sub_context, "scratchpad", child_sp)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
         # Project input into child run and compute the child's initial_input explicitly,
         # honoring explicit inputs over inherited conversation or parent data.
@@ -528,38 +556,129 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         return _NOT_FOUND
                 return cur
 
-            def _get_child(path: str) -> Any:
+            def _get_child(path: str) -> tuple[Any, str] | Any:
                 """Get a value from child context or last step output.
 
                 Returns _NOT_FOUND if the path doesn't exist in either location.
                 Returns the actual value (which may be None) if found.
                 """
                 parts = [p for p in path.split(".") if p]
-                # First: try to get from child's final context (branch_context)
-                result = _traverse_path(child_final_ctx, parts)
-                if result is not _NOT_FOUND:
-                    return result  # Found in context (may be None, that's valid)
-                # Second: check the last step's output if context didn't have the value
-                # This handles tool steps that return {"scratchpad": {...}} as output
-                # but haven't had that output merged into context yet.
+
+                def _is_import_artifacts(obj: object) -> TypeGuard[ImportArtifacts]:
+                    return isinstance(obj, ImportArtifacts)
+
+                def _get_from_artifacts(artifact_path: list[str]) -> Any:
+                    try:
+                        art = getattr(child_final_ctx, "import_artifacts", None)
+                        if _is_import_artifacts(art) and len(artifact_path) == 1:
+                            name = artifact_path[0]
+                            value = getattr(art, name, None)
+                            try:
+                                field = getattr(art.__class__, "model_fields", {}).get(name)
+                                default_val = (
+                                    field.default_factory()
+                                    if field is not None and field.default_factory is not None
+                                    else (field.default if field is not None else None)
+                                )
+                            except Exception:
+                                default_val = None
+                            if value is None or value == default_val:
+                                return _NOT_FOUND
+                            return value
+                        if _is_import_artifacts(art):
+                            return _NOT_FOUND
+                        if isinstance(art, MutableMapping):
+                            cur_art: Any = art
+                            for part in artifact_path:
+                                if isinstance(cur_art, MutableMapping) and part in cur_art:
+                                    cur_art = cur_art[part]
+                                else:
+                                    return _NOT_FOUND
+                            return _NOT_FOUND if cur_art is None else cur_art
+                    except Exception:
+                        pass
+                    return _NOT_FOUND
+
+                inner_candidate = _NOT_FOUND
                 if inner_sr is not None:
                     inner_output = getattr(inner_sr, "output", None)
                     if isinstance(inner_output, dict):
-                        result = _traverse_path(inner_output, parts)
-                        if result is not _NOT_FOUND:
-                            return result  # Found in output (may be None, that's valid)
+                        inner_candidate = _traverse_path(inner_output, parts)
+
+                if parts and parts[0] == "scratchpad":
+                    # Prefer redirected import artifacts when scratchpad keys were migrated.
+                    artifact_value = _get_from_artifacts(parts[1:])
+                    if artifact_value is not _NOT_FOUND:
+                        if artifact_value is not None:
+                            return artifact_value, "artifacts"
+                        # If artifacts contain an explicit None, still fall back to scratchpad in case
+                        # the scratchpad has a concrete value.
+                        result_ctx = _traverse_path(child_final_ctx, parts)
+                        if result_ctx is not _NOT_FOUND:
+                            return result_ctx, "context"
+                        return None, "artifacts"
+
+                # First: try to get from child's final context (branch_context)
+                result = _traverse_path(child_final_ctx, parts)
+                if result is not _NOT_FOUND:
+                    # If context path exists but is empty (not None), prefer richer inner step output.
+                    if (
+                        result in ({}, [])
+                        and inner_candidate is not _NOT_FOUND
+                        and inner_candidate not in ({}, None)
+                    ):
+                        return inner_candidate, "output"
+                    return result, "context"  # Found in context (may be None, that's valid)
+                # Second: check the last step's output if context didn't have the value
+                # This handles tool steps that return {"scratchpad": {...}} as output
+                # but haven't had that output merged into context yet.
+                if inner_candidate is not _NOT_FOUND:
+                    return inner_candidate, "output"  # Found in output (may be None, that's valid)
                 return _NOT_FOUND  # Not found anywhere
 
+            parent_ctx = context
+
             def _assign_parent(path: str, value: Any) -> None:
+                # Route mapped outputs into import_artifacts to avoid scratchpad usage
                 parts = [p for p in path.split(".") if p]
                 if not parts:
                     return
-                tgt = update_data
+                if parts[0] == "scratchpad":
+                    parts = parts[1:]
+                    if not parts:
+                        return
+                tgt = update_data.setdefault("import_artifacts", {})
+                if not tgt and parent_ctx is not None and hasattr(parent_ctx, "import_artifacts"):
+                    pa = getattr(parent_ctx, "import_artifacts", None)
+                    if isinstance(pa, MutableMapping):
+                        try:
+                            tgt.update(dict(pa))
+                        except Exception:
+                            pass
                 for part in parts[:-1]:
                     if part not in tgt or not isinstance(tgt[part], dict):
                         tgt[part] = {}
                     tgt = tgt[part]
-                tgt[parts[-1]] = value
+                normalized = value
+                if isinstance(value, dict):
+                    try:
+                        from flujo.state.backends.base import _serialize_for_json as _normalize_json
+
+                        normalized = _normalize_json(value)
+                    except Exception:
+                        normalized = value
+                tgt[parts[-1]] = normalized
+                if parent_ctx is not None and hasattr(parent_ctx, "import_artifacts"):
+                    pc_artifacts = getattr(parent_ctx, "import_artifacts", None)
+                    if isinstance(pc_artifacts, MutableMapping):
+                        cur = pc_artifacts
+                        for part in parts[:-1]:
+                            nxt = cur.get(part)
+                            if not isinstance(nxt, MutableMapping):
+                                nxt = {}
+                                cur[part] = nxt
+                            cur = nxt
+                        cur[parts[-1]] = normalized
 
             try:
                 for mapping in step.outputs:
@@ -570,7 +689,26 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         # Note: None is a valid value if the path exists
                         if child_val is _NOT_FOUND:
                             continue
-                        _assign_parent(parent_path, child_val)
+                        if isinstance(child_val, tuple):
+                            child_value, source = child_val
+                        else:
+                            child_value, source = child_val, "context"
+
+                        # Preserve explicit None on parent artifacts over non-context outputs.
+                        if (
+                            source == "output"
+                            and parent_ctx is not None
+                            and hasattr(parent_ctx, "import_artifacts")
+                        ):
+                            try:
+                                existing = getattr(parent_ctx.import_artifacts, parent_path, None)
+                                if existing is None:
+                                    _assign_parent(parent_path, None)
+                                    continue
+                            except Exception:
+                                pass
+
+                        _assign_parent(parent_path, child_value)
                     except Exception:
                         continue
                 parent_sr.output = update_data

@@ -11,7 +11,13 @@ from enum import Enum
 from flujo.type_definitions.common import JSONObject
 
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
-from flujo.utils.serialization import safe_serialize
+from flujo.state.backends.base import _serialize_for_json
+
+
+def _serialize(obj: Any) -> Any:
+    """JSON-friendly serialization used by tests (replaces safe_serialize)."""
+    normalized = _serialize_for_json(obj)
+    return json.loads(json.dumps(normalized, ensure_ascii=False))
 
 
 class MockEnum(Enum):
@@ -204,12 +210,8 @@ class TestSerializationProperties:
         }
 
         # Serialize and deserialize
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data = serialize_to_json_robust(serialized)
-        data = json.loads(data)
+        serialized = _serialize(request_data)
+        data = json.loads(json.dumps(serialized))
 
         # Test reconstruction
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -232,12 +234,8 @@ class TestSerializationProperties:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data = serialize_to_json_robust(serialized)
-        data = json.loads(data)
+        serialized = _serialize(request_data)
+        data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]
@@ -261,12 +259,8 @@ class TestSerializationProperties:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data = serialize_to_json_robust(serialized)
-        data = json.loads(data)
+        serialized = _serialize(request_data)
+        data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]
@@ -279,15 +273,15 @@ class TestSerializationProperties:
 
         # Our robust serialization system now handles UUID and Decimal
         # UUID should be serialized as a string
-        result = safe_serialize({"uuid": uuid.uuid4()})
+        result = _serialize({"uuid": uuid.uuid4()})
         assert isinstance(result["uuid"], str)
 
         # Decimal should be serialized as a string
-        result = safe_serialize({"dec": Decimal("1.23")})
+        result = _serialize({"dec": Decimal("1.23")})
         assert isinstance(result["dec"], str)
 
         # datetime is supported, so it should not raise
-        result = safe_serialize({"dt": datetime.now()})
+        result = _serialize({"dt": datetime.now()})
         assert isinstance(result["dt"], str)
 
     @given(model=deeply_nested_model_strategy())
@@ -301,12 +295,8 @@ class TestSerializationProperties:
             "usage_limits": None,
             "stream": False,
         }
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data = serialize_to_json_robust(serialized)
-        data = json.loads(data)
+        serialized = _serialize(request_data)
+        data = json.loads(json.dumps(serialized))
         try:
             reconstructed = self.backend._reconstruct_payload(request_data, data)
             reconstructed_input = reconstructed["input_data"]
@@ -332,12 +322,8 @@ class TestSerializationProperties:
             "usage_limits": None,
             "stream": False,
         }
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data_json = serialize_to_json_robust(serialized)
-        data_json = json.loads(data_json)
+        serialized = _serialize(request_data)
+        data_json = json.loads(json.dumps(serialized))
         try:
             reconstructed = self.backend._reconstruct_payload(request_data, data_json)
             reconstructed_input = reconstructed["input_data"]
@@ -423,12 +409,8 @@ class TestSerializationProperties:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data = serialize_to_json_robust(serialized)
-        data = json.loads(data)
+        serialized = _serialize(request_data)
+        data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]
@@ -476,12 +458,8 @@ class TestSerializationProperties:
             "stream": boolean_values[0],
         }
 
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data = serialize_to_json_robust(serialized)
-        data = json.loads(data)
+        serialized = _serialize(request_data)
+        data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]
@@ -535,12 +513,8 @@ class TestSerializationProperties:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data = serialize_to_json_robust(serialized)
-        data = json.loads(data)
+        serialized = _serialize(request_data)
+        data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]
@@ -582,12 +556,8 @@ class TestSerializationProperties:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data = serialize_to_json_robust(serialized)
-        data = json.loads(data)
+        serialized = _serialize(request_data)
+        data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]

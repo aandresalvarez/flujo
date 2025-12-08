@@ -1,9 +1,20 @@
-from typing import Optional, List, Any, Callable, Dict, Union, get_args, get_origin
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TypeGuard,
+    Union,
+    get_args,
+    get_origin,
+)
 import copy
 import inspect
 import os
 import weakref
 import types
+import logging
 from pydantic import BaseModel
 from ...utils.context import safe_merge_context_updates
 from ...exceptions import ContextMutationError
@@ -31,6 +42,25 @@ class ContextManager:
 
     # Module-level flag for strict context mutation detection (Phase 1)
     ENFORCE_ISOLATION: bool = os.environ.get("FLUJO_STRICT_CONTEXT", "0") == "1"
+
+    @staticmethod
+    def _is_base_model(obj: object) -> TypeGuard[BaseModel]:
+        return isinstance(obj, BaseModel)
+
+    @staticmethod
+    def _is_mock_context(obj: object) -> bool:
+        try:
+            from unittest.mock import Mock, MagicMock
+
+            try:
+                from unittest.mock import AsyncMock as _AsyncMock
+
+                _mock_types: tuple[type[Any], ...] = (Mock, MagicMock, _AsyncMock)
+            except Exception:
+                _mock_types = (Mock, MagicMock)
+            return isinstance(obj, _mock_types)
+        except Exception:
+            return False
 
     class ContextIsolationError(Exception):
         """Raised when context isolation fails under strict settings."""
@@ -104,21 +134,8 @@ class ContextManager:
         if context is None:
             return None
         # Fast path: skip isolation for unittest.mock contexts used in performance tests
-        try:
-            from unittest.mock import Mock, MagicMock
-
-            try:
-                from unittest.mock import AsyncMock as _AsyncMock
-
-                _mock_types: tuple[type[Any], ...] = (Mock, MagicMock, _AsyncMock)
-            except Exception:
-                _mock_types = (Mock, MagicMock)
-            if isinstance(context, _mock_types):
-                from typing import cast
-
-                return cast(Optional[BaseModel], context)
-        except Exception:
-            pass
+        if ContextManager._is_mock_context(context):
+            return context
         # Selective isolation: include only specified keys if requested
         if include_keys:
             try:
@@ -186,23 +203,14 @@ class ContextManager:
                 except Exception:
                     pass
         # Use pydantic's deep copy when available; otherwise fall back safely
-        if isinstance(context, BaseModel):
-            from typing import cast
-
+        if ContextManager._is_base_model(context):
             try:
-                return cast(Optional[BaseModel], context.model_copy(deep=True))
+                return context.model_copy(deep=True)
             except Exception:
-                # Fall through to deepcopy
+                # Fall through to generic clone
                 pass
 
-        try:
-            return copy.deepcopy(context)
-        except Exception:
-            # As a last resort, attempt a shallow copy; if that fails, return original reference
-            try:
-                return copy.copy(context)
-            except Exception:
-                return context
+        return _clone_context(context)
 
     @staticmethod
     def isolate_strict(
@@ -252,24 +260,12 @@ class ContextManager:
     def _isolate_strict_impl(
         context: Optional[BaseModel], include_keys: Optional[List[str]] = None
     ) -> Optional[BaseModel]:
+        last_error: Exception | None = None
         if context is None:
             return None
         # Allow mocks without isolation for performance tests
-        try:
-            from unittest.mock import Mock as _Mock, MagicMock as _MagicMock
-
-            try:
-                from unittest.mock import AsyncMock as _AsyncMock
-
-                _mock_types: tuple[type[Any], ...] = (_Mock, _MagicMock, _AsyncMock)
-            except Exception:
-                _mock_types = (_Mock, _MagicMock)
-            if isinstance(context, _mock_types):
-                from typing import cast
-
-                return cast(Optional[BaseModel], context)
-        except Exception:
-            pass
+        if ContextManager._is_mock_context(context):
+            return context
 
         # Selective isolation if keys provided (reuse non-strict which is safe)
         if include_keys:
@@ -280,7 +276,7 @@ class ContextManager:
 
         # Pydantic deep copy preferred
         try:
-            if isinstance(context, BaseModel):
+            if ContextManager._is_base_model(context):
                 isolated = context.model_copy(deep=True)
                 # Deep-copy scratchpad when possible
                 if hasattr(isolated, "scratchpad") and hasattr(context, "scratchpad"):
@@ -291,21 +287,24 @@ class ContextManager:
                         setattr(isolated, "scratchpad", getattr(context, "scratchpad"))
                 return isolated
         except Exception as e:
-            # Fallthrough to deepcopy
             last_error = e
-        else:
-            last_error = None
 
         try:
-            return copy.deepcopy(context)
+            cloned = _clone_context(context)
+            if cloned is None:
+                raise ContextManager.ContextIsolationError(
+                    f"Deep isolation returned None for context type {type(context).__name__}"
+                )
+            if cloned is context:
+                raise ContextManager.ContextIsolationError(
+                    f"Strict isolation fell back to shared reference for context type "
+                    f"{type(context).__name__}"
+                )
+            return cloned
         except Exception as e:
             raise ContextManager.ContextIsolationError(
                 f"Deep isolation failed for context type {type(context).__name__}: {e or last_error}"
             ) from e
-        except Exception:
-            from typing import cast
-
-            return cast(Optional[BaseModel], copy.deepcopy(context))
 
     @staticmethod
     def verify_isolation(
@@ -461,13 +460,11 @@ class ContextManager:
             raise ContextManager.ContextMergeError(f"Manual context merge failed: {e}") from e
 
 
-# Cache for parameter acceptance checks
+# Cache for parameter acceptance checks. We only cache weak-ref-able callables to avoid
+# id()-based collisions when Python reuses memory addresses after garbage collection.
 _accepts_param_cache_weak: weakref.WeakKeyDictionary[
     Callable[..., Any], Dict[str, Optional[bool]]
 ] = weakref.WeakKeyDictionary()
-_accepts_param_cache_id: weakref.WeakValueDictionary[int, Dict[str, Optional[bool]]] = (
-    weakref.WeakValueDictionary()
-)
 
 
 def _get_validation_flags(step: Any) -> tuple[bool, bool]:
@@ -494,10 +491,12 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
     """Return True if callable's signature includes ``param`` or ``**kwargs``."""
     try:
         cache = _accepts_param_cache_weak.setdefault(func, {})
-    except TypeError:  # For unhashable callables
-        func_id = id(func)
-        cache = _accepts_param_cache_id.setdefault(func_id, {})
-    if param in cache:
+    except TypeError:
+        # Unhashable / non-weakref-able callables (e.g., bound methods) are not cached to
+        # avoid id()-based collisions when memory addresses are reused.
+        cache = None
+
+    if cache is not None and param in cache:
         return cache[param]
 
     try:
@@ -533,7 +532,8 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
     except (TypeError, ValueError):
         result = None
 
-    cache[param] = result
+    if cache is not None:
+        cache[param] = result
     return result
 
 
@@ -570,6 +570,56 @@ def _should_pass_context(spec: Any, context: Optional[Any], func: Callable[..., 
     # bool(accepts_context) verifies if the function can dynamically accept the context parameter.
     accepts_context = _accepts_param(func, "context")
     return spec.needs_context or (context is not None and bool(accepts_context))
+
+
+def _clone_context(obj: Optional[BaseModel]) -> Optional[BaseModel]:
+    """Efficient deep clone favoring Pydantic's model_copy over stdlib deepcopy."""
+    log = logging.getLogger("flujo.context")
+    if obj is None:
+        return None
+    if isinstance(obj, BaseModel):
+        # Try fastest safe path
+        try:
+            return obj.model_copy(deep=True)
+        except Exception:
+            pass
+        # Field-wise deepcopy with skip-on-failure to avoid shared mutable resources
+        try:
+            data: dict[str, Any] = {}
+            for name in getattr(obj, "model_fields", {}):
+                val = getattr(obj, name, None)
+                try:
+                    data[name] = copy.deepcopy(val)
+                except Exception as exc:
+                    # Skip non-copyable field so default_factory/default can populate during validate
+                    log.debug(
+                        "Context isolation skipped non-copyable field %s on %s: %s",
+                        name,
+                        type(obj).__name__,
+                        exc,
+                    )
+                    continue
+            return type(obj).model_validate(data)
+        except Exception:
+            pass
+    try:
+        return copy.deepcopy(obj)
+    except Exception:
+        # Shallow copy as a last resort; log to surface potential shared-state risk.
+        try:
+            cloned = copy.copy(obj)
+            if cloned is obj:
+                log.warning(
+                    "Context isolation fallback returned original object; potential shared state risk",
+                    extra={"context_type": type(obj).__name__},
+                )
+            return cloned
+        except Exception:
+            log.warning(
+                "Context isolation failed to copy object; returning original (shared) reference",
+                extra={"context_type": type(obj).__name__},
+            )
+            return obj
 
 
 def _types_compatible(a: Any, b: Any) -> bool:

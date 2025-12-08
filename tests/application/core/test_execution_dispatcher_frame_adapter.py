@@ -28,30 +28,6 @@ class _NewStylePolicy(StepPolicy[Step[Any, Any]]):
         return Success(step_result=StepResult(name=frame.step.name, success=True))
 
 
-class _LegacyPolicy(StepPolicy[Step[Any, Any]]):
-    @property
-    def handles_type(self) -> type[Step[Any, Any]]:
-        return Step
-
-    async def execute(
-        self,
-        core: _DummyCore,
-        step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
-        limits: Any,
-        stream: bool,
-        on_chunk: Any,
-        cache_key: Any,
-        _fallback_depth: int = 0,
-    ) -> StepOutcome[Any]:
-        core.calls.append(
-            ("legacy", step.name, data, stream, cache_key, _fallback_depth, on_chunk is None)
-        )
-        return Success(step_result=StepResult(name=step.name, success=True))
-
-
 def _make_frame(name: str, *, fallback_depth: int = 0) -> ExecutionFrame[Any]:
     step = Step(name=name, agent=None)
     frame = ExecutionFrame(
@@ -84,15 +60,20 @@ async def test_dispatcher_prefers_frame_signature_when_available() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_adapts_frame_to_legacy_signature() -> None:
+async def test_dispatcher_rejects_legacy_signature() -> None:
+    class _LegacyPolicy(StepPolicy[Step[Any, Any]]):
+        @property
+        def handles_type(self) -> type[Step[Any, Any]]:
+            return Step
+
+        async def execute(self, core: _DummyCore, *args: Any, **kwargs: Any) -> StepOutcome[Any]:
+            return Success(step_result=StepResult(name="legacy", success=True))
+
     registry = PolicyRegistry()
-    policy = _LegacyPolicy()
-    registry.register(Step, policy)
+    registry.register(Step, _LegacyPolicy())
     core = _DummyCore()
     dispatcher = ExecutionDispatcher(registry, core=core)
 
     frame = _make_frame("legacy-policy", fallback_depth=2)
-    outcome = await dispatcher.dispatch(frame)
-
-    assert isinstance(outcome, Success)
-    assert core.calls == [("legacy", "legacy-policy", "data:legacy-policy", False, None, 2, True)]
+    with pytest.raises(TypeError):
+        await dispatcher.dispatch(frame)

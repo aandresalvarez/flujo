@@ -25,6 +25,7 @@ from ._shared import (
     to_outcome,
 )
 from ..executor_helpers import make_execution_frame
+from ..context_vars import _CACHE_OVERRIDE
 from flujo.exceptions import PipelineAbortSignal
 from .loop_hitl_orchestrator import clear_hitl_markers, propagate_pause_state
 from .loop_history import (
@@ -249,15 +250,13 @@ async def run_loop_iterations(
                                 pass
                 except Exception:
                     pass
-                prev_cache_enabled = bool(getattr(core, "_enable_cache", True))
+                token = _CACHE_OVERRIDE.set(False)
                 try:
-                    # Disable cache within loop iterations to avoid reusing stale results
-                    setattr(core, "_enable_cache", False)
                     pipeline_result: PipelineResult[Any] = await core._execute_pipeline(
                         body_pipeline, current_data, iteration_context, resources, limits, stream
                     )
                 finally:
-                    setattr(core, "_enable_cache", prev_cache_enabled)
+                    _CACHE_OVERRIDE.reset(token)
                 try:
                     scratch = getattr(iteration_context, "scratchpad", None)
                     if isinstance(scratch, dict):
@@ -662,6 +661,12 @@ async def run_loop_iterations(
                 telemetry.logfire.warning(
                     f"LoopStep '{loop_step.name}' merge of iteration_context failed: {e}"
                 )
+
+        # Ensure loop exit condition is re-evaluated with the latest context flags
+        if getattr(iteration_context, "is_complete", False) and hasattr(
+            current_context, "is_complete"
+        ):
+            current_context.is_complete = True
         sync_conversation_history(
             current_context=current_context,
             iteration_context=iteration_context,

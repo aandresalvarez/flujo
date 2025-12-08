@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Optional, cast, Callable, Awaitable, TypeVar, Union
+from typing import Any, Optional, Callable, Awaitable, TypeVar, Union, TypeGuard, cast
 
 from pydantic import BaseModel
 
@@ -11,7 +11,7 @@ from ...domain.models import UsageLimits, Quota
 from ...domain.sandbox import SandboxProtocol
 from .default_cache_components import OrjsonSerializer, Blake3Hasher
 from .context_manager import ContextManager
-from .types import ExecutionFrame
+from .types import ContextWithScratchpad, ExecutionFrame
 from ...steps.cache_step import CacheStep
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.parallel import ParallelStep
@@ -29,10 +29,14 @@ from ...exceptions import (
 from ...domain.models import PipelineResult, StepResult, StepOutcome, Failure, Success
 from ...infra.settings import get_settings
 from .failure_builder import build_failure_outcome
+from .context_vars import _CACHE_OVERRIDE
+
+__all__ = ["_CACHE_OVERRIDE"]  # Re-export for backward compatibility
 
 Outcome = Union[StepOutcome[StepResult], StepResult]
 
 TContext = TypeVar("TContext")
+TCtx = TypeVar("TCtx", bound=ContextWithScratchpad)
 
 
 # Backward-compatible error types used by other modules
@@ -161,6 +165,25 @@ def enforce_typed_context(context: Any) -> Any:
         return context
 
     raise TypeError("Context must be a Pydantic BaseModel when FLUJO_ENFORCE_TYPED_CONTEXT=1.")
+
+
+def _is_context_with_scratchpad(obj: object) -> TypeGuard[ContextWithScratchpad]:
+    """Narrow to contexts that expose scratchpad/branch bookkeeping."""
+    if not isinstance(obj, BaseModel):
+        return False
+    # Protocol guard: scratchpad + executed_branches must exist
+    return hasattr(obj, "scratchpad") and hasattr(obj, "executed_branches")
+
+
+def _coerce_context_with_scratchpad(
+    context: Optional[TCtx],
+) -> Optional[TCtx]:
+    """Validate and narrow incoming contexts to the scratchpad-bearing protocol."""
+    if context is None:
+        return None
+    if _is_context_with_scratchpad(context):
+        return cast(TCtx, context)
+    raise TypeError("Context must provide scratchpad and executed_branches for execution.")
 
 
 def attach_sandbox_to_context(context: Any, sandbox: SandboxProtocol | None) -> None:
@@ -660,55 +683,57 @@ async def execute_step_compat(
     )
 
 
-def isolate_context(context: Optional[Any], *, strict_context_isolation: bool) -> Optional[Any]:
-    """Isolate context using ContextManager with strict toggle."""
-    if context is None:
+def isolate_context(context: Optional[TCtx], *, strict_context_isolation: bool) -> Optional[TCtx]:
+    """Isolate context using ContextManager with strict toggle (typed)."""
+    ctx_model = _coerce_context_with_scratchpad(context)
+    if ctx_model is None:
         return None
     if strict_context_isolation:
-        isolated = ContextManager.isolate_strict(cast(Optional[BaseModel], context))
+        isolated = ContextManager.isolate_strict(cast(BaseModel, ctx_model))
     else:
-        isolated = ContextManager.isolate(cast(Optional[BaseModel], context))
-    return cast(Optional[Any], isolated)
+        isolated = ContextManager.isolate(cast(BaseModel, ctx_model))
+    return cast(Optional[TCtx], isolated)
 
 
 def merge_context_updates(
-    main_context: Optional[Any],
-    branch_context: Optional[Any],
+    main_context: Optional[TCtx],
+    branch_context: Optional[TCtx],
     *,
     strict_context_merge: bool,
-) -> Optional[Any]:
-    """Merge two contexts using ContextManager with strict toggle."""
+) -> Optional[TCtx]:
+    """Merge two contexts using ContextManager with strict toggle (typed)."""
     if main_context is None and branch_context is None:
         return None
     if main_context is None:
-        return branch_context
+        return _coerce_context_with_scratchpad(branch_context)
     if branch_context is None:
-        return main_context
+        return _coerce_context_with_scratchpad(main_context)
+
+    main_ctx = _coerce_context_with_scratchpad(main_context)
+    branch_ctx = _coerce_context_with_scratchpad(branch_context)
 
     if strict_context_merge:
         merged = ContextManager.merge_strict(
-            cast(Optional[BaseModel], main_context),
-            cast(Optional[BaseModel], branch_context),
+            cast(Optional[BaseModel], main_ctx), cast(Optional[BaseModel], branch_ctx)
         )
     else:
         merged = ContextManager.merge(
-            cast(Optional[BaseModel], main_context),
-            cast(Optional[BaseModel], branch_context),
+            cast(Optional[BaseModel], main_ctx), cast(Optional[BaseModel], branch_ctx)
         )
-    return cast(Optional[Any], merged)
+    return cast(Optional[TCtx], merged)
 
 
 def accumulate_loop_context(
-    current_context: Optional[Any],
-    iteration_context: Optional[Any],
+    current_context: Optional[TCtx],
+    iteration_context: Optional[TCtx],
     *,
     strict_context_merge: bool,
-) -> Optional[Any]:
+) -> Optional[TCtx]:
     """Merge loop iteration context into current context."""
     if current_context is None:
-        return iteration_context
+        return _coerce_context_with_scratchpad(iteration_context)
     if iteration_context is None:
-        return current_context
+        return _coerce_context_with_scratchpad(current_context)
     return merge_context_updates(
         current_context, iteration_context, strict_context_merge=strict_context_merge
     )

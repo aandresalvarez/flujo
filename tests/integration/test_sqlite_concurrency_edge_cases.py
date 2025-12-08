@@ -8,12 +8,65 @@ from pathlib import Path
 import pytest
 
 from flujo.state.backends.sqlite import SQLiteBackend
+from flujo.type_definitions.common import JSONObject
 
 pytestmark = [pytest.mark.serial, pytest.mark.slow]
 
 
 class TestSQLiteConcurrencyEdgeCases:
     """Tests for SQLiteBackend concurrency edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_sqlite_backend_multithreaded_access(self, tmp_path: Path) -> None:
+        """Ensure shared backend works across distinct event loops/threads."""
+
+        backend = SQLiteBackend(tmp_path / "shared.db")
+        await backend._ensure_init()
+
+        errors: list[BaseException] = []
+
+        def run_in_thread(run_id: str, idx: int) -> JSONObject | None:
+            async def _worker() -> JSONObject:
+                state: JSONObject = {
+                    "run_id": run_id,
+                    "pipeline_id": "pipe",
+                    "pipeline_name": "Pipe",
+                    "pipeline_version": "v1",
+                    "current_step_index": idx,
+                    "pipeline_context": {"idx": idx},
+                    "last_step_output": f"out-{idx}",
+                    "step_history": [],
+                    "status": "running",
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                    "total_steps": 1,
+                    "error_message": None,
+                    "execution_time_ms": 0,
+                    "memory_usage_mb": 0.0,
+                }
+                await backend.save_state(run_id, state)
+                loaded = await backend.load_state(run_id)
+                assert loaded is not None
+                return loaded
+
+            try:
+                return asyncio.run(_worker())
+            except BaseException as exc:
+                errors.append(exc)
+                return None
+
+        try:
+            thread_tasks = [
+                asyncio.to_thread(run_in_thread, "run-a", 1),
+                asyncio.to_thread(run_in_thread, "run-b", 2),
+            ]
+            results = await asyncio.gather(*thread_tasks)
+        finally:
+            await backend.shutdown()
+
+        assert not errors, f"Unexpected errors during multithreaded access: {errors}"
+        run_ids = {result["run_id"] for result in results if result is not None}
+        assert run_ids == {"run-a", "run-b"}
 
     @pytest.mark.asyncio
     async def test_concurrent_backup_operations(

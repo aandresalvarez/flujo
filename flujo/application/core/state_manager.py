@@ -3,11 +3,12 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timezone
-from typing import Any, Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
+from typing import Any, Generic, Optional, TypeVar, Tuple, TYPE_CHECKING, cast
 
 from flujo.domain.models import StepResult, BaseModel, PipelineResult
 from flujo.infra import telemetry
 from flujo.state.backends import StateBackend
+from flujo.state.backends.base import _serialize_for_json
 from flujo.state.models import WorkflowState
 from .state_serializer import StateSerializer
 from flujo.type_definitions.common import JSONObject
@@ -298,8 +299,9 @@ class StateManager(Generic[ContextT]):
                 )
 
         # Serialize step history with error handling
-        # Use minimal representation to avoid expensive deep serialization on large runs
-        serialized_step_history = self._serializer.serialize_step_history_minimal(step_history)
+        # Persist full history for correctness (tests rely on exact entries); callers can
+        # choose the optimized path when they want minimal snapshots.
+        serialized_step_history = self._serializer.serialize_step_history_full(step_history)
         metadata_dict: JSONObject = metadata or {}
 
         state_data = {
@@ -325,7 +327,8 @@ class StateManager(Generic[ContextT]):
             "background_error": metadata_dict.get("background_error"),
         }
 
-        await self.state_backend.save_state(run_id, state_data)
+        normalized_state = cast(dict[str, Any], _serialize_for_json(state_data))
+        await self.state_backend.save_state(run_id, normalized_state)
 
     async def persist_workflow_state_optimized(
         self,
@@ -378,7 +381,8 @@ class StateManager(Generic[ContextT]):
 
         # Keep step_history: include minimal entries when provided (for crash recovery), else empty list
         if step_history:
-            serialized_step_history = self._serializer.serialize_step_history_minimal(step_history)
+            # Persist full history so resumptions/tests can reconstruct prior steps.
+            serialized_step_history = self._serializer.serialize_step_history_full(step_history)
         else:
             serialized_step_history = []
 
@@ -412,7 +416,8 @@ class StateManager(Generic[ContextT]):
 
         # OPTIMIZATION: Use async persistence to avoid blocking
         try:
-            await self.state_backend.save_state(run_id, state_data)
+            normalized_state = cast(dict[str, Any], _serialize_for_json(state_data))
+            await self.state_backend.save_state(run_id, normalized_state)
         except Exception as e:
             logger.warning(f"Failed to persist state for run {run_id}: {e}")
             # Don't raise - persistence failure shouldn't break execution
@@ -538,18 +543,18 @@ class StateManager(Generic[ContextT]):
             return
         try:
             if not test_mode:
+                end_payload = {
+                    "status": "completed"
+                    if all(s.success for s in result.step_history)
+                    else "failed",
+                    "end_time": datetime.now(timezone.utc),
+                    "total_cost": result.total_cost_usd,
+                    "final_context": result.final_pipeline_context.model_dump()
+                    if result.final_pipeline_context
+                    else None,
+                }
                 await self.state_backend.save_run_end(
-                    run_id,
-                    {
-                        "status": "completed"
-                        if all(s.success for s in result.step_history)
-                        else "failed",
-                        "end_time": datetime.now(timezone.utc),
-                        "total_cost": result.total_cost_usd,
-                        "final_context": result.final_pipeline_context.model_dump()
-                        if result.final_pipeline_context
-                        else None,
-                    },
+                    run_id, cast(dict[str, Any], _serialize_for_json(end_payload))
                 )
             try:
                 from ...infra.audit import log_audit as _audit
@@ -626,9 +631,7 @@ class StateManager(Generic[ContextT]):
             # Some backends may not implement record_run_end; ignore if so.
             pass
         except Exception as exc:
-            telemetry.logfire.debug(
-                f"Non-fatal error in record_run_end for {run_id}: {exc}"
-            )
+            telemetry.logfire.debug(f"Non-fatal error in record_run_end for {run_id}: {exc}")
 
     async def persist_evaluation(
         self,

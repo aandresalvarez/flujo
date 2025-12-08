@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional, TypeVar, Set
+import re
 import hashlib
 import json
 import logging
@@ -198,7 +199,11 @@ def _serialize_for_cache_key(
                     hash(obj)
                 except Exception:
                     return f"<unserializable: {type(obj).__name__}>"
-            return str(obj)
+            rep = str(obj)
+            # Avoid memory-address-bearing reprs that thrash cache keys
+            if re.search(r"<[^>]+ at 0x[0-9a-fA-F]+>", rep):
+                return f"<unstable_repr:{type(obj).__name__}>"
+            return rep
         except Exception:
             return f"<unserializable: {type(obj).__name__}>"
 
@@ -210,14 +215,29 @@ def _sort_set_deterministically(
     obj_set: set[Any] | frozenset[Any], visited: Optional[Set[int]] = None
 ) -> list[Any]:
     """Sort a set or frozenset deterministically for cache key generation using unified serialization."""
-    from flujo.utils.serialization import safe_serialize
-
     if visited is None:
         visited = set()
 
+    def _serialize(obj: Any) -> Any:
+        try:
+            from pydantic import BaseModel as _BM
+
+            if isinstance(obj, _BM):
+                return obj.model_dump(mode="json")
+        except Exception:
+            pass
+        try:
+            import dataclasses as _dc
+
+            if _dc.is_dataclass(obj) and not isinstance(obj, type):
+                return _dc.asdict(obj)
+        except Exception:
+            pass
+        return obj
+
     try:
         # Try to sort by a stable representation using unified serialization
-        return sorted(obj_set, key=lambda x: str(safe_serialize(x, mode="cache")))
+        return sorted(obj_set, key=lambda x: str(_serialize(x)))
     except (TypeError, ValueError):
         # Fallback: convert to string representation and sort
         return sorted(obj_set, key=lambda x: str(x))

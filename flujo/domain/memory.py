@@ -64,7 +64,14 @@ def _cosine_similarity(lhs: Sequence[float], rhs: Sequence[float]) -> float:
 
 
 def _assign_id(record: MemoryRecord) -> MemoryRecord:
-    """Ensure the record has an identifier."""
+    """Ensure the record has an identifier.
+
+    Notes:
+    - If the caller supplies an id, it is preserved and will upsert on stores that
+      use ON CONFLICT(id) semantics (e.g., Postgres vector). Supplying your own id
+      therefore implies "replace/update this record".
+    - If no id is provided, a UUID is assigned to avoid collisions across runs.
+    """
 
     if record.id is None or record.id == "":
         record.id = uuid.uuid4().hex

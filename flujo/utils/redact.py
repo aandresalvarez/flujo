@@ -42,6 +42,9 @@ def summarize_and_redact_prompt(
         if secret:
             text = redact_string(text, secret)
 
+    # Generic fallback for obvious API-key patterns when explicit settings are unavailable.
+    text = re.sub(r"sk-[A-Za-z0-9_-]{5,}", "[REDACTED]", text)
+
     if len(text) > max_length:
         text = text[: max_length - 3] + "..."
 

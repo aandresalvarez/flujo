@@ -92,3 +92,30 @@ async def test_docker_sandbox_rejects_non_python() -> None:
 
     assert result.exit_code == 1
     assert "Unsupported language" in (result.error or "")
+
+
+@pytest.mark.asyncio
+async def test_docker_sandbox_cleanup_on_cancellation() -> None:
+    """Container should be removed even when execution is cancelled."""
+
+    class BlockingContainer(_FakeContainer):
+        def wait(self) -> dict[str, int]:
+            import time
+
+            time.sleep(1.0)  # Block long enough for cancellation
+            return {"StatusCode": 137}
+
+    container = BlockingContainer()
+    client = _FakeClient(container=container)
+    sandbox = DockerSandbox(client=client, image="python:3.11-slim", pull=False, timeout_s=5)
+
+    task = asyncio.create_task(
+        sandbox.exec_code(SandboxExecution(code="print('hi')", language="python"))
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert container.killed is True
+    assert container.removed is True

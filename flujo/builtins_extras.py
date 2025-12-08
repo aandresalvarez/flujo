@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Optional, cast
 
 from flujo.domain.models import BaseModel as DomainBaseModel
+from flujo.infra.jinja_utils import create_jinja_environment
 from flujo.infra.skill_models import SkillRegistration
 from flujo.infra.skill_registry import get_skill_registry
 from flujo.type_definitions.common import JSONObject
@@ -69,11 +70,11 @@ def _resolve_sandbox(context: DomainBaseModel | None) -> SandboxProtocol:
 
 
 async def render_jinja_template(template: str, variables: JSONObject | None = None) -> str:
-    """Render a Jinja2 template string with provided variables."""
+    """Render a Jinja2 template string with provided variables using sandboxing."""
     if _jinja2 is None:
         return template
     try:
-        env = _jinja2.Environment(undefined=_jinja2.StrictUndefined, autoescape=False)
+        env = create_jinja_environment(_jinja2)
         tmpl = env.from_string(template)
         return str(tmpl.render(**(variables or {})))
     except Exception:
@@ -348,13 +349,39 @@ def _register_builtins() -> None:
             restore: dict[str, dict[str, Any]] = {}
             mutated = False
             # Identify and (optionally) mock side-effect skills referenced in YAML
+            referenced_side_ids: list[str] = []
             if sandbox:
+                side_ids: list[str] = []
+                _find: Callable[[str], list[str]] | None = None
                 try:
                     from flujo.cli.helpers import find_side_effect_skills_in_yaml as _find
-
+                except ImportError:
+                    _find = None
+                if _find is not None:
                     side_ids = _find(yaml_text)
-                except Exception:
-                    side_ids = []
+                    referenced_side_ids = list(side_ids)
+                # If no side-effect skills were detected, fall back to all registered
+                # side-effect skills to ensure mocking in dry-run.
+                if not side_ids:
+                    entries = getattr(reg_local, "_entries", {})
+                    if isinstance(entries, dict):
+                        for scoped in entries.values():
+                            if not isinstance(scoped, dict):
+                                continue
+                            for sid, versions in scoped.items():
+                                if not isinstance(versions, dict):
+                                    continue
+                                entry_latest = versions.get("latest")
+                                if isinstance(entry_latest, dict) and entry_latest.get(
+                                    "side_effects"
+                                ):
+                                    side_ids.append(sid)
+                # Heuristic: if YAML references fs_write_file explicitly, always mock it
+                if "flujo.builtins.fs_write_file" in yaml_text:
+                    if "flujo.builtins.fs_write_file" not in side_ids:
+                        side_ids.append("flujo.builtins.fs_write_file")
+                    if "flujo.builtins.fs_write_file" not in referenced_side_ids:
+                        referenced_side_ids.append("flujo.builtins.fs_write_file")
             else:
                 side_ids = []
             try:
@@ -363,7 +390,14 @@ def _register_builtins() -> None:
                         entry = reg_local.get(sid)
                         if not entry:
                             continue
-                        restore[sid] = dict(entry)
+                        # Capture scoped/latest entry for proper restore
+                        versions = (
+                            getattr(reg_local, "_entries", {}).get("default", {}).get(sid, {})
+                        )
+                        original_latest = (
+                            versions.get("latest") if isinstance(versions, dict) else None
+                        )
+                        restore[sid] = {"scope": "default", "latest": original_latest}
 
                         def _make_factory(
                             _sid: str,
@@ -386,14 +420,18 @@ def _register_builtins() -> None:
                     return execute_pipeline_with_output_handling(runner, input_text, None, False)
 
                 result = await _asyncio.to_thread(_run_sync)
+                # Do not clobber outputs; optional decoration could be added per-step if needed.
                 return {"dry_run_result": result}
             finally:
                 if mutated:
-                    try:
-                        for sid, entry in restore.items():
-                            reg_local._entries[sid] = entry
-                    except Exception:
-                        pass
+                    for sid, snapshot in restore.items():
+                        versions = (
+                            getattr(reg_local, "_entries", {})
+                            .get(snapshot.get("scope", "default"), {})
+                            .get(sid)
+                        )
+                        if isinstance(versions, dict):
+                            versions["latest"] = snapshot.get("latest")
 
         reg.register(
             "flujo.builtins.run_pipeline_in_memory",

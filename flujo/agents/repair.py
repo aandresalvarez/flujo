@@ -17,7 +17,7 @@ import re
 from typing import Any, Final
 
 
-from ..utils.serialization import safe_serialize, safe_deserialize
+from ..utils.serialization import safe_deserialize
 
 # Import needed modules (avoiding circular imports)
 from typing import TYPE_CHECKING
@@ -118,8 +118,25 @@ class DeterministicRepairProcessor:
     def _canonical(data: Any) -> str:
         """Serialize ``data`` to canonical JSON string form."""
         obj = data if not isinstance(data, str) else safe_deserialize(json.loads(data))
-        # Use enhanced serialization for better handling of complex objects
-        serialized = safe_serialize(obj)
+
+        def _serialize(obj: Any) -> Any:
+            try:
+                from pydantic import BaseModel as _BM
+
+                if isinstance(obj, _BM):
+                    return obj.model_dump(mode="json")
+            except Exception:
+                pass
+            try:
+                import dataclasses as _dc
+
+                if _dc.is_dataclass(obj) and not isinstance(obj, type):
+                    return _dc.asdict(obj)
+            except Exception:
+                pass
+            return obj
+
+        serialized = _serialize(obj)
         return json.dumps(serialized, ensure_ascii=False, separators=(",", ":"))
 
     @classmethod

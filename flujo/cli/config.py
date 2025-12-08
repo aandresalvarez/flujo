@@ -22,7 +22,7 @@ import tempfile
 from .helpers import print_rich_or_typer
 
 
-def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
+def _normalize_sqlite_path(uri: str, cwd: Path, *, config_dir: Path | None = None) -> Path:
     """
     Normalize a SQLite URI path to an absolute or relative Path.
 
@@ -32,6 +32,7 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
     """
 
     parsed = urlparse(uri)
+    base_dir = config_dir if config_dir is not None else cwd
     # Case 1: Non-standard sqlite://{db_path} (netloc present, path empty)
     if parsed.netloc and not parsed.path:
         logging.warning(
@@ -48,7 +49,7 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
             pass
         if path_str.startswith("/"):
             return Path(path_str).resolve()
-        return (cwd / path_str).resolve()
+        return (base_dir / path_str).resolve()
     # Case 2: Standard sqlite:///foo.db (netloc empty, path present)
     elif not parsed.netloc and parsed.path:
         path_str = parsed.path
@@ -65,7 +66,7 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
             pass
         # Otherwise treat as relative to cwd
         rel_path = path_str[1:] if path_str.startswith("/") else path_str
-        return (cwd / rel_path).resolve()
+        return (base_dir / rel_path).resolve()
     # Case 3: netloc and path both present (rare, but possible)
     elif parsed.netloc:
         path_str = (
@@ -86,7 +87,7 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
             pass
         # Otherwise, treat as relative
         rel_path = path_str[1:] if path_str.startswith("/") else path_str
-        return (cwd / rel_path).resolve()
+        return (base_dir / rel_path).resolve()
     else:
         # Fallback: treat as relative, but guard against empty path (e.g., sqlite://)
         path_str = parsed.path
@@ -95,7 +96,7 @@ def _normalize_sqlite_path(uri: str, cwd: Path) -> Path:
                 "Malformed SQLite URI: empty path. Use 'sqlite:///file.db' or 'sqlite:////abs/path.db'."
             )
         rel_path = path_str[1:] if path_str.startswith("/") else path_str
-        resolved = (cwd / rel_path).resolve()
+        resolved = (base_dir / rel_path).resolve()
         return resolved
 
 
@@ -216,6 +217,14 @@ def load_backend_from_config() -> StateBackend:
             uri = "sqlite:///flujo_ops.db"
 
     parsed = urlparse(uri)
+    config_path = None
+    try:
+        cfg_mgr = get_config_manager(force_reload=False)
+        config_path = getattr(cfg_mgr, "config_path", None)
+    except Exception:
+        config_path = None
+    config_dir = config_path.parent if config_path is not None else Path.cwd()
+
     if parsed.scheme.lower() in {"postgres", "postgresql"}:
         # Guard: Check if asyncpg is available before creating PostgresBackend
         spec = importlib.util.find_spec("asyncpg")
@@ -239,7 +248,7 @@ def load_backend_from_config() -> StateBackend:
         )
 
     if parsed.scheme.startswith("sqlite"):
-        db_path = _normalize_sqlite_path(uri, Path.cwd())
+        db_path = _normalize_sqlite_path(uri, Path.cwd(), config_dir=config_dir)
         # Debug output for test visibility
         if os.getenv("FLUJO_DEBUG") == "1":
             logging.debug(f"[flujo.config] Using SQLite DB path: {db_path}")

@@ -639,11 +639,6 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         # Add to history and continue; remaining steps handled downstream.
                         self.step_coordinator.update_pipeline_result(result, step_result)
                         continue
-                        # Add to history and halt the pipeline
-                        self.step_coordinator.update_pipeline_result(result, step_result)
-                        self.set_final_context(result, context)
-                        yield result
-                        return
 
                     # Validate type compatibility with next step - this may raise TypeMismatchError
                     # Only validate types if the step succeeded (to avoid TypeMismatchError for failed steps)
@@ -674,24 +669,22 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     if step_result:
                         if step_result.success:
                             # Merge branch context from complex step handlers
-                            if step_result.branch_context is not None and context is not None:
-                                # Merge with explicit cast to satisfy generic ContextT
-                                from typing import cast
-
-                                merged = ContextManager.merge(
-                                    context, cast(Any, step_result.branch_context)
-                                )
-                                context = cast(Optional[ContextT], merged)
+                            if (
+                                step_result.branch_context is not None
+                                and context is not None
+                                and isinstance(step_result.branch_context, type(context))
+                            ):
+                                merged = ContextManager.merge(context, step_result.branch_context)
+                                context = merged
                             # For context-updating simple steps, prefer the branch_context snapshot
                             try:
                                 if (
                                     hasattr(step, "updates_context")
                                     and bool(getattr(step, "updates_context"))
                                     and step_result.branch_context is not None
+                                    and isinstance(step_result.branch_context, type(context))
                                 ):
-                                    from typing import cast as _cast
-
-                                    context = _cast(Optional[ContextT], step_result.branch_context)
+                                    context = step_result.branch_context
                             except Exception:
                                 pass
                             # --- CONTEXT UPDATE PATCH (deep merge + resilient fallback) ---
@@ -800,11 +793,26 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         # ✅ CRITICAL FIX: Persist state AFTER successful step execution for crash recovery
                         # This ensures the current_step_index reflects the next step to be executed
                         if persist_state_after_step and step_result.success:
-                            # Serialize the step output to avoid Pydantic serialization warnings during state persistence
-                            from flujo.utils.serialization import safe_serialize
+                            # Serialize the step output with model-aware dump during state persistence
+                            def _to_jsonable(obj: Any) -> Any:
+                                try:
+                                    from pydantic import BaseModel as _BM
+
+                                    if isinstance(obj, _BM):
+                                        return obj.model_dump(mode="json")
+                                except Exception:
+                                    pass
+                                try:
+                                    import dataclasses as _dc
+
+                                    if _dc.is_dataclass(obj) and not isinstance(obj, type):
+                                        return _dc.asdict(obj)
+                                except Exception:
+                                    pass
+                                return obj
 
                             serialized_output = (
-                                safe_serialize(step_result.output)
+                                _to_jsonable(step_result.output)
                                 if step_result.output is not None
                                 else None
                             )

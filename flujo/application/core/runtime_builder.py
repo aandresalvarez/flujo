@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeGuard
 from urllib.parse import urlparse
 import importlib
 
@@ -344,8 +344,8 @@ class FlujoRuntimeBuilder:
         validator_invoker_obj: ValidatorInvoker = validator_invoker or DefaultValidatorInvoker(
             validator_runner_obj
         )
-        simple_step_executor_obj: SimpleStepExecutor = cast(
-            SimpleStepExecutor, simple_step_executor or DefaultSimpleStepExecutor()
+        simple_step_executor_obj: SimpleStepExecutor = (
+            simple_step_executor or DefaultSimpleStepExecutor()
         )
         agent_step_executor_obj: AgentStepExecutor = (
             agent_step_executor or DefaultAgentStepExecutor()
@@ -512,8 +512,12 @@ class FlujoRuntimeBuilder:
             if policy_cls is None:
                 return None
             obj = policy_cls()
-            if callable(getattr(obj, "evaluate", None)):
-                return cast(GovernancePolicy, obj)
+            if _is_governance_policy(obj):
+                return obj
             return None
         except Exception:
             return None
+
+
+def _is_governance_policy(obj: Any) -> TypeGuard[GovernancePolicy]:
+    return callable(getattr(obj, "evaluate", None))

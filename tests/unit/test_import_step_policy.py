@@ -34,7 +34,7 @@ async def test_import_step_projects_input_and_merges_context() -> None:
         pipeline=child,
         inherit_context=True,
         input_to="scratchpad",
-        outputs=[OutputMapping(child="scratchpad.final_sql", parent="scratchpad.final_sql")],
+        outputs=[OutputMapping(child="scratchpad.final_sql", parent="final_sql")],
         updates_context=True,
     )
     parent = Pipeline.from_step(import_step)
@@ -45,5 +45,5 @@ async def test_import_step_projects_input_and_merges_context() -> None:
     ctx = res.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
     # Ensure mapped value is available without re-prompt
-    assert "final_sql" in ctx.scratchpad
-    assert str(ctx.scratchpad["final_sql"]).startswith("-- cohorts:")
+    assert "final_sql" in ctx.import_artifacts
+    assert str(ctx.import_artifacts["final_sql"]).startswith("-- cohorts:")

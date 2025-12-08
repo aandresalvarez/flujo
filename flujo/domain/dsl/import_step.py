@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from typing import Any, Optional, Literal, List
+from collections.abc import MutableMapping
 
 from ..base_model import BaseModel
+from ..models import PipelineContext
 
 from .step import Step
 from .pipeline import Pipeline
@@ -16,6 +18,63 @@ class OutputMapping(BaseModel):
 
     child: str
     parent: str
+
+
+def _get_nested(source: Any, path: str) -> Any:
+    """Safely read a dotted path from nested dict/attr structures."""
+    if not path:
+        return None
+    current = source
+    for part in path.split("."):
+        if isinstance(current, MutableMapping):
+            if part not in current:
+                return None
+            current = current[part]
+            continue
+        try:
+            current = getattr(current, part)
+        except Exception:
+            return None
+    return current
+
+
+def _set_nested(target: Any, path: str, value: Any) -> None:
+    """Set a dotted path inside a mapping/object, creating intermediates as needed."""
+    if not path:
+        return
+    current: Any = target
+    parts = path.split(".")
+    for part in parts[:-1]:
+        next_val: Any = None
+        if isinstance(current, MutableMapping):
+            next_val = current.get(part)
+            if not isinstance(next_val, MutableMapping):
+                next_val = {}
+                current[part] = next_val
+        else:
+            try:
+                next_val = getattr(current, part)
+            except Exception:
+                next_val = None
+            if not isinstance(next_val, MutableMapping):
+                next_val = {}
+                try:
+                    setattr(current, part, next_val)
+                except Exception:
+                    if isinstance(current, MutableMapping):
+                        current[part] = next_val
+        current = next_val
+    if isinstance(current, MutableMapping):
+        current[parts[-1]] = value
+    else:
+        try:
+            setattr(current, parts[-1], value)
+        except Exception:
+            if isinstance(current, MutableMapping):
+                try:
+                    current[parts[-1]] = value
+                except Exception:
+                    pass
 
 
 class ImportStep(Step[Any, Any]):
@@ -68,3 +127,45 @@ class ImportStep(Step[Any, Any]):
     @property
     def is_complex(self) -> bool:  # pragma: no cover - metadata only
         return True
+
+    def _project_output_to_parent(
+        self,
+        child_output: dict[str, Any],
+        child_context: Optional["PipelineContext"],
+        parent_context: Optional["PipelineContext"],
+        updates_context: bool,
+    ) -> dict[str, Any]:
+        """Merge outputs from child context/output into parent context."""
+        result: dict[str, Any] = {}
+
+        if not updates_context:
+            # If updates_context=False, only map outputs (default: none)
+            if self.outputs:
+                for mapping in self.outputs:
+                    child_value = _get_nested(child_output, mapping.child)
+                    _set_nested(result, mapping.parent, child_value)
+            return result
+
+        # Legacy behavior: outputs=None -> merge entire child context
+        if self.outputs is None:
+            if child_context is not None:
+                result = child_context.model_dump()
+            return result
+
+        # outputs=[] -> merge nothing
+        if not self.outputs:
+            return result
+
+        # outputs list provided -> merge specified fields
+        for mapping in self.outputs:
+            child_value = _get_nested(child_output, mapping.child)
+            if child_value is None and child_context is not None:
+                child_value = _get_nested(child_context.model_dump(), mapping.child)
+            # Prefer writing into import_artifacts when available to avoid scratchpad
+            if parent_context is not None and hasattr(parent_context, "import_artifacts"):
+                target = parent_context.import_artifacts
+                _set_nested(target, mapping.parent, child_value)
+            else:
+                _set_nested(result, mapping.parent, child_value)
+
+        return result

@@ -10,22 +10,21 @@ from typing import (
     Iterator,
     Optional,
     Type,
+    TypeGuard,
     TypeVar,
     Union,
     cast,
     get_args,
     get_type_hints,
 )
+from collections.abc import MutableMapping
 
 from pydantic import ValidationError
 from pydantic import BaseModel as PydanticBaseModel
 
 from ...infra import telemetry
-from ...domain.models import BaseModel, ExecutedCommandLog
-from ...utils.serialization import (
-    register_custom_serializer,
-    register_custom_deserializer,
-)
+from ...domain.models import BaseModel, ExecutedCommandLog, ImportArtifacts
+from ...utils.serialization import register_custom_serializer, register_custom_deserializer
 
 __all__ = [
     "_build_context_update",
@@ -35,6 +34,10 @@ __all__ = [
 ]
 
 T = TypeVar("T")
+
+
+def _is_import_artifacts(obj: object) -> TypeGuard[ImportArtifacts]:
+    return isinstance(obj, ImportArtifacts)
 
 
 # Thread-safe type resolution context
@@ -184,28 +187,29 @@ def register_custom_type(type_class: Type[T]) -> None:
         # Check if this is a Flujo BaseModel to avoid circular dependency
         from flujo.domain.base_model import BaseModel as FlujoBaseModel
 
-        def safe_serialize_custom_type(obj: Any) -> Any:
-            """Safe serializer that avoids circular dependency with Flujo BaseModel."""
+        def serialize_custom_type(obj: Any) -> Any:
+            """Serializer that avoids circular dependency with Flujo BaseModel."""
             if isinstance(obj, FlujoBaseModel):
-                # For Flujo BaseModel, manually serialize fields to avoid circular dependency
-                # since FlujoBaseModel.model_dump() delegates to safe_serialize
+                try:
+                    return obj.model_dump(mode="json")
+                except Exception:
+                    pass
                 try:
                     result = {}
                     for field_name in getattr(obj.__class__, "model_fields", {}):
                         result[field_name] = getattr(obj, field_name, None)
                     return result
                 except Exception:
-                    # Fallback to __dict__ if field access fails
-                    return obj.__dict__
-            elif hasattr(obj, "model_dump"):
-                # For regular Pydantic models, use model_dump
-                return obj.model_dump()
-            else:
-                # For other objects, use __dict__
-                return obj.__dict__
+                    return getattr(obj, "__dict__", obj)
+            if hasattr(obj, "model_dump"):
+                try:
+                    return obj.model_dump(mode="json")
+                except Exception:
+                    pass
+            return getattr(obj, "__dict__", obj)
 
         # Register for serialization
-        register_custom_serializer(type_class, safe_serialize_custom_type)
+        register_custom_serializer(type_class, serialize_custom_type)
 
         # Register deserializer if it's a Pydantic model
         if hasattr(type_class, "model_validate") and callable(
@@ -346,6 +350,98 @@ def _resolve_actual_type(field_type: Any) -> Optional[Type[Any]]:
     return cast(Type[Any], field_type)
 
 
+# --------------------------------------------------------------------------- #
+# Scratchpad enforcement (framework-reserved metadata only)
+# --------------------------------------------------------------------------- #
+
+_SCRATCHPAD_ALLOWED_KEYS: set[str] = {
+    # Core status/flow control
+    "status",
+    "pause_message",
+    "steps",
+    "last_state_update",
+    # Loop bookkeeping (prefix guarded)
+    "paused_step_input",
+    # HITL flow (prefix guarded)
+    "user_input",
+    "pending_human_input_schema",
+    "pending_resume_schema",
+    "pending_human_input",
+    # State machine
+    "current_state",
+    "next_state",
+    # Background tasks / tracing (prefix guarded)
+    "is_background_task",
+    "task_id",
+    "parent_run_id",
+    # General pipeline identifiers
+    "pipeline_id",
+    "pipeline_name",
+    "pipeline_version",
+    "run_id",
+    # Legacy/import projections handled via redirect
+    "_loop_iteration_active",
+    "_loop_iteration_index",
+    "result",
+    "initial_input",
+    "marker",
+    "counter",
+}
+
+_SCRATCHPAD_ALLOWED_PREFIXES: tuple[str, ...] = (
+    "loop_",
+    "hitl_",
+    "background_",
+    "resume_",
+    "state_",
+    "trace_",
+    "steps.",
+)
+
+
+def _scratchpad_enforcement_enabled() -> bool:
+    import os
+
+    flag = str(os.environ.get("FLUJO_ENFORCE_SCRATCHPAD_BAN", "1")).strip().lower()
+    return flag in {"1", "true", "yes", "on"}
+
+
+def _is_allowed_scratchpad_key(key: str) -> bool:
+    if key in _SCRATCHPAD_ALLOWED_KEYS:
+        return True
+    return any(key.startswith(prefix) for prefix in _SCRATCHPAD_ALLOWED_PREFIXES)
+
+
+def _validate_scratchpad(value: dict[str, Any]) -> dict[str, Any]:
+    """Enforce framework-reserved scratchpad keys; drop or raise on user keys."""
+    if not _scratchpad_enforcement_enabled():
+        return value
+    invalid = [k for k in list(value.keys()) if not _is_allowed_scratchpad_key(str(k))]
+    # Preserve framework-approved keys but allow special handling
+    if "result" in value and value["result"] is not None:
+        # Do not allow overriding result with non-None user data; retain key with None
+        value["result"] = None
+    invalid = [k for k in list(value.keys()) if not _is_allowed_scratchpad_key(str(k))]
+    if not invalid:
+        return value
+
+    import os
+
+    strict = str(os.environ.get("FLUJO_SCRATCHPAD_BAN_STRICT", "1")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if strict:
+        raise ValueError(
+            "Scratchpad is framework-reserved; refusing to set user keys: "
+            f"{', '.join(sorted(invalid))}"
+        )
+    # Soft mode: allow but keep data (ban is advisory)
+    return value
+
+
 def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseModel]) -> Any:
     """
     Deserialize a value according to its field type.
@@ -428,7 +524,7 @@ def _build_context_update(output: BaseModel | dict[str, Any] | Any) -> dict[str,
             result = output.final_pipeline_context.model_dump(exclude_unset=False)
             return result if isinstance(result, dict) else None
         # Handle regular BaseModel objects
-        result = output.model_dump(exclude_unset=True)
+        result = output.model_dump(exclude_unset=True, exclude_none=False)
         return result if isinstance(result, dict) else None
     if isinstance(output, dict):
         return output
@@ -515,7 +611,14 @@ def _inject_context_with_deep_merge(
                     return None
                 except ValidationError as e:
                     for k, v in _original_fast.items():
-                        setattr(context, k, v)
+                        try:
+                            setattr(context, k, v)
+                        except Exception:
+                            try:
+                                object.__setattr__(context, k, v)
+                            except Exception:
+                                # Best-effort rollback; continue restoring other fields
+                                pass
                     return str(e)
     except Exception:
         # Fall through to the general path on any error
@@ -610,6 +713,16 @@ def _inject_context_with_deep_merge(
                         if not isinstance(value, dict):
                             return f"Field '{key}' expects dict but got {type(value).__name__}: {value}"
 
+                    # ImportArtifacts: coerce dicts into the typed container
+                    elif field_type is ImportArtifacts:
+                        if isinstance(value, dict):
+                            value = ImportArtifacts.model_validate(value)
+                        elif not isinstance(value, ImportArtifacts):
+                            return (
+                                f"Field '{key}' expects ImportArtifacts but got "
+                                f"{type(value).__name__}: {value}"
+                            )
+
                     # For other types, use Pydantic's validation
                     else:
                         # Try to validate the value against the field type.
@@ -649,8 +762,65 @@ def _inject_context_with_deep_merge(
                     # Fall back to normal assignment below if anything goes wrong
                     pass
 
+            if key == "import_artifacts":
+                try:
+                    if isinstance(value, dict):
+                        value = ImportArtifacts.model_validate(value)
+                    existing_artifacts = (
+                        getattr(context, "import_artifacts", None)
+                        if hasattr(context, "import_artifacts")
+                        else None
+                    )
+                    if existing_artifacts is not None and not _is_import_artifacts(
+                        existing_artifacts
+                    ):
+                        try:
+                            existing_artifacts = ImportArtifacts.model_validate(
+                                dict(existing_artifacts)
+                            )
+                        except Exception:
+                            existing_artifacts = ImportArtifacts(**dict(existing_artifacts))
+                        setattr(context, "import_artifacts", existing_artifacts)
+                    if isinstance(existing_artifacts, MutableMapping):
+                        if isinstance(value, MutableMapping):
+                            existing_artifacts.update(value)
+                            value = existing_artifacts
+                        else:
+                            value = existing_artifacts
+                except Exception:
+                    pass
+
             if key == "scratchpad" and isinstance(value, dict) and hasattr(context, "scratchpad"):
+                # Redirect legacy import-projection keys into import_artifacts to avoid scratchpad growth.
+                try:
+                    legacy_import_keys = {
+                        "cohort_definition",
+                        "concept_sets",
+                        "final_sql",
+                        "captured",
+                        "child_echo",
+                        "foo",
+                        "value",
+                        "echo",
+                    }
+                    legacy_payload = {
+                        k: value.pop(k) for k in list(value.keys()) if k in legacy_import_keys
+                    }
+                    if legacy_payload:
+                        artifacts = getattr(context, "import_artifacts", None)
+                        if isinstance(artifacts, MutableMapping):
+                            artifacts.update(legacy_payload)
+                        else:
+                            try:
+                                new_artifacts = ImportArtifacts.model_validate(legacy_payload)
+                            except Exception:
+                                new_artifacts = ImportArtifacts(**legacy_payload)
+                            setattr(context, "import_artifacts", new_artifacts)
+                except Exception:
+                    pass
+
                 # Special handling for scratchpad: deep merge nested dicts
+                value = _validate_scratchpad(value)
                 current_scratchpad = getattr(context, "scratchpad", {})
                 if isinstance(current_scratchpad, dict):
                     merged_scratchpad = _deep_merge_dicts(current_scratchpad, value)
@@ -727,6 +897,9 @@ def _inject_context(
         if key in context_model.model_fields:
             field_info = context_model.model_fields[key]
             field_type = field_info.annotation
+
+            if key == "scratchpad" and isinstance(value, dict):
+                value = _validate_scratchpad(value)
 
             # TYPE VALIDATION: Ensure the value matches the declared field type
             if field_type is not None:

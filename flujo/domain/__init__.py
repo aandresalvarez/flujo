@@ -31,6 +31,7 @@ from .plugins import PluginOutcome, ValidationPlugin
 from .validation import Validator, ValidationResult
 from .pipeline_validation import ValidationFinding, ValidationReport
 from .resources import AppResources
+from . import blueprint as blueprint
 
 # ``mapper`` alias preserved for backwards compatibility
 mapper = Step.from_mapper
@@ -72,4 +73,5 @@ __all__ = [
     "ValidationReport",
     # Resources
     "AppResources",
+    "blueprint",
 ]

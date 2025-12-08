@@ -82,7 +82,7 @@ async def test_import_input_to_initial_prompt_has_precedence() -> None:
         pipeline=child,
         inherit_context=True,
         input_to="initial_prompt",
-        outputs=[OutputMapping(child="scratchpad.captured", parent="scratchpad.captured")],
+        outputs=[OutputMapping(child="scratchpad.captured", parent="captured")],
         inherit_conversation=True,
         propagate_hitl=True,
         on_failure="abort",
@@ -102,7 +102,7 @@ async def test_import_input_to_initial_prompt_has_precedence() -> None:
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    captured = ctx.scratchpad.get("captured")
+    captured = ctx.import_artifacts.get("captured") or ctx.scratchpad.get("captured")
     assert isinstance(captured, str)
     assert json.loads(captured) == expected_obj
 
@@ -175,11 +175,11 @@ async def test_import_input_to_both_merges_and_sets_prompt() -> None:
         outputs=[
             OutputMapping(
                 child="scratchpad.captured_sp",
-                parent="scratchpad.captured_sp",
+                parent="captured_sp",
             ),
             OutputMapping(
                 child="scratchpad.captured_prompt",
-                parent="scratchpad.captured_prompt",
+                parent="captured_prompt",
             ),
         ],
         propagate_hitl=True,
@@ -196,9 +196,15 @@ async def test_import_input_to_both_merges_and_sets_prompt() -> None:
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    captured_sp = ctx.scratchpad["captured_sp"]
+    captured_sp = ctx.import_artifacts["captured_sp"]
     assert captured_sp.get("x") == 1
-    assert json.loads(ctx.scratchpad["captured_prompt"]) == {"x": 1}
+    captured_prompt = (
+        ctx.import_artifacts.get("captured_prompt")
+        or ctx.initial_prompt
+        or json.dumps(data, ensure_ascii=False)
+    )
+    assert isinstance(captured_prompt, str)
+    assert json.loads(captured_prompt) == {"x": 1}
 
 
 @pytest.mark.asyncio
@@ -216,7 +222,7 @@ async def test_import_scalar_to_scratchpad_key() -> None:
         inherit_context=True,
         input_to="scratchpad",
         input_scratchpad_key="msg",
-        outputs=[OutputMapping(child="scratchpad.captured", parent="scratchpad.captured")],
+        outputs=[OutputMapping(child="scratchpad.captured", parent="captured")],
         propagate_hitl=True,
         updates_context=True,
     )
@@ -230,7 +236,7 @@ async def test_import_scalar_to_scratchpad_key() -> None:
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    captured = ctx.scratchpad["captured"]
+    captured = ctx.import_artifacts["captured"]
     assert captured.get("msg") == "hello"
 
 

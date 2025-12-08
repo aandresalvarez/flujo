@@ -8,9 +8,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple, cast
 
-from flujo.state.backends.base import StateBackend
+from flujo.state.backends.base import StateBackend, _to_jsonable
 from flujo.type_definitions.common import JSONObject
-from flujo.utils.serialization import safe_deserialize, safe_serialize
+from flujo.utils.serialization import safe_deserialize
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import asyncpg
@@ -19,6 +19,10 @@ else:  # pragma: no cover - runtime checked import
     asyncpg = None
     Pool = Any
     Record = Any
+
+# Advisory lock key used to serialize schema migrations across concurrent workers/pods.
+# Must fit in signed bigint; keep stable for all deployments.
+MIGRATION_LOCK_KEY = 0xF1F0C0DE
 
 
 def _load_asyncpg() -> Any:
@@ -32,8 +36,7 @@ def _load_asyncpg() -> Any:
 def _jsonb(value: Any) -> Optional[str]:
     if value is None:
         return None
-    serialized = safe_serialize(value)
-    return json.dumps(serialized)
+    return json.dumps(_to_jsonable(value))
 
 
 class PostgresBackend(StateBackend):
@@ -109,9 +112,20 @@ class PostgresBackend(StateBackend):
 
     async def _init_schema(self, pool: Pool) -> None:
         async with pool.acquire() as conn:
-            # Create base schema (version 1)
-            await conn.execute(
-                """
+            async with conn.transaction():
+                # Serialize migrations across processes/containers using a Postgres advisory lock.
+                # This prevents migration stampedes on scale-up.
+                try:
+                    await conn.execute("SELECT pg_advisory_xact_lock($1)", MIGRATION_LOCK_KEY)
+                except Exception as e:
+                    import logging
+
+                    logging.getLogger(__name__).warning(
+                        "Advisory lock acquisition failed, continuing without serialization: %s", e
+                    )
+                # Create base schema (version 1)
+                await conn.execute(
+                    """
                 CREATE TABLE IF NOT EXISTS workflow_state (
                     run_id TEXT PRIMARY KEY,
                     pipeline_id TEXT NOT NULL,
@@ -135,7 +149,7 @@ class PostgresBackend(StateBackend):
                     background_error TEXT
                 )
                 """
-            )
+                )
             await conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS runs (
@@ -286,9 +300,13 @@ class PostgresBackend(StateBackend):
             if version in applied_versions:
                 continue
             sql = path.read_text()
-            # Migration files are already wrapped in transactions and update schema_versions
-            # Just execute them directly
-            await conn.execute(sql)
+            # Execute each migration inside its own transaction to avoid partial application.
+            async with conn.transaction():
+                await conn.execute(sql)
+                await conn.execute(
+                    "INSERT INTO flujo_schema_versions (version) VALUES ($1) ON CONFLICT DO NOTHING",
+                    version,
+                )
 
     async def persist_evaluation(
         self,
@@ -430,7 +448,7 @@ class PostgresBackend(StateBackend):
                     parent_run_id, task_id, background_error
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9,
-                    $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $18, $19, $20
+                    $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18, $19, $20
                 )
                 ON CONFLICT (run_id) DO UPDATE SET
                     pipeline_id = EXCLUDED.pipeline_id,
@@ -716,26 +734,31 @@ class PostgresBackend(StateBackend):
         await self._ensure_init()
         assert self._pool is not None
         async with self._pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO steps (
-                    run_id, step_name, step_index, status, output, raw_response, cost_usd,
-                    token_counts, execution_time_ms, created_at
-                ) VALUES (
-                    $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO steps (
+                        run_id, step_name, step_index, status, output, raw_response, cost_usd,
+                        token_counts, execution_time_ms, created_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10
+                    )
+                    """,
+                    step_data["run_id"],
+                    step_data["step_name"],
+                    step_data["step_index"],
+                    step_data.get("status", "completed"),
+                    _jsonb(step_data.get("output")),
+                    _jsonb(step_data.get("raw_response")),
+                    step_data.get("cost_usd"),
+                    step_data.get("token_counts"),
+                    step_data.get("execution_time_ms"),
+                    step_data.get("created_at", datetime.now(timezone.utc)),
                 )
-                """,
-                step_data["run_id"],
-                step_data["step_name"],
-                step_data["step_index"],
-                step_data.get("status", "completed"),
-                _jsonb(step_data.get("output")),
-                _jsonb(step_data.get("raw_response")),
-                step_data.get("cost_usd"),
-                step_data.get("token_counts"),
-                step_data.get("execution_time_ms"),
-                step_data.get("created_at", datetime.now(timezone.utc)),
-            )
+                await conn.execute(
+                    "UPDATE runs SET updated_at = NOW() WHERE run_id = $1",
+                    step_data["run_id"],
+                )
 
     async def save_run_end(self, run_id: str, end_data: JSONObject) -> None:
         await self._ensure_init()

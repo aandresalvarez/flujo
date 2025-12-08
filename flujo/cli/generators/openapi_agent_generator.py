@@ -125,6 +125,7 @@ async def {fname}(
         )
 
     func_list = ", ".join(_safe_name(op.get("operationId") or f"{m}_{p}") for p, m, op in ops)
+
     def _resp_model_literal(model: str) -> str:
         if model in {"dict", "list"}:
             return model

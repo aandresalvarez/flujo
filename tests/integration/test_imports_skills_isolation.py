@@ -133,11 +133,15 @@ steps:
 
     # Validate merged outputs are present and reflect each child module, not bled
     ctx = result.final_pipeline_context
-    assert ctx is not None and hasattr(ctx, "scratchpad")
+    assert ctx is not None
 
-    # From clarification child
-    assert ctx.scratchpad.get("cohort_definition", {}).get("source") == "clarification"
+    artifacts = getattr(ctx, "import_artifacts", {})
+    # From clarification child (fallback to scratchpad for legacy)
+    cd = artifacts.get("cohort_definition") or ctx.scratchpad.get("cohort_definition", {})
+    assert isinstance(cd, dict) and cd.get("source") == "clarification"
     # From concept discovery child
-    assert ctx.scratchpad.get("concept_sets") == ["cs-A", "cs-B"]
+    concepts = artifacts.get("concept_sets") or ctx.scratchpad.get("concept_sets")
+    assert concepts == ["cs-A", "cs-B"]
     # From query builder child; ensure it saw the above values
-    assert ctx.scratchpad.get("final_sql", "").startswith("-- cd:clarification; cs:2")
+    final_sql = artifacts.get("final_sql") or ctx.scratchpad.get("final_sql", "")
+    assert str(final_sql).startswith("-- cd:clarification; cs:2")

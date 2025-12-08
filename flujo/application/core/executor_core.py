@@ -1,7 +1,8 @@
 from __future__ import annotations
 import asyncio
+import typing
 import warnings
-from typing import Any, Awaitable, Callable, Dict, Generic, Optional, cast, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, Generic, Optional, TYPE_CHECKING
 
 from ...domain.interfaces import StateProvider
 from ...domain.sandbox import SandboxProtocol
@@ -120,6 +121,8 @@ except Exception:
     _DEFAULT_STRICT_CONTEXT_ISOLATION = False
     _DEFAULT_STRICT_CONTEXT_MERGE = False
 
+from .executor_helpers import _CACHE_OVERRIDE
+
 if TYPE_CHECKING:
     from .state_manager import StateManager
     from ...type_definitions.common import JSONObject
@@ -181,6 +184,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         state_providers: Optional[Dict[str, StateProvider[Any]]] = None,
         state_manager: Optional["StateManager[Any]"] = None,
         deps: Optional[ExecutorCoreDeps] = None,
+        builder: Optional[FlujoRuntimeBuilder] = None,
     ) -> None:
         # Validate parameters for compatibility
         if cache_size <= 0:
@@ -200,8 +204,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
                 stacklevel=2,
             )
 
-        builder = FlujoRuntimeBuilder()
-        deps_obj = deps or builder.build(
+        builder_obj = builder or FlujoRuntimeBuilder()
+        deps_obj = deps or builder_obj.build(
             agent_runner=agent_runner,
             processor_pipeline=processor_pipeline,
             validator_runner=validator_runner,
@@ -431,6 +435,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._cache_manager.generate_cache_key(
             frame.step, frame.data, frame.context, getattr(frame, "resources", None)
         )
+
+    def _cache_enabled(self) -> bool:
+        """Return whether cache is enabled, honoring task-local overrides."""
+        override = _CACHE_OVERRIDE.get(None)
+        if override is not None:
+            return bool(override)
+        return bool(self._enable_cache)
 
     _normalize_frame_context = staticmethod(normalize_frame_context)
 
@@ -672,7 +683,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     def _isolate_context(
         self, context: Optional[TContext_w_Scratch]
     ) -> Optional[TContext_w_Scratch]:
-        return cast(
+        return typing.cast(
             Optional[TContext_w_Scratch],
             isolate_context(context, strict_context_isolation=bool(self._strict_context_isolation)),
         )
@@ -682,7 +693,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         main_context: Optional[TContext_w_Scratch],
         branch_context: Optional[TContext_w_Scratch],
     ) -> Optional[TContext_w_Scratch]:
-        return cast(
+        return typing.cast(
             Optional[TContext_w_Scratch],
             merge_context_updates(
                 main_context,
@@ -696,7 +707,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         current_context: Optional[TContext_w_Scratch],
         iteration_context: Optional[TContext_w_Scratch],
     ) -> Optional[TContext_w_Scratch]:
-        return cast(
+        return typing.cast(
             Optional[TContext_w_Scratch],
             accumulate_loop_context(
                 current_context,
@@ -754,6 +765,31 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     async def wait_for_background_tasks(self, timeout: float = 5.0) -> None:
         """Wait for all background tasks to complete with a timeout."""
         await self._background_task_manager.wait_for_completion(timeout)
+
+    async def aclose(self) -> None:
+        """Best-effort cleanup of executor-owned resources."""
+        try:
+            await self.wait_for_background_tasks()
+        except Exception:
+            pass
+
+        # Close memory indexing manager first (flush pending tasks)
+        try:
+            if self._memory_manager is not None and hasattr(self._memory_manager, "close"):
+                res = self._memory_manager.close()
+                if asyncio.iscoroutine(res):
+                    await res
+        except Exception:
+            pass
+
+        # Close vector store if it exposes close/cleanup
+        try:
+            if self._memory_store is not None and hasattr(self._memory_store, "close"):
+                res = self._memory_store.close()
+                if asyncio.iscoroutine(res):
+                    await res
+        except Exception:
+            pass
 
     async def execute(
         self,

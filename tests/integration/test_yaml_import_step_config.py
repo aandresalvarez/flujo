@@ -3,6 +3,21 @@ from __future__ import annotations
 from textwrap import dedent
 
 import pytest
+from unittest import mock
+from flujo.infra.config_manager import FlujoConfig
+
+
+@pytest.fixture(autouse=True)
+def mock_allowed_imports():
+    """Allow test modules to be imported during blueprint loading."""
+    with mock.patch("flujo.domain.blueprint.loader_resolution.get_config_provider") as mock_get:
+        mock_config = mock.Mock(spec=FlujoConfig)
+        mock_config.blueprint_allowed_imports = ["skills"]
+        mock_config.settings = mock.Mock()
+        mock_config.settings.blueprint_allowed_imports = ["skills"]
+
+        mock_get.return_value.load_config.return_value = mock_config
+        yield
 
 
 @pytest.mark.asyncio
@@ -74,5 +89,5 @@ async def test_yaml_import_step_with_config(tmp_path, monkeypatch):
     payload = {"cohort_definition": {"name": "demo"}, "concept_sets": [1, 2, 3]}
     res = await gather_result(runner, payload, initial_context_data={"initial_prompt": "goal"})
     ctx = res.final_pipeline_context
-    assert "final_sql" in ctx.scratchpad
-    assert str(ctx.scratchpad["final_sql"]).startswith("-- cohorts:")
+    assert "final_sql" in ctx.import_artifacts
+    assert str(ctx.import_artifacts["final_sql"]).startswith("-- cohorts:")

@@ -1,6 +1,7 @@
 import logging
 import sys
 import os
+import atexit
 from typing import TYPE_CHECKING, Any, Callable, Optional, List, cast
 from typing import Any as _TypeAny  # local alias to avoid name clash
 
@@ -311,6 +312,17 @@ def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
                     else None
                 ),
             )
+            # Ensure telemetry flushes before interpreter shutdown to avoid lost tail logs.
+            try:
+                flush_fn = None
+                if hasattr(_actual_logfire, "force_flush"):
+                    flush_fn = _actual_logfire.force_flush
+                elif hasattr(_actual_logfire, "flush"):
+                    flush_fn = _actual_logfire.flush
+                if flush_fn:
+                    atexit.register(flush_fn)
+            except Exception:
+                pass
             _safe_log(
                 _fallback_logger,
                 logging.INFO,

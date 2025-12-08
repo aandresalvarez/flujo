@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Optional, Protocol, cast, Type
+from typing import Any, Protocol, cast, Type
 
-from flujo.domain.models import Paused, StepOutcome, StepResult, UsageLimits
+from flujo.domain.models import Paused, StepOutcome, StepResult
 from flujo.exceptions import PausedException
 from flujo.infra import telemetry
 from ..policy_registry import StepPolicy
@@ -14,19 +14,7 @@ SimpleStepExecutorOutcomes = StepOutcome[StepResult]
 
 
 class SimpleStepExecutor(Protocol):
-    async def execute(
-        self,
-        core: Any,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        stream: bool,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
-        cache_key: Optional[str],
-        _fallback_depth: int = 0,
-    ) -> StepOutcome[StepResult]: ...
+    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
 
 
 class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
@@ -78,42 +66,11 @@ class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
                     and cache_key
                     and getattr(core, "_enable_cache", False)
                 ):
-                    await core._cache_backend.put(cache_key, outcome.step_result, ttl_s=3600)
+                    ttl_s = getattr(core, "_cache_ttl_s", 3600)
+                    await core._cache_backend.put(cache_key, outcome.step_result, ttl_s=ttl_s)
             except Exception:
                 pass
             return cast(StepOutcome[StepResult], outcome)
         except PausedException as e:
             # Surface as Paused outcome to maintain control-flow semantics
             return Paused(message=getattr(e, "message", ""))
-
-
-async def _execute_simple_step_policy_impl(
-    core: Any,
-    step: Any,
-    data: Any,
-    context: Optional[Any],
-    resources: Optional[Any],
-    limits: Optional[UsageLimits],
-    stream: bool,
-    on_chunk: Optional[Callable[[Any], Awaitable[None]]],
-    cache_key: Optional[str],
-    _fallback_depth: int,
-) -> StepOutcome[StepResult]:
-    """Deprecated: orchestration now handled in ExecutorCore; keep legacy entry-point thin."""
-    try:
-        return cast(
-            StepOutcome[StepResult],
-            await core._execute_agent_with_orchestration(
-                step,
-                data,
-                context,
-                resources,
-                limits,
-                stream,
-                on_chunk,
-                cache_key,
-                _fallback_depth,
-            ),
-        )
-    except PausedException as e:
-        return Paused(message=getattr(e, "message", ""))

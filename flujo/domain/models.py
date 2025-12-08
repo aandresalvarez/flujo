@@ -1,11 +1,25 @@
 """Domain models for flujo."""
 
 from __future__ import annotations
-from typing import Any, List, Optional, Literal, Generic, TypeVar, Tuple, cast
+from typing import (
+    Any,
+    ClassVar,
+    Generic,
+    Iterator,
+    ItemsView,
+    KeysView,
+    List,
+    Literal,
+    MutableMapping,
+    Optional,
+    Tuple,
+    TypeVar,
+    ValuesView,
+    cast,
+)
 from flujo.type_definitions.common import JSONObject
 from threading import RLock
 from pydantic import Field, ConfigDict, field_validator, PrivateAttr
-from typing import ClassVar
 from datetime import datetime, timezone
 import uuid
 from enum import Enum
@@ -126,6 +140,7 @@ __all__ = [
     "UsageEstimate",
     "Quota",
     "ExecutedCommandLog",
+    "ImportArtifacts",
     "PipelineContext",
     "HumanInteraction",
     "ConversationTurn",
@@ -304,6 +319,8 @@ class Quota:
         # Use non-negative values; infinity allowed for cost
         self._remaining_cost_usd = float(remaining_cost_usd)
         self._remaining_tokens = int(remaining_tokens)
+        # Quota methods are synchronous/non-blocking; RLock is adequate in the single-threaded
+        # asyncio model we run in. If await points are added in the future, switch to asyncio.Lock.
         self._lock: RLock = RLock()
 
     def get_remaining(self) -> Tuple[float, int]:
@@ -493,6 +510,99 @@ class ExecutedCommandLog(BaseModel):
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
 
+class ImportArtifacts(BaseModel, MutableMapping[str, Any]):
+    """Typed container for import projections to avoid scratchpad for user data."""
+
+    result: Any | None = None
+    marker: Any | None = None
+    counter: int | None = None
+    value: Any | None = None
+    initial_input: Any | None = None
+    child_echo: Any | None = None
+    final_sql: Any | None = None
+    concept_sets: list[Any] = Field(default_factory=list)
+    cohort_definition: dict[str, Any] | None = None
+    captured: Any | None = None
+    captured_sp: dict[str, Any] = Field(default_factory=dict)
+    captured_prompt: Any | None = None
+    extras: dict[str, Any] = Field(default_factory=dict)
+
+    model_config: ClassVar[ConfigDict] = {
+        "arbitrary_types_allowed": True,
+        "extra": "allow",
+    }
+
+    def _data(self) -> dict[str, Any]:
+        data: dict[str, Any] = {}
+        fields_set: set[str] = getattr(self, "__pydantic_fields_set__", set())
+        fields_def = type(self).model_fields
+        for name in fields_def:
+            val = getattr(self, name)
+            if val is not None or name in fields_set:
+                data[name] = val
+        extra = getattr(self, "__pydantic_extra__", None)
+        if isinstance(extra, dict):
+            data.update(extra)
+        data.update(self.extras)
+        return data
+
+    # MutableMapping interface
+    def __getitem__(self, key: str) -> Any:
+        return self._data()[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        if key in type(self).model_fields:
+            setattr(self, key, value)
+            return
+        extra = getattr(self, "__pydantic_extra__", None)
+        if not isinstance(extra, dict):
+            extra = {}
+            object.__setattr__(self, "__pydantic_extra__", extra)
+        extra[key] = value
+        self.extras[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        if key in type(self).model_fields:
+            object.__setattr__(self, key, None)
+        self.extras.pop(key, None)
+        extra = getattr(self, "__pydantic_extra__", None)
+        if isinstance(extra, dict):
+            extra.pop(key, None)
+
+    def __iter__(self) -> Iterator[str]:  # type: ignore[override]
+        return iter(self._data())
+
+    def __len__(self) -> int:
+        return len(self._data())
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data().get(key, default)
+
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        if key in self._data():
+            return self._data()[key]
+        self[key] = default
+        return default
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        merged: dict[str, Any] = {}
+        if args:
+            merged.update(dict(*args))
+        if kwargs:
+            merged.update(kwargs)
+        for k, v in merged.items():
+            self[k] = v
+
+    def items(self) -> ItemsView[str, Any]:
+        return self._data().items()
+
+    def keys(self) -> KeysView[str]:
+        return self._data().keys()
+
+    def values(self) -> ValuesView[Any]:
+        return self._data().values()
+
+
 class ConversationRole(str, Enum):
     """Canonical roles for conversational turns.
 
@@ -519,27 +629,19 @@ class PipelineContext(BaseModel):
     models should inherit from this class to add application specific fields
     while retaining the built in ones.
 
-    Attributes
-    ----------
-    run_id:
-        Unique identifier for the pipeline run.
-    initial_prompt:
-        First input provided to the run. Useful for logging and telemetry.
-    scratchpad:
-        Free form dictionary for transient state between steps.
-    hitl_history:
-        Records each human interaction when using HITL steps.
-    command_log:
-        Stores commands executed by an :class:`~flujo.recipes.AgenticLoop`.
-    conversation_history:
-        Ordered list of conversational turns (user/assistant) maintained when
-        a loop is configured with ``conversation: true``. Persisted with the
-        context to support pause/resume and restarts.
+    User data MUST NOT be stored in ``scratchpad``; it is reserved for framework
+    metadata only. Use typed context fields for application data.
     """
 
     run_id: str = Field(default_factory=lambda: f"run_{uuid.uuid4().hex}")
     initial_prompt: Optional[str] = None
-    scratchpad: JSONObject = Field(default_factory=dict)
+    # Reserved for framework metadata only; user data is disallowed.
+    scratchpad: JSONObject = Field(
+        default_factory=dict,
+        description="Framework-reserved metadata bag (user data disallowed).",
+    )
+    # Structured slot for import-related artifacts to avoid scratchpad usage.
+    import_artifacts: ImportArtifacts = Field(default_factory=ImportArtifacts)
     hitl_history: List[HumanInteraction] = Field(default_factory=list)
     command_log: List[ExecutedCommandLog] = Field(
         default_factory=list,

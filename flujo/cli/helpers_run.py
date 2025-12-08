@@ -14,7 +14,8 @@ from typer import Exit
 
 from flujo.domain.models import PipelineContext
 from flujo.infra import telemetry as _telemetry
-from flujo.utils.serialization import safe_serialize
+from pydantic import BaseModel as _BM
+import dataclasses as _dc
 
 from .helpers_io import (
     load_dataset_from_file,
@@ -345,6 +346,20 @@ def display_pipeline_results(
     except Exception:
         paused = False
 
+    def _model_dump_json_safe(obj: Any) -> Any:
+        """Return a JSON-mode dump if supported; gracefully fallback otherwise."""
+        if not hasattr(obj, "model_dump"):
+            return obj
+        try:
+            return obj.model_dump(mode="json")
+        except TypeError:
+            try:
+                return obj.model_dump()
+            except Exception:
+                return obj
+        except Exception:
+            return obj
+
     def _render_body() -> None:
         if paused:
             if _rich_available and console is not None:
@@ -396,11 +411,15 @@ def display_pipeline_results(
                     print_rich_or_typer(str(final_output))
             elif fmt == "json":
                 try:
-                    to_dump: Any
                     if isinstance(final_output, str):
                         to_dump = json.loads(final_output)
                     else:
-                        to_dump = safe_serialize(final_output)
+                        if isinstance(final_output, _BM):
+                            to_dump = _model_dump_json_safe(final_output)
+                        elif _dc.is_dataclass(final_output) and not isinstance(final_output, type):
+                            to_dump = _dc.asdict(final_output)
+                        else:
+                            to_dump = final_output
                     if _rich_available and console is not None:
                         console.print(json.dumps(to_dump, indent=2, ensure_ascii=False))
                     else:
@@ -414,7 +433,12 @@ def display_pipeline_results(
                 try:
                     import yaml as _yaml
 
-                    to_dump = safe_serialize(final_output)
+                    if isinstance(final_output, _BM):
+                        to_dump = _model_dump_json_safe(final_output)
+                    elif _dc.is_dataclass(final_output) and not isinstance(final_output, type):
+                        to_dump = _dc.asdict(final_output)
+                    else:
+                        to_dump = final_output
                     dumped = _yaml.safe_dump(
                         to_dump, sort_keys=False, allow_unicode=True, default_flow_style=False
                     )
@@ -585,10 +609,7 @@ def display_pipeline_results(
 
         if show_context and result.final_pipeline_context:
             header_ctx = "\n[bold]Final Context:[/bold]"
-            payload = json.dumps(
-                safe_serialize(result.final_pipeline_context.model_dump()),
-                indent=2,
-            )
+            payload = json.dumps(_model_dump_json_safe(result.final_pipeline_context), indent=2)
             if _rich_available and console is not None:
                 console.print(header_ctx)
                 console.print(payload)
@@ -691,7 +712,7 @@ def execute_improve(
         )
 
         if json_output:
-            return json.dumps(safe_serialize(report.model_dump()), indent=2)
+            return json.dumps(report.model_dump(mode="json"), indent=2)
 
         with open("output/trace_improve.txt", "a") as f:
             f.write("stage:print\n")

@@ -96,6 +96,9 @@ class BackendFactory:
 
     def __init__(self, executor_factory: Optional[ExecutorFactory] = None) -> None:
         self._executor_factory = executor_factory or ExecutorFactory()
+        # Reuse backends per target to avoid leaking connection pools in per-request runners.
+        # Keyed by normalized target (dsn or sqlite path).
+        self._state_backend_cache: dict[str, StateBackend] = {}
 
     def create_execution_backend(
         self, executor: ExecutorCore[Any] | None = None
@@ -126,19 +129,31 @@ class BackendFactory:
                 pool_min = getattr(extended_settings, "postgres_pool_min", 1)
                 pool_max = getattr(extended_settings, "postgres_pool_max", 10)
                 auto_migrate = os.getenv("FLUJO_AUTO_MIGRATE", "true").lower() != "false"
-                return PostgresBackend(
-                    state_uri,
-                    auto_migrate=auto_migrate,
-                    pool_min_size=pool_min,
-                    pool_max_size=pool_max,
-                )
+                cache_key = f"postgres:{state_uri}:{pool_min}:{pool_max}:{auto_migrate}"
+                backend = self._state_backend_cache.get(cache_key)
+                if backend is None:
+                    backend = PostgresBackend(
+                        state_uri,
+                        auto_migrate=auto_migrate,
+                        pool_min_size=pool_min,
+                        pool_max_size=pool_max,
+                    )
+                    self._state_backend_cache[cache_key] = backend
+                return backend
             if scheme in {"memory", "mem", "inmemory"}:
                 return InMemoryBackend()
             if scheme.startswith("sqlite"):
                 from flujo.cli.config import _normalize_sqlite_path
 
-                sqlite_path = _normalize_sqlite_path(state_uri, Path.cwd())
-                return SQLiteBackend(sqlite_path)
+                cfg_path = getattr(get_config_manager(), "config_path", None)
+                cfg_dir = cfg_path.parent if cfg_path else Path.cwd()
+                sqlite_path = _normalize_sqlite_path(state_uri, Path.cwd(), config_dir=cfg_dir)
+                cache_key = f"sqlite:{sqlite_path}"
+                backend = self._state_backend_cache.get(cache_key)
+                if backend is None:
+                    backend = SQLiteBackend(sqlite_path)
+                    self._state_backend_cache[cache_key] = backend
+                return backend
 
         if db_path is not None:
             target_path = Path(db_path)
@@ -149,4 +164,9 @@ class BackendFactory:
             except Exception:
                 root_base = Path.cwd()
             target_path = root_base / "flujo_ops.db"
-        return SQLiteBackend(target_path)
+        cache_key = f"sqlite:{target_path}"
+        backend = self._state_backend_cache.get(cache_key)
+        if backend is None:
+            backend = SQLiteBackend(target_path)
+            self._state_backend_cache[cache_key] = backend
+        return backend

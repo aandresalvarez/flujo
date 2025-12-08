@@ -10,10 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 import itertools
-from typing import Any, Generic, Optional, Type, TypeVar, cast
+from typing import Any, Generic, Optional, Type, TypeVar
 
 from flujo.domain.models import BaseModel, PipelineContext, StepResult
 from flujo.type_definitions.common import JSONObject
+from flujo.state.backends.base import _serialize_for_json
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
@@ -158,20 +159,15 @@ class StateSerializer(Generic[ContextT]):
                     val_repr = _fingerprint_scalar(value)
                 hash_input.append(f"{key}:{type(value).__name__}:{val_repr}")
             context_str = "|".join(hash_input)
-        else:
-            if raw_mapping is None:
-                # Use cache-friendly serialization path only for small contexts to avoid overhead
-                raw_mapping = context.model_dump() if hasattr(context, "model_dump") else {}
-            filtered_data = {k: v for k, v in raw_mapping.items() if k not in fields_to_exclude}
+            return hashlib.md5(context_str.encode()).hexdigest()
 
-            def default_serializer(o: Any) -> Any:
-                if hasattr(o, "__class__") and "Mock" in o.__class__.__name__:
-                    return f"Mock({type(o).__name__})"
-                raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+        if raw_mapping is None:
+            # Use cache-friendly serialization path only for small contexts to avoid overhead
+            raw_mapping = context.model_dump() if hasattr(context, "model_dump") else {}
+        filtered_data = {k: v for k, v in raw_mapping.items() if k not in fields_to_exclude}
 
-            context_str = json.dumps(
-                filtered_data, sort_keys=True, separators=(",", ":"), default=default_serializer
-            )
+        normalized = _serialize_for_json(filtered_data)
+        context_str = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
 
         return hashlib.md5(context_str.encode()).hexdigest()
 
@@ -237,7 +233,8 @@ class StateSerializer(Generic[ContextT]):
 
     def serialize_context_full(self, context: ContextT) -> JSONObject:
         # Use Pydantic dump for comprehensive state
-        return cast(JSONObject, context.model_dump())
+        data = context.model_dump()
+        return data if isinstance(data, dict) else {}
 
     def serialize_context_minimal(self, context: ContextT) -> JSONObject:
         # Minimal set used for optimized persistence paths
@@ -303,26 +300,25 @@ class StateSerializer(Generic[ContextT]):
     def serialize_step_history_minimal(
         self, step_history: Optional[list[StepResult]]
     ) -> list[JSONObject]:
-        out: list[JSONObject] = []
+        """Serialize only the most recent step to avoid quadratic growth."""
         if not step_history:
-            return out
-        for step_result in step_history:
-            try:
-                out.append(
-                    {
-                        "name": step_result.name,
-                        "output": step_result.output,
-                        "success": step_result.success,
-                        "cost_usd": step_result.cost_usd,
-                        "token_counts": step_result.token_counts,
-                        "attempts": step_result.attempts,
-                        "latency_s": step_result.latency_s,
-                        "feedback": step_result.feedback,
-                    }
-                )
-            except Exception:
-                continue
-        return out
+            return []
+        latest = step_history[-1]
+        try:
+            return [
+                {
+                    "name": latest.name,
+                    "output": latest.output,
+                    "success": latest.success,
+                    "cost_usd": latest.cost_usd,
+                    "token_counts": latest.token_counts,
+                    "attempts": latest.attempts,
+                    "latency_s": latest.latency_s,
+                    "feedback": latest.feedback,
+                }
+            ]
+        except Exception:
+            return []
 
     # -------------------------- Deserialization ---------------------------
 

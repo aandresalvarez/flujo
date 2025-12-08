@@ -13,8 +13,14 @@ import uuid
 
 from flujo.type_definitions.common import JSONObject
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
-from flujo.utils.serialization import safe_serialize
+from flujo.state.backends.base import _serialize_for_json
 from flujo.utils.serialization import register_custom_serializer
+
+
+def _serialize(obj: Any) -> Any:
+    """JSON-friendly serialization used by tests (replaces safe_serialize)."""
+    normalized = _serialize_for_json(obj)
+    return json.loads(json.dumps(normalized, ensure_ascii=False))
 
 
 class MockEnum(Enum):
@@ -151,7 +157,7 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = _serialize(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -175,7 +181,7 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = _serialize(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -200,7 +206,7 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = _serialize(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -228,7 +234,7 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = _serialize(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -252,7 +258,7 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = _serialize(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -277,12 +283,8 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data = serialize_to_json_robust(serialized)
-        data = json.loads(data)
+        serialized = _serialize(request_data)
+        data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]
@@ -304,14 +306,14 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
         # Our robust serialization system handles custom types gracefully
-        result = safe_serialize(request_data)
+        result = _serialize(request_data)
         # Pydantic models preserve their original types, so custom types remain as objects
         # This is actually the correct behavior for Pydantic models
-        assert isinstance(result["input_data"]["uuid_field"], uuid.UUID)
-        assert isinstance(result["input_data"]["datetime_field"], datetime)
-        assert isinstance(result["input_data"]["date_field"], date)
-        assert isinstance(result["input_data"]["time_field"], time)
-        assert isinstance(result["input_data"]["decimal_field"], Decimal)
+        assert isinstance(result["input_data"]["uuid_field"], str)
+        assert isinstance(result["input_data"]["datetime_field"], str)
+        assert isinstance(result["input_data"]["date_field"], str)
+        assert isinstance(result["input_data"]["time_field"], str)
+        assert isinstance(result["input_data"]["decimal_field"], str)
 
     def test_recursive_structures(self):
         """Test serialization of recursive structures."""
@@ -335,12 +337,8 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data = serialize_to_json_robust(serialized)
-        data = json.loads(data)
+        serialized = _serialize(request_data)
+        data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]
@@ -366,12 +364,8 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
-        # Use the robust serialization system instead of json.dumps
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        data = serialize_to_json_robust(serialized)
-        data = json.loads(data)
+        serialized = _serialize(request_data)
+        data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
         reconstructed_input = reconstructed["input_data"]
@@ -405,7 +399,7 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = _serialize(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -429,7 +423,7 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = _serialize(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -469,7 +463,7 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = _serialize(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -503,7 +497,7 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
         with pytest.raises(TypeError):
-            safe_serialize(request_data)
+            _serialize(request_data)
 
     def test_circular_reference_handling(self):
         """
@@ -530,32 +524,13 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        # Test that safe_serialize handles circular references gracefully
-        serialized = safe_serialize(request_data)
+        # Test that serialization handles circular references gracefully
+        serialized = _serialize(request_data)
         assert serialized is not None, (
-            "safe_serialize should not return None for circular references"
+            "serialization should not return None for circular references"
         )
-
-        # Test that robust serialization doesn't crash or hang
-        from flujo.utils.serialization import serialize_to_json_robust
-
-        try:
-            data = serialize_to_json_robust(serialized)
-            # If it succeeds, validate it's a string (may contain placeholders)
-            assert isinstance(data, str), "robust serialization should return a string"
-            assert len(data) > 0, "robust serialization should return non-empty string"
-        except (TypeError, ValueError) as e:
-            # If it fails, ensure it's a clear, actionable error
-            error_msg = str(e)
-            assert (
-                "MockEnum" in error_msg
-                or "circular" in error_msg.lower()
-                or "serializable" in error_msg.lower()
-            ), f"Error should be clear about the issue: {error_msg}"
-
-        # Test that the system doesn't hang or crash on complex structures
-        # This validates Flujo's robustness principle
-        assert True, "System handled circular reference gracefully without crashing or hanging"
+        # Ensure placeholder was inserted
+        assert serialized["input_data"]["nested_dict"]["self_ref"]["parent"] == "<circular>"
 
     @pytest.mark.slow
     def test_large_data_structures(self):
@@ -583,7 +558,7 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = _serialize(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -607,7 +582,7 @@ class TestSerializationEdgeCases:
             "stream": False,
         }
 
-        serialized = safe_serialize(request_data)
+        serialized = _serialize(request_data)
         data = json.loads(json.dumps(serialized))
 
         reconstructed = self.backend._reconstruct_payload(request_data, data)
@@ -626,7 +601,7 @@ class TestSerializationEdgeCases:
 
 def test_circular_reference_in_dict_keys():
     """Test that circular/self-referential objects as dict keys do not cause infinite recursion."""
-    from flujo.utils.serialization import safe_serialize, register_custom_serializer
+    from flujo.utils.serialization import register_custom_serializer
 
     class Node:
         def __init__(self, name):
@@ -642,7 +617,7 @@ def test_circular_reference_in_dict_keys():
     node2.ref = node1
 
     test_dict = {node1: "a", node2: "b", "plain": "c"}
-    result = safe_serialize(test_dict)
+    result = _serialize(test_dict)
     assert isinstance(result, dict)
     # Should not raise RecursionError or stack overflow
     assert any("node1" in str(k) or "node2" in str(k) for k in result.keys())

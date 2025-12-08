@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Awaitable, Callable, Dict, Literal, Optional, cast
 import time
 
@@ -30,6 +31,9 @@ except Exception:  # pragma: no cover - optional dependency
     OTEL_AVAILABLE = False
 
 
+logger = logging.getLogger("flujo.telemetry.otel")
+
+
 class OpenTelemetryHook:
     """Hook that exports Flujo lifecycle events as OpenTelemetry spans."""
 
@@ -56,6 +60,23 @@ class OpenTelemetryHook:
         self._active_spans: Dict[str, Span] = {}
         # Monotonic start times for step spans (fallback latency computation)
         self._mono_start: Dict[str, float] = {}
+        self._redact: Callable[[str], str]
+        try:
+            from flujo.utils.redact import summarize_and_redact_prompt
+
+            # Normalize to a single-argument callable; use defaults for optional params.
+            self._redact = lambda prompt_text: summarize_and_redact_prompt(prompt_text)
+        except ImportError:  # pragma: no cover - optional dependency
+            # Best-effort fallback when redaction helpers are unavailable.
+            self._redact = lambda _prompt_text: "<redacted>"
+
+    def _safe_redact(self, text: str) -> str:
+        """Best-effort redaction that never raises."""
+        try:
+            return self._redact(text)
+        except Exception as exc:  # noqa: BLE001 - defensive best-effort path
+            logger.debug("Redaction failed; using fallback placeholder", exc_info=exc)
+            return "<redaction-error>"
 
     async def hook(self, payload: HookPayload) -> None:
         if getattr(payload, "is_background", False):
@@ -132,10 +153,8 @@ class OpenTelemetryHook:
         ctx = trace.set_span_in_context(run_span)
         span = self.tracer.start_span(name_for_span, context=ctx)
         # Canonical attributes (best-effort)
-        try:
-            span.set_attribute("step_input", str(getattr(payload, "step_input", "")))
-        except Exception:
-            pass
+        raw_input = str(getattr(payload, "step_input", ""))
+        span.set_attribute("step_input", self._safe_redact(raw_input))
         try:
             span.set_attribute(
                 "flujo.step.type",
@@ -191,12 +210,14 @@ class OpenTelemetryHook:
         # Try to find the span using the step result name first
         key = self._get_step_span_key(payload.step_result.name)
         span = self._active_spans.pop(key, None)
+        actual_key = key
 
         # If not found, try to find any span that matches the step name pattern
         if span is None:
             for k in list(self._active_spans.keys()):
                 if k.startswith(f"step:{payload.step_result.name}"):
                     span = self._active_spans.pop(k)
+                    actual_key = k
                     break
 
         if span is not None:
@@ -205,14 +226,9 @@ class OpenTelemetryHook:
             # Prefer provided latency; fallback to monotonic delta when missing
             latency = payload.step_result.latency_s
             if not latency:
-                try:
-                    # Use the same key as pre_step if available
-                    pre_key = self._get_step_span_key(payload.step_result.name)
-                    start = self._mono_start.pop(pre_key, None)
-                    if start is not None:
-                        latency = max(0.0, time.monotonic() - start)
-                except Exception:
-                    pass
+                start = self._mono_start.pop(actual_key, None)
+                if start is not None:
+                    latency = max(0.0, time.monotonic() - start)
             span.set_attribute("latency_s", latency)
             span.set_attribute(
                 "flujo.budget.actual_cost_usd", getattr(payload.step_result, "cost_usd", 0.0)
@@ -220,25 +236,22 @@ class OpenTelemetryHook:
             span.set_attribute(
                 "flujo.budget.actual_tokens", getattr(payload.step_result, "token_counts", 0)
             )
+            span.set_attribute(
+                "step_output", self._safe_redact(str(getattr(payload.step_result, "output", "")))
+            )
             # Emit fallback event if metadata indicates it
-            try:
-                md = getattr(payload.step_result, "metadata_", {}) or {}
-                if md.get("fallback_triggered"):
-                    try:
-                        # Use OTel event API if available on span
-                        span.add_event(
-                            name="flujo.fallback.triggered",
-                            attributes={"original_error": str(md.get("original_error", ""))},
-                        )
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            md = getattr(payload.step_result, "metadata_", {}) or {}
+            if md.get("fallback_triggered"):
+                try:
+                    # Use OTel event API if available on span
+                    span.add_event(
+                        name="flujo.fallback.triggered",
+                        attributes={"original_error": str(md.get("original_error", ""))},
+                    )
+                except Exception as exc:  # noqa: BLE001 - telemetry must not fail user runs
+                    logger.debug("Failed to add fallback event to span: %s", exc)
             # Cleanup monotonic start entry if any
-            try:
-                self._mono_start.pop(self._get_step_span_key(payload.step_result.name), None)
-            except Exception:
-                pass
+            self._mono_start.pop(actual_key, None)
             span.end()
 
     async def _handle_step_failure(self, payload: OnStepFailurePayload) -> None:

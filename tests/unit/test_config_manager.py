@@ -55,6 +55,24 @@ class TestConfigManager:
             finally:
                 os.chdir(original_cwd)
 
+    def test_config_manager_respects_env_var_changes(self, tmp_path, monkeypatch):
+        """Settings should reflect env changes without forcing reload."""
+        config_path = tmp_path / "flujo.toml"
+        config_path.write_text("")  # minimal config to set config_path
+
+        mgr = ConfigManager(config_path)
+
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-old")
+        first = mgr.get_settings()
+        assert first.openai_api_key is not None
+        assert first.openai_api_key.get_secret_value() == "sk-old"
+
+        # Change env and ensure cache invalidation picks up the new value
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-new")
+        second = mgr.get_settings()
+        assert second.openai_api_key is not None
+        assert second.openai_api_key.get_secret_value() == "sk-new"
+
     def test_basic_config_loading(self):
         """Test loading a basic configuration file."""
         config_content = """

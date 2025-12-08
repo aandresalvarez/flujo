@@ -6,7 +6,9 @@ from typing import List
 from flujo import Step
 from flujo.domain.models import BaseModel as FlujoBaseModel
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend, gather_result
-from flujo.utils.serialization import safe_serialize, register_custom_serializer
+from flujo.utils.serialization import register_custom_serializer
+from flujo.state.backends.base import _serialize_for_json
+import json
 from tests.conftest import create_test_flujo
 from flujo.type_definitions.common import JSONObject
 
@@ -448,7 +450,8 @@ async def test_circular_reference_in_dict_keys_in_pipeline():
     test_dict = {node1: "a", node2: "b", "plain": "c"}
 
     # Simulate pipeline context/output serialization
-    result = safe_serialize({"context": test_dict})
+    normalized = _serialize_for_json({"context": test_dict})
+    result = json.loads(json.dumps(normalized, ensure_ascii=False))
     assert isinstance(result, dict)
     assert "context" in result
     # Should not raise RecursionError or stack overflow

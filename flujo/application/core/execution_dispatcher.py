@@ -3,13 +3,9 @@
 from __future__ import annotations
 
 import inspect
-import warnings
 from typing import Any, Awaitable, Callable, Optional, Type, Union
 
-from ...domain.dsl.step import Step
 from ...domain.models import Failure, StepOutcome, StepResult
-from ...infra import telemetry as _telemetry
-from ...utils.config import get_settings
 from .types import ExecutionFrame
 from .policy_registry import PolicyRegistry, StepPolicy
 
@@ -27,15 +23,13 @@ class ExecutionDispatcher:
         self._registry: PolicyRegistry = registry or PolicyRegistry()
         self._core = core
 
-    def register(self, step_type: Type[Step[Any, Any]], policy: PolicyCallable) -> None:
+    def register(self, step_type: Type[Any], policy: PolicyCallable) -> None:
         """Register a policy; thin wrapper around PolicyRegistry."""
         self._registry.register(step_type, policy)
 
-    def get_policy(self, step: Step[Any, Any]) -> Optional[RegisteredPolicy]:
+    def get_policy(self, step: Any) -> Optional[RegisteredPolicy]:
         """Return the policy callable for a step instance, if any."""
         policy = self._registry.get(type(step))
-        if policy is None:
-            policy = self._registry.get(Step)
         return policy
 
     async def dispatch(self, frame: ExecutionFrame[Any]) -> StepOutcome[Any]:
@@ -54,72 +48,30 @@ class ExecutionDispatcher:
             )
             if core_obj is None:
                 raise TypeError("Executor core is required for policy execution")
-            if self._expects_frame(policy):
-                return await policy.execute(core_obj, frame)
-            return await self._call_legacy_policy(policy, core_obj, frame)
+            self._validate_frame_signature(policy)
+            return await policy.execute(core_obj, frame)
         return await policy(frame)
 
-    def _expects_frame(self, policy: StepPolicy[Any]) -> bool:
-        """Detect whether a policy prefers the new frame-based signature."""
+    def _validate_frame_signature(self, policy: StepPolicy[Any]) -> None:
+        """Ensure the policy execute method accepts a `frame` parameter."""
         try:
             sig = inspect.signature(policy.execute)
             params = list(sig.parameters.values())
-            # Bound method: first param is usually `core`
-            for param in params[1:]:
-                if param.name == "frame":
-                    return True
-                if param.kind is inspect.Parameter.VAR_POSITIONAL:
-                    # Policies using *args typically expect a frame as the first arg
-                    return True
-                ann = param.annotation
-                if ann is ExecutionFrame or getattr(ann, "__name__", "") == "ExecutionFrame":
-                    return True
-        except Exception:
-            # Default to legacy behavior if inspection fails
-            return False
-        return False
-
-    async def _call_legacy_policy(
-        self, policy: StepPolicy[Any], core_obj: Any, frame: ExecutionFrame[Any]
-    ) -> StepOutcome[Any]:
-        """Adapt ExecutionFrame into legacy positional arguments for old policies."""
-        cache_key = None
-        try:
-            if getattr(core_obj, "_enable_cache", False):
-                cache_key = core_obj._cache_key(frame)
-        except Exception:
-            cache_key = None
-        fallback_depth = 0
-        try:
-            fallback_depth = int(getattr(frame, "_fallback_depth", 0) or 0)
-        except Exception:
-            fallback_depth = 0
-        try:
-            if get_settings().warn_legacy:
-                msg = (
-                    f"Legacy policy signature detected for {type(policy).__name__}; "
-                    "please migrate execute(core, frame) to ExecutionFrame."
+            if len(params) < 2:
+                raise TypeError(
+                    f"{type(policy).__name__}.execute must accept (core, frame); got {sig}"
                 )
-                warnings.warn(msg, DeprecationWarning, stacklevel=3)
-                try:
-                    _telemetry.logfire.warning(msg)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        return await policy.execute(
-            core_obj,
-            frame.step,
-            frame.data,
-            frame.context,
-            frame.resources,
-            frame.limits,
-            frame.stream,
-            frame.on_chunk,
-            cache_key,
-            fallback_depth,
-        )
+            frame_param = params[1]
+            if frame_param.name != "frame":
+                raise TypeError(
+                    f"{type(policy).__name__}.execute must accept `frame` as second parameter; got {sig}"
+                )
+        except TypeError:
+            raise
+        except Exception as exc:
+            raise TypeError(
+                f"Failed to validate execute signature for {type(policy).__name__}: {exc}"
+            ) from exc
 
     @property
     def registry(self) -> PolicyRegistry:

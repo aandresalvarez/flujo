@@ -21,36 +21,33 @@ import anyio
 import os
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
-from .base import StateBackend
+from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
+from .base import StateBackend, _serialize_for_json as _serialize_for_json_base
 from flujo.infra import telemetry
 from flujo.type_definitions.common import JSONObject
 
 logger = logging.getLogger(__name__)
 
+
+# Serialize objects for persistence using the shared normalization logic.
+def _serialize_for_json(obj: Any) -> Any:
+    return _serialize_for_json_base(obj)
+
+
 # Try to import orjson for faster JSON serialization
 try:
     import orjson
-    from flujo.utils.serialization import safe_serialize
 
     def _fast_json_dumps(obj: Any) -> str:
-        """Use orjson for faster JSON serialization with robust serialization.
-
-        Note: avoid key-sorting to reduce CPU overhead on hot paths.
-        """
-        serialized_obj = safe_serialize(obj)
-        blob: bytes = orjson.dumps(serialized_obj)
+        """Use orjson for faster JSON serialization with typed model support."""
+        blob: bytes = orjson.dumps(_serialize_for_json(obj))
         return blob.decode("utf-8")
 
 except ImportError:
-    from flujo.utils.serialization import safe_serialize
 
     def _fast_json_dumps(obj: Any) -> str:
-        """Fallback to standard json for JSON serialization with robust serialization.
-
-        Note: avoid key-sorting to reduce CPU overhead on hot paths.
-        """
-        serialized_obj = safe_serialize(obj)
-        s: str = json.dumps(serialized_obj, separators=(",", ":"))
+        """Fallback to standard json for JSON serialization with typed model support."""
+        s: str = json.dumps(_serialize_for_json(obj), separators=(",", ":"))
         return s
 
 
@@ -314,11 +311,16 @@ def validate_column_definition_or_raise(column_def: str) -> None:
         raise ValueError(f"Invalid column definition: {column_def}")
 
 
+async def _await_coro(coro: "Coroutine[Any, Any, Any]") -> Any:
+    """Helper to await a coroutine inside the blocking portal."""
+    return await coro
+
+
 def _run_coro_sync(coro: "Coroutine[Any, Any, Any]") -> Any:
     """Run an async coroutine from sync context, even if a loop exists.
 
-    This mirrors the safe pattern used elsewhere in the project to ensure we can
-    close resources at interpreter shutdown without hanging.
+    Uses a shared anyio BlockingPortal to avoid ad-hoc event loops/threads and
+    prevent "Event loop is closed" shutdown flakiness.
     """
     try:
         asyncio.get_running_loop()
@@ -326,7 +328,7 @@ def _run_coro_sync(coro: "Coroutine[Any, Any, Any]") -> Any:
         return asyncio.run(coro)
 
     portal = _get_blocking_portal()
-    return portal.call(lambda: coro)
+    return portal.call(_await_coro, coro)
 
 
 class SQLiteBackendBase(StateBackend):
@@ -341,11 +343,21 @@ class SQLiteBackendBase(StateBackend):
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)  # Ensure parent directories exist
+        # Locks must be loop-local to avoid cross-loop binding errors when the same backend
+        # instance is used from multiple event loops (e.g., threads running asyncio.run()).
+        # We keep _lock for backward compatibility but populate it with the current loop's
+        # lock on demand via _get_lock().
         self._lock: Optional[asyncio.Lock] = None
+        self._loop_locks: "weakref.WeakKeyDictionary[AbstractEventLoop, asyncio.Lock]" = (
+            weakref.WeakKeyDictionary()
+        )
+        self._thread_locks: Dict[int, asyncio.Lock] = {}
         self._initialized = False
-        # Lightweight single-connection pool to reduce connect() overhead on hot paths.
-        # Guarded by self._lock for serialized access.
+        # Backward-compat attribute (tests expect None when no pool). Actual pools are loop-local.
         self._connection_pool: Optional[aiosqlite.Connection] = None
+        # Per-event-loop pooled connections to avoid cross-loop reuse issues in async apps.
+        # Guarded by self._lock for serialized access.
+        self._connection_pool_map: Dict[int, aiosqlite.Connection] = {}
 
         # Event-loop-local file-level lock - will be initialized lazily
         self._file_lock: Optional[asyncio.Lock] = None
@@ -358,10 +370,57 @@ class SQLiteBackendBase(StateBackend):
             pass
 
     def _get_lock(self) -> asyncio.Lock:
-        """Lazily create the lock on first access."""
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-        return self._lock
+        """Return an event-loop-local lock to avoid cross-loop binding errors.
+
+        asyncio.Lock instances are bound to the loop that creates them. When the same
+        SQLiteBackend is used from different threads/loops (e.g., concurrent asyncio.run
+        calls), sharing a single lock causes RuntimeError: Task attached to a different
+        loop. We therefore allocate one lock per loop (and per thread when no loop is
+        running) and reuse it on subsequent calls from that context.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            thread_id = threading.get_ident()
+            lock = self._thread_locks.get(thread_id)
+            if lock is None:
+                lock = asyncio.Lock()
+                self._thread_locks[thread_id] = lock
+            self._lock = lock
+            return lock
+
+        lock = self._loop_locks.get(loop)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._loop_locks[loop] = lock
+        self._lock = lock
+        return lock
+
+    def _current_loop_id(self) -> Optional[int]:
+        try:
+            return id(asyncio.get_running_loop())
+        except RuntimeError:
+            return None
+
+    def _get_pooled_connection(self) -> Optional[aiosqlite.Connection]:
+        loop_id = self._current_loop_id()
+        if loop_id is None:
+            return None
+        return self._connection_pool_map.get(loop_id)
+
+    def _set_pooled_connection(self, conn: aiosqlite.Connection) -> None:
+        loop_id = self._current_loop_id()
+        if loop_id is None:
+            return
+        self._connection_pool_map[loop_id] = conn
+
+    async def _acquire_connection(self) -> tuple[aiosqlite.Connection, bool]:
+        """Return (connection, close_after) respecting loop-local pooling."""
+        pooled = self._get_pooled_connection()
+        if pooled is not None:
+            return pooled, False
+        conn = await self._create_connection()
+        return conn, True
 
     async def _create_connection(self) -> aiosqlite.Connection:
         """Return a new aiosqlite connection with daemonized worker thread."""
@@ -375,16 +434,20 @@ class SQLiteBackendBase(StateBackend):
 
     async def shutdown(self) -> None:
         """Close connection pool and release resources to avoid lingering threads."""
+        lock = self._get_lock()
         try:
-            # Close pooled async connection if present
-            if self._connection_pool is not None:
-                try:
-                    await self._connection_pool.close()
-                finally:
-                    self._connection_pool = None
-        except Exception:
-            # Defensive: never raise during shutdown
-            pass
+            async with lock:
+                # Close pooled async connections if present
+                for conn in list(self._connection_pool_map.values()):
+                    try:
+                        await conn.close()
+                    except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                        logger.debug(
+                            "Non-fatal error closing pooled connection during shutdown: %s", exc
+                        )
+                self._connection_pool_map.clear()
+        except Exception as exc:  # noqa: BLE001 - defensive shutdown
+            logger.debug("Non-fatal shutdown error: %s", exc)
 
     @classmethod
     def shutdown_all(cls) -> None:
@@ -746,21 +809,35 @@ class SQLiteBackendBase(StateBackend):
                 break
 
         try:
-            # Try to move the corrupted file to backup location using Path.rename
-            self.db_path.rename(backup_path)
+            # Try to move the corrupted file to backup location using Path.rename (offloaded)
+            await asyncio.to_thread(self.db_path.rename, backup_path)
             telemetry.logfire.warning(f"Corrupted database backed up to {backup_path}")
         except (OSError, IOError):
-            # If move fails, try to copy and then remove
+            # If move fails, try to copy and then remove (offloaded to avoid blocking loop)
             try:
                 import shutil
 
-                shutil.copy2(str(self.db_path), str(backup_path))
-                self.db_path.unlink()
+                def _copy_and_remove() -> None:
+                    shutil.copy2(str(self.db_path), str(backup_path))
+                    wal = self.db_path.with_suffix(self.db_path.suffix + "-wal")
+                    shm = self.db_path.with_suffix(self.db_path.suffix + "-shm")
+                    if wal.exists():
+                        shutil.copy2(str(wal), str(backup_path) + "-wal")
+                    if shm.exists():
+                        shutil.copy2(str(shm), str(backup_path) + "-shm")
+                    self.db_path.unlink(missing_ok=True)
+                    try:
+                        wal.unlink(missing_ok=True)
+                        shm.unlink(missing_ok=True)
+                    except Exception as exc:
+                        logger.debug("Could not remove WAL/SHM sidecars: %s", exc)
+
+                await asyncio.to_thread(_copy_and_remove)
                 telemetry.logfire.warning(f"Corrupted database copied to {backup_path} and removed")
             except (OSError, IOError) as copy_error:
                 # If all else fails, just remove the corrupted file
                 try:
-                    self.db_path.unlink()
+                    await asyncio.to_thread(self.db_path.unlink)
                     telemetry.logfire.warning(f"Corrupted database removed: {copy_error}")
                 except (OSError, IOError) as remove_error:
                     telemetry.logfire.error(f"Failed to remove corrupted database: {remove_error}")
@@ -995,18 +1072,45 @@ class SQLiteBackendBase(StateBackend):
                         await self._init_db()
                         # Lazily create a pooled connection with optimized pragmas for subsequent writes
                         try:
-                            self._connection_pool = await self._create_connection()
-                            await self._connection_pool.execute("PRAGMA journal_mode = WAL")
-                            await self._connection_pool.execute("PRAGMA synchronous = NORMAL")
-                            await self._connection_pool.execute("PRAGMA temp_store = MEMORY")
-                            await self._connection_pool.execute("PRAGMA cache_size = 10000")
-                            await self._connection_pool.execute("PRAGMA mmap_size = 268435456")
-                            await self._connection_pool.execute("PRAGMA page_size = 4096")
-                            await self._connection_pool.execute("PRAGMA busy_timeout = 1000")
-                            await self._connection_pool.commit()
-                        except Exception:
-                            # If pool creation fails, fall back to per-call connections
-                            self._connection_pool = None
+                            conn = await self._create_connection()
+                            try:
+                                await conn.execute("PRAGMA journal_mode = WAL")
+                                await conn.execute("PRAGMA synchronous = NORMAL")
+                                await conn.execute("PRAGMA temp_store = MEMORY")
+                                await conn.execute("PRAGMA cache_size = 10000")
+                                await conn.execute("PRAGMA mmap_size = 268435456")
+                                await conn.execute("PRAGMA page_size = 4096")
+                                await conn.execute("PRAGMA busy_timeout = 1000")
+                                await conn.commit()
+                                lock = self._get_lock()
+                                async with lock:
+                                    self._set_pooled_connection(conn)
+                            except (sqlite3.Error, aiosqlite.Error):
+                                try:
+                                    await conn.close()
+                                except Exception as close_exc:  # noqa: BLE001 - best-effort cleanup
+                                    logger.debug(
+                                        "Non-fatal error closing pooled connection: %s", close_exc
+                                    )
+                                # Fall back to per-call connections
+                            except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+                                try:
+                                    await conn.close()
+                                except Exception as close_exc:  # noqa: BLE001 - best-effort cleanup
+                                    logger.debug(
+                                        "Non-fatal error closing pooled connection: %s", close_exc
+                                    )
+                                raise
+                            except Exception:
+                                try:
+                                    await conn.close()
+                                except Exception as close_exc:  # noqa: BLE001 - best-effort cleanup
+                                    logger.debug(
+                                        "Non-fatal error closing pooled connection: %s", close_exc
+                                    )
+                                raise
+                        except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+                            raise
                         self._initialized = True
                     except sqlite3.DatabaseError as e:
                         telemetry.logfire.error(f"Failed to initialize DB: {e}")
@@ -1014,13 +1118,17 @@ class SQLiteBackendBase(StateBackend):
 
     async def close(self) -> None:
         """Close database connections and cleanup resources."""
-        conn = getattr(self, "_connection_pool", None)
-        if conn:
-            try:
-                await conn.close()
-            finally:
-                self._connection_pool = None
-        self._initialized = False
+        lock = self._get_lock()
+        async with lock:
+            # Close all loop-local pooled connections
+            for conn in list(self._connection_pool_map.values()):
+                try:
+                    await conn.close()
+                except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                    logger.debug("Non-fatal error closing pooled connection: %s", exc)
+            self._connection_pool_map.clear()
+            self._connection_pool = None
+            self._initialized = False
 
         # No global locks to clean up
 
@@ -1115,10 +1223,11 @@ class SQLiteBackendBase(StateBackend):
         """Persist a shadow evaluation result into SQLite."""
 
         async def _insert() -> None:
-            conn = self._connection_pool or await self._create_connection()
-            close_after = conn is not self._connection_pool
+            conn, close_after = await self._acquire_connection()
             try:
-                metadata_json = None if metadata is None else json.dumps(safe_serialize(metadata))
+                metadata_json = (
+                    None if metadata is None else json.dumps(_serialize_for_json(metadata))
+                )
                 await conn.execute(
                     """
                     INSERT INTO evaluations (run_id, step_name, score, feedback, metadata, created_at)
@@ -1148,8 +1257,7 @@ class SQLiteBackendBase(StateBackend):
         """Return recent evaluations."""
 
         async def _select() -> list[JSONObject]:
-            conn = self._connection_pool or await self._create_connection()
-            close_after = conn is not self._connection_pool
+            conn, close_after = await self._acquire_connection()
             try:
                 if run_id:
                     cursor = await conn.execute(

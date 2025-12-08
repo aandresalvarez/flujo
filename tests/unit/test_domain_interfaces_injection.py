@@ -15,6 +15,21 @@ from flujo.domain.interfaces import (
     set_default_telemetry_sink,
 )
 from flujo.architect import builder
+from unittest import mock
+from flujo.infra.config_manager import FlujoConfig
+
+
+@pytest.fixture()
+def mock_allowed_imports():
+    """Allow test modules to be imported during blueprint loading."""
+    with mock.patch("flujo.domain.blueprint.loader_resolution.get_config_provider") as mock_get:
+        mock_config = mock.Mock(spec=FlujoConfig)
+        mock_config.blueprint_allowed_imports = ["flujo", "math"]
+        mock_config.settings = mock.Mock()
+        mock_config.settings.blueprint_allowed_imports = ["flujo", "math"]
+
+        mock_get.return_value.load_config.return_value = mock_config
+        yield
 
 
 class _FakeTelemetry:
@@ -97,6 +112,7 @@ def test_blueprint_import_enforces_allowlist_from_injected_config_provider() -> 
     assert fake_provider.called >= 2
 
 
+@pytest.mark.usefixtures("mock_allowed_imports")
 def test_blueprint_loader_uses_injected_skills_discovery(tmp_path: Any) -> None:
     original_discovery = get_skills_discovery()
     fake_discovery = _FakeSkillsDiscovery()

@@ -315,8 +315,11 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         # Wait for background tasks if executor supports it
         try:
             executor = getattr(self.backend, "_executor", None)
-            if executor and hasattr(executor, "wait_for_background_tasks"):
-                await executor.wait_for_background_tasks()
+            if executor:
+                if hasattr(executor, "aclose"):
+                    await executor.aclose()
+                elif hasattr(executor, "wait_for_background_tasks"):
+                    await executor.wait_for_background_tasks()
         except Exception:
             pass
 

@@ -293,8 +293,8 @@ def safe_deserialize(
     - Enums
     - Special float values (inf, -inf, nan)
     - Primitives (str, int, bool, None)
-    - Datetime objects (datetime, date, time)
-    - Bytes and memoryview objects
+    - Datetime objects (datetime, date, time) when target_type explicitly requests a datetime type
+    - Bytes and memoryview objects (base64-decoded when target_type requests bytes-like)
     - Complex numbers
     - Custom types registered via register_custom_deserializer
 
@@ -319,21 +319,36 @@ def safe_deserialize(
     if serialized_data is None:
         return None
 
-    # Handle primitives
-    if isinstance(serialized_data, (str, int, bool)):
+    # Handle primitives (non-str)
+    if isinstance(serialized_data, (bool, int, float)):
         return serialized_data
 
-    # Handle special float values
+    # Handle strings with special cases only when target_type explicitly requires it
     if isinstance(serialized_data, str):
-        if serialized_data == "nan":
-            return float("nan")
-        if serialized_data == "inf":
-            return float("inf")
-        if serialized_data == "-inf":
-            return float("-inf")
+        if target_type is float:
+            if serialized_data == "nan":
+                return float("nan")
+            if serialized_data == "inf":
+                return float("inf")
+            if serialized_data == "-inf":
+                return float("-inf")
+            return serialized_data
 
-    # Handle float
-    if isinstance(serialized_data, float):
+        if target_type in {bytes, bytearray, memoryview}:
+            try:
+                import base64
+                import binascii
+
+                decoded = base64.b64decode(serialized_data, validate=True)
+                if target_type is bytearray:
+                    return bytearray(decoded)
+                if target_type is memoryview:
+                    return memoryview(decoded)
+                return decoded
+            except (ValueError, binascii.Error):
+                return serialized_data
+
+        # Default: leave string as-is when no explicit target coercion requested
         return serialized_data
 
     # Handle lists
@@ -342,13 +357,20 @@ def safe_deserialize(
 
     # Handle dictionaries
     if isinstance(serialized_data, dict):
+        # Check if this looks like a serialized complex number
+        if "real" in serialized_data and "imag" in serialized_data and len(serialized_data) == 2:
+            try:
+                return complex(serialized_data["real"], serialized_data["imag"])
+            except (ValueError, TypeError):
+                pass
+
         # Check if this looks like a serialized custom type
         if target_type is not None:
             custom_deserializer = lookup_custom_deserializer(target_type)
             if custom_deserializer:
                 try:
                     return custom_deserializer(serialized_data)
-                except Exception:
+                except (TypeError, ValueError):
                     pass  # Fall back to dict reconstruction
 
         # Reconstruct as dict
@@ -358,39 +380,6 @@ def safe_deserialize(
             )
             for k, v in serialized_data.items()
         }
-
-    # Handle datetime objects (from ISO format strings)
-    if isinstance(serialized_data, str):
-        try:
-            from datetime import datetime
-
-            # Try to parse as datetime
-            dt = datetime.fromisoformat(serialized_data.replace("Z", "+00:00"))
-            return dt
-        except (ValueError, TypeError):
-            pass
-
-    # Handle complex numbers (from dict with 'real' and 'imag' keys)
-    if (
-        isinstance(serialized_data, dict)
-        and "real" in serialized_data
-        and "imag" in serialized_data
-    ):
-        try:
-            return complex(serialized_data["real"], serialized_data["imag"])
-        except (ValueError, TypeError):
-            pass
-
-    # Handle bytes (from base64 strings)
-    if isinstance(serialized_data, str):
-        try:
-            import base64
-
-            # Try to decode as base64
-            decoded = base64.b64decode(serialized_data)
-            return decoded
-        except Exception:
-            pass
 
     # Handle enums
     if target_type is not None and hasattr(target_type, "__members__"):
@@ -448,6 +437,7 @@ def safe_serialize(
 
     Handles circular references robustly with mode-specific behavior:
     - "default" mode: Returns appropriate placeholders (None for objects, {} for dicts, [] for lists)
+    - "python" mode: Mirrors "default" for circulars to align with BaseModel.model_dump
     - "cache" mode: Returns "<ClassName circular>" placeholders
     - Custom modes: Uses the circular_ref_placeholder parameter
 
@@ -481,7 +471,7 @@ def safe_serialize(
 
     # Handle datetime objects with mode-aware behavior
     if isinstance(obj, (datetime, date, time)):
-        # Preserve native types in "python" mode (used for model field fidelity)
+        # Preserve native types in python mode; cast to ISO string otherwise
         return obj if mode == "python" else obj.isoformat()
 
     # Handle Enum objects specifically - don't add to _seen
@@ -508,6 +498,16 @@ def safe_serialize(
     except Exception:
         pass
 
+    # Determine if this is a Flujo BaseModel (used in multiple branches)
+    is_flujo_model = False
+    if HAS_PYDANTIC:
+        try:
+            from flujo.domain.base_model import BaseModel as FlujoBaseModel
+
+            is_flujo_model = isinstance(obj, FlujoBaseModel)
+        except ImportError:
+            is_flujo_model = False
+
     # Handle circular references for non-primitive types
     if not isinstance(obj, PRIMITIVE_TYPES):
         obj_id = id(obj)
@@ -521,15 +521,7 @@ def safe_serialize(
                 # Generate class-specific circular reference marker
                 class_name = getattr(obj.__class__, "__name__", type(obj).__name__)
                 return f"<{class_name} circular>"
-            elif mode == "default":
-                # For default mode, check if this is a Flujo BaseModel for special handling
-                try:
-                    from flujo.domain.base_model import BaseModel as FlujoBaseModel
-
-                    is_flujo_model = isinstance(obj, FlujoBaseModel)
-                except ImportError:
-                    is_flujo_model = False
-
+            elif mode in {"default", "python"}:
                 if is_flujo_model:
                     return None
                 elif isinstance(obj, dict):
@@ -539,7 +531,7 @@ def safe_serialize(
                 elif isinstance(obj, (set, frozenset)):
                     return []
                 else:
-                    # For other objects in default mode, use the circular_ref_placeholder
+                    # For other objects in default/python modes, use the circular_ref_placeholder
                     return circular_ref_placeholder
             else:
                 # For other modes, use the provided placeholder
@@ -569,6 +561,22 @@ def safe_serialize(
                 if isinstance(e, (ValueError, TypeError)) and "failed" in str(e).lower():
                     raise
                 # For other exceptions, fall through to default handling
+                pass
+
+        # Prefer Pydantic model_dump for BaseModel instances; then serialize recursively
+        if HAS_PYDANTIC and isinstance(obj, PydanticBaseModel) and not is_flujo_model:
+            # Avoid recursive model_dump (may trigger circular errors); serialize __dict__ using caller mode
+            try:
+                raw = getattr(obj, "__dict__", obj)
+                return safe_serialize(
+                    raw,
+                    default_serializer,
+                    _seen,
+                    _recursion_depth + 1,
+                    circular_ref_placeholder,
+                    mode,
+                )
+            except (AttributeError, TypeError, RecursionError):
                 pass
 
         if obj is None:
@@ -639,14 +647,6 @@ def safe_serialize(
             }
         # Handle Pydantic models with enhanced Flujo BaseModel support
         if hasattr(obj, "model_dump") or (HAS_PYDANTIC and isinstance(obj, PydanticBaseModel)):
-            # Check if this is a subclass of our custom BaseModel (from flujo.domain.base_model)
-            try:
-                from flujo.domain.base_model import BaseModel as FlujoBaseModel
-
-                is_flujo_model = isinstance(obj, FlujoBaseModel)
-            except ImportError:
-                is_flujo_model = False
-
             if is_flujo_model:
                 # This is a Flujo BaseModel - build a dict manually from declared fields
                 # to avoid triggering Pydantic's strict serializer (which emits warnings
@@ -680,23 +680,19 @@ def safe_serialize(
             else:
                 # For other Pydantic models, use their native model_dump and process carefully
                 try:
-                    # Prefer python-mode dump to preserve Python types (datetime, UUID, Decimal)
                     if hasattr(obj, "model_dump"):
                         try:
-                            model_dict = obj.model_dump(mode="python")
+                            dump_mode = "python" if mode == "python" else "json"
+                            model_dict = obj.model_dump(mode=dump_mode)
                         except TypeError:
-                            # Older signatures without mode parameter
                             model_dict = obj.model_dump()
+                    elif hasattr(obj, "dict"):
+                        model_dict = obj.dict()
                     else:
-                        if hasattr(obj, "dict"):
-                            model_dict = obj.dict()
-                        else:
-                            model_dict = {}
-                    # For each value in the model dict, serialize recursively with per-field fallback
+                        model_dict = {}
                     result = {}
                     for k, v in model_dict.items():
                         if v is None or isinstance(v, (str, int, float, bool, list, dict)):
-                            # Basic types - keep as-is
                             result[k] = v
                         else:
                             try:
@@ -706,7 +702,7 @@ def safe_serialize(
                                     _seen,
                                     _recursion_depth + 1,
                                     circular_ref_placeholder,
-                                    "python",
+                                    mode,
                                 )
                             except TypeError as e:
                                 if "not serializable" in str(e):
@@ -1047,7 +1043,9 @@ def serialize_to_json(obj: Any, mode: str = "default", **kwargs: Any) -> str:
 
     Args:
         obj: The object to serialize
-        mode: Serialization mode ("default" or "cache")
+        mode: Serialization mode ("default" or "cache" or "python"). Non-json-safe
+            types (e.g., datetime, UUID, Decimal) are normalized to strings in
+            non-"python" modes to guarantee JSON-serializable output.
         **kwargs: Additional arguments to pass to json.dumps
 
     Returns:

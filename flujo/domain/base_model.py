@@ -17,23 +17,44 @@ class BaseModel(PydanticBaseModel):
 
     def model_dump(self, *, mode: str = "default", **kwargs: Any) -> Any:
         """
-        Unified model serialization using flujo.utils.serialization.
-
-        This method delegates to the centralized serialization system to ensure
-        consistent behavior across all domain models.
-
-        Args:
-            mode: Serialization mode, supports "default" and "cache" modes
-            **kwargs: Additional arguments (preserved for Pydantic compatibility)
-
-        Returns:
-            Serialized representation of the model
+        Unified model serialization using native Pydantic serialization, then normalized
+        via the shared JSON-safe serializer (supports custom serializer registry).
         """
-        from flujo.utils.serialization import safe_serialize
+        try:
+            data = super().model_dump(mode=mode, **kwargs)
+        except ValueError as exc:
+            # Gracefully handle circular references by falling back to python mode
+            if "Circular reference detected" not in str(exc):
+                raise
+            try:
+                data = super().model_dump(mode="python", serialize_as_any=True, **kwargs)
+            except Exception:
+                data = self.__dict__
+        try:
+            from flujo.state.backends.base import _serialize_for_json
 
-        # Delegate all serialization to the centralized utility.
-        # We pass `self` to be serialized.
-        return safe_serialize(self, mode=mode)
+            normalized = _serialize_for_json(data, _seen={id(self)})
+
+            def _strip_placeholders(value: Any) -> Any:
+                if (
+                    isinstance(value, str)
+                    and value.startswith("<")
+                    and value.endswith(" circular>")
+                ):
+                    return None
+                if isinstance(value, list):
+                    return [_strip_placeholders(v) for v in value]
+                if isinstance(value, tuple):
+                    return tuple(_strip_placeholders(v) for v in value)
+                if isinstance(value, dict):
+                    return {k: _strip_placeholders(v) for k, v in value.items()}
+                return value
+
+            if mode != "cache":
+                return _strip_placeholders(normalized)
+            return normalized
+        except Exception:
+            return data
 
     def model_dump_json(self, **kwargs: Any) -> str:
         """

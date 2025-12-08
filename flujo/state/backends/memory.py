@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, List, Optional, Tuple, cast
 
 from flujo.type_definitions.common import JSONObject
-from ...utils.serialization import safe_deserialize, safe_serialize
 
-from .base import StateBackend
+from .base import StateBackend, _serialize_for_json
 from ._filters import metadata_contains
 
 
@@ -35,8 +35,10 @@ class InMemoryBackend(StateBackend):
 
     async def save_state(self, run_id: str, state: JSONObject) -> None:
         async with self._get_lock():
-            # Serialize state so custom types are handled consistently
-            self._store[run_id] = safe_serialize(state)
+            # Serialize state so custom types are handled consistently without safe_serialize
+            normalized = _serialize_for_json(state)
+            serialized = json.loads(json.dumps(normalized, ensure_ascii=False))
+            self._store[run_id] = serialized
 
     async def load_state(self, run_id: str) -> Optional[JSONObject]:
         async with self._get_lock():
@@ -44,7 +46,7 @@ class InMemoryBackend(StateBackend):
             if stored is None:
                 return None
             # Return a deserialized copy to avoid accidental mutation
-            return deepcopy(cast(JSONObject, safe_deserialize(stored)))
+            return deepcopy(cast(JSONObject, stored))
 
     async def delete_state(self, run_id: str) -> None:
         async with self._get_lock():
@@ -93,7 +95,7 @@ class InMemoryBackend(StateBackend):
         async with self._get_lock():
             entries: list[tuple[datetime, JSONObject]] = []
             for stored in self._store.values():
-                state = safe_deserialize(stored)
+                state = deepcopy(cast(JSONObject, stored))
                 if status and state.get("status") != status:
                     continue
                 if pipeline_name and state.get("pipeline_name") != pipeline_name:

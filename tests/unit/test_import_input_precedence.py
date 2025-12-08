@@ -79,7 +79,7 @@ def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
         inherit_context=True,
         inherit_conversation=True,
         input_to="both",  # seed initial_prompt and scratchpad
-        outputs=[OutputMapping(child="scratchpad.echo", parent="scratchpad.child_echo")],
+        outputs=[OutputMapping(child="scratchpad.echo", parent="child_echo")],
         updates_context=True,
     )
 
@@ -97,7 +97,7 @@ def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
         inherit_context=True,
         inherit_conversation=True,
         input_to="both",
-        outputs=[OutputMapping(child="scratchpad.echo", parent="scratchpad.child_echo")],
+        outputs=[OutputMapping(child="scratchpad.echo", parent="child_echo")],
         updates_context=True,
     )
 
@@ -117,6 +117,6 @@ def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
     final_ctx = result.final_pipeline_context
     assert final_ctx is not None
     # With input_to="both", the child sees stringified JSON in its echo scratchpad
-    assert getattr(final_ctx, "scratchpad", {}).get("child_echo") == (
+    assert final_ctx.import_artifacts["child_echo"] == (
         "{" + '"cohort_definition": "Influenza B, SNOMED 6142004"' + "}"
     )

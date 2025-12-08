@@ -5,7 +5,7 @@ from flujo.type_definitions.common import JSONObject
 import pytest
 
 # Mark this module as benchmark so it's excluded from fast test runs
-pytestmark = pytest.mark.benchmark
+pytestmark = [pytest.mark.benchmark, pytest.mark.slow]
 
 import os
 import time
@@ -14,7 +14,7 @@ from typing import Any, Dict, List
 from pydantic import BaseModel, Field
 
 from flujo.testing.utils import SimpleDummyRemoteBackend as DummyRemoteBackend
-from flujo.utils.serialization import safe_serialize
+from flujo.state.backends.base import _serialize_for_json
 
 
 class BenchmarkModel(BaseModel):
@@ -33,6 +33,12 @@ class NestedBenchmarkModel(BaseModel):
     root: BenchmarkModel
     children: List[BenchmarkModel]
     config: Dict[str, BenchmarkModel]
+
+
+def _serialize(obj: Any) -> Any:
+    """JSON-safe serialization using the shared helper."""
+    normalized = _serialize_for_json(obj)
+    return json.loads(json.dumps(normalized, ensure_ascii=False))
 
 
 def create_small_model() -> BenchmarkModel:
@@ -136,12 +142,12 @@ class TestSerializationPerformance:
 
         # Warm up
         for _ in range(10):
-            safe_serialize(request_data)
+            _serialize(request_data)
 
         # Benchmark serialization
         start_time = time.perf_counter()
         for _ in range(iterations):
-            serialized = safe_serialize(request_data)
+            serialized = _serialize(request_data)
         serialization_time = time.perf_counter() - start_time
 
         # Benchmark JSON encoding
@@ -289,7 +295,7 @@ class TestSerializationPerformance:
         # Serialize all models
         serialized_list = []
         for request_data in request_data_list:
-            serialized = safe_serialize(request_data)
+            serialized = _serialize(request_data)
             serialized_list.append(serialized)
 
         peak_memory = process.memory_info().rss / 1024 / 1024  # MB
@@ -319,7 +325,7 @@ class TestSerializationPerformance:
 
         def serialize_operation():
             """Single serialization operation."""
-            serialized = safe_serialize(request_data)
+            serialized = _serialize(request_data)
             data = json.loads(json.dumps(serialized))
             self.backend._reconstruct_payload(request_data, data)
             return True
@@ -378,7 +384,7 @@ class TestSerializationPerformance:
         operations = 0
 
         while time.perf_counter() - start_time < 1.0:
-            serialized = safe_serialize(request_data)
+            serialized = _serialize(request_data)
             data = json.loads(json.dumps(serialized))
             self.backend._reconstruct_payload(request_data, data)
             operations += 1
@@ -421,7 +427,7 @@ class TestSerializationPerformance:
                 "usage_limits": None,
                 "stream": False,
             }
-            serialized = safe_serialize(request_data)
+            serialized = _serialize(request_data)
             data = json.loads(json.dumps(serialized))
             reconstructed = self.backend._reconstruct_payload(request_data, data)
 

@@ -15,10 +15,11 @@ import sys
 import platform
 import gc
 import time
+import json
 
 from flujo.type_definitions.common import JSONObject
-
-from flujo.utils.serialization import safe_serialize, robust_serialize
+from flujo.state.backends.base import _serialize_for_json
+from flujo.utils.serialization import robust_serialize
 
 
 class TestCISerializationCompatibility:
@@ -38,15 +39,16 @@ class TestCISerializationCompatibility:
             "special_chars": "line1\nline2\r\nline3",
         }
 
-        # Test safe_serialize
-        safe_result = safe_serialize(test_data)
-        assert isinstance(safe_result, dict)
-        assert safe_result["string"] == "test"
-        assert safe_result["number"] == 42
-        assert safe_result["boolean"] is True
-        assert safe_result["none"] is None
+        serialized = json.loads(
+            json.dumps(test_data, default=_serialize_for_json, ensure_ascii=False)
+        )
+        assert isinstance(serialized, dict)
+        assert serialized["string"] == "test"
+        assert serialized["number"] == 42
+        assert serialized["boolean"] is True
+        assert serialized["none"] is None
 
-        # Test robust_serialize
+        # Test robust_serialize (legacy compatibility)
         robust_result = robust_serialize(test_data)
         assert isinstance(robust_result, dict)
         assert robust_result["string"] == "test"

@@ -1,10 +1,23 @@
-from typing import Protocol, TypeVar, Any, List, Generic, Optional, Callable, Awaitable
+from typing import (
+    Protocol,
+    TypeVar,
+    Any,
+    List,
+    Generic,
+    Optional,
+    Callable,
+    Awaitable,
+    TYPE_CHECKING,
+)
 from dataclasses import dataclass
 from flujo.type_definitions.common import JSONObject
 
-from flujo.domain.dsl.step import Step
 from ...domain.resources import AppResources
 from ...domain.models import UsageLimits, PipelineResult, Quota
+from ...domain.interfaces import StepLike
+
+if TYPE_CHECKING:
+    pass  # pragma: no cover
 
 
 class ContextWithScratchpad(Protocol):
@@ -29,7 +42,7 @@ class ExecutionFrame(Generic[TContext_w_Scratch]):
     """
 
     # Core execution parameters
-    step: "Step[Any, Any]"
+    step: StepLike
     data: Any
     context: Optional[TContext_w_Scratch]
     resources: Optional[AppResources]

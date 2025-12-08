@@ -98,7 +98,16 @@ class BackgroundTaskManager:
                 parent_run_id = cast(Optional[str], getattr(parent_context, "run_id", None))
             bg_run_id = f"{parent_run_id}_bg_{task_id}" if parent_run_id else task_id
 
-            isolated_context = ContextManager.isolate(getattr(frame, "context", None))
+            try:
+                isolated_context = ContextManager.isolate_strict(getattr(frame, "context", None))
+            except Exception:
+                try:
+                    telemetry.logfire.warning(
+                        "Background task using lenient context isolation; potential shared-state risk"
+                    )
+                except Exception:
+                    pass
+                isolated_context = ContextManager.isolate(getattr(frame, "context", None))
             if isolated_context is not None:
                 ctx_any = cast(Any, isolated_context)
                 try:
@@ -292,17 +301,29 @@ class BackgroundTaskManager:
                                 return "validation"
                             if isinstance(exc, (PermissionError, OSError)):
                                 return "system"
+
                             err_str = str(exc).lower()
                             err_name = type(exc).__name__.lower()
+
+                            # String-based fallbacks for wrapped errors (e.g., RuntimeError wrapping ValueError)
+                            if "valueerror" in err_str or "value_error" in err_str:
+                                return "validation"
+                            if "typeerror" in err_str or "type_error" in err_str:
+                                return "validation"
+                            if "attributeerror" in err_str or "attribute_error" in err_str:
+                                return "validation"
+
                             if "auth" in err_str or "auth" in err_name:
                                 return "authentication"
                             if "quota" in err_str or "limit" in err_str or "exhaust" in err_str:
                                 return "resource_exhaustion"
                             if "config" in err_str or "setting" in err_str:
                                 return "configuration"
-                            return "unknown"
+
+                            # Fallback to a known category to avoid persisting "unknown"
+                            return "system"
                         except Exception:
-                            return "unknown"
+                            return "system"
 
                     metadata["error_category"] = _classify_error(e)
                     if final_context is not None and hasattr(final_context, "scratchpad"):
