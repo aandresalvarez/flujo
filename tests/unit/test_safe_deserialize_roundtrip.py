@@ -4,7 +4,7 @@ from flujo.type_definitions.common import JSONObject
 import pytest
 
 from flujo.utils.serialization import (
-    _serialize_for_json as serialize_jsonable,
+    _serialize_for_json,
     safe_deserialize,
     register_custom_serializer,
     register_custom_deserializer,
@@ -37,7 +37,7 @@ def clear_registry() -> None:
 
 def test_default_behavior_returns_serialized_data() -> None:
     obj = DataExample(1, "x")
-    set = serialize_jsonable(obj)
+    set = _serialize_for_json(obj)
     assert isinstance(set, dict)
     assert safe_deserialize(set) == set
 
@@ -46,7 +46,7 @@ def test_custom_type_roundtrip_with_registry() -> None:
     item = CustomType(42)
     register_custom_serializer(CustomType, lambda x: x.to_dict())
     register_custom_deserializer(CustomType, CustomType.from_dict)
-    serialized = serialize_jsonable(item)
+    serialized = _serialize_for_json(item)
     result = safe_deserialize(serialized, CustomType)
     assert isinstance(result, CustomType)
     assert result.value == 42

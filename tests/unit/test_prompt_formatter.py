@@ -14,10 +14,10 @@ def test_baseline_placeholder_and_json() -> None:
     person = Person(name="Alice", email="a@example.com")
     result = format_prompt(template, name="World", person=person)
     # Derive expected JSON from the actual serialization logic to keep test in sync
-    from flujo.utils.serialization import _serialize_for_json as serialize_jsonable
+    from flujo.utils.serialization import _serialize_for_json
     import json
 
-    expected_json = json.dumps(serialize_jsonable(person))
+    expected_json = json.dumps(_serialize_for_json(person))
     assert result == f"Hello World! Data: {expected_json}"
 
 
