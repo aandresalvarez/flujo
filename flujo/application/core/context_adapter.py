@@ -412,16 +412,31 @@ def _is_allowed_scratchpad_key(key: str) -> bool:
     return any(key.startswith(prefix) for prefix in _SCRATCHPAD_ALLOWED_PREFIXES)
 
 
-def _validate_scratchpad(value: dict[str, Any]) -> dict[str, Any]:
-    """Enforce framework-reserved scratchpad keys; drop or raise on user keys."""
+def _validate_scratchpad(
+    value: dict[str, Any], *, allowed_extra_keys: set[str] | None = None
+) -> dict[str, Any]:
+    """Enforce framework-reserved scratchpad keys; drop or raise on user keys.
+
+    allowed_extra_keys lets explicitly mapped keys (e.g., ImportStep outputs) bypass
+    the reserved-key filter while keeping the general guardrails in place.
+    """
     if not _scratchpad_enforcement_enabled():
         return value
-    invalid = [k for k in list(value.keys()) if not _is_allowed_scratchpad_key(str(k))]
+    allowed_extra_keys = allowed_extra_keys or set()
+    invalid = [
+        k
+        for k in list(value.keys())
+        if k not in allowed_extra_keys and not _is_allowed_scratchpad_key(str(k))
+    ]
     # Preserve framework-approved keys but allow special handling
     if "result" in value and value["result"] is not None:
         # Do not allow overriding result with non-None user data; retain key with None
         value["result"] = None
-    invalid = [k for k in list(value.keys()) if not _is_allowed_scratchpad_key(str(k))]
+    invalid = [
+        k
+        for k in list(value.keys())
+        if k not in allowed_extra_keys and not _is_allowed_scratchpad_key(str(k))
+    ]
     if not invalid:
         return value
 
@@ -804,8 +819,19 @@ def _inject_context_with_deep_merge(
                         "echo",
                         "marker",
                     }
+                    sibling_artifacts = update_data.get("import_artifacts")
+                    allowed_from_artifacts: set[str] = set()
+                    try:
+                        if isinstance(sibling_artifacts, MutableMapping):
+                            allowed_from_artifacts = {
+                                k for k in value.keys() if k in sibling_artifacts
+                            }
+                    except Exception:
+                        allowed_from_artifacts = set()
                     legacy_payload = {
-                        k: value.pop(k) for k in list(value.keys()) if k in legacy_import_keys
+                        k: value.pop(k)
+                        for k in list(value.keys())
+                        if k in legacy_import_keys and k not in allowed_from_artifacts
                     }
                     if legacy_payload:
                         artifacts = getattr(context, "import_artifacts", None)
@@ -821,7 +847,7 @@ def _inject_context_with_deep_merge(
                     pass
 
                 # Special handling for scratchpad: deep merge nested dicts
-                value = _validate_scratchpad(value)
+                value = _validate_scratchpad(value, allowed_extra_keys=allowed_from_artifacts)
                 current_scratchpad = getattr(context, "scratchpad", {})
                 if isinstance(current_scratchpad, dict):
                     merged_scratchpad = _deep_merge_dicts(current_scratchpad, value)
@@ -900,7 +926,14 @@ def _inject_context(
             field_type = field_info.annotation
 
             if key == "scratchpad" and isinstance(value, dict):
-                value = _validate_scratchpad(value)
+                allowed_from_artifacts: set[str] = set()
+                try:
+                    sibling_artifacts = update_data.get("import_artifacts")
+                    if isinstance(sibling_artifacts, MutableMapping):
+                        allowed_from_artifacts = {k for k in value.keys() if k in sibling_artifacts}
+                except Exception:
+                    allowed_from_artifacts = set()
+                value = _validate_scratchpad(value, allowed_extra_keys=allowed_from_artifacts)
 
             # TYPE VALIDATION: Ensure the value matches the declared field type
             if field_type is not None:
