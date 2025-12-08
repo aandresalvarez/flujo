@@ -293,8 +293,8 @@ def safe_deserialize(
     - Enums
     - Special float values (inf, -inf, nan)
     - Primitives (str, int, bool, None)
-    - Datetime objects (datetime, date, time)
-    - Bytes and memoryview objects
+    - Datetime objects (datetime, date, time) when target_type is not explicitly a datetime type
+    - Bytes and memoryview objects (base64-decoded when target_type requests bytes-like)
     - Complex numbers
     - Custom types registered via register_custom_deserializer
 
@@ -346,6 +346,7 @@ def safe_deserialize(
         if target_type in {bytes, bytearray, memoryview}:
             try:
                 import base64
+                import binascii
 
                 decoded = base64.b64decode(serialized_data, validate=True)
                 if target_type is bytearray:
@@ -353,7 +354,7 @@ def safe_deserialize(
                 if target_type is memoryview:
                     return memoryview(decoded)
                 return decoded
-            except Exception:
+            except (ValueError, binascii.Error):
                 pass
         return serialized_data
 

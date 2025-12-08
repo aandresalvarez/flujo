@@ -37,7 +37,8 @@ class NestedBenchmarkModel(BaseModel):
 
 def _serialize(obj: Any) -> Any:
     """JSON-safe serialization using the shared helper."""
-    return json.loads(json.dumps(obj, default=_serialize_for_json, ensure_ascii=False))
+    normalized = _serialize_for_json(obj)
+    return json.loads(json.dumps(normalized, ensure_ascii=False))
 
 
 def create_small_model() -> BenchmarkModel:
