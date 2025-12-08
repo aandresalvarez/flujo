@@ -325,12 +325,6 @@ def safe_deserialize(
 
     # Handle strings with special cases only when target_type explicitly requires it
     if isinstance(serialized_data, str):
-        from datetime import date, datetime, time
-
-        if target_type in {datetime, date, time}:
-            # Preserve string unless a custom deserializer is registered
-            return serialized_data
-
         if target_type is float:
             if serialized_data == "nan":
                 return float("nan")
