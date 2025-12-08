@@ -131,29 +131,31 @@ class DockerSandbox(SandboxProtocol):
                     timed_out = True
                     try:
                         container_obj.kill()
-                    except Exception:
-                        pass
+                    except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                        logger.debug("Failed to kill timed-out container: %s", exc)
                 except asyncio.CancelledError:
                     try:
                         container_obj.kill()
-                    except Exception:
-                        pass
+                    except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                        logger.debug("Failed to kill cancelled container: %s", exc)
                     raise
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001 - unexpected wait failure
+                    logger.debug("Container wait failed: %s", exc)
 
                 try:
                     logs = container_obj.logs(stdout=True, stderr=True) or b""
                     stdout = logs.decode("utf-8", errors="replace")
                     stderr = ""
-                except Exception:
+                except Exception as exc:  # noqa: BLE001 - logs are best-effort
+                    logger.debug("Failed to read container logs: %s", exc)
                     stdout = ""
                     stderr = ""
 
                 try:
                     status = wait_result if wait_result is not None else {"StatusCode": 1}
                     exit_code = int(status.get("StatusCode", 1))
-                except Exception:
+                except Exception as exc:  # noqa: BLE001 - fall back to exit_code=1
+                    logger.debug("Failed to extract container exit code: %s", exc)
                     exit_code = 1
 
                 artifacts = self._collect_artifacts(workdir / "artifacts")
@@ -170,8 +172,8 @@ class DockerSandbox(SandboxProtocol):
             finally:
                 try:
                     container_obj.remove(force=True)
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001 - cleanup best-effort
+                    logger.debug("Failed to remove container: %s", exc)
 
     def _collect_artifacts(self, path: Path) -> dict[str, bytes] | None:
         if not path.exists():

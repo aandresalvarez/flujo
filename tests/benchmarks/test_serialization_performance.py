@@ -5,7 +5,7 @@ from flujo.type_definitions.common import JSONObject
 import pytest
 
 # Mark this module as benchmark so it's excluded from fast test runs
-pytestmark = pytest.mark.benchmark
+pytestmark = [pytest.mark.benchmark, pytest.mark.slow]
 
 import os
 import time

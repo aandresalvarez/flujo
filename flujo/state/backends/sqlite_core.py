@@ -433,17 +433,20 @@ class SQLiteBackendBase(StateBackend):
 
     async def shutdown(self) -> None:
         """Close connection pool and release resources to avoid lingering threads."""
+        lock = self._get_lock()
         try:
-            # Close pooled async connections if present
-            for conn in list(self._connection_pool_map.values()):
-                try:
-                    await conn.close()
-                except Exception:
-                    pass
-            self._connection_pool_map.clear()
-        except Exception:
-            # Defensive: never raise during shutdown
-            pass
+            async with lock:
+                # Close pooled async connections if present
+                for conn in list(self._connection_pool_map.values()):
+                    try:
+                        await conn.close()
+                    except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                        logger.debug(
+                            "Non-fatal error closing pooled connection during shutdown: %s", exc
+                        )
+                self._connection_pool_map.clear()
+        except Exception as exc:  # noqa: BLE001 - defensive shutdown
+            logger.debug("Non-fatal shutdown error: %s", exc)
 
     @classmethod
     def shutdown_all(cls) -> None:
@@ -1094,8 +1097,8 @@ class SQLiteBackendBase(StateBackend):
             for conn in list(self._connection_pool_map.values()):
                 try:
                     await conn.close()
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                    logger.debug("Non-fatal error closing pooled connection: %s", exc)
             self._connection_pool_map.clear()
             self._connection_pool = None
             self._initialized = False

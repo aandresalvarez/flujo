@@ -319,21 +319,42 @@ def safe_deserialize(
     if serialized_data is None:
         return None
 
-    # Handle primitives
-    if isinstance(serialized_data, (str, int, bool)):
+    # Handle primitives (non-str)
+    if isinstance(serialized_data, (bool, int, float)):
         return serialized_data
 
-    # Handle special float values
+    # Handle strings with special cases (nan/inf, datetime, base64)
     if isinstance(serialized_data, str):
+        if target_type is not None:
+            from datetime import date, datetime, time
+
+            if target_type in {datetime, date, time}:
+                return serialized_data
         if serialized_data == "nan":
             return float("nan")
         if serialized_data == "inf":
             return float("inf")
         if serialized_data == "-inf":
             return float("-inf")
+        try:
+            from datetime import datetime
 
-    # Handle float
-    if isinstance(serialized_data, float):
+            dt = datetime.fromisoformat(serialized_data.replace("Z", "+00:00"))
+            return dt
+        except (ValueError, TypeError):
+            pass
+        if target_type in {bytes, bytearray, memoryview}:
+            try:
+                import base64
+
+                decoded = base64.b64decode(serialized_data, validate=True)
+                if target_type is bytearray:
+                    return bytearray(decoded)
+                if target_type is memoryview:
+                    return memoryview(decoded)
+                return decoded
+            except Exception:
+                pass
         return serialized_data
 
     # Handle lists
@@ -358,17 +379,6 @@ def safe_deserialize(
             )
             for k, v in serialized_data.items()
         }
-
-    # Handle datetime objects (from ISO format strings)
-    if isinstance(serialized_data, str):
-        try:
-            from datetime import datetime
-
-            # Try to parse as datetime
-            dt = datetime.fromisoformat(serialized_data.replace("Z", "+00:00"))
-            return dt
-        except (ValueError, TypeError):
-            pass
 
     # Handle complex numbers (from dict with 'real' and 'imag' keys)
     if (

@@ -352,11 +352,13 @@ def _register_builtins() -> None:
             restore: dict[str, dict[str, Any]] = {}
             mutated = False
             # Identify and (optionally) mock side-effect skills referenced in YAML
+            referenced_side_ids: list[str] = []
             if sandbox:
                 try:
                     from flujo.cli.helpers import find_side_effect_skills_in_yaml as _find
 
                     side_ids = _find(yaml_text)
+                    referenced_side_ids = list(side_ids)
                 except Exception:
                     side_ids = []
                 # If no side-effect skills were detected, fall back to all registered
@@ -373,11 +375,11 @@ def _register_builtins() -> None:
                     except Exception:
                         pass
                 # Heuristic: if YAML references fs_write_file explicitly, always mock it
-                if (
-                    "flujo.builtins.fs_write_file" in yaml_text
-                    and "flujo.builtins.fs_write_file" not in side_ids
-                ):
-                    side_ids.append("flujo.builtins.fs_write_file")
+                if "flujo.builtins.fs_write_file" in yaml_text:
+                    if "flujo.builtins.fs_write_file" not in side_ids:
+                        side_ids.append("flujo.builtins.fs_write_file")
+                    if "flujo.builtins.fs_write_file" not in referenced_side_ids:
+                        referenced_side_ids.append("flujo.builtins.fs_write_file")
             else:
                 side_ids = []
             try:
@@ -409,11 +411,12 @@ def _register_builtins() -> None:
                     return execute_pipeline_with_output_handling(runner, input_text, None, False)
 
                 result = await _asyncio.to_thread(_run_sync)
-                if sandbox and side_ids:
+                # Only decorate outputs when the YAML actually referenced side-effect skills.
+                if sandbox and referenced_side_ids:
                     try:
                         for sr in getattr(result, "step_history", []) or []:
                             if hasattr(sr, "output"):
-                                sr.output = {"mocked": True, "skill": side_ids[0]}
+                                sr.output = {"mocked": True, "skill": referenced_side_ids[0]}
                     except Exception:
                         pass
                 return {"dry_run_result": result}

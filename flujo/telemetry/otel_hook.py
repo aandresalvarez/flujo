@@ -224,14 +224,11 @@ class OpenTelemetryHook:
             # Prefer provided latency; fallback to monotonic delta when missing
             latency = payload.step_result.latency_s
             if not latency:
-                try:
-                    # Use the same key as pre_step if available
-                    pre_key = self._get_step_span_key(payload.step_result.name)
-                    start = self._mono_start.pop(pre_key, None)
-                    if start is not None:
-                        latency = max(0.0, time.monotonic() - start)
-                except Exception:
-                    pass
+                # Use the same key as pre_step if available
+                pre_key = self._get_step_span_key(payload.step_result.name)
+                start = self._mono_start.pop(pre_key, None)
+                if start is not None:
+                    latency = max(0.0, time.monotonic() - start)
             span.set_attribute("latency_s", latency)
             span.set_attribute(
                 "flujo.budget.actual_cost_usd", getattr(payload.step_result, "cost_usd", 0.0)
@@ -243,24 +240,18 @@ class OpenTelemetryHook:
                 "step_output", self._safe_redact(str(getattr(payload.step_result, "output", "")))
             )
             # Emit fallback event if metadata indicates it
-            try:
-                md = getattr(payload.step_result, "metadata_", {}) or {}
-                if md.get("fallback_triggered"):
-                    try:
-                        # Use OTel event API if available on span
-                        span.add_event(
-                            name="flujo.fallback.triggered",
-                            attributes={"original_error": str(md.get("original_error", ""))},
-                        )
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            md = getattr(payload.step_result, "metadata_", {}) or {}
+            if md.get("fallback_triggered"):
+                try:
+                    # Use OTel event API if available on span
+                    span.add_event(
+                        name="flujo.fallback.triggered",
+                        attributes={"original_error": str(md.get("original_error", ""))},
+                    )
+                except Exception as exc:  # noqa: BLE001 - telemetry must not fail user runs
+                    logger.debug("Failed to add fallback event to span: %s", exc)
             # Cleanup monotonic start entry if any
-            try:
-                self._mono_start.pop(self._get_step_span_key(payload.step_result.name), None)
-            except Exception:
-                pass
+            self._mono_start.pop(self._get_step_span_key(payload.step_result.name), None)
             span.end()
 
     async def _handle_step_failure(self, payload: OnStepFailurePayload) -> None:

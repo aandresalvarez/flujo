@@ -97,7 +97,7 @@ def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
         inherit_context=True,
         inherit_conversation=True,
         input_to="both",
-        outputs=[OutputMapping(child="scratchpad.echo", parent="scratchpad.child_echo")],
+        outputs=[OutputMapping(child="scratchpad.echo", parent="child_echo")],
         updates_context=True,
     )
 

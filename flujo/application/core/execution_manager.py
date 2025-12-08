@@ -639,11 +639,6 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         # Add to history and continue; remaining steps handled downstream.
                         self.step_coordinator.update_pipeline_result(result, step_result)
                         continue
-                        # Add to history and halt the pipeline
-                        self.step_coordinator.update_pipeline_result(result, step_result)
-                        self.set_final_context(result, context)
-                        yield result
-                        return
 
                     # Validate type compatibility with next step - this may raise TypeMismatchError
                     # Only validate types if the step succeeded (to avoid TypeMismatchError for failed steps)

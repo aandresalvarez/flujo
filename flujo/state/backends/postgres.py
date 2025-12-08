@@ -296,9 +296,13 @@ class PostgresBackend(StateBackend):
             if version in applied_versions:
                 continue
             sql = path.read_text()
-            # Migration files are already wrapped in transactions and update schema_versions
-            # Just execute them directly
-            await conn.execute(sql)
+            # Execute each migration inside its own transaction to avoid partial application.
+            async with conn.transaction():
+                await conn.execute(sql)
+                await conn.execute(
+                    "INSERT INTO flujo_schema_versions (version) VALUES ($1) ON CONFLICT DO NOTHING",
+                    version,
+                )
 
     async def persist_evaluation(
         self,
