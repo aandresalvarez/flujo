@@ -244,7 +244,7 @@ def serialize_jsonable(
     *,
     mode: str = "json",
     default_serializer: Optional[Callable[[Any], Any]] = None,
-    circular_ref_placeholder: str = "<circular-ref>",
+    circular_ref_placeholder: str | None = "<circular-ref>",
     _seen: Optional[Set[int]] = None,
     _depth: int = 0,
 ) -> JsonValue:
@@ -496,8 +496,7 @@ def robust_serialize(
     """Logging-friendly serializer that never raises."""
 
     try:
-        placeholder = circular_ref_placeholder or "<circular-ref>"
-        return serialize_jsonable(obj, circular_ref_placeholder=placeholder)
+        return serialize_jsonable(obj, circular_ref_placeholder=circular_ref_placeholder)
     except Exception:
         return f"<unserializable: {type(obj).__name__}>"
 
