@@ -60,7 +60,7 @@ def lookup_custom_serializer(value: Any) -> Optional[Callable[[Any], Any]]:
         for base, serializer in _custom_serializers.items():
             if isinstance(value, base):
                 return serializer
-    return None
+        return None
 
 
 def lookup_custom_deserializer(obj_type: type[Any]) -> Optional[Callable[[Any], Any]]:
@@ -279,11 +279,11 @@ def serialize_jsonable(
                 )
 
     if isinstance(obj, (str, bool)) or obj is None:
-        return obj  # type: ignore[return-value]
+        return obj
     if isinstance(obj, int):
-        return obj  # type: ignore[return-value]
+        return obj
     if isinstance(obj, float):
-        return _normalize_float(obj)  # type: ignore[return-value]
+        return _normalize_float(obj)
 
     obj_id = id(obj)
     if obj_id in _seen:
@@ -304,18 +304,18 @@ def serialize_jsonable(
             )
 
         if isinstance(obj, (datetime, date, time)):
-            return obj if mode == "python" else obj.isoformat()  # type: ignore[return-value]
+            return obj.isoformat()
 
         if isinstance(obj, (UUID, Decimal)):
-            return str(obj)  # type: ignore[return-value]
+            return str(obj)
 
         if isinstance(obj, complex):
-            return {"real": obj.real, "imag": obj.imag}  # type: ignore[return-value]
+            return {"real": obj.real, "imag": obj.imag}
 
         if isinstance(obj, (bytes, bytearray, memoryview)):
             import base64
 
-            return base64.b64encode(bytes(obj)).decode("utf-8")  # type: ignore[return-value]
+            return base64.b64encode(bytes(obj)).decode("utf-8")
 
         if HAS_PYDANTIC and isinstance(obj, PydanticBaseModel):
             self_refs: set[str] = set()
@@ -358,6 +358,10 @@ def serialize_jsonable(
                 )
 
         if dataclasses.is_dataclass(obj):
+            if isinstance(obj, type):
+                raise TypeError(
+                    f"Cannot serialize dataclass type {obj.__name__}; provide an instance instead."
+                )
             return serialize_jsonable(
                 dataclasses.asdict(obj),
                 mode=mode,
@@ -388,7 +392,7 @@ def serialize_jsonable(
                     _seen=_seen,
                     _depth=_depth + 1,
                 )
-            return out  # type: ignore[return-value]
+            return out
 
         if isinstance(obj, (set, frozenset)):
             return [
@@ -401,7 +405,7 @@ def serialize_jsonable(
                     _depth=_depth + 1,
                 )
                 for item in obj
-            ]  # type: ignore[return-value]
+            ]
 
         if isinstance(obj, Sequence) and not isinstance(obj, (str, bytes, bytearray, memoryview)):
             return [
@@ -414,14 +418,14 @@ def serialize_jsonable(
                     _depth=_depth + 1,
                 )
                 for item in obj
-            ]  # type: ignore[return-value]
+            ]
 
         if callable(obj):
             if hasattr(obj, "__name__"):
-                return str(obj.__name__)  # type: ignore[return-value]
+                return str(obj.__name__)
             if hasattr(obj, "__qualname__"):
-                return str(obj.__qualname__)  # type: ignore[return-value]
-            return repr(obj)  # type: ignore[return-value]
+                return str(obj.__qualname__)
+            return repr(obj)
 
         if default_serializer is not None:
             try:
@@ -438,7 +442,7 @@ def serialize_jsonable(
 
         if hasattr(obj, "model_dump"):
             try:
-                dumped = obj.model_dump()  # type: ignore[attr-defined]
+                dumped = obj.model_dump()
                 return serialize_jsonable(
                     dumped,
                     mode=mode,
@@ -492,7 +496,8 @@ def robust_serialize(
     """Logging-friendly serializer that never raises."""
 
     try:
-        return serialize_jsonable(obj, circular_ref_placeholder=circular_ref_placeholder)
+        placeholder = circular_ref_placeholder or "<circular-ref>"
+        return serialize_jsonable(obj, circular_ref_placeholder=placeholder)
     except Exception:
         return f"<unserializable: {type(obj).__name__}>"
 

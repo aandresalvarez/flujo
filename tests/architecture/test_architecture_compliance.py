@@ -487,6 +487,9 @@ class TestCodeQualityStandards:
 
         hits: list[str] = []
         for path in flujo_root.rglob("*.py"):
+            # Skip this test file to avoid self-matching on the test name/docstring.
+            if path == Path(__file__):
+                continue
             try:
                 content = path.read_text()
             except (UnicodeDecodeError, OSError):
