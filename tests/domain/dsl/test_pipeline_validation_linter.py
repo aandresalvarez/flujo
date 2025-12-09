@@ -177,6 +177,18 @@ def test_generic_input_without_adapter_errors() -> None:
     assert any(f.rule_id == "V-A2-STRICT" for f in report.errors)
 
 
+def test_adapter_requires_allowlist_token() -> None:
+    async def a(x: int) -> int:  # type: ignore[override]
+        return x
+
+    s1 = Step.from_callable(a, name="a")
+    s2 = Step.from_callable(a, name="adapt", is_adapter=True)
+    # Remove token to trigger failure
+    s2.meta["adapter_allow"] = "wrong"
+    report = (Pipeline.from_step(s1) >> s2).validate_graph()
+    assert any(f.rule_id == "V-ADAPT-ALLOW" for f in report.errors)
+
+
 def test_reused_step_instance_warns_V_A3() -> None:
     s = Step.from_callable(_id, name="dup")
     p = Pipeline.model_construct(steps=[s, s])

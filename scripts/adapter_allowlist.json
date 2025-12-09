@@ -2,7 +2,8 @@
   "allowed": {
     "TypedAnyAdapter": "core-migration",
     "DictContextAdapter": "legacy-bridge",
-    "SchemaAdapter": "legacy-bridge"
+    "SchemaAdapter": "legacy-bridge",
+    "generic-adapter": "generic"
   }
 }
 

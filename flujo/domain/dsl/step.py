@@ -615,6 +615,11 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             merged_config.update(config.model_dump())
         merged_config.update(config_kwargs)
 
+        meta: dict[str, Any] = {"is_adapter": True} if is_adapter else {}
+        if is_adapter:
+            meta["adapter_id"] = "generic-adapter"
+            meta["adapter_allow"] = "generic"
+
         step_instance = cls.model_validate(
             {
                 "name": name,
@@ -627,7 +632,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "updates_context": updates_context,
                 "validate_fields": validate_fields,
                 "sink_to": sink_to,
-                "meta": {"is_adapter": True} if is_adapter else {},
+                "meta": meta,
                 "config": StepConfig(**merged_config),
             }
         )

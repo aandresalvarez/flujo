@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import json
+from pathlib import Path
 from typing import Any, Set, TYPE_CHECKING
 
 from ..pipeline_validation import ValidationFinding, ValidationReport
@@ -685,10 +687,21 @@ def run_step_validations(
         prev_step: Any | None,
         prev_out_type: Any,
     ) -> set[str]:
+        adapter_allowlist: dict[str, str] = {}
+        allowlist_path = Path(__file__).resolve().parents[3] / "scripts" / "adapter_allowlist.json"
+        try:
+            if allowlist_path.exists():
+                adapter_allowlist = json.loads(allowlist_path.read_text(encoding="utf-8")).get(
+                    "allowed", {}
+                )
+        except Exception:
+            adapter_allowlist = {}
+
         for idx_step, step in enumerate(getattr(current, "steps", []) or []):
             meta = getattr(step, "meta", None)
             _yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
             templated_input = meta.get("templated_input") if isinstance(meta, dict) else None
+            is_adapter_step = bool(meta.get("is_adapter")) if isinstance(meta, dict) else False
             if id(step) in seen_steps:
                 report.warnings.append(
                     ValidationFinding(
@@ -853,6 +866,33 @@ def run_step_validations(
                     )
                 )
 
+            if is_adapter_step:
+                adapter_id = meta.get("adapter_id") if isinstance(meta, dict) else None
+                adapter_token = meta.get("adapter_allow") if isinstance(meta, dict) else None
+                if not adapter_id or adapter_id not in adapter_allowlist:
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id="V-ADAPT-ALLOW",
+                            severity="error",
+                            message=(
+                                f"Adapter step '{getattr(step, 'name', '')}' lacks an allowlisted adapter_id."
+                            ),
+                            step_name=getattr(step, "name", None),
+                        )
+                    )
+                elif adapter_allowlist.get(adapter_id) != adapter_token:
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id="V-ADAPT-ALLOW",
+                            severity="error",
+                            message=(
+                                f"Adapter step '{getattr(step, 'name', '')}' missing correct adapter token "
+                                f"(expected '{adapter_allowlist.get(adapter_id)}')."
+                            ),
+                            step_name=getattr(step, "name", None),
+                        )
+                    )
+
             if prev_step is not None:
                 prev_updates_context = bool(getattr(prev_step, "updates_context", False))
                 curr_accepts_input = getattr(step, "__step_input_type__", Any)
@@ -929,6 +969,34 @@ def run_step_validations(
                                 step_name=getattr(step, "name", None),
                             )
                         )
+                    else:
+                        adapter_id = meta.get("adapter_id") if isinstance(meta, dict) else None
+                        adapter_token = (
+                            meta.get("adapter_allow") if isinstance(meta, dict) else None
+                        )
+                        if not adapter_id or adapter_id not in adapter_allowlist:
+                            report.errors.append(
+                                ValidationFinding(
+                                    rule_id="V-ADAPT-ALLOW",
+                                    severity="error",
+                                    message=(
+                                        f"Adapter step '{getattr(step, 'name', '')}' lacks an allowlisted adapter_id."
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                )
+                            )
+                        elif adapter_allowlist.get(adapter_id) != adapter_token:
+                            report.errors.append(
+                                ValidationFinding(
+                                    rule_id="V-ADAPT-ALLOW",
+                                    severity="error",
+                                    message=(
+                                        f"Adapter step '{getattr(step, 'name', '')}' missing correct adapter token "
+                                        f"(expected '{adapter_allowlist.get(adapter_id)}')."
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                )
+                            )
 
             fb = getattr(step, "fallback_step", None)
             if fb is not None:
