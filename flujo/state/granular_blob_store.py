@@ -21,7 +21,7 @@ if TYPE_CHECKING:
         async def load_state(self, key: str) -> object | None: ...
 
 
-__all__ = ["GranularBlobStore", "BlobRef", "BlobNotFoundError"]
+__all__ = ["BlobNotFoundError", "BlobRef", "GranularBlobStore"]
 
 
 # Blob reference marker format
@@ -177,7 +177,10 @@ class GranularBlobStore:
 
         try:
             blob_data = await self._backend.load_state(storage_key)
-        except Exception:
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).debug("Failed to load blob %s: %s", blob_ref.blob_id, exc)
             blob_data = None
 
         if blob_data is None:
@@ -223,23 +226,17 @@ class GranularBlobStore:
     def process_for_storage(
         self,
         data: Dict[str, Any],
-        run_id: str,
-        step_name: str,
-        turn_index: int,
     ) -> tuple[Dict[str, Any], list[tuple[str, Any]]]:
-        """Process a dict, identifying fields that should be offloaded.
+        """Identify dict fields that exceed the offload threshold.
 
-        This is a synchronous helper that identifies candidates.
+        This is a synchronous helper that identifies offload candidates.
         Actual offloading must be done separately with async offload().
 
         Args:
             data: Dictionary to process
-            run_id: Run identifier
-            step_name: Step name
-            turn_index: Turn index
 
         Returns:
-            Tuple of (data_with_markers, list_of_offload_candidates)
+            Tuple of (original_data_copy, list_of_offload_candidates)
             where each candidate is (field_path, payload)
         """
         candidates: list[tuple[str, Any]] = []

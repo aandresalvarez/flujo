@@ -28,7 +28,7 @@ async for result in runner.run_async("Research quantum computing breakthroughs")
 
 ## How It Works
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    Step.granular(...)                        │
 │                           │                                  │
@@ -192,7 +192,7 @@ The granular state is stored in `context.scratchpad["granular_state"]`:
 
 Large payloads (>20KB by default) are offloaded to durable storage:
 
-```
+```text
 Original: {"large_data": "...50KB of content..."}
 Stored:   {"large_data": "<<FL_BLOB_REF:abc123:size=50000>>"}
 ```

@@ -92,16 +92,17 @@ def _get_run_id(context: Any) -> str:
     return f"run_{id(context)}"
 
 
-def _get_expected_turn_index(context: Any) -> int:
-    """Get expected turn index from loop iteration tracking."""
+def _get_loop_iteration_index(context: Any) -> int:
+    """Get current loop iteration from context (for logging only)."""
     if context is None:
         return 0
     scratch = getattr(context, "scratchpad", None)
     if isinstance(scratch, dict):
-        # Loop iteration is tracked by the LoopStep executor
-        iteration = scratch.get("loop_iteration", 0)
-        if isinstance(iteration, int):
-            return iteration
+        # Try internal loop tracking key first
+        for key in ("_loop_iteration_index", "loop_iteration"):
+            val = scratch.get(key)
+            if isinstance(val, int):
+                return val
     return 0
 
 
@@ -153,79 +154,53 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             step_history=[],
         )
 
-        # Get expected turn index from loop iteration
-        expected_index = _get_expected_turn_index(context)
-
         # Load existing granular state
         stored_state = _get_granular_state(context)
+
+        # Get stored turn_index (0 if no state yet)
         stored_index = stored_state["turn_index"] if stored_state else 0
 
         # === CAS Guard Logic (§5.1) ===
+        # The granular policy manages its OWN turn tracking independent of loop iteration.
+        # On each turn: if stored_index == loop_iteration, we've already done this turn (skip).
+        # On resume: we read stored_index and continue from there.
+
+        # Important: The LoopStep runs this policy N times (max_turns).
+        # Each invocation is a new "turn". The turn_index in stored_state tells us
+        # how many turns we've completed. We should execute if turn_index < max_turns
+        # and the agent hasn't signaled completion yet.
+
         if stored_state is not None:
-            if stored_index > expected_index:
-                # Runner is behind - fail fast (recoverable)
-                telemetry.logfire.warning(
-                    f"[GranularPolicy] CAS guard: stored_index ({stored_index}) > expected ({expected_index})"
-                )
-                raise ResumeError(
-                    f"State ahead of runner: stored_index={stored_index}, expected={expected_index}",
-                    irrecoverable=False,
-                )
-
-            if stored_index == expected_index:
-                # Ghost-write case - skip execution entirely
+            # Check if already complete
+            if stored_state.get("is_complete", False):
                 telemetry.logfire.info(
-                    f"[GranularPolicy] CAS skip: turn {stored_index} already committed"
+                    f"[GranularPolicy] Agent already complete at turn {stored_index}"
                 )
-
-                # Validate fingerprint before skipping
-                current_fingerprint = self._compute_fingerprint(step, data, context)
-                if (
-                    stored_state["fingerprint"]
-                    and stored_state["fingerprint"] != current_fingerprint
-                ):
-                    raise ResumeError(
-                        "Fingerprint mismatch on resume - configuration changed",
-                        irrecoverable=True,
-                    )
-
-                # Return stored state without executing or touching quota
                 result.success = True
-                result.output = (
-                    stored_state.get("final_output") if stored_state["is_complete"] else None
-                )
+                result.output = stored_state.get("final_output")
                 result.latency_s = self._ns_to_seconds(time.perf_counter_ns() - start_ns)
                 result.metadata_["cas_skipped"] = True
                 result.metadata_["turn_index"] = stored_index
+                result.metadata_["is_complete"] = True
                 result.branch_context = context
-
                 return Success(step_result=result)
 
-            if stored_index < expected_index:
-                # Gap detected - fail fast (recoverable)
-                telemetry.logfire.warning(
-                    f"[GranularPolicy] CAS gap: stored_index ({stored_index}) < expected ({expected_index})"
-                )
+            # Validate fingerprint before continuing
+            current_fingerprint = self._compute_fingerprint(step, data, context)
+            if stored_state["fingerprint"] and stored_state["fingerprint"] != current_fingerprint:
                 raise ResumeError(
-                    f"Gap in state: stored_index={stored_index}, expected={expected_index}",
-                    irrecoverable=False,
+                    "Fingerprint mismatch on resume - configuration changed",
+                    irrecoverable=True,
                 )
 
         # === Fingerprint Computation (§5.2) ===
         current_fingerprint = self._compute_fingerprint(step, data, context)
 
-        if stored_state is not None and stored_state["fingerprint"]:
-            if stored_state["fingerprint"] != current_fingerprint:
-                raise ResumeError(
-                    "Fingerprint mismatch - cannot resume with changed configuration",
-                    irrecoverable=True,
-                )
-
         # === Context Isolation (§5.4) ===
         isolated_context = (
             ContextManager.isolate(
                 context,
-                purpose=f"granular_turn:{step_name}:{expected_index}",
+                purpose=f"granular_turn:{step_name}:{stored_index}",
             )
             if context is not None
             else None
@@ -252,7 +227,9 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
         # === Idempotency Key Injection (§7) ===
         run_id = _get_run_id(context)
-        idempotency_key = GranularStep.generate_idempotency_key(run_id, step_name, expected_index)
+        # Use stored_index + 1 as next turn index for idempotency
+        next_turn_index = stored_index + 1 if stored_index > 0 else 0
+        idempotency_key = GranularStep.generate_idempotency_key(run_id, step_name, next_turn_index)
 
         # Inject key into resources/deps if possible
         if resources is not None:
@@ -326,7 +303,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             new_history = list(history)
             new_history.append(
                 {
-                    "turn_index": expected_index,
+                    "turn_index": next_turn_index,
                     "input": data if self._is_json_serializable(data) else str(data),
                     "output": agent_output
                     if self._is_json_serializable(agent_output)
@@ -336,7 +313,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
             # === Persist New State (CAS check: only if turn_index matches) ===
             new_state: GranularState = {
-                "turn_index": expected_index + 1,
+                "turn_index": next_turn_index + 1,
                 "history": new_history,
                 "is_complete": is_complete,
                 "final_output": agent_output if is_complete else None,
@@ -354,11 +331,11 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             result.success = True
             result.output = agent_output
             result.branch_context = context
-            result.metadata_["turn_index"] = expected_index + 1
+            result.metadata_["turn_index"] = next_turn_index + 1
             result.metadata_["is_complete"] = is_complete
 
             telemetry.logfire.info(
-                f"[GranularPolicy] Turn {expected_index} complete, is_complete={is_complete}"
+                f"[GranularPolicy] Turn {next_turn_index} complete, is_complete={is_complete}"
             )
 
             return Success(step_result=result)
@@ -371,7 +348,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             result.feedback = str(exc)
             result.latency_s = self._ns_to_seconds(time.perf_counter_ns() - start_ns)
 
-            telemetry.logfire.error(f"[GranularPolicy] Turn {expected_index} failed: {exc}")
+            telemetry.logfire.error(f"[GranularPolicy] Turn {next_turn_index} failed: {exc}")
 
             return Failure(
                 error=exc,

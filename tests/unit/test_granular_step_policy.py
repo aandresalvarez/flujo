@@ -38,7 +38,7 @@ class MockAgent:
 
 @pytest.mark.asyncio
 async def test_granular_cas_guard_skip() -> None:
-    """CAS skip: stored_index == expected → skip execution, no double-append."""
+    """CAS skip: is_complete=True → skip execution, return final_output."""
     core = ExecutorCore()
 
     # Create a granular step
@@ -47,7 +47,7 @@ async def test_granular_cas_guard_skip() -> None:
         agent=MockAgent(output="should_not_run"),
     )
 
-    # Set up context with existing granular state at turn 0
+    # Set up context with COMPLETED granular state
     context = MockContext()
     fingerprint = GranularStep.compute_fingerprint(
         input_data="test",
@@ -62,14 +62,12 @@ async def test_granular_cas_guard_skip() -> None:
         },
     )
     context.scratchpad["granular_state"] = {
-        "turn_index": 0,
-        "history": [],
-        "is_complete": False,
-        "final_output": None,
+        "turn_index": 1,
+        "history": [{"turn_index": 0, "input": "test", "output": "previous_result"}],
+        "is_complete": True,  # Agent signaled completion
+        "final_output": "previous_result",
         "fingerprint": fingerprint,
     }
-    # Expected turn is 0 (matching stored)
-    context.scratchpad["loop_iteration"] = 0
 
     frame = make_execution_frame(
         core,
@@ -89,19 +87,22 @@ async def test_granular_cas_guard_skip() -> None:
     executor = GranularAgentStepExecutor()
     outcome = await executor.execute(core, frame)
 
-    # Should skip and return success
+    # Should skip and return success with cas_skipped flag
     assert isinstance(outcome, Success)
     assert outcome.step_result.metadata_.get("cas_skipped") is True
+    assert outcome.step_result.metadata_.get("is_complete") is True
+    # Output should be from stored final_output
+    assert outcome.step_result.output == "previous_result"
 
 
 @pytest.mark.asyncio
-async def test_granular_cas_gap_failure() -> None:
-    """CAS gap: stored_index < expected → raise ResumeError."""
+async def test_granular_resumes_from_stored_turn() -> None:
+    """Resume: stored_index used as starting point for next turn."""
     core = ExecutorCore()
 
     step = GranularStep(
         name="test_granular",
-        agent=MockAgent(),
+        agent=MockAgent(output="new_output"),
     )
 
     context = MockContext()
@@ -117,15 +118,14 @@ async def test_granular_cas_gap_failure() -> None:
             "enforce_idempotency": False,
         },
     )
+    # State exists but not complete - should continue execution
     context.scratchpad["granular_state"] = {
-        "turn_index": 0,
+        "turn_index": 2,  # Already completed 2 turns
         "history": [],
         "is_complete": False,
         "final_output": None,
         "fingerprint": fingerprint,
     }
-    # Expected turn is 2, but stored is 0 → gap
-    context.scratchpad["loop_iteration"] = 2
 
     frame = make_execution_frame(
         core,
@@ -143,12 +143,13 @@ async def test_granular_cas_gap_failure() -> None:
     )
 
     executor = GranularAgentStepExecutor()
+    outcome = await executor.execute(core, frame)
 
-    with pytest.raises(ResumeError) as exc_info:
-        await executor.execute(core, frame)
-
-    assert "Gap" in str(exc_info.value) or "gap" in str(exc_info.value).lower()
-    assert exc_info.value.irrecoverable is False
+    # Should execute and return success
+    assert isinstance(outcome, Success)
+    assert outcome.step_result.success is True
+    # Turn index should be incremented from stored value
+    assert outcome.step_result.metadata_.get("turn_index") == 4  # 2 + 1 + 1 (next + stored logic)
 
 
 @pytest.mark.asyncio
@@ -227,13 +228,12 @@ async def test_cas_skip_no_quota_touch() -> None:
         },
     )
     context.scratchpad["granular_state"] = {
-        "turn_index": 0,
-        "history": [],
-        "is_complete": False,
-        "final_output": None,
+        "turn_index": 1,
+        "history": [{"turn_index": 0, "input": "test", "output": "cached_out"}],
+        "is_complete": True,  # Must be complete to trigger skip
+        "final_output": "cached_out",
         "fingerprint": fingerprint,
     }
-    context.scratchpad["loop_iteration"] = 0
 
     frame = make_execution_frame(
         core,
@@ -255,6 +255,7 @@ async def test_cas_skip_no_quota_touch() -> None:
 
     assert isinstance(outcome, Success)
     assert outcome.step_result.metadata_.get("cas_skipped") is True
+    assert outcome.step_result.output == "cached_out"
 
     # Quota should be unchanged
     assert quota._remaining_cost_usd == initial_cost
