@@ -17,7 +17,7 @@
 </div>
 ---
 
-Flujo is a framework for building, observing, and deploying AI agent workflows. It bridges the gap between simple Python scripts and complex enterprise orchestration, giving you **retries**, **durable state persistence**, and **human-in-the-loop** capabilities out of the box.
+Flujo is a framework for building, observing, and deploying AI agent workflows. It bridges the gap between simple Python scripts and complex enterprise orchestration, giving you **retries**, **durable state persistence**, and **human-in-the-loop** capabilities out of the box. See `docs/context_strict_mode.md` for strict context rules and `docs/adapter_allowlist.md` for the adapter allowlist required in strict DSL mode.
 
 Designed for high-stakes, restricted environments (like healthcare), Flujo delivers **Temporal-like resilience and auditability** within a single, deployable Python process, eliminating the need for complex external infrastructure.
 

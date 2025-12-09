@@ -17,4 +17,5 @@
   Ctx = typed_context(MyContext)
   ```
 - Codemod helper: `python scripts/codemods/scratchpad_to_typed.py --apply <paths>` rewrites `ctx.scratchpad["foo"]` to `ctx.foo` (conservative).
+- Adapter allowlist: see `docs/adapter_allowlist.md` for marking adapters with `adapter_id`/`adapter_allow` and the required token.
 
