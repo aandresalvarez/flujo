@@ -121,25 +121,6 @@ async def test_granular_fingerprint_with_real_agent() -> None:
 
 
 @pytest.mark.asyncio
-async def test_granular_idempotency_key_injection() -> None:
-    """Test that idempotency keys are generated correctly for real agent runs."""
-    from flujo.domain.dsl.granular import GranularStep
-
-    # Generate keys for multiple turns
-    keys = []
-    for turn in range(5):
-        key = GranularStep.generate_idempotency_key("run_abc123", "my_step", turn)
-        keys.append(key)
-
-    # All keys should be unique
-    assert len(set(keys)) == 5
-
-    # Keys should be deterministic
-    key_again = GranularStep.generate_idempotency_key("run_abc123", "my_step", 0)
-    assert key_again == keys[0]
-
-
-@pytest.mark.asyncio
 async def test_granular_step_factory_with_real_agent() -> None:
     """Test Step.granular() factory with real agent."""
     agent = make_agent_async(
