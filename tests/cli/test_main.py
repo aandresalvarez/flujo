@@ -244,6 +244,12 @@ def test_cli_compile_yaml_roundtrip(tmp_path: Path) -> None:
     steps:
       - kind: step
         name: s1
+        agent:
+          id: "flujo.builtins.echo"
+        meta:
+          is_adapter: true
+          adapter_id: generic-adapter
+          adapter_allow: generic
       - kind: map
         name: mapper
         map:
@@ -251,15 +257,33 @@ def test_cli_compile_yaml_roundtrip(tmp_path: Path) -> None:
           body:
             - kind: step
               name: inner
+              agent:
+                id: "flujo.builtins.echo"
+              meta:
+                is_adapter: true
+                adapter_id: generic-adapter
+                adapter_allow: generic
       - kind: parallel
         name: p
         branches:
           a:
             - kind: step
               name: a1
+              agent:
+                id: "flujo.builtins.echo"
+              meta:
+                is_adapter: true
+                adapter_id: generic-adapter
+                adapter_allow: generic
           b:
             - kind: step
               name: b1
+              agent:
+                id: "flujo.builtins.echo"
+              meta:
+                is_adapter: true
+                adapter_id: generic-adapter
+                adapter_allow: generic
     """
     src = tmp_path / "pipe.yaml"
     src.write_text(yaml_text)

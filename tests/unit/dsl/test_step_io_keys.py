@@ -4,7 +4,7 @@ from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.step import Step
 
 
-def _agent(x: object) -> object:
+def _agent(x: dict[str, object]) -> dict[str, object]:
     return x
 
 

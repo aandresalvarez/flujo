@@ -72,6 +72,7 @@ async def expect_optional(x: Optional[str]) -> str:
 
 def test_union_optional_handling() -> None:
     ok_pipeline = echo >> expect_optional
+    expect_optional.__step_input_type__ = Optional[str]
     report_ok = ok_pipeline.validate_graph()
     assert report_ok.is_valid
     runner_ok = create_test_flujo(ok_pipeline)

@@ -15,9 +15,9 @@ def test_yaml_pipeline_generic_requires_adapter() -> None:
     yaml_text = """
     steps:
       - name: a
-        agent: tests.helpers.agent_echo_int
+        agent: tests.unit.test_error_messages.make_int
       - name: b
-        agent: tests.helpers.agent_echo_object
+        agent: tests.unit.test_error_messages.need_str
     """
     p = _load_pipeline(yaml_text)
     report = p.validate_graph()
@@ -28,9 +28,9 @@ def test_yaml_adapter_must_have_allowlist_token() -> None:
     yaml_text = """
     steps:
       - name: a
-        agent: tests.helpers.agent_echo_int
+        agent: tests.unit.test_error_messages.make_int
       - name: adapt
-        agent: tests.helpers.agent_echo_int
+        agent: tests.unit.test_error_messages.make_int
         meta:
           is_adapter: true
           adapter_id: generic-adapter

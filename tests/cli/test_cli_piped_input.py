@@ -20,6 +20,10 @@ steps:
     name: process_input
     agent:
       id: "flujo.builtins.stringify"
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
     input: "Processing: {{ steps.get_input }}"
 """
 

@@ -64,6 +64,10 @@ steps:
   - kind: step
     name: subpipe
     uses: imports.support
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
 """
 
 
@@ -107,6 +111,10 @@ steps:
   - kind: step
     name: use_support
     uses: imports.support
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
 """
     p.write_text(yaml_text)
     result = runner.invoke(app, ["run", str(p), "--input", "hello", "--json"])
@@ -143,6 +151,10 @@ steps:
   - kind: step
     name: support_assist
     uses: imports.support
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
         """.strip()
     )
 

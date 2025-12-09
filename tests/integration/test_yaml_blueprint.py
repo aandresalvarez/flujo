@@ -51,8 +51,20 @@ version: "0.1"
 steps:
   - kind: step
     name: s1
+    agent:
+      id: "flujo.builtins.echo"
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
   - kind: step
     name: s2
+    agent:
+      id: "flujo.builtins.stringify"
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
 """
 
 
