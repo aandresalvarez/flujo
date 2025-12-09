@@ -84,26 +84,24 @@ def test_step_io_keys_require_branch_outputs_when_missing() -> None:
 
 
 def test_step_io_keys_union_parallel_branch_outputs() -> None:
-    branch_one = Pipeline.model_construct(
-        steps=[Step(name="branch-one", agent=_agent, output_keys=["branch_value"])],
-        hooks=[],
-        on_finish=[],
-    )
-    branch_two = Pipeline.model_construct(
-        steps=[Step(name="branch-two", agent=_agent, output_keys=["other_value"])],
-        hooks=[],
-        on_finish=[],
-    )
+    branch_one_step = Step(name="branch-one", agent=_agent, output_keys=["branch_value"])
+    branch_one_step.__step_output_type__ = dict[str, object]
+    branch_one = Pipeline.model_construct(steps=[branch_one_step], hooks=[], on_finish=[])
+    branch_two_step = Step(name="branch-two", agent=_agent, output_keys=["other_value"])
+    branch_two_step.__step_output_type__ = dict[str, object]
+    branch_two = Pipeline.model_construct(steps=[branch_two_step], hooks=[], on_finish=[])
     parallel = ParallelStep(
         name="parallel",
         agent=_agent,
         branches={"one": branch_one, "two": branch_two},
     )
+    parallel.__step_output_type__ = dict[str, object]
     consumer = Step(
         name="after-parallel",
         agent=_agent,
         input_keys=["branch_value", "other_value"],
     )
+    consumer.__step_input_type__ = dict[str, object]
 
     pipeline = Pipeline.model_construct(steps=[parallel, consumer], hooks=[], on_finish=[])
     report = pipeline.validate_graph()

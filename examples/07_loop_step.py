@@ -62,6 +62,7 @@ loop_step = Step.loop_until(
 )
 loop_step.__step_output_type__ = TextEdit
 generate_text_agent.__step_output_type__ = TextEdit
+loop_step.meta = {"is_adapter": True, "adapter_id": "generic-adapter", "adapter_allow": "generic"}
 
 # The full pipeline: generate an initial version, then enter the refinement loop.
 full_pipeline = generate_text_agent >> loop_step

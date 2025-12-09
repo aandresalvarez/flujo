@@ -18,6 +18,9 @@ steps:
       is_adapter: true
       adapter_id: generic-adapter
       adapter_allow: generic
+    output_keys: ["user_input"]
+    updates_context: true
+    sink_to: "user_input"
     input: "{{ context.initial_prompt or 'What do you want to do today?' }}"
 
   - kind: step
@@ -29,6 +32,8 @@ steps:
       adapter_id: generic-adapter
       adapter_allow: generic
     input: "Processing: {{ steps.get_input }}"
+    __step_input_type__: str
+    __step_output_type__: str
 """
 
 

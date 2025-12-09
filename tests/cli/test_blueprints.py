@@ -57,6 +57,10 @@ agents:
           type: string
           enum: [a, b]
       required: [category]
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
 steps:
   - kind: step
     name: categorize
@@ -108,6 +112,10 @@ agents:
         category:
           type: string
       required: [category]
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
 steps:
   - kind: step
     name: categorize

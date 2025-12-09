@@ -57,6 +57,7 @@ steps:
       is_adapter: true
       adapter_id: generic-adapter
       adapter_allow: generic
+    input: "Hello YAML"
   - kind: step
     name: s2
     agent:
@@ -65,6 +66,7 @@ steps:
       is_adapter: true
       adapter_id: generic-adapter
       adapter_allow: generic
+    input: "{{ previous_step.output }}"
 """
 
 
