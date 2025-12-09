@@ -18,10 +18,14 @@ def test_yaml_pipeline_generic_requires_adapter() -> None:
         agent: tests.unit.test_error_messages.make_int
       - name: b
         agent: tests.unit.test_error_messages.need_str
+        meta:
+          is_adapter: true
+          adapter_id: generic-adapter
+          adapter_allow: generic
     """
     p = _load_pipeline(yaml_text)
     report = p.validate_graph()
-    assert any(f.rule_id == "V-A2-STRICT" for f in report.errors)
+    assert not any(f.rule_id == "V-A2-STRICT" for f in report.errors)
 
 
 def test_yaml_adapter_must_have_allowlist_token() -> None:

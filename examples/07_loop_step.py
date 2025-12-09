@@ -48,6 +48,8 @@ async def edit_and_review_agent(draft: TextEdit) -> TextEdit:
 
 # The body of our loop is a single "edit and review" step.
 loop_body_pipeline = Pipeline.from_step(edit_and_review_agent)
+# Explicitly type loop body output to avoid generic object chaining complaints
+edit_and_review_agent.__step_output_type__ = TextEdit
 
 # The `LoopStep` will run the `loop_body_pipeline` repeatedly.
 loop_step = Step.loop_until(

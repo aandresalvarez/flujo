@@ -10,7 +10,9 @@ def _agent(x: dict[str, object]) -> dict[str, object]:
 
 def test_step_io_keys_validation_passes_when_produced() -> None:
     s1 = Step(name="first", agent=_agent, output_keys=["summary"])
+    s1.__step_output_type__ = dict[str, object]
     s2 = Step(name="second", agent=_agent, input_keys=["summary"])
+    s2.__step_input_type__ = dict[str, object]
 
     pipeline = Pipeline.model_construct(steps=[s1, s2], hooks=[], on_finish=[])
     report = pipeline.validate_graph()
