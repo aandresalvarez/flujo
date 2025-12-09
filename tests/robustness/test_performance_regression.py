@@ -6,6 +6,7 @@ detect performance regressions in critical code paths.
 
 import asyncio
 import os
+import statistics
 import time
 from typing import Any
 from unittest.mock import AsyncMock
@@ -259,8 +260,6 @@ class TestPerformanceRegression:
         The test verifies CORRECTNESS (all operations complete with valid results)
         and logs detailed metrics for human review and trend analysis.
         """
-        import asyncio
-        import statistics
 
         def get_system_metrics() -> dict[str, Any]:
             """Collect current system load metrics."""
@@ -484,7 +483,6 @@ class TestScalabilityRegression:
 
         The key invariant is: concurrent execution should be faster than sequential.
         """
-        import asyncio
 
         async def run_high_concurrency_test():
             executor = create_mock_executor_core()
