@@ -685,7 +685,10 @@ def run_step_validations(
         prev_step: Any | None,
         prev_out_type: Any,
     ) -> set[str]:
-        for step in getattr(current, "steps", []) or []:
+        for idx_step, step in enumerate(getattr(current, "steps", []) or []):
+            meta = getattr(step, "meta", None)
+            _yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+            templated_input = meta.get("templated_input") if isinstance(meta, dict) else None
             if id(step) in seen_steps:
                 report.warnings.append(
                     ValidationFinding(
@@ -934,6 +937,63 @@ def run_step_validations(
             for pk in produced_keys:
                 produced_paths.add(pk)
                 available_roots.add(_root_key(pk))
+
+            if isinstance(sink_target, str) and sink_target.startswith("scratchpad"):
+                report.errors.append(
+                    ValidationFinding(
+                        rule_id="CTX-SCRATCHPAD",
+                        severity="error",
+                        message=(
+                            f"Step '{step.name}' writes to scratchpad via sink_to='{sink_target}'. "
+                            "User data must be stored in typed context fields instead."
+                        ),
+                        step_name=getattr(step, "name", None),
+                        location_path=_yloc.get("path")
+                        if isinstance(_yloc, dict)
+                        else f"steps[{idx_step}]",
+                        file=_yloc.get("file") if isinstance(_yloc, dict) else None,
+                        line=_yloc.get("line") if isinstance(_yloc, dict) else None,
+                        column=_yloc.get("column") if isinstance(_yloc, dict) else None,
+                    )
+                )
+
+            if isinstance(templated_input, str) and "scratchpad" in templated_input:
+                report.errors.append(
+                    ValidationFinding(
+                        rule_id="CTX-SCRATCHPAD",
+                        severity="error",
+                        message=(
+                            f"Step '{step.name}' templated_input references scratchpad. "
+                            "Move data to typed context fields."
+                        ),
+                        step_name=getattr(step, "name", None),
+                        location_path=_yloc.get("path")
+                        if isinstance(_yloc, dict)
+                        else f"steps[{idx_step}]",
+                        file=_yloc.get("file") if isinstance(_yloc, dict) else None,
+                        line=_yloc.get("line") if isinstance(_yloc, dict) else None,
+                        column=_yloc.get("column") if isinstance(_yloc, dict) else None,
+                    )
+                )
+
+            if getattr(step, "updates_context", False) and not produced_keys:
+                report.errors.append(
+                    ValidationFinding(
+                        rule_id="CTX-OUTPUT-KEYS",
+                        severity="error",
+                        message=(
+                            f"Step '{step.name}' sets updates_context=True but declares no output_keys/sink_to. "
+                            "Declare typed context fields to persist outputs."
+                        ),
+                        step_name=getattr(step, "name", None),
+                        location_path=_yloc.get("path")
+                        if isinstance(_yloc, dict)
+                        else f"steps[{idx_step}]",
+                        file=_yloc.get("file") if isinstance(_yloc, dict) else None,
+                        line=_yloc.get("line") if isinstance(_yloc, dict) else None,
+                        column=_yloc.get("column") if isinstance(_yloc, dict) else None,
+                    )
+                )
 
             prev_step = step
             prev_out_type = getattr(step, "__step_output_type__", Any)

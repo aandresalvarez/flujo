@@ -146,6 +146,24 @@ def test_no_missing_agent_error_for_hitl_step() -> None:
     assert not any(f.rule_id == "V-A1" for f in report.errors)
 
 
+def test_scratchpad_sink_to_errors() -> None:
+    async def a(x: int) -> int:  # type: ignore[override]
+        return x
+
+    s1 = Step.from_callable(a, name="a", updates_context=True, sink_to="scratchpad.value")
+    report = Pipeline.from_step(s1).validate_graph()
+    assert any(f.rule_id == "CTX-SCRATCHPAD" for f in report.errors)
+
+
+def test_updates_context_without_outputs_errors() -> None:
+    async def a(x: int) -> int:  # type: ignore[override]
+        return x
+
+    s1 = Step.from_callable(a, name="a", updates_context=True)
+    report = Pipeline.from_step(s1).validate_graph()
+    assert any(f.rule_id == "CTX-OUTPUT-KEYS" for f in report.errors)
+
+
 def test_reused_step_instance_warns_V_A3() -> None:
     s = Step.from_callable(_id, name="dup")
     p = Pipeline.model_construct(steps=[s, s])
