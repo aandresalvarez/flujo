@@ -156,6 +156,38 @@ if __name__ == "__main__":
 
 Your Python-defined pipelines get all the same benefits: automatic CLI generation, budget enforcement, and full traceability.
 
+### 🔄 Granular Execution (Resumable Agents)
+
+For long-running, multi-turn agent conversations that need crash-safe persistence:
+
+```python
+from flujo import Step, Flujo
+from flujo.agents import make_agent_async
+
+# Create a research agent
+agent = make_agent_async(
+    model="openai:gpt-4o",
+    system_prompt="You are a research assistant. Respond with 'COMPLETE' when done.",
+    output_type=str,
+)
+
+# Wrap in granular execution - survives crashes!
+pipeline = Step.granular("research_agent", agent, max_turns=20)
+
+async def main():
+    runner = Flujo(pipeline)
+    async for result in runner.run_async("Research quantum computing"):
+        print(result.output)
+```
+
+**Key Benefits:**
+- ✅ **Crash-safe**: Resume after server restart without losing progress
+- ✅ **No double-billing**: Completed turns are skipped on resume
+- ✅ **Fingerprint validation**: Detects config changes between runs
+- ✅ **Idempotency keys**: Safe external API retries
+
+See the full guide: [docs/guides/granular_execution.md](docs/guides/granular_execution.md)
+
 ---
 
 ## 🧩 The Blueprint (YAML)

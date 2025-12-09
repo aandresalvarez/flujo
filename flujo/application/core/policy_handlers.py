@@ -4,6 +4,7 @@ from typing import Any, TYPE_CHECKING, cast
 
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
+from ...domain.dsl.granular import GranularStep
 from ...domain.dsl.import_step import ImportStep
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.parallel import ParallelStep
@@ -249,6 +250,7 @@ class PolicyHandlers:
 
         self._adapt_existing_policies(registry)
         self._ensure_state_machine_policy(registry)
+        self._ensure_granular_policy(registry)
         # Ensure a fallback exists; default to simple policy when not provided
         try:
             if registry._fallback_policy is None:  # noqa: SLF001
@@ -297,6 +299,24 @@ class PolicyHandlers:
 
             if registry.get(_SM) is None:
                 registry.register(_SM, _sm_bound)
+        except Exception:
+            # Defensive: never break core init due to optional policy wiring
+            pass
+
+    def _ensure_granular_policy(self, registry: PolicyRegistry) -> None:
+        """Register GranularStep policy for crash-safe, resumable agent execution."""
+        try:
+            from typing import Any as _Any
+
+            from .policies.granular_policy import GranularAgentStepExecutor as _GPolicy
+
+            _g_policy = _GPolicy()
+
+            async def _g_bound(frame: ExecutionFrame[_Any]) -> StepOutcome[StepResult]:
+                return await _g_policy.execute(self._core, frame)
+
+            if registry.get(GranularStep) is None:
+                registry.register(GranularStep, _g_bound)
         except Exception:
             # Defensive: never break core init due to optional policy wiring
             pass

@@ -17,7 +17,6 @@ from typing import (
     TypeVar,
     Dict,
     Type,
-    overload,
     Union,
     cast,
     TYPE_CHECKING,
@@ -900,6 +899,79 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             **config_kwargs,
         )
 
+    @classmethod
+    def granular(
+        cls,
+        name: str,
+        agent: Any,
+        input_: Any = None,
+        *,
+        max_turns: int = 20,
+        history_max_tokens: int = 128_000,
+        blob_threshold_bytes: int = 20_000,
+        enforce_idempotency: bool = False,
+        **config_kwargs: Any,
+    ) -> "Pipeline[Any, Any]":
+        """Build a granular execution pipeline for crash-safe, resumable agent runs.
+
+        Wraps a GranularStep in a LoopStep with abort-on-failure semantics.
+        Each turn is persisted atomically with CAS guards to prevent double-execution.
+
+        Args:
+            name: Step name for identification
+            agent: The agent to execute
+            input_: Optional input data or template
+            max_turns: Maximum number of turns before forced completion (default 20)
+            history_max_tokens: Token budget for message history (default 128K)
+            blob_threshold_bytes: Payload size triggering blob offload (default 20KB)
+            enforce_idempotency: Require idempotency keys on tool calls (default False)
+            **config_kwargs: Additional step configuration
+
+        Returns:
+            Pipeline containing LoopStep(GranularStep) with on_failure="abort"
+        """
+        from .loop import LoopStep
+        from .granular import GranularStep
+        from .pipeline import Pipeline
+
+        # Create the inner granular step
+        granular_step = GranularStep(
+            name=f"{name}_turn",
+            agent=agent,
+            input_=input_,
+            history_max_tokens=history_max_tokens,
+            blob_threshold_bytes=blob_threshold_bytes,
+            enforce_idempotency=enforce_idempotency,
+            **config_kwargs,
+        )
+
+        # Wrap in a pipeline for loop body
+        inner_pipeline = Pipeline.from_step(granular_step)
+
+        # Exit when granular_state.is_complete is True
+        def _exit_condition(output: Any, ctx: Optional[ContextModelT]) -> bool:
+            # Check for completion flag in output or scratchpad
+            if hasattr(output, "is_complete"):
+                return bool(output.is_complete)
+            if ctx is not None:
+                scratch = getattr(ctx, "scratchpad", None)
+                if isinstance(scratch, dict):
+                    gs = scratch.get("granular_state")
+                    if isinstance(gs, dict):
+                        return bool(gs.get("is_complete", False))
+            return False
+
+        # Loop until complete or max_turns
+        loop = LoopStep[Any](
+            name=name,
+            loop_body_pipeline=inner_pipeline,
+            exit_condition_callable=_exit_condition,
+            max_loops=max_turns,
+            on_failure="abort",  # Abort on inner failure per PRD §5.3
+        )
+
+        return Pipeline.from_step(loop)
+
     # ------------------------------------------------------------------
     # Convenience helpers
     # ------------------------------------------------------------------
@@ -956,145 +1028,10 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
 # ----------------------------------------------------------------------
 # Helper decorator factory (step / adapter_step)
+# Extracted to step_decorators.py - re-exported here for backward compatibility
 # ----------------------------------------------------------------------
 
-
-@overload
-def step(
-    func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
-    *,
-    name: str | None = None,
-    updates_context: bool = False,
-    processors: Optional[AgentProcessors] = None,
-    persist_feedback_to_context: Optional[str] = None,
-    persist_validation_results_to: Optional[str] = None,
-    is_adapter: bool = False,
-    **config_kwargs: Any,
-) -> "Step[StepInT, StepOutT]": ...
-
-
-@overload
-def step(
-    *,
-    updates_context: bool = False,
-    validate_fields: bool = False,  # New parameter for field validation
-    sink_to: str | None = None,  # Scalar output destination
-    name: Optional[str] = None,
-    config: Optional[StepConfig] = None,
-    execution_mode: ExecutionMode | None = None,
-    max_retries: int | None = None,
-    timeout_s: float | None = None,
-    **config_kwargs: Any,
-) -> Callable[
-    [Callable[Concatenate[Any, P], Coroutine[Any, Any, Any]]],
-    "Step[StepInT, StepOutT]",
-]: ...
-
-
-def step(
-    func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
-    *,
-    name: str | None = None,
-    updates_context: bool = False,
-    validate_fields: bool = False,  # New parameter for field validation
-    sink_to: str | None = None,  # Scalar output destination
-    config: StepConfig | None = None,
-    execution_mode: ExecutionMode | None = None,
-    max_retries: int | None = None,
-    timeout_s: float | None = None,
-    processors: Optional[AgentProcessors] = None,
-    persist_feedback_to_context: Optional[str] = None,
-    persist_validation_results_to: Optional[str] = None,
-    is_adapter: bool = False,
-    **config_kwargs: Any,
-) -> Any:
-    """Decorator / factory for creating :class:`Step` instances from async callables."""
-
-    def decorator(
-        fn: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
-    ) -> "Step[StepInT, StepOutT]":
-        if config is not None and (
-            execution_mode is not None
-            or max_retries is not None
-            or timeout_s is not None
-            or config_kwargs
-        ):
-            import warnings as _warnings
-
-            _warnings.warn(
-                "Both `config` and additional config parameters were provided to @step; "
-                "explicit parameters will override the StepConfig values.",
-                UserWarning,
-                stacklevel=2,
-            )
-
-        merged_config_kwargs: dict[str, Any] = {}
-        if config is not None:
-            merged_config_kwargs.update(config.model_dump())
-        merged_config_kwargs.update(config_kwargs)
-        if execution_mode is not None:
-            merged_config_kwargs["execution_mode"] = execution_mode
-        if max_retries is not None:
-            merged_config_kwargs["max_retries"] = max_retries
-        if timeout_s is not None:
-            merged_config_kwargs["timeout_s"] = timeout_s
-
-        final_config = StepConfig(**merged_config_kwargs)
-
-        return Step.from_callable(
-            fn,
-            name=name or fn.__name__,
-            updates_context=updates_context,
-            validate_fields=validate_fields,  # Pass the new parameter
-            sink_to=sink_to,  # Pass sink_to parameter
-            processors=processors,
-            persist_feedback_to_context=persist_feedback_to_context,
-            persist_validation_results_to=persist_validation_results_to,
-            is_adapter=is_adapter,
-            config=final_config,
-        )
-
-    # If used without parentheses, func is the callable
-    if func is not None:
-        return decorator(func)
-
-    return decorator
-
-
-@overload
-def adapter_step(
-    func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
-    *,
-    name: str | None = None,
-    updates_context: bool = False,
-    processors: Optional[AgentProcessors] = None,
-    persist_feedback_to_context: Optional[str] = None,
-    persist_validation_results_to: Optional[str] = None,
-    **config_kwargs: Any,
-) -> "Step[StepInT, StepOutT]": ...
-
-
-@overload
-def adapter_step(
-    *,
-    name: str | None = None,
-    updates_context: bool = False,
-    processors: Optional[AgentProcessors] = None,
-    persist_feedback_to_context: Optional[str] = None,
-    persist_validation_results_to: Optional[str] = None,
-    **config_kwargs: Any,
-) -> Callable[
-    [Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]],
-    "Step[StepInT, StepOutT]",
-]: ...
-
-
-def adapter_step(
-    func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
-    **kwargs: Any,
-) -> Any:
-    """Alias for :func:`step` that marks the created step as an adapter."""
-    return cast(Any, step)(func, is_adapter=True, **kwargs)
+from .step_decorators import step, adapter_step  # noqa: E402
 
 
 class HumanInTheLoopStep(Step[Any, Any]):
