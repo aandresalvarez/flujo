@@ -16,6 +16,10 @@ def test_yaml_pipeline_generic_requires_adapter() -> None:
     steps:
       - name: a
         agent: tests.unit.test_error_messages.make_int
+        meta:
+          is_adapter: true
+          adapter_id: generic-adapter
+          adapter_allow: generic
       - name: b
         agent: tests.unit.test_error_messages.need_str
         meta:

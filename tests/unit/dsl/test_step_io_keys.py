@@ -44,11 +44,9 @@ def test_step_io_keys_warns_when_only_root_available() -> None:
 
 
 def test_step_io_keys_follow_branch_union_for_conditional() -> None:
-    branch_a = Pipeline.model_construct(
-        steps=[Step(name="branch-a-step", agent=_agent, output_keys=["branch_value"])],
-        hooks=[],
-        on_finish=[],
-    )
+    branch_step = Step(name="branch-a-step", agent=_agent, output_keys=["branch_value"])
+    branch_step.__step_output_type__ = dict[str, object]
+    branch_a = Pipeline.model_construct(steps=[branch_step], hooks=[], on_finish=[])
     cond = ConditionalStep(
         name="choose",
         agent=_agent,
@@ -56,6 +54,7 @@ def test_step_io_keys_follow_branch_union_for_conditional() -> None:
         condition_callable=lambda *_: "a",
     )
     consumer = Step(name="after-cond", agent=_agent, input_keys=["branch_value"])
+    consumer.__step_input_type__ = dict[str, object]
 
     pipeline = Pipeline.model_construct(steps=[cond, consumer], hooks=[], on_finish=[])
     report = pipeline.validate_graph()

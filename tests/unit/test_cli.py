@@ -400,7 +400,12 @@ def test_cli_explain(tmp_path) -> None:
 def test_cli_validate_success(tmp_path) -> None:
     file = tmp_path / "pipe.py"
     file.write_text(
-        "from flujo.domain import Step\nfrom flujo.testing.utils import StubAgent\npipeline = Step.model_validate({'name': 'A', 'agent': StubAgent(['x'])}) >> Step.model_validate({'name': 'B', 'agent': StubAgent(['y'])})\n"
+        "from flujo.domain import Step\nfrom flujo.testing.utils import StubAgent\n"
+        "s1 = Step.model_validate({'name': 'A', 'agent': StubAgent(['x'])})\n"
+        "s1.__step_output_type__ = str\n"
+        "s2 = Step.model_validate({'name': 'B', 'agent': StubAgent(['y']), 'meta': {'is_adapter': True, 'adapter_id': 'generic-adapter', 'adapter_allow': 'generic'}})\n"
+        "s2.__step_input_type__ = str\n"
+        "pipeline = s1 >> s2\n"
     )
     result = runner.invoke(app, ["validate", str(file)])
     assert result.exit_code == 0
