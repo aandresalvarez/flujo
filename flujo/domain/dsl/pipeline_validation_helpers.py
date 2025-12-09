@@ -857,6 +857,12 @@ def run_step_validations(
                 prev_updates_context = bool(getattr(prev_step, "updates_context", False))
                 curr_accepts_input = getattr(step, "__step_input_type__", Any)
                 prev_produces_output = getattr(prev_step, "__step_output_type__", Any)
+                is_adapter = False
+                try:
+                    meta = getattr(step, "meta", None)
+                    is_adapter = bool(meta.get("is_adapter")) if isinstance(meta, dict) else False
+                except Exception:
+                    is_adapter = False
 
                 def _templated_input_consumes_prev(_step: Any, prev_name: str) -> bool:
                     try:
@@ -905,6 +911,22 @@ def run_step_validations(
                                 suggestion=(
                                     "Set updates_context=True on the producing step or insert an adapter step to consume its output."
                                 ),
+                            )
+                        )
+
+                # Disallow implicit Any/object bridging without explicit adapter
+                if curr_accepts_input in (Any, object) and prev_produces_output is not None:
+                    if not is_adapter:
+                        report.errors.append(
+                            ValidationFinding(
+                                rule_id="V-A2-STRICT",
+                                severity="error",
+                                message=(
+                                    f"Step '{step.name}' accepts '{curr_accepts_input}' which is too generic "
+                                    f"for upstream output '{getattr(prev_step, 'name', '')}'. "
+                                    "Use an explicit adapter step with is_adapter=True."
+                                ),
+                                step_name=getattr(step, "name", None),
                             )
                         )
 
