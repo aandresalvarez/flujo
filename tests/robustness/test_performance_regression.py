@@ -3,7 +3,12 @@
 These tests ensure that performance characteristics are maintained and
 detect performance regressions in critical code paths.
 """
-# ruff: noqa
+
+import asyncio
+import os
+import time
+from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -12,25 +17,18 @@ try:
 except ImportError:
     psutil = None  # type: ignore[assignment,unused-ignore]
 
+from flujo.application.core.state_serializer import StateSerializer
+from flujo.domain.models import ConversationRole, ConversationTurn, PipelineContext, StepResult
+from tests.test_types.fixtures import create_test_step, create_test_step_result
+from tests.test_types.mocks import create_mock_executor_core
+from tests.robustness.baseline_manager import get_baseline_manager
+
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.benchmark,
 ]
 if psutil is None:
     pytestmark.append(pytest.mark.skip(reason="psutil not available"))
-
-import asyncio
-import time
-import os
-from typing import Any
-from unittest.mock import AsyncMock
-
-from flujo.application.core.executor_core import ExecutorCore
-from flujo.application.core.state_serializer import StateSerializer
-from flujo.domain.models import ConversationRole, ConversationTurn, PipelineContext, StepResult
-from tests.test_types.fixtures import create_test_step, create_test_step_result
-from tests.test_types.mocks import create_mock_executor_core
-from tests.robustness.baseline_manager import get_baseline_manager, measure_and_check_regression
 
 
 class TestPerformanceRegression:
@@ -121,9 +119,9 @@ class TestPerformanceRegression:
         avg_time = sum(results) / len(results)
         threshold = baseline_thresholds["pipeline_creation"]
 
-        assert (
-            avg_time <= threshold
-        ), f"Pipeline creation time {avg_time:.2f}ms exceeds threshold {threshold}ms"
+        assert avg_time <= threshold, (
+            f"Pipeline creation time {avg_time:.2f}ms exceeds threshold {threshold}ms"
+        )
 
     def test_context_isolation_performance(self, baseline_thresholds: dict[str, float]):
         """Test that context isolation performance stays within bounds."""
@@ -146,13 +144,12 @@ class TestPerformanceRegression:
         avg_time = sum(results) / len(results)
         threshold = baseline_thresholds["context_isolation"]
 
-        assert (
-            avg_time <= threshold
-        ), f"Context isolation time {avg_time:.2f}ms exceeds threshold {threshold}ms"
+        assert avg_time <= threshold, (
+            f"Context isolation time {avg_time:.2f}ms exceeds threshold {threshold}ms"
+        )
 
     def test_serialization_performance(self, baseline_thresholds: dict[str, float]):
         """Test that serialization performance stays within bounds."""
-        from flujo.domain.models import StepResult
 
         def serialize_object():
             result = create_test_step_result(
@@ -174,9 +171,9 @@ class TestPerformanceRegression:
         avg_time = sum(results) / len(results)
         threshold = baseline_thresholds["serialization"]
 
-        assert (
-            avg_time <= threshold
-        ), f"Serialization time {avg_time:.2f}ms exceeds threshold {threshold}ms"
+        assert avg_time <= threshold, (
+            f"Serialization time {avg_time:.2f}ms exceeds threshold {threshold}ms"
+        )
 
     def test_context_hash_performance(self):
         """Ensure context hashing stays fast for large contexts."""
@@ -206,9 +203,9 @@ class TestPerformanceRegression:
             serializer.compute_context_hash(context)
         total_time = (time.perf_counter() - start_time) * 1000  # ms
 
-        assert (
-            total_time < 75
-        ), f"Context hashing took {total_time:.1f}ms for 5 runs, expected < 75ms"
+        assert total_time < 75, (
+            f"Context hashing took {total_time:.1f}ms for 5 runs, expected < 75ms"
+        )
 
     def test_memory_overhead_monitoring(self, baseline_thresholds: dict[str, float]):
         """Test that memory overhead stays within acceptable bounds."""
@@ -331,12 +328,12 @@ class TestPerformanceRegression:
                 # --- Validate correctness (NOT performance) ---
                 assert len(sequential_results) == num_operations, "Sequential: not all completed"
                 assert len(concurrent_results) == num_operations, "Concurrent: not all completed"
-                assert all(
-                    isinstance(r, StepResult) for r in sequential_results
-                ), "Invalid sequential results"
-                assert all(
-                    isinstance(r, StepResult) for r in concurrent_results
-                ), "Invalid concurrent results"
+                assert all(isinstance(r, StepResult) for r in sequential_results), (
+                    "Invalid sequential results"
+                )
+                assert all(isinstance(r, StepResult) for r in concurrent_results), (
+                    "Invalid concurrent results"
+                )
 
                 # Calculate speedup for logging
                 speedup = sequential_time / concurrent_time if concurrent_time > 0 else float("inf")
@@ -381,14 +378,14 @@ class TestPerformanceRegression:
             print(f"  Mean: {mean_concurrent:.2f}ms")
             print(f"  Min: {min(concurrent_times):.2f}ms")
             print(f"  Max: {max(concurrent_times):.2f}ms")
-            print(f"\nSpeedup Analysis:")
+            print("\nSpeedup Analysis:")
             print(f"  Mean: {mean_speedup:.2f}x")
             print(f"  Median: {median_speedup:.2f}x")
             print(f"  Min: {actual_min_speedup:.2f}x")
             print(f"  Max: {max_speedup:.2f}x")
             if speedup_std > 0:
                 print(f"  Std Dev: {speedup_std:.2f}x")
-            print(f"\nSystem Load (across runs):")
+            print("\nSystem Load (across runs):")
             if system_metrics_list:
                 avg_cpu = statistics.mean([m.get("cpu_percent", 0) for m in system_metrics_list])
                 avg_mem = statistics.mean([m.get("memory_mb", 0) for m in system_metrics_list])
@@ -525,12 +522,12 @@ class TestScalabilityRegression:
             # --- Validate correctness ---
             assert len(sequential_results) == num_operations, "Sequential: not all completed"
             assert len(concurrent_results) == num_operations, "Concurrent: not all completed"
-            assert all(
-                isinstance(r, StepResult) for r in sequential_results
-            ), "Invalid sequential results"
-            assert all(
-                isinstance(r, StepResult) for r in concurrent_results
-            ), "Invalid concurrent results"
+            assert all(isinstance(r, StepResult) for r in sequential_results), (
+                "Invalid sequential results"
+            )
+            assert all(isinstance(r, StepResult) for r in concurrent_results), (
+                "Invalid concurrent results"
+            )
 
             # --- Validate RELATIVE performance (environment-independent) ---
             # Concurrent execution should provide speedup over sequential.
@@ -548,7 +545,7 @@ class TestScalabilityRegression:
             min_speedup = 1.5
 
             # Log performance for debugging (not part of assertion)
-            print(f"\nHigh Concurrency Performance:")
+            print("\nHigh Concurrency Performance:")
             print(f"  Sequential: {sequential_time:.1f}ms")
             print(f"  Concurrent: {concurrent_time:.1f}ms")
             print(f"  Speedup: {speedup:.2f}x")

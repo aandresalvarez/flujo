@@ -40,9 +40,10 @@ def _serialize_for_test(obj: Any) -> Any:
     try:
         # Test if JSON-serializable
         json.dumps(obj)
-        return obj
     except (TypeError, ValueError):
         return str(obj)
+    else:
+        return obj
 
 
 def assert_pipeline_result(result: Any, expected_output: Optional[Any] = None) -> None:

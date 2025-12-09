@@ -7,6 +7,8 @@ import pytest
 
 from flujo.utils.async_bridge import run_sync
 
+pytestmark = pytest.mark.fast
+
 
 class TestRunSync:
     """Tests for the run_sync utility."""

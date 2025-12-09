@@ -80,9 +80,8 @@ json_string = model.model_dump_json()
 ### Safe Serialization
 
 ```python
-from flujo.utils import model_dump(mode="json")
-
-result = model_dump(mode="json")(complex_object, default_serializer=str)
+# For Pydantic models, call model_dump(mode="json") on the instance
+result = complex_object.model_dump(mode="json")
 ```
 
 ### Create Type-Specific Serializer

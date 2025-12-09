@@ -189,10 +189,7 @@ def execute_pipeline_with_output_handling(
             from flujo.utils.serialization import _robust_serialize_internal
             import json as _json
 
-            try:
-                serialized = _robust_serialize_internal(result)
-            except Exception:
-                serialized = f"<unserializable: {type(result).__name__}>"
+            serialized = _robust_serialize_internal(result)
             return _json.dumps(serialized, indent=2)
         if run_id is not None:
             result = runner.run(input_data, run_id=run_id)

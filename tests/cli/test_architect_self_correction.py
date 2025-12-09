@@ -186,9 +186,9 @@ def test_architect_self_correction_loop(tmp_path: Path, mock_architect_self_corr
     # If loop is visible in step history, assert iterations were recorded; otherwise fall back to validator sequence
     if any(n == "ValidateAndRepair" for n in names):
         loop_attempts = int(captured.get("loop_attempts", -1))
-        assert (
-            loop_attempts >= 1
-        ), f"expected >=1 loop attempt recorded, got {loop_attempts}; names={names}"
+        assert loop_attempts >= 2, (
+            f"expected >=2 loop attempts recorded, got {loop_attempts}; names={names}"
+        )
     else:
         # Fallback: ensure at least one validation occurred
         assert len(vins) >= 1, f"expected validator called at least once, got {len(vins)}"

@@ -104,16 +104,31 @@ class TestDSLCoreDecoupling:
 
             # Check for module-level imports from application.core
             for node in ast.iter_child_nodes(tree):
-                if isinstance(node, (ast.Import, ast.ImportFrom)):
-                    # Get the module being imported
-                    if isinstance(node, ast.ImportFrom) and node.module:
-                        module = node.module
-                        if "flujo.application.core" in module or module.startswith(
-                            "...application.core"
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        target = alias.name
+                        if target == "flujo.application.core" or target.startswith(
+                            "flujo.application.core."
                         ):
                             line = content.split("\n")[node.lineno - 1].strip()
                             rel_path = py_file.relative_to(flujo_root)
                             violations.append(f"{rel_path}:{node.lineno}: {line}")
+                elif isinstance(node, ast.ImportFrom):
+                    module = node.module or ""
+                    # Prepend dots for relative imports to keep intent visible
+                    if node.level:
+                        module = "." * node.level + module
+
+                    normalized = module.lstrip(".")
+                    if normalized.startswith("application.core"):
+                        normalized = "flujo." + normalized
+
+                    if normalized == "flujo.application.core" or normalized.startswith(
+                        "flujo.application.core."
+                    ):
+                        line = content.split("\n")[node.lineno - 1].strip()
+                        rel_path = py_file.relative_to(flujo_root)
+                        violations.append(f"{rel_path}:{node.lineno}: {line}")
 
         if violations:
             pytest.fail(
@@ -129,12 +144,12 @@ class TestDSLCoreDecoupling:
             pytest.skip("interfaces.py not found")
 
         content = interfaces_file.read_text()
-        assert (
-            "def accepts_param(" in content
-        ), "domain.interfaces must provide accepts_param function"
-        assert (
-            '"accepts_param"' in content or "'accepts_param'" in content
-        ), "accepts_param must be exported in __all__"
+        assert "def accepts_param(" in content, (
+            "domain.interfaces must provide accepts_param function"
+        )
+        assert '"accepts_param"' in content or "'accepts_param'" in content, (
+            "accepts_param must be exported in __all__"
+        )
 
 
 class TestAsyncBridgeUnification:
@@ -161,10 +176,10 @@ class TestAsyncBridgeUnification:
 
         content = prometheus_file.read_text()
         # Should import from async_bridge
-        assert (
-            "from" in content and "async_bridge" in content
-        ), "prometheus.py should import from async_bridge"
+        assert "from" in content and "async_bridge" in content, (
+            "prometheus.py should import from async_bridge"
+        )
         # Should NOT define its own run_coroutine implementation
-        assert (
-            "def run_coroutine(" not in content
-        ), "prometheus.py should not define its own run_coroutine; use run_sync"
+        assert "def run_coroutine(" not in content, (
+            "prometheus.py should not define its own run_coroutine; use run_sync"
+        )

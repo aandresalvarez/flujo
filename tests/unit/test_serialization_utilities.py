@@ -265,7 +265,7 @@ class TestSerializeForJson:
 
         # Only used for unknown types, not primitives
         def default_serializer(obj: Any) -> str:
-            return f"custom_{str(obj)}"
+            return f"custom_{obj!s}"
 
         # For a primitive, should return as is
         result = _serialize_for_json("test", default_serializer=default_serializer)
@@ -277,7 +277,7 @@ class TestSerializeForJson:
 
         unknown = Unknown()
         result = _serialize_for_json(unknown, default_serializer=default_serializer)
-        assert result == f"custom_{str(unknown)}"
+        assert result == f"custom_{unknown!s}"
 
     def test__serialize_for_json_nested_structures(self):
         """Test serializing nested data structures."""

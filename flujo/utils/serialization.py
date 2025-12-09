@@ -529,7 +529,7 @@ def _robust_serialize_internal(
     """
     try:
         return _json_serialize_impl(obj, circular_ref_placeholder=circular_ref_placeholder)
-    except Exception:
+    except Exception:  # noqa: BLE001 - intentional blanket catch; serializer must never raise
         return f"<unserializable: {type(obj).__name__}>"
 
 

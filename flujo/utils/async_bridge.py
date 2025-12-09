@@ -53,13 +53,13 @@ def run_sync(coro: Coroutine[Any, Any, T]) -> T:
 
     # Already inside a loop - use thread isolation
     result: Any = None
-    exc: BaseException | None = None
+    exc: Exception | None = None
 
     def _target() -> None:
         nonlocal result, exc
         try:
             result = asyncio.run(coro)
-        except BaseException as e:  # pragma: no cover - unlikely
+        except Exception as e:  # pragma: no cover - unexpected coroutine failure
             exc = e
 
     thread = threading.Thread(target=_target, daemon=True)
