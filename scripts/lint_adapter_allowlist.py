@@ -43,15 +43,26 @@ def _find_adapter_usages() -> List[Tuple[Path, str]]:
     return usages
 
 
+def _has_token(text: str, token: str) -> bool:
+    return f"ADAPTER_ALLOW:{token}" in text
+
+
 def main() -> None:
     allowlist = _load_allowlist().get("allowed", {})
     usages = _find_adapter_usages()
 
     violations: list[str] = []
     for file_path, adapter in usages:
-        if adapter not in allowlist:
+        token = allowlist.get(adapter)
+        text = file_path.read_text(encoding="utf-8", errors="ignore")
+        if token is None:
             violations.append(
                 f"{adapter} used in {file_path.relative_to(ROOT)} without allowlist entry"
+            )
+            continue
+        if not _has_token(text, token):
+            violations.append(
+                f"{adapter} in {file_path.relative_to(ROOT)} missing token ADAPTER_ALLOW:{token}"
             )
 
     if violations:

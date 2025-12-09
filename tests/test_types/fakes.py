@@ -7,10 +7,11 @@ MagicMock/AsyncMock. They are intended to replace ad-hoc mocks in tests.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
-from flujo.application.core.executor_protocols import IUsageMeter
+from flujo.application.core.executor_protocols import IUsageMeter, ICacheBackend
 from flujo.domain.resources import AppResources
+from flujo.domain.models import StepResult
 
 
 class FakeAgent:
@@ -64,4 +65,20 @@ class FakeUsageMeter(IUsageMeter):
         return current
 
 
-__all__ = ["FakeAgent", "FakeUsageMeter"]
+__all__ = ["FakeAgent", "FakeUsageMeter", "FakeCacheBackend"]
+
+
+class FakeCacheBackend(ICacheBackend):
+    """In-memory cache backend for tests."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, StepResult] = {}
+
+    async def get(self, key: str) -> Optional[StepResult]:
+        return self.store.get(key)
+
+    async def put(self, key: str, value: StepResult, ttl_s: int) -> None:  # noqa: ARG002
+        self.store[key] = value
+
+    async def clear(self) -> None:
+        self.store.clear()
