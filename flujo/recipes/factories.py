@@ -454,7 +454,15 @@ async def run_default_pipeline(
         Candidate with solution and checklist, or None if failed
     """
     runner: Flujo[str, Checklist, PipelineContext] = Flujo(pipeline)
-    result = await gather_result(runner, task.prompt)
+    try:
+        result = await gather_result(runner, task.prompt)
+    except Exception as exc:
+        from flujo.exceptions import TypeMismatchError
+
+        # Treat type mismatch as pipeline failure for convenience helper
+        if isinstance(exc, TypeMismatchError):
+            return None
+        raise
 
     # Extract solution from context and checklist from the validator step output
     context = result.final_pipeline_context

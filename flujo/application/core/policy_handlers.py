@@ -14,6 +14,7 @@ from ...infra import telemetry as _telemetry
 from ...steps.cache_step import CacheStep
 from .policy_registry import PolicyRegistry, StepPolicy
 from .types import ExecutionFrame
+from .type_guards import normalize_outcome
 
 if TYPE_CHECKING:
     from .executor_core import ExecutorCore
@@ -43,31 +44,11 @@ class PolicyHandlers:
 
     async def parallel_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         res_any = await self._core.parallel_step_executor.execute(self._core, frame)
-        if isinstance(res_any, StepOutcome):
-            return res_any
-        return (
-            Success(step_result=res_any)
-            if res_any.success
-            else Failure(
-                error=Exception(res_any.feedback or "step failed"),
-                feedback=res_any.feedback,
-                step_result=res_any,
-            )
-        )
+        return normalize_outcome(res_any, step_name=getattr(frame.step, "name", "<unnamed>"))
 
     async def loop_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         res_any = await self._core.loop_step_executor.execute(self._core, frame)
-        if isinstance(res_any, StepOutcome):
-            return res_any
-        return (
-            Success(step_result=res_any)
-            if res_any.success
-            else Failure(
-                error=Exception(res_any.feedback or "step failed"),
-                feedback=res_any.feedback,
-                step_result=res_any,
-            )
-        )
+        return normalize_outcome(res_any, step_name=getattr(frame.step, "name", "<unnamed>"))
 
     async def conditional_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         step = frame.step
@@ -140,45 +121,15 @@ class PolicyHandlers:
                 pass
         except Exception:
             pass
-        if isinstance(res_any, StepOutcome):
-            return res_any
-        return (
-            Success(step_result=res_any)
-            if res_any.success
-            else Failure(
-                error=Exception(res_any.feedback or "step failed"),
-                feedback=res_any.feedback,
-                step_result=res_any,
-            )
-        )
+        return normalize_outcome(res_any, step_name=getattr(frame.step, "name", "<unnamed>"))
 
     async def dynamic_router_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         res_any = await self._core.dynamic_router_step_executor.execute(self._core, frame)
-        if isinstance(res_any, StepOutcome):
-            return res_any
-        return (
-            Success(step_result=res_any)
-            if res_any.success
-            else Failure(
-                error=Exception(res_any.feedback or "step failed"),
-                feedback=res_any.feedback,
-                step_result=res_any,
-            )
-        )
+        return normalize_outcome(res_any, step_name=getattr(frame.step, "name", "<unnamed>"))
 
     async def hitl_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         res_any = await self._core.hitl_step_executor.execute(self._core, frame)
-        if isinstance(res_any, StepOutcome):
-            return res_any
-        return (
-            Success(step_result=res_any)
-            if res_any.success
-            else Failure(
-                error=Exception(res_any.feedback or "step failed"),
-                feedback=res_any.feedback,
-                step_result=res_any,
-            )
-        )
+        return normalize_outcome(res_any, step_name=getattr(frame.step, "name", "<unnamed>"))
 
     async def default_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
         step = frame.step
@@ -217,7 +168,7 @@ class PolicyHandlers:
                 cache_key=cache_key,
                 fallback_depth=fb_depth_norm,
             )
-        res_outcome = res_any if isinstance(res_any, StepOutcome) else Success(step_result=res_any)
+        res_outcome = normalize_outcome(res_any, step_name=getattr(step, "name", "<unnamed>"))
         await self._core._agent_orchestrator.cache_success_if_applicable(
             core=self._core,
             step=step,

@@ -646,7 +646,7 @@ def run_step_validations(
             except Exception:
                 pass
 
-            if is_dict_like_a and (b is object or b is str or origin_b is dict):
+            if is_dict_like_a and (b is object or b is str or b is dict or origin_b is dict):
                 return True
             b_eff = origin_b if origin_b is not None else b
             a_eff = origin_a if origin_a is not None else a
@@ -855,9 +855,6 @@ def run_step_validations(
                 curr_accepts_input = getattr(step, "__step_input_type__", Any)
                 prev_produces_output = getattr(prev_step, "__step_output_type__", Any)
 
-                def _is_none_or_object(t: Any) -> bool:
-                    return t is None or t is type(None) or t is object  # noqa: E721
-
                 def _templated_input_consumes_prev(_step: Any, prev_name: str) -> bool:
                     try:
                         meta2 = getattr(_step, "meta", None)
@@ -882,10 +879,16 @@ def run_step_validations(
                     except Exception:
                         return False
 
+                curr_generic = (
+                    curr_accepts_input is Any
+                    or curr_accepts_input is object
+                    or curr_accepts_input is None
+                    or curr_accepts_input is type(None)  # noqa: E721
+                )
                 if (
                     (not prev_updates_context)
-                    and (not _is_none_or_object(prev_produces_output))
-                    and (_is_none_or_object(curr_accepts_input) or curr_accepts_input is Any)
+                    and (prev_produces_output is not None)
+                    and curr_generic
                 ):
                     if not _templated_input_consumes_prev(step, getattr(prev_step, "name", "")):
                         report.warnings.append(

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, cast, Type
+from typing import Any, Protocol, Type
 
 from flujo.domain.models import Paused, StepOutcome, StepResult
 from flujo.exceptions import PausedException
 from flujo.infra import telemetry
 from ..policy_registry import StepPolicy
 from ..types import ExecutionFrame
+from ..type_guards import normalize_outcome
 from ....domain.dsl.step import Step
 
 # Backward compatibility: alias kept for consumers/tests expecting this symbol
@@ -70,7 +71,7 @@ class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
                     await core._cache_backend.put(cache_key, outcome.step_result, ttl_s=ttl_s)
             except Exception:
                 pass
-            return cast(StepOutcome[StepResult], outcome)
+            return normalize_outcome(outcome, step_name=getattr(step, "name", "<unnamed>"))
         except PausedException as e:
             # Surface as Paused outcome to maintain control-flow semantics
             return Paused(message=getattr(e, "message", ""))

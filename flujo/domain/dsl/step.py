@@ -21,6 +21,7 @@ from typing import (
     cast,
     TYPE_CHECKING,
     Literal,
+    get_origin,
 )
 
 try:
@@ -87,6 +88,68 @@ class BranchFailureStrategy(Enum):
 
     PROPAGATE = "propagate"
     IGNORE = "ignore"
+
+
+_TYPE_FALLBACK: type[Any] = object
+
+
+def _log_type_warning(message: str, step_name: str, *, error: Exception | None = None) -> None:
+    """Best-effort telemetry logging without introducing import-time cycles."""
+    try:
+        from flujo.infra import telemetry as _telemetry
+
+        extra: dict[str, Any] = {"step": step_name}
+        if error is not None:
+            extra["error"] = str(error)
+        _telemetry.logfire.warn(message, extra=extra)
+    except Exception:
+        # Telemetry must never break DSL import or execution
+        return
+
+
+def _normalize_signature_type(candidate: Any) -> type[Any]:
+    """Map signature-derived types to safe, non-Any fallbacks."""
+    if candidate is Any or candidate is None or candidate is type(None):  # noqa: E721
+        return _TYPE_FALLBACK
+    try:
+        origin = get_origin(candidate)
+    except Exception:
+        origin = None
+    if origin is dict:
+        return dict
+    if isinstance(candidate, type):
+        return candidate
+    return _TYPE_FALLBACK
+
+
+def _infer_agent_io_types(agent: Any, *, step_name: str) -> tuple[type[Any], type[Any]]:
+    """Infer input/output types from an agent or callable, defaulting to object on failure."""
+    executable = (
+        agent.run
+        if hasattr(agent, "run") and callable(getattr(agent, "run"))
+        else (agent if callable(agent) else None)
+    )
+    if executable is None:
+        _log_type_warning(
+            "Unable to infer step IO types; agent exposes no executable", step_name=step_name
+        )
+        return (_TYPE_FALLBACK, _TYPE_FALLBACK)
+
+    try:
+        from flujo.signature_tools import analyze_signature
+
+        sig_info = analyze_signature(executable)
+        return (
+            _normalize_signature_type(getattr(sig_info, "input_type", _TYPE_FALLBACK)),
+            _normalize_signature_type(getattr(sig_info, "output_type", _TYPE_FALLBACK)),
+        )
+    except Exception as exc:
+        _log_type_warning(
+            "Failed to infer step IO types from agent signature; using object fallback",
+            step_name=step_name,
+            error=exc,
+        )
+        return (_TYPE_FALLBACK, _TYPE_FALLBACK)
 
 
 class StepConfig(BaseModel):
@@ -379,24 +442,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 }
             ),
         )
-
-        # Infer types from agent.run or the agent itself if callable
-        try:
-            from flujo.signature_tools import analyze_signature
-
-            executable = (
-                agent.run
-                if hasattr(agent, "run") and callable(getattr(agent, "run"))
-                else (agent if callable(agent) else None)
-            )
-            if executable is not None:
-                sig_info = analyze_signature(executable)
-                step_instance.__step_input_type__ = getattr(sig_info, "input_type", Any)
-                step_instance.__step_output_type__ = getattr(sig_info, "output_type", Any)
-        except Exception:
-            step_instance.__step_input_type__ = Any
-            step_instance.__step_output_type__ = Any
-
+        input_type, output_type = _infer_agent_io_types(agent, step_name=step_instance.name)
+        step_instance.__step_input_type__ = input_type
+        step_instance.__step_output_type__ = output_type
         return step_instance
 
     @classmethod
@@ -430,24 +478,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 }
             ),
         )
-
-        # Infer types from agent.run or the agent itself if callable
-        try:
-            from flujo.signature_tools import analyze_signature
-
-            executable = (
-                agent.run
-                if hasattr(agent, "run") and callable(getattr(agent, "run"))
-                else (agent if callable(agent) else None)
-            )
-            if executable is not None:
-                sig_info = analyze_signature(executable)
-                step_instance.__step_input_type__ = getattr(sig_info, "input_type", Any)
-                step_instance.__step_output_type__ = getattr(sig_info, "output_type", Any)
-        except Exception:
-            step_instance.__step_input_type__ = Any
-            step_instance.__step_output_type__ = Any
-
+        input_type, output_type = _infer_agent_io_types(agent, step_name=step_instance.name)
+        step_instance.__step_input_type__ = input_type
+        step_instance.__step_output_type__ = output_type
         return step_instance
 
     @classmethod
@@ -486,24 +519,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 }
             ),
         )
-
-        # Infer types from agent.run or the agent itself if callable
-        try:
-            from flujo.signature_tools import analyze_signature
-
-            executable = (
-                agent.run
-                if hasattr(agent, "run") and callable(getattr(agent, "run"))
-                else (agent if callable(agent) else None)
-            )
-            if executable is not None:
-                sig_info = analyze_signature(executable)
-                step_instance.__step_input_type__ = getattr(sig_info, "input_type", Any)
-                step_instance.__step_output_type__ = getattr(sig_info, "output_type", Any)
-        except Exception:
-            step_instance.__step_input_type__ = Any
-            step_instance.__step_output_type__ = Any
-
+        input_type, output_type = _infer_agent_io_types(agent, step_name=step_instance.name)
+        step_instance.__step_input_type__ = input_type
+        step_instance.__step_output_type__ = output_type
         return step_instance
 
     # ------------------------------------------------------------------
@@ -532,11 +550,21 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         # Infer injection signature & wrap callable into an agent-like object
         func = callable_
-        from flujo.signature_tools import analyze_signature
+        sig_info = None
+        try:
+            from flujo.signature_tools import analyze_signature
+
+            sig_info = analyze_signature(func)
+        except Exception as exc:
+            _log_type_warning(
+                "Failed to analyze callable signature; using object fallback",
+                step_name=name,
+                error=exc,
+            )
 
         class _CallableAgent:  # pylint: disable=too-few-public-methods
             _step_callable = func
-            _injection_spec = analyze_signature(func)
+            _injection_spec = sig_info
 
             # Store the original function signature for parameter names
             _original_sig = inspect.signature(func)
@@ -582,13 +610,6 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 # Call the original function directly
                 return await cast(Callable[..., Any], func)(*call_args, **callable_kwargs)
 
-        # Analyze signature for type info
-        from flujo.signature_tools import analyze_signature
-
-        sig_info = analyze_signature(func)
-        input_type = sig_info.input_type if hasattr(sig_info, "input_type") else Any
-        output_type = sig_info.output_type if hasattr(sig_info, "output_type") else Any
-
         merged_config: dict[str, Any] = {}
         if config is not None:
             merged_config.update(config.model_dump())
@@ -611,8 +632,12 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
             }
         )
         # Set type info for pipeline validation
-        step_instance.__step_input_type__ = input_type
-        step_instance.__step_output_type__ = output_type
+        step_instance.__step_input_type__ = _normalize_signature_type(
+            getattr(sig_info, "input_type", _TYPE_FALLBACK)
+        )
+        step_instance.__step_output_type__ = _normalize_signature_type(
+            getattr(sig_info, "output_type", _TYPE_FALLBACK)
+        )
         return step_instance
 
     @classmethod
