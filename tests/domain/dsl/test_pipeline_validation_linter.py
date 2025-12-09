@@ -189,6 +189,24 @@ def test_adapter_requires_allowlist_token() -> None:
     assert any(f.rule_id == "V-ADAPT-ALLOW" for f in report.errors)
 
 
+def test_parallel_branch_requires_adapter_for_generic_consumer() -> None:
+    async def a(x: int) -> int:  # type: ignore[override]
+        return x
+
+    async def b(x: object) -> object:  # type: ignore[override]
+        return x
+
+    branch_a = Pipeline.from_step(Step.from_callable(a, name="a"))
+    branch_b = Pipeline.from_step(Step.from_callable(b, name="b"))
+    p = ParallelStep(
+        name="P",
+        branches={"a": branch_a, "b": branch_b},
+        merge_strategy=MergeStrategy.CONTEXT_UPDATE,
+    )
+    report = Pipeline.from_step(p).validate_graph()
+    assert any(f.rule_id == "V-A2-STRICT" for f in report.errors)
+
+
 def test_reused_step_instance_warns_V_A3() -> None:
     s = Step.from_callable(_id, name="dup")
     p = Pipeline.model_construct(steps=[s, s])
