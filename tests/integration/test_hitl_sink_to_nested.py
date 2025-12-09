@@ -122,18 +122,18 @@ steps:
     resumed = await runner.resume_async(paused_result, "loop_value_1")
 
     # The pipeline should complete now (loop exits after max_loops)
-    assert resumed.final_pipeline_context.scratchpad.get("status") != "paused", (
-        f"Pipeline still paused after loop completion. Status: {resumed.final_pipeline_context.scratchpad.get('status')}"
-    )
+    assert (
+        resumed.final_pipeline_context.scratchpad.get("status") != "paused"
+    ), f"Pipeline still paused after loop completion. Status: {resumed.final_pipeline_context.scratchpad.get('status')}"
 
     # Verify sink_to worked in loop
     final_ctx = resumed.final_pipeline_context
     if hasattr(final_ctx.scratchpad, "loop_input"):
         assert final_ctx.scratchpad.loop_input == "loop_value_1"
     elif isinstance(final_ctx.scratchpad, dict):
-        assert final_ctx.scratchpad.get("loop_input") == "loop_value_1", (
-            f"loop_input not found in scratchpad. Keys: {list(final_ctx.scratchpad.keys())}"
-        )
+        assert (
+            final_ctx.scratchpad.get("loop_input") == "loop_value_1"
+        ), f"loop_input not found in scratchpad. Keys: {list(final_ctx.scratchpad.keys())}"
     else:
         pytest.fail("scratchpad.loop_input not found after loop")
 

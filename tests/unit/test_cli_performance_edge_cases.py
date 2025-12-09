@@ -202,9 +202,9 @@ class TestCLIPerformanceEdgeCases:
             # Relative check: Should be comparable to baseline
             # Allow 2x variance
             if baseline > 0:
-                assert execution_time < baseline * 3.0, (
-                    f"Show {run_id} took {execution_time:.3f}s, baseline {baseline:.3f}s"
-                )
+                assert (
+                    execution_time < baseline * 3.0
+                ), f"Show {run_id} took {execution_time:.3f}s, baseline {baseline:.3f}s"
             else:
                 assert execution_time < 0.5, f"Show {run_id} took {execution_time:.3f}s"
 
@@ -245,9 +245,9 @@ class TestCLIPerformanceEdgeCases:
         # Allow overhead factor
         if baseline > 0:
             # 5 commands. Allow 10x baseline total.
-            assert total_time < baseline * 15.0, (
-                f"Concurrent access took {total_time:.3f}s, baseline {baseline:.3f}s"
-            )
+            assert (
+                total_time < baseline * 15.0
+            ), f"Concurrent access took {total_time:.3f}s, baseline {baseline:.3f}s"
         else:
             assert total_time < 3.0, f"Concurrent access took {total_time:.3f}s"
 
@@ -401,9 +401,9 @@ class TestCLIPerformanceEdgeCases:
         print(f"Concurrent write performance: {total_time:.3f}s")
         # Sanity check: 50 concurrent writes should complete within reasonable time
         # This is a major regression detector, not a tight performance gate
-        assert total_time < 30.0, (
-            f"Concurrent writes took {total_time:.3f}s - major regression detected"
-        )
+        assert (
+            total_time < 30.0
+        ), f"Concurrent writes took {total_time:.3f}s - major regression detected"
 
         # Verify all writes succeeded
         for i in range(50):

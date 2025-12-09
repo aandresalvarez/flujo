@@ -93,14 +93,14 @@ class TestErrorRecovery:
             )
 
             # Should handle timeout gracefully
-            assert error_result.success, (
-                f"Timeout not handled properly: {error_result.error_message}"
-            )
+            assert (
+                error_result.success
+            ), f"Timeout not handled properly: {error_result.error_message}"
 
             # Should complete in reasonable time
-            assert error_result.recovery_time < 6.0, (
-                f"Recovery took too long: {error_result.recovery_time}s"
-            )
+            assert (
+                error_result.recovery_time < 6.0
+            ), f"Recovery took too long: {error_result.recovery_time}s"
 
         asyncio.run(run_timeout_test())
 
@@ -438,9 +438,9 @@ class TestResilienceUnderLoad:
             successful_results = [r for r in results if r.success]
             failed_results = [r for r in results if not r.success]
 
-            assert len(successful_results) == 6, (
-                f"Expected 6 successes, got {len(successful_results)}"
-            )
+            assert (
+                len(successful_results) == 6
+            ), f"Expected 6 successes, got {len(successful_results)}"
             assert len(failed_results) == 3, f"Expected 3 failures, got {len(failed_results)}"
 
             # All results should be StepResult instances

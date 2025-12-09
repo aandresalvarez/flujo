@@ -3,7 +3,13 @@
 These tests ensure that performance characteristics are maintained and
 detect performance regressions in critical code paths.
 """
-# ruff: noqa
+
+import asyncio
+import os
+import statistics
+import time
+from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -12,25 +18,18 @@ try:
 except ImportError:
     psutil = None  # type: ignore[assignment,unused-ignore]
 
+from flujo.application.core.state_serializer import StateSerializer
+from flujo.domain.models import ConversationRole, ConversationTurn, PipelineContext, StepResult
+from tests.test_types.fixtures import create_test_step, create_test_step_result
+from tests.test_types.mocks import create_mock_executor_core
+from tests.robustness.baseline_manager import get_baseline_manager
+
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.benchmark,
 ]
 if psutil is None:
     pytestmark.append(pytest.mark.skip(reason="psutil not available"))
-
-import asyncio
-import time
-import os
-from typing import Any
-from unittest.mock import AsyncMock
-
-from flujo.application.core.executor_core import ExecutorCore
-from flujo.application.core.state_serializer import StateSerializer
-from flujo.domain.models import ConversationRole, ConversationTurn, PipelineContext, StepResult
-from tests.test_types.fixtures import create_test_step, create_test_step_result
-from tests.test_types.mocks import create_mock_executor_core
-from tests.robustness.baseline_manager import get_baseline_manager, measure_and_check_regression
 
 
 class TestPerformanceRegression:
@@ -152,7 +151,6 @@ class TestPerformanceRegression:
 
     def test_serialization_performance(self, baseline_thresholds: dict[str, float]):
         """Test that serialization performance stays within bounds."""
-        from flujo.domain.models import StepResult
 
         def serialize_object():
             result = create_test_step_result(
@@ -262,8 +260,6 @@ class TestPerformanceRegression:
         The test verifies CORRECTNESS (all operations complete with valid results)
         and logs detailed metrics for human review and trend analysis.
         """
-        import asyncio
-        import statistics
 
         def get_system_metrics() -> dict[str, Any]:
             """Collect current system load metrics."""
@@ -381,14 +377,14 @@ class TestPerformanceRegression:
             print(f"  Mean: {mean_concurrent:.2f}ms")
             print(f"  Min: {min(concurrent_times):.2f}ms")
             print(f"  Max: {max(concurrent_times):.2f}ms")
-            print(f"\nSpeedup Analysis:")
+            print("\nSpeedup Analysis:")
             print(f"  Mean: {mean_speedup:.2f}x")
             print(f"  Median: {median_speedup:.2f}x")
             print(f"  Min: {actual_min_speedup:.2f}x")
             print(f"  Max: {max_speedup:.2f}x")
             if speedup_std > 0:
                 print(f"  Std Dev: {speedup_std:.2f}x")
-            print(f"\nSystem Load (across runs):")
+            print("\nSystem Load (across runs):")
             if system_metrics_list:
                 avg_cpu = statistics.mean([m.get("cpu_percent", 0) for m in system_metrics_list])
                 avg_mem = statistics.mean([m.get("memory_mb", 0) for m in system_metrics_list])
@@ -487,7 +483,6 @@ class TestScalabilityRegression:
 
         The key invariant is: concurrent execution should be faster than sequential.
         """
-        import asyncio
 
         async def run_high_concurrency_test():
             executor = create_mock_executor_core()
@@ -548,7 +543,7 @@ class TestScalabilityRegression:
             min_speedup = 1.5
 
             # Log performance for debugging (not part of assertion)
-            print(f"\nHigh Concurrency Performance:")
+            print("\nHigh Concurrency Performance:")
             print(f"  Sequential: {sequential_time:.1f}ms")
             print(f"  Concurrent: {concurrent_time:.1f}ms")
             print(f"  Speedup: {speedup:.2f}x")

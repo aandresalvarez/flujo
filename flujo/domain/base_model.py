@@ -66,9 +66,9 @@ class BaseModel(PydanticBaseModel):
         Returns:
             JSON string representation of the model
         """
-        from flujo.utils.serialization import serialize_to_json
+        from flujo.utils.serialization import _serialize_to_json_internal
 
         # Extract mode if present in kwargs, default to "default"
         mode = kwargs.pop("mode", "default")
         data = self.model_dump(mode=mode, **kwargs)
-        return serialize_to_json(data, mode=mode, **kwargs)
+        return _serialize_to_json_internal(data, mode=mode, **kwargs)

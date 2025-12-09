@@ -88,9 +88,9 @@ def test_architect_execution_time_consistency():
     max_variance = avg_time * 0.5
 
     for exec_time in execution_times:
-        assert abs(exec_time - avg_time) <= max_variance, (
-            f"Execution time {exec_time}s varies too much from average {avg_time}s"
-        )
+        assert (
+            abs(exec_time - avg_time) <= max_variance
+        ), f"Execution time {exec_time}s varies too much from average {avg_time}s"
 
 
 @pytest.mark.integration
@@ -123,9 +123,9 @@ def test_architect_memory_usage_stability():
     max_allowed_increase_mb = 200.0  # 200MB is generous for a single pipeline run
     max_allowed_increase = int(max_allowed_increase_mb * 1024 * 1024)
 
-    assert memory_increase <= max_allowed_increase, (
-        f"Memory usage increased by {memory_increase / (1024 * 1024):.2f}MB, exceeding limit of {max_allowed_increase_mb:.0f}MB"
-    )
+    assert (
+        memory_increase <= max_allowed_increase
+    ), f"Memory usage increased by {memory_increase / (1024 * 1024):.2f}MB, exceeding limit of {max_allowed_increase_mb:.0f}MB"
 
     # Verify result is valid
     assert result is not None
@@ -186,9 +186,9 @@ def test_architect_handles_high_frequency_requests():
 
         # Sanity check: operations should complete (not hang)
         # Use generous 120s timeout - this is a stress test, not a speed test
-        assert total_time <= 120.0, (
-            f"Total execution time {total_time:.2f}s exceeds 120s sanity limit"
-        )
+        assert (
+            total_time <= 120.0
+        ), f"Total execution time {total_time:.2f}s exceeds 120s sanity limit"
     else:
         # If no successful executions, fail the test
         assert False, "No successful executions to measure performance"
@@ -271,9 +271,9 @@ def test_architect_large_context_handling():
     # Sanity check: should complete (not hang)
     # Use generous 60s timeout - this is a stress test with large context
     print(f"Execution time with large context: {execution_time:.2f}s")
-    assert execution_time <= 60.0, (
-        f"Execution time {execution_time:.2f}s exceeds 60s sanity limit for large context"
-    )
+    assert (
+        execution_time <= 60.0
+    ), f"Execution time {execution_time:.2f}s exceeds 60s sanity limit for large context"
 
     # Should generate YAML even with large context
     yaml_text = getattr(ctx, "yaml_text", None)
@@ -315,9 +315,9 @@ def test_architect_concurrent_pipeline_execution():
 
     # All executions should succeed
     successful_executions = [r for r in results if r["success"]]
-    assert len(successful_executions) == 5, (
-        f"Expected 5 successful executions, got {len(successful_executions)}"
-    )
+    assert (
+        len(successful_executions) == 5
+    ), f"Expected 5 successful executions, got {len(successful_executions)}"
 
     # Execution times should be reasonable
     execution_times = [r["execution_time"] for r in results]
@@ -326,9 +326,9 @@ def test_architect_concurrent_pipeline_execution():
     # No single execution should take more than 3x the average
     max_allowed_time = avg_time * 3
     for exec_time in execution_times:
-        assert exec_time <= max_allowed_time, (
-            f"Execution time {exec_time:.2f}s exceeds {max_allowed_time:.2f}s limit"
-        )
+        assert (
+            exec_time <= max_allowed_time
+        ), f"Execution time {exec_time:.2f}s exceeds {max_allowed_time:.2f}s limit"
 
 
 @pytest.mark.integration
@@ -375,9 +375,9 @@ def test_architect_memory_cleanup_after_execution():
     memory_increase_after_gc = memory_after_gc - memory_before
     max_allowed_increase = 10 * 1024 * 1024  # 10MB
 
-    assert memory_increase_after_gc <= max_allowed_increase, (
-        f"Memory not properly cleaned up: increase of {memory_increase_after_gc / (1024 * 1024):.2f}MB"
-    )
+    assert (
+        memory_increase_after_gc <= max_allowed_increase
+    ), f"Memory not properly cleaned up: increase of {memory_increase_after_gc / (1024 * 1024):.2f}MB"
 
 
 @pytest.mark.integration
@@ -463,9 +463,9 @@ def test_architect_resource_usage_scaling():
         # Execution time should scale reasonably with complexity
         # Allow for some variance but should not exceed expected time by more than 50%
         max_allowed_time = test_case["expected_time"] * 1.5
-        assert execution_time <= max_allowed_time, (
-            f"Execution time {execution_time:.2f}s exceeds expected {max_allowed_time:.2f}s for complexity level"
-        )
+        assert (
+            execution_time <= max_allowed_time
+        ), f"Execution time {execution_time:.2f}s exceeds expected {max_allowed_time:.2f}s for complexity level"
 
 
 @pytest.mark.integration
@@ -529,9 +529,9 @@ def test_architect_stress_test_rapid_requests():
         time_ratio = (
             max_execution_time / min_execution_time if min_execution_time > 0 else float("inf")
         )
-        assert time_ratio <= 5, (
-            f"Execution time variance too high: max/min ratio {time_ratio:.2f} exceeds 5x limit"
-        )
+        assert (
+            time_ratio <= 5
+        ), f"Execution time variance too high: max/min ratio {time_ratio:.2f} exceeds 5x limit"
 
         # Sanity check: total time should not exceed generous limit (not hang)
         assert total_time <= 180.0, f"Total time {total_time:.2f}s exceeds 180s sanity limit"

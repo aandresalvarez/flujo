@@ -73,18 +73,18 @@ def test_regression_fix_context_updates_work():
     # CRITICAL: Verify that yaml_text is preserved in the final context
     yaml_text = getattr(ctx, "yaml_text", None)
     assert isinstance(yaml_text, str), f"Expected yaml_text to be a string, got {type(yaml_text)}"
-    assert "version:" in yaml_text, (
-        f"Expected yaml_text to contain 'version:', got: {yaml_text[:100]}"
-    )
+    assert (
+        "version:" in yaml_text
+    ), f"Expected yaml_text to contain 'version:', got: {yaml_text[:100]}"
 
     # CRITICAL: Verify that generated_yaml is also preserved
     generated_yaml = getattr(ctx, "generated_yaml", None)
-    assert isinstance(generated_yaml, str), (
-        f"Expected generated_yaml to be a string, got {type(generated_yaml)}"
-    )
-    assert "version:" in generated_yaml, (
-        f"Expected generated_yaml to contain 'version:', got: {generated_yaml[:100]}"
-    )
+    assert isinstance(
+        generated_yaml, str
+    ), f"Expected generated_yaml to be a string, got {type(generated_yaml)}"
+    assert (
+        "version:" in generated_yaml
+    ), f"Expected generated_yaml to contain 'version:', got: {generated_yaml[:100]}"
 
     # Verify both fields contain the same content
     assert yaml_text == generated_yaml, "yaml_text and generated_yaml should be identical"
@@ -155,9 +155,9 @@ def test_regression_fix_validation_state_transitions():
     # Verify that yaml_is_valid was properly set during validation
     yaml_is_valid = getattr(ctx, "yaml_is_valid", None)
     assert yaml_is_valid is not None, "yaml_is_valid should be set during validation"
-    assert isinstance(yaml_is_valid, bool), (
-        f"yaml_is_valid should be a boolean, got {type(yaml_is_valid)}"
-    )
+    assert isinstance(
+        yaml_is_valid, bool
+    ), f"yaml_is_valid should be a boolean, got {type(yaml_is_valid)}"
 
     # If validation passed, we should have yaml_text
     if yaml_is_valid:

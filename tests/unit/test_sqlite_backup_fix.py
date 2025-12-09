@@ -76,9 +76,9 @@ class TestSQLiteBackupFix:
         # Use regex to match timestamp pattern instead of exact time
         import re
 
-        assert re.match(r"test\.db\.corrupt\.\d+$", backup_file.name), (
-            f"Unexpected backup filename: {backup_file.name}"
-        )
+        assert re.match(
+            r"test\.db\.corrupt\.\d+$", backup_file.name
+        ), f"Unexpected backup filename: {backup_file.name}"
 
     @pytest.mark.asyncio
     async def test_backup_handles_existing_files(self, tmp_path: Path) -> None:
@@ -227,9 +227,9 @@ class TestSQLiteBackupFix:
                 backup_with_corrupted_content = backup_file
                 break
 
-        assert backup_with_corrupted_content is not None, (
-            "Should find backup with corrupted content"
-        )
+        assert (
+            backup_with_corrupted_content is not None
+        ), "Should find backup with corrupted content"
 
     @pytest.mark.asyncio
     async def test_backup_regression_removes_oldest_and_moves_db(self, tmp_path: Path) -> None:
@@ -261,9 +261,9 @@ class TestSQLiteBackupFix:
                 backup_with_corrupted_content = backup_file
                 break
 
-        assert backup_with_corrupted_content is not None, (
-            "Should find backup with corrupted content"
-        )
+        assert (
+            backup_with_corrupted_content is not None
+        ), "Should find backup with corrupted content"
         # The original DB should be gone
         assert not db_path.exists()
 

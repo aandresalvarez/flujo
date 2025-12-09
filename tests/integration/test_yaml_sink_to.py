@@ -25,9 +25,9 @@ steps:
 
     # Verify sink_to was loaded correctly
     increment_step = pipeline.steps[0]
-    assert increment_step.sink_to == "scratchpad.counter", (
-        f"sink_to should be 'scratchpad.counter', got: {increment_step.sink_to}"
-    )
+    assert (
+        increment_step.sink_to == "scratchpad.counter"
+    ), f"sink_to should be 'scratchpad.counter', got: {increment_step.sink_to}"
 
     # Run the pipeline
     runner = Flujo(pipeline)
@@ -41,17 +41,17 @@ steps:
     # Verify counter was persisted via sink_to
     ctx = result.final_pipeline_context
     assert hasattr(ctx, "scratchpad"), "Context should have scratchpad"
-    assert "counter" in ctx.scratchpad, (
-        f"counter should be in scratchpad. Keys: {list(ctx.scratchpad.keys())}"
-    )
-    assert ctx.scratchpad["counter"] == 6, (
-        f"counter should be 6 (5+1), got: {ctx.scratchpad.get('counter')}"
-    )
+    assert (
+        "counter" in ctx.scratchpad
+    ), f"counter should be in scratchpad. Keys: {list(ctx.scratchpad.keys())}"
+    assert (
+        ctx.scratchpad["counter"] == 6
+    ), f"counter should be 6 (5+1), got: {ctx.scratchpad.get('counter')}"
 
     # Verify second step saw the counter
-    assert result.output == "counter_is_6", (
-        f"Second step should see counter=6, got: {result.output}"
-    )
+    assert (
+        result.output == "counter_is_6"
+    ), f"Second step should see counter=6, got: {result.output}"
 
 
 # Loop test disabled - exposes unrelated loop max_loops YAML parsing issue

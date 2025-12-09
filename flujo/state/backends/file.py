@@ -8,7 +8,10 @@ from typing import List, Optional, Tuple, cast
 
 from .base import StateBackend
 from flujo.type_definitions.common import JSONObject
-from ...utils.serialization import safe_deserialize, serialize_to_json
+from ...utils.serialization import (
+    safe_deserialize,
+    _serialize_to_json_internal as serialize_to_json,
+)
 
 
 class FileBackend(StateBackend):

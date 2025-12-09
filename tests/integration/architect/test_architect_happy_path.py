@@ -30,20 +30,20 @@ def test_architect_happy_path_generates_yaml(monkeypatch: pytest.MonkeyPatch) ->
     # REGRESSION TEST: Ensure context updates are working correctly
     # This test will fail if the context update issue we fixed recurs
     generated_yaml = getattr(ctx, "generated_yaml", None)
-    assert isinstance(generated_yaml, str), (
-        f"Expected generated_yaml to be a string, got {type(generated_yaml)}"
-    )
-    assert "version:" in generated_yaml, (
-        f"Expected generated_yaml to contain 'version:', got: {generated_yaml[:100]}"
-    )
+    assert isinstance(
+        generated_yaml, str
+    ), f"Expected generated_yaml to be a string, got {type(generated_yaml)}"
+    assert (
+        "version:" in generated_yaml
+    ), f"Expected generated_yaml to contain 'version:', got: {generated_yaml[:100]}"
     assert yaml_text == generated_yaml, "yaml_text and generated_yaml should be identical"
 
     # REGRESSION TEST: Ensure yaml_is_valid is properly set
     yaml_is_valid = getattr(ctx, "yaml_is_valid", None)
     assert yaml_is_valid is not None, "yaml_is_valid should be set during validation"
-    assert isinstance(yaml_is_valid, bool), (
-        f"yaml_is_valid should be a boolean, got {type(yaml_is_valid)}"
-    )
+    assert isinstance(
+        yaml_is_valid, bool
+    ), f"yaml_is_valid should be a boolean, got {type(yaml_is_valid)}"
 
     # REGRESSION TEST: Ensure the pipeline completed without infinite loops
     # The test should complete in reasonable time, not hang indefinitely

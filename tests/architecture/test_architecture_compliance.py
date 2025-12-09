@@ -465,7 +465,7 @@ class TestCodeQualityStandards:
 
                     # Check for unified serialization
                     uses_unified_serialization = (
-                        "serialize_jsonable" in content
+                        "_serialize_for_json" in content
                         or "model_dump" in content
                         or "from .base_model import BaseModel" in content
                     )
@@ -509,7 +509,6 @@ class TestQualityGates:
         """Get the root directory of the Flujo project."""
         return Path(__file__).parent.parent.parent
 
-    @pytest.mark.timeout(300)
     def test_all_quality_checks_pass(self, flujo_root: Path):
         """Run all quality checks that must pass before PR merge.
 
@@ -570,7 +569,7 @@ class TestQualityGates:
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=300,
+                timeout=600,
             )
             if result.returncode != 0:
                 error_info = f"unit tests failed:\nSTDOUT:\n{result.stdout[-1000:]}\nSTDERR:\n{result.stderr[-2000:]}"

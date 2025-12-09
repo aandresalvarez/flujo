@@ -185,12 +185,12 @@ async def test_architect_context_persistence(monkeypatch: pytest.MonkeyPatch) ->
     assert ctx is not None, "Pipeline context should be available"
 
     # Check that initial context was preserved
-    assert getattr(ctx, "initial_prompt", None) == "Create a pipeline with specific requirements", (
-        "Initial prompt should be preserved"
-    )
-    assert getattr(ctx, "user_goal", None) == "Build a secure data processing pipeline", (
-        "User goal should be preserved"
-    )
+    assert (
+        getattr(ctx, "initial_prompt", None) == "Create a pipeline with specific requirements"
+    ), "Initial prompt should be preserved"
+    assert (
+        getattr(ctx, "user_goal", None) == "Build a secure data processing pipeline"
+    ), "User goal should be preserved"
     assert getattr(ctx, "non_interactive", None) is True, "Non-interactive flag should be preserved"
     assert getattr(ctx, "hitl_enabled", None) is False, "HITL enabled flag should be preserved"
 
@@ -340,12 +340,12 @@ async def test_architect_performance_characteristics(monkeypatch: pytest.MonkeyP
         )
 
     # Verify consistency
-    assert len(set(yaml_lengths)) <= 2, (
-        f"YAML lengths should be consistent across runs, got: {yaml_lengths}"
-    )
-    assert max(run_times) - min(run_times) < 5.0, (
-        f"Run times should be consistent, got: {run_times}"
-    )
+    assert (
+        len(set(yaml_lengths)) <= 2
+    ), f"YAML lengths should be consistent across runs, got: {yaml_lengths}"
+    assert (
+        max(run_times) - min(run_times) < 5.0
+    ), f"Run times should be consistent, got: {run_times}"
 
     print("DEBUG: Performance test completed successfully")
     print(f"DEBUG: Run times: {[f'{t:.2f}s' for t in run_times]}")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Generic, List, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Callable, Generic, List, Optional, TypeVar, Union
 
 try:
     from typing import Self
@@ -12,8 +12,12 @@ from pydantic import Field
 from ..models import BaseModel
 from .step import Step, MergeStrategy, BranchFailureStrategy
 from .pipeline import Pipeline  # Import for runtime use in normalization
-from ...application.core.types import TContext_w_Scratch
 from flujo.type_definitions.common import JSONObject
+
+if TYPE_CHECKING:
+    from ...application.core.types import TContext_w_Scratch
+else:
+    TContext_w_Scratch = Any
 
 TContext = TypeVar("TContext", bound=BaseModel)
 

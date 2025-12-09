@@ -130,7 +130,7 @@ def safe_deserialize(
     target_type: Optional[type[Any]] = None,
     default_deserializer: Optional[Callable[[Any], Any]] = None,
 ) -> Any:
-    """Best-effort deserialization counterpart for :func:`serialize_jsonable`."""
+    """Best-effort deserialization counterpart for ``_serialize_for_json``."""
 
     if serialized_data is None:
         return None
@@ -239,7 +239,7 @@ def _normalize_float(value: float) -> float | str:
     return value
 
 
-def serialize_jsonable(
+def _json_serialize_impl(
     obj: Any,
     *,
     mode: str = "json",
@@ -249,6 +249,9 @@ def serialize_jsonable(
     _depth: int = 0,
 ) -> JsonValue:
     """Convert arbitrary objects into JSON-safe structures.
+
+    Internal implementation for flujo. External users should use
+    ``model_dump(mode="json")`` for Pydantic models.
 
     - Pydantic models use ``model_dump`` with ``mode="json"`` by default.
     - Dataclasses are converted via ``asdict``.
@@ -269,7 +272,7 @@ def serialize_jsonable(
             custom_result = None
         else:
             if custom_result is not obj:
-                return serialize_jsonable(
+                return _json_serialize_impl(
                     custom_result,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -294,7 +297,7 @@ def serialize_jsonable(
     _seen.add(obj_id)
     try:
         if isinstance(obj, Enum):
-            return serialize_jsonable(
+            return _json_serialize_impl(
                 obj.value,
                 mode=mode,
                 default_serializer=default_serializer,
@@ -336,7 +339,7 @@ def serialize_jsonable(
                         if mode == "cache"
                         else circular_ref_placeholder
                     )
-                return serialize_jsonable(
+                return _json_serialize_impl(
                     dumped,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -348,7 +351,7 @@ def serialize_jsonable(
                 fallback_data = {k: v for k, v in vars(obj).items() if not k.startswith("_")}
                 if not fallback_data:
                     return f"<unserializable: {type(obj).__name__}>"
-                return serialize_jsonable(
+                return _json_serialize_impl(
                     fallback_data,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -362,7 +365,7 @@ def serialize_jsonable(
                 raise TypeError(
                     f"Cannot serialize dataclass type {obj.__name__}; provide an instance instead."
                 )
-            return serialize_jsonable(
+            return _json_serialize_impl(
                 dataclasses.asdict(obj),
                 mode=mode,
                 default_serializer=default_serializer,
@@ -375,7 +378,7 @@ def serialize_jsonable(
             out: Dict[str, Any] = {}
             for key, value in obj.items():
                 key_str = str(
-                    serialize_jsonable(
+                    _json_serialize_impl(
                         key,
                         mode=mode,
                         default_serializer=default_serializer,
@@ -384,7 +387,7 @@ def serialize_jsonable(
                         _depth=_depth + 1,
                     )
                 )
-                out[key_str] = serialize_jsonable(
+                out[key_str] = _json_serialize_impl(
                     value,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -396,7 +399,7 @@ def serialize_jsonable(
 
         if isinstance(obj, (set, frozenset)):
             return [
-                serialize_jsonable(
+                _json_serialize_impl(
                     item,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -409,7 +412,7 @@ def serialize_jsonable(
 
         if isinstance(obj, Sequence) and not isinstance(obj, (str, bytes, bytearray, memoryview)):
             return [
-                serialize_jsonable(
+                _json_serialize_impl(
                     item,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -429,7 +432,7 @@ def serialize_jsonable(
 
         if default_serializer is not None:
             try:
-                return serialize_jsonable(
+                return _json_serialize_impl(
                     default_serializer(obj),
                     mode=mode,
                     default_serializer=default_serializer,
@@ -443,7 +446,7 @@ def serialize_jsonable(
         if hasattr(obj, "model_dump"):
             try:
                 dumped = obj.model_dump()
-                return serialize_jsonable(
+                return _json_serialize_impl(
                     dumped,
                     mode=mode,
                     default_serializer=default_serializer,
@@ -459,7 +462,7 @@ def serialize_jsonable(
             }
             if _depth == 0:
                 if data and ("output" in data or "content" in data):
-                    return serialize_jsonable(
+                    return _json_serialize_impl(
                         data,
                         mode=mode,
                         default_serializer=default_serializer,
@@ -490,30 +493,56 @@ def serialize_jsonable(
         _seen.discard(obj_id)
 
 
-def robust_serialize(
+# ---------------------------------------------------------------------------
+# Internal-use functions (primary serialization API for flujo internals)
+# External users should use model_dump(mode="json") directly.
+# ---------------------------------------------------------------------------
+
+
+def _serialize_for_json(
+    obj: Any,
+    *,
+    mode: str = "json",
+    default_serializer: Optional[Callable[[Any], Any]] = None,
+    circular_ref_placeholder: str | None = "<circular-ref>",
+    _seen: Optional[Set[int]] = None,
+) -> JsonValue:
+    """Internal serialization for flujo modules.
+
+    External code should use model_dump(mode="json") for Pydantic models.
+    """
+    return _json_serialize_impl(
+        obj,
+        mode=mode,
+        default_serializer=default_serializer,
+        circular_ref_placeholder=circular_ref_placeholder,
+        _seen=_seen,
+    )
+
+
+def _robust_serialize_internal(
     obj: Any, *, circular_ref_placeholder: str | None = "<circular-ref>"
 ) -> JsonValue | str:
-    """Logging-friendly serializer that never raises."""
+    """Internal robust serializer that never raises.
 
+    For flujo internals that need never-raise serialization.
+    """
     try:
-        return serialize_jsonable(obj, circular_ref_placeholder=circular_ref_placeholder)
-    except Exception:
+        return _json_serialize_impl(obj, circular_ref_placeholder=circular_ref_placeholder)
+    except Exception:  # noqa: BLE001 - intentional blanket catch; serializer must never raise
         return f"<unserializable: {type(obj).__name__}>"
 
 
-def serialize_to_json(obj: Any, *, mode: str = "json", **kwargs: Any) -> str:
-    """Serialize ``obj`` to a JSON string using :func:`serialize_jsonable`."""
+def _serialize_to_json_internal(obj: Any, *, mode: str = "json", **kwargs: Any) -> str:
+    """Internal JSON string serializer for flujo modules.
 
-    return json.dumps(serialize_jsonable(obj, mode=mode), sort_keys=True, **kwargs)
-
-
-def serialize_to_json_robust(obj: Any, **kwargs: Any) -> str:
-    """Serialize using :func:`robust_serialize`, guaranteeing JSON output."""
-
-    return json.dumps(robust_serialize(obj), **kwargs)
+    For flujo internals that need JSON string output.
+    """
+    return json.dumps(_json_serialize_impl(obj, mode=mode), sort_keys=True, **kwargs)
 
 
 __all__ = [
+    # Serialization utilities (public API)
     "create_field_serializer",
     "create_serializer_for_type",
     "lookup_custom_serializer",
@@ -521,10 +550,10 @@ __all__ = [
     "register_custom_serializer",
     "register_custom_deserializer",
     "reset_custom_serializer_registry",
-    "robust_serialize",
     "safe_deserialize",
-    "serialize_jsonable",
-    "serialize_to_json",
-    "serialize_to_json_robust",
     "serializable_field",
+    # Internal functions (for flujo modules only)
+    "_serialize_for_json",
+    "_robust_serialize_internal",
+    "_serialize_to_json_internal",
 ]

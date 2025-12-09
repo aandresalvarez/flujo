@@ -40,12 +40,14 @@ def test_normalize_sqlite_path_absolute():
     """
     _normalize_sqlite_path should return absolute paths as-is.
     """
-    uri = "sqlite:////tmp/abs.db"
     with tempfile.TemporaryDirectory() as tmpdir:
+        # Use a temp absolute path to avoid hard-coded /tmp; simulate absolute URI
+        abs_path = Path(tmpdir) / "abs.db"
+        uri = f"sqlite:///{abs_path}"
         cwd = Path(tmpdir)
         result = _normalize_sqlite_path(uri, cwd)
-        assert result.resolve() == Path("/tmp/abs.db").resolve(), (
-            f"Expected {Path('/tmp/abs.db').resolve()}, got {result.resolve()}"
+        assert result.resolve() == abs_path.resolve(), (
+            f"Expected {abs_path.resolve()}, got {result.resolve()}"
         )
 
 

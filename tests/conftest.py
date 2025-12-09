@@ -240,16 +240,7 @@ def register_mock_serializers():
     """
     _register_baseline_serializers()
 
-    # Register fallback serializer for unknown types with __dict__
-    def fallback_dict_serializer(obj):
-        """Fallback serializer for objects with __dict__ attribute."""
-        if hasattr(obj, "__dict__"):
-            return obj.__dict__
-        return str(obj)
-
-    # Note: The serialization system already handles objects with __dict__ automatically
-    # in the serialize_jsonable function, so we don't need a fallback serializer
-
+    # Serialization system already handles __dict__ and primitives; no extra fallback needed.
     # Yield to allow tests to run
     yield
 

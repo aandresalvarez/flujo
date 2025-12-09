@@ -4,7 +4,7 @@ import json
 import uuid
 from typing import Any
 from pydantic import BaseModel
-from .serialization import robust_serialize
+from .serialization import _robust_serialize_internal
 from flujo.type_definitions.common import JSONObject
 
 IF_BLOCK_REGEX = re.compile(r"\{\{#if\s*([^\}]+?)\s*\}\}(.*?)\{\{\/if\}\}", re.DOTALL)
@@ -79,8 +79,8 @@ class AdvancedPromptFormatter:
         return value
 
     def _serialize_value(self, value: Any) -> str:
-        """Serialize ``value`` to JSON using :func:`robust_serialize`."""
-        serialized = robust_serialize(value)
+        """Serialize ``value`` to JSON using internal robust serializer."""
+        serialized = _robust_serialize_internal(value)
         # If robust_serialize returns a string, it's already serialized
         if isinstance(serialized, str):
             return serialized
@@ -287,7 +287,7 @@ class AdvancedPromptFormatter:
                 return 0
         if lname == "tojson":
             try:
-                serialized = robust_serialize(value)
+                serialized = _robust_serialize_internal(value)
             except Exception:
                 serialized = value
             try:

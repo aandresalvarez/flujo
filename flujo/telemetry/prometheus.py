@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import socket
 import threading
 import time
-from collections.abc import Coroutine
-from typing import Any, Callable, Iterable, TypeVar, cast
+from typing import Any, Callable, Iterable, TypeVar
 
 from ..state.backends.base import StateBackend
+from ..utils.async_bridge import run_sync
 
 
 class PrometheusBindingError(PermissionError):
@@ -21,30 +20,8 @@ T = TypeVar("T")
 # Default timeout for server readiness checks
 DEFAULT_SERVER_TIMEOUT = 10.0
 
-
-def run_coroutine(coro: Coroutine[Any, Any, T]) -> T:
-    """Run ``coro`` even if there's already a running event loop."""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-
-    result: Any = None
-    exc: BaseException | None = None
-
-    def _target() -> None:
-        nonlocal result, exc
-        try:
-            result = asyncio.run(coro)
-        except BaseException as e:  # pragma: no cover - unlikely
-            exc = e
-
-    thread = threading.Thread(target=_target)
-    thread.start()
-    thread.join()
-    if exc:
-        raise exc
-    return cast(T, result)
+# Backward compatibility alias - use run_sync directly for new code
+run_coroutine = run_sync
 
 
 def _wait_for_server(host: str, port: int, timeout: float = DEFAULT_SERVER_TIMEOUT) -> bool:

@@ -138,7 +138,7 @@ async def test_import_step_outputs_preserves_explicit_none_values() -> None:
     # The key assertion: explicit None from child context should be preserved,
     # NOT replaced by "from_output" from the last step's output
     assert "result" in ctx.import_artifacts, "result key should exist even if value is None"
-    assert ctx.import_artifacts.get("result") is None, (
-        "Explicit None from context should be preserved, not replaced by output"
-    )
+    assert (
+        ctx.import_artifacts.get("result") is None
+    ), "Explicit None from context should be preserved, not replaced by output"
     assert ctx.import_artifacts.get("marker") == "step1_ran"

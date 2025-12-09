@@ -18,7 +18,7 @@ from flujo.utils.serialization import register_custom_serializer
 
 
 def _serialize(obj: Any) -> Any:
-    """JSON-friendly serialization used by tests (replaces serialize_jsonable)."""
+    """JSON-friendly serialization used by tests (replaces _serialize_for_json)."""
     normalized = _serialize_for_json(obj)
     return json.loads(json.dumps(normalized, ensure_ascii=False))
 
@@ -526,9 +526,9 @@ class TestSerializationEdgeCases:
 
         # Test that serialization handles circular references gracefully
         serialized = _serialize(request_data)
-        assert serialized is not None, (
-            "serialization should not return None for circular references"
-        )
+        assert (
+            serialized is not None
+        ), "serialization should not return None for circular references"
         # Ensure placeholder was inserted
         assert serialized["input_data"]["nested_dict"]["self_ref"]["parent"] == "<circular>"
 

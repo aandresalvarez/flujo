@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 from flujo.steps.cache_step import _generate_cache_key, _serialize_for_cache_key
 from flujo.utils.serialization import (
-    serialize_jsonable,
+    _serialize_for_json,
     register_custom_serializer,
     reset_custom_serializer_registry,
 )
@@ -48,5 +48,5 @@ def test_custom_serializer_is_honored() -> None:
         return f"INT:{value}"
 
     register_custom_serializer(int, custom_int)
-    result = serialize_jsonable({"num": 7})
+    result = _serialize_for_json({"num": 7})
     assert result["num"] == "INT:7"

@@ -51,9 +51,9 @@ def test_architect_handles_malformed_initial_data():
     except Exception as e:
         # Expected behavior: system should fail fast with validation error
         # This is actually good - it means the system is properly validating input
-        assert "validation" in str(e).lower() or "initialization" in str(e).lower(), (
-            f"Expected validation error, got: {e}"
-        )
+        assert (
+            "validation" in str(e).lower() or "initialization" in str(e).lower()
+        ), f"Expected validation error, got: {e}"
         print(f"✅ System properly rejected malformed data with error: {e}")
 
 

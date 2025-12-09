@@ -19,7 +19,7 @@ import json
 
 from flujo.type_definitions.common import JSONObject
 from flujo.state.backends.base import _serialize_for_json
-from flujo.utils.serialization import robust_serialize
+from flujo.utils.serialization import _robust_serialize_internal
 
 
 class TestCISerializationCompatibility:
@@ -49,7 +49,7 @@ class TestCISerializationCompatibility:
         assert serialized["none"] is None
 
         # Test robust_serialize (legacy compatibility)
-        robust_result = robust_serialize(test_data)
+        robust_result = _robust_serialize_internal(test_data)
         assert isinstance(robust_result, dict)
         assert robust_result["string"] == "test"
         assert robust_result["number"] == 42
@@ -66,7 +66,7 @@ class TestCISerializationCompatibility:
 
         # Perform serialization
         start_time = time.perf_counter()
-        result = robust_serialize(large_data)
+        result = _robust_serialize_internal(large_data)
         serialization_time = time.perf_counter() - start_time
 
         # Should complete in reasonable time
@@ -92,7 +92,7 @@ class TestCISerializationCompatibility:
         obj = ProblematicObject()
 
         # Should not raise exception
-        result = robust_serialize(obj)
+        result = _robust_serialize_internal(obj)
         assert isinstance(result, str)
         assert "ProblematicObject" in result
 
@@ -103,7 +103,7 @@ class TestCISerializationCompatibility:
         data["self"] = data
 
         # Should handle without stack overflow
-        result = robust_serialize(data, circular_ref_placeholder=None)
+        result = _robust_serialize_internal(data, circular_ref_placeholder=None)
         assert isinstance(result, dict)
         assert result["self"] is None  # Circular ref should be None
 
@@ -121,7 +121,7 @@ class TestCIResourceConstraints:
             current = current["nested"]
 
         # Should handle without memory issues
-        result = robust_serialize(nested_data)
+        result = _robust_serialize_internal(nested_data)
         assert isinstance(result, dict)
         assert "nested" in result
 
@@ -140,7 +140,7 @@ class TestCIResourceConstraints:
                     "data": f"worker_{worker_id}_data",
                     "nested": {"value": worker_id * 10},
                 }
-                result = robust_serialize(data)
+                result = _robust_serialize_internal(data)
                 results.put((worker_id, result))
             except Exception as e:
                 errors.put((worker_id, e))
@@ -157,9 +157,9 @@ class TestCIResourceConstraints:
             thread.join()
 
         # Check results
-        assert errors.empty(), (
-            f"Errors in concurrent test: {[errors.get() for _ in range(errors.qsize())]}"
-        )
+        assert (
+            errors.empty()
+        ), f"Errors in concurrent test: {[errors.get() for _ in range(errors.qsize())]}"
         assert results.qsize() == 3, f"Expected 3 results, got {results.qsize()}"
 
 
@@ -180,7 +180,7 @@ class TestCIPlatformCompatibility:
         ]
 
         for test_case in test_cases:
-            result = robust_serialize(test_case)
+            result = _robust_serialize_internal(test_case)
             assert isinstance(result, dict)
             # Basic validation that serialization completed
             assert len(result) > 0
@@ -196,7 +196,7 @@ class TestCIPlatformCompatibility:
             "architecture": platform.architecture()[0],
         }
 
-        result = robust_serialize(test_data)
+        result = _robust_serialize_internal(test_data)
         assert isinstance(result, dict)
         assert result["version"] == test_data["version"]
         assert result["platform"] == test_data["platform"]
@@ -214,7 +214,7 @@ class TestCITimingIssues:
         }
 
         start_time = time.perf_counter()
-        result = robust_serialize(complex_data)
+        result = _robust_serialize_internal(complex_data)
         serialization_time = time.perf_counter() - start_time
 
         # Should complete within reasonable time
@@ -239,7 +239,7 @@ class TestCITimingIssues:
 
         # Set a timeout for the operation
         start_time = time.perf_counter()
-        result = robust_serialize(data)
+        result = _robust_serialize_internal(data)
         execution_time = time.perf_counter() - start_time
 
         # Should complete quickly
@@ -266,7 +266,7 @@ class TestCIErrorRecovery:
         obj = FailingObject("problematic_attr")
 
         # Should handle gracefully
-        result = robust_serialize(obj)
+        result = _robust_serialize_internal(obj)
         assert isinstance(result, str)
         assert "FailingObject" in result
 
@@ -279,7 +279,7 @@ class TestCIErrorRecovery:
         }
 
         # Enhanced: Robust serialize may return string for entire object in enhanced system
-        result = robust_serialize(data)
+        result = _robust_serialize_internal(data)
         if isinstance(result, dict):
             # Legacy behavior: Partial serialization succeeded
             assert result["normal"] == "value"

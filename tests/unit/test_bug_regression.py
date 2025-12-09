@@ -20,8 +20,8 @@ from flujo.domain.models import BaseModel, PipelineResult
 from flujo.application.core.execution_manager import ExecutionManager
 from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.utils.serialization import (
-    serialize_jsonable,
-    robust_serialize,
+    _serialize_for_json,
+    _robust_serialize_internal,
     register_custom_serializer,
 )
 from flujo.domain import Step
@@ -232,13 +232,13 @@ class TestSerializationEdgeCases:
 
         obj = UnknownType("test")
 
-        # Test serialize_jsonable with unknown type - should now serialize objects with __dict__
-        result_safe = serialize_jsonable(obj)
+        # Test _serialize_for_json with unknown type - should now serialize objects with __dict__
+        result_safe = _serialize_for_json(obj)
         assert isinstance(result_safe, dict)
         assert result_safe["value"] == "test"
 
         # Test robust_serialize with unknown type - should handle gracefully
-        result_robust = robust_serialize(obj)
+        result_robust = _robust_serialize_internal(obj)
         assert isinstance(result_robust, dict)
         assert result_robust["value"] == "test"
 
@@ -259,7 +259,7 @@ class TestSerializationEdgeCases:
         obj1.children = [obj2]  # Create circular reference
 
         # Should not raise exception and should serialize as dict
-        result = robust_serialize(obj1)
+        result = _robust_serialize_internal(obj1)
         assert isinstance(result, dict)
         assert result["name"] == "parent"
         assert "children" in result
@@ -277,7 +277,7 @@ class TestSerializationEdgeCases:
         obj = ProblematicObject()
 
         # Should not raise exception and should serialize as dict
-        result = robust_serialize(obj)
+        result = _robust_serialize_internal(obj)
         assert isinstance(result, dict)
         # The object should be serialized as an empty dict since it has no __dict__ attributes
         assert result == {}
@@ -303,7 +303,7 @@ class TestPerformanceRegression:
 
         # Measure serialization time
         start_time = time.perf_counter()
-        result = robust_serialize(data)
+        result = _robust_serialize_internal(data)
         serialization_time = time.perf_counter() - start_time
 
         # Should complete in reasonable time (adjust threshold as needed)
@@ -359,7 +359,7 @@ class TestCIEnvironmentCompatibility:
         large_data = {"items": [{"id": i, "data": f"item_{i}" * 100} for i in range(1000)]}
 
         # Perform serialization
-        result = robust_serialize(large_data)
+        result = _robust_serialize_internal(large_data)
 
         # Force garbage collection multiple times to ensure cleanup
         for _ in range(3):
@@ -441,7 +441,7 @@ class TestCIEnvironmentCompatibility:
                     "nested": {"value": f"data_{worker_id}"},
                     "list": [i for i in range(100)],
                 }
-                result = robust_serialize(data)
+                result = _robust_serialize_internal(data)
                 results.put((worker_id, result))
             except Exception as e:
                 errors.put((worker_id, e))
@@ -475,7 +475,7 @@ class TestEdgeCaseRobustness:
             current = current["nested"]
 
         # Should not cause stack overflow
-        result = robust_serialize(data)
+        result = _robust_serialize_internal(data)
         assert isinstance(result, dict)
         assert "nested" in result
 
@@ -485,7 +485,7 @@ class TestEdgeCaseRobustness:
         data = {"large_string": large_string}
 
         # Should handle without memory issues
-        result = robust_serialize(data)
+        result = _robust_serialize_internal(data)
         assert isinstance(result, dict)
         assert len(result["large_string"]) == len(large_string)
 
@@ -500,7 +500,7 @@ class TestEdgeCaseRobustness:
         }
 
         # Should handle all special characters
-        result = robust_serialize(special_chars)
+        result = _robust_serialize_internal(special_chars)
         assert isinstance(result, dict)
         assert result["unicode"] == special_chars["unicode"]
         assert result["quotes"] == special_chars["quotes"]

@@ -66,6 +66,6 @@ def test_fallback_serialization_benchmark(benchmark, state_manager, pipeline_con
     benchmark(exercise)
 
     threshold = float(os.getenv("FLUJO_FALLBACK_BENCH_THRESHOLD", "0.10"))
-    assert benchmark.stats["min"] < threshold, (
-        f"Fallback serialization regression: {benchmark.stats['min']:.6f}s >= {threshold:.3f}s"
-    )
+    assert (
+        benchmark.stats["min"] < threshold
+    ), f"Fallback serialization regression: {benchmark.stats['min']:.6f}s >= {threshold:.3f}s"

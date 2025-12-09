@@ -83,6 +83,6 @@ def test_finalize_types_uses_wrapper_target_output_type() -> None:
 
     _finalize_step_types(step_obj)
 
-    assert step_obj.__step_output_type__ is MyOutModel, (
-        "Expected finalize to copy target_output_type to step output type"
-    )
+    assert (
+        step_obj.__step_output_type__ is MyOutModel
+    ), "Expected finalize to copy target_output_type to step output type"
