@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from .state_machine import StateMachineStep
     from .step import MergeStrategy, BranchFailureStrategy, BranchKey, HumanInTheLoopStep
     from .dynamic_router import DynamicParallelRouterStep
+    from .granular import GranularStep, ResumeError
 
 __all__ = [
     "StepConfig",
@@ -41,6 +42,8 @@ __all__ = [
     "BranchKey",
     "HumanInTheLoopStep",
     "DynamicParallelRouterStep",
+    "GranularStep",
+    "ResumeError",
 ]
 
 # Lazy import pattern for all other symbols
@@ -102,4 +105,14 @@ def __getattr__(name: str) -> Any:
 
         globals()[name] = DynamicParallelRouterStep
         return DynamicParallelRouterStep
+    if name == "GranularStep":
+        from .granular import GranularStep
+
+        globals()[name] = GranularStep
+        return GranularStep
+    if name == "ResumeError":
+        from .granular import ResumeError
+
+        globals()[name] = ResumeError
+        return ResumeError
     raise AttributeError(f"module 'flujo.domain.dsl' has no attribute '{name}'")
