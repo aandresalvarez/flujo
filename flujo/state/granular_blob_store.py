@@ -12,7 +12,14 @@ import time
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from flujo.state.backends.protocol import StateBackend
+    from typing import Protocol
+
+    class StateBackend(Protocol):
+        """Protocol for state backend."""
+
+        async def save_state(self, key: str, data: object) -> None: ...
+        async def load_state(self, key: str) -> object | None: ...
+
 
 __all__ = ["GranularBlobStore", "BlobRef", "BlobNotFoundError"]
 
@@ -180,7 +187,12 @@ class GranularBlobStore:
                 "This may indicate data loss or store unavailability.",
             )
 
-        # Deserialize payload
+        # Deserialize payload (blob_data should be a dict from our save_state)
+        if not isinstance(blob_data, dict):
+            raise BlobNotFoundError(
+                blob_ref.blob_id,
+                f"Blob {blob_ref.blob_id} has invalid format.",
+            )
         serialized = blob_data.get("payload")
         if serialized is None:
             raise BlobNotFoundError(
@@ -283,7 +295,7 @@ class GranularBlobStore:
 
         for key in ("input", "output"):
             value = entry.get(key)
-            if BlobRef.is_marker(value):
+            if isinstance(value, str) and BlobRef.is_marker(value):
                 result[key] = await self.hydrate_marker(value)
 
         return result

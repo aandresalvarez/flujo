@@ -201,6 +201,6 @@ On resume, blob references are automatically hydrated.
 
 ## See Also
 
-- [Conversational Loops](conversational_loops.md) - Alternative for simpler loops
-- [Human-in-the-Loop](hitl.md) - Pause for user input
-- [State Persistence](../reference/state_backends.md) - Backend options
+- [Conversational Loops](../conversational_loops.md) - Alternative for simpler loops
+- [Human-in-the-Loop](../hitl.md) - Pause for user input
+- [Blueprints](../blueprints.md) - YAML configuration
