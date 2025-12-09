@@ -60,6 +60,7 @@ loop_step = Step.loop_until(
     exit_condition_callable=lambda body_output, ctx: body_output.is_good_enough,
     max_loops=5,  # A safeguard to prevent infinite loops.
 )
+loop_step.__step_output_type__ = TextEdit
 
 # The full pipeline: generate an initial version, then enter the refinement loop.
 full_pipeline = generate_text_agent >> loop_step

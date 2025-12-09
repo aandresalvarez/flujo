@@ -61,6 +61,10 @@ steps:
   - kind: step
     name: categorize
     uses: agents.categorizer
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
   - kind: step
     name: subpipe
     uses: imports.support
@@ -108,6 +112,10 @@ steps:
   - kind: step
     name: categorize
     uses: agents.categorizer
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
   - kind: step
     name: use_support
     uses: imports.support
@@ -148,6 +156,10 @@ steps:
     name: greet
     agent:
       id: "flujo.builtins.stringify"
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
   - kind: step
     name: support_assist
     uses: imports.support

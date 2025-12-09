@@ -16,8 +16,8 @@ def test_validate_sarif_contains_rules_and_results(tmp_path: Path) -> None:
     yml = (
         'version: "0.1"\n'
         "steps:\n"
-        '  - name: A\n    agent: { id: "flujo.builtins.stringify" }\n    input: "hello"\n'
-        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    input: "{{ previous_step.output }}"\n'
+        '  - name: A\n    agent: { id: "flujo.builtins.stringify" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "hello"\n'
+        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "{{ previous_step.output }}"\n'
     )
     f = _write(tmp_path, "p.yaml", yml)
     res = subprocess.run(
@@ -41,8 +41,8 @@ def test_validate_rules_profile_strict_makes_vt1_error(tmp_path: Path) -> None:
     yml = (
         'version: "0.1"\n'
         "steps:\n"
-        '  - name: A\n    agent: { id: "flujo.builtins.stringify" }\n    input: "hello"\n'
-        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    input: "{{ previous_step.output }}"\n'
+        '  - name: A\n    agent: { id: "flujo.builtins.stringify" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "hello"\n'
+        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "{{ previous_step.output }}"\n'
     )
     f = _write(tmp_path, "p.yaml", yml)
     import os
@@ -75,8 +75,8 @@ def test_validate_rules_file_off_suppresses_findings(tmp_path: Path) -> None:
     yml = (
         'version: "0.1"\n'
         "steps:\n"
-        '  - name: A\n    agent: { id: "flujo.builtins.stringify" }\n    input: "hello"\n'
-        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    input: "{{ previous_step.output }}"\n'
+        '  - name: A\n    agent: { id: "flujo.builtins.stringify" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "hello"\n'
+        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "{{ previous_step.output }}"\n'
     )
     f = _write(tmp_path, "p.yaml", yml)
     res = subprocess.run(

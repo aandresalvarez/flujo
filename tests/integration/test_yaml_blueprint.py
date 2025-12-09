@@ -53,6 +53,10 @@ steps:
     name: s1
     agent:
       id: "flujo.builtins.echo"
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
   - kind: step
     name: s2
     agent:

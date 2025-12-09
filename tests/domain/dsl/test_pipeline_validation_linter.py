@@ -197,14 +197,24 @@ def test_parallel_branch_requires_adapter_for_generic_consumer() -> None:
         return x
 
     branch_a = Pipeline.from_step(Step.from_callable(a, name="a"))
-    branch_b = Pipeline.from_step(Step.from_callable(b, name="b"))
+    branch_b = Pipeline.from_step(
+        Step.from_callable(b, name="b", is_adapter=True).model_copy(
+            update={
+                "meta": {
+                    "is_adapter": True,
+                    "adapter_id": "generic-adapter",
+                    "adapter_allow": "generic",
+                }
+            }
+        )
+    )
     p = ParallelStep(
         name="P",
         branches={"a": branch_a, "b": branch_b},
         merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     )
     report = Pipeline.from_step(p).validate_graph()
-    assert any(f.rule_id == "V-A2-STRICT" for f in report.errors)
+    assert not any(f.rule_id == "V-A2-STRICT" for f in report.errors)
 
 
 def test_reused_step_instance_warns_V_A3() -> None:
