@@ -27,6 +27,10 @@ steps:
     message: "What is your name?"
   - name: run
     uses: agents.echoer
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
         """.strip()
     )
 

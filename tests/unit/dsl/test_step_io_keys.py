@@ -53,6 +53,7 @@ def test_step_io_keys_follow_branch_union_for_conditional() -> None:
         branches={"a": branch_a},
         condition_callable=lambda *_: "a",
     )
+    cond.__step_output_type__ = dict[str, object]
     consumer = Step(name="after-cond", agent=_agent, input_keys=["branch_value"])
     consumer.__step_input_type__ = dict[str, object]
 

@@ -61,6 +61,7 @@ loop_step = Step.loop_until(
     max_loops=5,  # A safeguard to prevent infinite loops.
 )
 loop_step.__step_output_type__ = TextEdit
+generate_text_agent.__step_output_type__ = TextEdit
 
 # The full pipeline: generate an initial version, then enter the refinement loop.
 full_pipeline = generate_text_agent >> loop_step

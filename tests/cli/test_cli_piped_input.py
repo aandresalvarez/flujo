@@ -14,6 +14,10 @@ steps:
     name: get_input
     agent:
       id: "flujo.builtins.ask_user"
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
     input: "{{ context.initial_prompt or 'What do you want to do today?' }}"
 
   - kind: step
