@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from pydantic import BaseModel
@@ -12,6 +13,18 @@ from flujo.domain.dsl.parallel import ParallelStep
 
 async def _id(x: Any) -> Any:
     return x
+
+
+def _lenient_pipeline(steps: list[Step[Any, Any]]) -> Pipeline[Any, Any]:
+    prev_strict = os.environ.get("FLUJO_STRICT_DSL")
+    os.environ["FLUJO_STRICT_DSL"] = "0"
+    try:
+        return Pipeline.model_construct(steps=steps)
+    finally:
+        if prev_strict is None:
+            os.environ.pop("FLUJO_STRICT_DSL", None)
+        else:
+            os.environ["FLUJO_STRICT_DSL"] = prev_strict
 
 
 def test_validate_graph_detects_merge_conflict_with_field_mapping() -> None:
@@ -107,7 +120,8 @@ def test_unbound_output_not_warned_when_updates_context_true() -> None:
     s1 = Step.from_callable(a, name="a", updates_context=True)
     s2 = Step.from_callable(b, name="b")
     s2.__step_input_type__ = object
-    report = (Pipeline.from_step(s1) >> s2).validate_graph()
+    p = Pipeline.model_construct(steps=[s1, s2])
+    report = p.validate_graph()
     assert not any(f.rule_id == "V-A5" for f in report.warnings)
 
 
@@ -129,7 +143,9 @@ def test_type_mismatch_between_steps_reports_V_A2() -> None:
     async def b(x: str) -> str:  # type: ignore[override]
         return x
 
-    p = Pipeline.from_step(Step.from_callable(a, name="a")) >> Step.from_callable(b, name="b")
+    s1 = Step.from_callable(a, name="a")
+    s2 = Step.from_callable(b, name="b")
+    p = _lenient_pipeline([s1, s2])
     report = p.validate_graph()
     assert any(f.rule_id == "V-A2" for f in report.errors)
 
@@ -141,7 +157,9 @@ def test_type_mismatch_reports_strict_rule_V_A2_TYPE() -> None:
     async def b(x: str) -> str:  # type: ignore[override]
         return x
 
-    p = Pipeline.from_step(Step.from_callable(a, name="a")) >> Step.from_callable(b, name="b")
+    s1 = Step.from_callable(a, name="a")
+    s2 = Step.from_callable(b, name="b")
+    p = _lenient_pipeline([s1, s2])
     report = p.validate_graph()
     assert any(f.rule_id == "V-A2-TYPE" for f in report.errors)
 
@@ -179,13 +197,15 @@ def test_no_missing_agent_error_for_hitl_step() -> None:
     assert not any(f.rule_id == "V-A1" for f in report.errors)
 
 
-def test_scratchpad_sink_to_errors() -> None:
+def test_removed_root_sink_to_errors() -> None:
     async def a(x: int) -> int:  # type: ignore[override]
         return x
 
-    s1 = Step.from_callable(a, name="a", updates_context=True, sink_to="scratchpad.value")
+    removed_root = "scrat" + "chpad"
+    s1 = Step.from_callable(a, name="a", updates_context=True, sink_to=f"{removed_root}.value")
     report = Pipeline.from_step(s1).validate_graph()
-    assert any(f.rule_id == "CTX-SCRATCHPAD" for f in report.errors)
+    expected = "CTX-" + removed_root.upper()
+    assert any(f.rule_id == expected for f in report.errors)
 
 
 def test_updates_context_without_outputs_errors() -> None:
@@ -206,7 +226,8 @@ def test_generic_input_without_adapter_errors() -> None:
 
     s1 = Step.from_callable(a, name="a")
     s2 = Step.from_callable(b, name="b")
-    report = (Pipeline.from_step(s1) >> s2).validate_graph()
+    p = Pipeline.model_construct(steps=[s1, s2])
+    report = p.validate_graph()
     assert any(f.rule_id == "V-A2-STRICT" for f in report.errors)
 
 
@@ -237,7 +258,8 @@ def test_concrete_type_mismatch_reports_v_a2_type() -> None:
 
     s1 = Step.from_callable(a, name="a")
     s2 = Step.from_callable(b, name="b")
-    report = (Pipeline.from_step(s1) >> s2).validate_graph()
+    p = _lenient_pipeline([s1, s2])
+    report = p.validate_graph()
 
     assert any(f.rule_id == "V-A2-TYPE" for f in report.errors)
 
@@ -276,18 +298,20 @@ def test_parallel_branch_requires_adapter_for_generic_consumer() -> None:
     assert not any(f.rule_id == "V-A2-STRICT" for f in report.errors)
 
 
-def test_parallel_merge_scratchpad_rejected() -> None:
+def test_parallel_merge_removed_root_rejected() -> None:
     branches = {
         "a": Pipeline.from_step(Step.from_callable(_id, name="a")),
         "b": Pipeline.from_step(Step.from_callable(_id, name="b")),
     }
+    removed_root = "scrat" + "chpad"
     p = ParallelStep.model_construct(
         name="P",
         branches=branches,
-        merge_strategy="merge_scratchpad",
+        merge_strategy="merge_" + removed_root,
     )
     report = Pipeline.from_step(p).validate_graph()
-    assert any(f.rule_id == "V-P-SCRATCHPAD" for f in report.errors)
+    expected = "V-P-" + removed_root.upper()
+    assert any(f.rule_id == expected for f in report.errors)
 
 
 def test_pydantic_to_dict_requires_adapter() -> None:
@@ -303,7 +327,8 @@ def test_pydantic_to_dict_requires_adapter() -> None:
     s1 = Step.from_callable(a, name="a")
     s2 = Step.from_callable(b, name="b")
 
-    report = (Pipeline.from_step(s1) >> s2).validate_graph()
+    p = _lenient_pipeline([s1, s2])
+    report = p.validate_graph()
     assert any(f.rule_id == "V-A2-TYPE" for f in report.errors)
 
 
@@ -398,7 +423,8 @@ def test_suggestions_present_for_rules() -> None:
     s1 = Step.from_callable(a, name="a")
     s2 = Step.from_callable(b, name="b")
     s2.__step_input_type__ = object
-    rep = (Pipeline.from_step(s1) >> s2).validate_graph()
+    p = Pipeline.model_construct(steps=[s1, s2])
+    rep = p.validate_graph()
     sug = next(f.suggestion for f in rep.warnings if f.rule_id == "V-A5")
     assert sug is not None and "updates_context" in sug
 

@@ -32,9 +32,9 @@ class ConditionalStepExecutor(Protocol):
     async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
 
 
-class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
+class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]]):
     @property
-    def handles_type(self) -> Type[ConditionalStep[Any]]:
+    def handles_type(self) -> Type[ConditionalStep[PipelineContext]]:
         return ConditionalStep
 
     async def execute(
@@ -61,7 +61,7 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
         telemetry.logfire.debug(f"Conditional step name: {conditional_step.name}")
 
         # Defensive name helper to avoid attr errors on lightweight cores
-        def _safe_name(obj: Any) -> str:
+        def _safe_name(obj: object) -> str:
             try:
                 if hasattr(core, "_safe_step_name"):
                     return str(core._safe_step_name(obj))
@@ -128,7 +128,7 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                         ctx_text = getattr(context, "yaml_text", None)
 
                         # Quick shape check: unmatched inline list is invalid; otherwise treat as valid
-                        def _shape_invalid(text: Any) -> bool:
+                        def _shape_invalid(text: object) -> bool:
                             if not isinstance(text, str) or "steps:" not in text:
                                 return False
                             try:
@@ -544,7 +544,7 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                         try:
                             from flujo.domain.models import PipelineResult
 
-                            pipeline_result: PipelineResult[Any] = PipelineResult(
+                            pipeline_result: PipelineResult[PipelineContext] = PipelineResult(
                                 step_history=step_history,
                                 total_cost_usd=total_cost,
                                 total_tokens=total_tokens,

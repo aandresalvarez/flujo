@@ -8,11 +8,7 @@ from flujo.cli.helpers import create_flujo_runner, execute_pipeline_with_output_
 
 @pytest.mark.integration
 def test_regression_fix_infinite_loop_generation_state():
-    """Regression test: Ensure GenerateYAML step doesn't cause infinite loops in Generation state.
-
-    This test verifies that the fix for setting both next_state and current_state
-    in the scratchpad doesn't cause state machine conflicts.
-    """
+    """Regression test: Ensure GenerateYAML step doesn't cause infinite loops in Generation state."""
     # Enable full state machine
     import os
 
@@ -34,13 +30,7 @@ def test_regression_fix_infinite_loop_generation_state():
     ctx = getattr(result, "final_pipeline_context", None)
     assert ctx is not None
 
-    # Verify we reached the final state
-    scratchpad = getattr(ctx, "scratchpad", {})
-    assert isinstance(scratchpad, dict)
-
-    # The state machine should have progressed through all states
-    # We don't check specific state values as they may change, but we ensure
-    # the pipeline completed without hanging
+    # The state machine should have progressed through all states without hanging.
 
 
 @pytest.mark.integration
@@ -166,12 +156,8 @@ def test_regression_fix_validation_state_transitions():
 
 
 @pytest.mark.integration
-def test_regression_fix_scratchpad_updates():
-    """Regression test: Ensure scratchpad updates work correctly for state transitions.
-
-    This test verifies that the scratchpad is properly updated during state transitions
-    and doesn't cause conflicts between next_state and current_state.
-    """
+def test_regression_fix_state_updates():
+    """Regression test: Ensure state-machine typed fields update correctly."""
     # Enable full state machine
     import os
 
@@ -264,7 +250,6 @@ def test_regression_fix_no_direct_context_mutation():
     # Verify that the context is properly structured (not corrupted by direct mutation)
     assert hasattr(ctx, "yaml_text"), "Context should have yaml_text attribute"
     assert hasattr(ctx, "generated_yaml"), "Context should have generated_yaml attribute"
-    assert hasattr(ctx, "scratchpad"), "Context should have scratchpad attribute"
 
     # Verify the context object is still a valid ArchitectContext instance
     assert isinstance(ctx, ArchitectContext), "Final context should be ArchitectContext instance"
@@ -310,10 +295,6 @@ def test_regression_fix_complete_architect_flow():
     yaml_is_valid = getattr(ctx, "yaml_is_valid", None)
     assert yaml_is_valid is not None, "yaml_is_valid must be set"
     assert isinstance(yaml_is_valid, bool), "yaml_is_valid must be a boolean"
-
-    # Verify the pipeline reached a terminal state
-    scratchpad = getattr(ctx, "scratchpad", {})
-    assert isinstance(scratchpad, dict), "scratchpad must be a dictionary"
 
     # Success: All regression fixes are working correctly
     print("✅ All regression fixes verified successfully!")

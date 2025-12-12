@@ -64,7 +64,7 @@ async def test_hitl_in_loop_no_nesting_on_resume():
                 agent={"id": "flujo.builtins.passthrough"},
                 input="",
                 updates_context=True,
-                sink_to="scratchpad",
+                sink_to="import_artifacts",
                 processors={
                     "output_processors": [
                         {
@@ -82,7 +82,7 @@ async def test_hitl_in_loop_no_nesting_on_resume():
                     Step(
                         name="ask_question",
                         agent={"id": "flujo.builtins.passthrough", "model": "openai:gpt-4o-mini"},
-                        input="Current slots: {{ context.scratchpad.slots | tojson }}",
+                        input="Current slots: {{ context.import_artifacts.slots | tojson }}",
                         updates_context=True,
                         output_schema=SlotOutput.model_json_schema(),
                         processors={
@@ -112,7 +112,7 @@ async def test_hitl_in_loop_no_nesting_on_resume():
                         agent={"id": "flujo.builtins.passthrough"},
                         input="{{ previous_step }}",
                         updates_context=True,
-                        sink_to="scratchpad.slots.metric",
+                        sink_to="import_artifacts.slots.metric",
                         processors={
                             "output_processors": [
                                 {
@@ -123,7 +123,7 @@ async def test_hitl_in_loop_no_nesting_on_resume():
                         },
                     ),
                 ],
-                exit_expression="{{ context.scratchpad.slots.metric is defined }}",
+                exit_expression="{{ context.import_artifacts.slots.metric is defined }}",
                 max_loops=5,
             ),
         ]
@@ -161,10 +161,10 @@ async def test_hitl_in_loop_no_nesting_on_resume():
 
     # Verify slots were updated (proves step 2 executed after resume)
     ctx2 = result2.final_pipeline_context
-    assert hasattr(ctx2, "scratchpad"), "Context should have scratchpad"
-    assert "slots" in ctx2.scratchpad, "Should have slots"
-    assert ctx2.scratchpad["slots"].get("metric") == "prevalence", (
-        f"Slots should be updated with user input. Got: {ctx2.scratchpad.get('slots')}"
+    slots = ctx2.import_artifacts.get("slots")
+    assert isinstance(slots, dict), "Should have slots"
+    assert slots.get("metric") == "prevalence", (
+        f"Slots should be updated with user input. Got: {slots}"
     )
 
     # Verify loop completed successfully

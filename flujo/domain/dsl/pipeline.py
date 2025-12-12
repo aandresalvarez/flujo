@@ -1,6 +1,5 @@
 from __future__ import annotations
-from typing import Any, ClassVar, Generic, Iterator, Optional, Sequence, TypeVar
-import logging
+from typing import Any, ClassVar, Generic, Iterator, Optional, Sequence, TypeVar, TypeAlias
 from pydantic import ConfigDict, Field, PrivateAttr, field_validator
 
 from ..pipeline_validation import ValidationFinding, ValidationReport
@@ -23,6 +22,8 @@ PipeInT = TypeVar("PipeInT")
 PipeOutT = TypeVar("PipeOutT")
 NewPipeOutT = TypeVar("NewPipeOutT")
 
+AnyStep: TypeAlias = Step[Any, Any]
+
 __all__ = ["Pipeline"]
 
 
@@ -35,7 +36,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     class.
     """
 
-    steps: Sequence[Step[Any, Any]]
+    steps: Sequence[AnyStep]
     hooks: list[HookCallable] = Field(default_factory=list)
     on_finish: list[HookCallable] = Field(default_factory=list)
 
@@ -53,12 +54,94 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     # -----------------------------
 
     @staticmethod
-    def _extract_step_io(step: Step[Any, Any]) -> tuple[Any, Any]:
+    def _extract_step_io(step: AnyStep) -> tuple[object, object]:
         """Return the declared input/output types for a step."""
         return (
             getattr(step, "__step_input_type__", Any),
             getattr(step, "__step_output_type__", Any),
         )
+
+    @staticmethod
+    def _compatible_types(a: Any, b: Any, *, is_adapter: bool = False) -> bool:
+        """Strict type compatibility for adjacent steps.
+
+        Mirrors V-A2/V-A2-STRICT/V-A2-TYPE logic: disallow Any/object fallthrough and
+        require adapters for unsafe bridges (e.g., Pydantic->dict).
+        """
+        from typing import get_origin, get_args, Union as TypingUnion
+        import types as _types
+
+        if a in (Any, object, None, type(None)) or b in (Any, object, None, type(None)):  # noqa: E721
+            return False
+
+        origin_a, origin_b = get_origin(a), get_origin(b)
+        try:
+            from pydantic import BaseModel as _PydanticBaseModel
+
+            if isinstance(a, type) and issubclass(a, _PydanticBaseModel):
+                # Allow Pydantic model outputs to flow into dict expectations only via adapters.
+                if b is dict or origin_b is dict:
+                    return is_adapter
+        except Exception:
+            pass
+        _UnionType = getattr(_types, "UnionType", None)
+
+        if origin_b is TypingUnion or (_UnionType is not None and origin_b is _UnionType):
+            return any(
+                Pipeline._compatible_types(a, arg, is_adapter=is_adapter) for arg in get_args(b)
+            )
+        if origin_a is TypingUnion or (_UnionType is not None and origin_a is _UnionType):
+            return all(
+                Pipeline._compatible_types(arg, b, is_adapter=is_adapter) for arg in get_args(a)
+            )
+
+        try:
+            b_eff = origin_b if origin_b is not None else b
+            a_eff = origin_a if origin_a is not None else a
+            if not isinstance(b_eff, type) or not isinstance(a_eff, type):
+                return False
+            return issubclass(a_eff, b_eff)
+        except Exception:
+            return False
+
+    def _assert_adjacent_types_strict(self) -> None:
+        try:
+            from ...infra.settings import get_settings as _get_settings
+
+            strict_mode = bool(getattr(_get_settings(), "strict_dsl", True))
+        except Exception:
+            strict_mode = True
+
+        if not strict_mode:
+            return
+
+        prev_step: AnyStep | None = None
+        prev_out_type: object | None = None
+        for step in self.steps:
+            in_type = getattr(step, "__step_input_type__", Any)
+            out_type = getattr(step, "__step_output_type__", Any)
+            meta = getattr(step, "meta", {}) or {}
+            templated_input_present = (
+                isinstance(meta, dict) and meta.get("templated_input") is not None
+            )
+            is_adapter_step = isinstance(meta, dict) and bool(meta.get("is_adapter", False))
+            if prev_step is not None and prev_out_type is not None:
+                generic_types = (Any, object, None, type(None))
+                if (
+                    not templated_input_present
+                    and not is_adapter_step
+                    and prev_out_type not in generic_types  # noqa: E721
+                    and in_type not in generic_types  # noqa: E721
+                    and not self._compatible_types(
+                        prev_out_type, in_type, is_adapter=is_adapter_step
+                    )
+                ):
+                    raise ValueError(
+                        f"Type mismatch between steps '{prev_step.name}' (returns {prev_out_type}) and "
+                        f"'{step.name}' (expects {in_type}). Insert an adapter step or adjust types."
+                    )
+            prev_step = step
+            prev_out_type = out_type
 
     def _initialize_io_types(self) -> None:
         """Populate pipeline head/tail types from contained steps."""
@@ -66,6 +149,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             self._input_type = Any
             self._output_type = Any
             return
+        self._assert_adjacent_types_strict()
         first_step = self.steps[0]
         last_step = self.steps[-1]
         self._input_type = self._extract_step_io(first_step)[0]
@@ -123,10 +207,7 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
     def model_post_init(self, __context: Any) -> None:  # noqa: D401
         """Ensure head/tail types are initialized after construction."""
-        try:
-            self._initialize_io_types()
-        except Exception:
-            pass
+        self._initialize_io_types()
 
     # Preserve concrete Step subclasses (e.g., CacheStep, HumanInTheLoopStep)
     @field_validator("steps", mode="before")
@@ -213,40 +294,6 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             _lb._OVERRIDE_CACHE = None
         except Exception:
             pass
-        from typing import Any, get_origin, get_args, Union as TypingUnion
-        import types as _types
-
-        def _compatible(a: Any, b: Any) -> bool:
-            """Strict type compatibility: disallow Any/object fallthrough and dict->object bypasses."""
-            if a in (Any, object, None, type(None)) or b in (Any, object, None, type(None)):  # noqa: E721
-                return False
-
-            origin_a, origin_b = get_origin(a), get_origin(b)
-            try:
-                from pydantic import BaseModel as _PydanticBaseModel
-
-                if isinstance(a, type) and issubclass(a, _PydanticBaseModel):
-                    if b is dict or origin_b is dict:
-                        return True
-            except Exception:
-                pass
-            _UnionType = getattr(_types, "UnionType", None)
-
-            if origin_b is TypingUnion or (_UnionType is not None and origin_b is _UnionType):
-                return any(_compatible(a, arg) for arg in get_args(b))
-            if origin_a is TypingUnion or (_UnionType is not None and origin_a is _UnionType):
-                return all(_compatible(arg, b) for arg in get_args(a))
-
-            try:
-                b_eff = origin_b if origin_b is not None else b
-                a_eff = origin_a if origin_a is not None else a
-                if not isinstance(b_eff, type) or not isinstance(a_eff, type):
-                    return False
-                return issubclass(a_eff, b_eff)
-            except Exception as e:  # pragma: no cover
-                logging.warning("_compatible: issubclass(%s, %s) raised %s", a, b, e)
-                return False
-
         report = ValidationReport()
         # Initialize visited sets/caches to guard recursion/cycles and enable caching
         if _visited_pipelines is None:

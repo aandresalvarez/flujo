@@ -15,7 +15,7 @@ def _echo_agent(payload: Any, *, context: Optional[Any] = None) -> Any:
     return payload
 
 
-def _echo_to_scratchpad(payload: Any, *, context: Optional[Any] = None) -> JSONObject:
+def _echo_to_import_artifacts(payload: Any, *, context: Optional[Any] = None) -> JSONObject:
     # Map the incoming payload into import_artifacts.echo via updates_context
     return {"import_artifacts": {"echo": payload}}
 
@@ -36,7 +36,7 @@ def test_import_explicit_input_precedence_uses_import_artifacts_key() -> None:
         inherit_context=True,
         inherit_conversation=True,
         input_to="initial_prompt",
-        # default input_scratchpad_key = "initial_input"
+        # default scalar input key = "initial_input"
         updates_context=False,
     )
     parent = Pipeline(steps=[status_step, imp])
@@ -71,7 +71,7 @@ def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
     # Child: map input into import_artifacts.echo (so parent outputs mapping can pull it)
     child = Pipeline(
         steps=[
-            Step(name="echo_to_ctx", agent=_echo_to_scratchpad, updates_context=True),
+            Step(name="echo_to_ctx", agent=_echo_to_import_artifacts, updates_context=True),
         ]
     )
 

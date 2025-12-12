@@ -6,12 +6,12 @@ from flujo.utils.expressions import compile_expression_to_callable
 
 
 class _Ctx:
-    def __init__(self, scratchpad: dict | None = None) -> None:
-        self.scratchpad = scratchpad or {}
+    def __init__(self, step_outputs: dict | None = None) -> None:
+        self.step_outputs = step_outputs or {}
 
 
 def test_allowlisted_dict_get_with_default() -> None:
-    expr = compile_expression_to_callable("context.scratchpad.get('missing', 'fallback')")
+    expr = compile_expression_to_callable("context.step_outputs.get('missing', 'fallback')")
     ctx = _Ctx({"present": 1})
     out = expr(output=None, context=ctx)
     assert out == "fallback"
@@ -32,7 +32,7 @@ def test_allowlisted_string_methods() -> None:
 def test_disallow_mutating_or_unknown_calls() -> None:
     # pop is not allow-listed
     with pytest.raises(ValueError, match="Unsupported expression element"):
-        compile_expression_to_callable("context.scratchpad.pop('k')")(None, _Ctx())
+        compile_expression_to_callable("context.step_outputs.pop('k')")(None, _Ctx())
 
     # bare function calls not allowed (may surface as Unknown name or Unsupported expression)
     with pytest.raises(ValueError, match="(Unsupported expression element|Unknown name)"):
@@ -42,7 +42,7 @@ def test_disallow_mutating_or_unknown_calls() -> None:
 def test_nested_attribute_and_subscript_and_none_tolerance() -> None:
     # Use boolean conditions with nested access; avoid IfExp (not supported)
     expr = compile_expression_to_callable(
-        "context.scratchpad.get('user') and context.scratchpad.user['name'].lower().startswith('ali')"
+        "context.step_outputs.get('user') and context.step_outputs.user['name'].lower().startswith('ali')"
     )
     ctx = _Ctx({"user": {"name": "ALICE"}})
     assert expr(None, ctx) is True
@@ -54,7 +54,7 @@ def test_nested_attribute_and_subscript_and_none_tolerance() -> None:
 def test_invalid_arg_types_to_allowlisted_methods_raise() -> None:
     # dict.get with non-string key should raise per sandbox rules
     with pytest.raises(ValueError, match="Unsupported expression element"):
-        compile_expression_to_callable("context.scratchpad.get(123)")(None, _Ctx())
+        compile_expression_to_callable("context.step_outputs.get(123)")(None, _Ctx())
 
     # startswith requires a string
     with pytest.raises(ValueError, match="Unsupported expression element"):

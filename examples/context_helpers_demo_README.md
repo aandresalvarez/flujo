@@ -16,7 +16,7 @@ Sets a value at a specific context path.
 
 **Input**:
 ```yaml
-path: "scratchpad.field_name"
+path: "import_artifacts.field_name"
 value: <any value>
 ```
 
@@ -27,7 +27,7 @@ value: <any value>
   agent:
     id: "flujo.builtins.context_set"
   input:
-    path: "scratchpad.counter"
+    path: "import_artifacts.counter"
     value: 0
   updates_context: true
 ```
@@ -37,7 +37,7 @@ Merges a dictionary into the context at a specific path.
 
 **Input**:
 ```yaml
-path: "scratchpad.field_name"
+path: "import_artifacts.field_name"
 value: <dictionary to merge>
 ```
 
@@ -48,7 +48,7 @@ value: <dictionary to merge>
   agent:
     id: "flujo.builtins.context_merge"
   input:
-    path: "scratchpad.settings"
+    path: "import_artifacts.settings"
     value:
       theme: "dark"
       notifications: true
@@ -60,7 +60,7 @@ Gets a value from the context with an optional default.
 
 **Input**:
 ```yaml
-path: "scratchpad.field_name"
+path: "import_artifacts.field_name"
 default: <fallback value>
 ```
 
@@ -71,7 +71,7 @@ default: <fallback value>
   agent:
     id: "flujo.builtins.context_get"
   input:
-    path: "scratchpad.counter"
+    path: "import_artifacts.counter"
     default: 0
 ```
 
@@ -84,7 +84,7 @@ uv run flujo run --pipeline examples/context_helpers_demo.yaml --input "start"
 ## Key Benefits
 
 1. **Type Safety**: Unlike direct context manipulation, these helpers are type-safe
-2. **Nested Paths**: Supports dot-separated paths like `scratchpad.user.settings.theme`
+2. **Nested Paths**: Supports dot-separated paths like `import_artifacts.user.settings.theme`
 3. **Graceful Defaults**: `context_get` provides fallbacks for missing values
 4. **No Boilerplate**: Eliminates custom Python skills for simple context operations
 
@@ -93,4 +93,3 @@ uv run flujo run --pipeline examples/context_helpers_demo.yaml --input "start"
 - **Use context helpers** for simple get/set/merge operations
 - **Use custom skills** when you need complex logic or transformations
 - **Use `sink_to` in HITL steps** for automatic storage of human responses
-

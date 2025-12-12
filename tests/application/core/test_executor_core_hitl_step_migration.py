@@ -124,7 +124,7 @@ class TestExecutorCoreHITLStepMigration:
         mock_limits: Mock,
         mock_context_setter: Mock,
     ):
-        """Test that HITL updates land on typed fields (not scratchpad)."""
+        """Test that HITL updates land on typed fields."""
         # Arrange
         data = "test_data"
         custom_message = "Review required"
@@ -255,7 +255,7 @@ class TestExecutorCoreHITLStepMigration:
         mock_limits: Mock,
         mock_context_setter: Mock,
     ):
-        """Test that typed HITL fields are populated and scratchpad stays clean."""
+        """Test that typed HITL fields are populated."""
         # Arrange
         data = "test_data"
         custom_message = "Custom message"
@@ -309,7 +309,7 @@ class TestExecutorCoreHITLStepMigration:
             assert mock_context.import_artifacts.get(key) == value
 
         # Verify HITL-specific data is added
-        # status is now on typed field, not scratchpad
+        # status is now on typed field
         assert mock_context.status == "paused"
         assert mock_context.pause_message == str(data)
         assert mock_context.paused_step_input == data
@@ -391,7 +391,7 @@ class TestExecutorCoreHITLStepMigration:
         mock_limits: Mock,
         mock_context_setter: Mock,
     ):
-        """Ensure HITL flow does not rely on scratchpad."""
+        """Ensure HITL flow does not rely on removed fields."""
         data = "test_data"
 
         # Act & Assert

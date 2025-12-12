@@ -1,6 +1,8 @@
+import os
+from typing import Any
+
 from flujo import Pipeline, step
 from flujo.domain.models import BaseModel
-from typing import Any
 from pydantic import BaseModel as PydBaseModel
 from flujo.domain.dsl.step import Step
 from flujo.domain.blueprint.loader import _finalize_step_types
@@ -53,7 +55,15 @@ def test_pydantic_output_bridges_to_dict_input() -> None:
     # Next step expects a dict[str, Any]
     s2 = Step.from_callable(_consume_dict, name="s2")
 
-    p = Pipeline.model_construct(steps=[s1, s2])
+    prev_strict = os.environ.get("FLUJO_STRICT_DSL")
+    os.environ["FLUJO_STRICT_DSL"] = "0"
+    try:
+        p = Pipeline.model_construct(steps=[s1, s2])
+    finally:
+        if prev_strict is None:
+            os.environ.pop("FLUJO_STRICT_DSL", None)
+        else:
+            os.environ["FLUJO_STRICT_DSL"] = prev_strict
     report = p.validate_graph()
     # Strict mode: Pydantic -> dict is not allowed without an explicit adapter.
     assert any(e.rule_id == "V-A2-TYPE" for e in report.errors), (

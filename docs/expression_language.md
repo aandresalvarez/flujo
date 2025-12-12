@@ -27,7 +27,7 @@ Variables in Scope
 
 Examples
 - Conditional by string prefix: `previous_step.lower().startswith('ok:')`
-- Loop exit by status: `context.scratchpad.get('status', '').upper() == 'DONE'`
+- Loop exit by status: `context.status.upper() == 'DONE'`
 - Check membership: `'tool' in steps and steps['tool'].success == True`
 
 Security Notes
@@ -40,4 +40,3 @@ Error Messages
 
 Performance
 - Simple expressions evaluate in microseconds on modern hardware
-

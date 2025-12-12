@@ -361,7 +361,20 @@ def load_pipeline_blueprint_from_yaml(
                     raise BlueprintError(
                         f"Failed to compile declarative blueprint (agents/imports): {e}"
                     ) from e
-            p = build_pipeline_from_blueprint(bp)
+            try:
+                p = build_pipeline_from_blueprint(bp)
+            except BlueprintError:
+                raise
+            except Exception as e:
+                # Preserve control-flow exceptions if they ever surface here.
+                try:
+                    from flujo.exceptions import ControlFlowError
+
+                    if isinstance(e, ControlFlowError):
+                        raise
+                except Exception:
+                    pass
+                raise BlueprintError(f"Failed to build pipeline from blueprint: {e}") from e
             try:
                 name_val = getattr(bp, "name", None)
                 if isinstance(name_val, str):

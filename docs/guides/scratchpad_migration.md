@@ -78,12 +78,13 @@ After migration, you may encounter:
 
 Both indicate incomplete migration. Fix by adding proper `sink_to` or `output_keys`.
 
-## Framework-Reserved Scratchpad Keys
+## Scratchpad Is Fully Removed
 
-Some keys remain valid in scratchpad for framework use:
+`scratchpad` no longer exists on `PipelineContext` and any payload or template that references it will fail validation.
+Framework metadata that used to live under scratchpad has been promoted to typed fields:
 
-- `status`, `current_state` (state machine)
-- `turn_index`, `history` (granular execution)
-- `slots_*` (slot synthesis helpers)
+- `status`, `current_state`, `next_state` (state machine)
+- `granular_state` and related counters (granular execution)
+- Loop/HITL fields such as `loop_*`, `pause_message`, `paused_step_input`, `hitl_data`
 
-These are allowlisted and won't trigger validation errors.
+Use these typed fields or `import_artifacts` for transient structured state.

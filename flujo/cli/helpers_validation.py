@@ -61,9 +61,17 @@ def validate_pipeline_file(path: str, *, include_imports: bool = True) -> Valida
 
         base_dir = os.path.dirname(os.path.abspath(path))
         try:
-            pipeline: Pipeline[Any, Any] = load_pipeline_blueprint_from_yaml(
-                yaml_text, base_dir=base_dir, source_file=path
-            )
+            prev_strict = os.environ.get("FLUJO_STRICT_DSL")
+            os.environ["FLUJO_STRICT_DSL"] = "0"
+            try:
+                pipeline: Pipeline[Any, Any] = load_pipeline_blueprint_from_yaml(
+                    yaml_text, base_dir=base_dir, source_file=path
+                )
+            finally:
+                if prev_strict is None:
+                    os.environ.pop("FLUJO_STRICT_DSL", None)
+                else:
+                    os.environ["FLUJO_STRICT_DSL"] = prev_strict
         except Exception as e:
             msg = str(e)
             m = re.search(r"Failed to compile import '([^']+)' from '([^']+)': (.+)", msg)
@@ -86,7 +94,7 @@ def validate_pipeline_file(path: str, *, include_imports: bool = True) -> Valida
                 )
             raise
     else:
-        pipeline, _ = load_pipeline_from_file(path)
+        pipeline, _ = load_pipeline_from_file(path, lenient_dsl=True)
 
     return pipeline.validate_graph(include_imports=include_imports)
 
@@ -97,7 +105,15 @@ def validate_yaml_text(
     """Validate a YAML blueprint string and return its ValidationReport."""
     from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
 
-    pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
+    prev_strict = os.environ.get("FLUJO_STRICT_DSL")
+    os.environ["FLUJO_STRICT_DSL"] = "0"
+    try:
+        pipeline = load_pipeline_blueprint_from_yaml(yaml_text, base_dir=base_dir)
+    finally:
+        if prev_strict is None:
+            os.environ.pop("FLUJO_STRICT_DSL", None)
+        else:
+            os.environ["FLUJO_STRICT_DSL"] = prev_strict
     return pipeline.validate_graph(include_imports=include_imports)
 
 

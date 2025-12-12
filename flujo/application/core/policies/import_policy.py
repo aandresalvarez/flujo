@@ -1,7 +1,7 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
-from typing import Type, TypeGuard, cast
+from typing import Type, TypeGuard
 from collections.abc import MutableMapping
 from flujo.domain.models import ImportArtifacts
 
@@ -39,7 +39,11 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
         return ImportStep
 
     async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = cast(ImportStep, frame.step)
+        step = frame.step
+        if not isinstance(step, ImportStep):
+            raise TypeError(
+                f"DefaultImportStepExecutor received non-ImportStep: {type(step).__name__}"
+            )
         data = frame.data
         context = frame.context
         resources = frame.resources

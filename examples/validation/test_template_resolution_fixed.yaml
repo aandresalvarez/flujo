@@ -6,7 +6,7 @@ description: |
   This demonstrates the three correct ways to reference step outputs in templates:
   1. previous_step - For immediate previous step
   2. steps.step_name.output - For named steps
-  3. context.scratchpad.explicit_field - For explicitly stored context
+  3. context.import_artifacts.explicit_field - For explicitly stored context
 
 agents:
   test_agent:
@@ -51,14 +51,13 @@ steps:
               #   agent: { id: "flujo.builtins.passthrough" }
               #   input: "{{ previous_step.question }}"
               #   updates_context: true
-              #   sink_to: "scratchpad.current_question"
+              #   sink_to: "import_artifacts.current_question"
               # Then reference it:
               # - kind: hitl
               #   name: ask_user_method3
-              #   message: "{{ context.scratchpad.current_question }}"
+              #   message: "{{ context.import_artifacts.current_question }}"
       
       exit_expression: "context.action == 'finish'"
       max_loops: 1
 
 # This works in all modes (strict, warn, ignore) because variables are defined
-

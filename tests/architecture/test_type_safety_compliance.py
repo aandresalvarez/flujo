@@ -228,20 +228,6 @@ class TestTypeSafetyCompliance:
                 "Examples:\n" + "\n".join(filtered[:5])
             )
 
-    def test_scratchpad_allowlist_is_not_expanded(self):
-        """Prevent unreviewed growth of scratchpad allowlist (framework-reserved)."""
-        from flujo.application.core import context_adapter as ca
-
-        allowed = getattr(ca, "_SCRATCHPAD_ALLOWED_KEYS", set())
-        assert isinstance(allowed, set)
-        # Baseline derived from current framework-reserved keys; tighten over time.
-        max_allowed = 24
-        if len(allowed) > max_allowed:
-            pytest.fail(
-                f"Scratchpad allowlist expanded unexpectedly ({len(allowed)} > {max_allowed}). "
-                "Reserve scratchpad for framework metadata only; migrate user data to typed fields."
-            )
-
 
 class TestArchitectureCompliance:
     """Test suite for architectural pattern compliance."""

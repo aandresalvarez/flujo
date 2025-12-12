@@ -37,11 +37,11 @@ class DummyStep:
 class DummyContext:
     def __init__(self, run_id: str) -> None:
         self.run_id = run_id
-        self.scratchpad = {}
+        self.status = "completed"
 
     # Match the interface used by display_pipeline_results when printing final context
     def model_dump(self) -> dict:
-        return {"run_id": self.run_id, "scratchpad": self.scratchpad}
+        return {"run_id": self.run_id, "status": self.status}
 
 
 class DummyResult:

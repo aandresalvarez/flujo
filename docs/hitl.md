@@ -33,7 +33,7 @@ The `sink_to` field automatically stores the human response to a specified conte
 - kind: hitl
   name: get_user_name
   message: "What is your name?"
-  sink_to: "scratchpad.user_name"
+  sink_to: "import_artifacts.user_name"
 
 - kind: hitl
   name: get_preferences
@@ -43,13 +43,13 @@ The `sink_to` field automatically stores the human response to a specified conte
     properties:
       theme: { type: string, enum: ["light", "dark"] }
       notifications: { type: boolean }
-  sink_to: "scratchpad.user_preferences"
+  sink_to: "import_artifacts.user_preferences"
 ```
 
 **How it works:**
-- The human response is automatically stored to `context.scratchpad.user_name` or `context.scratchpad.user_preferences`
+- The human response is automatically stored to `context.import_artifacts.user_name` or `context.import_artifacts.user_preferences`
 - Works with both simple text responses and structured `input_schema` responses
-- Supports nested paths like `"scratchpad.settings.user.name"`
+- Supports nested paths like `"import_artifacts.settings.user.name"`
 - If the context path doesn't exist, a warning is logged and execution continues normally
 
 **Without `sink_to` (old pattern):**
@@ -71,7 +71,7 @@ The `sink_to` field automatically stores the human response to a specified conte
 - kind: hitl
   name: get_user_name
   message: "What is your name?"
-  sink_to: "scratchpad.user_name"
+  sink_to: "import_artifacts.user_name"
 # Done! No manual storage step needed
 ```
 
@@ -174,7 +174,7 @@ After a HITL step, the `resume_input` variable is automatically available in tem
 - Keep `input_schema` minimal and explicit
 - Use the sync helper `flujo.builtins.check_user_confirmation_sync` for YAML conditionals
 - Prefer short, directive messages
-- For nested storage, ensure intermediate context fields exist (e.g., `context.scratchpad` must exist before using `sink_to: "scratchpad.field"`)
+- For nested storage, ensure intermediate context fields exist (e.g., `context.import_artifacts` must exist before using `sink_to: "import_artifacts.field"`)
 
 ## Troubleshooting
 

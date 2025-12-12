@@ -37,7 +37,7 @@ def test_excluded_fields_non_string_env_falls_back_to_defaults():
 def test_excluded_fields_accepts_whitelisted_values_only():
     ctx = _reset_context_module()
     ctx._EXCLUDED_FIELDS_CACHE = None
-    ctx._ENV_EXCLUDED_FIELDS_CACHE = "scratchpad,cache_hits"
+    ctx._ENV_EXCLUDED_FIELDS_CACHE = "foo,cache_hits"
     vals = ctx.get_excluded_fields()
     assert vals == {"cache_hits"}
 

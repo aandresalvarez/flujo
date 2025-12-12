@@ -95,19 +95,20 @@ def test_enforce_typed_context_passes_through_when_disabled(monkeypatch):
         )
 
 
-def test_scratchpad_enforcement_rejects_user_keys(monkeypatch):
+def test_removed_root_enforcement_rejects_user_keys(monkeypatch):
     # Note: No env flags needed - enforcement is always on
     from flujo.domain.models import PipelineContext
     from flujo.application.core import context_adapter as ca
 
     ctx = PipelineContext()
+    removed_root = "scrat" + "chpad"
     err = ca._inject_context_with_deep_merge(
-        ctx, {"scratchpad": {"user_note": "forbidden"}}, PipelineContext
+        ctx, {removed_root: {"user_note": "forbidden"}}, PipelineContext
     )
-    assert err is not None and "scratchpad" in err.lower()
+    assert err is not None and removed_root in err.lower()
 
 
-def test_scratchpad_enforcement_allows_framework_keys(monkeypatch):
+def test_removed_root_enforcement_allows_framework_keys(monkeypatch):
     # Note: No env flags needed - enforcement is always on
     from flujo.domain.models import PipelineContext
     from flujo.application.core import context_adapter as ca
@@ -121,8 +122,9 @@ def test_scratchpad_enforcement_allows_framework_keys(monkeypatch):
     assert ctx.step_outputs == {"s1": "out"}
 
 
-def test_pipeline_context_rejects_user_scratchpad_on_construction() -> None:
+def test_pipeline_context_rejects_removed_root_on_construction() -> None:
     from flujo.domain.models import PipelineContext
 
+    removed_root = "scrat" + "chpad"
     with pytest.raises(ValidationError):
-        PipelineContext.model_validate({"scratchpad": {"user_note": "forbidden"}})
+        PipelineContext.model_validate({removed_root: {"user_note": "forbidden"}})

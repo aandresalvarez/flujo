@@ -191,7 +191,7 @@ class TestPerformanceRegression:
         context = PipelineContext(
             initial_prompt="performance check",
             conversation_history=conversation,
-            scratchpad={
+            step_outputs={
                 "metrics": [{"index": i, "values": list(range(15))} for i in range(50)],
                 "notes": "n" * 256,
             },

@@ -7,5 +7,4 @@ steps:
     updates_context: true
     config:
       outputs:
-        - { child: "scratchpad.value", parent: "scratchpad.k" }
-
+        - { child: "import_artifacts.value", parent: "import_artifacts.k" }

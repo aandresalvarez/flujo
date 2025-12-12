@@ -9,8 +9,8 @@ from flujo.domain.models import PipelineContext as _PC
 
 async def _set_next_state(_inp: str, *, context: _PC | None = None) -> str:
     try:
-        if context is not None and hasattr(context, "scratchpad"):
-            context.scratchpad["next_state"] = "s2"
+        if context is not None:
+            context.next_state = "s2"
     except Exception:
         pass
     return "ok"

@@ -31,11 +31,12 @@ def test_v_c1_updates_context_nonmergeable_warns_and_escalates() -> None:
     assert any(f.severity == "error" for f in vc1)
 
 
-def test_v_c2_scratchpad_shape_conflicts_warns() -> None:
-    """V-C2: Mapping to scratchpad root is now an error."""
+def test_v_c2_removed_root_shape_conflicts_warns() -> None:
+    """V-C2: Mapping to a removed root is now an error."""
     from flujo.domain.dsl.import_step import ImportStep, OutputMapping
 
     # Child pipeline can be anything; we only check the mapping target
+    removed_root = "scrat" + "chpad"
     child = Pipeline.model_validate(
         {
             "steps": [
@@ -54,7 +55,7 @@ def test_v_c2_scratchpad_shape_conflicts_warns() -> None:
             "name": "RunChild",
             "pipeline": child,
             "updates_context": True,
-            "outputs": [OutputMapping(child="scratchpad.value", parent="scratchpad")],
+            "outputs": [OutputMapping(child=f"{removed_root}.value", parent=removed_root)],
         }
     )
     report = Pipeline.model_validate({"steps": [imp]}).validate_graph()

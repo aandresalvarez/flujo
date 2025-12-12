@@ -37,11 +37,25 @@ def print_rich_or_typer(msg: str, *, style: Optional[str] = None, stderr: bool =
 
 
 def load_pipeline_from_file(
-    pipeline_file: str, pipeline_name: str = "pipeline"
+    pipeline_file: str,
+    pipeline_name: str = "pipeline",
+    *,
+    lenient_dsl: bool = False,
 ) -> tuple["Pipeline[Any, Any]", str]:
     """Load a pipeline from a Python file."""
+    prev_strict: str | None = None
     try:
-        ns: JSONObject = runpy.run_path(pipeline_file)
+        if lenient_dsl:
+            prev_strict = os.environ.get("FLUJO_STRICT_DSL")
+            os.environ["FLUJO_STRICT_DSL"] = "0"
+        try:
+            ns: JSONObject = runpy.run_path(pipeline_file)
+        finally:
+            if lenient_dsl:
+                if prev_strict is None:
+                    os.environ.pop("FLUJO_STRICT_DSL", None)
+                else:
+                    os.environ["FLUJO_STRICT_DSL"] = prev_strict
     except ModuleNotFoundError as e:
         mod = getattr(e, "name", None) or str(e)
         try:
@@ -66,7 +80,18 @@ def load_pipeline_from_file(
             import os as _os
             import traceback as _tb
 
-            secho(f"Failed to load pipeline file: {type(e).__name__}: {e}", fg="red", err=True)
+            msg = f"Failed to load pipeline file: {type(e).__name__}: {e}"
+            try:
+                if isinstance(e, ValueError):
+                    txt = str(e)
+                    if (
+                        "Type mismatch between steps" in txt
+                        or "accepts a generic input type" in txt
+                    ):
+                        msg = f"Pipeline validation failed before run: {txt}"
+            except Exception:
+                pass
+            secho(msg, fg="red", err=True)
             if _os.getenv("FLUJO_CLI_VERBOSE") == "1" or _os.getenv("FLUJO_CLI_TRACE") == "1":
                 secho("\nTraceback:", fg="yellow", err=True)
                 secho("".join(_tb.format_exception(e)), err=True)

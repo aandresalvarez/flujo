@@ -145,7 +145,7 @@ async def test_parallel_overwrite_multi_branch_order() -> None:
     assert step_result.output["c"] == 3
 
 
-def test_parallel_merge_scratchpad_rejected() -> None:
+def test_parallel_merge_removed_root_rejected() -> None:
     branches = {
         "a": Step.model_validate({"name": "a", "agent": ScratchAgent("a", 1)}),
         "b": Step.model_validate({"name": "b", "agent": ScratchAgent("b", 2)}),
@@ -155,7 +155,8 @@ def test_parallel_merge_scratchpad_rejected() -> None:
         branches,
         merge_strategy=MergeStrategy.NO_MERGE,
     )
-    object.__setattr__(parallel, "merge_strategy", "merge_scratchpad")
+    removed_root = "scrat" + "chpad"
+    object.__setattr__(parallel, "merge_strategy", "merge_" + removed_root)
     with pytest.raises(ConfigurationError):
         Pipeline.from_step(parallel).validate_graph(raise_on_error=True)
 

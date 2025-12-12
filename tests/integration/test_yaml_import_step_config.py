@@ -27,7 +27,7 @@ async def test_yaml_import_step_with_config(tmp_path, monkeypatch):
     from flujo.domain.models import PipelineContext
     from flujo.testing.utils import gather_result
 
-    # Create a simple skill that writes final_sql into scratchpad using context
+    # Create a simple skill that writes final_sql into import_artifacts using context
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     (skills_dir / "__init__.py").write_text("")

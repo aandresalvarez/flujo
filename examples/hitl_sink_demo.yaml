@@ -19,7 +19,7 @@ steps:
   - kind: hitl
     name: get_user_name
     message: "👋 Welcome! What's your name?"
-    sink_to: "scratchpad.user_name"
+    sink_to: "import_artifacts.user_name"
   
   # Step 2: Get user preferences (structured input with sink_to)
   - kind: hitl
@@ -34,15 +34,15 @@ steps:
         notifications:
           type: boolean
       required: ["theme"]
-    sink_to: "scratchpad.user_preferences"
+    sink_to: "import_artifacts.user_preferences"
   
   # Step 3: Generate personalized greeting using stored context
   - kind: step
     name: create_greeting
     uses: agents.greeter
     input: |
-      User name: {{ context.scratchpad.user_name }}
-      Theme preference: {{ context.scratchpad.user_preferences.theme }}
+      User name: {{ context.import_artifacts.user_name }}
+      Theme preference: {{ context.import_artifacts.user_preferences.theme }}
       Create a personalized greeting message.
   
   # Step 4: Show the result
@@ -53,5 +53,5 @@ steps:
       ✅ Greeting created: {{ previous_step }}
       
       📋 Stored context:
-      - Name: {{ context.scratchpad.user_name }}
-      - Preferences: {{ context.scratchpad.user_preferences | tojson }}
+      - Name: {{ context.import_artifacts.user_name }}
+      - Preferences: {{ context.import_artifacts.user_preferences | tojson }}

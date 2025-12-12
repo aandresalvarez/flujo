@@ -1,3 +1,4 @@
+import os
 from typing import Optional
 import pytest
 
@@ -49,7 +50,15 @@ async def need_str(x: str) -> str:
 
 
 def test_type_mismatch_errors() -> None:
-    pipeline = make_int >> need_str
+    prev_strict = os.environ.get("FLUJO_STRICT_DSL")
+    os.environ["FLUJO_STRICT_DSL"] = "0"
+    try:
+        pipeline = Pipeline.model_construct(steps=[make_int, need_str])
+    finally:
+        if prev_strict is None:
+            os.environ.pop("FLUJO_STRICT_DSL", None)
+        else:
+            os.environ["FLUJO_STRICT_DSL"] = prev_strict
     report = pipeline.validate_graph()
     assert not report.is_valid
     assert any(f.rule_id == "V-A2" for f in report.errors)

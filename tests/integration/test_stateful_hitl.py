@@ -15,13 +15,13 @@ pytestmark = [pytest.mark.slow, pytest.mark.serial]
 
 async def setup_agent(data: str, *, context: PipelineContext | None = None) -> str:
     if context:
-        context.scratchpad["pre"] = data
+        context.import_artifacts["pre"] = data
     return "setup"
 
 
 async def verify_agent(data: str, *, context: PipelineContext | None = None) -> str:
     assert context is not None
-    return f"{context.scratchpad.get('pre')}:{data}"
+    return f"{context.import_artifacts.get('pre')}:{data}"
 
 
 class ComplexInput(BaseModel):
@@ -60,7 +60,7 @@ async def test_stateful_hitl_resume(tmp_path: Path) -> None:
     ctx = paused.final_pipeline_context
     assert ctx.status == "paused"
     assert len(paused.step_history) == 1
-    assert ctx.scratchpad["pre"] == "hello"
+    assert ctx.import_artifacts.get("pre") == "hello"
 
     saved = await backend.load_state(run_id)
     assert saved is not None

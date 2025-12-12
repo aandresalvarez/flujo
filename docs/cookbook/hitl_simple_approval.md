@@ -12,7 +12,7 @@ runner = Flujo(pipeline)
 result = None
 async for item in runner.run_async("start"):
     result = item
-# show result.final_pipeline_context.scratchpad["pause_message"] to the user
+# show result.final_pipeline_context.pause_message to the user
 # then resume
 result = await runner.resume_async(result, "yes")
 ```

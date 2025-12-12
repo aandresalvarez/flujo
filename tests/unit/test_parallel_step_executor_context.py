@@ -13,7 +13,6 @@ from flujo.application.core.context_manager import ContextManager
 
 
 class _Ctx(BaseModel):
-    scratchpad: dict[str, object] = Field(default_factory=dict)
     executed_branches: list[str] = Field(default_factory=list)
     tag: str | None = None
 
@@ -98,7 +97,7 @@ async def test_parallel_executor_merges_successful_branch_contexts(
     """Test that parallel executor handles context merging for successful branches.
 
     Note: When context_include_keys is None (default), the executor manually merges
-    specific attributes (scratchpad, branch_results, context_updates) instead of
+    specific typed attributes (step_outputs, import_artifacts, branch_results, context_updates) instead of
     calling ContextManager.merge. This test verifies the result has proper branch_context.
     """
     base_context = _Ctx()

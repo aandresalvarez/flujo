@@ -66,7 +66,7 @@ def _yaml_multi_state_with_when() -> str:
         "      - from: s1\n"
         "        on: success\n"
         "        to: s2\n"
-        "        when: \"context.scratchpad.get('go_s2')\"\n"
+        "        when: \"context.import_artifacts.get('go_s2')\"\n"
         "      - from: s1\n"
         "        on: success\n"
         "        to: s3\n"
@@ -80,7 +80,7 @@ async def test_yaml_multi_state_flow_with_when_true() -> None:
     runner = create_test_flujo(pipeline)
     final = None
     async for item in runner.stream_async(
-        "start", initial_context_data={"scratchpad": {"go_s2": True}}
+        "start", initial_context_data={"import_artifacts": {"go_s2": True}}
     ):
         final = item
     assert final is not None

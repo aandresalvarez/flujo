@@ -31,9 +31,9 @@ def test_step_io_keys_validation_errors_when_missing() -> None:
 
 
 def test_step_io_keys_warns_when_only_root_available() -> None:
-    s1 = Step(name="first", agent=_agent, output_keys=["scratchpad"])
+    s1 = Step(name="first", agent=_agent, output_keys=["import_artifacts"])
     s1.__step_output_type__ = dict[str, object]
-    s2 = Step(name="second", agent=_agent, input_keys=["scratchpad.summary"])
+    s2 = Step(name="second", agent=_agent, input_keys=["import_artifacts.summary"])
     s2.__step_input_type__ = dict[str, object]
 
     pipeline = Pipeline.model_construct(steps=[s1, s2], hooks=[], on_finish=[])

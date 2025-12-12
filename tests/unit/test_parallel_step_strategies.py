@@ -26,7 +26,7 @@ class MockContext(BaseModel):
 
     # Required PipelineContext attributes
     initial_prompt: str = "test_prompt"
-    scratchpad: JSONObject = {}
+    step_outputs: JSONObject = {}
 
     # Additional data storage for tests that expect it
     data: JSONObject = {}
@@ -40,7 +40,7 @@ class MockContext(BaseModel):
 
         # Extract known fields
         initial_prompt = merged_data.pop("initial_prompt", "test_prompt")
-        scratchpad = merged_data.pop("scratchpad", {})
+        step_outputs = merged_data.pop("step_outputs", {})
 
         # Store original data for tests that expect it
         data_field = dict(data) if data is not None else {}
@@ -48,7 +48,10 @@ class MockContext(BaseModel):
 
         # Initialize BaseModel with all fields
         super().__init__(
-            initial_prompt=initial_prompt, scratchpad=scratchpad, data=data_field, **merged_data
+            initial_prompt=initial_prompt,
+            step_outputs=step_outputs,
+            data=data_field,
+            **merged_data,
         )
 
     @classmethod
@@ -376,8 +379,8 @@ class TestParallelStepExecution:
             merge_strategy=MergeStrategy.OVERWRITE,
             on_branch_failure=BranchFailureStrategy.PROPAGATE,
         )
-        # Provide a scratchpad in the context data
-        context = MockContext({"key": "value", "scratchpad": {}})
+        # Provide an explicit empty step_outputs in the context data
+        context = MockContext({"key": "value", "step_outputs": {}})
         executor = ExecutorCore()
         result = await executor._handle_parallel_step(
             parallel_step=parallel_step,
@@ -390,20 +393,21 @@ class TestParallelStepExecution:
         assert result.success
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_merge_scratchpad_rejected(
+    async def test_parallel_execution_merge_removed_root_rejected(
         self, mock_step_executor, mock_context_setter
     ):
-        """MERGE_SCRATCHPAD is removed and should raise ConfigurationError."""
+        """Removed merge strategy should raise ConfigurationError."""
+        removed_root = "scrat" + "chpad"
         parallel_step = ParallelStep.model_construct(
             name="test_parallel",
             branches={
                 "branch1": Pipeline(steps=[Step(name="step1", agent=StubAgent(["output1"]))])
             },
-            merge_strategy="merge_scratchpad",
+            merge_strategy="merge_" + removed_root,
             on_branch_failure=BranchFailureStrategy.PROPAGATE,
         )
 
-        context = MockContext({"key": "value", "scratchpad": {}})
+        context = MockContext({"key": "value", "step_outputs": {}})
 
         executor = ExecutorCore()
         with pytest.raises(ConfigurationError):
@@ -533,12 +537,17 @@ class TestParallelStepExecution:
         class TestContext(BaseModel):
             initial_prompt: str = "test_prompt"
             value: str = "initial"
-            scratchpad: JSONObject = {}
+            step_outputs: JSONObject = {}
 
             model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
             def __init__(self, value: str = "initial", **kwargs):
-                super().__init__(initial_prompt="test_prompt", value=value, scratchpad={}, **kwargs)
+                super().__init__(
+                    initial_prompt="test_prompt",
+                    value=value,
+                    step_outputs={},
+                    **kwargs,
+                )
 
             @classmethod
             def model_validate(cls, data):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-# Architect integration tests use StateMachine pipelines with shared scratchpad state
+# Architect integration tests use StateMachine pipelines with shared state-machine metadata
 # that can race under xdist parallel execution.
 pytestmark = [pytest.mark.serial]
 

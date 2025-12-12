@@ -12,7 +12,8 @@ To create your own context model, **inherit from `flujo.models.PipelineContext`*
 This base class provides important built-in fields managed by the engine:
 
 - `initial_prompt: str` – automatically populated with the first input of each `run()` call.
-- `scratchpad: Dict[str, Any]` – a general-purpose dictionary for transient state.
+- `import_artifacts: ImportArtifacts` – a structured, dict-like store for transient state and import hand-offs.
+- `step_outputs: Dict[str, Any]` – prior step outputs keyed by step name.
 - `hitl_history: List[HumanInteraction]` – records all human-in-the-loop interactions.
 - `command_log: List[ExecutedCommandLog]` – tracks commands issued by an agentic loop pipeline.
 
@@ -49,22 +50,22 @@ Sets a value at a specific context path (supports nested paths with dot notation
 ```yaml
 - kind: step
   name: set_user_name
-  agent:
-    id: "flujo.builtins.context_set"
-  input:
-    path: "scratchpad.user_name"
-    value: "Alice"
-  updates_context: true
+	  agent:
+	    id: "flujo.builtins.context_set"
+	  input:
+	    path: "import_artifacts.user_name"
+	    value: "Alice"
+	  updates_context: true
 ```
 
 **Usage in Python**:
 ```python
 from flujo.builtins import context_set
 
-@step
-async def initialize(data: str, *, context: PipelineContext):
-    await context_set(path="scratchpad.counter", value=0, context=context)
-    return data
+	@step
+	async def initialize(data: str, *, context: PipelineContext):
+	    await context_set(path="import_artifacts.counter", value=0, context=context)
+	    return data
 ```
 
 ### `flujo.builtins.context_merge`
@@ -75,25 +76,25 @@ Merges a dictionary into the context at a specific path.
 ```yaml
 - kind: step
   name: merge_settings
-  agent:
-    id: "flujo.builtins.context_merge"
-  input:
-    path: "scratchpad.settings"
-    value:
-      theme: "dark"
-      notifications: true
-  updates_context: true
+	  agent:
+	    id: "flujo.builtins.context_merge"
+	  input:
+	    path: "import_artifacts.settings"
+	    value:
+	      theme: "dark"
+	      notifications: true
+	  updates_context: true
 ```
 
 **Usage in Python**:
 ```python
 from flujo.builtins import context_merge
 
-@step
-async def add_settings(data: str, *, context: PipelineContext):
-    settings = {"theme": "dark", "notifications": True}
-    await context_merge(path="scratchpad.settings", value=settings, context=context)
-    return data
+	@step
+	async def add_settings(data: str, *, context: PipelineContext):
+	    settings = {"theme": "dark", "notifications": True}
+	    await context_merge(path="import_artifacts.settings", value=settings, context=context)
+	    return data
 ```
 
 ### `flujo.builtins.context_get`
@@ -104,21 +105,21 @@ Gets a value from the context with an optional default fallback.
 ```yaml
 - kind: step
   name: get_counter
-  agent:
-    id: "flujo.builtins.context_get"
-  input:
-    path: "scratchpad.counter"
-    default: 0
+	  agent:
+	    id: "flujo.builtins.context_get"
+	  input:
+	    path: "import_artifacts.counter"
+	    default: 0
 ```
 
 **Usage in Python**:
 ```python
 from flujo.builtins import context_get
 
-@step
-async def read_counter(data: str, *, context: PipelineContext):
-    counter = await context_get(path="scratchpad.counter", default=0, context=context)
-    return f"Counter is at {counter}"
+	@step
+	async def read_counter(data: str, *, context: PipelineContext):
+	    counter = await context_get(path="import_artifacts.counter", default=0, context=context)
+	    return f"Counter is at {counter}"
 ```
 
 ### Nested Path Support
@@ -129,21 +130,21 @@ All helpers support dot-separated paths for nested fields:
 # Set a deeply nested value
 - kind: step
   name: set_nested
-  agent:
-    id: "flujo.builtins.context_set"
-  input:
-    path: "scratchpad.user.preferences.theme"
-    value: "dark"
-  updates_context: true
+	  agent:
+	    id: "flujo.builtins.context_set"
+	  input:
+	    path: "import_artifacts.user.preferences.theme"
+	    value: "dark"
+	  updates_context: true
 
 # Get a nested value with fallback
 - kind: step
   name: get_nested
-  agent:
-    id: "flujo.builtins.context_get"
-  input:
-    path: "scratchpad.user.preferences.theme"
-    default: "light"
+	  agent:
+	    id: "flujo.builtins.context_get"
+	  input:
+	    path: "import_artifacts.user.preferences.theme"
+	    default: "light"
 ```
 
 ### When to Use

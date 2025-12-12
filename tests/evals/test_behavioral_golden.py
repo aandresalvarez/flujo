@@ -87,25 +87,25 @@ async def test_ensure_object_handles_non_json() -> None:
 
 def test_context_isolation_and_merge_lenient():
     class Ctx(BaseModel):
-        scratchpad: dict[str, Any] = Field(default_factory=dict)
+        extras: dict[str, Any] = Field(default_factory=dict)
         value: int = 0
         import_artifacts: ImportArtifacts = Field(default_factory=ImportArtifacts)
 
-    original = Ctx(scratchpad={"a": 1}, value=1)
+    original = Ctx(extras={"a": 1}, value=1)
     isolated = ContextManager.isolate(original, purpose="test")
     assert isolated is not original
-    assert isolated.scratchpad == {"a": 1}
+    assert isolated.extras == {"a": 1}
 
-    isolated.scratchpad["a"] = 99
+    isolated.extras["a"] = 99
     isolated.value = 2
 
     # Original remains unchanged
-    assert original.scratchpad == {"a": 1}
+    assert original.extras == {"a": 1}
     assert original.value == 1
 
     merged = ContextManager.merge(original, isolated)
     assert merged is original
-    assert original.scratchpad == {"a": 99}
+    assert original.extras == {"a": 99}
     assert original.value == 2
 
 

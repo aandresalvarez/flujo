@@ -12,7 +12,7 @@ steps:
             updates_context: true
             config:
               outputs:
-                - { child: "scratchpad.value", parent: "scratchpad.k_a" }
+                - { child: "import_artifacts.value", parent: "import_artifacts.k_a" }
       B:
         steps:
           - name: B1
@@ -20,5 +20,4 @@ steps:
             updates_context: true
             config:
               outputs:
-                - { child: "scratchpad.value", parent: "scratchpad.k_b" }
-
+                - { child: "import_artifacts.value", parent: "import_artifacts.k_b" }

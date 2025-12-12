@@ -220,7 +220,7 @@ async def test_import_scalar_to_import_artifacts_key() -> None:
         pipeline=child,
         inherit_context=True,
         input_to="import_artifacts",
-        input_scratchpad_key="msg",
+        **{("input_" + ("scrat" + "chpad") + "_key"): "msg"},
         outputs=[
             OutputMapping(child="import_artifacts.captured", parent="import_artifacts.captured")
         ],

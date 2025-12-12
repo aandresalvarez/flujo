@@ -12,7 +12,6 @@ from flujo.domain.models import PipelineContext
 
 class RAGContext(PipelineContext):
     run_id: str | None = None
-    scratchpad: dict[str, Any] = Field(default_factory=dict)
     summary: str | None = None
     query: str | None = None
     retrieved: list[Any] = Field(default_factory=list)
@@ -50,8 +49,8 @@ async def answer(data: dict[str, Any], context: RAGContext) -> dict[str, Any]:
 
 pipeline = Pipeline(
     steps=[
-        Step(name="summarize", agent=summarize, output_keys=["scratchpad.summary"]),
-        Step(name="recall", agent=recall, input_keys=["scratchpad.summary"]),
+        Step(name="summarize", agent=summarize, output_keys=["summary"]),
+        Step(name="recall", agent=recall, input_keys=["summary"]),
         Step(name="answer", agent=answer, input_keys=["question", "retrieved"]),
     ]
 )

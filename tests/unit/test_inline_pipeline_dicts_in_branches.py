@@ -29,13 +29,13 @@ def _write_child_project(base: Path, name: str, tool_src: str, pipeline_yaml: st
 
 
 def test_statemachine_state_allows_inline_steps_mapping(tmp_path: Path) -> None:
-    # Child emits scratchpad.k = v
+    # Child emits import_artifacts.k = v
     tools = (
         "from __future__ import annotations\n"
         "from typing import Any, Optional\n"
         "from flujo.domain.models import PipelineContext\n\n"
         "async def emit(_data: Any, *, context: Optional[PipelineContext] = None) -> dict:\n"
-        '    return {"scratchpad": {"k": "v"}}\n'
+        '    return {"import_artifacts": {"k": "v"}}\n'
     )
     child_yaml = (
         'version: "0.1"\n'
@@ -64,7 +64,7 @@ def test_statemachine_state_allows_inline_steps_mapping(tmp_path: Path) -> None:
         "            config:\n"
         "              inherit_context: true\n"
         "              outputs:\n"
-        '                - { child: "scratchpad.k", parent: "scratchpad.k" }\n'
+        '                - { child: "import_artifacts.k", parent: "import_artifacts.k" }\n'
         "      done:\n"
         "        steps:\n"
         "          - kind: step\n"

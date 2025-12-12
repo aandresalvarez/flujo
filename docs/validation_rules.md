@@ -58,7 +58,7 @@ Suppression:
 
 ## <a id="v-i2"></a>V‑I2 — Import outputs mapping sanity
   - Why: parent mapping uses an unknown root (e.g., `badroot.value`).
-  - Fix: map under `scratchpad.<key>` or a known context field.
+  - Fix: map under `import_artifacts.<key>` or a known typed context field.
 
 ## <a id="v-i3"></a>V‑I3 — Cyclic imports
   - Why: import graphs must be acyclic. Loader typically raises at compile time; validation guards recursion.
@@ -88,10 +88,10 @@ Suppression:
 ## <a id="v-ctx1"></a>V‑CTX1 — Missing required context keys
 - Why: A step declared `input_keys` that are not produced earlier in the pipeline (including branches/imports).
 - How availability is computed: context keys produced via `output_keys`/`sink_to` are unioned across conditional branches, parallel branches, and imported pipelines; dotted paths are tracked.
-- Fix: ensure an upstream step produces the required keys (e.g., set `output_keys=["scratchpad.field"]`) or adjust the consumer’s `input_keys`.
+- Fix: ensure an upstream step produces the required keys (e.g., set `output_keys=["import_artifacts.field"]`) or adjust the consumer’s `input_keys`.
 
 ## <a id="v-ctx2"></a>V‑CTX2 — Weak context path (root available only)
-- Why: A step requires a dotted path (e.g., `scratchpad.field`) but only the root (`scratchpad`) is known to exist so structure is uncertain.
+- Why: A step requires a dotted path (e.g., `import_artifacts.field`) but only the root (`import_artifacts`) is known to exist so structure is uncertain.
 - Fix: have the producing step declare the precise `output_keys` path or relax the consumer’s requirement if any shape is acceptable.
 
 ## <a id="v-sm1"></a>V‑SM1 — StateMachine transitions validity
@@ -138,9 +138,9 @@ For a full list and examples, see the CLI docs and inline suggestions printed by
 - Why: Explicit branch outputs map to the same parent keys without a merge strategy.
 - Fix: Add `field_mapping` or change strategy to avoid conflicts.
 
-## <a id="v-c2"></a>V‑C2 — Scratchpad shape conflicts
-  - Why: Mapping directly to the `scratchpad` root may assign a non‑object and corrupt the expected dict shape.
-  - Fix: Map to `scratchpad.<key>` or ensure the value is an object (dict-like).
+## <a id="v-c2"></a>V‑C2 — Legacy scratchpad root conflicts
+  - Why: Mapping directly to the removed `scratchpad` root may assign a non‑object and corrupt expected shape.
+  - Fix: Map to `import_artifacts.<key>` or ensure the value is an object (dict-like).
 
 ## (TODO) V‑C3 — Large literals in templates
   - Why: Very large embedded constants harm performance and logs.
@@ -163,8 +163,8 @@ For a full list and examples, see the CLI docs and inline suggestions printed by
   - Fix: Use `--imports` to aggregate; address errors in the child and re‑run. Summary V‑I4 indicates counts; individual findings retain their original rule IDs.
 
 ## <a id="v-i5"></a>V‑I5 — Input projection coherence
-  - Why: Parent→child input projection (initial_prompt vs scratchpad) may not match the child's expected input shape.
-  - Fix: If the child expects objects, use `input_to=scratchpad` or `both` with `input_scratchpad_key`; if it expects strings, include `initial_prompt`.
+  - Why: Parent→child input projection (initial_prompt vs import_artifacts) may not match the child's expected input shape.
+  - Fix: If the child expects objects, use `input_to=import_artifacts` or `both` with `input_scratchpad_key`; if it expects strings, include `initial_prompt`.
 
 ## (TODO) V‑I6 — Inherit context consistency
 - Why: Inconsistent `inherit_context` settings across import boundaries lead to surprises.

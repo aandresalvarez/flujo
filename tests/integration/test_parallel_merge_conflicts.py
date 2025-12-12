@@ -1,7 +1,7 @@
 from typing import Any
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.executor_helpers import make_execution_frame
@@ -10,13 +10,11 @@ from flujo.domain.dsl import Step, Pipeline
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.step import BranchFailureStrategy, MergeStrategy
 from flujo.domain.models import StepResult
-from flujo.type_definitions.common import JSONObject
 from tests.test_types.fixtures import create_test_step_result
 
 
 class Ctx(BaseModel):
     value: str = "base"
-    scratchpad: JSONObject = Field(default_factory=dict)
 
 
 @pytest.mark.asyncio

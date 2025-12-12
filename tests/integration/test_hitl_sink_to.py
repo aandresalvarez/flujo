@@ -19,7 +19,7 @@ class _Ctx(PipelineContext):
 @pytest.mark.asyncio
 @pytest.mark.slow
 @pytest.mark.serial
-async def test_hitl_sink_to_scratchpad():
+async def test_hitl_sink_to_typed_field():
     """Test that sink_to stores response to a typed context field."""
     hitl = HumanInTheLoopStep(
         name="get_user_name", message_for_user="What is your name?", sink_to="user_name"
