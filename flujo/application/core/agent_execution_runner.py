@@ -600,12 +600,6 @@ class AgentExecutionRunner:
                             or getattr(attempt_context, "_loop_iteration_active", False)
                             or getattr(core, "_inside_loop_iteration", False)
                             or getattr(step, "_force_loop_fallback", False)
-                            or (
-                                isinstance(getattr(attempt_context, "scratchpad", None), dict)
-                                and getattr(attempt_context, "scratchpad", {}).get(
-                                    "_loop_iteration_active", False
-                                )
-                            )
                         )
                     except Exception:
                         is_loop_context = False
@@ -852,34 +846,13 @@ class AgentExecutionRunner:
                 # Record step output for templating
                 try:
                     if attempt_context is not None:
-                        sp = getattr(attempt_context, "scratchpad", None)
-                        if sp is None:
-                            setattr(attempt_context, "scratchpad", {"steps": {}})
-                            sp = getattr(attempt_context, "scratchpad", None)
-                        if isinstance(sp, dict):
-                            steps_map_raw = sp.get("steps")
-                            scratch_steps: dict[str, Any] = (
-                                steps_map_raw if isinstance(steps_map_raw, dict) else {}
-                            )
-                            if not isinstance(steps_map_raw, dict):
-                                sp["steps"] = scratch_steps
-                            scratch_steps[getattr(step, "name", "")] = result.output
+                        outputs = getattr(attempt_context, "step_outputs", None)
+                        if isinstance(outputs, dict):
+                            outputs[getattr(step, "name", "")] = result.output
                         if context is not None and context is not attempt_context:
-                            try:
-                                sp_main = getattr(context, "scratchpad", None)
-                                if sp_main is None:
-                                    setattr(context, "scratchpad", {"steps": {}})
-                                    sp_main = getattr(context, "scratchpad", None)
-                                if isinstance(sp_main, dict):
-                                    steps_main_raw = sp_main.get("steps")
-                                    scratch_steps_main: dict[str, Any] = (
-                                        steps_main_raw if isinstance(steps_main_raw, dict) else {}
-                                    )
-                                    if not isinstance(steps_main_raw, dict):
-                                        sp_main["steps"] = scratch_steps_main
-                                    scratch_steps_main[getattr(step, "name", "")] = result.output
-                            except Exception:
-                                pass
+                            outputs_main = getattr(context, "step_outputs", None)
+                            if isinstance(outputs_main, dict):
+                                outputs_main[getattr(step, "name", "")] = result.output
                 except Exception:
                     pass
                 try:

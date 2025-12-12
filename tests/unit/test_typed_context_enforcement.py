@@ -15,7 +15,6 @@ class _DummyCore:
 
 
 def test_typed_context_allows_basemodel_when_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FLUJO_ENFORCE_TYPED_CONTEXT", "1")
     core = _DummyCore()
     ctx = PipelineContext()
 
@@ -37,7 +36,6 @@ def test_typed_context_allows_basemodel_when_enforced(monkeypatch: pytest.Monkey
 
 
 def test_typed_context_rejects_dict_when_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FLUJO_ENFORCE_TYPED_CONTEXT", "1")
     core = _DummyCore()
     with pytest.raises(TypeError):
         make_execution_frame(
@@ -57,20 +55,21 @@ def test_typed_context_rejects_dict_when_enforced(monkeypatch: pytest.MonkeyPatc
 
 
 def test_typed_context_allows_dict_when_not_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Strict-only posture: dict contexts are always rejected (no opt-out).
     monkeypatch.delenv("FLUJO_ENFORCE_TYPED_CONTEXT", raising=False)
     core = _DummyCore()
-    frame = make_execution_frame(
-        core,
-        step="s",
-        data=None,
-        context={"k": "v"},
-        resources=None,
-        limits=None,
-        context_setter=None,
-        stream=False,
-        on_chunk=None,
-        fallback_depth=0,
-        quota=None,
-        result=None,
-    )
-    assert frame.context == {"k": "v"}
+    with pytest.raises(TypeError):
+        make_execution_frame(
+            core,
+            step="s",
+            data=None,
+            context={"k": "v"},
+            resources=None,
+            limits=None,
+            context_setter=None,
+            stream=False,
+            on_chunk=None,
+            fallback_depth=0,
+            quota=None,
+            result=None,
+        )

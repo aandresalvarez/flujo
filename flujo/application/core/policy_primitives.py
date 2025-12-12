@@ -38,67 +38,57 @@ class LoopResumeState:
 
     @classmethod
     def from_context(cls, context: Any) -> Optional["LoopResumeState"]:
-        scratch = getattr(context, "scratchpad", None)
-        if not isinstance(scratch, dict):
+        if context is None:
             return None
-        raw = scratch.get(cls.STORAGE_KEY)
-        if isinstance(raw, dict):
-            try:
-                return cls(
-                    iteration=int(raw.get("iteration", 1)),
-                    step_index=int(raw.get("step_index", 0)),
-                    requires_hitl_payload=bool(raw.get("requires_hitl_payload", False)),
-                    last_output=raw.get("last_output"),
-                    paused_step_name=raw.get("paused_step_name"),
-                )
-            except Exception:
-                pass
-
-        maybe_iteration = scratch.get("loop_iteration")
-        maybe_index = scratch.get("loop_step_index")
+        maybe_iteration = getattr(context, "loop_iteration_index", None)
+        maybe_index = getattr(context, "loop_step_index", None)
         if isinstance(maybe_iteration, int) and isinstance(maybe_index, int):
             return cls(
-                iteration=maybe_iteration,
-                step_index=maybe_index,
-                requires_hitl_payload=bool(scratch.get("loop_resume_requires_hitl_output")),
-                last_output=scratch.get("loop_last_output"),
-                paused_step_name=scratch.get("loop_paused_step_name"),
+                iteration=max(1, maybe_iteration),
+                step_index=max(0, maybe_index),
+                requires_hitl_payload=bool(
+                    getattr(context, "loop_resume_requires_hitl_output", False)
+                ),
+                last_output=getattr(context, "loop_last_output", None),
+                paused_step_name=getattr(context, "loop_paused_step_name", None),
             )
         return None
 
     def persist(self, context: Any, body_length: int) -> None:
-        scratch = getattr(context, "scratchpad", None)
-        if not isinstance(scratch, dict):
-            return
         bounded_index = max(0, min(self.step_index, body_length))
-        payload = {
-            "iteration": max(1, self.iteration),
-            "step_index": bounded_index,
-            "requires_hitl_payload": bool(self.requires_hitl_payload),
-            "last_output": self.last_output,
-            "paused_step_name": self.paused_step_name,
-        }
-        scratch[self.STORAGE_KEY] = payload
-        scratch["loop_iteration"] = payload["iteration"]
-        scratch["loop_step_index"] = bounded_index
-        scratch["loop_last_output"] = self.last_output
-        if self.paused_step_name:
-            scratch["loop_paused_step_name"] = self.paused_step_name
-        if self.requires_hitl_payload:
-            scratch["loop_resume_requires_hitl_output"] = True
-        else:
-            scratch.pop("loop_resume_requires_hitl_output", None)
+        if context is None:
+            return
+        try:
+            if hasattr(context, "loop_iteration_index"):
+                context.loop_iteration_index = max(1, self.iteration)
+            if hasattr(context, "loop_step_index"):
+                context.loop_step_index = bounded_index
+            if hasattr(context, "loop_last_output"):
+                context.loop_last_output = self.last_output
+            if hasattr(context, "loop_paused_step_name"):
+                context.loop_paused_step_name = self.paused_step_name
+            if hasattr(context, "loop_resume_requires_hitl_output"):
+                context.loop_resume_requires_hitl_output = bool(self.requires_hitl_payload)
+        except Exception:
+            pass
 
     @classmethod
     def clear(cls, context: Any) -> None:
-        scratch = getattr(context, "scratchpad", None)
-        if isinstance(scratch, dict):
-            scratch.pop(cls.STORAGE_KEY, None)
-            scratch.pop("loop_iteration", None)
-            scratch.pop("loop_step_index", None)
-            scratch.pop("loop_last_output", None)
-            scratch.pop("loop_paused_step_name", None)
-            scratch.pop("loop_resume_requires_hitl_output", None)
+        if context is None:
+            return
+        try:
+            if hasattr(context, "loop_iteration_index"):
+                context.loop_iteration_index = None
+            if hasattr(context, "loop_step_index"):
+                context.loop_step_index = None
+            if hasattr(context, "loop_last_output"):
+                context.loop_last_output = None
+            if hasattr(context, "loop_paused_step_name"):
+                context.loop_paused_step_name = None
+            if hasattr(context, "loop_resume_requires_hitl_output"):
+                context.loop_resume_requires_hitl_output = False
+        except Exception:
+            pass
 
 
 # Shared utilities -----------------------------------------------------------

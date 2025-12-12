@@ -16,11 +16,11 @@ def _echo_agent(payload: Any, *, context: Optional[Any] = None) -> Any:
 
 
 def _echo_to_scratchpad(payload: Any, *, context: Optional[Any] = None) -> JSONObject:
-    # Map the incoming payload into context.scratchpad.echo via updates_context
-    return {"scratchpad": {"echo": payload}}
+    # Map the incoming payload into import_artifacts.echo via updates_context
+    return {"import_artifacts": {"echo": payload}}
 
 
-def test_import_explicit_input_precedence_uses_scratchpad_key() -> None:
+def test_import_explicit_input_precedence_uses_import_artifacts_key() -> None:
     # Child: single step that echoes its input
     child = Pipeline(
         steps=[
@@ -41,12 +41,12 @@ def test_import_explicit_input_precedence_uses_scratchpad_key() -> None:
     )
     parent = Pipeline(steps=[status_step, imp])
 
-    # Seed explicit artifact in scratchpad.initial_input; this must take precedence
+    # Seed explicit artifact in import_artifacts.initial_input; this must take precedence
     explicit_payload = {"cohort_definition": "Influenza A, ICD-10 J10"}
     runner = Flujo(
         pipeline=parent,
         context_model=PipelineContext,
-        initial_context_data={"scratchpad": {"initial_input": explicit_payload}},
+        initial_context_data={"import_artifacts": {"initial_input": explicit_payload}},
         enable_tracing=False,
     )
     result = runner.run(initial_input="ignored")
@@ -61,11 +61,14 @@ def test_import_explicit_input_precedence_uses_scratchpad_key() -> None:
     # Metadata exposes trace of where initial input was resolved from
     md = result.step_history[-1].metadata_
     assert isinstance(md, dict)
-    assert md.get("import.initial_input_resolved", {}).get("origin") == "scratchpad:initial_input"
+    assert (
+        md.get("import.initial_input_resolved", {}).get("origin")
+        == "import_artifacts:initial_input"
+    )
 
 
 def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
-    # Child: map input into scratchpad.echo (so parent outputs mapping can pull it)
+    # Child: map input into import_artifacts.echo (so parent outputs mapping can pull it)
     child = Pipeline(
         steps=[
             Step(name="echo_to_ctx", agent=_echo_to_scratchpad, updates_context=True),
@@ -78,8 +81,8 @@ def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
         pipeline=child,
         inherit_context=True,
         inherit_conversation=True,
-        input_to="both",  # seed initial_prompt and scratchpad
-        outputs=[OutputMapping(child="scratchpad.echo", parent="child_echo")],
+        input_to="both",  # seed initial_prompt and import_artifacts
+        outputs=[OutputMapping(child="import_artifacts.echo", parent="child_echo")],
         updates_context=True,
     )
 
@@ -87,7 +90,7 @@ def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
 
     def _set_second(_: Any, *, context: Optional[Any] = None) -> JSONObject:
         # Overwrite the explicit artifact key between imports
-        return {"scratchpad": {"initial_input": second_value}}
+        return {"import_artifacts": {"initial_input": second_value}}
 
     set_second = Step(name="set_second_input", agent=_set_second, updates_context=True)
 
@@ -97,7 +100,7 @@ def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
         inherit_context=True,
         inherit_conversation=True,
         input_to="both",
-        outputs=[OutputMapping(child="scratchpad.echo", parent="child_echo")],
+        outputs=[OutputMapping(child="import_artifacts.echo", parent="child_echo")],
         updates_context=True,
     )
 
@@ -107,7 +110,7 @@ def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
         pipeline=parent,
         context_model=PipelineContext,
         initial_context_data={
-            "scratchpad": {"initial_input": {"cohort_definition": "Influenza, unspecified"}}
+            "import_artifacts": {"initial_input": {"cohort_definition": "Influenza, unspecified"}}
         },
         enable_tracing=False,
     )
@@ -116,7 +119,7 @@ def test_import_outputs_mapping_repeated_imports_with_both_projection() -> None:
     # Verify that outputs mapping captured the echo from the second import
     final_ctx = result.final_pipeline_context
     assert final_ctx is not None
-    # With input_to="both", the child sees stringified JSON in its echo scratchpad
+    # With input_to="both", the child sees stringified JSON in its echo artifacts
     assert final_ctx.import_artifacts["child_echo"] == (
         "{" + '"cohort_definition": "Influenza B, SNOMED 6142004"' + "}"
     )

@@ -37,18 +37,11 @@ from flujo.infra import telemetry
 __all__ = ["GranularAgentStepExecutor", "DefaultGranularAgentStepExecutor"]
 
 
-# Storage key for granular state in scratchpad
-GRANULAR_STATE_KEY = "granular_state"
-
-
 def _get_granular_state(context: Any) -> Optional[GranularState]:
-    """Extract granular_state from context scratchpad."""
+    """Extract granular_state from context.granular_state."""
     if context is None:
         return None
-    scratch = getattr(context, "scratchpad", None)
-    if not isinstance(scratch, dict):
-        return None
-    raw = scratch.get(GRANULAR_STATE_KEY)
+    raw = getattr(context, "granular_state", None)
     if isinstance(raw, dict):
         return GranularState(
             turn_index=int(raw.get("turn_index", 0)),
@@ -61,17 +54,17 @@ def _get_granular_state(context: Any) -> Optional[GranularState]:
 
 
 def _set_granular_state(context: Any, state: GranularState) -> None:
-    """Store granular_state in context scratchpad."""
+    """Store granular_state in context.granular_state."""
     if context is None:
         return
-    scratch = getattr(context, "scratchpad", None)
-    if not isinstance(scratch, dict):
+    payload = dict(state)
+    try:
+        object.__setattr__(context, "granular_state", payload)
+    except Exception:
         try:
-            scratch = {}
-            object.__setattr__(context, "scratchpad", scratch)
+            setattr(context, "granular_state", payload)
         except Exception:
             return
-    scratch[GRANULAR_STATE_KEY] = dict(state)
 
 
 def _get_run_id(context: Any) -> str:
@@ -83,12 +76,6 @@ def _get_run_id(context: Any) -> str:
         val = getattr(context, attr, None)
         if isinstance(val, str) and val:
             return val
-    scratch = getattr(context, "scratchpad", None)
-    if isinstance(scratch, dict):
-        for key in ("run_id", "_run_id"):
-            val = scratch.get(key)
-            if isinstance(val, str) and val:
-                return val
     return f"run_{id(context)}"
 
 
@@ -96,13 +83,9 @@ def _get_loop_iteration_index(context: Any) -> int:
     """Get current loop iteration from context (for logging only)."""
     if context is None:
         return 0
-    scratch = getattr(context, "scratchpad", None)
-    if isinstance(scratch, dict):
-        # Try internal loop tracking key first
-        for key in ("_loop_iteration_index", "loop_iteration"):
-            val = scratch.get(key)
-            if isinstance(val, int):
-                return val
+    val = getattr(context, "loop_iteration_index", None)
+    if isinstance(val, int):
+        return val
     return 0
 
 

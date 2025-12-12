@@ -40,10 +40,10 @@ async def test_yaml_import_step_with_config(tmp_path, monkeypatch):
 
             async def emit_final_sql(_data: object, *, context: PipelineContext | None = None) -> dict:
                 assert context is not None
-                cd = context.scratchpad.get("cohort_definition")
-                cs = context.scratchpad.get("concept_sets") or []
+                cd = context.import_artifacts.get("cohort_definition")
+                cs = context.import_artifacts.get("concept_sets") or []
                 final_sql = f"-- cohorts: {str(cd)}; concepts: {len(cs)}"
-                return {"scratchpad": {"final_sql": final_sql}}
+                return {"import_artifacts": {"final_sql": final_sql}}
             """
         )
     )
@@ -77,10 +77,10 @@ async def test_yaml_import_step_with_config(tmp_path, monkeypatch):
             uses: imports.qb
             updates_context: true
             config:
-              input_to: scratchpad
+              input_to: import_artifacts
               outputs:
-                - child: scratchpad.final_sql
-                  parent: scratchpad.final_sql
+                - child: import_artifacts.final_sql
+                  parent: import_artifacts.final_sql
         """
     )
 

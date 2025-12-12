@@ -142,7 +142,7 @@ class ReplayExecutor(Generic[_CtxT]):
             ctx = getattr(final_result, "final_pipeline_context", None)
             is_paused = False
             if _PipelineContext is not None and isinstance(ctx, _PipelineContext):
-                status = ctx.scratchpad.get("status") if hasattr(ctx, "scratchpad") else None
+                status = getattr(ctx, "status", None)
                 is_paused = status == "paused"
             if not is_paused:
                 break

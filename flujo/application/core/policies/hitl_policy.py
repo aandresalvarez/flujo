@@ -45,65 +45,91 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
         step = frame.step
         data = frame.data
         context = frame.context
-        import time
 
         from flujo.exceptions import TemplateResolutionError
 
         try:
-            if context is not None and hasattr(context, "scratchpad"):
-                sp = context.scratchpad
-                if isinstance(sp, dict):
-                    if not sp.get("loop_resume_requires_hitl_output"):
-                        sp.pop("hitl_data", None)
-                        sp.pop("user_input", None)
-                        sp.pop("paused_step_input", None)
-                    last_step = sp.get("last_hitl_step")
-                    # When we enter a new HITL step, clear stale HITL markers so we don't auto-consume
-                    # previous input and accidentally skip pausing, except when we are resuming and
-                    # intentionally feeding the pending user input to this step.
-                    if last_step is None or last_step != step.name:
-                        sp.pop("hitl_data", None)
-                        sp.pop("user_input", None)
-                        sp.pop("pause_message", None)
-                        sp.pop("hitl_message", None)
-                        sp.pop("paused_step_input", None)
-                        if not sp.get("loop_resume_requires_hitl_output"):
-                            sp.pop("loop_resume_requires_hitl_output", None)
-                        sp.pop("loop_last_output", None)
-                    sp["last_hitl_step"] = step.name
-                    if data is not None and sp.get("status") == "paused":
-                        # Hydrate user_input when resuming into the same HITL or when the resume flag is set.
-                        if sp.get("loop_resume_requires_hitl_output") and "user_input" in sp:
-                            # Preserve human resume payload; do not overwrite with loop data.
-                            pass
-                        elif last_step == step.name or sp.get("loop_resume_requires_hitl_output"):
-                            sp["user_input"] = data
-                        else:
-                            sp.pop("user_input", None)
-                    # Hard fast-path: if we already have a resume payload, consume it immediately.
-                    if sp.get("loop_resume_requires_hitl_output") and "user_input" in sp:
-                        resume_payload = sp.get("user_input")
-                        sp["status"] = "running"
-                        sp.pop("loop_resume_requires_hitl_output", None)
-                        # Apply sink_to before returning (mirrors logic at lines 248-260)
-                        if step.sink_to and context is not None:
-                            try:
-                                from flujo.utils.context import set_nested_context_field
+            if context is not None:
+                resume_flag = bool(getattr(context, "loop_resume_requires_hitl_output", False))
+                if not resume_flag:
+                    if hasattr(context, "hitl_data"):
+                        context.hitl_data = {}
+                    if hasattr(context, "user_input"):
+                        context.user_input = None
+                    if hasattr(context, "paused_step_input"):
+                        context.paused_step_input = None
 
-                                set_nested_context_field(context, step.sink_to, resume_payload)
-                            except Exception:
-                                pass
-                        return Success(
-                            step_result=StepResult(
-                                name=getattr(step, "name", "hitl"),
-                                output=resume_payload,
-                                success=True,
-                                attempts=1,
-                                latency_s=0.0,
-                                token_counts=0,
-                                cost_usd=0.0,
-                            )
+                last_step = None
+                try:
+                    hd = getattr(context, "hitl_data", None)
+                    if isinstance(hd, dict):
+                        last_step = hd.get("last_hitl_step")
+                except Exception:
+                    last_step = None
+
+                # When we enter a new HITL step, clear stale HITL markers so we don't auto-consume
+                # previous input and accidentally skip pausing, except when we are resuming and
+                # intentionally feeding the pending user input to this step.
+                if last_step is None or last_step != step.name:
+                    if hasattr(context, "hitl_data"):
+                        context.hitl_data = {}
+                    if hasattr(context, "user_input"):
+                        context.user_input = None
+                    if hasattr(context, "pause_message"):
+                        context.pause_message = None
+                    if hasattr(context, "paused_step_input"):
+                        context.paused_step_input = None
+                    if not resume_flag and hasattr(context, "loop_resume_requires_hitl_output"):
+                        context.loop_resume_requires_hitl_output = False
+                    if hasattr(context, "loop_last_output"):
+                        context.loop_last_output = None
+
+                # Track the last HITL step in typed metadata bag (no scratchpad writes).
+                try:
+                    hd2 = getattr(context, "hitl_data", None)
+                    if isinstance(hd2, dict):
+                        hd2["last_hitl_step"] = step.name
+                except Exception:
+                    pass
+
+                if data is not None and getattr(context, "status", None) == "paused":
+                    # Hydrate user_input when resuming into the same HITL or when the resume flag is set.
+                    if resume_flag and getattr(context, "user_input", None) is not None:
+                        # Preserve human resume payload; do not overwrite with loop data.
+                        pass
+                    elif last_step == step.name or resume_flag:
+                        if hasattr(context, "user_input"):
+                            context.user_input = data
+                    else:
+                        if hasattr(context, "user_input"):
+                            context.user_input = None
+
+                # Hard fast-path: if we already have a resume payload, consume it immediately.
+                resume_payload = getattr(context, "user_input", None)
+                if resume_flag and resume_payload is not None:
+                    if hasattr(context, "status"):
+                        context.status = "running"
+                    if hasattr(context, "loop_resume_requires_hitl_output"):
+                        context.loop_resume_requires_hitl_output = False
+                    # Apply sink_to before returning (mirrors logic further below)
+                    if step.sink_to and context is not None:
+                        try:
+                            from flujo.utils.context import set_nested_context_field
+
+                            set_nested_context_field(context, step.sink_to, resume_payload)
+                        except Exception:
+                            pass
+                    return Success(
+                        step_result=StepResult(
+                            name=getattr(step, "name", "hitl"),
+                            output=resume_payload,
+                            success=True,
+                            attempts=1,
+                            latency_s=0.0,
+                            token_counts=0,
+                            cost_usd=0.0,
                         )
+                    )
         except Exception:
             pass
 
@@ -176,17 +202,24 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
 
         # If no prior pause/input exists, initiate a pause immediately.
         try:
-            sp = getattr(context, "scratchpad", {}) if context is not None else {}
-            if isinstance(sp, dict):
-                has_input = sp.get("user_input") is not None or sp.get("hitl_data") is not None
-                status_is_paused = sp.get("status") == "paused"
+            if context is not None:
+                has_input = getattr(context, "user_input", None) is not None or bool(
+                    getattr(context, "hitl_data", {}) or {}
+                )
+                status_is_paused = getattr(context, "status", None) == "paused"
                 if not status_is_paused and not has_input:
-                    sp["status"] = "paused"
-                    sp["hitl_data"] = data
-                    sp["hitl_message"] = rendered_message
-                    sp["pause_message"] = rendered_message
-                    sp["paused_step_input"] = data
-                    setattr(context, "scratchpad", sp)
+                    if hasattr(context, "status"):
+                        context.status = "paused"
+                    if hasattr(context, "pause_message"):
+                        context.pause_message = rendered_message
+                    if hasattr(context, "paused_step_input"):
+                        context.paused_step_input = data
+                    try:
+                        hd3 = getattr(context, "hitl_data", None)
+                        if isinstance(hd3, dict):
+                            hd3["last_hitl_step"] = step.name
+                    except Exception:
+                        pass
                     raise PausedException(rendered_message)
         except PausedException:
             raise
@@ -196,12 +229,12 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
         try:
             # When resuming, runner records the human response in ctx.hitl_history.
             # Complete this exact paused instance only when the current step input
-            # matches the previously paused input (scratchpad['hitl_data']).
+            # matches the previously paused input (paused_step_input).
             hitl_hist = getattr(context, "hitl_history", None) if context is not None else None
             last = hitl_hist[-1] if isinstance(hitl_hist, list) and hitl_hist else None
-            sp = getattr(context, "scratchpad", None) if context is not None else None
-            prev_data = sp.get("hitl_data") if isinstance(sp, dict) else None
-            status_is_paused = isinstance(sp, dict) and sp.get("status") == "paused"
+            # Read from typed field paused_step_input
+            prev_data = getattr(context, "paused_step_input", None)
+            status_is_paused = getattr(context, "status", None) == "paused"
             same_input = False
             try:
                 same_input = (prev_data == data) or (str(prev_data) == str(data))
@@ -223,14 +256,12 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
                                 )
                     except Exception:
                         pass
-                    # Update steps map snapshot for templates
+                    # Update steps map snapshot for templates (typed field)
                     try:
-                        if hasattr(context, "scratchpad") and isinstance(context.scratchpad, dict):
-                            steps_map = context.scratchpad.setdefault("steps", {})
-                            if isinstance(steps_map, dict):
-                                steps_map[getattr(step, "name", "")] = str(resp)
-                            # Clear the correlation data to avoid accidental reuse
-                            context.scratchpad.pop("hitl_data", None)
+                        if hasattr(context, "step_outputs") and isinstance(
+                            getattr(context, "step_outputs", None), dict
+                        ):
+                            context.step_outputs[getattr(step, "name", "")] = str(resp)
                     except Exception:
                         pass
                     # If sink_to is specified, automatically store the response to context
@@ -245,10 +276,10 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
                             telemetry.logfire.info(f"HITL response stored to {step.sink_to}")
                         except Exception as e:
                             telemetry.logfire.warning(f"Failed to sink HITL to {step.sink_to}: {e}")
-                    # Always mirror the response onto scratchpad.user_input for downstream steps
+                    # Mirror the response onto typed context for downstream steps
                     try:
-                        if hasattr(context, "scratchpad") and isinstance(context.scratchpad, dict):
-                            context.scratchpad["user_input"] = resp
+                        if hasattr(context, "user_input"):
+                            context.user_input = resp
                     except Exception:
                         pass
                     else:
@@ -281,11 +312,9 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
 
         if context is not None:
             try:
-                if hasattr(context, "scratchpad") and isinstance(context.scratchpad, dict):
-                    context.scratchpad["status"] = "paused"
-                    context.scratchpad["last_state_update"] = time.monotonic()
-                else:
-                    core._update_context_state(context, "paused")
+                if hasattr(context, "status"):
+                    context.status = "paused"
+                core._update_context_state(context, "paused")
             except Exception as e:
                 telemetry.logfire.error(f"Failed to update context state: {e}")
 
@@ -294,16 +323,15 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
         try:
             if (
                 context is not None
-                and hasattr(context, "scratchpad")
-                and isinstance(context.scratchpad, dict)
-                and context.scratchpad.get("status") == "paused"
-                and context.scratchpad.get("loop_resume_requires_hitl_output")
+                and getattr(context, "status", None) == "paused"
+                and getattr(context, "loop_resume_requires_hitl_output", False)
                 and data is not None
             ):
                 resp = data
-                sp = context.scratchpad
-                sp["status"] = "running"
-                sp["user_input"] = resp
+                if hasattr(context, "status"):
+                    context.status = "running"
+                if hasattr(context, "user_input"):
+                    context.user_input = resp
                 if step.sink_to:
                     try:
                         from flujo.utils.context import set_nested_context_field
@@ -312,8 +340,13 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
                     except Exception:
                         pass
                 # Consume the resume marker so subsequent HITLs will pause again.
-                sp.pop("loop_resume_requires_hitl_output", None)
-                sp.pop("hitl_data", None)
+                try:
+                    if hasattr(context, "loop_resume_requires_hitl_output"):
+                        context.loop_resume_requires_hitl_output = False
+                    if hasattr(context, "hitl_data"):
+                        context.hitl_data = {}
+                except Exception:
+                    pass
                 return Success(
                     step_result=StepResult(
                         name=getattr(step, "name", "hitl"),
@@ -328,15 +361,27 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
         except Exception:
             pass
 
-        if context is not None and hasattr(context, "scratchpad"):
+        if context is not None:
             try:
                 # Use the rendered message computed earlier
+                # Use the rendered message computed earlier
                 hitl_message = rendered_message
-                context.scratchpad["hitl_message"] = hitl_message
-                context.scratchpad["hitl_data"] = data
+                if hasattr(context, "pause_message"):
+                    context.pause_message = hitl_message
+
+                # Use typed field for paused_step_input instead of hitl_data
+                if hasattr(context, "paused_step_input"):
+                    context.paused_step_input = data
+
                 # Persist user-provided input for downstream sinks/validators
-                if data is not None:
-                    context.scratchpad["user_input"] = data
+                if data is not None and hasattr(context, "user_input"):
+                    context.user_input = data
+
+                # Record loop resume requirements in typed fields only
+                if hasattr(context, "loop_resume_requires_hitl_output"):
+                    context.loop_resume_requires_hitl_output = True
+
+                # Append assistant turn to conversation history so loops in conversation:true
                 # Append assistant turn to conversation history so loops in conversation:true
                 # capture the question even when the iteration pauses here.
                 try:
@@ -361,18 +406,17 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
                 try:
                     from flujo.domain.commands import AskHumanCommand as _AskHuman
 
-                    context.scratchpad.setdefault(
-                        "paused_step_input", _AskHuman(question=hitl_message)
-                    )
+                    if hasattr(context, "paused_step_input") and context.paused_step_input is None:
+                        context.paused_step_input = _AskHuman(question=hitl_message)
                 except Exception:
                     pass
             except Exception as e:
-                telemetry.logfire.error(f"Failed to update context scratchpad: {e}")
+                telemetry.logfire.error(f"Failed to update HITL context: {e}")
 
         try:
             # Reuse same rendering path for the outgoing pause message
-            if context is not None and hasattr(context, "scratchpad"):
-                tmp_msg = context.scratchpad.get("hitl_message", "Paused")
+            if context is not None:
+                tmp_msg = getattr(context, "pause_message", None) or "Paused"
                 message = tmp_msg if isinstance(tmp_msg, str) else str(tmp_msg)
             else:
                 # Render directly when context is not available

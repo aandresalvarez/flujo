@@ -159,15 +159,19 @@ class Settings(BaseSettings):
     shadow_eval: ShadowEvalSettings = ShadowEvalSettings()
 
     # --- Core strictness toggles ---
-    # Enforce strict context isolation and merging (CI-friendly). Can be overridden per-executor.
-    strict_context_isolation: bool = False
-    strict_context_merge: bool = False
+    # Strict mode is the default; opt-out is not supported in CI.
+    strict_dsl: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("FLUJO_STRICT_DSL", "flujo_strict_dsl"),
+        description="Enable strict DSL/type enforcement (no loose Any/object flows).",
+    )
+    # Enforce strict context isolation and merging.
+    strict_context_isolation: bool = True
+    strict_context_merge: bool = True
     enforce_typed_context: bool = Field(
-        default=False,
+        default=True,
         validation_alias=AliasChoices("FLUJO_ENFORCE_TYPED_CONTEXT", "flujo_enforce_typed_context"),
-        description=(
-            "When true, contexts must be Pydantic BaseModel instances; plain dicts are rejected."
-        ),
+        description="[DEPRECATED] Always True - strict mode enforced in executor_helpers.py (env flag ignored).",
     )
     governance_policy_module: Optional[str] = Field(
         default=None,

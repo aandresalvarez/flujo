@@ -95,7 +95,7 @@ def test_success_transition_applies_and_stops_on_end_state() -> None:
         assert isinstance(out, Success)
         assert core.calls == 1  # Executed s1 only, then end
         # current_state should be s2 after transition
-        assert ctx.scratchpad.get("current_state") == "s2"
+        assert ctx.current_state == "s2"
 
     asyncio.run(_run())
 
@@ -143,7 +143,7 @@ def test_failure_transition_wildcard_to_failed() -> None:
         out = await policy.execute(core, frame)
         assert isinstance(out, Success)
         assert core.calls == 1
-        assert ctx.scratchpad.get("current_state") == "failed"
+        assert ctx.current_state == "failed"
 
     asyncio.run(_run())
 
@@ -184,8 +184,8 @@ def test_pause_transition_reenters_state_and_reraises() -> None:
         with pytest.raises(PausedException):
             await policy.execute(core, frame)
         # After pause handling, current_state must be set to target
-        assert ctx.scratchpad.get("current_state") == "s1"
-        assert ctx.scratchpad.get("next_state") == "s1"
+        assert ctx.current_state == "s1"
+        assert ctx.next_state == "s1"
         assert core.calls == 1
 
     asyncio.run(_run())
@@ -212,7 +212,7 @@ def test_no_rule_fallbacks_to_legacy_next_state() -> None:
     ctx = PipelineContext(initial_prompt="")
     # Simulate legacy next_state set by sub-pipeline
     iter_ctx = PipelineContext(initial_prompt="")
-    iter_ctx.scratchpad["next_state"] = "s2"
+    iter_ctx.next_state = "s2"
     fake_pr = PipelineResult(
         step_history=[_sr("inner", True)],
         total_cost_usd=0.0,
@@ -237,7 +237,7 @@ def test_no_rule_fallbacks_to_legacy_next_state() -> None:
         out = await policy.execute(core, frame)
         assert isinstance(out, Success)
         assert core.calls == 1
-        assert ctx.scratchpad.get("current_state") == "s2"
+        assert ctx.current_state == "s2"
 
     asyncio.run(_run())
 
@@ -270,7 +270,7 @@ def test_when_runtime_error_treated_as_non_match() -> None:
     ctx = PipelineContext(initial_prompt="")
     # Legacy next_state produced by sub-pipeline
     iter_ctx = PipelineContext(initial_prompt="")
-    iter_ctx.scratchpad["next_state"] = "s2"
+    iter_ctx.next_state = "s2"
     fake_pr = PipelineResult(
         step_history=[_sr("inner", True)],
         total_cost_usd=0.0,
@@ -294,7 +294,7 @@ def test_when_runtime_error_treated_as_non_match() -> None:
     async def _run():
         out = await policy.execute(core, frame)
         assert isinstance(out, Success)
-        assert ctx.scratchpad.get("current_state") == "s2"
+        assert ctx.current_state == "s2"
 
     asyncio.run(_run())
 
@@ -319,7 +319,7 @@ def test_no_transitions_legacy_flow_and_step_history() -> None:
 
     # First hop sets next_state → s2 via sub-context
     iter_ctx1 = PipelineContext(initial_prompt="")
-    iter_ctx1.scratchpad["next_state"] = "s2"
+    iter_ctx1.next_state = "s2"
     pr1 = PipelineResult(
         step_history=[_sr("inner1", True)],
         total_cost_usd=0.5,
@@ -373,7 +373,7 @@ def test_totals_aggregate_across_states() -> None:
 
     # First hop → next_state s2, second hop → next_state s3
     iter_ctx1 = PipelineContext(initial_prompt="")
-    iter_ctx1.scratchpad["next_state"] = "s2"
+    iter_ctx1.next_state = "s2"
     pr1 = PipelineResult(
         step_history=[_sr("inner1", True)],
         total_cost_usd=1.2,
@@ -381,7 +381,7 @@ def test_totals_aggregate_across_states() -> None:
         final_pipeline_context=iter_ctx1,
     )
     iter_ctx2 = PipelineContext(initial_prompt="")
-    iter_ctx2.scratchpad["next_state"] = "s3"
+    iter_ctx2.next_state = "s3"
     pr2 = PipelineResult(
         step_history=[_sr("inner2", True)],
         total_cost_usd=0.8,

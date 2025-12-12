@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional, Set, cast
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional, Set
 
 from ...domain.models import BackgroundLaunched, UsageEstimate
 from ...infra import telemetry
@@ -95,7 +95,7 @@ class BackgroundTaskManager:
             parent_context: Any = getattr(frame, "context", None)
             parent_run_id: Optional[str] = None
             if parent_context is not None:
-                parent_run_id = cast(Optional[str], getattr(parent_context, "run_id", None))
+                parent_run_id = getattr(parent_context, "run_id", None)
             bg_run_id = f"{parent_run_id}_bg_{task_id}" if parent_run_id else task_id
 
             try:
@@ -109,18 +109,22 @@ class BackgroundTaskManager:
                     pass
                 isolated_context = ContextManager.isolate(getattr(frame, "context", None))
             if isolated_context is not None:
-                ctx_any = cast(Any, isolated_context)
                 try:
-                    ctx_any.run_id = bg_run_id
+                    isolated_context.run_id = bg_run_id  # type: ignore[attr-defined]
                 except Exception:
                     pass
                 try:
-                    setattr(ctx_any, "parent_run_id", parent_run_id)
+                    if hasattr(isolated_context, "parent_run_id"):
+                        isolated_context.parent_run_id = parent_run_id
+                    else:
+                        setattr(isolated_context, "parent_run_id", parent_run_id)
                 except Exception:
                     pass
                 try:
-                    if hasattr(ctx_any, "scratchpad"):
-                        ctx_any.scratchpad["is_background_task"] = True
+                    if hasattr(isolated_context, "is_background_task"):
+                        isolated_context.is_background_task = True
+                    if hasattr(isolated_context, "task_id"):
+                        isolated_context.task_id = task_id
                 except Exception:
                     pass
 
@@ -222,7 +226,7 @@ class BackgroundTaskManager:
                 bg_frame: ExecutionFrame[Any] = ExecutionFrame(
                     step=step_copy,
                     data=getattr(frame, "data", None),
-                    context=cast(Optional[Any], isolated_context),
+                    context=isolated_context,
                     resources=getattr(frame, "resources", None),
                     limits=getattr(frame, "limits", None),
                     quota=quota,
@@ -326,11 +330,12 @@ class BackgroundTaskManager:
                             return "system"
 
                     metadata["error_category"] = _classify_error(e)
-                    if final_context is not None and hasattr(final_context, "scratchpad"):
+                    if final_context is not None:
                         try:
-                            final_context.scratchpad["background_error_category"] = metadata[
-                                "error_category"
-                            ]
+                            if hasattr(final_context, "background_error_category"):
+                                final_context.background_error_category = str(
+                                    metadata.get("error_category", "system")
+                                )
                         except Exception:
                             pass
 

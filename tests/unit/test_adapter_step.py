@@ -11,7 +11,7 @@ class ComplexInput(BaseModel):
     length: int
 
 
-@adapter_step
+@adapter_step(adapter_id="generic-adapter", adapter_allow="generic")
 async def adapt(text: str) -> ComplexInput:
     return ComplexInput(text=text, length=len(text))
 
@@ -43,7 +43,7 @@ def example_adapter_step():
     >>> from flujo import Flujo
     >>> from flujo.domain import adapter_step, step
     >>>
-    >>> @adapter_step
+    >>> @adapter_step(adapter_id="generic-adapter", adapter_allow="generic")
     ... async def add_one(x: int) -> int:
     ...     return x + 1
     >>>

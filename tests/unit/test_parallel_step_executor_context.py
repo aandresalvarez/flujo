@@ -1,7 +1,7 @@
-import types
 from typing import Any, Optional, Dict
 
 import pytest
+from pydantic import BaseModel, Field
 
 from flujo.domain.dsl.step import Step, MergeStrategy
 from flujo.domain.dsl.pipeline import Pipeline
@@ -12,8 +12,10 @@ from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.context_manager import ContextManager
 
 
-class _Ctx(types.SimpleNamespace):
-    pass
+class _Ctx(BaseModel):
+    scratchpad: dict[str, object] = Field(default_factory=dict)
+    executed_branches: list[str] = Field(default_factory=list)
+    tag: str | None = None
 
 
 @pytest.mark.asyncio
@@ -28,7 +30,9 @@ async def test_parallel_executor_isolates_context_per_branch(
     ) -> Any:
         called["isolate"] += 1
         # Return a shallow copy-like namespace for visibility
-        return _Ctx(**getattr(ctx, "__dict__", {}))
+        if isinstance(ctx, BaseModel):
+            return _Ctx(**ctx.model_dump())
+        return _Ctx()
 
     monkeypatch.setattr(ContextManager, "isolate", staticmethod(fake_isolate))
 

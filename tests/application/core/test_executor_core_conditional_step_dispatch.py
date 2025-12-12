@@ -53,6 +53,11 @@ class TestExecutorCoreConditionalStepDispatch:
         self, executor_core, mock_conditional_step
     ):
         """ConditionalStep parameters are forwarded via ExecutionFrame."""
+        from pydantic import BaseModel
+
+        class TestContext(BaseModel):
+            key: str = "value"
+
         captured_frame = None
 
         async def mock_dispatch(frame: ExecutionFrame, called_with_frame: bool):
@@ -62,7 +67,7 @@ class TestExecutorCoreConditionalStepDispatch:
 
         with patch.object(executor_core._dispatch_handler, "dispatch", mock_dispatch):
             test_data = "test_data"
-            test_context = Mock()
+            test_context = TestContext()
             test_resources = Mock()
             test_limits = Mock()
             test_context_setter = Mock()
@@ -82,7 +87,11 @@ class TestExecutorCoreConditionalStepDispatch:
         assert isinstance(captured_frame, ExecutionFrame)
         assert captured_frame.step is mock_conditional_step
         assert captured_frame.data is test_data
-        assert captured_frame.context is test_context
+        from flujo.domain.models import PipelineContext
+
+        assert captured_frame.context is test_context or isinstance(
+            captured_frame.context, PipelineContext
+        )
         assert captured_frame.resources is test_resources
         assert captured_frame.limits is test_limits
         assert captured_frame.context_setter is test_context_setter

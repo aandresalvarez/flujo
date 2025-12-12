@@ -402,15 +402,14 @@ class StepCoordinator(Generic[ContextT]):
                                 # Normalize Paused control flow to PipelineAbortSignal and mark context
                                 try:
                                     if isinstance(context, PipelineContext):
-                                        context.scratchpad["status"] = "paused"
+                                        context.status = "paused"
                                         # Use plain message for backward compatibility
                                         msg = getattr(step_outcome, "message", "Paused for HITL")
-                                        context.scratchpad["pause_message"] = (
+                                        context.pause_message = (
                                             msg if isinstance(msg, str) else str(msg)
                                         )
-                                        scratch = context.scratchpad
-                                        if "paused_step_input" not in scratch:
-                                            scratch["paused_step_input"] = data
+                                        if context.paused_step_input is None:
+                                            context.paused_step_input = data
                                 except Exception:
                                     pass
                                 raise PipelineAbortSignal("Paused for HITL")
@@ -461,6 +460,9 @@ class StepCoordinator(Generic[ContextT]):
                                         step_result = out2
                                         yield Success(step_result=step_result)
                                 except Exception as e:
+                                    # Control-flow exceptions must propagate; never coerce into failures.
+                                    if isinstance(e, (PausedException, PipelineAbortSignal)):
+                                        raise
                                     try:
                                         telemetry.logfire.error(
                                             f"Coordinator internal execute failed: {e}"
@@ -484,15 +486,14 @@ class StepCoordinator(Generic[ContextT]):
             except PausedException as e:
                 # Handle pause for human input; mark context and stop executing current step
                 if isinstance(context, PipelineContext):
-                    context.scratchpad["status"] = "paused"
+                    context.status = "paused"
                     # Use plain message for backward compatibility (tests expect plain message)
                     # Only set if not already set (loop policy or recipe may have set it already)
-                    if "pause_message" not in context.scratchpad:
-                        context.scratchpad["pause_message"] = getattr(e, "message", "")
+                    if context.pause_message is None:
+                        context.pause_message = getattr(e, "message", "")
                     # If already set, preserve it (loop policy/recipe already set it correctly)
-                    scratch = context.scratchpad
-                    if "paused_step_input" not in scratch:
-                        scratch["paused_step_input"] = data
+                    if context.paused_step_input is None:
+                        context.paused_step_input = data
                 # Indicate to the ExecutionManager/Runner that execution should stop by raising a sentinel
                 raise PipelineAbortSignal("Paused for HITL")
             except UsageLimitExceededError:

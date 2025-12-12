@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Type, TypeVar, get_args, get_origin, Union, TYPE_CHECKING, cast
+from typing import Any, Type, TypeVar, get_args, get_origin, Union, TYPE_CHECKING
 
 from ...exceptions import TypeMismatchError
 from .context_manager import _types_compatible
@@ -84,7 +84,7 @@ class TypeValidator:
         candidate = getattr(step, "__step_input_type__", Any)
         if isinstance(candidate, type):
             return candidate
-        return cast(Type[Any], Any)
+        return object
 
     @staticmethod
     def get_step_output_type(step: "DSLStep[Any, Any]") -> Type[Any]:
@@ -92,4 +92,4 @@ class TypeValidator:
         candidate = getattr(step, "__step_output_type__", Any)
         if isinstance(candidate, type):
             return candidate
-        return cast(Type[Any], Any)
+        return object

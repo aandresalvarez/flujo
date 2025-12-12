@@ -372,10 +372,10 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                 # Do not return early; allow remaining steps to execute.
                                 continue
                             elif isinstance(item, Paused):
-                                # Update context scratchpad and raise abort to halt
-                                if context is not None and hasattr(context, "scratchpad"):
-                                    context.scratchpad["status"] = "paused"
-                                    context.scratchpad["pause_message"] = item.message
+                                # Update context with pause state using typed fields
+                                if context is not None:
+                                    context.status = "paused"
+                                    context.pause_message = item.message
                                 raise PipelineAbortSignal("Paused for HITL")
                             elif isinstance(item, Chunk):
                                 # Pass through streaming chunks
@@ -533,9 +533,9 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                         feedback=_out_local.feedback,
                                     )
                                 elif isinstance(_out_local, Paused):
-                                    if context is not None and hasattr(context, "scratchpad"):
-                                        context.scratchpad["status"] = "paused"
-                                        context.scratchpad["pause_message"] = _out_local.message
+                                    if context is not None:
+                                        context.status = "paused"
+                                        context.pause_message = _out_local.message
                                     raise PipelineAbortSignal("Paused for HITL")
                             else:
                                 # Legacy: treat as success StepResult
@@ -608,9 +608,9 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                 return
                             elif isinstance(_out, _Paused):
                                 # Normalize to pause signal
-                                if context is not None and hasattr(context, "scratchpad"):
-                                    context.scratchpad["status"] = "paused"
-                                    context.scratchpad["pause_message"] = _out.message
+                                if context is not None:
+                                    context.status = "paused"
+                                    context.pause_message = _out.message
                                 raise PipelineAbortSignal("Paused for HITL")
                         except Exception:
                             step_result = None
@@ -927,13 +927,15 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     # Tests expect that only previously completed steps are present.
                     # Ensure paused state is reflected in context for HITL scenarios
                     try:
-                        if context is not None and hasattr(context, "scratchpad"):
-                            scratch = getattr(context, "scratchpad")
-                            # Only set paused if not already set by lower layers
-                            if scratch.get("status") != "paused":
-                                scratch["status"] = "paused"
-                            if not scratch.get("pause_message"):
-                                scratch["pause_message"] = "Paused for HITL"
+                        if context is not None:
+                            # Use typed fields instead of scratchpad for status and pause_message
+                            current_status = getattr(context, "status", None)
+                            if current_status != "paused":
+                                if hasattr(context, "status"):
+                                    context.status = "paused"
+                            if not getattr(context, "pause_message", None):
+                                if hasattr(context, "pause_message"):
+                                    context.pause_message = "Paused for HITL"
                     except Exception:
                         pass
                     # Best-effort: record latest step result for pause diagnostics
@@ -968,13 +970,12 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                 except PausedException as e:
                     # Handle pause by updating context and returning current result
                     if context is not None:
-                        if hasattr(context, "scratchpad"):
-                            context.scratchpad["status"] = "paused"
-                            # Use plain message for backward compatibility (tests expect plain message)
-                            # Only set if not already set (loop policy or recipe may have set it already)
-                            if "pause_message" not in context.scratchpad:
-                                context.scratchpad["pause_message"] = getattr(e, "message", "")
-                            # If already set, preserve it (loop policy/recipe already set it correctly)
+                        context.status = "paused"
+                        # Use plain message for backward compatibility (tests expect plain message)
+                        # Only set if not already set (loop policy or recipe may have set it already)
+                        if context.pause_message is None:
+                            context.pause_message = getattr(e, "message", "")
+                        # If already set, preserve it (loop policy/recipe already set it correctly)
                     # Do not append the in‑flight step_result for pauses to keep
                     # history aligned with completed steps only.
                     # Best-effort: record latest step result for pause diagnostics

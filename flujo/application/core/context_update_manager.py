@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from ...infra import telemetry
 from .context_adapter import _build_context_update, _inject_context_with_deep_merge
 
 
@@ -31,14 +30,6 @@ class ContextUpdateManager:
             return None
 
         try:
-            try:
-                _before = getattr(context, "scratchpad", None)
-                telemetry.logfire.info(
-                    f"[ContextUpdate] Before update (step={getattr(step, 'name', '?')}): scratchpad={_before}"
-                )
-            except Exception:
-                pass
-
             validation_error = _inject_context_with_deep_merge(context, update_data, type(context))
 
             if validation_error:
@@ -67,14 +58,6 @@ class ContextUpdateManager:
                 except Exception:
                     # Preserve original validation_error if fallback merge fails
                     pass
-
-            try:
-                _after = getattr(context, "scratchpad", None)
-                telemetry.logfire.info(
-                    f"[ContextUpdate] After update (step={getattr(step, 'name', '?')}): scratchpad={_after}"
-                )
-            except Exception:
-                pass
 
             return validation_error
         except Exception:

@@ -9,9 +9,11 @@ import json
 def test_json_includes_fixes_metrics_and_dry_run(tmp_path: Path) -> None:
     yml = (
         'version: "0.1"\n'
+        "agents:\n"
+        '  typed: { id: "tests.unit.test_error_messages.need_str", model: "local:mock", system_prompt: "typed", output_schema: { type: string } }\n'
         "steps:\n"
-        '  - name: A\n    agent: { id: "flujo.builtins.echo" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "hello"\n'
-        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "{{ previous_step.output }} {{ previous_step | to_json }}"\n'
+        '  - name: A\n    uses: agents.typed\n    input: "hello"\n'
+        '  - name: B\n    uses: agents.typed\n    input_schema: { type: string }\n    input: "{{ previous_step.output }} {{ previous_step | to_json }}"\n'
     )
     f = tmp_path / "p.yaml"
     f.write_text(yml)
@@ -58,8 +60,10 @@ def test_json_includes_fixes_metrics_and_dry_run(tmp_path: Path) -> None:
 def test_json_counts_with_telemetry(tmp_path: Path) -> None:
     yml = (
         'version: "0.1"\n'
+        "agents:\n"
+        '  typed: { id: "tests.unit.test_error_messages.need_str", model: "local:mock", system_prompt: "typed", output_schema: { type: string } }\n'
         "steps:\n"
-        '  - name: A\n    agent: { id: "flujo.builtins.echo" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "{{ previous_step.output }}"\n'
+        '  - name: A\n    uses: agents.typed\n    input: "hello"\n'
     )
     f = tmp_path / "p.yaml"
     f.write_text(yml)
@@ -81,9 +85,11 @@ def test_json_counts_with_telemetry(tmp_path: Path) -> None:
 def test_telemetry_counts_exact_v_t1(tmp_path: Path) -> None:
     yml = (
         'version: "0.1"\n'
+        "agents:\n"
+        '  typed: { id: "tests.unit.test_error_messages.need_str", model: "local:mock", system_prompt: "typed", output_schema: { type: string } }\n'
         "steps:\n"
-        '  - name: A\n    agent: { id: "flujo.builtins.echo" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "hello"\n'
-        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "{{ previous_step.output }}"\n'
+        '  - name: A\n    uses: agents.typed\n    input: "hello"\n'
+        '  - name: B\n    uses: agents.typed\n    input_schema: { type: string }\n    input: "{{ previous_step.output }}"\n'
     )
     f = tmp_path / "a.yaml"
     f.write_text(yml)

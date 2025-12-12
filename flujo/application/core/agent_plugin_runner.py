@@ -41,10 +41,6 @@ def _in_loop_context(attempt_context: Any, core: Any, step: Any) -> bool:
             or getattr(attempt_context, "_loop_iteration_active", False)
             or getattr(core, "_inside_loop_iteration", False)
             or getattr(step, "_force_loop_fallback", False)
-            or (
-                isinstance(getattr(attempt_context, "scratchpad", None), dict)
-                and getattr(attempt_context, "scratchpad", {}).get("_loop_iteration_active", False)
-            )
         )
     except Exception:
         return False

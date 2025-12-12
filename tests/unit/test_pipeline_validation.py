@@ -55,7 +55,11 @@ def test_pydantic_output_bridges_to_dict_input() -> None:
 
     p = Pipeline.model_construct(steps=[s1, s2])
     report = p.validate_graph()
-    assert not report.errors, f"Unexpected validation errors: {[e.message for e in report.errors]}"
+    # Strict mode: Pydantic -> dict is not allowed without an explicit adapter.
+    assert any(e.rule_id == "V-A2-TYPE" for e in report.errors), (
+        "Expected V-A2-TYPE error when piping a Pydantic model output into a dict input "
+        "without an adapter."
+    )
 
 
 def test_templated_input_tojson_skips_type_mismatch() -> None:
@@ -83,6 +87,6 @@ def test_finalize_types_uses_wrapper_target_output_type() -> None:
 
     _finalize_step_types(step_obj)
 
-    assert (
-        step_obj.__step_output_type__ is MyOutModel
-    ), "Expected finalize to copy target_output_type to step output type"
+    assert step_obj.__step_output_type__ is MyOutModel, (
+        "Expected finalize to copy target_output_type to step output type"
+    )

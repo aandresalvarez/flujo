@@ -16,8 +16,6 @@ StepOutT = TypeVar("StepOutT")
 class PipelineContextLike(Protocol):
     """Context contract required by execution/CLI."""
 
-    scratchpad: Any
-
     def model_dump(self, *args: Any, **kwargs: Any) -> Any: ...
 
 

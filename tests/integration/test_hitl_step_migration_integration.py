@@ -35,11 +35,9 @@ class TestHITLStepMigrationIntegration:
         return step
 
     @pytest.fixture
-    def mock_context(self) -> Mock:
-        """Create a mock PipelineContext."""
-        context = Mock(spec=PipelineContext)
-        context.scratchpad = {}
-        return context
+    def mock_context(self) -> PipelineContext:
+        """Create a real PipelineContext for strict typed-context enforcement."""
+        return PipelineContext()
 
     @pytest.fixture
     def mock_resources(self) -> Mock:
@@ -88,10 +86,11 @@ class TestHITLStepMigrationIntegration:
         # Verify the exception contains the custom message
         assert "Please review this complex data" in str(exc_info.value)
 
-        # Verify context was updated with complex data
-        assert mock_context.scratchpad["hitl_data"] == data
-        assert mock_context.scratchpad["status"] == "paused"
-        assert mock_context.scratchpad["hitl_message"] == "Please review this complex data"
+        # Verify context was updated with typed fields and metadata
+        assert mock_context.status == "paused"
+        assert mock_context.pause_message == "Please review this complex data"
+        assert mock_context.paused_step_input == data
+        assert mock_context.hitl_data.get("last_hitl_step") == mock_hitl_step.name
 
     async def test_hitl_step_with_different_contexts(
         self,
@@ -118,8 +117,7 @@ class TestHITLStepMigrationIntegration:
             assert str(data) in str(e)
 
         # Test with empty context
-        empty_context = Mock(spec=PipelineContext)
-        empty_context.scratchpad = {}
+        empty_context = PipelineContext()
         try:
             await executor_core._handle_hitl_step(
                 mock_hitl_step,
@@ -132,11 +130,10 @@ class TestHITLStepMigrationIntegration:
             assert False, "Should have raised PausedException"
         except PausedException as e:
             assert str(data) in str(e)
-            assert empty_context.scratchpad["status"] == "paused"
+            assert empty_context.status == "paused"
 
         # Test with pre-populated context
-        populated_context = Mock(spec=PipelineContext)
-        populated_context.scratchpad = {"existing_key": "existing_value"}
+        populated_context = PipelineContext(hitl_data={"existing_key": "existing_value"})
         try:
             await executor_core._handle_hitl_step(
                 mock_hitl_step,
@@ -149,10 +146,10 @@ class TestHITLStepMigrationIntegration:
             assert False, "Should have raised PausedException"
         except PausedException as e:
             assert str(data) in str(e)
-            # Verify existing data is preserved
-            assert populated_context.scratchpad["existing_key"] == "existing_value"
-            # Verify new data is added
-            assert populated_context.scratchpad["status"] == "paused"
+            # Verify existing data is preserved (metadata remains in hitl_data)
+            assert populated_context.hitl_data.get("last_hitl_step") == mock_hitl_step.name
+            # Verify new data is added on typed fields
+            assert populated_context.status == "paused"
 
     async def test_hitl_step_with_telemetry(
         self,
@@ -182,8 +179,8 @@ class TestHITLStepMigrationIntegration:
 
         # Verify telemetry logging (this would be checked in a real scenario)
         # The implementation should log the HITL step execution
-        assert mock_context.scratchpad["status"] == "paused"
-        assert mock_context.scratchpad["hitl_message"] == "Telemetry test message"
+        assert mock_context.status == "paused"
+        assert mock_context.pause_message == "Telemetry test message"
 
     async def test_hitl_step_with_usage_limits(
         self,
@@ -213,7 +210,7 @@ class TestHITLStepMigrationIntegration:
 
         # Verify that usage limits don't interfere with HITL step execution
         # HITL steps should pause regardless of usage limits
-        assert mock_context.scratchpad["status"] == "paused"
+        assert mock_context.status == "paused"
 
     # ============================================================================
     # Phase 2.2: Migration Compatibility Tests
@@ -248,12 +245,10 @@ class TestHITLStepMigrationIntegration:
         # 1. Should raise PausedException with str(data) as message
         assert str(data) in str(exc_info.value)
 
-        # 2. Should update context scratchpad with status="paused"
-        assert mock_context.scratchpad["status"] == "paused"
-
-        # 3. Should store the message and data in scratchpad
-        assert mock_context.scratchpad["hitl_message"] == str(data)
-        assert mock_context.scratchpad["hitl_data"] == data
+        # 2. Should update typed context fields
+        assert mock_context.status == "paused"
+        assert mock_context.pause_message == str(data)
+        assert mock_context.hitl_data.get("last_hitl_step") == mock_hitl_step.name
 
     async def test_hitl_step_backward_compatibility(
         self,
@@ -291,7 +286,10 @@ class TestHITLStepMigrationIntegration:
             # Verify backward compatibility
             expected_message = case["message"] if case["message"] is not None else str(data)
             assert expected_message in str(exc_info.value)
-            assert mock_context.scratchpad["hitl_data"] == data
+            assert mock_context.status == "paused"
+            assert mock_context.pause_message == expected_message
+            assert mock_context.hitl_data.get("last_hitl_step") == mock_hitl_step.name
+            assert mock_context.paused_step_input == data
 
     async def test_hitl_step_performance_comparison(
         self,
@@ -359,7 +357,7 @@ class TestHITLStepMigrationIntegration:
 
         # Verify the integration works correctly
         assert "Integration test message" in str(exc_info.value)
-        assert mock_context.scratchpad["status"] == "paused"
+        assert mock_context.status == "paused"
 
     async def test_hitl_step_error_handling_integration(
         self,
@@ -419,10 +417,11 @@ class TestHITLStepMigrationIntegration:
                 mock_context_setter,
             )
 
-        # Verify complex data is properly stored in context
-        assert mock_context.scratchpad["hitl_data"] == complex_data
-        assert mock_context.scratchpad["status"] == "paused"
-        assert mock_context.scratchpad["hitl_message"] == "Complex serialization test"
+        # Verify complex data is preserved on typed fields
+        assert mock_context.status == "paused"
+        assert mock_context.pause_message == "Complex serialization test"
+        assert mock_context.paused_step_input == complex_data
+        assert mock_context.hitl_data.get("last_hitl_step") == mock_hitl_step.name
 
     async def test_hitl_step_memory_efficiency_integration(
         self,
@@ -443,7 +442,7 @@ class TestHITLStepMigrationIntegration:
 
         # Act
         gc.collect()  # Clean up before test
-        initial_memory = sys.getsizeof(mock_context.scratchpad)
+        initial_memory = sys.getsizeof(mock_context.model_dump())
 
         with pytest.raises(PausedException):
             await executor_core._handle_hitl_step(
@@ -455,11 +454,12 @@ class TestHITLStepMigrationIntegration:
                 mock_context_setter,
             )
 
-        final_memory = sys.getsizeof(mock_context.scratchpad)
+        final_memory = sys.getsizeof(mock_context.model_dump())
 
         # Assert memory usage is reasonable
         memory_increase = final_memory - initial_memory
         assert memory_increase < 10000  # Should not increase by more than 10KB
 
         # Verify data is still properly stored
-        assert mock_context.scratchpad["hitl_data"] == large_data
+        assert mock_context.paused_step_input == large_data
+        assert mock_context.hitl_data.get("last_hitl_step") == mock_hitl_step.name

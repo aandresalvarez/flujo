@@ -151,12 +151,14 @@ class BlueprintStepModel(BaseModel):
     ignore_branch_names: Optional[bool] = None
     message: Optional[str] = None
     input_schema: Optional[JSONObject] = None
+    output_schema: Optional[JSONObject] = None
     sink_to: Optional[str] = None
     wrapped_step: Optional[JSONObject] = None
     planner: Optional[str] = None
     registry: Optional[Union[str, JSONObject]] = None
     output_template: Optional[str] = None
     processing: Optional[JSONObject] = None
+    meta: Optional[JSONObject] = None
 
     @field_validator("uses")
     @classmethod

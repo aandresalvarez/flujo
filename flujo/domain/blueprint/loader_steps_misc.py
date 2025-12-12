@@ -15,6 +15,7 @@ from .loader_resolution import (
     _resolve_validators,
 )
 from .loader_steps_common import _finalize_step_types
+from .model_generator import generate_model_from_schema, _python_type_for_json_schema
 from flujo.type_definitions.common import JSONObject
 
 BuildStep = Callable[..., Step[Any, Any]]
@@ -188,8 +189,12 @@ def build_basic_step(
             import_cfg: JSONObject = dict(model.config or {})
             inherit_context = bool(import_cfg.get("inherit_context", False))
             input_to_val = str(import_cfg.get("input_to", "initial_prompt"))
-            if input_to_val not in {"initial_prompt", "scratchpad", "both"}:
-                input_to_val = "initial_prompt"
+            allowed_input_to = {"initial_prompt", "import_artifacts", "both"}
+            if input_to_val not in allowed_input_to:
+                raise BlueprintError(
+                    f"ImportStep config.input_to must be one of {sorted(allowed_input_to)}, got "
+                    f"'{input_to_val}'. scratchpad has been removed."
+                )
             input_scratchpad_key = import_cfg.get("input_scratchpad_key", "initial_input")
             outputs_raw = import_cfg.get("outputs", None)
             outputs: Optional[list[OutputMapping]]
@@ -273,6 +278,36 @@ def build_basic_step(
     try:
         if model.input is not None:
             st.meta["templated_input"] = model.input
+    except Exception:
+        pass
+    try:
+        if isinstance(model.meta, dict):
+            st.meta.update(model.meta)
+    except Exception:
+        pass
+    # Propagate explicit JSON schemas to step IO types for validation
+    try:
+        if isinstance(model.input_schema, dict):
+            schema_type = model.input_schema.get("type")
+            if schema_type and schema_type != "object":
+                st.__step_input_type__ = _python_type_for_json_schema(model.input_schema)
+            else:
+                schema_model_in = generate_model_from_schema(
+                    f"{model.name}Input", model.input_schema
+                )
+                st.__step_input_type__ = schema_model_in
+    except Exception:
+        pass
+    try:
+        if isinstance(model.output_schema, dict):
+            schema_type = model.output_schema.get("type")
+            if schema_type and schema_type != "object":
+                st.__step_output_type__ = _python_type_for_json_schema(model.output_schema)
+            else:
+                schema_model_out = generate_model_from_schema(
+                    f"{model.name}Output", model.output_schema
+                )
+                st.__step_output_type__ = schema_model_out
     except Exception:
         pass
     try:

@@ -13,24 +13,19 @@ version: "0.1"
 name: minimal
 agents:
   echoer:
-    model: "openai:gpt-4o"  # used only for provider hint; no network call on --dry-run
-    system_prompt: |
-      You are a test agent.
+    id: "tests.unit.test_error_messages.need_str"
+    model: "local:mock"
+    system_prompt: "typed"
     output_schema:
-      type: object
-      properties:
-        msg: { type: string }
-      required: [msg]
+      type: string
 steps:
   - name: ask
-    kind: hitl
-    message: "What is your name?"
+    uses: agents.echoer
+    input: "What is your name?"
   - name: run
     uses: agents.echoer
-    meta:
-      is_adapter: true
-      adapter_id: generic-adapter
-      adapter_allow: generic
+    input_schema:
+      type: string
         """.strip()
     )
 

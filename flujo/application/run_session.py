@@ -264,18 +264,18 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         merged_data.update(copy.deepcopy(self.initial_context_data))
                     if isinstance(initial_context_data, dict):
                         merged_data.update(copy.deepcopy(initial_context_data))
+                    if "scratchpad" in merged_data:
+                        raise PipelineContextInitializationError(
+                            "scratchpad has been removed; migrate initial context data to typed fields "
+                            "(status, step_outputs, import_artifacts, etc.)."
+                        )
                     for key, value in merged_data.items():
-                        if key == "scratchpad" and isinstance(value, dict):
-                            try:
-                                scratch = getattr(current_context_instance, "scratchpad", None)
-                                if isinstance(scratch, dict):
-                                    scratch.update(value)
-                            except Exception:
-                                pass
-                        elif key in ("initial_prompt", "run_id"):
+                        if key in ("initial_prompt", "run_id"):
                             object.__setattr__(current_context_instance, key, value)
                         else:
                             object.__setattr__(current_context_instance, key, value)
+                except PipelineContextInitializationError:
+                    raise
                 except Exception:
                     pass
                 if run_id is not None:
@@ -286,7 +286,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                     object.__setattr__(current_context_instance, "_artifacts", [])
 
             if isinstance(current_context_instance, PipelineContext):
-                current_context_instance.scratchpad["status"] = "running"
+                current_context_instance.status = "running"
 
             start_idx = 0
             data: Any = initial_input
@@ -460,7 +460,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         is_paused = False
                         try:
                             ctx = chunk.final_pipeline_context
-                            if ctx and getattr(ctx, "scratchpad", {}).get("status") == "paused":
+                            if ctx and getattr(ctx, "status", None) == "paused":
                                 is_paused = True
                         except Exception:
                             pass
@@ -512,7 +512,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                             ctx = chunk.final_pipeline_context
                             if (
                                 isinstance(ctx, PipelineContext)
-                                and ctx.scratchpad.get("status") == "paused"
+                                and getattr(ctx, "status", None) == "paused"
                             ):
                                 paused = True
                                 pipeline_result_obj = chunk
@@ -524,11 +524,11 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                 yield chunk
                                 return
                             if isinstance(ctx, PipelineContext) and (
-                                "loop_iteration" in ctx.scratchpad
-                                or "loop_step_index" in ctx.scratchpad
+                                getattr(ctx, "loop_iteration_index", None) is not None
+                                or getattr(ctx, "loop_step_index", None) is not None
                             ):
                                 try:
-                                    ctx.scratchpad["status"] = "paused"
+                                    ctx.status = "paused"
                                     pipeline_result_obj = chunk
                                     paused = True
                                     _yielded_pipeline_result = True
@@ -566,10 +566,9 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                 paused = True
                 try:
                     if isinstance(current_context_instance, PipelineContext):
-                        current_context_instance.scratchpad["status"] = "paused"
-                        current_context_instance.scratchpad.setdefault(
-                            "pause_message", str(e) or "Paused for HITL"
-                        )
+                        current_context_instance.status = "paused"
+                        if current_context_instance.pause_message is None:
+                            current_context_instance.pause_message = str(e) or "Paused for HITL"
                         pipeline_result_obj.final_pipeline_context = cast(
                             Optional[ContextT], current_context_instance
                         )
@@ -620,7 +619,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         paused = True
                         try:
                             if isinstance(current_context_instance, PipelineContext):
-                                current_context_instance.scratchpad["status"] = "paused"
+                                current_context_instance.status = "paused"
                         except Exception:
                             pass
                     final_status: Literal[
@@ -631,7 +630,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         final_status = "failed"
                     elif paused or (
                         isinstance(current_context_instance, PipelineContext)
-                        and current_context_instance.scratchpad.get("status") == "paused"
+                        and getattr(current_context_instance, "status", None) == "paused"
                     ):
                         final_status = "paused"
                     elif start_idx > 0:

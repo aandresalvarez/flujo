@@ -138,7 +138,7 @@ def _register_builtins() -> None:
                 **SkillRegistration(
                     id="flujo.builtins.context_set",
                     factory=lambda **_params: context_set,
-                    description="Set a context field at a dot-separated path (e.g., 'scratchpad.counter')",
+                    description="Set a context field at a dot-separated path (e.g., 'call_count' or 'import_artifacts.counter')",
                     input_schema={
                         "type": "object",
                         "properties": {
@@ -155,7 +155,7 @@ def _register_builtins() -> None:
                 **SkillRegistration(
                     id="flujo.builtins.context_merge",
                     factory=lambda **_params: context_merge,
-                    description="Merge a dictionary into context at a path (e.g., 'scratchpad.settings')",
+                    description="Merge a dictionary into context at a path (e.g., 'hitl_data' or 'import_artifacts.extras')",
                     input_schema={
                         "type": "object",
                         "properties": {

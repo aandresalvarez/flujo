@@ -41,11 +41,11 @@ async def test_yaml_pause_transition_self_reentry() -> None:
     ctx = paused.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
     # Pause metadata
-    assert ctx.scratchpad.get("status") == "paused"
-    assert isinstance(ctx.scratchpad.get("pause_message"), str)
+    assert ctx.status == "paused"
+    assert isinstance(ctx.pause_message, str)
     # State machine control metadata
-    assert ctx.scratchpad.get("current_state") == "s1"
-    assert ctx.scratchpad.get("next_state") == "s1"
+    assert ctx.current_state == "s1"
+    assert ctx.next_state == "s1"
 
 
 def _yaml_multi_state_with_when() -> str:
@@ -86,7 +86,7 @@ async def test_yaml_multi_state_flow_with_when_true() -> None:
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    assert ctx.scratchpad.get("current_state") == "s2"
+    assert ctx.current_state == "s2"
 
 
 @pytest.mark.asyncio
@@ -100,4 +100,4 @@ async def test_yaml_multi_state_flow_with_when_false() -> None:
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    assert ctx.scratchpad.get("current_state") == "s3"
+    assert ctx.current_state == "s3"

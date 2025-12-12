@@ -341,10 +341,9 @@ def display_pipeline_results(
     hitl_message = None
     try:
         ctx = getattr(result, "final_pipeline_context", None)
-        scratch = getattr(ctx, "scratchpad", None) if ctx is not None else None
-        if isinstance(scratch, dict) and scratch.get("status") == "paused":
+        if ctx is not None and getattr(ctx, "status", None) == "paused":
             paused = True
-            hitl_message = scratch.get("pause_message") or scratch.get("hitl_message")
+            hitl_message = getattr(ctx, "pause_message", None)
     except Exception:
         paused = False
 

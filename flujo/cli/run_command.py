@@ -580,11 +580,8 @@ state_uri = "sqlite:///flujo_ops.db"
                 def _is_paused(_res: Any) -> tuple[bool, str | None]:
                     try:
                         ctx = getattr(_res, "final_pipeline_context", None)
-                        scratch = getattr(ctx, "scratchpad", None) if ctx is not None else None
-                        if isinstance(scratch, dict) and scratch.get("status") == "paused":
-                            return True, (
-                                scratch.get("pause_message") or scratch.get("hitl_message")
-                            )
+                        if ctx is not None and getattr(ctx, "status", None) == "paused":
+                            return True, getattr(ctx, "pause_message", None)
                     except Exception:
                         pass
                     return False, None
@@ -837,10 +834,6 @@ state_uri = "sqlite:///flujo_ops.db"
                     except Exception:
                         base = {}
                     # Augment with common transient fields for debugging
-                    try:
-                        base["scratchpad"] = _serialize_obj(getattr(ctx, "scratchpad", {}))
-                    except Exception:
-                        pass
                     try:
                         base["conversation_history"] = [
                             {

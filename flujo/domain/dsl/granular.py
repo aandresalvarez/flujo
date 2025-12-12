@@ -20,7 +20,7 @@ __all__ = ["GranularStep", "GranularState", "ResumeError"]
 
 
 class GranularState(TypedDict):
-    """State schema for granular execution, persisted in scratchpad.
+    """State schema for granular execution, persisted in context.granular_state.
 
     Attributes:
         turn_index: Committed turn count (0 = start, incremented after each turn)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING, cast
+from typing import Any, TYPE_CHECKING
 
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
@@ -33,7 +33,7 @@ class PolicyHandlers:
         step = frame.step
         return await self._core._import_orchestrator.execute(
             core=self._core,
-            step=cast(ImportStep, step),
+            step=step,
             data=frame.data,
             context=frame.context,
             resources=frame.resources,
@@ -205,7 +205,16 @@ class PolicyHandlers:
         # Ensure a fallback exists; default to simple policy when not provided
         try:
             if registry._fallback_policy is None:  # noqa: SLF001
-                registry.register_fallback(cast(StepPolicy[Any], self._core.simple_step_executor))
+                fallback = self._core.simple_step_executor
+                if isinstance(fallback, StepPolicy):
+                    registry.register_fallback(fallback)
+                else:
+                    from .policy_registry import CallableStepPolicy
+
+                    async def _fallback(frame: ExecutionFrame[Any]) -> StepOutcome[Any]:
+                        return await fallback.execute(self._core, frame)
+
+                    registry.register_fallback(CallableStepPolicy(Step, _fallback))
         except Exception:
             pass
 

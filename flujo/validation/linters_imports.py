@@ -10,7 +10,9 @@ class ImportLinter(BaseLinter):
     """Import-related lints that do not require recursive validation."""
 
     _ALLOWED_PARENT_ROOTS: ClassVar[set[str]] = {
-        "scratchpad",
+        "import_artifacts",
+        "step_outputs",
+        "steps",
         "command_log",
         "hitl_history",
         "conversation_history",
@@ -86,17 +88,33 @@ class ImportLinter(BaseLinter):
                         if not parent_path:
                             continue
                         root = parent_path.split(".", 1)[0]
+                        if root == "scratchpad":
+                            out.append(
+                                ValidationFinding(
+                                    rule_id="V-I2",
+                                    severity="error",
+                                    message=(
+                                        f"Import outputs mapping parent path '{parent_path}' targets removed scratchpad."
+                                    ),
+                                    step_name=getattr(st, "name", None),
+                                    suggestion=(
+                                        "Map into import_artifacts.<key> or another typed context field."
+                                    ),
+                                    location_path="steps[].config.outputs",
+                                )
+                            )
+                            continue
                         if root not in self._ALLOWED_PARENT_ROOTS:
                             out.append(
                                 ValidationFinding(
                                     rule_id="V-I2",
                                     severity="warning",
                                     message=(
-                                        f"Import outputs mapping parent path '{parent_path}' has an unknown root; consider mapping under 'scratchpad' or a known context field."
+                                        f"Import outputs mapping parent path '{parent_path}' has an unknown root; consider mapping under import_artifacts or a known context field."
                                     ),
                                     step_name=getattr(st, "name", None),
                                     suggestion=(
-                                        "Use scratchpad.<key> for transient fields or ensure the root is a valid context field."
+                                        "Use import_artifacts.<key> for transient fields or ensure the root is a valid context field."
                                     ),
                                     location_path="steps[].config.outputs",
                                 )
@@ -111,11 +129,11 @@ class ImportLinter(BaseLinter):
                                 rule_id="V-I5",
                                 severity="warning",
                                 message=(
-                                    "Import projects an object literal to initial_prompt; consider projecting to scratchpad or both."
+                                    "Import projects an object literal to initial_prompt; consider projecting to import_artifacts or both."
                                 ),
                                 step_name=getattr(st, "name", None),
                                 suggestion=(
-                                    "Use input_to=scratchpad or both with input_scratchpad_key to pass structured input."
+                                    "Use input_to=import_artifacts or both to pass structured input."
                                 ),
                             )
                         )

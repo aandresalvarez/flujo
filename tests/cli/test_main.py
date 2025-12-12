@@ -143,7 +143,13 @@ def test_cli_validate_reports_suggestions(tmp_path: Path) -> None:
         async def b(x: str) -> str: return x
         s1 = Step.from_callable(a, name="a")
         s1.__step_output_type__ = str
-        s2 = Step.from_callable(b, name="b", is_adapter=True)
+        s2 = Step.from_callable(
+            b,
+            name="b",
+            is_adapter=True,
+            adapter_id="generic-adapter",
+            adapter_allow="generic",
+        )
         s2.meta = {"is_adapter": True, "adapter_id": "generic-adapter", "adapter_allow": "generic"}
         s2.__step_input_type__ = str
         pipeline = Pipeline.from_step(s1) >> s2

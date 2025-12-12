@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, Type
 
-from flujo.domain.models import Paused, StepOutcome, StepResult
+from flujo.domain.models import StepOutcome, StepResult
 from flujo.exceptions import PausedException
 from flujo.infra import telemetry
 from ..policy_registry import StepPolicy
@@ -73,5 +73,5 @@ class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
                 pass
             return normalize_outcome(outcome, step_name=getattr(step, "name", "<unnamed>"))
         except PausedException as e:
-            # Surface as Paused outcome to maintain control-flow semantics
-            return Paused(message=getattr(e, "message", ""))
+            # Control-flow exception: must propagate to the runner (do not coerce into data).
+            raise e

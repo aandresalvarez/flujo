@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING, cast
+from typing import Any, TYPE_CHECKING
 
 from ...domain.models import Failure, Paused, StepOutcome, StepResult, Success
 from ...exceptions import (
@@ -34,7 +34,13 @@ class DispatchHandler:
             outcome = await self._core._dispatcher.dispatch(frame)
             await self._core._hydration_manager.persist_context(getattr(frame, "context", None))
             if called_with_frame:
-                return cast(StepOutcome[StepResult], outcome)
+                if isinstance(outcome, Paused):
+                    raise PausedException(outcome.message)
+                if isinstance(outcome, (StepOutcome, StepResult)):
+                    return outcome
+                raise TypeError(
+                    f"Dispatcher returned unsupported type {type(outcome).__name__} for step '{step_name}'"
+                )
             if isinstance(outcome, Success):
                 return self._core._unwrap_outcome_to_step_result(outcome.step_result, step_name)
             if isinstance(outcome, Failure):
@@ -44,10 +50,9 @@ class DispatchHandler:
             return self._core._unwrap_outcome_to_step_result(outcome, step_name)
         except InfiniteFallbackError:
             raise
-        except PausedException as e:
+        except PausedException:
             await self._core._hydration_manager.persist_context(getattr(frame, "context", None))
-            if called_with_frame:
-                return Paused(message=getattr(e, "message", ""))
+            # Control-flow exception: must propagate to the runner regardless of call mode.
             raise
         except (
             UsageLimitExceededError,

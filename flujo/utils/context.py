@@ -83,7 +83,6 @@ def get_excluded_fields() -> set[str]:
         "operation_count",
         "cache_timestamps",
         "cache_keys",
-        "scratchpad",  # Temporary storage for intermediate computation results
         "hitl_history",
         "run_id",
         "initial_prompt",
@@ -248,48 +247,13 @@ def safe_merge_context_updates(
         """
         result = target_dict.copy()
         # Phase 1: Preserve pause_message from target if it exists (recipe sets it correctly)
-        # This handles both top-level pause_message and nested scratchpad["pause_message"]
         preserved_pause_message = None
         if isinstance(result, dict):
             preserved_pause_message = result.get("pause_message")
-            # Also check nested scratchpad
-            if preserved_pause_message is None and "scratchpad" in result:
-                scratchpad = result.get("scratchpad")
-                if isinstance(scratchpad, dict):
-                    preserved_pause_message = scratchpad.get("pause_message")
 
         for key, source_value in source_dict.items():
             if key in result and isinstance(result[key], dict) and isinstance(source_value, dict):
-                # Phase 1: Special handling for scratchpad to preserve pause_message
-                if key == "scratchpad":
-                    # Preserve pause_message from target scratchpad before merging
-                    target_scratchpad = result[key]
-                    source_scratchpad = source_value
-                    preserved_scratchpad_pause_message = None
-                    if isinstance(target_scratchpad, dict):
-                        preserved_scratchpad_pause_message = target_scratchpad.get("pause_message")
-                    # Remove formatted pause_message from source to prevent overwrite
-                    # If source has pause_message and it's different from target's, it might be formatted
-                    if isinstance(source_scratchpad, dict) and "pause_message" in source_scratchpad:
-                        source_pause_msg = source_scratchpad.get("pause_message")
-                        # If source has pause_message but target doesn't, or if they're different,
-                        # remove source's to avoid overwriting target's plain message
-                        if (
-                            preserved_scratchpad_pause_message is None
-                            or source_pause_msg != preserved_scratchpad_pause_message
-                        ):
-                            # Source might have formatted message, remove it before merge
-                            source_scratchpad = source_scratchpad.copy()
-                            source_scratchpad.pop("pause_message", None)
-                    # Merge scratchpad dictionaries
-                    result[key] = deep_merge_dict(target_scratchpad, source_scratchpad)
-                    # Restore preserved pause_message if it was set (recipe set it correctly)
-                    if preserved_scratchpad_pause_message is not None and isinstance(
-                        result[key], dict
-                    ):
-                        result[key]["pause_message"] = preserved_scratchpad_pause_message
-                else:
-                    result[key] = deep_merge_dict(result[key], source_value)
+                result[key] = deep_merge_dict(result[key], source_value)
             elif key in result and isinstance(result[key], list) and isinstance(source_value, list):
                 # Robust de-duplication using stable content hashing to avoid false matches
                 import json as _json
@@ -394,18 +358,6 @@ def safe_merge_context_updates(
                 if not key.startswith("_")
             }
 
-        # Preserve scratchpad entries even when they contain explicit None values.
-        try:
-            if hasattr(source_context, "scratchpad"):
-                sp = getattr(source_context, "scratchpad")
-                if isinstance(sp, dict):
-                    scratch_target = source_fields.setdefault("scratchpad", {})
-                    if isinstance(scratch_target, dict):
-                        for k, v in sp.items():
-                            scratch_target[k] = v
-        except Exception:
-            pass
-
         # Include dynamically added attributes that model_dump/model.dict may skip
         try:
             extra_attrs = getattr(source_context, "__dict__", {})
@@ -463,71 +415,6 @@ def safe_merge_context_updates(
 
                 # Skip excluded fields to prevent duplication during loop merging
                 if field_name in excluded_fields:
-                    # Special handling for scratchpad: even if excluded, we must preserve critical keys
-                    # and simple primitive values to ensure state machine transitions and basic data flow work.
-                    if field_name == "scratchpad":
-                        if _VERBOSE_DEBUG:
-                            logger.debug(
-                                "Processing excluded scratchpad for critical keys and primitives"
-                            )
-
-                        # Critical keys that must ALWAYS be preserved
-                        CRITICAL_SCRATCHPAD_KEYS = {
-                            "current_state",
-                            "status",
-                            "pause_message",
-                            "next_state",
-                            "loop_index",
-                            "loop_output",
-                        }
-
-                        # Check if source has any critical keys or primitives
-                        source_scratch = getattr(source_context, "scratchpad", {})
-                        if isinstance(source_scratch, dict):
-                            # Filter for critical keys OR primitive types (str, int, float, bool, None)
-                            # This prevents large objects from polluting the context while allowing basic state to flow.
-                            updates_to_merge = {}
-                            for k, v in source_scratch.items():
-                                if k in CRITICAL_SCRATCHPAD_KEYS:
-                                    updates_to_merge[k] = v
-                                elif isinstance(v, (str, int, float, bool, type(None))):
-                                    updates_to_merge[k] = v
-
-                            if updates_to_merge:
-                                if _VERBOSE_DEBUG:
-                                    logger.debug(
-                                        f"Merging filtered scratchpad keys: {list(updates_to_merge.keys())}"
-                                    )
-
-                                # Get or create target scratchpad
-                                if not hasattr(target_context, "scratchpad"):
-                                    _force_setattr(target_context, "scratchpad", {})
-                                target_scratch = getattr(target_context, "scratchpad")
-
-                                if isinstance(target_scratch, dict):
-                                    # Merge filtered keys
-                                    merged_scratch = deep_merge_dict(
-                                        target_scratch, updates_to_merge
-                                    )
-                                    _force_setattr(target_context, "scratchpad", merged_scratch)
-
-                                    # Observability: Warn about keys being merged from excluded scratchpad
-                                    # This helps identify if the exclusion policy is too aggressive
-                                    # We only warn if CRITICAL keys are involved, as primitives are less risky
-                                    critical_keys_merged = [
-                                        k
-                                        for k in updates_to_merge.keys()
-                                        if k in CRITICAL_SCRATCHPAD_KEYS
-                                    ]
-                                    if critical_keys_merged:
-                                        logger.warning(
-                                            f"Merged critical keys {critical_keys_merged} from excluded 'scratchpad'. "
-                                            "Consider removing 'scratchpad' from excluded_fields if this is unintended."
-                                        )
-
-                                    updated_count += 1
-                                    continue
-
                     if _VERBOSE_DEBUG:
                         logger.debug("Skipping excluded field: %s", field_name)
                     continue
@@ -645,16 +532,6 @@ def safe_merge_context_updates(
                     # For other types, use simple replacement
                     try:
                         if current_value != actual_source_value:
-                            # Protect scratchpad from being overwritten by None
-                            if (
-                                field_name == "scratchpad"
-                                and actual_source_value is None
-                                and current_value is not None
-                            ):
-                                if _VERBOSE_DEBUG:
-                                    logger.debug("Skipping scratchpad overwrite with None")
-                                continue
-
                             # Use setattr to trigger Pydantic validation
                             _force_setattr(target_context, field_name, actual_source_value)
                             updated_count += 1
@@ -930,7 +807,7 @@ def set_nested_context_field(context: Any, path: str, value: Any) -> bool:
 
     Args:
         context: The context object (typically PipelineContext)
-        path: Dot-separated path to the field (e.g., "scratchpad.user_name" or "scratchpad.nested.field")
+        path: Dot-separated path to the field (e.g., "result" or "user_query")
         value: The value to set
 
     Returns:
@@ -941,13 +818,17 @@ def set_nested_context_field(context: Any, path: str, value: Any) -> bool:
 
     Example:
         >>> context = PipelineContext()
-        >>> set_nested_context_field(context, "scratchpad.user_name", "Alice")
+        >>> set_nested_context_field(context, "user_name", "Alice")
         True
-        >>> context.scratchpad["user_name"]  # or context.scratchpad.user_name
-        'Alice'
     """
     if not path:
         return False
+    # Scratchpad is deprecated and framework-reserved; prohibit writing into it via dot-paths.
+    # Use typed context fields instead.
+    if path == "scratchpad" or path.startswith("scratchpad."):
+        raise ValueError(
+            "scratchpad is framework-reserved and deprecated; write to typed context fields instead."
+        )
 
     parts = path.split(".")
     target = context

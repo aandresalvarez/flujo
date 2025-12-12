@@ -8,6 +8,7 @@ Tests cover PRD v12 requirements:
 """
 
 import pytest
+from pydantic import BaseModel, Field
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.executor_helpers import make_execution_frame
@@ -16,11 +17,11 @@ from flujo.domain.dsl.granular import GranularStep, ResumeError
 from flujo.domain.models import Success, Quota
 
 
-class MockContext:
-    """Mock context with scratchpad for testing."""
+class MockContext(BaseModel):
+    """Typed mock context for strict-mode execution (must be a Pydantic model)."""
 
-    def __init__(self) -> None:
-        self.scratchpad: dict = {}
+    granular_state: dict[str, object] | None = None
+    executed_branches: list[str] = Field(default_factory=list)
 
 
 class MockAgent:
@@ -61,7 +62,7 @@ async def test_granular_cas_guard_skip() -> None:
             "enforce_idempotency": False,
         },
     )
-    context.scratchpad["granular_state"] = {
+    context.granular_state = {
         "turn_index": 1,
         "history": [{"turn_index": 0, "input": "test", "output": "previous_result"}],
         "is_complete": True,  # Agent signaled completion
@@ -119,7 +120,7 @@ async def test_granular_resumes_from_stored_turn() -> None:
         },
     )
     # State exists but not complete - should continue execution
-    context.scratchpad["granular_state"] = {
+    context.granular_state = {
         "turn_index": 2,  # Already completed 2 turns
         "history": [],
         "is_complete": False,
@@ -164,14 +165,13 @@ async def test_granular_fingerprint_mismatch() -> None:
 
     context = MockContext()
     # Store a different fingerprint
-    context.scratchpad["granular_state"] = {
+    context.granular_state = {
         "turn_index": 0,
         "history": [],
         "is_complete": False,
         "final_output": None,
         "fingerprint": "different_fingerprint_hash",
     }
-    context.scratchpad["loop_iteration"] = 0
 
     frame = make_execution_frame(
         core,
@@ -227,7 +227,7 @@ async def test_cas_skip_no_quota_touch() -> None:
             "enforce_idempotency": False,
         },
     )
-    context.scratchpad["granular_state"] = {
+    context.granular_state = {
         "turn_index": 1,
         "history": [{"turn_index": 0, "input": "test", "output": "cached_out"}],
         "is_complete": True,  # Must be complete to trigger skip

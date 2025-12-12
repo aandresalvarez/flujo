@@ -147,11 +147,11 @@ class DefaultProcessorPipeline:
             except Exception as e:
                 if not _slots_fallback_used:
                     try:
-                        scratch = (
-                            getattr(context, "scratchpad", None) if context is not None else None
+                        hitl_data = (
+                            getattr(context, "hitl_data", None) if context is not None else None
                         )
-                        if isinstance(scratch, dict) and "slots" in scratch:
-                            processed_data = {"slots": scratch.get("slots", {})}
+                        if isinstance(hitl_data, dict) and "slots" in hitl_data:
+                            processed_data = {"slots": hitl_data.get("slots", {})}
                             _slots_fallback_used = True
                             continue
                     except Exception:

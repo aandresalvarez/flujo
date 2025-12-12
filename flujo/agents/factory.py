@@ -12,7 +12,7 @@ Single Responsibility Principle and isolate agent creation concerns.
 from __future__ import annotations
 
 import os
-from typing import Any, Optional, Type, get_origin
+from typing import Any, Optional, Type, get_origin, cast
 
 from pydantic import TypeAdapter
 from pydantic_ai import Agent
@@ -44,6 +44,7 @@ def make_agent(
 ) -> tuple[Agent[Any, Any], AgentProcessors]:
     """Creates a pydantic_ai.Agent, injecting the correct API key and returns it with processors."""
     provider_name = model.split(":")[0].lower()
+    base_model = model.split(":", 1)[1].lower() if ":" in model else ""
     from flujo.infra.settings import get_settings
 
     current_settings = get_settings()
@@ -89,6 +90,30 @@ def make_agent(
     final_processors = processors.model_copy(deep=True) if processors else AgentProcessors()
 
     actual_type = _unwrap_type_adapter(output_type)
+
+    # Local stub model: allow offline/deterministic agents for tests and CLI fixtures.
+    # This returns a minimal agent that simply echoes the first positional argument,
+    # preserving type hints via output_type to satisfy validation paths without
+    # requiring a real provider or network access.
+    if provider_name == "local" and base_model == "mock":
+
+        class _LocalMockAgent:
+            def __init__(self) -> None:
+                self.model = model
+                self.output_type = actual_type
+                self.target_output_type = actual_type
+
+            async def run(self, *args: Any, **kwargs: Any) -> Any:
+                if args:
+                    return args[0]
+                if "data" in kwargs:
+                    return kwargs["data"]
+                return None
+
+            async def run_async(self, *args: Any, **kwargs: Any) -> Any:
+                return await self.run(*args, **kwargs)
+
+        return cast(Agent[Any, Any], _LocalMockAgent()), final_processors
 
     try:
         # Specialized handling for OpenAI GPT-5 and other reasoning models using Responses API

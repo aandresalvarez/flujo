@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import BaseModel
+
 from flujo.domain.dsl import Step, Pipeline
 from flujo.domain.dsl.loop import LoopStep
 from flujo.domain.dsl.step import MergeStrategy
@@ -132,6 +134,37 @@ def test_type_mismatch_between_steps_reports_V_A2() -> None:
     assert any(f.rule_id == "V-A2" for f in report.errors)
 
 
+def test_type_mismatch_reports_strict_rule_V_A2_TYPE() -> None:
+    async def a(x: int) -> int:  # type: ignore[override]
+        return x
+
+    async def b(x: str) -> str:  # type: ignore[override]
+        return x
+
+    p = Pipeline.from_step(Step.from_callable(a, name="a")) >> Step.from_callable(b, name="b")
+    report = p.validate_graph()
+    assert any(f.rule_id == "V-A2-TYPE" for f in report.errors)
+
+
+def test_adapter_step_skips_type_errors_when_allowlisted() -> None:
+    async def a(x: int) -> int:  # type: ignore[override]
+        return x
+
+    async def b(x: object) -> object:  # type: ignore[override]
+        return x
+
+    producer = Step.from_callable(a, name="a")
+    adapter = Step.from_callable(
+        b,
+        name="adapt",
+        is_adapter=True,
+        adapter_id="generic-adapter",
+        adapter_allow="generic",
+    )
+    report = (Pipeline.from_step(producer) >> adapter).validate_graph()
+    assert not any(f.rule_id in {"V-A2", "V-A2-STRICT", "V-A2-TYPE"} for f in report.errors)
+
+
 def test_missing_agent_simple_step_reports_V_A1() -> None:
     naked = Step(name="naked")  # agent=None by default
     report = Pipeline.from_step(naked).validate_graph()
@@ -182,11 +215,31 @@ def test_adapter_requires_allowlist_token() -> None:
         return x
 
     s1 = Step.from_callable(a, name="a")
-    s2 = Step.from_callable(a, name="adapt", is_adapter=True)
+    s2 = Step.from_callable(
+        a,
+        name="adapt",
+        is_adapter=True,
+        adapter_id="generic-adapter",
+        adapter_allow="generic",
+    )
     # Remove token to trigger failure
     s2.meta["adapter_allow"] = "wrong"
     report = (Pipeline.from_step(s1) >> s2).validate_graph()
     assert any(f.rule_id == "V-ADAPT-ALLOW" for f in report.errors)
+
+
+def test_concrete_type_mismatch_reports_v_a2_type() -> None:
+    async def a(x: int) -> int:  # type: ignore[override]
+        return x
+
+    async def b(x: float) -> float:  # type: ignore[override]
+        return x
+
+    s1 = Step.from_callable(a, name="a")
+    s2 = Step.from_callable(b, name="b")
+    report = (Pipeline.from_step(s1) >> s2).validate_graph()
+
+    assert any(f.rule_id == "V-A2-TYPE" for f in report.errors)
 
 
 def test_parallel_branch_requires_adapter_for_generic_consumer() -> None:
@@ -198,7 +251,13 @@ def test_parallel_branch_requires_adapter_for_generic_consumer() -> None:
 
     branch_a = Pipeline.from_step(Step.from_callable(a, name="a"))
     branch_b = Pipeline.from_step(
-        Step.from_callable(b, name="b", is_adapter=True).model_copy(
+        Step.from_callable(
+            b,
+            name="b",
+            is_adapter=True,
+            adapter_id="generic-adapter",
+            adapter_allow="generic",
+        ).model_copy(
             update={
                 "meta": {
                     "is_adapter": True,
@@ -215,6 +274,97 @@ def test_parallel_branch_requires_adapter_for_generic_consumer() -> None:
     )
     report = Pipeline.from_step(p).validate_graph()
     assert not any(f.rule_id == "V-A2-STRICT" for f in report.errors)
+
+
+def test_parallel_merge_scratchpad_rejected() -> None:
+    branches = {
+        "a": Pipeline.from_step(Step.from_callable(_id, name="a")),
+        "b": Pipeline.from_step(Step.from_callable(_id, name="b")),
+    }
+    p = ParallelStep.model_construct(
+        name="P",
+        branches=branches,
+        merge_strategy="merge_scratchpad",
+    )
+    report = Pipeline.from_step(p).validate_graph()
+    assert any(f.rule_id == "V-P-SCRATCHPAD" for f in report.errors)
+
+
+def test_pydantic_to_dict_requires_adapter() -> None:
+    class Model(BaseModel):
+        x: int
+
+    async def a(x: int) -> Model:  # type: ignore[override]
+        return Model(x=x)
+
+    async def b(x: dict[str, str]) -> dict[str, str]:  # type: ignore[override]
+        return x
+
+    s1 = Step.from_callable(a, name="a")
+    s2 = Step.from_callable(b, name="b")
+
+    report = (Pipeline.from_step(s1) >> s2).validate_graph()
+    assert any(f.rule_id == "V-A2-TYPE" for f in report.errors)
+
+
+def test_pydantic_to_dict_allowed_via_adapter() -> None:
+    class Model(BaseModel):
+        x: int
+
+    async def a(x: int) -> Model:  # type: ignore[override]
+        return Model(x=x)
+
+    async def b(x: dict[str, str]) -> dict[str, str]:  # type: ignore[override]
+        return x
+
+    s1 = Step.from_callable(a, name="a")
+    s2 = Step.from_callable(
+        b,
+        name="adapt",
+        is_adapter=True,
+        adapter_id="generic-adapter",
+        adapter_allow="generic",
+    )
+
+    report = (Pipeline.from_step(s1) >> s2).validate_graph()
+    assert not any(f.rule_id == "V-A2-TYPE" for f in report.errors)
+
+
+def test_pipeline_records_head_and_tail_types() -> None:
+    async def a(x: int) -> str:  # type: ignore[override]
+        return str(x)
+
+    async def b(x: str) -> float:  # type: ignore[override]
+        return float(len(x))
+
+    s1 = Step.from_callable(a, name="a")
+    s2 = Step.from_callable(b, name="b")
+
+    p1 = Pipeline.from_step(s1)
+    assert p1.input_type is int
+    assert p1.output_type is str
+
+    p2 = p1 >> s2
+    assert p2.input_type is int
+    assert p2.output_type is float
+
+
+def test_pipeline_rshift_with_pipeline_preserves_head_tail() -> None:
+    async def a(x: int) -> str:  # type: ignore[override]
+        return str(x)
+
+    async def b(x: str) -> bytes:  # type: ignore[override]
+        return x.encode()
+
+    async def c(x: bytes) -> bool:  # type: ignore[override]
+        return bool(x)
+
+    p_left = Pipeline.from_step(Step.from_callable(a, name="a")) >> Step.from_callable(b, name="b")
+    p_right = Pipeline.from_step(Step.from_callable(c, name="c"))
+
+    chained = p_left >> p_right
+    assert chained.input_type is int
+    assert chained.output_type is bool
 
 
 def test_reused_step_instance_warns_V_A3() -> None:

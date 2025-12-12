@@ -615,9 +615,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         meta.setdefault("is_background_task", True)
         meta["background_error"] = meta.get("background_error") or str(error)
 
-        if context is not None and hasattr(context, "scratchpad"):
+        if context is not None:
             try:
-                context.scratchpad["background_error"] = str(error)
+                if hasattr(context, "background_error"):
+                    context.background_error = str(error)
             except Exception:
                 pass
 

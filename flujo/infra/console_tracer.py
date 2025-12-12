@@ -104,7 +104,7 @@ class ConsoleTracer:
         inferred success solely from ``step_history`` which reports ``all([]) == True``
         in paused-early cases, causing a misleading "COMPLETED" panel. We now:
         - Prefer ``pipeline_result.success`` when available (runner sets this).
-        - Detect a paused state from ``payload.context.scratchpad['status']`` (or
+        - Detect a paused state from ``payload.context.status`` (or
           ``pipeline_result.final_pipeline_context`` as a fallback).
         - Adjust the title and styling accordingly.
         """
@@ -114,8 +114,7 @@ class ConsoleTracer:
 
         # Determine final status
         ctx = payload.context or getattr(pipeline_result, "final_pipeline_context", None)
-        scratch = getattr(ctx, "scratchpad", None) if ctx is not None else None
-        paused = isinstance(scratch, dict) and scratch.get("status") == "paused"
+        paused = bool(ctx is not None and getattr(ctx, "status", None) == "paused")
 
         # Prefer the explicit success flag set by the runner; fall back to step_history
         is_success = bool(getattr(pipeline_result, "success", False))

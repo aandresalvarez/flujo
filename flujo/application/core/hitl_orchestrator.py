@@ -32,11 +32,12 @@ class HitlOrchestrator:
         outcome: StepOutcome[StepResult] = await core.hitl_step_executor.execute(core, frame)
         if isinstance(outcome, Paused):
             try:
-                if context is not None and hasattr(context, "scratchpad"):
-                    scratch = getattr(context, "scratchpad")
-                    if isinstance(scratch, dict):
-                        scratch["status"] = "paused"
-                        scratch["pause_message"] = outcome.message
+                if context is not None:
+                    # Use typed fields instead of scratchpad for status and pause_message
+                    if hasattr(context, "status"):
+                        context.status = "paused"
+                    if hasattr(context, "pause_message"):
+                        context.pause_message = outcome.message
             except Exception:
                 pass
             raise PausedException(outcome.message)

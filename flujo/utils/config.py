@@ -18,7 +18,7 @@ class Settings:
     pure_quota_mode: bool = True
     test_mode: bool = False
     warn_legacy: bool = False
-    enforce_typed_context: bool = False
+    # NOTE: enforce_typed_context removed - strict mode is always on (executor_helpers.py:136-148)
     memory_indexing_enabled: bool = False
     memory_embedding_model: str | None = None
     governance_mode: Literal["allow_all", "deny_all"] = "allow_all"
@@ -63,7 +63,7 @@ def _load_from_env() -> Settings:
         pure_quota_mode=True,
         test_mode=_flag("FLUJO_TEST_MODE"),
         warn_legacy=_flag("FLUJO_WARN_LEGACY"),
-        enforce_typed_context=_flag("FLUJO_ENFORCE_TYPED_CONTEXT"),
+        # NOTE: enforce_typed_context removed - strict mode is always on
         memory_indexing_enabled=_flag("FLUJO_MEMORY_INDEXING_ENABLED"),
         memory_embedding_model=os.getenv("FLUJO_MEMORY_EMBEDDING_MODEL"),
         governance_mode=_mode("FLUJO_GOVERNANCE_MODE", "allow_all"),

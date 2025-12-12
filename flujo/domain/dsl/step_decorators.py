@@ -12,7 +12,6 @@ from typing import (
     Coroutine,
     Optional,
     TYPE_CHECKING,
-    cast,
     overload,
 )
 
@@ -45,6 +44,8 @@ def step(
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
     is_adapter: bool = False,
+    adapter_id: str | None = None,
+    adapter_allow: str | None = None,
     **config_kwargs: Any,
 ) -> "Step[StepInT, StepOutT]": ...
 
@@ -60,6 +61,8 @@ def step(
     execution_mode: "ExecutionMode | None" = None,
     max_retries: int | None = None,
     timeout_s: float | None = None,
+    adapter_id: str | None = None,
+    adapter_allow: str | None = None,
     **config_kwargs: Any,
 ) -> Callable[
     [Callable[Concatenate[Any, P], Coroutine[Any, Any, Any]]],
@@ -82,6 +85,8 @@ def step(
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
     is_adapter: bool = False,
+    adapter_id: str | None = None,
+    adapter_allow: str | None = None,
     **config_kwargs: Any,
 ) -> Any:
     """Decorator / factory for creating :class:`Step` instances from async callables."""
@@ -129,6 +134,8 @@ def step(
             persist_feedback_to_context=persist_feedback_to_context,
             persist_validation_results_to=persist_validation_results_to,
             is_adapter=is_adapter,
+            adapter_id=adapter_id,
+            adapter_allow=adapter_allow,
             config=final_config,
         )
 
@@ -145,6 +152,8 @@ def adapter_step(
     *,
     name: str | None = None,
     updates_context: bool = False,
+    adapter_id: str,
+    adapter_allow: str,
     processors: Optional["AgentProcessors"] = None,
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
@@ -157,6 +166,8 @@ def adapter_step(
     *,
     name: str | None = None,
     updates_context: bool = False,
+    adapter_id: str,
+    adapter_allow: str,
     processors: Optional["AgentProcessors"] = None,
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
@@ -172,4 +183,23 @@ def adapter_step(
     **kwargs: Any,
 ) -> Any:
     """Alias for :func:`step` that marks the created step as an adapter."""
-    return cast(Any, step)(func, is_adapter=True, **kwargs)
+    adapter_id = kwargs.pop("adapter_id", None)
+    adapter_allow = kwargs.pop("adapter_allow", None)
+
+    if adapter_id is None or adapter_allow is None:
+        raise ValueError("adapter_step requires adapter_id and adapter_allow (allowlist token).")
+
+    if func is None:
+        return step(
+            is_adapter=True,
+            adapter_id=adapter_id,
+            adapter_allow=adapter_allow,
+            **kwargs,
+        )
+    return step(
+        func,
+        is_adapter=True,
+        adapter_id=adapter_id,
+        adapter_allow=adapter_allow,
+        **kwargs,
+    )

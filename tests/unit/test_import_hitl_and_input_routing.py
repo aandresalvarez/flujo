@@ -56,21 +56,18 @@ steps:
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    assert ctx.scratchpad.get("status") == "paused"
-    assert (
-        isinstance(ctx.scratchpad.get("pause_message"), str)
-        and ctx.scratchpad["pause_message"].strip()
-    )
+    assert ctx.status == "paused"
+    assert isinstance(ctx.pause_message, str) and ctx.pause_message.strip()
 
 
 @pytest.mark.asyncio
 async def test_import_input_to_initial_prompt_has_precedence() -> None:
-    # Child pipeline that captures its initial_prompt into scratchpad.captured
+    # Child pipeline that captures its initial_prompt into import_artifacts.captured
     async def capture_initial_prompt(
         _: object, *, context: Optional[PipelineContext] = None
     ) -> dict:
         assert context is not None
-        return {"scratchpad": {"captured": context.initial_prompt}}
+        return {"import_artifacts": {"captured": context.initial_prompt}}
 
     child = Pipeline.from_step(
         Step.from_callable(capture_initial_prompt, name="capture", updates_context=True)
@@ -82,7 +79,9 @@ async def test_import_input_to_initial_prompt_has_precedence() -> None:
         pipeline=child,
         inherit_context=True,
         input_to="initial_prompt",
-        outputs=[OutputMapping(child="scratchpad.captured", parent="captured")],
+        outputs=[
+            OutputMapping(child="import_artifacts.captured", parent="import_artifacts.captured")
+        ],
         inherit_conversation=True,
         propagate_hitl=True,
         on_failure="abort",
@@ -102,7 +101,7 @@ async def test_import_input_to_initial_prompt_has_precedence() -> None:
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    captured = ctx.import_artifacts.get("captured") or ctx.scratchpad.get("captured")
+    captured = ctx.import_artifacts.get("captured")
     assert isinstance(captured, str)
     assert json.loads(captured) == expected_obj
 
@@ -150,7 +149,7 @@ steps:
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    assert ctx.scratchpad.get("status") == "running"
+    assert ctx.status != "paused"
 
 
 @pytest.mark.asyncio
@@ -159,8 +158,8 @@ async def test_import_input_to_both_merges_and_sets_prompt() -> None:
     async def capture(_: object, *, context: Optional[PipelineContext] = None) -> dict:
         assert context is not None
         return {
-            "scratchpad": {
-                "captured_sp": context.scratchpad,
+            "import_artifacts": {
+                "captured_sp": dict(context.import_artifacts),
                 "captured_prompt": context.initial_prompt,
             }
         }
@@ -174,12 +173,12 @@ async def test_import_input_to_both_merges_and_sets_prompt() -> None:
         input_to="both",
         outputs=[
             OutputMapping(
-                child="scratchpad.captured_sp",
-                parent="captured_sp",
+                child="import_artifacts.captured_sp",
+                parent="import_artifacts.captured_sp",
             ),
             OutputMapping(
-                child="scratchpad.captured_prompt",
-                parent="captured_prompt",
+                child="import_artifacts.captured_prompt",
+                parent="import_artifacts.captured_prompt",
             ),
         ],
         propagate_hitl=True,
@@ -209,10 +208,10 @@ async def test_import_input_to_both_merges_and_sets_prompt() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.serial
-async def test_import_scalar_to_scratchpad_key() -> None:
+async def test_import_scalar_to_import_artifacts_key() -> None:
     async def capture(_: object, *, context: Optional[PipelineContext] = None) -> dict:
         assert context is not None
-        return {"scratchpad": {"captured": context.scratchpad}}
+        return {"import_artifacts": {"captured": dict(context.import_artifacts)}}
 
     child = Pipeline.from_step(Step.from_callable(capture, name="cap", updates_context=True))
 
@@ -220,9 +219,11 @@ async def test_import_scalar_to_scratchpad_key() -> None:
         name="import_child",
         pipeline=child,
         inherit_context=True,
-        input_to="scratchpad",
+        input_to="import_artifacts",
         input_scratchpad_key="msg",
-        outputs=[OutputMapping(child="scratchpad.captured", parent="captured")],
+        outputs=[
+            OutputMapping(child="import_artifacts.captured", parent="import_artifacts.captured")
+        ],
         propagate_hitl=True,
         updates_context=True,
     )

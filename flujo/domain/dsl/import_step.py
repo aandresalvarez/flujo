@@ -13,29 +13,52 @@ from .pipeline import Pipeline
 class OutputMapping(BaseModel):
     """Declarative mapping from child → parent context paths.
 
-    Example: { child: "scratchpad.final_sql", parent: "scratchpad.final_sql" }
+    Example: { child: "import_artifacts.final_sql", parent: "import_artifacts.final_sql" }
     """
 
     child: str
     parent: str
 
 
-def _get_nested(source: Any, path: str) -> Any:
-    """Safely read a dotted path from nested dict/attr structures."""
+def _get_nested_present(source: object, path: str) -> tuple[bool, object | None]:
+    """Safely read a dotted path and track presence.
+
+    This distinguishes between "missing path" and "present with value None"
+    for mapping semantics (notably ImportStep output projection).
+    """
     if not path:
-        return None
+        return False, None
     current = source
     for part in path.split("."):
         if isinstance(current, MutableMapping):
             if part not in current:
-                return None
+                return False, None
             current = current[part]
+            continue
+        # Pydantic models: if a field is None and not explicitly set, treat as missing.
+        fields_def = getattr(type(current), "model_fields", None)
+        if isinstance(fields_def, dict) and part in fields_def:
+            val = getattr(current, part, None)
+            fields_set: set[str] = getattr(current, "__pydantic_fields_set__", set())
+            if val is None and part not in fields_set:
+                return False, None
+            current = val
+            continue
+        extra = getattr(current, "__pydantic_extra__", None)
+        if isinstance(extra, dict) and part in extra:
+            current = extra[part]
             continue
         try:
             current = getattr(current, part)
         except Exception:
-            return None
-    return current
+            return False, None
+    return True, current
+
+
+def _get_nested(source: object, path: str) -> object | None:
+    """Safely read a dotted path from nested dict/attr structures."""
+    present, value = _get_nested_present(source, path)
+    return value if present else None
 
 
 def _set_nested(target: Any, path: str, value: Any) -> None:
@@ -89,10 +112,10 @@ class ImportStep(Step[Any, Any]):
     input_to:
         Where to project the parent step input for the child run. One of:
         - "initial_prompt": JSON/text into child initial_prompt
-        - "scratchpad": merge dict input into scratchpad (or store under key)
+        - "import_artifacts": merge dict input into import_artifacts (or store under key)
         - "both": apply both behaviors
     input_scratchpad_key:
-        Optional key when projecting scalar inputs into the scratchpad.
+        Optional key when projecting scalar inputs into import_artifacts.
     outputs:
         Optional list of mappings from child context paths → parent context paths.
         Semantics with ``updates_context=True``:
@@ -117,7 +140,7 @@ class ImportStep(Step[Any, Any]):
 
     pipeline: Pipeline[Any, Any]
     inherit_context: bool = False
-    input_to: Literal["initial_prompt", "scratchpad", "both"] = "initial_prompt"
+    input_to: Literal["initial_prompt", "import_artifacts", "both"] = "initial_prompt"
     input_scratchpad_key: Optional[str] = "initial_input"
     outputs: Optional[List[OutputMapping]] = None
     inherit_conversation: bool = True
@@ -158,14 +181,14 @@ class ImportStep(Step[Any, Any]):
 
         # outputs list provided -> merge specified fields
         for mapping in self.outputs:
-            child_value = _get_nested(child_output, mapping.child)
-            if child_value is None and child_context is not None:
-                child_value = _get_nested(child_context.model_dump(), mapping.child)
-            # Prefer writing into import_artifacts when available to avoid scratchpad
-            if parent_context is not None and hasattr(parent_context, "import_artifacts"):
-                target = parent_context.import_artifacts
-                _set_nested(target, mapping.parent, child_value)
-            else:
-                _set_nested(result, mapping.parent, child_value)
+            present_ctx = False
+            child_value = None
+            if child_context is not None:
+                present_ctx, child_value = _get_nested_present(child_context, mapping.child)
+            if not present_ctx:
+                present_out, child_value = _get_nested_present(child_output, mapping.child)
+                if not present_out:
+                    child_value = None
+            _set_nested(result, mapping.parent, child_value)
 
         return result

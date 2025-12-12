@@ -3,7 +3,6 @@ from flujo.type_definitions.common import JSONObject
 # mypy: ignore-errors
 
 import inspect
-from typing import cast
 
 from ._shared import (  # noqa: F401
     Any,
@@ -64,7 +63,8 @@ async def run_agent_execution(
             fallback_depth=_fallback_depth,
         )
     except PausedException as e:
-        return Paused(message=getattr(e, "message", ""))
+        # Control-flow exception: must propagate (do not coerce into data).
+        raise e
     if hasattr(step, "_mock_name"):
         mock_name = str(getattr(step, "_mock_name", ""))
         if "fallback_step" in mock_name and mock_name.count("fallback_step") > 1:
@@ -314,10 +314,10 @@ async def run_agent_execution(
         try:
             if resources is not None:
                 if hasattr(resources, "__aenter__"):
-                    attempt_resources = await cast(Any, resources).__aenter__()
+                    attempt_resources = await resources.__aenter__()  # type: ignore[attr-defined]
                     exit_cm = getattr(resources, "__aexit__", None)
                 elif hasattr(resources, "__enter__"):
-                    attempt_resources = cast(Any, resources).__enter__()
+                    attempt_resources = resources.__enter__()  # type: ignore[attr-defined]
                     exit_cm = getattr(resources, "__exit__", None)
         except Exception:
             raise
@@ -905,19 +905,9 @@ async def run_agent_execution(
                     result.branch_context = context
                     try:
                         if context is not None:
-                            sp = getattr(context, "scratchpad", None)
-                            if sp is None:
-                                try:
-                                    setattr(context, "scratchpad", {"steps": {}})
-                                    sp = getattr(context, "scratchpad", None)
-                                except Exception:
-                                    sp = None
-                            if isinstance(sp, dict):
-                                steps_map = sp.get("steps")
-                                if not isinstance(steps_map, dict):
-                                    steps_map = {}
-                                    sp["steps"] = steps_map
-                                steps_map[getattr(step, "name", "")] = result.output
+                            outputs = getattr(context, "step_outputs", None)
+                            if isinstance(outputs, dict):
+                                outputs[getattr(step, "name", "")] = result.output
                     except Exception:
                         pass
                     try:

@@ -26,7 +26,6 @@ def prepare_resume_config(loop_step: Any, current_context: Any, data: Any) -> Lo
     resume_requires_hitl_output = False
     resume_payload = data
     paused_step_name: str | None = None
-    scratchpad_ref = getattr(current_context, "scratchpad", None)
     resume_state = LoopResumeState.from_context(current_context) if current_context else None
     if resume_state is not None:
         saved_iteration = resume_state.iteration
@@ -36,21 +35,20 @@ def prepare_resume_config(loop_step: Any, current_context: Any, data: Any) -> Lo
         resume_requires_hitl_output = resume_state.requires_hitl_payload
         paused_step_name = resume_state.paused_step_name
         LoopResumeState.clear(current_context)
-        if isinstance(scratchpad_ref, dict):
-            scratchpad_ref["status"] = "paused" if resume_requires_hitl_output else "running"
-            # Restore the HITL marker so the HITL policy's fast-path can consume user_input
-            if resume_requires_hitl_output:
-                scratchpad_ref["loop_resume_requires_hitl_output"] = True
+        if hasattr(current_context, "status"):
+            current_context.status = "paused" if resume_requires_hitl_output else "running"
+        if hasattr(current_context, "loop_resume_requires_hitl_output"):
+            current_context.loop_resume_requires_hitl_output = bool(resume_requires_hitl_output)
         telemetry.logfire.info(
             f"LoopStep '{loop_step.name}' RESUMING from iteration {saved_iteration}, step {saved_step_index}"
         )
-    elif isinstance(scratchpad_ref, dict):
-        maybe_iteration = scratchpad_ref.get("loop_iteration")
-        maybe_index = scratchpad_ref.get("loop_step_index")
-        maybe_status = scratchpad_ref.get("status")
-        maybe_last_output = scratchpad_ref.get("loop_last_output")
-        resume_flag = scratchpad_ref.get("loop_resume_requires_hitl_output")
-        paused_step_name_raw = scratchpad_ref.get("loop_paused_step_name")
+    else:
+        maybe_iteration = getattr(current_context, "loop_iteration_index", None)
+        maybe_index = getattr(current_context, "loop_step_index", None)
+        maybe_status = getattr(current_context, "status", None)
+        maybe_last_output = getattr(current_context, "loop_last_output", None)
+        resume_flag = getattr(current_context, "loop_resume_requires_hitl_output", None)
+        paused_step_name_raw = getattr(current_context, "loop_paused_step_name", None)
         if isinstance(paused_step_name_raw, str) and paused_step_name_raw:
             paused_step_name = paused_step_name_raw
         if (
@@ -68,7 +66,9 @@ def prepare_resume_config(loop_step: Any, current_context: Any, data: Any) -> Lo
             telemetry.logfire.info(
                 f"LoopStep '{loop_step.name}' RESUMING from iteration {saved_iteration}, step {saved_step_index} (status={maybe_status})"
             )
-            scratchpad_ref["status"] = "paused" if resume_requires_hitl_output else "running"
+            # Use typed field for status
+            if hasattr(current_context, "status"):
+                current_context.status = "paused" if resume_requires_hitl_output else "running"
     resume_payload = _resolve_resume_payload(
         current_context=current_context,
         resume_requires_hitl_output=resume_requires_hitl_output,
@@ -77,12 +77,12 @@ def prepare_resume_config(loop_step: Any, current_context: Any, data: Any) -> Lo
     )
     iteration_count = saved_iteration if saved_iteration >= 1 else 1
     try:
-        if current_context is not None and hasattr(current_context, "scratchpad"):
-            sp_main = getattr(current_context, "scratchpad")
-            if isinstance(sp_main, dict):
-                if is_resuming and resume_requires_hitl_output:
-                    sp_main["status"] = "paused"
-                sp_main["loop_iteration"] = iteration_count - 1
+        if current_context is not None:
+            if is_resuming and resume_requires_hitl_output:
+                if hasattr(current_context, "status"):
+                    current_context.status = "paused"
+            if hasattr(current_context, "loop_iteration_index"):
+                current_context.loop_iteration_index = iteration_count - 1
     except Exception:
         pass
     current_step_index = saved_step_index
@@ -100,10 +100,15 @@ def prepare_resume_config(loop_step: Any, current_context: Any, data: Any) -> Lo
 
 
 def clear_hitl_markers(ctx: Any) -> None:
-    scratch = getattr(ctx, "scratchpad", None)
-    if isinstance(scratch, dict):
-        scratch.pop("hitl_data", None)
-        scratch.pop("paused_step_input", None)
+    try:
+        if hasattr(ctx, "hitl_data"):
+            ctx.hitl_data = {}
+        if hasattr(ctx, "paused_step_input"):
+            ctx.paused_step_input = None
+        if hasattr(ctx, "user_input"):
+            ctx.user_input = None
+    except Exception:
+        pass
 
 
 def propagate_pause_state(
@@ -116,29 +121,53 @@ def propagate_pause_state(
     paused_step_name: str | None,
     hitl_output: Any = None,
 ) -> None:
-    scratchpad_iter = getattr(iteration_context, "scratchpad", None)
-    if isinstance(scratchpad_iter, dict):
-        scratchpad_iter["status"] = "paused"
-        scratchpad_iter["loop_iteration"] = iteration_count
-        scratchpad_iter["loop_step_index"] = current_step_index + 1
-        scratchpad_iter["loop_last_output"] = current_data
-        scratchpad_iter["loop_resume_requires_hitl_output"] = True
-        scratchpad_iter["loop_paused_step_name"] = paused_step_name
-        if hitl_output is not None:
-            scratchpad_iter["paused_step_input"] = hitl_output
-            scratchpad_iter["hitl_data"] = getattr(hitl_output, "human_response", None)
-        _append_pause_message(
-            target_context=iteration_context, pause_message=scratchpad_iter.get("pause_message", "")
-        )
-    if current_context is not None and isinstance(
-        getattr(current_context, "scratchpad", None), dict
-    ):
-        current_context.scratchpad.update(
-            scratchpad_iter if isinstance(scratchpad_iter, dict) else {}
-        )
+    # Typed-only pause propagation (scratchpad is deprecated; no writes).
+    if hasattr(iteration_context, "status"):
+        iteration_context.status = "paused"
+    if hasattr(iteration_context, "loop_iteration_index"):
+        iteration_context.loop_iteration_index = iteration_count
+    if hasattr(iteration_context, "loop_step_index"):
+        iteration_context.loop_step_index = current_step_index + 1
+    if hasattr(iteration_context, "loop_last_output"):
+        iteration_context.loop_last_output = current_data
+    if hasattr(iteration_context, "loop_resume_requires_hitl_output"):
+        iteration_context.loop_resume_requires_hitl_output = True
+    if hasattr(iteration_context, "loop_paused_step_name"):
+        iteration_context.loop_paused_step_name = paused_step_name
+    if hitl_output is not None:
+        if hasattr(iteration_context, "paused_step_input"):
+            iteration_context.paused_step_input = hitl_output
+        val = getattr(hitl_output, "human_response", None)
+        if hasattr(iteration_context, "user_input"):
+            iteration_context.user_input = val
+        if hasattr(iteration_context, "hitl_data") and val is not None:
+            iteration_context.hitl_data = {"human_response": val}
+    _append_pause_message(
+        target_context=iteration_context,
+        pause_message=getattr(iteration_context, "pause_message", None) or "",
+    )
+    if current_context is not None:
+        try:
+            # Keep the main context aligned for resume.
+            for attr in (
+                "status",
+                "loop_iteration_index",
+                "loop_step_index",
+                "loop_last_output",
+                "loop_resume_requires_hitl_output",
+                "loop_paused_step_name",
+                "paused_step_input",
+                "user_input",
+                "hitl_data",
+                "pause_message",
+            ):
+                if hasattr(iteration_context, attr) and hasattr(current_context, attr):
+                    setattr(current_context, attr, getattr(iteration_context, attr))
+        except Exception:
+            pass
         _append_pause_message(
             target_context=current_context,
-            pause_message=current_context.scratchpad.get("pause_message", ""),
+            pause_message=getattr(current_context, "pause_message", None) or "",
         )
     try:
         ContextManager.merge(current_context, iteration_context)
@@ -179,15 +208,10 @@ def _resolve_resume_payload(
                 return latest_resp
     except Exception:
         pass
-    scratchpad_ref = getattr(current_context, "scratchpad", None)
-    if resume_payload is None and isinstance(scratchpad_ref, dict):
+    steps_snap = getattr(current_context, "step_outputs", None)
+    if resume_payload is None and isinstance(steps_snap, dict):
         try:
-            steps_snap = scratchpad_ref.get("steps")
-            if (
-                isinstance(steps_snap, dict)
-                and isinstance(paused_step_name, str)
-                and paused_step_name in steps_snap
-            ):
+            if isinstance(paused_step_name, str) and paused_step_name in steps_snap:
                 return steps_snap.get(paused_step_name)
         except Exception:
             return resume_payload

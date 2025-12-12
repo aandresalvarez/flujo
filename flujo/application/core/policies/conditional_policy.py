@@ -205,13 +205,14 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                     )
                     has_hitl = any(isinstance(_s, _HITLStep) for _s in branch_steps)
                     if has_hitl:
-                        sp = getattr(context, "scratchpad", {}) if context is not None else {}
                         has_input = False
-                        if isinstance(sp, dict):
-                            has_input = (
-                                sp.get("user_input") is not None or sp.get("hitl_data") is not None
+                        if context is not None:
+                            has_input = getattr(context, "user_input", None) is not None or bool(
+                                getattr(context, "hitl_data", {}) or {}
                             )
-                            resume_requires_hitl = bool(sp.get("loop_resume_requires_hitl_output"))
+                            resume_requires_hitl = bool(
+                                getattr(context, "loop_resume_requires_hitl_output", False)
+                            )
                         if not has_input:
                             msg = None
                             for _s in branch_steps:
@@ -220,30 +221,41 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                                         _s, "message_for_user", None
                                     )
                                     break
-                            if context is not None and isinstance(sp, dict):
-                                sp["status"] = "paused"
-                                if data is not None:
-                                    sp["hitl_data"] = data
-                                if msg:
-                                    sp["hitl_message"] = msg
-                                setattr(context, "scratchpad", sp)
+                            if context is not None:
+                                if hasattr(context, "status"):
+                                    context.status = "paused"
+                                if hasattr(context, "paused_step_input"):
+                                    context.paused_step_input = data
+                                if hasattr(context, "pause_message") and msg:
+                                    context.pause_message = msg
                             raise PausedException(msg or "Awaiting human input")
                         else:
                             # If we have user_input from resume, feed it into branch_data for HITL step
                             try:
-                                branch_data = sp.get("user_input", branch_data)
+                                if context is not None:
+                                    branch_data = getattr(context, "user_input", branch_data)
                                 if resume_requires_hitl:
                                     # Preserve paused status and input so the HITL policy can auto-consume it.
-                                    sp["status"] = "paused"
-                                    sp.setdefault("user_input", branch_data)
-                                    if branch_data is not None and "hitl_data" not in sp:
-                                        sp["hitl_data"] = branch_data
+                                    if hasattr(context, "status"):
+                                        context.status = "paused"
+                                    if (
+                                        hasattr(context, "user_input")
+                                        and getattr(context, "user_input", None) is None
+                                    ):
+                                        context.user_input = branch_data
+                                    if hasattr(context, "hitl_data") and branch_data is not None:
+                                        context.hitl_data = {"human_response": branch_data}
                                 else:
                                     # Consume the user_input so subsequent HITL steps in later branches pause again.
-                                    sp.pop("user_input", None)
-                                    sp.pop("hitl_data", None)
+                                    if context is not None:
+                                        if hasattr(context, "user_input"):
+                                            context.user_input = None
+                                        if hasattr(context, "hitl_data"):
+                                            context.hitl_data = {}
                                     try:
-                                        sp["status"] = "running"
+                                        # Use typed field for status
+                                        if hasattr(context, "status"):
+                                            context.status = "running"
                                     except Exception:
                                         pass
                                 # Apply sink_to for the first HITL in this branch
@@ -263,12 +275,16 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                                     1 for _s in branch_steps if isinstance(_s, _HITLStep)
                                 )
                                 if remaining_hitl_count > 1:
-                                    sp["status"] = "paused"
-                                    sp.setdefault(
-                                        "pause_message",
-                                        getattr(first_hitl, "message", None)
-                                        or getattr(first_hitl, "message_for_user", "Paused"),
-                                    )
+                                    # Use typed field for status
+                                    if hasattr(context, "status"):
+                                        context.status = "paused"
+                                    if (
+                                        hasattr(context, "pause_message")
+                                        and getattr(context, "pause_message", None) is None
+                                    ):
+                                        context.pause_message = getattr(
+                                            first_hitl, "message", None
+                                        ) or getattr(first_hitl, "message_for_user", "Paused")
                                     raise PausedException("Awaiting next HITL input")
                             except Exception:
                                 pass
@@ -399,12 +415,11 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                             continue
                     if force_repause_after_branch and isinstance(context, PipelineContext):
                         try:
-                            sp = getattr(context, "scratchpad", None)
-                            if isinstance(sp, dict):
-                                sp["status"] = "paused"
-                                sp.setdefault(
-                                    "pause_message", getattr(conditional_step, "name", "")
-                                )
+                            # Use typed field for status
+                            if hasattr(context, "status"):
+                                context.status = "paused"
+                            if hasattr(context, "pause_message"):
+                                context.pause_message = getattr(conditional_step, "name", "")
                         except Exception:
                             pass
                         raise PausedException("Awaiting next HITL input")
@@ -491,11 +506,12 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                     result.cost_usd = total_cost
                     if resume_requires_hitl and isinstance(context, PipelineContext):
                         try:
-                            sp_parent = getattr(context, "scratchpad", None)
-                            if isinstance(sp_parent, dict):
-                                sp_parent.pop("loop_resume_requires_hitl_output", None)
-                                sp_parent.pop("user_input", None)
-                                sp_parent.pop("hitl_data", None)
+                            if hasattr(context, "loop_resume_requires_hitl_output"):
+                                context.loop_resume_requires_hitl_output = False
+                            if hasattr(context, "user_input"):
+                                context.user_input = None
+                            if hasattr(context, "hitl_data"):
+                                context.hitl_data = {}
                         except Exception:
                             pass
                     # Update branch context using ContextManager and propagate into parent
@@ -507,20 +523,20 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[Any]]):
                     result.branch_context = merged_ctx
                     if merged_ctx is not None and context is not None and merged_ctx is not context:
                         try:
-                            # Ensure parent context reflects merged scratchpad (including HITL user_input)
+                            # Ensure parent context reflects merged typed fields.
                             ContextManager.merge(context, merged_ctx)
                         except Exception:
                             pass
                     # Ensure HITL user input set on parent context when available in branch
                     try:
-                        bc_sp = getattr(branch_context, "scratchpad", None)
-                        ctx_sp = getattr(context, "scratchpad", None)
                         if (
-                            isinstance(bc_sp, dict)
-                            and "user_input" in bc_sp
-                            and isinstance(ctx_sp, dict)
+                            context is not None
+                            and branch_context is not None
+                            and getattr(context, "user_input", None) is None
                         ):
-                            ctx_sp.setdefault("user_input", bc_sp.get("user_input"))
+                            val = getattr(branch_context, "user_input", None)
+                            if val is not None and hasattr(context, "user_input"):
+                                context.user_input = val
                     except Exception:
                         pass
                     # Invoke context setter on success when provided

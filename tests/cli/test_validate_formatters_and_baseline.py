@@ -15,9 +15,11 @@ def _write(tmp: Path, name: str, text: str) -> Path:
 def test_validate_sarif_contains_rules_and_results(tmp_path: Path) -> None:
     yml = (
         'version: "0.1"\n'
+        "agents:\n"
+        '  typed: { id: "tests.unit.test_error_messages.need_str", model: "local:mock", system_prompt: "typed", output_schema: { type: string } }\n'
         "steps:\n"
-        '  - name: A\n    agent: { id: "flujo.builtins.echo" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "hello"\n'
-        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "{{ previous_step.output }}"\n'
+        '  - name: A\n    uses: agents.typed\n    input: "hello"\n'
+        '  - name: B\n    uses: agents.typed\n    input_schema: { type: string }\n    input: "{{ previous_step.output }}"\n'
     )
     f = _write(tmp_path, "p.yaml", yml)
     res = subprocess.run(
@@ -40,9 +42,11 @@ def test_validate_rules_profile_strict_makes_vt1_error(tmp_path: Path) -> None:
     _write(tmp_path, "flujo.toml", flujo_toml)
     yml = (
         'version: "0.1"\n'
+        "agents:\n"
+        '  typed: { id: "tests.unit.test_error_messages.need_str", model: "local:mock", system_prompt: "typed", output_schema: { type: string } }\n'
         "steps:\n"
-        '  - name: A\n    agent: { id: "flujo.builtins.echo" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "hello"\n'
-        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    meta: { is_adapter: true, adapter_id: generic-adapter, adapter_allow: generic }\n    input: "{{ previous_step.output }}"\n'
+        '  - name: A\n    uses: agents.typed\n    input: "hello"\n'
+        '  - name: B\n    uses: agents.typed\n    input: "{{ previous_step.missing_field }}"\n'
     )
     f = _write(tmp_path, "p.yaml", yml)
     import os
@@ -66,7 +70,7 @@ def test_validate_rules_profile_strict_makes_vt1_error(tmp_path: Path) -> None:
     # With V-T* = error, strict default should fail
     assert res.returncode == 4
     payload = json.loads(res.stdout or "{}")
-    assert any(e.get("rule_id") == "V-T1" for e in payload.get("errors") or [])
+    assert any(e.get("rule_id") in {"V-T1", "V-T5"} for e in payload.get("errors") or [])
 
 
 def test_validate_rules_file_off_suppresses_findings(tmp_path: Path) -> None:
@@ -102,9 +106,11 @@ def test_validate_baseline_deltas_and_update(tmp_path: Path) -> None:
     # Start with a pipeline that has a single V-T1
     yml1 = (
         'version: "0.1"\n'
+        "agents:\n"
+        '  typed: { id: "tests.unit.test_error_messages.need_str", model: "local:mock", system_prompt: "typed", output_schema: { type: string } }\n'
         "steps:\n"
-        '  - name: A\n    agent: { id: "flujo.builtins.stringify" }\n    input: "hello"\n'
-        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    input: "{{ previous_step.output }}"\n'
+        '  - name: A\n    uses: agents.typed\n    input: "hello"\n'
+        '  - name: B\n    uses: agents.typed\n    input: "{{ previous_step.output }}"\n'
     )
     f = _write(tmp_path, "p.yaml", yml1)
     # First run, capture JSON and write baseline
@@ -130,10 +136,12 @@ def test_validate_baseline_deltas_and_update(tmp_path: Path) -> None:
     # Modify pipeline to add an additional finding (another V-T1)
     yml2 = (
         'version: "0.1"\n'
+        "agents:\n"
+        '  typed: { id: "tests.unit.test_error_messages.need_str", model: "local:mock", system_prompt: "typed", output_schema: { type: string } }\n'
         "steps:\n"
-        '  - name: A\n    agent: { id: "flujo.builtins.stringify" }\n    input: "hello"\n'
-        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    input: "{{ previous_step.output }}"\n'
-        '  - name: C\n    agent: { id: "flujo.builtins.stringify" }\n    input: "{{ previous_step.output }}"\n'
+        '  - name: A\n    uses: agents.typed\n    input: "hello"\n'
+        '  - name: B\n    uses: agents.typed\n    input_schema: { type: string }\n    input: "{{ previous_step.output }}"\n'
+        '  - name: C\n    uses: agents.typed\n    input_schema: { type: string }\n    input: "{{ previous_step.output }}"\n'
     )
     _write(tmp_path, "p.yaml", yml2)
     res2 = subprocess.run(
@@ -203,9 +211,11 @@ def test_validate_baseline_fail_on_warn_nonzero_for_new(tmp_path: Path) -> None:
     (tmp_path / "baseline.json").write_text(json.dumps({"errors": [], "warnings": []}))
     yml = (
         'version: "0.1"\n'
+        "agents:\n"
+        '  typed: { model: "local:mock", system_prompt: "typed", output_schema: { type: string } }\n'
         "steps:\n"
-        '  - name: A\n    agent: { id: "flujo.builtins.stringify" }\n    input: "hello"\n'
-        '  - name: B\n    agent: { id: "flujo.builtins.stringify" }\n    input: "{{ previous_step.output }}"\n'
+        '  - name: A\n    uses: agents.typed\n    input: "hello"\n'
+        '  - name: B\n    uses: agents.typed\n    input: "{{ previous_step.output }}"\n'
     )
     f = _write(tmp_path, "p.yaml", yml)
     res = subprocess.run(

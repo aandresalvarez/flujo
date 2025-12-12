@@ -131,7 +131,7 @@ class TraceManager:
         """Finalize root span on post-run and attach it to the result.
 
         Status resolution:
-        - paused when context.scratchpad.status == 'paused'
+        - paused when context.status == 'paused'
         - completed when pipeline_result.success is truthy
         - failed otherwise
         """
@@ -142,8 +142,12 @@ class TraceManager:
             ctx = payload.context or getattr(
                 payload.pipeline_result, "final_pipeline_context", None
             )
-            scratch = getattr(ctx, "scratchpad", None) if ctx is not None else None
-            paused = isinstance(scratch, dict) and scratch.get("status") == "paused"
+            paused = False
+            try:
+                if ctx is not None and getattr(ctx, "status", None) == "paused":
+                    paused = True
+            except Exception:
+                paused = False
             is_success = bool(getattr(payload.pipeline_result, "success", False))
 
             if paused:

@@ -200,6 +200,8 @@ class CacheManager:
         cached = await self.maybe_fetch_step_result(frame)
         if cached is None:
             return None
+        if not isinstance(cached, StepResult):
+            return None
         if called_with_frame:
             return Success(step_result=cached)
         return cached

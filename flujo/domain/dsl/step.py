@@ -18,7 +18,6 @@ from typing import (
     Dict,
     Type,
     Union,
-    cast,
     TYPE_CHECKING,
     Literal,
     get_origin,
@@ -76,7 +75,6 @@ class MergeStrategy(Enum):
 
     NO_MERGE = "no_merge"
     OVERWRITE = "overwrite"
-    MERGE_SCRATCHPAD = "merge_scratchpad"
     CONTEXT_UPDATE = "context_update"  # Proper context updates with validation
     ERROR_ON_CONFLICT = "error_on_conflict"  # Explicitly error on any conflicting field
     KEEP_FIRST = "keep_first"  # Keep first occurrence of each key when merging
@@ -237,14 +235,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         description="Context keys this step will populate upon completion.",
     )
     # Optional sink_to for simple steps: store the step's output directly into
-    # a context path (e.g., "counter" or "scratchpad.field"). This is useful
+    # a context path (e.g., "counter" or "result"). This is useful
     # when the step returns a scalar value that should be persisted in context
-    # without requiring a dict-shaped output.
+    # without requiring a dict-shaped output. Scratchpad is reserved and will fail validation.
     sink_to: str | None = Field(
         default=None,
         description=(
             "Context path to automatically store the step output "
-            "(e.g., 'counter' or 'scratchpad.value')."
+            "(e.g., 'counter' or 'result'). Scratchpad targets are not allowed."
         ),
     )
     meta: JSONObject = Field(
@@ -381,7 +379,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         if self.agent is None:
             raise ValueError(f"Step '{self.name}' has no agent to run.")
 
-        return cast(Coroutine[Any, Any, StepOutT], self.agent.run(data, **kwargs))
+        return self.agent.run(data, **kwargs)
 
     def fallback(self, fallback_step: "Step[Any, Any]") -> "Step[StepInT, StepOutT]":
         """Set a fallback step to execute if this step fails.
@@ -427,20 +425,17 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         Also infers input/output types from the agent's signature for pipeline validation.
         """
-        step_instance = cast(
-            "Step[Any, Any]",
-            cls.model_validate(
-                {
-                    "name": "review",
-                    "agent": agent,
-                    "plugins": plugins or [],
-                    "validators": validators or [],
-                    "processors": processors or AgentProcessors(),
-                    "persist_feedback_to_context": persist_feedback_to_context,
-                    "persist_validation_results_to": persist_validation_results_to,
-                    "config": StepConfig(**config),
-                }
-            ),
+        step_instance: "Step[Any, Any]" = cls.model_validate(
+            {
+                "name": "review",
+                "agent": agent,
+                "plugins": plugins or [],
+                "validators": validators or [],
+                "processors": processors or AgentProcessors(),
+                "persist_feedback_to_context": persist_feedback_to_context,
+                "persist_validation_results_to": persist_validation_results_to,
+                "config": StepConfig(**config),
+            }
         )
         input_type, output_type = _infer_agent_io_types(agent, step_name=step_instance.name)
         step_instance.__step_input_type__ = input_type
@@ -463,20 +458,17 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         Also infers input/output types from the agent's signature for pipeline validation.
         """
-        step_instance = cast(
-            "Step[Any, Any]",
-            cls.model_validate(
-                {
-                    "name": "solution",
-                    "agent": agent,
-                    "plugins": plugins or [],
-                    "validators": validators or [],
-                    "processors": processors or AgentProcessors(),
-                    "persist_feedback_to_context": persist_feedback_to_context,
-                    "persist_validation_results_to": persist_validation_results_to,
-                    "config": StepConfig(**config),
-                }
-            ),
+        step_instance: "Step[Any, Any]" = cls.model_validate(
+            {
+                "name": "solution",
+                "agent": agent,
+                "plugins": plugins or [],
+                "validators": validators or [],
+                "processors": processors or AgentProcessors(),
+                "persist_feedback_to_context": persist_feedback_to_context,
+                "persist_validation_results_to": persist_validation_results_to,
+                "config": StepConfig(**config),
+            }
         )
         input_type, output_type = _infer_agent_io_types(agent, step_name=step_instance.name)
         step_instance.__step_input_type__ = input_type
@@ -500,24 +492,21 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         Also infers input/output types from the agent's signature for pipeline validation.
         """
-        step_instance = cast(
-            "Step[Any, Any]",
-            cls.model_validate(
-                {
-                    "name": "validate",
-                    "agent": agent,
-                    "plugins": plugins or [],
-                    "validators": validators or [],
-                    "processors": processors or AgentProcessors(),
-                    "persist_feedback_to_context": persist_feedback_to_context,
-                    "persist_validation_results_to": persist_validation_results_to,
-                    "config": StepConfig(**config),
-                    "meta": {
-                        "is_validation_step": True,
-                        "strict_validation": strict,
-                    },
-                }
-            ),
+        step_instance: "Step[Any, Any]" = cls.model_validate(
+            {
+                "name": "validate",
+                "agent": agent,
+                "plugins": plugins or [],
+                "validators": validators or [],
+                "processors": processors or AgentProcessors(),
+                "persist_feedback_to_context": persist_feedback_to_context,
+                "persist_validation_results_to": persist_validation_results_to,
+                "config": StepConfig(**config),
+                "meta": {
+                    "is_validation_step": True,
+                    "strict_validation": strict,
+                },
+            }
         )
         input_type, output_type = _infer_agent_io_types(agent, step_name=step_instance.name)
         step_instance.__step_input_type__ = input_type
@@ -540,6 +529,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         persist_feedback_to_context: Optional[str] = None,
         persist_validation_results_to: Optional[str] = None,
         is_adapter: bool = False,
+        adapter_id: str | None = None,
+        adapter_allow: str | None = None,
         config: StepConfig | None = None,
         **config_kwargs: Any,
     ) -> "Step[StepInT, StepOutT]":
@@ -608,17 +599,29 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 callable_kwargs.update(kwargs)
 
                 # Call the original function directly
-                return await cast(Callable[..., Any], func)(*call_args, **callable_kwargs)
+                return await func(*call_args, **callable_kwargs)
 
         merged_config: dict[str, Any] = {}
         if config is not None:
             merged_config.update(config.model_dump())
         merged_config.update(config_kwargs)
 
-        meta: dict[str, Any] = {"is_adapter": True} if is_adapter else {}
+        # Enforce explicit adapter identity/token to prevent generic, untracked adapters.
+        adapter_id_val = merged_config.pop("adapter_id", adapter_id)
+        adapter_allow_val = merged_config.pop("adapter_allow", adapter_allow)
+
         if is_adapter:
-            meta["adapter_id"] = "generic-adapter"
-            meta["adapter_allow"] = "generic"
+            if not adapter_id_val or not adapter_allow_val:
+                raise ValueError(
+                    "Adapter steps must provide adapter_id and adapter_allow (allowlist token)."
+                )
+            meta: dict[str, Any] = {
+                "is_adapter": True,
+                "adapter_id": adapter_id_val,
+                "adapter_allow": adapter_allow_val,
+            }
+        else:
+            meta = {}
 
         step_instance = cls.model_validate(
             {
@@ -809,11 +812,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                         if la is not None:
                             return la
                         # 1) Prefer the exact captured artifact recorded during the last iteration
-                        sp = getattr(context, "scratchpad", None)
-                        if isinstance(sp, dict):
-                            steps = sp.get("steps") or {}
-                            if isinstance(steps, dict) and "_capture_artifact" in steps:
-                                return steps.get("_capture_artifact")
+                        outputs = getattr(context, "step_outputs", None)
+                        if isinstance(outputs, dict) and "_capture_artifact" in outputs:
+                            return outputs.get("_capture_artifact")
                         # 2) Fallback to any context-scoped attribute set by the capture step
                         if hasattr(context, "_last_refine_artifact"):
                             return getattr(context, "_last_refine_artifact")
@@ -821,9 +822,12 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                     pass
             return out
 
-        mapper_step = cast(
-            "Step[Any, Any]",
-            cls.from_callable(_post_output_mapper, name=f"{name}_output_mapper", is_adapter=True),
+        mapper_step: "Step[Any, Any]" = cls.from_callable(
+            _post_output_mapper,
+            name=f"{name}_output_mapper",
+            is_adapter=True,
+            adapter_id="generic-adapter",
+            adapter_allow="generic",
         )
         # Compose pipeline: loop then post mapping step
         return core_loop >> mapper_step
@@ -980,15 +984,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         # Exit when granular_state.is_complete is True
         def _exit_condition(output: Any, ctx: Optional[ContextModelT]) -> bool:
-            # Check for completion flag in output or scratchpad
+            # Check for completion flag in output or granular_state
             if hasattr(output, "is_complete"):
                 return bool(output.is_complete)
             if ctx is not None:
-                scratch = getattr(ctx, "scratchpad", None)
-                if isinstance(scratch, dict):
-                    gs = scratch.get("granular_state")
-                    if isinstance(gs, dict):
-                        return bool(gs.get("is_complete", False))
+                gs = getattr(ctx, "granular_state", None)
+                if isinstance(gs, dict):
+                    return bool(gs.get("is_complete", False))
             return False
 
         # Loop until complete or max_turns
@@ -1018,7 +1020,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 return data.get(key)
             raise TypeError("use_input expects a dict-like input")
 
-        adapter = Step.from_callable(_select, name=f"select_{key}", is_adapter=True)
+        adapter = Step.from_callable(
+            _select,
+            name=f"select_{key}",
+            is_adapter=True,
+            adapter_id="generic-adapter",
+            adapter_allow="generic",
+        )
         return Pipeline.from_step(adapter) >> self
 
     @classmethod
@@ -1040,9 +1048,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 raise TypeError("Gather step expects dict input")
             return {k: data.get(k) for k in wait_for}
 
-        return cast(
-            "Step[Any, JSONObject]",
-            cls.from_callable(_gather, name=name, is_adapter=True, **config_kwargs),
+        return Step.from_callable(
+            _gather,
+            name=name,
+            is_adapter=True,
+            adapter_id="generic-adapter",
+            adapter_allow="generic",
+            **config_kwargs,
         )
 
     @classmethod
@@ -1071,14 +1083,14 @@ class HumanInTheLoopStep(Step[Any, Any]):
         message_for_user: Optional message to display to the user
         input_schema: Optional schema for validating user input
         sink_to: Optional context path to automatically store the human response
-                 (e.g., "scratchpad.user_answer" or "scratchpad.nested.field")
+                 (e.g., "hitl_data.user_answer" or "user_input")
     """
 
     message_for_user: str | None = Field(default=None)
     input_schema: Any | None = Field(default=None)
     sink_to: str | None = Field(
         default=None,
-        description="Context path to automatically store the human response (e.g., 'scratchpad.user_name')",
+        description="Context path to automatically store the human response (e.g., 'hitl_data.user_name')",
     )
 
     model_config = {"arbitrary_types_allowed": True}

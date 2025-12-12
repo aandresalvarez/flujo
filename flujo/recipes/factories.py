@@ -76,21 +76,23 @@ def make_default_pipeline(
         """Review the task and create a checklist."""
         result = await _invoke(review_agent, data, context=context)
         checklist = cast(Checklist, getattr(result, "output", result))
-        context.scratchpad["checklist"] = checklist
+        checklist = cast(Checklist, getattr(result, "output", result))
+        context.checklist = checklist
         return data
 
     async def solution_step(data: str, *, context: PipelineContext) -> str:
         """Generate a solution based on the task."""
         result = await _invoke(solution_agent, data, context=context)
         solution = cast(str, getattr(result, "output", result))
-        context.scratchpad["solution"] = solution
+        solution = cast(str, getattr(result, "output", result))
+        context.solution = solution
         return solution
 
     async def validate_step(_data: Any, *, context: PipelineContext) -> Checklist:
         """Validate the solution against the checklist."""
         payload = {
-            "solution": context.scratchpad.get("solution", ""),
-            "checklist": context.scratchpad.get("checklist", Checklist(items=[])),
+            "solution": getattr(context, "solution", "") or "",
+            "checklist": getattr(context, "checklist", None) or Checklist(items=[]),
         }
         result = await _invoke(validator_agent, payload, context=context)
         return cast(Checklist, getattr(result, "output", result))
@@ -230,7 +232,8 @@ def make_agentic_loop_pipeline(
                 elif cmd.type == "ask_human":
                     if isinstance(context, PipelineContext):
                         # If we already have HITL data (resume path), consume it and continue.
-                        hitl_data = context.scratchpad.get("hitl_data")
+                        # Prefer typed user_input field
+                        hitl_data = getattr(context, "user_input", None)
                         if hitl_data is not None:
                             exec_result = hitl_data
                             log_entry = ExecutedCommandLog(
@@ -240,12 +243,17 @@ def make_agentic_loop_pipeline(
                             )
                             _log_if_new(log_entry, context)
                             # Clear resume marker now that we've consumed the payload.
-                            context.scratchpad.pop("loop_resume_requires_hitl_output", None)
-                            context.scratchpad["status"] = "running"
+                            if hasattr(context, "status"):
+                                context.status = "running"
+                            if hasattr(context, "loop_resume_requires_hitl_output"):
+                                context.loop_resume_requires_hitl_output = False
                             return log_entry
-                        context.scratchpad["paused_step_input"] = cmd
-                        context.scratchpad["loop_resume_requires_hitl_output"] = True
-                        context.scratchpad["status"] = "paused"
+                        if hasattr(context, "paused_step_input"):
+                            context.paused_step_input = cmd
+                        if hasattr(context, "loop_resume_requires_hitl_output"):
+                            context.loop_resume_requires_hitl_output = True
+                        if hasattr(context, "status"):
+                            context.status = "paused"
                     # Do NOT create or append a log entry here; only log on resume
                     from flujo.infra import telemetry
 
@@ -387,20 +395,21 @@ def make_agentic_loop_pipeline(
             from flujo.exceptions import PausedException as _Paused
 
             if isinstance(log, _AskHuman) and ctx is not None:
-                if hasattr(ctx, "scratchpad") and isinstance(ctx.scratchpad, dict):
-                    ctx.scratchpad["status"] = "paused"
-                    ctx.scratchpad["pause_message"] = getattr(log, "question", "Paused")
-                    # Save the pending command so resume can convert/log it
-                    ctx.scratchpad["paused_step_input"] = log
+                if hasattr(ctx, "status"):
+                    ctx.status = "paused"
+                if hasattr(ctx, "pause_message"):
+                    ctx.pause_message = getattr(log, "question", "Paused")
+                # Save the pending command so resume can convert/log it (typed field only)
+                if hasattr(ctx, "paused_step_input"):
+                    ctx.paused_step_input = log
                 raise _Paused(getattr(log, "question", "Paused"))
         except Exception:
             pass
 
         # If paused, do not log to preserve clean pause state
-        if ctx is not None and isinstance(getattr(ctx, "scratchpad", None), dict):
-            if ctx.scratchpad.get("status") == "paused":
-                goal = ctx.initial_prompt if ctx is not None else ""
-                return {"last_command_result": None, "goal": goal}
+        if ctx is not None and getattr(ctx, "status", None) == "paused":
+            goal = ctx.initial_prompt if ctx is not None else ""
+            return {"last_command_result": None, "goal": goal}
         _log_if_new(log, ctx)
         goal = ctx.initial_prompt if ctx is not None else ""
         return {"last_command_result": log.execution_result, "goal": goal}
@@ -471,9 +480,9 @@ async def run_default_pipeline(
 
     try:
         # Primary sources filled by step callables
-        if context is not None and hasattr(context, "scratchpad"):
-            solution = context.scratchpad.get("solution")
-            # Do not take checklist from scratchpad yet; prefer validator output below
+        if context is not None:
+            solution = getattr(context, "solution", None)
+            # Do not take checklist from context yet; prefer validator output below
     except Exception:
         # Best-effort: proceed to fallbacks below
         pass
@@ -501,15 +510,15 @@ async def run_default_pipeline(
             except Exception:
                 continue
 
-    # 3) If still missing, fallback to the review scratchpad checklist
+    # 3) If still missing, fallback to checklist stored on context
     if checklist is None:
         try:
-            if context is not None and hasattr(context, "scratchpad"):
-                checklist = context.scratchpad.get("checklist")
+            if context is not None:
+                checklist = getattr(context, "checklist", None)
         except Exception:
             pass
 
-    # 4) Derive solution from the named solution step when scratchpad is empty
+    # 4) Derive solution from the named solution step when missing
     if solution is None:
         for step in result.step_history:
             try:

@@ -102,7 +102,8 @@ class TestTypeSafetyCompliance:
             concerning_any_uses.append(occurrence)
 
         # Allow some baseline Any usage but prevent significant new usage
-        max_allowed_any = 600  # Baseline adjusted to current codebase footprint
+        # Lowered from 600 to 500 - current DSL Any ~443, prevent regression
+        max_allowed_any = 500
 
         if len(concerning_any_uses) > max_allowed_any:
             pytest.fail(
@@ -218,10 +219,11 @@ class TestTypeSafetyCompliance:
                 continue
             filtered.append(occ)
 
-        # Baseline: keep below 150 non-allowlisted casts to prevent regressions.
-        if len(filtered) > 150:
+        # Baseline: keep below 10 non-allowlisted casts (current baseline ~1)
+        # Tightened from 50 to 10 to align with near-zero baseline and prevent regression
+        if len(filtered) > 10:
             pytest.fail(
-                f"Excessive typing.cast usage detected ({len(filtered)} > 150 baseline). "
+                f"Excessive typing.cast usage detected ({len(filtered)} > 10 baseline). "
                 "Please replace casts with precise types/TypeGuards. "
                 "Examples:\n" + "\n".join(filtered[:5])
             )

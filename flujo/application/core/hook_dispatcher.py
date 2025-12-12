@@ -10,7 +10,6 @@ from typing import (
     get_args,
     Union,
     Literal,
-    cast,
 )
 
 import logging
@@ -66,8 +65,7 @@ def _should_dispatch(annotation: Any, payload: HookPayload) -> bool:
 def _is_background_context(context: Any) -> bool:
     """Best-effort determination of background execution based on context."""
     try:
-        scratch = getattr(context, "scratchpad", None)
-        if isinstance(scratch, dict) and scratch.get("is_background_task"):
+        if bool(getattr(context, "is_background_task", False)):
             return True
     except Exception:
         pass
@@ -164,7 +162,7 @@ async def _dispatch_hook(
         step_obj = kwargs.get("step")
         kwargs["is_background"] = _is_background_context(ctx) or _is_background_step(step_obj)
 
-    payload = PayloadCls(event_name=cast(Any, event_name), **kwargs)
+    payload = PayloadCls(event_name=event_name, **kwargs)
 
     for hook in hooks:
         try:

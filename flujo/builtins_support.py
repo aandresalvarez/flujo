@@ -157,7 +157,7 @@ async def context_set(
     reducing boilerplate and preventing `Any` type usage.
 
     Args:
-        path: Dot-separated path to the field (e.g., "scratchpad.counter")
+        path: Dot-separated path to the field (e.g., "call_count" or "import_artifacts.counter")
         value: Value to set at the path
         context: Pipeline context (injected automatically by Flujo)
 
@@ -169,7 +169,7 @@ async def context_set(
         - kind: step
           name: init_counter
           agent: { id: "flujo.builtins.context_set" }
-          input: { path: "scratchpad.counter", value: 0 }
+          input: { path: "call_count", value: 0 }
         ```
     """
     from flujo.utils.context import set_nested_context_field
@@ -201,7 +201,7 @@ async def context_merge(
     This is useful for updating nested context objects with multiple fields at once.
 
     Args:
-        path: Dot-separated path to merge into (e.g., "scratchpad.settings")
+        path: Dot-separated path to merge into (e.g., "hitl_data" or "import_artifacts.extras")
         value: Dictionary to merge at the path
         context: Pipeline context (injected automatically by Flujo)
 
@@ -214,7 +214,7 @@ async def context_merge(
           name: update_settings
           agent: { id: "flujo.builtins.context_merge" }
           input:
-            path: "scratchpad.settings"
+            path: "import_artifacts.extras"
             value: { theme: "dark", notifications: true }
         ```
     """
@@ -276,7 +276,7 @@ async def context_get(
     """Get a value from the context at the specified dot-separated path.
 
     Args:
-        path: Dot-separated path to the field (e.g., "scratchpad.counter")
+        path: Dot-separated path to the field (e.g., "call_count" or "import_artifacts.counter")
         default: Default value if path doesn't exist
         context: Pipeline context (injected automatically by Flujo)
 
@@ -288,7 +288,7 @@ async def context_get(
         - kind: step
           name: get_counter
           agent: { id: "flujo.builtins.context_get" }
-          input: { path: "scratchpad.counter", default: 0 }
+          input: { path: "call_count", default: 0 }
         ```
     """
     if context is None:

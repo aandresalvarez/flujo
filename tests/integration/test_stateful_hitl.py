@@ -58,7 +58,7 @@ async def test_stateful_hitl_resume(tmp_path: Path) -> None:
     await asyncio.sleep(0.05)
 
     ctx = paused.final_pipeline_context
-    assert ctx.scratchpad["status"] == "paused"
+    assert ctx.status == "paused"
     assert len(paused.step_history) == 1
     assert ctx.scratchpad["pre"] == "hello"
 
@@ -84,7 +84,7 @@ async def test_stateful_hitl_resume(tmp_path: Path) -> None:
     assert resumed.step_history[2].output == "hello:yes"
     assert len(resumed.final_pipeline_context.hitl_history) == 1
     assert resumed.final_pipeline_context.hitl_history[0].human_response == "yes"
-    assert resumed.final_pipeline_context.scratchpad["status"] == "completed"
+    assert resumed.final_pipeline_context.status == "completed"
 
     saved2 = await backend.load_state(run_id)
     assert saved2 is not None
@@ -135,7 +135,7 @@ async def test_hitl_resume_with_pydantic_input(tmp_path: Path) -> None:
 
     assert isinstance(resumed.step_history[1].output, ComplexInput)
     assert resumed.step_history[1].output.reply == "ok"
-    assert resumed.final_pipeline_context.scratchpad["status"] == "completed"
+    assert resumed.final_pipeline_context.status == "completed"
 
 
 @pytest.mark.asyncio
@@ -160,7 +160,7 @@ async def test_hitl_as_final_step(tmp_path: Path) -> None:
         initial_context_data={"initial_prompt": "start", "run_id": run_id},
     )
 
-    assert paused.final_pipeline_context.scratchpad["status"] == "paused"
+    assert paused.final_pipeline_context.status == "paused"
 
     new_runner = create_test_flujo(
         pipeline,
@@ -175,7 +175,7 @@ async def test_hitl_as_final_step(tmp_path: Path) -> None:
     await asyncio.sleep(0.05)
 
     assert len(resumed.step_history) == 2
-    assert resumed.final_pipeline_context.scratchpad["status"] == "completed"
+    assert resumed.final_pipeline_context.status == "completed"
 
     saved = await backend.load_state(run_id)
     assert saved is not None

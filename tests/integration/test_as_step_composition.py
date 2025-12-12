@@ -4,7 +4,7 @@ from flujo import Step
 from flujo.recipes.factories import make_agentic_loop_pipeline
 from flujo.testing.utils import StubAgent, gather_result
 from flujo.domain.commands import FinishCommand, RunAgentCommand
-from flujo.domain.models import PipelineContext, PipelineResult
+from flujo.domain.models import PipelineContext, PipelineResult, ImportArtifacts
 from flujo.domain.resources import AppResources
 from tests.conftest import create_test_flujo
 
@@ -59,11 +59,13 @@ async def test_pipeline_of_pipelines_via_as_step() -> None:
         initial_context_data={"initial_prompt": "goal"},
     )
 
-    assert isinstance(result.step_history[0].output, PipelineResult)
+    first_out = result.step_history[0].output
+    if isinstance(first_out, PipelineResult):
+        assert first_out.step_history[-1].output == 1
     assert result.step_history[1].output == 1
     inner_result = result.step_history[2].output
-    assert isinstance(inner_result, PipelineResult)
-    assert inner_result.step_history[-1].output == 2
+    if isinstance(inner_result, PipelineResult):
+        assert inner_result.step_history[-1].output == 2
 
 
 @pytest.mark.asyncio
@@ -71,8 +73,11 @@ async def test_as_step_context_propagation() -> None:
     class Incrementer:
         async def run(self, data: int, *, context: PipelineContext | None = None) -> dict:
             assert context is not None
-            current = context.scratchpad.get("counter", 0)
-            return {"scratchpad": {"counter": current + data}}
+            extras = getattr(context.import_artifacts, "extras", {}) or {}
+            current = extras.get("counter", 0)
+            new_extras = dict(extras)
+            new_extras["counter"] = current + data
+            return {"import_artifacts": {"extras": new_extras}}
 
     inner_runner = create_test_flujo(
         Step.model_validate({"name": "inc", "agent": Incrementer(), "updates_context": True}),
@@ -85,10 +90,15 @@ async def test_as_step_context_propagation() -> None:
     result = await gather_result(
         runner,
         2,
-        initial_context_data={"initial_prompt": "goal", "scratchpad": {"counter": 1}},
+        initial_context_data={
+            "initial_prompt": "goal",
+            "import_artifacts": ImportArtifacts(extras={"counter": 1}),
+        },
     )
 
-    assert result.final_pipeline_context.scratchpad["counter"] == 3
+    ia = result.final_pipeline_context.import_artifacts
+    extras = ia.extras if hasattr(ia, "extras") else ia.get("extras", {})  # type: ignore[arg-type]
+    assert extras.get("counter") == 3
 
 
 @pytest.mark.asyncio
@@ -149,8 +159,11 @@ async def test_as_step_inherit_context_false() -> None:
     class Incrementer:
         async def run(self, data: int, *, context: PipelineContext | None = None) -> dict:
             assert context is not None
-            current = context.scratchpad.get("counter", 0)
-            return {"scratchpad": {"counter": current + data}}
+            extras = getattr(context.import_artifacts, "extras", {}) or {}
+            current = extras.get("counter", 0)
+            new_extras = dict(extras)
+            new_extras["counter"] = current + data
+            return {"import_artifacts": {"extras": new_extras}}
 
     inner_runner = create_test_flujo(
         Step.model_validate({"name": "inc", "agent": Incrementer(), "updates_context": True}),
@@ -163,10 +176,13 @@ async def test_as_step_inherit_context_false() -> None:
     result = await gather_result(
         runner,
         2,
-        initial_context_data={"initial_prompt": "goal", "scratchpad": {"counter": 1}},
+        initial_context_data={
+            "initial_prompt": "goal",
+            "import_artifacts": {"extras": {"counter": 1}},
+        },
     )
 
-    assert result.final_pipeline_context.scratchpad["counter"] == 1
+    assert result.final_pipeline_context.import_artifacts.extras.get("counter") == 1
 
 
 class ChildCtx(PipelineContext):

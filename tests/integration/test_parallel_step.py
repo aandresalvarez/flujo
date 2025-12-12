@@ -3,8 +3,8 @@ import asyncio
 from typing import Any
 import pytest
 from flujo.domain.models import BaseModel, PipelineContext, StepResult
-from flujo.domain import Step, MergeStrategy, BranchFailureStrategy, UsageLimits
-from flujo.exceptions import UsageLimitExceededError
+from flujo.domain import Step, MergeStrategy, BranchFailureStrategy, UsageLimits, Pipeline
+from flujo.exceptions import UsageLimitExceededError, ConfigurationError
 from flujo.testing.utils import gather_result
 from tests.conftest import create_test_flujo
 
@@ -75,7 +75,7 @@ class ScratchAgent:
             raise RuntimeError("boom")
         await asyncio.sleep(self.delay)
         if context is not None:
-            context.scratchpad[self.key] = self.val
+            context.import_artifacts[self.key] = self.val
         return data + self.val
 
 
@@ -96,23 +96,6 @@ class CostlyAgent:
 
 
 @pytest.mark.asyncio
-async def test_parallel_merge_scratchpad() -> None:
-    branches = {
-        "a": Step.model_validate({"name": "a", "agent": ScratchAgent("a", 1)}),
-        "b": Step.model_validate({"name": "b", "agent": ScratchAgent("b", 2)}),
-    }
-    parallel = Step.parallel(
-        "merge_sp",
-        branches,
-        merge_strategy=MergeStrategy.MERGE_SCRATCHPAD,
-    )
-    runner = create_test_flujo(parallel, context_model=ScratchCtx)
-    result = await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})
-    assert result.final_pipeline_context.scratchpad["a"] == 1
-    assert result.final_pipeline_context.scratchpad["b"] == 2
-
-
-@pytest.mark.asyncio
 async def test_parallel_overwrite_conflict() -> None:
     branches = {
         "a": Step.model_validate({"name": "a", "agent": ScratchAgent("v", 1, delay=0.1)}),
@@ -121,7 +104,8 @@ async def test_parallel_overwrite_conflict() -> None:
     parallel = Step.parallel("overwrite", branches, merge_strategy=MergeStrategy.OVERWRITE)
     runner = create_test_flujo(parallel, context_model=ScratchCtx)
     result = await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})
-    assert result.final_pipeline_context.scratchpad["v"] == 2
+    step_result = result.step_history[-1]
+    assert step_result.output["b"] == 2
 
 
 @pytest.mark.asyncio
@@ -133,7 +117,7 @@ async def test_parallel_overwrite_preserves_context() -> None:
     parallel = Step.parallel(
         "overwrite_keep",
         branches,
-        context_include_keys=["scratchpad", "initial_prompt"],
+        context_include_keys=["import_artifacts", "initial_prompt"],
         merge_strategy=MergeStrategy.OVERWRITE,
     )
     runner = create_test_flujo(parallel, context_model=ScratchCtx)
@@ -143,7 +127,7 @@ async def test_parallel_overwrite_preserves_context() -> None:
         initial_context_data={"initial_prompt": "x", "val": 5},
     )
     assert result.final_pipeline_context.val == 5
-    assert result.final_pipeline_context.scratchpad["y"] == 2
+    assert result.step_history[-1].output["b"] == 2
 
 
 @pytest.mark.asyncio
@@ -156,8 +140,24 @@ async def test_parallel_overwrite_multi_branch_order() -> None:
     parallel = Step.parallel("overwrite_multi", branches, merge_strategy=MergeStrategy.OVERWRITE)
     runner = create_test_flujo(parallel, context_model=ScratchCtx)
     result = await gather_result(runner, 0, initial_context_data={"initial_prompt": "x"})
-    assert result.final_pipeline_context.scratchpad["v"] == 2
-    assert result.final_pipeline_context.scratchpad["w"] == 3
+    step_result = result.step_history[-1]
+    assert step_result.output["b"] == 2
+    assert step_result.output["c"] == 3
+
+
+def test_parallel_merge_scratchpad_rejected() -> None:
+    branches = {
+        "a": Step.model_validate({"name": "a", "agent": ScratchAgent("a", 1)}),
+        "b": Step.model_validate({"name": "b", "agent": ScratchAgent("b", 2)}),
+    }
+    parallel = Step.parallel(
+        "merge_sp",
+        branches,
+        merge_strategy=MergeStrategy.NO_MERGE,
+    )
+    object.__setattr__(parallel, "merge_strategy", "merge_scratchpad")
+    with pytest.raises(ConfigurationError):
+        Pipeline.from_step(parallel).validate_graph(raise_on_error=True)
 
 
 @pytest.mark.asyncio

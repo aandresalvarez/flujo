@@ -27,7 +27,7 @@ Purpose: deliver compile-time confidence without breaking core architectural rul
 - Allowlist file with adapter identifiers, owner, rationale, expiry/review date.
 - Lint/CI rule: new adapter instantiation must reference allowlist token; else fail. No generic adapter imports outside approved boundaries.
 - Ownership: core maintainers approve additions; PRs adding adapters must include boundary tests and justification.
-
+  
 ### Performance Budget & Benchmarks
 - Define hot-path budget for executor + policy dispatch; perf canary in CI fast tier with fail-fast threshold. Full benchmarks run on schedule.
 - Any perf regression requires root-cause fix; thresholds are not raised to mask regressions.

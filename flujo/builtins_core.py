@@ -100,7 +100,7 @@ def _register_builtins() -> None:
     reg.register(
         "flujo.builtins.context_set",
         _context_set_factory,
-        description="Set a context field at a dot-separated path (e.g., 'scratchpad.counter')",
+        description="Set a context field at a dot-separated path (e.g., 'import_artifacts.counter')",
         arg_schema={
             "type": "object",
             "properties": {"path": {"type": "string"}, "value": {}},
@@ -111,7 +111,7 @@ def _register_builtins() -> None:
     reg.register(
         "flujo.builtins.context_merge",
         _context_merge_factory,
-        description="Merge a dictionary into context at a path (e.g., 'scratchpad.settings')",
+        description="Merge a dictionary into context at a path (e.g., 'import_artifacts.extras.settings')",
         arg_schema={
             "type": "object",
             "properties": {"path": {"type": "string"}, "value": {"type": "object"}},

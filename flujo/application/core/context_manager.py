@@ -278,13 +278,6 @@ class ContextManager:
         try:
             if ContextManager._is_base_model(context):
                 isolated = context.model_copy(deep=True)
-                # Deep-copy scratchpad when possible
-                if hasattr(isolated, "scratchpad") and hasattr(context, "scratchpad"):
-                    try:
-                        isolated.scratchpad = copy.deepcopy(getattr(context, "scratchpad"))
-                    except Exception:
-                        # Fall back to reference; not fatal for strict isolation
-                        setattr(isolated, "scratchpad", getattr(context, "scratchpad"))
                 return isolated
         except Exception as e:
             last_error = e
@@ -313,8 +306,7 @@ class ContextManager:
     ) -> None:
         """Verify that isolated context hasn't mutated original (strict mode).
 
-        This method checks for shared references, particularly in scratchpad,
-        which is the most common mutation point.
+        This method checks for shared references in common mutable fields.
 
         Args:
             original: The original context
@@ -328,19 +320,38 @@ class ContextManager:
         if original is None or isolated is None:
             return
 
-        # Deep comparison of scratchpad (most common mutation point)
-        orig_scratch = getattr(original, "scratchpad", None)
-        iso_scratch = getattr(isolated, "scratchpad", None)
+        from collections.abc import MutableMapping as _MutableMapping
 
-        # Check if scratchpad references are shared (mutation risk)
-        if orig_scratch is iso_scratch and orig_scratch is not None:
-            purpose = getattr(isolated, "_isolation_purpose", "unknown")
-            raise ContextMutationError(
-                f"Isolated context shares scratchpad reference with original. "
-                f"Isolation purpose: {purpose}",
-                suggestion="Ensure context isolation creates deep copies of mutable fields",
-                code="CONTEXT_MUTATION_VIOLATION",
-            )
+        def _collect_mutables(ctx: BaseModel) -> dict[str, object]:
+            out: dict[str, object] = {}
+            for name in (
+                "step_outputs",
+                "hitl_history",
+                "command_log",
+                "conversation_history",
+                "hitl_data",
+                "import_artifacts",
+            ):
+                try:
+                    val = getattr(ctx, name, None)
+                    if isinstance(val, (dict, list, _MutableMapping)):
+                        out[name] = val
+                except Exception:
+                    continue
+            return out
+
+        orig_mut = _collect_mutables(original)
+        iso_mut = _collect_mutables(isolated)
+        for name, orig_val in orig_mut.items():
+            iso_val = iso_mut.get(name)
+            if orig_val is iso_val and orig_val is not None:
+                purpose = getattr(isolated, "_isolation_purpose", "unknown")
+                raise ContextMutationError(
+                    f"Isolated context shares '{name}' reference with original. "
+                    f"Isolation purpose: {purpose}",
+                    suggestion="Ensure context isolation deep-copies mutable fields",
+                    code="CONTEXT_MUTATION_VIOLATION",
+                )
 
         # Additional check: verify context IDs match tracking
         if hasattr(isolated, "_original_context_id"):

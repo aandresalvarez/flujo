@@ -129,7 +129,9 @@ class TestMapStepRefactoring:
         )
 
         assert map_step.name == "factory_test"
-        assert map_step.pipeline_to_run == simple_pipeline
+        assert map_step.pipeline_to_run is not None
+        # Compare structure instead of generic-param rendering differences.
+        assert list(map_step.pipeline_to_run.steps) == list(simple_pipeline.steps)
         assert map_step.iterable_input == "items"
 
     def test_map_step_inheritance(self, map_step: MapStep[_TestContext]) -> None:

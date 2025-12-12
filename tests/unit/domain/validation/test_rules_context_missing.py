@@ -32,7 +32,7 @@ def test_v_c1_updates_context_nonmergeable_warns_and_escalates() -> None:
 
 
 def test_v_c2_scratchpad_shape_conflicts_warns() -> None:
-    """V-C2: Warn when mapping to scratchpad root (shape risk)."""
+    """V-C2: Mapping to scratchpad root is now an error."""
     from flujo.domain.dsl.import_step import ImportStep, OutputMapping
 
     # Child pipeline can be anything; we only check the mapping target
@@ -58,9 +58,13 @@ def test_v_c2_scratchpad_shape_conflicts_warns() -> None:
         }
     )
     report = Pipeline.model_validate({"steps": [imp]}).validate_graph()
-    assert any(
-        w.rule_id == "V-C2" and w.step_name == "RunChild" for w in report.warnings
-    ), report.model_dump()
+    vc2 = [
+        f
+        for f in (report.errors + report.warnings)
+        if f.rule_id == "V-C2" and f.step_name == "RunChild"
+    ]
+    assert vc2, report.model_dump()
+    assert any(f.severity == "error" for f in vc2)
 
 
 def test_v_c3_large_literal_templates_todo() -> None:

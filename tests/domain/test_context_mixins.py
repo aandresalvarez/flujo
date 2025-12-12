@@ -24,16 +24,3 @@ def test_typed_context_rejects_non_base() -> None:
 
     with pytest.raises(TypeError):
         typed_context(NotCtx)  # type: ignore[arg-type]
-
-
-def test_forbid_scratchpad_user_data_blocks_unknown_keys() -> None:
-    ctx = MyContext()
-    ctx.scratchpad["user_stuff"] = "x"
-    with pytest.raises(ValueError):
-        ctx.forbid_scratchpad_user_data()
-
-
-def test_forbid_scratchpad_user_data_allows_reserved() -> None:
-    ctx = MyContext()
-    ctx.scratchpad["status"] = "paused"
-    ctx.forbid_scratchpad_user_data()  # should not raise

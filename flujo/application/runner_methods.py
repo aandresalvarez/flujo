@@ -119,7 +119,7 @@ async def run_outcomes_async(
             ctx = pipeline_result_obj.final_pipeline_context
             msg = None
             if isinstance(ctx, PipelineContext):
-                msg = ctx.scratchpad.get("pause_message")
+                msg = getattr(ctx, "pause_message", None)
         except Exception:
             msg = None
         yield Paused(message=msg or "Paused for HITL")
@@ -129,9 +129,9 @@ async def run_outcomes_async(
         if isinstance(pipeline_result_obj, PipelineResult):
             ctx = pipeline_result_obj.final_pipeline_context
             if isinstance(ctx, PipelineContext):
-                status = ctx.scratchpad.get("status") if hasattr(ctx, "scratchpad") else None
+                status = getattr(ctx, "status", None)
                 if status == "paused":
-                    msg = ctx.scratchpad.get("pause_message")
+                    msg = getattr(ctx, "pause_message", None)
                     yield Paused(message=msg or "Paused for HITL")
                     return
     except Exception:
@@ -160,9 +160,9 @@ async def run_outcomes_async(
         try:
             ctx = pipeline_result_obj.final_pipeline_context
             if isinstance(ctx, PipelineContext):
-                status = ctx.scratchpad.get("status") if hasattr(ctx, "scratchpad") else None
+                status = getattr(ctx, "status", None)
                 if status == "paused":
-                    msg = ctx.scratchpad.get("pause_message")
+                    msg = getattr(ctx, "pause_message", None)
                     yield Paused(message=msg or "Paused for HITL")
                     return
         except Exception:

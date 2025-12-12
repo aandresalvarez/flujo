@@ -113,9 +113,8 @@ class StateMachineStep(Step[Any, Any]):
 
         def _select_branch(_out: Any = None, ctx: Any | None = None) -> str:
             try:
-                if ctx is not None and hasattr(ctx, "scratchpad"):
-                    sp = getattr(ctx, "scratchpad", {})
-                    key = sp.get("current_state") if isinstance(sp, dict) else None
+                if ctx is not None:
+                    key = getattr(ctx, "current_state", None)
                     if isinstance(key, str) and key in self.states:
                         return key
             except Exception:

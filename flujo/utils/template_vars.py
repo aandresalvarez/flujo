@@ -92,13 +92,13 @@ class TemplateContextProxy:
 
 
 def get_steps_map_from_context(context: Any) -> JSONObject:
-    """Extract mapping of prior step outputs from context.scratchpad['steps'] when present."""
+    """Extract mapping of prior step outputs from context.step_outputs when present."""
     try:
-        scratchpad = getattr(context, "scratchpad", None)
-        if isinstance(scratchpad, Mapping):
-            steps = scratchpad.get("steps")
-            if isinstance(steps, Mapping):
-                return dict(steps)
+        # Prefer typed field if available
+        if hasattr(context, "step_outputs"):
+            outputs = getattr(context, "step_outputs")
+            if isinstance(outputs, Mapping):
+                return dict(outputs)
     except Exception:
         pass
     return {}

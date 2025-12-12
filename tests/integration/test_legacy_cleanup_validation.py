@@ -247,7 +247,7 @@ class TestRemainingFunctionPreservation:
             pass  # Expected
 
         # Verify context was updated
-        assert mock_context.scratchpad["status"] == "paused"
+        assert mock_context.status == "paused"
 
     async def test_run_step_logic_preservation(self):
         """Test that _run_step_logic continues to work."""
