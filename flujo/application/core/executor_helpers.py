@@ -135,13 +135,19 @@ def normalize_frame_context(frame: object) -> None:
 def enforce_typed_context(context: object | None) -> BaseModel | None:
     """Enforce that context is a Pydantic BaseModel when strict mode is enabled.
 
-    Strict mode rejects legacy dict contexts instead of attempting coercion, to
-    avoid silent shape drift and to keep context contracts explicit.
+    For backward compatibility, legacy dict contexts are coerced into a
+    ``PipelineContext``. This keeps older `ExecutorCore.execute(..., context={...})`
+    call sites working while still rejecting removed/unsafe legacy fields (e.g.
+    `scratchpad`) via model validation.
     """
     if context is None:
         return None
     if isinstance(context, BaseModel):
         return context
+    if isinstance(context, dict):
+        from ...domain.models import PipelineContext
+
+        return PipelineContext.model_validate(context)
 
     # Strict-only posture: no opt-out for non-Pydantic contexts.
     raise TypeError("Context must be a Pydantic BaseModel (strict mode enforced).")
