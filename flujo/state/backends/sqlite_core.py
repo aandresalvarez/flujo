@@ -451,21 +451,34 @@ class SQLiteBackendBase(StateBackend):
     async def shutdown(self) -> None:
         """Close connection pool and release resources to avoid lingering threads."""
         lock = self._get_lock()
+        acquired = False
         try:
-            async with lock:
-                # Close pooled async connections if present
-                for conn in list(self._connection_pool_map.values()):
-                    try:
-                        await asyncio.wait_for(conn.close(), timeout=2.0)
-                    except TimeoutError as exc:
-                        logger.debug("Timed out closing pooled connection during shutdown: %s", exc)
-                    except Exception as exc:  # noqa: BLE001 - best-effort cleanup
-                        logger.debug(
-                            "Non-fatal error closing pooled connection during shutdown: %s", exc
-                        )
-                self._connection_pool_map.clear()
+            try:
+                await asyncio.wait_for(lock.acquire(), timeout=2.0)
+                acquired = True
+            except TimeoutError as exc:
+                logger.debug("Timed out acquiring shutdown lock: %s", exc)
+
+            conns = list(self._connection_pool_map.values())
+            self._connection_pool_map.clear()
         except Exception as exc:  # noqa: BLE001 - defensive shutdown
             logger.debug("Non-fatal shutdown error: %s", exc)
+            conns = []
+        finally:
+            if acquired:
+                try:
+                    lock.release()
+                except Exception:
+                    pass
+
+        # Close pooled async connections if present (best-effort; never hang).
+        for conn in conns:
+            try:
+                await asyncio.wait_for(conn.close(), timeout=2.0)
+            except TimeoutError as exc:
+                logger.debug("Timed out closing pooled connection during shutdown: %s", exc)
+            except Exception as exc:  # noqa: BLE001 - best-effort cleanup
+                logger.debug("Non-fatal error closing pooled connection during shutdown: %s", exc)
 
     @classmethod
     def shutdown_all(cls) -> None:

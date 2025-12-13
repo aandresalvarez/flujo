@@ -111,13 +111,11 @@ async def test_task_client_registry_resume(sqlite_backend):
     )
     paused = None
     try:
-        async for result in runner.run_async(
+        paused = await runner.run_result_async(
             "goal",
             run_id="registry-resume-test",
             initial_context_data={"pipeline_name": "test-pipeline", "pipeline_version": "1.0.0"},
-        ):
-            paused = result
-            break
+        )
     finally:
         await runner.aclose()
 
@@ -146,8 +144,7 @@ async def test_task_client_registry_resume_missing_pipeline(sqlite_backend):
 
     runner = Flujo(pipeline=pipeline, state_backend=sqlite_backend, delete_on_completion=False)
     try:
-        async for _ in runner.run_async("goal", run_id="missing-pipeline-test"):
-            break
+        _ = await runner.run_result_async("goal", run_id="missing-pipeline-test")
     finally:
         await runner.aclose()
 
@@ -176,12 +173,11 @@ async def test_task_client_registry_resume_no_pipeline_or_registry(sqlite_backen
         delete_on_completion=False,
     )
     try:
-        async for _ in runner.run_async(
+        _ = await runner.run_result_async(
             "goal",
             run_id="no-pipeline-test",
             initial_context_data={"pipeline_name": "test-pipeline", "pipeline_version": "1.0.0"},
-        ):
-            break
+        )
     finally:
         await runner.aclose()
 
@@ -217,12 +213,11 @@ async def test_task_client_registry_resume_fallback_to_latest(sqlite_backend):
         pipeline_version="1.0.0",  # Run with version 1.0.0 (not in registry)
     )
     try:
-        async for _ in runner.run_async(
+        _ = await runner.run_result_async(
             "goal",
             run_id="fallback-test",
             initial_context_data={"pipeline_name": "test-pipeline", "pipeline_version": "1.0.0"},
-        ):
-            break
+        )
     finally:
         await runner.aclose()
 
@@ -292,8 +287,10 @@ async def test_task_client_backward_compatibility_pipeline_arg(sqlite_backend):
     pipeline = Pipeline.from_step(Step.human_in_the_loop("Approval", message_for_user="Approve?"))
 
     runner = Flujo(pipeline=pipeline, state_backend=sqlite_backend, delete_on_completion=False)
-    async for result in runner.run_async("goal", run_id="backward-compat-test"):
-        break
+    try:
+        _ = await runner.run_result_async("goal", run_id="backward-compat-test")
+    finally:
+        await runner.aclose()
 
     # Old API: pipeline as positional argument (should still work)
     client = TaskClient(backend=sqlite_backend)
