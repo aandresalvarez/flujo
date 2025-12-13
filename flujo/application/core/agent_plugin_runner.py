@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional
+from typing import Awaitable, Callable, Optional
 
-from ...domain.models import StepOutcome, StepResult, Success, Failure
+from ...domain.models import BaseModel, StepOutcome, StepResult, Success, Failure
 from ...exceptions import InfiniteRedirectError
 from ...infra import telemetry
 from ...utils.performance import time_perf_ns, time_perf_ns_to_seconds
@@ -26,7 +26,7 @@ class PluginState:
 class PluginHandlingResult:
     """Outcome of a plugin run within an agent attempt."""
 
-    processed_output: Any
+    processed_output: object
     outcome: StepOutcome[StepResult] | None
     retry: bool
     resources_closed: bool
@@ -34,7 +34,7 @@ class PluginHandlingResult:
     attempt_exception: BaseException | None
 
 
-def _in_loop_context(attempt_context: Any, core: Any, step: Any) -> bool:
+def _in_loop_context(attempt_context: BaseModel | None, core: object, step: object) -> bool:
     try:
         return bool(
             getattr(attempt_context, "_last_loop_iterations", None) is not None
@@ -52,22 +52,22 @@ class AgentPluginRunner:
     async def handle_plugins(
         self,
         *,
-        core: Any,
-        step: Any,
-        data: Any,
-        context: Any,
-        attempt_context: Any,
-        attempt_resources: Any,
-        limits: Any,
+        core: object,
+        step: object,
+        data: object,
+        context: BaseModel | None,
+        attempt_context: BaseModel | None,
+        attempt_resources: object | None,
+        limits: object | None,
         stream: bool,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+        on_chunk: Optional[Callable[[object], Awaitable[None]]],
         fallback_depth: int,
         attempt: int,
         total_attempts: int,
         start_ns: int,
         result: StepResult,
-        processed_output: Any,
-        pre_attempt_context: Any,
+        processed_output: object,
+        pre_attempt_context: BaseModel | None,
         prompt_tokens_latest: int,
         close_resources: Callable[[BaseException | None], Awaitable[None]],
         state: PluginState,
@@ -83,6 +83,15 @@ class AgentPluginRunner:
                 attempt_exception=None,
             )
 
+        def _safe_step_name(step_obj: object) -> str:
+            safe_fn = getattr(core, "_safe_step_name", None)
+            if callable(safe_fn):
+                try:
+                    return str(safe_fn(step_obj))
+                except Exception:
+                    pass
+            return str(getattr(step_obj, "name", "<unnamed>"))
+
         telemetry.logfire.info(
             f"[AgentExecutionRunner] Running plugins for step '{getattr(step, 'name', '<unnamed>')}'"
         )
@@ -95,7 +104,13 @@ class AgentPluginRunner:
             timeout_s = None
 
         try:
-            processed_output = await core.plugin_redirector.run(
+            plugin_redirector = getattr(core, "plugin_redirector", None)
+            run_plugins = (
+                getattr(plugin_redirector, "run", None) if plugin_redirector is not None else None
+            )
+            if not callable(run_plugins):
+                raise TypeError("Executor core must provide plugin_redirector.run()")
+            processed_output = await run_plugins(
                 initial=processed_output,
                 step=step,
                 data=data,
@@ -208,7 +223,10 @@ class AgentPluginRunner:
             except Exception:
                 pass
             try:
-                fallback_result_sr = await core.execute(
+                execute_fn = getattr(core, "execute", None)
+                if not callable(execute_fn):
+                    raise TypeError("Executor core must provide execute()")
+                fallback_result_sr = await execute_fn(
                     step=fb_step,
                     data=data,
                     context=attempt_context,
@@ -229,7 +247,7 @@ class AgentPluginRunner:
                             error=fb_exc,
                             feedback=fb_txt,
                             step_result=StepResult(
-                                name=core._safe_step_name(step),
+                                name=_safe_step_name(step),
                                 output=None,
                                 success=False,
                                 attempts=result.attempts,
@@ -249,9 +267,10 @@ class AgentPluginRunner:
                     )
                 raise
 
-            fallback_result_sr = core._unwrap_outcome_to_step_result(
-                fallback_result_sr, core._safe_step_name(fb_step)
-            )
+            unwrap_fn = getattr(core, "_unwrap_outcome_to_step_result", None)
+            if not callable(unwrap_fn):
+                raise TypeError("Executor core must provide _unwrap_outcome_to_step_result()")
+            fallback_result_sr = unwrap_fn(fallback_result_sr, _safe_step_name(fb_step))
             if fallback_result_sr.metadata_ is None:
                 fallback_result_sr.metadata_ = {}
             fallback_result_sr.metadata_["fallback_triggered"] = True
@@ -259,11 +278,7 @@ class AgentPluginRunner:
                 f"Original error: {result.feedback}; Fallback error: {fallback_result_sr.feedback}"
             )
             try:
-                fb_tokens = (
-                    int(fallback_result_sr.token_counts["total"])
-                    if isinstance(fallback_result_sr.token_counts, dict)
-                    else int(fallback_result_sr.token_counts)
-                )
+                fb_tokens = int(fallback_result_sr.token_counts)
             except Exception:
                 try:
                     fb_tokens = int(getattr(fallback_result_sr, "token_counts", 0))
@@ -315,15 +330,23 @@ class AgentPluginRunner:
                 except Exception:
                     pass
                 try:
-                    await core._usage_meter.add(
-                        float(fallback_result_sr.cost_usd or 0.0),
-                        prompt_tokens_latest + fb_tokens,
-                        0,
-                    )
+                    usage_meter = getattr(core, "_usage_meter", None)
+                    add_fn = getattr(usage_meter, "add", None) if usage_meter is not None else None
+                    if callable(add_fn):
+                        await add_fn(
+                            float(fallback_result_sr.cost_usd or 0.0),
+                            prompt_tokens_latest + fb_tokens,
+                            0,
+                        )
                 except Exception:
                     pass
                 try:
-                    core._fallback_handler.reset()
+                    fb_handler = getattr(core, "_fallback_handler", None)
+                    reset_fn = (
+                        getattr(fb_handler, "reset", None) if fb_handler is not None else None
+                    )
+                    if callable(reset_fn):
+                        reset_fn()
                 except Exception:
                     pass
                 await close_resources(None)
@@ -343,7 +366,7 @@ class AgentPluginRunner:
                     error=Exception(combo),
                     feedback=combo,
                     step_result=StepResult(
-                        name=core._safe_step_name(step),
+                        name=_safe_step_name(step),
                         output=None,
                         success=False,
                         attempts=result.attempts,

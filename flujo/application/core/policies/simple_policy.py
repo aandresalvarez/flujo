@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, Type
+from typing import Protocol, Type
 
-from flujo.domain.models import StepOutcome, StepResult
+from flujo.domain.models import BaseModel, StepOutcome, StepResult
 from flujo.exceptions import PausedException
 from flujo.infra import telemetry
 from ..policy_registry import StepPolicy
@@ -15,15 +15,19 @@ SimpleStepExecutorOutcomes = StepOutcome[StepResult]
 
 
 class SimpleStepExecutor(Protocol):
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
+    async def execute(
+        self, core: object, frame: ExecutionFrame[BaseModel]
+    ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
+class DefaultSimpleStepExecutor(StepPolicy[Step[object, object]]):
     @property
-    def handles_type(self) -> Type[Step[Any, Any]]:
+    def handles_type(self) -> Type[Step[object, object]]:
         return Step
 
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def execute(
+        self, core: object, frame: ExecutionFrame[BaseModel]
+    ) -> StepOutcome[StepResult]:
         """Frame-based execution entrypoint for simple steps."""
         step = frame.step
         data = frame.data
@@ -35,7 +39,9 @@ class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
         cache_key = None
         if getattr(core, "_enable_cache", False):
             try:
-                cache_key = core._cache_key(frame)
+                cache_key_fn = getattr(core, "_cache_key", None)
+                if callable(cache_key_fn):
+                    cache_key = cache_key_fn(frame)
             except Exception:
                 cache_key = None
         try:
@@ -47,7 +53,11 @@ class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
             f"[Policy] SimpleStep: delegating to core orchestration for '{getattr(step, 'name', '<unnamed>')}'"
         )
         try:
-            outcome = await core._agent_handler.execute(
+            agent_handler = getattr(core, "_agent_handler", None)
+            execute_fn = getattr(agent_handler, "execute", None)
+            if not callable(execute_fn):
+                raise TypeError("ExecutorCore missing _agent_handler.execute")
+            outcome = await execute_fn(
                 step,
                 data,
                 context,
@@ -68,7 +78,10 @@ class DefaultSimpleStepExecutor(StepPolicy[Step[Any, Any]]):
                     and getattr(core, "_enable_cache", False)
                 ):
                     ttl_s = getattr(core, "_cache_ttl_s", 3600)
-                    await core._cache_backend.put(cache_key, outcome.step_result, ttl_s=ttl_s)
+                    backend = getattr(core, "_cache_backend", None)
+                    put_fn = getattr(backend, "put", None)
+                    if callable(put_fn):
+                        await put_fn(cache_key, outcome.step_result, ttl_s=ttl_s)
             except Exception:
                 pass
             return normalize_outcome(outcome, step_name=getattr(step, "name", "<unnamed>"))

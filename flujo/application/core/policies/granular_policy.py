@@ -13,13 +13,14 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from typing import Any, Optional, Type
+from typing import Optional, Type
 
 from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.policy_registry import StepPolicy
 from flujo.application.core.types import ExecutionFrame
 from flujo.domain.dsl.granular import GranularStep, GranularState, ResumeError
 from flujo.domain.models import (
+    BaseModel,
     Failure,
     StepOutcome,
     StepResult,
@@ -106,8 +107,8 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
     async def execute(
         self,
-        core: Any,
-        frame: ExecutionFrame[Any],
+        core: object,
+        frame: ExecutionFrame[BaseModel],
     ) -> StepOutcome[StepResult]:
         step: GranularStep = frame.step
         data = frame.data
@@ -247,7 +248,11 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
             # Run the agent
             try:
-                agent_output = await core._agent_runner.run(
+                agent_runner = getattr(core, "_agent_runner", None)
+                run_fn = getattr(agent_runner, "run", None)
+                if not callable(run_fn):
+                    raise TypeError("ExecutorCore missing _agent_runner.run")
+                agent_output = await run_fn(
                     agent=agent,
                     payload=data,
                     context=isolated_context,

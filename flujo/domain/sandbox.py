@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping, MutableMapping, Protocol, Sequence
+from typing import Mapping, MutableMapping, Protocol, Sequence, runtime_checkable
 
 
 @dataclass(slots=True)
@@ -33,6 +33,7 @@ class SandboxResult:
         return self.exit_code == 0 and not self.timed_out and self.error is None
 
 
+@runtime_checkable
 class SandboxProtocol(Protocol):
     """Protocol for executing untrusted code in an isolated sandbox."""
 

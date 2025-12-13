@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from ...domain.models import PipelineResult, StepResult
+from ...domain.models import BaseModel as DomainBaseModel
+from ...domain.models import PipelineResult, StepResult, UsageLimits
 from .executor_helpers import make_execution_frame
+from .types import TContext_w_Scratch
 
 if TYPE_CHECKING:  # pragma: no cover
     from .executor_core import ExecutorCore
@@ -17,13 +20,14 @@ class LoopOrchestrator:
     async def execute(
         self,
         *,
-        core: "ExecutorCore[Any]",
-        loop_step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
-        limits: Any,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        core: "ExecutorCore[TContext_w_Scratch]",
+        loop_step: object,
+        data: object,
+        context: TContext_w_Scratch | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None,
         fallback_depth: int = 0,
     ) -> StepResult:
         try:
@@ -66,14 +70,14 @@ class LoopOrchestrator:
         iter_mapper = getattr(loop_step, "iteration_input_mapper", None)
         output_mapper = getattr(loop_step, "loop_output_mapper", None)
 
-        current_context = context or _PipelineContext(initial_prompt=str(data))
+        current_context: DomainBaseModel = context or _PipelineContext(initial_prompt=str(data))
         main_context = current_context
         current_input = data
         attempts = 0
         step_history_tracker = core._step_history_tracker
-        last_feedback: Optional[str] = None
+        last_feedback: str | None = None
         exit_reason: str = "max_loops"
-        final_output: Any = None
+        final_output: object | None = None
 
         for i in range(1, max_loops + 1):
             attempts = i
@@ -110,6 +114,18 @@ class LoopOrchestrator:
                 except Exception:
                     iter_context = main_context
 
+                if (
+                    body is None
+                    or context is None
+                    or resources is None
+                    or limits is None
+                    or main_context is None
+                ):
+                    raise RuntimeError("Legacy loop missing pipeline prerequisites")
+                try:
+                    iter_context = context.model_copy(deep=True)
+                except Exception:
+                    iter_context = context
                 pr = await core._execute_pipeline(
                     body,
                     body_output,
@@ -138,18 +154,31 @@ class LoopOrchestrator:
                     current_context = main_context
             except Exception:
                 for s in steps:
-                    sr = await core._execute_simple_step(
-                        s,
-                        body_output,
-                        current_context,
-                        resources,
-                        limits,
-                        False,
-                        None,
-                        None,
-                        0,
-                        False,
-                    )
+                    try:
+                        sr = await core._execute_simple_step(
+                            s,
+                            body_output,
+                            current_context,
+                            resources,
+                            limits,
+                            False,
+                            None,
+                            None,
+                            0,
+                            False,
+                        )
+                    except TypeError:
+                        sr = await core._execute_simple_step(
+                            s,
+                            body_output,
+                            current_context,
+                            resources,
+                            limits,
+                            False,
+                            None,
+                            None,
+                            0,
+                        )
                     step_history_tracker.add_step_result(sr)
                     if not sr.success:
                         fb = f"Loop body failed: {sr.feedback or 'Unknown error'}"

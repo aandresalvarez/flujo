@@ -3,19 +3,22 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import types
 from datetime import datetime
 from dataclasses import dataclass
 from typing import (
-    Any,
     Dict,
     Generic,
     Optional,
     Type,
     TypeVar,
     AsyncIterator,
-    Union,
     Literal,
+    TYPE_CHECKING,
 )
+
+if TYPE_CHECKING:
+    from ..domain.events import HookPayload
 
 from ..exceptions import (
     InfiniteFallbackError,
@@ -23,12 +26,13 @@ from ..exceptions import (
     PausedException,
     PipelineAbortSignal,
 )
-from ..domain.dsl.step import Step
+from ..domain.dsl.step import Step, StepConfig
 from ..domain.dsl.pipeline import Pipeline
 from ..domain.models import PipelineResult, StepResult, UsageLimits, PipelineContext, StepOutcome
 from ..domain.commands import AgentCommand
 from pydantic import TypeAdapter
 from ..domain.resources import AppResources
+from ..domain.processors import AgentProcessors
 from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend
 from ..domain.interfaces import StateProvider
@@ -118,7 +122,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
     _tracing_manager: TracingManager
     _state_manager: StateBackendManager
-    _trace_manager: Optional[Any]  # Will be TraceManager when tracing is enabled
+    _trace_manager: object | None  # Trace manager instance when tracing is enabled
 
     def __init__(
         self,
@@ -136,12 +140,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         executor_factory: Optional[ExecutorFactory] = None,
         backend_factory: Optional[BackendFactory] = None,
         pipeline_version: str = "latest",
-        local_tracer: Union[str, Any, None] = None,
+        local_tracer: object | None = None,
         registry: Optional[PipelineRegistry] = None,
         pipeline_name: Optional[str] = None,
         enable_tracing: bool = True,
         pipeline_id: Optional[str] = None,
-        state_providers: Optional[Dict[str, StateProvider[Any]]] = None,
+        state_providers: Optional[Dict[str, StateProvider[object]]] = None,
     ) -> None:
         if isinstance(pipeline, Step):
             pipeline = Pipeline.from_step(pipeline)
@@ -197,7 +201,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self.resources = resources
 
         def _post_run_only(hook: HookCallable) -> HookCallable:
-            async def _wrapped(payload: Any) -> None:
+            async def _wrapped(payload: HookPayload) -> None:
                 if getattr(payload, "event_name", None) == "post_run":
                     await hook(payload)
 
@@ -264,7 +268,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         combined_hooks.extend(pipeline_finish_hooks)
         if hooks:
             combined_hooks.extend(list(hooks))
-        self.hooks: list[Any] = combined_hooks
+        self.hooks: list[HookCallable] = combined_hooks
 
         # Tracing lifecycle management
         self._tracing_manager = TracingManager(
@@ -300,7 +304,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         )
         self.state_backend: StateBackend | None = self._state_manager.backend
         self.delete_on_completion = delete_on_completion
-        self._pending_close_tasks: list[asyncio.Task[Any]] = []
+        self._pending_close_tasks: list[asyncio.Task[object]] = []
 
     def _create_default_backend(self) -> "ExecutionBackend":
         return _create_default_backend(self)
@@ -336,7 +340,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self,
         exc_type: Type[BaseException] | None,
         exc: BaseException | None,
-        tb: Any,
+        tb: types.TracebackType | None,
     ) -> None:
         await self.aclose()
 
@@ -347,7 +351,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self,
         exc_type: Type[BaseException] | None,
         exc: BaseException | None,
-        tb: Any,
+        tb: types.TracebackType | None,
     ) -> Literal[False]:
         self.close()
         return False
@@ -383,7 +387,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             "post_step",
             "on_step_failure",
         ],
-        **kwargs: Any,
+        **kwargs: object,
     ) -> None:
         """Invoke registered hooks for ``event_name``."""
 
@@ -392,7 +396,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     async def _execute_steps(
         self,
         start_idx: int,
-        data: Any,
+        data: object,
         context: Optional[ContextT],
         result: PipelineResult[ContextT],
         *,
@@ -400,7 +404,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         run_id: str | None = None,
         state_backend: StateBackend | None = None,
         state_created_at: datetime | None = None,
-    ) -> AsyncIterator[Any]:
+    ) -> AsyncIterator[object]:
         """Delegate step execution to a composed RunSession."""
         session = self._make_session()
         async for item in session.execute_steps(
@@ -421,7 +425,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         *,
         run_id: str | None = None,
         initial_context_data: Optional[JSONObject] = None,
-    ) -> AsyncIterator[PipelineResult[ContextT]]:
+    ) -> AsyncIterator[object]:
         """Delegate run orchestration to the composed RunSession."""
         session = self._make_session()
         async for item in session.run_async(
@@ -520,7 +524,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         initial_input: RunnerInT,
         *,
         initial_context_data: Optional[JSONObject] = None,
-    ) -> AsyncIterator[Any]:
+    ) -> AsyncIterator[object]:
         async for item in _stream_async(
             self,
             initial_input,
@@ -543,7 +547,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         )
 
     async def resume_async(
-        self, paused_result: PipelineResult[ContextT], human_input: Any
+        self, paused_result: PipelineResult[ContextT], human_input: object
     ) -> PipelineResult[ContextT]:
         return await _resume_async(self, paused_result, human_input)
 
@@ -552,7 +556,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         return await replay_from_trace(self, run_id)
 
     @staticmethod
-    def _parse_timestamp(value: Any) -> Optional[datetime]:
+    def _parse_timestamp(value: object) -> Optional[datetime]:
         if isinstance(value, datetime):
             return value
         if isinstance(value, str):
@@ -562,10 +566,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 return None
         return None
 
-    def _find_step_by_name(self, name: str) -> Optional[Step[Any, Any]]:
+    def _find_step_by_name(self, name: str) -> Optional[Step[object, object]]:
         if self.pipeline is None:
             return None
-        LoopStepType: Any = None
+        LoopStepType: type[object] | None = None
         try:
             from ..domain.dsl.loop import LoopStep as _LoopStep
 
@@ -573,7 +577,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         except Exception:
             pass
 
-        queue: list[Step[Any, Any]] = list(getattr(self.pipeline, "steps", []))
+        queue: list[Step[object, object]] = list(getattr(self.pipeline, "steps", []))
         visited: set[int] = set()
 
         while queue:
@@ -637,7 +641,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     async def resume_background_task(
         self,
         task_id: str,
-        new_data: Optional[Any] = None,
+        new_data: object | None = None,
     ) -> PipelineResult[ContextT]:
         """Resume a failed background task synchronously."""
         if self.state_backend is None:
@@ -689,7 +693,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
         final_context = context
 
-        def _context_setter(_res: PipelineResult[Any], updated_ctx: Optional[Any]) -> None:
+        def _context_setter(_res: PipelineResult[ContextT], updated_ctx: ContextT | None) -> None:
             nonlocal final_context
             if updated_ctx is not None:
                 final_context = updated_ctx
@@ -803,7 +807,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         *,
         run_id: str | None = None,
         initial_context_data: Optional[JSONObject] = None,
-    ) -> AsyncIterator[Any]:
+    ) -> AsyncIterator[object]:
         """Run pipeline yielding lifecycle events (StepOutcome/Chunk) and final PipelineResult."""
         async for item in self.run_async(
             initial_input, run_id=run_id, initial_context_data=initial_context_data
@@ -811,9 +815,36 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             yield item
 
     def as_step(
-        self, name: str, *, inherit_context: bool = True, **kwargs: Any
+        self,
+        name: str,
+        *,
+        inherit_context: bool = True,
+        validate_fields: bool = False,
+        sink_to: str | None = None,
+        processors: AgentProcessors | None = None,
+        persist_feedback_to_context: str | None = None,
+        persist_validation_results_to: str | None = None,
+        is_adapter: bool = False,
+        adapter_id: str | None = None,
+        adapter_allow: str | None = None,
+        config: StepConfig | None = None,
+        **config_kwargs: object,
     ) -> Step[RunnerInT, PipelineResult[ContextT]]:
-        return _as_step(self, name, inherit_context=inherit_context, **kwargs)
+        return _as_step(
+            self,
+            name,
+            inherit_context=inherit_context,
+            validate_fields=validate_fields,
+            sink_to=sink_to,
+            processors=processors,
+            persist_feedback_to_context=persist_feedback_to_context,
+            persist_validation_results_to=persist_validation_results_to,
+            is_adapter=is_adapter,
+            adapter_id=adapter_id,
+            adapter_allow=adapter_allow,
+            config=config,
+            **config_kwargs,
+        )
 
     async def _shutdown_state_backend(self) -> None:
         """Shutdown the default state backend to avoid lingering worker threads."""

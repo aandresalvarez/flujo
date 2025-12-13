@@ -12,7 +12,17 @@ import time
 import threading
 import weakref
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Coroutine, Dict, List, Optional, TYPE_CHECKING
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Dict,
+    List,
+    Optional,
+    TypeVar,
+    TYPE_CHECKING,
+)
 
 from contextlib import AbstractContextManager
 
@@ -53,6 +63,9 @@ except ImportError:
 
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
+
+
+T = TypeVar("T")
 
 
 # Maximum length for SQL identifiers
@@ -311,12 +324,12 @@ def validate_column_definition_or_raise(column_def: str) -> None:
         raise ValueError(f"Invalid column definition: {column_def}")
 
 
-async def _await_coro(coro: "Coroutine[Any, Any, Any]") -> Any:
+async def _await_coro(coro: "Coroutine[Any, Any, T]") -> T:
     """Helper to await a coroutine inside the blocking portal."""
     return await coro
 
 
-def _run_coro_sync(coro: "Coroutine[Any, Any, Any]") -> Any:
+def _run_coro_sync(coro: "Coroutine[Any, Any, T]") -> T:
     """Run an async coroutine from sync context, even if a loop exists.
 
     Uses a shared anyio BlockingPortal to avoid ad-hoc event loops/threads and
@@ -328,7 +341,8 @@ def _run_coro_sync(coro: "Coroutine[Any, Any, Any]") -> Any:
         return asyncio.run(coro)
 
     portal = _get_blocking_portal()
-    return portal.call(_await_coro, coro)
+    result: T = portal.call(_await_coro, coro)
+    return result
 
 
 class SQLiteBackendBase(StateBackend):

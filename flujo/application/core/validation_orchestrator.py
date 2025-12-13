@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING
 
-from ...domain.models import StepResult
+from ...domain.models import BaseModel, StepResult
 from ...exceptions import PausedException
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -18,18 +18,18 @@ class ValidationOrchestrator:
     async def validate(
         self,
         *,
-        core: "ExecutorCore[Any]",
-        step: "Step[Any, Any]",
-        output: Any,
-        context: Optional[Any],
-        limits: Optional[Any],
-        data: Any,
-        attempt_context: Optional[Any],
-        attempt_resources: Optional[Any],
+        core: "ExecutorCore[BaseModel]",
+        step: "Step[object, object]",
+        output: object,
+        context: object | None,
+        limits: object | None,
+        data: object,
+        attempt_context: object | None,
+        attempt_resources: object | None,
         stream: bool,
-        on_chunk: Optional[Any],
+        on_chunk: object | None,
         fallback_depth: int,
-    ) -> Optional[StepResult]:
+    ) -> StepResult | None:
         if not hasattr(step, "validators") or not step.validators:
             return None
 

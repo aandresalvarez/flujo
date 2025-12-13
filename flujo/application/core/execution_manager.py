@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, AsyncIterator, Generic, Optional, TypeVar
+from typing import AsyncIterator, Generic, Optional, Protocol, Sequence, TypeVar
 
 from flujo.domain.backends import ExecutionBackend
+from flujo.domain.dsl.step import Step
 from flujo.domain.models import (
     BaseModel,
     PipelineResult,
@@ -35,7 +36,7 @@ from flujo.infra import telemetry
 from flujo.application.core.context_adapter import _build_context_update
 
 from .context_manager import ContextManager
-from .step_coordinator import StepCoordinator
+from .step_coordinator import LegacyStepExecutor, StepCoordinator
 from .state_manager import StateManager
 from .type_validator import TypeValidator
 from .execution_manager_finalization import ExecutionFinalizationMixin
@@ -44,6 +45,12 @@ from flujo.domain.models import UsageLimits
 # from flujo.domain.dsl import LoopStep  # Commented to avoid circular import
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
+
+
+class PipelineLike(Protocol):
+    """Minimal pipeline contract for ExecutionManager."""
+
+    steps: Sequence[Step]
 
 
 class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
@@ -56,7 +63,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
 
     def __init__(
         self,
-        pipeline: Any,
+        pipeline: PipelineLike,
         *,
         backend: Optional[ExecutionBackend] = None,  # ✅ NEW: Receive the backend directly.
         state_manager: Optional[StateManager[ContextT]] = None,
@@ -80,14 +87,14 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                 for loop iterations to prevent unintended side effects between
                 iterations and ensure each iteration operates independently.
         """
-        self.pipeline = pipeline
+        self.pipeline: PipelineLike = pipeline
         # ✅ NEW: Store the backend, create default if None
         if backend is None:
             from flujo.infra.backends import LocalBackend
             from flujo.application.core.executor_core import ExecutorCore
 
-            executor: ExecutorCore[Any] = ExecutorCore()
-            self.backend: Any = LocalBackend(executor)
+            executor: ExecutorCore[BaseModel] = ExecutorCore()
+            self.backend: ExecutionBackend = LocalBackend(executor)
         else:
             self.backend = backend
         self.state_manager = state_manager or StateManager()
@@ -125,15 +132,16 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
     async def execute_steps(
         self,
         start_idx: int,
-        data: Any,
+        data: object,
         context: Optional[ContextT],
         result: PipelineResult[ContextT],
         *,
         stream_last: bool = False,
         run_id: str | None = None,
         state_created_at: datetime | None = None,
-        step_executor: Optional[Any] = None,  # Legacy parameter for backward compatibility
-    ) -> AsyncIterator[Any]:
+        step_executor: LegacyStepExecutor
+        | None = None,  # Legacy parameter for backward compatibility
+    ) -> AsyncIterator[object]:
         """Execute pipeline steps with simplified, coordinated logic.
 
         This is the main execution loop that coordinates all components:
@@ -205,7 +213,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     # Execute steps via the configured backend (default path).
                     chosen_step_executor = step_executor
 
-                    last_item: Any | None = None
+                    last_item: object | None = None
                     async for item in self.step_coordinator.execute_step(
                         step=step,
                         data=data,
@@ -794,7 +802,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         # This ensures the current_step_index reflects the next step to be executed
                         if persist_state_after_step and step_result.success:
                             # Serialize the step output with model-aware dump during state persistence
-                            def _to_jsonable(obj: Any) -> Any:
+                            def _to_jsonable(obj: object) -> object:
                                 try:
                                     from pydantic import BaseModel as _BM
 

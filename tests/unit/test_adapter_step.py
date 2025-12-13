@@ -1,8 +1,8 @@
 import doctest
-from pydantic import BaseModel
 import pytest
 
-from flujo.domain import adapter_step, step
+from flujo.domain import Step, adapter_step, step
+from flujo.domain.models import BaseModel
 from tests.conftest import create_test_flujo
 
 
@@ -34,6 +34,11 @@ async def test_adapter_pipeline_runs() -> None:
 
 def test_is_adapter_meta() -> None:
     assert adapt.meta.get("is_adapter") is True
+
+
+def test_adapter_without_tokens_rejected_on_model_validate() -> None:
+    with pytest.raises(ValueError, match="adapter_id and adapter_allow"):
+        Step.model_validate({"name": "adapt", "meta": {"is_adapter": True}})
 
 
 def example_adapter_step():

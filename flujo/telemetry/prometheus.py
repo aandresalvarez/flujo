@@ -39,7 +39,7 @@ def _wait_for_server(host: str, port: int, timeout: float = DEFAULT_SERVER_TIMEO
 try:
     from prometheus_client import make_wsgi_app
     from prometheus_client.core import GaugeMetricFamily
-    from prometheus_client.registry import REGISTRY
+    from prometheus_client.registry import Collector, REGISTRY
 
     PROM_AVAILABLE = True
 except ImportError:  # pragma: no cover - optional dependency
@@ -51,7 +51,7 @@ except ImportError:  # pragma: no cover - optional dependency
         pass
 
 
-class PrometheusCollector:
+class PrometheusCollector(Collector):
     """Prometheus collector that exposes aggregated run metrics."""
 
     def __init__(self, backend: StateBackend) -> None:
@@ -115,15 +115,8 @@ def start_prometheus_server(port: int, backend: StateBackend) -> tuple[Callable[
     collector = PrometheusCollector(backend)
     # Register collector, ignore if already registered
     try:
-        from typing import TYPE_CHECKING, cast
-
-        if TYPE_CHECKING:
-            # Precise type for register at type-check time
-            from prometheus_client.registry import Collector as _PromCollector
-
-            REGISTRY.register(cast(_PromCollector, collector))
-        else:  # runtime path
-            REGISTRY.register(collector)
+        # Collector is an ABC; we register our concrete implementation.
+        REGISTRY.register(collector)
     except ValueError:
         # Already registered, ignore
         pass

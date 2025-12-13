@@ -1,49 +1,49 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 from pydantic import BaseModel as PydanticBaseModel
 from ..base_model import BaseModel as FlujoBaseModel
 
 from ..dsl import Step
+from ..dsl.step import BranchFailureStrategy, MergeStrategy
 from .loader_models import BlueprintError
 
 
-def _normalize_merge_strategy(value: Optional[str]) -> Any:
-    from ..dsl.step import MergeStrategy as _MS
-
+def _normalize_merge_strategy(value: Optional[str]) -> MergeStrategy:
     if value is None:
-        return _MS.CONTEXT_UPDATE
+        return MergeStrategy.CONTEXT_UPDATE
     if str(value).lower() == "merge_scratchpad":
         raise BlueprintError(
             "Merge strategy 'merge_scratchpad' is not allowed (scratchpad banned)."
         )
     try:
-        return _MS[value.upper()]
+        return MergeStrategy[value.upper()]
     except Exception as e:
         raise BlueprintError(f"Invalid merge_strategy: {value}") from e
 
 
-def _normalize_branch_failure(value: Optional[str]) -> Any:
-    from ..dsl.step import BranchFailureStrategy as _BFS
-
+def _normalize_branch_failure(value: Optional[str]) -> BranchFailureStrategy:
     if value is None:
-        return _BFS.PROPAGATE
+        return BranchFailureStrategy.PROPAGATE
     try:
-        return _BFS[value.upper()]
+        return BranchFailureStrategy[value.upper()]
     except Exception as e:
         raise BlueprintError(f"Invalid on_branch_failure: {value}") from e
 
 
-def _finalize_step_types(step_obj: Step[Any, Any]) -> None:
+def _finalize_step_types(step_obj: Step[object, object]) -> None:
     """Best-effort static type assignment for pipeline validation."""
     try:
         from flujo.signature_tools import analyze_signature as _analyze
         import inspect as _inspect
 
-        def _is_default_type(t: Any) -> bool:
-            return t is object or str(t) == "typing.Any"
+        def _as_type(candidate: object) -> type[object] | None:
+            return candidate if isinstance(candidate, type) else None
 
-        def _unwrap_primitive_wrapper(t: Any) -> Any:
+        def _is_default_type(t: object) -> bool:
+            return t is object or not isinstance(t, type)
+
+        def _unwrap_primitive_wrapper(t: object) -> object:
             try:
                 if (
                     isinstance(t, type)
@@ -67,7 +67,9 @@ def _finalize_step_types(step_obj: Step[Any, Any]) -> None:
             ):
                 out_t = getattr(agent_obj, "target_output_type")
                 if out_t is not None:
-                    step_obj.__step_output_type__ = _unwrap_primitive_wrapper(out_t)
+                    resolved = _as_type(_unwrap_primitive_wrapper(out_t))
+                    if resolved is not None:
+                        step_obj.__step_output_type__ = resolved
         except Exception:
             pass
         fn = getattr(agent_obj, "_step_callable", None)
@@ -87,12 +89,16 @@ def _finalize_step_types(step_obj: Step[Any, Any]) -> None:
             sig = _analyze(fn)
             try:
                 if _is_default_type(getattr(step_obj, "__step_input_type__", object)):
-                    step_obj.__step_input_type__ = getattr(sig, "input_type", object)
+                    resolved = _as_type(getattr(sig, "input_type", object))
+                    if resolved is not None:
+                        step_obj.__step_input_type__ = resolved
             except Exception:
                 pass
             try:
                 if _is_default_type(getattr(step_obj, "__step_output_type__", object)):
-                    step_obj.__step_output_type__ = getattr(sig, "output_type", object)
+                    resolved = _as_type(getattr(sig, "output_type", object))
+                    if resolved is not None:
+                        step_obj.__step_output_type__ = resolved
             except Exception:
                 pass
     except Exception:

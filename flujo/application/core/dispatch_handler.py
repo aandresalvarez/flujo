@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from ...domain.models import Failure, Paused, StepOutcome, StepResult, Success
 from ...exceptions import (
@@ -12,7 +12,7 @@ from ...exceptions import (
     PricingNotConfiguredError,
     UsageLimitExceededError,
 )
-from .types import ExecutionFrame
+from .types import ExecutionFrame, TContext_w_Scratch
 
 if TYPE_CHECKING:
     from .executor_core import ExecutorCore
@@ -21,11 +21,11 @@ if TYPE_CHECKING:
 class DispatchHandler:
     """Encapsulates policy dispatch + hydration persistence for ExecutorCore."""
 
-    def __init__(self, core: "ExecutorCore[Any]") -> None:
-        self._core: "ExecutorCore[Any]" = core
+    def __init__(self, core: "ExecutorCore[TContext_w_Scratch]") -> None:
+        self._core: "ExecutorCore[TContext_w_Scratch]" = core
 
     async def dispatch(
-        self, frame: ExecutionFrame[Any], *, called_with_frame: bool
+        self, frame: ExecutionFrame[TContext_w_Scratch], *, called_with_frame: bool
     ) -> StepOutcome[StepResult] | StepResult:
         """Dispatch via policy registry and handle control-flow outcomes."""
         step = frame.step

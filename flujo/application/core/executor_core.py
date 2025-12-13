@@ -1,11 +1,13 @@
 from __future__ import annotations
 import asyncio
 import warnings
-from typing import Any, Awaitable, Callable, Dict, Generic, Optional, TYPE_CHECKING
+from collections.abc import Awaitable, Callable
+from typing import Generic, TYPE_CHECKING, TypeVar
 
 from ...domain.interfaces import StateProvider
 from ...domain.sandbox import SandboxProtocol
 from ...domain.memory import VectorStoreProtocol
+from ...domain.models import BaseModel as DomainBaseModel
 from ...domain.models import PipelineResult, Quota, StepOutcome, StepResult, UsageLimits
 from ...exceptions import (
     MissingAgentError,
@@ -127,6 +129,9 @@ if TYPE_CHECKING:
     from ...type_definitions.common import JSONObject
 
 
+TFrameContext = TypeVar("TFrameContext", bound=DomainBaseModel)
+
+
 class ExecutorCore(Generic[TContext_w_Scratch]):
     """
     Policy-driven step executor with modular architecture.
@@ -146,44 +151,44 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         validator_runner: IValidatorRunner | None = None,
         plugin_runner: IPluginRunner | None = None,
         usage_meter: IUsageMeter | None = None,
-        quota_manager: Optional[QuotaManager] = None,
-        cache_backend: Any = None,
-        cache_key_generator: Any = None,
+        quota_manager: QuotaManager | None = None,
+        cache_backend: object | None = None,
+        cache_key_generator: object | None = None,
         telemetry: ITelemetry | None = None,
         enable_cache: bool = True,
         # Additional parameters for compatibility
-        serializer: Any = None,
-        hasher: Any = None,
+        serializer: ISerializer | None = None,
+        hasher: IHasher | None = None,
         # UltraStepExecutor compatibility parameters
         cache_size: int = 1024,
         cache_ttl: int = 3600,
         concurrency_limit: int = 10,
         # Additional compatibility parameters
-        optimization_config: Any = None,
+        optimization_config: object | None = None,
         # Injected policies
-        timeout_runner: Optional[TimeoutRunner] = None,
-        unpacker: Optional[AgentResultUnpacker] = None,
-        plugin_redirector: Optional[PluginRedirector] = None,
-        validator_invoker: Optional[ValidatorInvoker] = None,
-        simple_step_executor: Optional[SimpleStepExecutor] = None,
-        agent_step_executor: Optional[AgentStepExecutor] = None,
-        loop_step_executor: Optional[LoopStepExecutor] = None,
-        parallel_step_executor: Optional[ParallelStepExecutor] = None,
-        conditional_step_executor: Optional[ConditionalStepExecutor] = None,
-        dynamic_router_step_executor: Optional[DynamicRouterStepExecutor] = None,
-        hitl_step_executor: Optional[HitlStepExecutor] = None,
-        cache_step_executor: Optional[CacheStepExecutor] = None,
-        usage_estimator: Optional[UsageEstimator] = None,
-        estimator_factory: Optional[UsageEstimatorFactory] = None,
-        policy_registry: Optional[PolicyRegistry] = None,
+        timeout_runner: TimeoutRunner | None = None,
+        unpacker: AgentResultUnpacker | None = None,
+        plugin_redirector: PluginRedirector | None = None,
+        validator_invoker: ValidatorInvoker | None = None,
+        simple_step_executor: SimpleStepExecutor | None = None,
+        agent_step_executor: AgentStepExecutor | None = None,
+        loop_step_executor: LoopStepExecutor | None = None,
+        parallel_step_executor: ParallelStepExecutor | None = None,
+        conditional_step_executor: ConditionalStepExecutor | None = None,
+        dynamic_router_step_executor: DynamicRouterStepExecutor | None = None,
+        hitl_step_executor: HitlStepExecutor | None = None,
+        cache_step_executor: CacheStepExecutor | None = None,
+        usage_estimator: UsageEstimator | None = None,
+        estimator_factory: UsageEstimatorFactory | None = None,
+        policy_registry: PolicyRegistry | None = None,
         # Strict behavior toggles (robust defaults with optional enforcement)
         strict_context_isolation: bool = False,
         strict_context_merge: bool = False,
         enable_optimized_error_handling: bool = True,
-        state_providers: Optional[Dict[str, StateProvider[Any]]] = None,
-        state_manager: Optional["StateManager[Any]"] = None,
-        deps: Optional[ExecutorCoreDeps] = None,
-        builder: Optional[FlujoRuntimeBuilder] = None,
+        state_providers: dict[str, StateProvider[object]] | None = None,
+        state_manager: StateManager[DomainBaseModel] | None = None,
+        deps: ExecutorCoreDeps[TContext_w_Scratch] | None = None,
+        builder: FlujoRuntimeBuilder | None = None,
     ) -> None:
         # Validate parameters for compatibility
         if cache_size <= 0:
@@ -273,8 +278,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._hasher = deps_obj.hasher
         self._cache_key_generator = deps_obj.cache_key_generator
 
-        self._cache_locks: Dict[str, asyncio.Lock] = {}
-        self._cache_locks_lock: Optional[asyncio.Lock] = None
+        self._cache_locks: dict[str, asyncio.Lock] = {}
+        self._cache_locks_lock: asyncio.Lock | None = None
 
         # Strict behavior settings (defaults can be overridden by global settings)
         self._strict_context_isolation = (
@@ -392,7 +397,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._memory_store
 
     @property
-    def memory_manager(self) -> Any:
+    def memory_manager(self) -> object | None:
         """Exposed memory manager; may be NullMemoryManager when disabled."""
         return self._memory_manager
 
@@ -430,7 +435,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             # This handles the case where no event loop exists
             asyncio.run(self._cache_manager.clear_cache())
 
-    def _cache_key(self, frame: Any) -> str:
+    def _cache_key(self, frame: ExecutionFrame[TFrameContext]) -> str:
         return self._cache_manager.generate_cache_key(
             frame.step, frame.data, frame.context, getattr(frame, "resources", None)
         )
@@ -444,23 +449,23 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     _normalize_frame_context = staticmethod(normalize_frame_context)
 
-    async def _set_quota_and_hydrate(self, frame: ExecutionFrame[Any]) -> None:
+    async def _set_quota_and_hydrate(self, frame: ExecutionFrame[TContext_w_Scratch]) -> None:
         """Assign quota to the execution context and hydrate managed state."""
         await set_quota_and_hydrate(frame, self._quota_manager, self._hydration_manager)
 
     def _handle_missing_agent_exception(
-        self, err: MissingAgentError, step: Any, *, called_with_frame: bool
+        self, err: MissingAgentError, step: object, *, called_with_frame: bool
     ) -> StepOutcome[StepResult] | StepResult:
         return handle_missing_agent_exception(self, err, step, called_with_frame=called_with_frame)
 
     async def _persist_and_finalize(
         self,
         *,
-        step: Any,
+        step: object,
         result: StepResult,
-        cache_key: Optional[str],
+        cache_key: str | None,
         called_with_frame: bool,
-        frame: ExecutionFrame[Any] | None = None,
+        frame: ExecutionFrame[TContext_w_Scratch] | None = None,
     ) -> StepOutcome[StepResult] | StepResult:
         return await persist_and_finalize(
             self,
@@ -474,8 +479,8 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     def _handle_unexpected_exception(
         self,
         *,
-        step: Any,
-        frame: ExecutionFrame[Any],
+        step: object,
+        frame: ExecutionFrame[TContext_w_Scratch],
         exc: Exception,
         called_with_frame: bool,
     ) -> StepOutcome[StepResult] | StepResult:
@@ -484,23 +489,23 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
 
     async def _maybe_use_cache(
-        self, frame: ExecutionFrame[Any], *, called_with_frame: bool
-    ) -> tuple[Optional[StepOutcome[StepResult] | StepResult], Optional[str]]:
+        self, frame: ExecutionFrame[TContext_w_Scratch], *, called_with_frame: bool
+    ) -> tuple[StepOutcome[StepResult] | StepResult | None, str | None]:
         return await maybe_use_cache(self, frame, called_with_frame=called_with_frame)
 
-    def _get_current_quota(self) -> Optional[Quota]:
+    def _get_current_quota(self) -> Quota | None:
         """Best-effort getter for the current quota using the manager first."""
         return get_current_quota(self._quota_manager)
 
-    def _set_current_quota(self, quota: Optional[Quota]) -> Optional[object]:
+    def _set_current_quota(self, quota: Quota | None) -> object | None:
         """Best-effort setter for the current quota (returns token when available)."""
         return set_current_quota(self._quota_manager, quota)
 
-    def _reset_current_quota(self, token: Optional[object]) -> None:
+    def _reset_current_quota(self, token: object | None) -> None:
         """Best-effort reset for quota context tokens."""
         reset_current_quota(self._quota_manager, token)
 
-    def _get_background_quota(self, parent_quota: Optional[Quota] = None) -> Optional[Quota]:
+    def _get_background_quota(self, parent_quota: Quota | None = None) -> Quota | None:
         """Compute quota for background tasks with parent-first split."""
         settings = get_settings()
         bg_settings = getattr(settings, "background_tasks", None)
@@ -534,14 +539,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         *,
         task_id: str,
         bg_run_id: str,
-        parent_run_id: Optional[str],
+        parent_run_id: str | None,
         step_name: str,
-        data: Any,
-        context: Optional[TContext_w_Scratch],
-        metadata: Optional["JSONObject"] = None,
+        data: object,
+        context: TContext_w_Scratch | None,
+        metadata: JSONObject | None = None,
     ) -> None:
         """Persist initial state for a background task."""
         if self.state_manager is None:
+            return
+        if context is not None and not isinstance(context, DomainBaseModel):
             return
 
         meta = dict(metadata or {})
@@ -564,11 +571,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         *,
         task_id: str,
-        context: Optional[TContext_w_Scratch],
-        metadata: Optional["JSONObject"] = None,
+        context: TContext_w_Scratch | None,
+        metadata: JSONObject | None = None,
     ) -> None:
         """Mark a background task as completed."""
         if self.state_manager is None:
+            return
+        if context is None or not isinstance(context, DomainBaseModel):
             return
 
         run_id = getattr(context, "run_id", None) if context is not None else None
@@ -598,12 +607,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         *,
         task_id: str,
-        context: Optional[TContext_w_Scratch],
+        context: TContext_w_Scratch | None,
         error: Exception,
-        metadata: Optional["JSONObject"] = None,
+        metadata: JSONObject | None = None,
     ) -> None:
         """Mark a background task as failed."""
         if self.state_manager is None:
+            return
+        if context is None or not isinstance(context, DomainBaseModel):
             return
 
         run_id = getattr(context, "run_id", None) if context is not None else None
@@ -643,12 +654,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         *,
         task_id: str,
-        context: Optional[TContext_w_Scratch],
+        context: TContext_w_Scratch | None,
         error: Exception,
-        metadata: Optional["JSONObject"] = None,
+        metadata: JSONObject | None = None,
     ) -> None:
         """Mark a background task as paused (control-flow signal)."""
         if self.state_manager is None:
+            return
+        if context is None or not isinstance(context, DomainBaseModel):
             return
 
         run_id = getattr(context, "run_id", None) if context is not None else None
@@ -677,21 +690,19 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         except Exception:
             pass
 
-    def _hash_obj(self, obj: Any) -> str:
+    def _hash_obj(self, obj: object) -> str:
         return hash_obj(obj, self._serializer, self._hasher)
 
-    def _isolate_context(
-        self, context: Optional[TContext_w_Scratch]
-    ) -> Optional[TContext_w_Scratch]:
+    def _isolate_context(self, context: TContext_w_Scratch | None) -> TContext_w_Scratch | None:
         return isolate_context(
             context, strict_context_isolation=bool(self._strict_context_isolation)
         )
 
     def _merge_context_updates(
         self,
-        main_context: Optional[TContext_w_Scratch],
-        branch_context: Optional[TContext_w_Scratch],
-    ) -> Optional[TContext_w_Scratch]:
+        main_context: TContext_w_Scratch | None,
+        branch_context: TContext_w_Scratch | None,
+    ) -> TContext_w_Scratch | None:
         return merge_context_updates(
             main_context,
             branch_context,
@@ -700,9 +711,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     def _accumulate_loop_context(
         self,
-        current_context: Optional[TContext_w_Scratch],
-        iteration_context: Optional[TContext_w_Scratch],
-    ) -> Optional[TContext_w_Scratch]:
+        current_context: TContext_w_Scratch | None,
+        iteration_context: TContext_w_Scratch | None,
+    ) -> TContext_w_Scratch | None:
         return accumulate_loop_context(
             current_context,
             iteration_context,
@@ -721,21 +732,22 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._result_handler.unwrap_outcome_to_step_result(outcome, step_name)
 
     async def _dispatch_frame(
-        self, frame: ExecutionFrame[Any], *, called_with_frame: bool
+        self, frame: ExecutionFrame[TContext_w_Scratch], *, called_with_frame: bool
     ) -> StepOutcome[StepResult] | StepResult:
         return await self._dispatch_handler.dispatch(frame, called_with_frame=called_with_frame)
 
     async def _execute_complex_step(
         self,
         *,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
+        step: object,
+        data: object,
+        context: TContext_w_Scratch | None,
+        resources: object | None,
+        limits: UsageLimits | None,
         stream: bool = False,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
+        on_chunk: Callable[[object], Awaitable[None]] | None = None,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None = None,
         _fallback_depth: int = 0,
     ) -> StepResult:
         try:
@@ -786,9 +798,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def execute(
         self,
-        frame_or_step: ExecutionFrame[Any] | Any | None = None,
-        data: Any | None = None,
-        **kwargs: Any,
+        frame_or_step: ExecutionFrame[TContext_w_Scratch] | object | None = None,
+        data: object | None = None,
+        **kwargs: object,
     ) -> StepOutcome[StepResult] | StepResult:
         """Public entrypoint that delegates to the shared execution flow."""
         return await execute_entrypoint(self, frame_or_step, data, **kwargs)
@@ -808,38 +820,41 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     # Compatibility shims retained for legacy call sites/tests
     async def _execute_pipeline_via_policies(
         self,
-        pipeline: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[Any],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
-    ) -> PipelineResult[Any]:
+        pipeline: object,
+        data: object,
+        context: TContext_w_Scratch | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None = None,
+    ) -> PipelineResult[DomainBaseModel]:
         return await self._step_handler.pipeline(
             pipeline, data, context, resources, limits, context_setter
         )
 
     async def _execute_pipeline(
         self,
-        pipeline: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
-        limits: Any,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-    ) -> PipelineResult[Any]:
+        pipeline: object,
+        data: object,
+        context: TContext_w_Scratch,
+        resources: object,
+        limits: UsageLimits,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None,
+    ) -> PipelineResult[DomainBaseModel]:
         return await self._step_handler.pipeline(
             pipeline, data, context, resources, limits, context_setter
         )
 
     async def _handle_loop_step(
         self,
-        loop_step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
-        limits: Any,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        loop_step: object,
+        data: object,
+        context: TContext_w_Scratch,
+        resources: object,
+        limits: UsageLimits,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None,
         _fallback_depth: int = 0,
     ) -> StepResult:
         return await self._step_handler.loop_step(
@@ -848,12 +863,13 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def _execute_loop(
         self,
-        loop_step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
-        limits: Any,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        loop_step: object,
+        data: object,
+        context: TContext_w_Scratch,
+        resources: object,
+        limits: UsageLimits,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None,
         _fallback_depth: int = 0,
     ) -> StepResult:
         return await self._loop_orchestrator.execute(
@@ -869,15 +885,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def _handle_cache_step(
         self,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
+        step: object,
+        data: object,
+        context: TContext_w_Scratch | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None = None,
         *,
-        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
-        **_: Any,
+        step_executor: Callable[..., Awaitable[StepResult]] | None = None,
+        **_: object,
     ) -> StepResult:
         return await self._step_handler.cache_step(
             step, data, context, resources, limits, context_setter, step_executor
@@ -885,14 +902,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def _handle_conditional_step(
         self,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        step: object,
+        data: object,
+        context: TContext_w_Scratch | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None,
         _fallback_depth: int = 0,
-        **_: Any,
+        **_: object,
     ) -> StepResult:
         return await self._step_handler.conditional_step(
             step, data, context, resources, limits, context_setter, _fallback_depth
@@ -900,13 +918,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def _handle_dynamic_router_step(
         self,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
-        **_: Any,
+        step: object,
+        data: object,
+        context: TContext_w_Scratch | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None = None,
+        **_: object,
     ) -> StepResult:
         return await self._step_handler.dynamic_router_step(
             step, data, context, resources, limits, context_setter
@@ -914,17 +933,18 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def _handle_hitl_step(
         self,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        step: object,
+        data: object,
+        context: TContext_w_Scratch | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None,
         stream: bool = False,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-        cache_key: Optional[str] = None,
+        on_chunk: Callable[[object], Awaitable[None]] | None = None,
+        cache_key: str | None = None,
         _fallback_depth: int = 0,
-        **_: Any,
+        **_: object,
     ) -> StepResult:
         return await self._step_handler.hitl_step(
             step,
@@ -941,15 +961,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def _handle_parallel_step(
         self,
-        step: Any | None = None,
-        data: Any = None,
-        context: Any = None,
-        resources: Any = None,
-        limits: Any = None,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
+        step: object | None = None,
+        data: object | None = None,
+        context: TContext_w_Scratch | None = None,
+        resources: object | None = None,
+        limits: UsageLimits | None = None,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None = None,
         *,
-        parallel_step: Any | None = None,
-        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
+        parallel_step: object | None = None,
+        step_executor: Callable[..., Awaitable[StepResult]] | None = None,
     ) -> StepResult:
         ps = parallel_step if parallel_step is not None else step
         return await self._step_handler.parallel_step(
@@ -958,14 +979,15 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def _handle_dynamic_router(
         self,
-        step: Any | None = None,
-        data: Any | None = None,
-        context: Any | None = None,
-        resources: Any | None = None,
-        limits: Any | None = None,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
-        router_step: Any | None = None,
-        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
+        step: object | None = None,
+        data: object | None = None,
+        context: TContext_w_Scratch | None = None,
+        resources: object | None = None,
+        limits: UsageLimits | None = None,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None = None,
+        router_step: object | None = None,
+        step_executor: Callable[..., Awaitable[StepResult]] | None = None,
     ) -> StepResult:
         rs = router_step if router_step is not None else step
         return await self._step_handler.dynamic_router_wrapper(
@@ -974,14 +996,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def _execute_agent_with_orchestration(
         self,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
+        step: object,
+        data: object,
+        context: TContext_w_Scratch | None,
+        resources: object | None,
+        limits: UsageLimits | None,
         stream: bool,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
-        cache_key: Optional[str],
+        on_chunk: Callable[[object], Awaitable[None]] | None,
+        cache_key: str | None,
         _fallback_depth: int,
     ) -> StepOutcome[StepResult]:
         return await self._agent_handler.execute(

@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Any, Mapping, cast
-from types import SimpleNamespace
+from dataclasses import dataclass
+from typing import Mapping
 import inspect
 
 import openai
 
-from ..models import EmbeddingResult, UsageType, resolve_usage_constructor
+from ..models import EmbeddingResult, UsageLike, UsageType, resolve_usage_constructor
+
+
+@dataclass(slots=True)
+class _UsageFallback:
+    input_tokens: int | None
+    output_tokens: int | None
+    request_tokens: int | None
+    response_tokens: int | None
+    total_tokens: int | None
+    requests: int | None
 
 
 class OpenAIEmbeddingClient:
@@ -33,12 +43,14 @@ class OpenAIEmbeddingClient:
         self.model_id = f"openai:{model_name}"
         # Lazily construct the OpenAI client to avoid requiring API key at import/initialization time
         # This allows unit tests that only validate formatting to run without network secrets.
-        self._client: Optional[openai.AsyncOpenAI] = None
-        self._usage_ctor = resolve_usage_constructor()
+        self._client: openai.AsyncOpenAI | None = None
+        self._usage_ctor: type[object] = resolve_usage_constructor()
 
     @staticmethod
-    def _get_param_names(usage_ctor: Any) -> Mapping[str, inspect.Parameter]:
+    def _get_param_names(usage_ctor: object) -> Mapping[str, inspect.Parameter]:
         try:
+            if not callable(usage_ctor):
+                return {}
             return inspect.signature(usage_ctor).parameters
         except Exception:
             return {}
@@ -50,15 +62,7 @@ class OpenAIEmbeddingClient:
         Handles both the modern input/output_tokens signature and the older
         request/response_tokens shape without raising when fields are absent.
         """
-        usage_ctor: Any = self._usage_ctor
-        if not callable(usage_ctor):
-            return cast(
-                UsageType,
-                SimpleNamespace(
-                    input_tokens=prompt_tokens, output_tokens=0, total_tokens=total_tokens
-                ),
-            )
-
+        usage_ctor: object = self._usage_ctor
         params = self._get_param_names(usage_ctor)
 
         input_key = (
@@ -82,30 +86,44 @@ class OpenAIEmbeddingClient:
             usage_kwargs[total_key] = total_tokens
 
         try:
-            return cast(UsageType, usage_ctor(**usage_kwargs))
+            created: object = usage_ctor(**usage_kwargs) if callable(usage_ctor) else None
+            if isinstance(created, UsageLike):
+                return created
+            return _UsageFallback(
+                input_tokens=prompt_tokens,
+                output_tokens=0,
+                request_tokens=prompt_tokens,
+                response_tokens=0,
+                total_tokens=total_tokens,
+                requests=usage_kwargs.get("requests"),
+            )
         except TypeError:
             # Some versions expect a requests field; include it on retry.
             if "requests" in params and "requests" not in usage_kwargs:
                 usage_kwargs["requests"] = 1
             try:
-                return cast(UsageType, usage_ctor(**usage_kwargs))
+                created_retry: object = usage_ctor(**usage_kwargs) if callable(usage_ctor) else None
+                if isinstance(created_retry, UsageLike):
+                    return created_retry
             except Exception:
-                return cast(
-                    UsageType,
-                    SimpleNamespace(
-                        input_tokens=usage_kwargs.get(input_key or "", prompt_tokens),
-                        output_tokens=usage_kwargs.get(output_key or "", 0),
-                        total_tokens=usage_kwargs.get(total_key or "", total_tokens),
-                    ),
-                )
+                pass
 
-    async def embed(self, texts: List[str]) -> EmbeddingResult:
+        return _UsageFallback(
+            input_tokens=prompt_tokens,
+            output_tokens=0,
+            request_tokens=prompt_tokens,
+            response_tokens=0,
+            total_tokens=total_tokens,
+            requests=usage_kwargs.get("requests"),
+        )
+
+    async def embed(self, texts: list[str]) -> EmbeddingResult:
         """
         Generate embeddings for the given texts.
 
         Parameters
         ----------
-        texts : List[str]
+        texts : list[str]
             List of texts to embed
 
         Returns

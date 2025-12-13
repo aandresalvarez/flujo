@@ -1,12 +1,13 @@
 from typing import Any, Optional, Dict
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from flujo.domain.dsl.step import Step, MergeStrategy
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.models import StepResult
+from flujo.domain.models import BaseModel
 from flujo.application.core.step_policies import DefaultParallelStepExecutor
 from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.context_manager import ContextManager

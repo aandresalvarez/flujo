@@ -2,10 +2,7 @@ from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 # mypy: ignore-errors
 
-from typing import Type
-
 from ._shared import (  # noqa: F401
-    Any,
     Awaitable,
     Callable,
     BranchFailureStrategy,
@@ -40,22 +37,25 @@ from ._shared import (  # noqa: F401
 )
 from ..policy_registry import StepPolicy
 from ..types import ExecutionFrame
+from flujo.domain.base_model import BaseModel
 
 
 # --- Parallel Step Executor policy ---
 class ParallelStepExecutor(Protocol):
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
+    async def execute(
+        self, core: object, frame: ExecutionFrame[BaseModel]
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
     @property
-    def handles_type(self) -> Type[ParallelStep]:
+    def handles_type(self) -> type[ParallelStep]:
         return ParallelStep
 
     async def execute(
         self,
-        core: Any,
-        frame: ExecutionFrame[Any],
+        core: object,
+        frame: ExecutionFrame[BaseModel],
     ) -> StepOutcome[StepResult]:
         step = frame.step
         data = frame.data
@@ -65,7 +65,9 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         context_setter = getattr(frame, "context_setter", None)
         step_executor = getattr(frame, "step_executor", None)
 
-        parallel_step: ParallelStep[Any] | None = step if isinstance(step, ParallelStep) else None
+        parallel_step: ParallelStep[object] | None = (
+            step if isinstance(step, ParallelStep) else None
+        )
         if not isinstance(step, ParallelStep):
             raise ValueError(f"Expected ParallelStep, got {type(step)}")
         parallel_step = step
@@ -107,9 +109,9 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         # FSD-009: Pure quota-only mode
         # Do not use breach_event or any legacy governor; safety via reservations only
         # Deterministic quota splitting per branch
-        branch_items: List[Tuple[str, Any]] = list(parallel_step.branches.items())
+        branch_items: List[Tuple[str, object]] = list(parallel_step.branches.items())
         branch_names: List[str] = [bn for bn, _ in branch_items]
-        branch_pipelines: List[Any] = [bp for _, bp in branch_items]
+        branch_pipelines: List[object] = [bp for _, bp in branch_items]
         branch_quota_map: Dict[str, Optional[Quota]] = {bn: None for bn in branch_names}
         try:
             current_quota = (
@@ -152,7 +154,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
 
             branch_contexts[branch_name] = branch_context
 
-        def _merge_branch_context_into_parent(branch_ctx: Any) -> None:
+        def _merge_branch_context_into_parent(branch_ctx: object | None) -> None:
             nonlocal context
             if context is None or branch_ctx is None:
                 return
@@ -178,8 +180,8 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         # Branch executor
         async def execute_branch(
             branch_name: str,
-            branch_pipeline: Any,
-            branch_context: Any,
+            branch_pipeline: object,
+            branch_context: object | None,
             branch_quota: Optional[Quota],
         ) -> Tuple[str, StepResult]:
             try:
@@ -406,7 +408,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                 except Exception:
                     pass
 
-        async def _handle_branch_result(branch_execution_result: Any, idx: int) -> None:
+        async def _handle_branch_result(branch_execution_result: object, idx: int) -> None:
             nonlocal total_cost, total_tokens, all_successful
             branch_name_local = list(parallel_step.branches.keys())[idx]
             if isinstance(
@@ -508,7 +510,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     limits, "total_tokens_limit", None
                 ) is not None and total_tokens > int(limits.total_tokens_limit)
                 if breached_cost or breached_tokens:
-                    pipeline_result: PipelineResult[Any] = PipelineResult(
+                    pipeline_result: PipelineResult[object] = PipelineResult(
                         step_history=list(branch_results.values()),
                         total_cost_usd=total_cost,
                         total_tokens=total_tokens,
@@ -650,14 +652,14 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     pass
                 # Build a PipelineResult with any branch results we have so far
                 try:
-                    pr: PipelineResult[Any] = PipelineResult(
+                    pr: PipelineResult[object] = PipelineResult(
                         step_history=list(branch_results.values()),
                         total_cost_usd=sum(br.cost_usd for br in branch_results.values()),
                         total_tokens=sum(br.token_counts for br in branch_results.values()),
                         final_pipeline_context=context,
                     )
                 except Exception:
-                    pr = PipelineResult[Any](step_history=[], total_cost_usd=0.0, total_tokens=0)
+                    pr = PipelineResult[object](step_history=[], total_cost_usd=0.0, total_tokens=0)
                 msg = usage_limit_error_msg or "Usage limit exceeded"
                 raise UsageLimitExceededError(msg, pr)
 
@@ -689,7 +691,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                         )
                             except Exception:
                                 pass
-                        pipeline_result: PipelineResult[Any] = PipelineResult(
+                        pipeline_result: PipelineResult[object] = PipelineResult(
                             step_history=list(branch_results.values()),
                             total_cost_usd=total_cost,
                             total_tokens=total_tokens,
@@ -785,7 +787,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                 if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
                     # Helper: detect conflicts between TWO branch contexts (NOT parent vs branch)
                     def _detect_branch_conflicts(
-                        ctx_a: Any, ctx_b: Any, name_a: str, name_b: str
+                        ctx_a: object, ctx_b: object, name_a: str, name_b: str
                     ) -> None:
                         """Detect leaf conflicts between two branch contexts."""
                         from flujo.exceptions import ConfigurationError as _CfgErr
@@ -815,7 +817,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                         except Exception:  # noqa: BLE001
                             return  # Can't compare, skip
 
-                        def _walk(val_a: Any, val_b: Any, path: str) -> None:
+                        def _walk(val_a: object, val_b: object, path: str) -> None:
                             # Skip branch_results/context_updates which are intentionally merged
                             if path in {"branch_results", "context_updates"}:
                                 return
@@ -1091,14 +1093,14 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
 class ParallelStepExecutorOutcomes(Protocol):
     async def execute(
         self,
-        core: Any,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
+        core: object,
+        step: object,
+        data: object,
+        context: Optional[object],
+        resources: Optional[object],
         limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        parallel_step: Optional[ParallelStep[Any]] = None,
+        context_setter: Optional[Callable[[PipelineResult[object], Optional[object]], None]],
+        parallel_step: Optional[ParallelStep[object]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
     ) -> StepOutcome[StepResult]: ...
 

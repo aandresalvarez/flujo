@@ -8,13 +8,13 @@ Tests cover PRD v12 requirements:
 """
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.policies.granular_policy import GranularAgentStepExecutor
 from flujo.domain.dsl.granular import GranularStep, ResumeError
-from flujo.domain.models import Success, Quota
+from flujo.domain.models import BaseModel, Success, Quota
 
 
 class MockContext(BaseModel):

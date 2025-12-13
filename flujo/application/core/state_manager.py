@@ -3,7 +3,7 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timezone
-from typing import Any, Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
+from typing import Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
 
 from flujo.domain.models import StepResult, BaseModel, PipelineResult
 from flujo.infra import telemetry
@@ -159,7 +159,7 @@ class StateManager(Generic[ContextT]):
         context_model: Optional[type[ContextT]] = None,
     ) -> tuple[
         Optional[ContextT],
-        Any,
+        object | None,
         int,
         Optional[datetime],
         Optional[str],
@@ -262,7 +262,7 @@ class StateManager(Generic[ContextT]):
         run_id: str | None,
         context: Optional[ContextT],
         current_step_index: int,
-        last_step_output: Any | None,
+        last_step_output: object | None,
         status: str,
         state_created_at: datetime | None = None,
         step_history: Optional[list[StepResult]] = None,
@@ -339,7 +339,7 @@ class StateManager(Generic[ContextT]):
         run_id: str | None,
         context: Optional[ContextT],
         current_step_index: int,
-        last_step_output: Any | None,
+        last_step_output: object | None,
         status: str,
         state_created_at: datetime | None = None,
         step_history: Optional[list[StepResult]] = None,
@@ -672,7 +672,7 @@ class StateManager(Generic[ContextT]):
                 extra={"error": str(exc)},
             )
 
-    def _convert_trace_to_dict(self, trace_tree: Any) -> JSONObject:
+    def _convert_trace_to_dict(self, trace_tree: object) -> JSONObject:
         """Convert trace tree to dictionary format for JSON serialization."""
         if hasattr(trace_tree, "__dict__"):
             # Handle Span objects

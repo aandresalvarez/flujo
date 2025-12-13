@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, List, Optional, Literal, Union
+from typing import Optional, Literal, Union
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
@@ -18,7 +18,7 @@ class _CoercionConfig(BaseModel):
     tolerant_level: int = 0
     max_unescape_depth: Optional[int] = None
     anyof_strategy: Optional[str] = None
-    allow: Optional[dict[str, List[str]]] = None
+    allow: Optional[dict[str, list[str]]] = None
 
     @model_validator(mode="after")
     def _validate_values(self) -> "_CoercionConfig":
@@ -48,16 +48,16 @@ class _CoercionConfig(BaseModel):
 
 class _ReasoningPrecheckConfig(BaseModel):
     enabled: bool = False
-    validator_agent: Optional[Any] = None
-    agent: Optional[Any] = None
-    delimiters: Optional[List[str]] = None
+    validator_agent: object | None = None
+    agent: object | None = None
+    delimiters: list[str] | None = None
     goal_context_key: Optional[str] = None
     score_threshold: Optional[float] = None
-    required_context_keys: Optional[List[str]] = None
+    required_context_keys: list[str] | None = None
     inject_feedback: Optional[str] = None
     retry_guidance_prefix: Optional[str] = None
     context_feedback_key: Optional[str] = None
-    consensus_agent: Optional[Any] = None
+    consensus_agent: object | None = None
     consensus_samples: Optional[int] = None
     consensus_threshold: Optional[float] = None
 
@@ -128,7 +128,7 @@ class BlueprintStepModel(BaseModel):
     name: str = Field(validation_alias=AliasChoices("name", "step"))
     agent: Optional[Union[str, JSONObject]] = None
     uses: Optional[str] = None
-    input: Optional[Any] = None
+    input: object | None = None
     config: JSONObject = Field(default_factory=dict)
     updates_context: bool = False
     validate_fields: bool = False
@@ -136,18 +136,18 @@ class BlueprintStepModel(BaseModel):
     reduce: Optional[Union[str, JSONObject]] = None
     condition: Optional[str] = None
     condition_expression: Optional[str] = None
-    default_branch: Optional[Any] = None
+    default_branch: object | None = None
     loop: Optional[JSONObject] = None
     map: Optional[JSONObject] = None
     router: Optional[JSONObject] = None
     fallback: Optional[JSONObject] = None
     usage_limits: Optional[JSONObject] = None
-    plugins: Optional[List[Union[str, JSONObject]]] = None
-    validators: Optional[List[str]] = None
+    plugins: list[Union[str, JSONObject]] | None = None
+    validators: list[str] | None = None
     merge_strategy: Optional[str] = None
     on_branch_failure: Optional[str] = None
-    context_include_keys: Optional[List[str]] = None
-    field_mapping: Optional[dict[str, List[str]]] = None
+    context_include_keys: list[str] | None = None
+    field_mapping: Optional[dict[str, list[str]]] = None
     ignore_branch_names: Optional[bool] = None
     message: Optional[str] = None
     input_schema: Optional[JSONObject] = None
@@ -192,7 +192,7 @@ class BlueprintStepModel(BaseModel):
 class BlueprintPipelineModel(BaseModel):
     version: str = Field(default="0.1")
     name: Optional[str] = None
-    steps: List[JSONObject]
+    steps: list[JSONObject]
     agents: Optional[dict[str, "AgentModel"]] = None
     imports: Optional[dict[str, str]] = None
 

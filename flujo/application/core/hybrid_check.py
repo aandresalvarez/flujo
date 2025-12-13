@@ -1,15 +1,19 @@
-from typing import Any, Optional, List, Tuple
-from flujo.domain.plugins import PluginOutcome, ValidationPlugin
+from __future__ import annotations
+
+import inspect
+
+from flujo.domain.plugins import PluginOutcome
+from flujo.domain.base_model import BaseModel as DomainBaseModel
 from flujo.domain.validation import Validator
 
 
 async def run_hybrid_check(
-    data: Any,
-    plugins: List[Tuple[ValidationPlugin, int]],
-    validators: List[Validator],
-    context: Optional[Any] = None,
-    resources: Optional[Any] = None,
-) -> Tuple[Any, Optional[str]]:
+    data: object,
+    plugins: list[tuple[object, int]],
+    validators: list[Validator],
+    context: object | None = None,
+    resources: object | None = None,
+) -> tuple[object, str | None]:
     """
     Run plugins then validators in sequence and return a tuple:
       (possibly-transformed data, aggregated failure feedback or None).
@@ -20,14 +24,37 @@ async def run_hybrid_check(
     """
     # 1. Plugins
     output = data
-    plugin_feedbacks: List[str] = []
+    plugin_feedbacks: list[str] = []
     for plugin, priority in sorted(plugins, key=lambda x: x[1], reverse=True):
-        plugin_kwargs: dict[str, Any] = {}
-        # decide whether to pass context/resources (import helpers accordingly)
+        plugin_input: dict[str, object]
+        if isinstance(output, dict):
+            plugin_input = dict(output)
+        else:
+            plugin_input = {"output": output}
+        plugin_kwargs: dict[str, object] = {}
         try:
-            result = await plugin.validate(output, **plugin_kwargs)
+            validate_fn = getattr(plugin, "validate", None)
+        except Exception:
+            validate_fn = None
+        if not callable(validate_fn):
+            from .executor_helpers import PluginError
+
+            raise PluginError("Plugin missing validate()")
+        try:
+            sig = inspect.signature(validate_fn)
+            if "context" in sig.parameters and context is not None:
+                plugin_kwargs["context"] = context
+            if "resources" in sig.parameters and resources is not None:
+                plugin_kwargs["resources"] = resources
+        except Exception:
+            plugin_kwargs = plugin_kwargs
+        try:
+            res = validate_fn(plugin_input, **plugin_kwargs)
+            result = await res if inspect.isawaitable(res) else res
         except Exception as e:
-            raise ValueError(str(e))
+            from .executor_helpers import PluginError
+
+            raise PluginError(str(e)) from e
         if isinstance(result, PluginOutcome):
             if not result.success:
                 if result.feedback is not None:
@@ -38,19 +65,22 @@ async def run_hybrid_check(
         else:
             output = result
     # 2. Validators
+    failed_msgs: list[str] = []
     if validators:
         from flujo.domain.validation import ValidationResult
 
-        failed_msgs: List[str] = []
+        validator_context: DomainBaseModel | None = (
+            context if isinstance(context, DomainBaseModel) else None
+        )
         for validator in validators:
             try:
-                vr: ValidationResult = await validator.validate(output, context=context)
+                vr: ValidationResult = await validator.validate(output, context=validator_context)
             except Exception as e:
                 failed_msgs.append(f"{validator.name}: {e}")
                 continue
             if not vr.is_valid:
                 failed_msgs.append(f"{vr.validator_name}: {vr.feedback}")
-        if failed_msgs:
-            parts = plugin_feedbacks + failed_msgs
-            return output, "; ".join(parts)
+    all_msgs = plugin_feedbacks + failed_msgs
+    if all_msgs:
+        return output, "; ".join(all_msgs)
     return output, None

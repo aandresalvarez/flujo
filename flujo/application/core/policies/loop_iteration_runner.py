@@ -1,8 +1,9 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
+from typing import Protocol
+
 from ._shared import (
-    Any,
     Awaitable,
     Callable,
     ConversationHistoryPromptProcessor,
@@ -13,7 +14,6 @@ from ._shared import (
     Paused,
     PausedException,
     Pipeline,
-    PipelineContext,
     PipelineResult,
     Step,
     StepOutcome,
@@ -38,17 +38,21 @@ from ._shared import HumanInTheLoopStep  # noqa: F401  # used via isinstance che
 from ..step_result_pool import build_pooled_step_result
 
 
+class _NamedStep(Protocol):
+    name: str
+
+
 async def run_loop_iterations(
     *,
-    core: Any,
-    loop_step: Any,
-    body_pipeline: Pipeline | Any,
-    current_data: Any,
-    current_context: PipelineContext | Any,
-    resources: Any,
+    core: object,
+    loop_step: _NamedStep,
+    body_pipeline: Pipeline | object,
+    current_data: object,
+    current_context: object | None,
+    resources: object,
     limits: UsageLimits | None,
     stream: bool,
-    on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+    on_chunk: Optional[Callable[[object], Awaitable[None]]],
     cache_key: Optional[str],
     conv_enabled: bool,
     history_cfg: HistoryStrategyConfig | None,
@@ -61,16 +65,16 @@ async def run_loop_iterations(
     saved_step_index: int,
     is_resuming: bool,
     resume_requires_hitl_output: bool,
-    resume_payload: Any,
-    saved_last_output: Any,
+    resume_payload: object,
+    saved_last_output: object,
     paused_step_name: str | None,
     iteration_count: int,
     current_step_index: int,
     start_time: float,
-    context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+    context_setter: Optional[Callable[[PipelineResult[object], object | None], None]],
     _fallback_depth: int,
 ) -> StepOutcome[StepResult]:
-    loop_body_steps: list[Any] = []
+    loop_body_steps: list[object] = []
     steps_attr = getattr(body_pipeline, "steps", None) if hasattr(body_pipeline, "steps") else None
     steps_len = 0
     try:
@@ -87,7 +91,7 @@ async def run_loop_iterations(
         telemetry.logfire.info(
             f"LoopStep '{loop_step.name}' using regular execution (single/no-step pipeline)"
         )
-    stashed_exec_lists: list[Any] = []
+    stashed_exec_lists: list[object] = []
     if is_resuming:
         total_steps = len(loop_body_steps)
         if total_steps == 0:
@@ -230,7 +234,7 @@ async def run_loop_iterations(
                         setattr(core, "_inside_loop_iteration", True)
                     except Exception:
                         pass
-                step_force_prev: dict[Any, Any] = {}
+                step_force_prev: dict[object, object] = {}
                 try:
                     for st in getattr(body_pipeline, "steps", []) or []:
                         try:
@@ -245,7 +249,7 @@ async def run_loop_iterations(
                     pass
                 token = _CACHE_OVERRIDE.set(False)
                 try:
-                    pipeline_result: PipelineResult[Any] = await core._execute_pipeline(
+                    pipeline_result: PipelineResult[object] = await core._execute_pipeline(
                         body_pipeline, current_data, iteration_context, resources, limits, stream
                     )
                 finally:
@@ -329,7 +333,7 @@ async def run_loop_iterations(
             telemetry.logfire.info(
                 f"LoopStep '{loop_step.name}': executing loop body step-by-step with {len(loop_body_steps)} steps"
             )
-            pipeline_result = PipelineResult[Any](
+            pipeline_result = PipelineResult[object](
                 step_history=[],
                 total_cost_usd=0.0,
                 total_tokens=0,

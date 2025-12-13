@@ -1,7 +1,6 @@
 """StateProvider hydration and persistence management."""
 
 from __future__ import annotations
-from typing import Any, Dict, Optional
 import asyncio
 from pydantic import BaseModel
 
@@ -12,19 +11,19 @@ from ...domain.interfaces import StateProvider
 class HydrationManager:
     """Manages hydration and persistence of ContextReference fields using StateProviders."""
 
-    def __init__(self, state_providers: Optional[Dict[str, StateProvider[Any]]] = None) -> None:
-        self._state_providers = state_providers or {}
-        self._telemetry: Optional[Any] = None
+    def __init__(self, state_providers: dict[str, StateProvider[object]] | None = None) -> None:
+        self._state_providers: dict[str, StateProvider[object]] = state_providers or {}
+        self._telemetry: object | None = None
 
-    def set_telemetry(self, telemetry: Any) -> None:
+    def set_telemetry(self, telemetry: object) -> None:
         """Set telemetry instance for logging warnings."""
         self._telemetry = telemetry
 
-    def add_state_provider(self, provider_id: str, provider: StateProvider[Any]) -> None:
+    def add_state_provider(self, provider_id: str, provider: StateProvider[object]) -> None:
         """Add a state provider."""
         self._state_providers[provider_id] = provider
 
-    def get_state_provider(self, provider_id: str) -> Optional[StateProvider[Any]]:
+    def get_state_provider(self, provider_id: str) -> StateProvider[object] | None:
         """Get a state provider by ID."""
         return self._state_providers.get(provider_id)
 
@@ -32,7 +31,7 @@ class HydrationManager:
         """Remove a state provider."""
         self._state_providers.pop(provider_id, None)
 
-    async def hydrate_context(self, context: Optional[Any]) -> None:
+    async def hydrate_context(self, context: object | None) -> None:
         """Hydrate ContextReference fields in the context using registered providers."""
         if context is None or not self._state_providers:
             return
@@ -41,7 +40,7 @@ class HydrationManager:
         # We check top-level fields of Pydantic models
         if isinstance(context, BaseModel):
             tasks = []
-            refs: list[tuple[str, ContextReference[Any], StateProvider[Any]]] = []
+            refs: list[tuple[str, ContextReference[object], StateProvider[object]]] = []
             for field_name, field_value in context:
                 if isinstance(field_value, ContextReference):
                     provider = self._state_providers.get(field_value.provider_id)
@@ -50,22 +49,23 @@ class HydrationManager:
             for field_name, ref, provider in refs:
 
                 async def _load_and_set(
-                    fn: str, r: ContextReference[Any], p: StateProvider[Any]
+                    fn: str, r: ContextReference[object], p: StateProvider[object]
                 ) -> None:
                     try:
                         data = await p.load(r.key)
-                        r.set(data)
+                        if data is not None:
+                            r.set(data)
                     except Exception as e:
                         if self._telemetry:
                             warning_fn = getattr(self._telemetry, "warning", None)
-                            if warning_fn:
+                            if callable(warning_fn):
                                 warning_fn(f"Failed to hydrate reference {fn}: {e}")
 
                 tasks.append(_load_and_set(field_name, ref, provider))
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def persist_context(self, context: Optional[Any]) -> None:
+    async def persist_context(self, context: object | None) -> None:
         """Persist ContextReference fields in the context using registered providers."""
         if context is None or not self._state_providers:
             return
@@ -83,10 +83,10 @@ class HydrationManager:
                             except Exception as e:
                                 if self._telemetry:
                                     warning_fn = getattr(self._telemetry, "warning", None)
-                                    if warning_fn:
+                                    if callable(warning_fn):
                                         warning_fn(f"Failed to persist reference {field_name}: {e}")
 
-    def get_state_providers(self) -> Dict[str, StateProvider[Any]]:
+    def get_state_providers(self) -> dict[str, StateProvider[object]]:
         """Get all registered state providers."""
         return self._state_providers.copy()
 

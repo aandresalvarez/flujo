@@ -1,7 +1,8 @@
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from flujo.application.core.executor_helpers import make_execution_frame
+from flujo.domain.models import BaseModel
 from flujo.domain.models import Quota, UsageLimits
 
 

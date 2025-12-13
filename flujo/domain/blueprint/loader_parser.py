@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, List, Optional, Tuple
+from typing import TypeVar
 
 import yaml
 from pydantic import ValidationError
@@ -13,10 +13,14 @@ from .loader_steps import build_pipeline_from_blueprint
 from flujo.type_definitions.common import JSONObject
 
 
-def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
+PipeInT = TypeVar("PipeInT")
+PipeOutT = TypeVar("PipeOutT")
+
+
+def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[PipeInT, PipeOutT]) -> str:
     """Serialize a Pipeline to a minimal YAML blueprint (v0)."""
 
-    def step_to_yaml(step: Any) -> JSONObject:
+    def step_to_yaml(step: object) -> JSONObject:
         if isinstance(step, ParallelStep):
             branches: JSONObject = {}
             for k, p in step.branches.items():
@@ -64,7 +68,7 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                 body = getattr(step, "original_body_pipeline", None) or getattr(
                     step, "pipeline_to_run", None
                 )
-                body_steps: List[JSONObject] = []
+                body_steps: list[JSONObject] = []
                 if body is not None:
                     body_steps = [step_to_yaml(s) for s in body.steps]
                 return {
@@ -89,7 +93,7 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
                     "name": step.name,
                     "branches": branches,
                 }
-                if step.default_branch_pipeline is not None:
+                if isinstance(step.default_branch_pipeline, Pipeline):
                     data["default_branch"] = [
                         step_to_yaml(s) for s in step.default_branch_pipeline.steps
                     ]
@@ -100,8 +104,12 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
             from ..dsl.loop import LoopStep
 
             if isinstance(step, LoopStep):
+                body_pipe = getattr(step, "loop_body_pipeline", None)
+                loop_body_steps = getattr(body_pipe, "steps", None)
+                if not isinstance(loop_body_steps, (list, tuple)):
+                    loop_body_steps = []
                 loop_data = {
-                    "body": [step_to_yaml(s) for s in step.loop_body_pipeline.steps],
+                    "body": [step_to_yaml(s) for s in loop_body_steps],
                     "max_loops": step.max_retries,
                 }
                 return {
@@ -168,10 +176,10 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[Any, Any]) -> str:
 
 def load_pipeline_blueprint_from_yaml(
     yaml_text: str,
-    base_dir: Optional[str] = None,
-    source_file: Optional[str] = None,
-    _visited: Optional[list[str]] = None,
-) -> Pipeline[Any, Any]:
+    base_dir: str | None = None,
+    source_file: str | None = None,
+    _visited: list[str] | None = None,
+) -> Pipeline[object, object]:
     import os
     import sys as _sys
 
@@ -204,26 +212,26 @@ def load_pipeline_blueprint_from_yaml(
         _visited.append(real_source)
         _file_pushed = True
     try:
-        loc_index: dict[str, Tuple[int, int]] = {}
-        sup_index: dict[str, List[str]] = {}
+        loc_index: dict[str, tuple[int, int]] = {}
+        sup_index: dict[str, list[str]] = {}
         try:
             from ruamel.yaml import YAML as _RYAML
             from ruamel.yaml.comments import CommentedMap as _CMap, CommentedSeq as _CSeq
 
             def _build_index(
                 txt: str,
-            ) -> Tuple[dict[str, Tuple[int, int]], dict[str, List[str]]]:
+            ) -> tuple[dict[str, tuple[int, int]], dict[str, list[str]]]:
                 yaml_rt = _RYAML(typ="rt")
                 root = yaml_rt.load(txt)
-                idx: dict[str, Tuple[int, int]] = {}
-                sup: dict[str, List[str]] = {}
+                idx: dict[str, tuple[int, int]] = {}
+                sup: dict[str, list[str]] = {}
 
-                def _extract_ignores(comment_obj: Any) -> List[str]:
-                    pats: List[str] = []
+                def _extract_ignores(comment_obj: object) -> list[str]:
+                    pats: list[str] = []
                     try:
                         import re as _re
 
-                        texts: List[str] = []
+                        texts: list[str] = []
                         if comment_obj is None:
                             return pats
                         if isinstance(comment_obj, (list, tuple)):
@@ -250,7 +258,7 @@ def load_pipeline_blueprint_from_yaml(
                         return pats
                     return pats
 
-                def _recurse(node: Any, path: str) -> None:
+                def _recurse(node: object, path: str) -> None:
                     try:
                         if isinstance(node, _CMap):
                             for k, v in node.items():
@@ -400,7 +408,7 @@ def load_pipeline_blueprint_from_yaml(
             try:
                 from ..dsl import Pipeline as _DPipe, Step as _DStep
 
-                def _attach_step_loc(st: Any) -> None:
+                def _attach_step_loc(st: object) -> None:
                     try:
                         meta = getattr(st, "meta", None)
                         if isinstance(meta, dict) and "yaml_path" in meta:
@@ -410,11 +418,11 @@ def load_pipeline_blueprint_from_yaml(
                                 info = {"path": ypath, "line": int(ln), "column": int(col)}
                                 if source_file:
                                     info["file"] = str(source_file)
-                                st.meta["_yaml_loc"] = info
+                                meta["_yaml_loc"] = info
                             pats = sup_index.get(ypath) or []
                             if pats:
                                 try:
-                                    lst = st.meta.setdefault("suppress_rules", [])
+                                    lst = meta.setdefault("suppress_rules", [])
                                     for ptn in pats:
                                         if ptn not in lst:
                                             lst.append(ptn)
@@ -463,7 +471,7 @@ def load_pipeline_blueprint_from_yaml(
                     except Exception:
                         pass
 
-                def _attach_pipe_loc(pipe: Any) -> None:
+                def _attach_pipe_loc(pipe: object) -> None:
                     try:
                         for _st in getattr(pipe, "steps", []) or []:
                             _attach_step_loc(_st)

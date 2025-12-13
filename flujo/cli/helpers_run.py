@@ -6,7 +6,13 @@ import importlib.metadata as importlib_metadata
 import json
 import os
 import sys
-from typing import Any, List, Optional, Type, cast
+from typing import Any, List, Literal, Optional, Type, overload, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flujo.domain.dsl.pipeline import Pipeline
+    from flujo.application.runner import Flujo
+    from flujo.state import StateBackend
+    from flujo.domain.models import PipelineResult
 
 from flujo.type_definitions.common import JSONObject
 
@@ -41,7 +47,7 @@ def setup_run_command_environment(
     context_model: Optional[str],
     context_data: Optional[str],
     context_file: Optional[str],
-) -> tuple[Any, str, Any, Optional[JSONObject], Optional[Type[PipelineContext]]]:
+) -> tuple["Pipeline[Any, Any]", str, str, Optional[JSONObject], Optional[Type[PipelineContext]]]:
     """Set up the environment for the run command."""
     import runpy
 
@@ -66,14 +72,14 @@ def setup_run_command_environment(
 
 
 def create_flujo_runner(
-    pipeline: Any,
+    pipeline: "Pipeline[Any, Any]",
     context_model_class: Optional[Type[PipelineContext]],
     initial_context_data: Optional[JSONObject],
-    state_backend: Optional[Any] = None,
+    state_backend: Optional["StateBackend"] = None,
     *,
     debug: bool = False,
     live: bool = False,
-) -> Any:
+) -> "Flujo[Any, Any, PipelineContext]":
     """Create a Flujo runner instance with the given configuration."""
     from flujo.cli.main import Flujo
     from flujo.domain.models import PipelineContext
@@ -147,12 +153,30 @@ def create_flujo_runner(
     return runner
 
 
+@overload
 def execute_pipeline_with_output_handling(
-    runner: Any,
+    runner: "Flujo[Any, Any, PipelineContext]",
+    input_data: str,
+    run_id: Optional[str],
+    json_output: Literal[True],
+) -> str: ...
+
+
+@overload
+def execute_pipeline_with_output_handling(
+    runner: "Flujo[Any, Any, PipelineContext]",
+    input_data: str,
+    run_id: Optional[str],
+    json_output: Literal[False],
+) -> "PipelineResult[PipelineContext]": ...
+
+
+def execute_pipeline_with_output_handling(
+    runner: "Flujo[Any, Any, PipelineContext]",
     input_data: str,
     run_id: Optional[str],
     json_output: bool,
-) -> Any:
+) -> "PipelineResult[PipelineContext] | str":
     """Execute the pipeline and handle output formatting."""
     import asyncio as _asyncio
     import io as _io
@@ -173,7 +197,7 @@ def execute_pipeline_with_output_handling(
     except Exception:
         pass
 
-    def _run_pipeline() -> Any:
+    def _run_pipeline() -> "PipelineResult[PipelineContext] | str":
         if json_output:
             buf = _io.StringIO()
             old_stdout = _sys.stdout
@@ -191,11 +215,10 @@ def execute_pipeline_with_output_handling(
 
             serialized = _robust_serialize_internal(result)
             return _json.dumps(serialized, indent=2)
+
         if run_id is not None:
-            result = runner.run(input_data, run_id=run_id)
-        else:
-            result = runner.run(input_data)
-        return result
+            return runner.run(input_data, run_id=run_id)
+        return runner.run(input_data)
 
     if _disable_span:
         try:
@@ -313,7 +336,7 @@ def execute_pipeline_with_output_handling(
 
 
 def display_pipeline_results(
-    result: Any,
+    result: "PipelineResult[PipelineContext]",
     run_id: Optional[str],
     json_output: bool,
     *,
@@ -647,7 +670,10 @@ def get_masked_settings_dict() -> JSONObject:
     import flujo.cli.main as cli_main
 
     settings = cli_main.load_settings()
-    return cast(JSONObject, settings.model_dump(exclude={"openai_api_key", "logfire_api_key"}))
+    data = settings.model_dump(exclude={"openai_api_key", "logfire_api_key"})
+    if isinstance(data, dict):
+        return data
+    return {}
 
 
 def execute_improve(

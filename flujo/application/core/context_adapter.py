@@ -5,11 +5,8 @@ import threading
 import types
 from contextlib import contextmanager
 from typing import (
-    Any,
-    Dict,
     Iterator,
     Optional,
-    Type,
     TypeGuard,
     TypeVar,
     Union,
@@ -53,13 +50,13 @@ class TypeResolutionContext:
     """
 
     def __init__(self) -> None:
-        self._resolvers: Dict[str, "_ModuleTypeResolver"] = {}
-        self._current_module: Optional[Any] = None
+        self._resolvers: dict[str, _ModuleTypeResolver] = {}
+        self._current_module: object | None = None
         self._lock = threading.RLock()
-        self._global_type_cache: Dict[str, Type[Any]] = {}
+        self._global_type_cache: dict[str, type[object]] = {}
 
     @contextmanager
-    def module_scope(self, module: Any) -> Iterator[None]:
+    def module_scope(self, module: object) -> Iterator[None]:
         """Set the current module scope for type resolution."""
         with self._lock:
             self._current_module = module
@@ -68,7 +65,7 @@ class TypeResolutionContext:
             finally:
                 self._current_module = None
 
-    def resolve_type(self, type_name: str, base_type: Type[T]) -> Optional[Type[T]]:
+    def resolve_type(self, type_name: str, base_type: type[T]) -> type[T] | None:
         """
         Resolve type with validation using current module scope.
 
@@ -105,16 +102,13 @@ class TypeResolutionContext:
 
             return None
 
-    def _validate_type_resolution(self, type_obj: Any, expected_base: Type[Any]) -> bool:
+    def _validate_type_resolution(
+        self, type_obj: object, expected_base: type[T]
+    ) -> TypeGuard[type[T]]:
         """Validate that resolved object is actually a valid type."""
         if not isinstance(type_obj, type):
             return False
-
-        # Check if it's a subclass of expected base
-        if not issubclass(type_obj, expected_base):
-            return False
-
-        return True
+        return issubclass(type_obj, expected_base)
 
     def clear_global_cache(self) -> None:
         """Clear the global type cache."""
@@ -125,12 +119,12 @@ class TypeResolutionContext:
 class _ModuleTypeResolver:
     """Module-scoped type resolver with caching."""
 
-    def __init__(self, module: Any) -> None:
+    def __init__(self, module: object) -> None:
         self.module = module
-        self._cache: Dict[str, Type[Any]] = {}
+        self._cache: dict[str, type[object]] = {}
         self._type_hints_cache: Optional[JSONObject] = None
 
-    def resolve_type(self, type_name: str) -> Optional[Type[Any]]:
+    def resolve_type(self, type_name: str) -> type[object] | None:
         """Resolve type from module scope with caching."""
         if type_name in self._cache:
             return self._cache[type_name]
@@ -166,7 +160,7 @@ class _ModuleTypeResolver:
 _type_context = TypeResolutionContext()
 
 
-def register_custom_type(type_class: Type[T]) -> None:
+def register_custom_type(type_class: type[T]) -> None:
     """
     Register a custom type for serialization and type resolution.
 
@@ -186,7 +180,7 @@ def register_custom_type(type_class: Type[T]) -> None:
         # Check if this is a Flujo BaseModel to avoid circular dependency
         from flujo.domain.base_model import BaseModel as FlujoBaseModel
 
-        def serialize_custom_type(obj: Any) -> Any:
+        def serialize_custom_type(obj: object) -> object:
             """Serializer that avoids circular dependency with Flujo BaseModel."""
             if isinstance(obj, FlujoBaseModel):
                 try:
@@ -215,7 +209,7 @@ def register_custom_type(type_class: Type[T]) -> None:
             getattr(type_class, "model_validate", None)
         ):
             # Use a type-safe approach to call model_validate
-            def safe_model_validate(data: Any) -> Any:
+            def safe_model_validate(data: object) -> object:
                 model_validate = getattr(type_class, "model_validate", None)
                 if callable(model_validate):
                     return model_validate(data)
@@ -226,7 +220,7 @@ def register_custom_type(type_class: Type[T]) -> None:
             register_custom_deserializer(type_class, safe_model_validate)
 
 
-def _resolve_type_from_string(type_str: str) -> Optional[Type[Any]]:
+def _resolve_type_from_string(type_str: str) -> type[object] | None:
     """
     Robust type resolution using Python's type system.
 
@@ -262,13 +256,13 @@ def _resolve_type_from_string(type_str: str) -> Optional[Type[Any]]:
     return None
 
 
-def _extract_union_types(union_type: Any) -> list[Type[Any]]:
+def _extract_union_types(union_type: object) -> list[object]:
     """
     Extract non-None types from a Union type annotation.
 
     Uses Python's type system properly instead of regex parsing.
     """
-    non_none_types: list[Type[Any]] = []
+    non_none_types: list[object] = []
 
     # Handle Python 3.10+ Union syntax (types.UnionType)
     if isinstance(union_type, types.UnionType):
@@ -279,25 +273,30 @@ def _extract_union_types(union_type: Any) -> list[Type[Any]]:
             # Fallback: try to extract from string representation
             type_str = str(union_type)
             # Use proper type parsing instead of regex
-            non_none_types = _parse_type_string(type_str)
+            non_none_types = [t for t in _parse_type_string(type_str)]
         return non_none_types
 
     # Handle traditional Union[T, None] syntax
-    if hasattr(union_type, "__origin__") and union_type.__origin__ is Union:
-        non_none_types = [t for t in union_type.__args__ if t is not type(None)]
-    elif hasattr(union_type, "__union_params__"):
-        non_none_types = [t for t in union_type.__union_params__ if t is not type(None)]
+    origin = getattr(union_type, "__origin__", None)
+    if origin is Union:
+        args_obj = getattr(union_type, "__args__", ())
+        if isinstance(args_obj, tuple):
+            non_none_types = [t for t in args_obj if t is not type(None)]
+    else:
+        params_obj = getattr(union_type, "__union_params__", ())
+        if isinstance(params_obj, tuple):
+            non_none_types = [t for t in params_obj if t is not type(None)]
 
     return non_none_types
 
 
-def _parse_type_string(type_str: str) -> list[Type[Any]]:
+def _parse_type_string(type_str: str) -> list[type[object]]:
     """
     Parse type string using proper type system integration.
 
     This replaces regex-based parsing with proper type analysis.
     """
-    types_found: list[Type[Any]] = []
+    types_found: list[type[object]] = []
 
     try:
         # Try to get type hints from current module
@@ -314,7 +313,7 @@ def _parse_type_string(type_str: str) -> list[Type[Any]]:
     return types_found
 
 
-def _resolve_actual_type(field_type: Any) -> Optional[Type[Any]]:
+def _resolve_actual_type(field_type: object) -> type[object] | None:
     """
     Resolve the actual type from a field annotation using type system.
 
@@ -343,13 +342,15 @@ def _resolve_actual_type(field_type: Any) -> Optional[Type[Any]]:
                 resolved = _resolve_type_from_string(first)
                 if resolved is not None:
                     return resolved
-            return first
+            if isinstance(first, type):
+                return first
+            return None
         return None
 
     return field_type if isinstance(field_type, type) else None
 
 
-def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseModel]) -> Any:
+def _deserialize_value(value: object, field_type: object, context_model: type[BaseModel]) -> object:
     """
     Deserialize a value according to its field type.
 
@@ -371,7 +372,7 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
                 and callable(getattr(resolved_element_type, "model_validate", None))
                 and issubclass(resolved_element_type, BaseModel)
             ):
-                deserialized: list[Any] = []
+                deserialized: list[object] = []
                 for item in value:
                     if isinstance(item, resolved_element_type):
                         deserialized.append(item)
@@ -421,7 +422,9 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
     return value
 
 
-def _build_context_update(output: BaseModel | dict[str, Any] | Any) -> dict[str, Any] | None:
+def _build_context_update(
+    output: BaseModel | JSONObject | object,
+) -> JSONObject | None:
     """Return context update dict extracted from a step output."""
     if isinstance(output, (BaseModel, PydanticBaseModel)):
         # Handle PipelineResult objects from as_step
@@ -438,7 +441,7 @@ def _build_context_update(output: BaseModel | dict[str, Any] | Any) -> dict[str,
     return None
 
 
-def _deep_merge_dicts(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+def _deep_merge_dicts(base: JSONObject, update: JSONObject) -> JSONObject:
     """Deep merge update dict into base dict, handling nested structures."""
     result = base.copy()
 
@@ -455,8 +458,8 @@ def _deep_merge_dicts(base: dict[str, Any], update: dict[str, Any]) -> dict[str,
 
 def _inject_context_with_deep_merge(
     context: BaseModel,
-    update_data: dict[str, Any],
-    context_model: Type[BaseModel],
+    update_data: JSONObject,
+    context_model: type[BaseModel],
 ) -> Optional[str]:
     """Apply ``update_data`` to ``context`` with deep merge for nested dicts.
 
@@ -643,8 +646,6 @@ def _inject_context_with_deep_merge(
                                 pass
                             elif hasattr(field_type, "model_validate"):
                                 field_type.model_validate(value)
-                            elif hasattr(field_type, "__call__"):
-                                field_type(value)
                         except Exception as validation_error:
                             return f"Field '{key}' validation failed: {validation_error}"
 
@@ -734,8 +735,8 @@ def _inject_context_with_deep_merge(
 
 def _inject_context(
     context: BaseModel,
-    update_data: dict[str, Any],
-    context_model: Type[BaseModel],
+    update_data: JSONObject,
+    context_model: type[BaseModel],
 ) -> Optional[str]:
     """Apply ``update_data`` to ``context`` validating against ``context_model``.
 
@@ -783,8 +784,6 @@ def _inject_context(
                         try:
                             if hasattr(field_type, "model_validate"):
                                 field_type.model_validate(value)
-                            elif hasattr(field_type, "__call__"):
-                                field_type(value)
                         except Exception as validation_error:
                             return f"Field '{key}' validation failed: {validation_error}"
 

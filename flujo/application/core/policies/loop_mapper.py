@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from typing import Protocol
+
 from ._shared import (
-    Any,
-    PipelineContext,
     StepOutcome,
     StepResult,
     telemetry,
@@ -12,13 +12,17 @@ from ._shared import (
 from .common import DefaultAgentResultUnpacker
 
 
+class _NamedStep(Protocol):
+    name: str
+
+
 def map_initial_input(
     *,
-    loop_step: Any,
-    current_data: Any,
-    current_context: PipelineContext | Any,
+    loop_step: _NamedStep,
+    current_data: object,
+    current_context: object | None,
     start_time: float,
-) -> tuple[Any, StepOutcome[StepResult] | None]:
+) -> tuple[object, StepOutcome[StepResult] | None]:
     mapper = (
         loop_step.get_initial_input_to_loop_body_mapper()
         if hasattr(loop_step, "get_initial_input_to_loop_body_mapper")
@@ -47,9 +51,9 @@ def map_initial_input(
 
 def apply_iteration_input_mapper(
     *,
-    loop_step: Any,
-    current_data: Any,
-    current_context: PipelineContext | Any,
+    loop_step: _NamedStep,
+    current_data: object,
+    current_context: object | None,
     iteration_count: int,
     max_loops: int,
     start_time: float,
@@ -57,7 +61,7 @@ def apply_iteration_input_mapper(
     cumulative_cost: float,
     iteration_results_all: list[StepResult],
     iteration_results: list[StepResult],
-) -> tuple[Any, StepOutcome[StepResult] | None]:
+) -> tuple[object, StepOutcome[StepResult] | None]:
     iter_mapper = (
         loop_step.get_iteration_input_mapper()
         if hasattr(loop_step, "get_iteration_input_mapper")
@@ -94,18 +98,18 @@ def apply_iteration_input_mapper(
 
 def finalize_loop_output(
     *,
-    loop_step: Any,
-    core: Any,
-    current_data: Any,
-    final_output: Any,
-    current_context: PipelineContext | Any,
+    loop_step: _NamedStep,
+    core: object,
+    current_data: object,
+    final_output: object,
+    current_context: object | None,
     iteration_count: int,
     cumulative_tokens: int,
     cumulative_cost: float,
     iteration_results_all: list[StepResult],
     is_map_step: bool,
     start_time: float,
-) -> tuple[Any, StepOutcome[StepResult] | None]:
+) -> tuple[object, StepOutcome[StepResult] | None]:
     output_mapper = (
         loop_step.get_loop_output_mapper()
         if hasattr(loop_step, "get_loop_output_mapper")

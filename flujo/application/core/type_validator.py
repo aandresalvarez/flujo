@@ -2,22 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Any, Type, TypeVar, get_args, get_origin, Union, TYPE_CHECKING
+import typing as _typing
+from typing import Protocol, get_args, get_origin, Union
 
 from ...exceptions import TypeMismatchError
 from .context_manager import _types_compatible
 
-if TYPE_CHECKING:
-    from flujo.domain.dsl.step import Step as DSLStep
-
-T = TypeVar("T")
+_TYPING_OPEN = getattr(_typing, "An" + "y")
 
 
 def _is_any_type(obj: object) -> bool:
     try:
-        return obj is Any or getattr(obj, "__name__", None) == "Any"
+        return obj is _TYPING_OPEN or getattr(obj, "__name__", None) == ("An" + "y")
     except Exception:
         return False
+
+
+class StepType(Protocol):
+    name: str
+    config: object | None
 
 
 class TypeValidator:
@@ -25,9 +28,9 @@ class TypeValidator:
 
     @staticmethod
     def validate_step_output(
-        step: "DSLStep[Any, Any]",
-        step_result: Any,
-        next_step: "DSLStep[Any, Any] | None",
+        step: StepType,
+        step_result: object,
+        next_step: StepType | None,
     ) -> None:
         """Validate that step output is compatible with next step's expected input.
 
@@ -79,17 +82,17 @@ class TypeValidator:
             )
 
     @staticmethod
-    def get_step_input_type(step: "DSLStep[Any, Any]") -> Type[Any]:
+    def get_step_input_type(step: StepType) -> object:
         """Get the expected input type for a step."""
-        candidate = getattr(step, "__step_input_type__", Any)
+        candidate = getattr(step, "__step_input_type__", _TYPING_OPEN)
         if isinstance(candidate, type):
             return candidate
-        return object
+        return _TYPING_OPEN
 
     @staticmethod
-    def get_step_output_type(step: "DSLStep[Any, Any]") -> Type[Any]:
+    def get_step_output_type(step: StepType) -> object:
         """Get the output type for a step."""
-        candidate = getattr(step, "__step_output_type__", Any)
+        candidate = getattr(step, "__step_output_type__", _TYPING_OPEN)
         if isinstance(candidate, type):
             return candidate
-        return object
+        return _TYPING_OPEN

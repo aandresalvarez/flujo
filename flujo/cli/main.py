@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flujo.domain.dsl.pipeline import Pipeline
+    from flujo.domain.models import Candidate, Checklist, Task
+    from flujo.agents.wrappers import AsyncAgentWrapper
+    from flujo.infra.settings import FlujoSettings
 
 import typer
 from typing_extensions import Annotated
@@ -259,32 +265,34 @@ def get_cli_defaults(command: str) -> JSONObject:
 # These maintain the testing interface while the actual implementations live elsewhere
 
 
-def run_default_pipeline(pipeline: Any, task: Any) -> Any:
+async def run_default_pipeline(
+    pipeline: "Pipeline[str, Checklist]", task: "Task"
+) -> "Optional[Candidate]":
     """Compatibility function for testing - re-exports from recipes.factories."""
-    return _run_default_pipeline(pipeline, task)
+    return await _run_default_pipeline(pipeline, task)
 
 
-def make_review_agent(model: str | None = None) -> Any:
+def make_review_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, Checklist]":
     """Compatibility function for testing - re-exports from agents.recipes."""
     return _make_review_agent(model)
 
 
-def make_solution_agent(model: str | None = None) -> Any:
+def make_solution_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, str]":
     """Compatibility function for testing - re-exports from agents.recipes."""
     return _make_solution_agent(model)
 
 
-def make_validator_agent(model: str | None = None) -> Any:
+def make_validator_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, Checklist]":
     """Compatibility function for testing - re-exports from agents.recipes."""
     return _make_validator_agent(model)
 
 
-def get_reflection_agent(model: str | None = None) -> Any:
+def get_reflection_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, str]":
     """Compatibility function for testing - re-exports from agents.recipes."""
     return _get_reflection_agent(model)
 
 
-def make_default_pipeline(**kwargs: Any) -> Any:
+def make_default_pipeline(**kwargs: Any) -> "Pipeline[str, Checklist]":
     """Compatibility function for testing - re-exports from recipes.factories."""
     from flujo.recipes.factories import make_default_pipeline as _make_default_pipeline
 
@@ -308,12 +316,12 @@ SelfImprovementAgent = _SelfImprovementAgent
 ImprovementReport = _ImprovementReport
 
 
-def make_self_improvement_agent(model: str | None = None) -> Any:
+def make_self_improvement_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, Any]":
     """Compatibility function for testing - re-exports from agents.recipes."""
     return _make_self_improvement_agent(model)
 
 
-def load_settings() -> Any:
+def load_settings() -> "FlujoSettings":
     """Compatibility function for testing - re-exports from config_manager."""
     from flujo.infra.config_manager import load_settings as _load_settings
 

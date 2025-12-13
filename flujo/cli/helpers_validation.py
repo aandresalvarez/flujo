@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 import yaml
 from typer import Exit
@@ -172,10 +172,8 @@ def sanitize_blueprint_yaml(yaml_text: str) -> str:
                 except Exception:
                     pass
             if isinstance(node.get("step"), dict):
-                try:
-                    embedded = cast(JSONObject, node.get("step"))
-                except Exception:
-                    embedded = None
+                embedded_raw = node.get("step")
+                embedded = embedded_raw if isinstance(embedded_raw, dict) else None
                 if isinstance(embedded, dict):
                     try:
                         del node["step"]

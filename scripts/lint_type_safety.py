@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI when new `Any` or `cast()` usages are introduced in core/DSL."""
+"""Fail CI when new `Any` or `cast()` usages are introduced in tracked scopes."""
 
 from __future__ import annotations
 
@@ -8,22 +8,40 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Iterable, Iterator, Sequence
 
 ROOT = Path(__file__).resolve().parent.parent
 BASELINE_PATH = ROOT / "scripts/type_safety_baseline.json"
 
-TARGETS = {
-    "core": ROOT / "flujo" / "application" / "core",
-    "dsl": ROOT / "flujo" / "domain" / "dsl",
+TARGETS: dict[str, Sequence[Path]] = {
+    "core": (ROOT / "flujo" / "application" / "core",),
+    # Core runtime surface outside application/core (still should be kept tight).
+    "runtime": (
+        ROOT / "flujo" / "application" / "runner.py",
+        ROOT / "flujo" / "application" / "runner_methods.py",
+        ROOT / "flujo" / "application" / "runner_execution.py",
+        ROOT / "flujo" / "application" / "run_session.py",
+    ),
+    "dsl": (ROOT / "flujo" / "domain" / "dsl",),
+    # YAML/blueprint loading and coercion surface (edge -> runtime).
+    "blueprint": (ROOT / "flujo" / "domain" / "blueprint",),
 }
 
 
-def _count_token(path: Path, token: str) -> int:
+def _iter_py_files(path: Path) -> Iterator[Path]:
+    if path.is_dir():
+        yield from path.rglob("*.py")
+        return
+    if path.is_file() and path.suffix == ".py":
+        yield path
+
+
+def _count_pattern(paths: Iterable[Path], pattern: re.Pattern[str]) -> int:
     total = 0
-    for file_path in path.rglob("*.py"):
-        text = file_path.read_text(encoding="utf-8", errors="ignore")
-        total += len(re.findall(re.escape(token), text))
+    for base in paths:
+        for file_path in _iter_py_files(base):
+            text = file_path.read_text(encoding="utf-8", errors="ignore")
+            total += len(pattern.findall(text))
     return total
 
 
@@ -66,9 +84,13 @@ def main() -> None:
     args = parser.parse_args()
 
     baseline = _load_baseline()
+    patterns = {
+        "cast": re.compile(r"\bcast\s*\("),
+        "Any": re.compile(r"\bAny\b"),
+    }
     current: Dict[str, Dict[str, int]] = {
-        scope: {"cast": _count_token(path, "cast("), "Any": _count_token(path, "Any")}
-        for scope, path in TARGETS.items()
+        scope: {metric: _count_pattern(paths, patterns[metric]) for metric in patterns}
+        for scope, paths in TARGETS.items()
     }
 
     # Update baseline if requested

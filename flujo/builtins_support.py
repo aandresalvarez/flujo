@@ -20,7 +20,9 @@ except Exception:
     pass
 
 
-async def passthrough(x: Any) -> Any:
+async def passthrough(
+    x: JSONObject | str | list[JSONObject] | None,
+) -> JSONObject | str | list[JSONObject] | None:
     """Return the input unchanged (identity)."""
     return x
 
@@ -83,7 +85,7 @@ async def repair_yaml_ruamel(yaml_text: str) -> JSONObject:
 
 
 # --- Adapter: return YAML in CLI-expected format ---
-async def return_yaml_for_cli(yaml_text: Any) -> Dict[str, str]:
+async def return_yaml_for_cli(yaml_text: str | JSONObject) -> Dict[str, str]:
     """Return YAML in the format that the CLI expects to find, extracting it if necessary.
 
     Defensive against LLMs that occasionally prepend prose before the YAML. If any
@@ -313,7 +315,9 @@ async def context_get(
 
 
 async def extract_decomposed_steps(
-    decomposition: Any, *, output_key: str = "prepared_steps_for_mapping"
+    decomposition: PydanticBaseModel | JSONObject,
+    *,
+    output_key: str = "prepared_steps_for_mapping",
 ) -> JSONObject:
     """Extract a list of step dicts from a decomposer output structure."""
     steps: list[JSONObject] = []
@@ -337,12 +341,16 @@ async def extract_decomposed_steps(
     return {output_key: steps}
 
 
-async def extract_yaml_text(writer_output: Any) -> Dict[str, str]:
+async def extract_yaml_text(
+    writer_output: PydanticBaseModel | JSONObject | str | bytes,
+) -> Dict[str, str]:
     """Robustly extract YAML text from various agent output formats."""
     text = ""
     try:
         if isinstance(writer_output, dict):
             text = writer_output.get("yaml_text") or writer_output.get("generated_yaml") or ""
+        elif isinstance(writer_output, bytes):
+            text = writer_output.decode()
         elif hasattr(writer_output, "yaml_text"):
             text = getattr(writer_output, "yaml_text") or ""
         elif hasattr(writer_output, "generated_yaml"):
@@ -377,7 +385,9 @@ async def extract_yaml_text(writer_output: Any) -> Dict[str, str]:
     return {"yaml_text": text or "", "generated_yaml": text or ""}
 
 
-async def capture_validation_report(report: Any) -> JSONObject:
+async def capture_validation_report(
+    report: PydanticBaseModel | JSONObject,
+) -> JSONObject:
     """Capture ValidationReport-like payload into context-friendly dict."""
     try:
         if hasattr(report, "model_dump"):
@@ -395,7 +405,7 @@ async def capture_validation_report(report: Any) -> JSONObject:
 
 
 async def check_user_confirmation(
-    _out: Any = None,
+    _out: str | JSONObject | None = None,
     ctx: Optional[DomainBaseModel] = None,
     *,
     user_input: Optional[str] = None,
@@ -414,7 +424,9 @@ async def check_user_confirmation(
     return "denied"
 
 
-async def compute_validity_key(_x: Any = None, *, context: Optional[DomainBaseModel] = None) -> str:
+async def compute_validity_key(
+    _x: JSONObject | None = None, *, context: Optional[DomainBaseModel] = None
+) -> str:
     try:
         val = bool(getattr(context, "yaml_is_valid", False))
     except Exception:
@@ -428,7 +440,9 @@ async def compute_validity_key(_x: Any = None, *, context: Optional[DomainBaseMo
     return "valid" if val else "invalid"
 
 
-def always_valid_key(_out: Any = None, ctx: Optional[DomainBaseModel] = None) -> str:
+def always_valid_key(
+    _out: JSONObject | str | None = None, ctx: Optional[DomainBaseModel] = None
+) -> str:
     """Return 'valid' unconditionally (used after successful repair)."""
     return "valid"
 
@@ -436,7 +450,9 @@ def always_valid_key(_out: Any = None, ctx: Optional[DomainBaseModel] = None) ->
 # --- In-memory YAML validation skill ---
 
 
-async def validation_report_to_flag(report: Any) -> JSONObject:
+async def validation_report_to_flag(
+    report: PydanticBaseModel | JSONObject,
+) -> JSONObject:
     """Return a dict with yaml_is_valid based on a ValidationReport-like input."""
     try:
         if isinstance(report, dict):
@@ -450,7 +466,9 @@ async def validation_report_to_flag(report: Any) -> JSONObject:
 
 
 async def extract_validation_errors(
-    report: Any, *, context: Optional[DomainBaseModel] = None
+    report: PydanticBaseModel | JSONObject,
+    *,
+    context: Optional[DomainBaseModel] = None,
 ) -> JSONObject:
     """Extract error messages from a ValidationReport-like input for repair loops.
 
@@ -506,7 +524,7 @@ async def extract_validation_errors(
 
 
 def select_validity_branch(
-    _out: Any = None,
+    _out: JSONObject | str | None = None,
     ctx: Optional[DomainBaseModel] = None,
     **kwargs: Any,
 ) -> str:
@@ -597,7 +615,7 @@ def select_validity_branch(
 
 
 def select_by_yaml_shape(
-    _out: Any = None,
+    _out: JSONObject | str | None = None,
     ctx: Optional[DomainBaseModel] = None,
     **kwargs: Any,
 ) -> str:

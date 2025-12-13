@@ -553,7 +553,7 @@ class TestExecutorCoreFallback:
         self, executor_core, create_step_with_fallback
     ):
         """Test fallback behavior with context and resources."""
-        from pydantic import BaseModel
+        from flujo.domain.models import BaseModel
 
         class TestContext(BaseModel):
             key: str = "value"

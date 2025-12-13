@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Optional, Type, Generic, cast
+from typing import Any, Optional, Type, Generic
 
 from pydantic import ValidationError, BaseModel as PydanticBaseModel, TypeAdapter
-from pydantic_ai import Agent, ModelRetry
+from pydantic_ai import ModelRetry
 
 
 from tenacity import AsyncRetrying, RetryError, stop_after_attempt, wait_exponential
@@ -44,6 +44,7 @@ from ..utils import format_prompt
 # Import from utils to avoid circular imports
 # Import the module (not the symbol) so tests can monkeypatch it
 from . import utils as agents_utils
+from .agent_like import AgentLike
 
 
 # pydantic-ai UnexpectedModelBehavior import with safe fallback, mypy-friendly
@@ -51,7 +52,7 @@ def _resolve_unexpected_model_behavior() -> type[Exception]:  # pragma: no cover
     try:  # pydantic-ai >=0.7
         from pydantic_ai.exceptions import UnexpectedModelBehavior as umb_imported
 
-        return cast(type[Exception], umb_imported)
+        return umb_imported
     except ImportError:
 
         class FallbackUnexpectedModelBehavior(Exception):
@@ -71,7 +72,7 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
 
     def __init__(
         self,
-        agent: Agent[Any, AgentOutT],
+        agent: AgentLike,
         max_retries: int = 3,
         timeout: int | None = None,
         model_name: str | None = None,
@@ -598,7 +599,7 @@ class TemplatedAsyncAgentWrapper(AsyncAgentWrapper[AgentInT, AgentOutT]):
 
     def __init__(
         self,
-        agent: Agent[Any, AgentOutT],
+        agent: AgentLike,
         *,
         template_string: str,
         variables_spec: Optional[dict[str, Any]] = None,

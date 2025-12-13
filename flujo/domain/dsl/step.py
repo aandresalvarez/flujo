@@ -13,6 +13,7 @@ from typing import (
     Coroutine,
     Generic,
     List,
+    NoReturn,
     Optional,
     TypeVar,
     Dict,
@@ -34,7 +35,7 @@ from enum import Enum
 from flujo.domain.base_model import BaseModel
 from flujo.domain.models import RefinementCheck, UsageLimits  # noqa: F401
 from flujo.domain.resources import AppResources
-from pydantic import Field, ConfigDict
+from pydantic import Field, ConfigDict, model_validator
 from ..agent_protocol import AsyncAgentProtocol
 from ..plugins import ValidationPlugin
 from ..validation import Validator
@@ -61,8 +62,9 @@ P = ParamSpec("P")
 
 ContextModelT = TypeVar("ContextModelT", bound=BaseModel)
 
-# BranchKey type alias for ConditionalStep
-BranchKey = Any
+# BranchKey type alias for ConditionalStep.
+# Keys must be JSON/YAML-friendly and stable for persistence/serialization.
+BranchKey = str | bool | int
 
 
 class MergeStrategy(Enum):
@@ -88,7 +90,7 @@ class BranchFailureStrategy(Enum):
     IGNORE = "ignore"
 
 
-_TYPE_FALLBACK: type[Any] = object
+_TYPE_FALLBACK: type[object] = object
 
 
 def _log_type_warning(message: str, step_name: str, *, error: Exception | None = None) -> None:
@@ -96,7 +98,7 @@ def _log_type_warning(message: str, step_name: str, *, error: Exception | None =
     try:
         from flujo.infra import telemetry as _telemetry
 
-        extra: dict[str, Any] = {"step": step_name}
+        extra: dict[str, object] = {"step": step_name}
         if error is not None:
             extra["error"] = str(error)
         _telemetry.logfire.warn(message, extra=extra)
@@ -105,7 +107,7 @@ def _log_type_warning(message: str, step_name: str, *, error: Exception | None =
         return
 
 
-def _normalize_signature_type(candidate: Any) -> type[Any]:
+def _normalize_signature_type(candidate: object) -> type[object]:
     """Map signature-derived types to safe, non-Any fallbacks."""
     if candidate is Any or candidate is None or candidate is type(None):  # noqa: E721
         return _TYPE_FALLBACK
@@ -120,7 +122,7 @@ def _normalize_signature_type(candidate: Any) -> type[Any]:
     return _TYPE_FALLBACK
 
 
-def _infer_agent_io_types(agent: Any, *, step_name: str) -> tuple[type[Any], type[Any]]:
+def _infer_agent_io_types(agent: object, *, step_name: str) -> tuple[type[object], type[object]]:
     """Infer input/output types from an agent or callable, defaulting to object on failure."""
     executable = (
         agent.run
@@ -193,13 +195,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     """
 
     name: str
-    agent: Any | None = Field(default=None)
+    agent: object | None = Field(default=None)
     config: StepConfig = Field(default_factory=StepConfig)
     plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
     validators: List[Validator] = Field(default_factory=list)
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
     processors: "AgentProcessors" = Field(default_factory=AgentProcessors)
-    fallback_step: Optional[Any] = Field(default=None, exclude=True)
+    fallback_step: object | None = Field(default=None, exclude=True)
     usage_limits: Optional[UsageLimits] = Field(
         default=None,
         description="Usage limits for this step (cost and token limits).",
@@ -213,7 +215,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         description=("Append ValidationResult objects to this context attribute (must be a list)."),
     )
     # Optional declarative input (templated). Alias preserves legacy ``input`` param.
-    input_: Any | None = Field(
+    input_: object | None = Field(
         default=None,
         alias="input",
         description="Explicit step input (can be templated).",
@@ -266,6 +268,19 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         "arbitrary_types_allowed": True,
     }
 
+    @model_validator(mode="after")
+    def _validate_adapter_metadata(self) -> "Step[StepInT, StepOutT]":
+        """Adapters must always declare identity and allowlist token."""
+        meta = getattr(self, "meta", None)
+        if isinstance(meta, dict) and meta.get("is_adapter"):
+            adapter_id = meta.get("adapter_id")
+            adapter_allow = meta.get("adapter_allow")
+            if not adapter_id or not adapter_allow:
+                raise ValueError(
+                    "Adapter steps must include adapter_id and adapter_allow (allowlist token)."
+                )
+        return self
+
     # ---------------------------------------------------------------------
     # Utility / dunder helpers
     # ---------------------------------------------------------------------
@@ -291,7 +306,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         return f"Step(name={self.name!r}, agent={agent_repr}{config_repr})"
 
     @property
-    def input(self) -> Any | None:
+    def input(self) -> object | None:
         """Return the declarative input value (legacy alias)."""
         return self.input_
 
@@ -306,7 +321,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 # Do not fail initialization if meta isn't mutable
                 pass
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover - behavior
+    def __call__(self, *args: Any, **kwargs: Any) -> NoReturn:  # pragma: no cover - behavior
         """Disallow direct invocation of a Step."""
         from ...exceptions import ImproperStepInvocationError
 
@@ -374,7 +389,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     # Execution helpers
     # ------------------------------------------------------------------
 
-    def arun(self, data: StepInT, **kwargs: Any) -> Coroutine[Any, Any, StepOutT]:
+    def arun(self, data: StepInT, **kwargs: Any) -> Coroutine[object, object, StepOutT]:
         """Return the agent coroutine to run this step directly in tests."""
         if self.agent is None:
             raise ValueError(f"Step '{self.name}' has no agent to run.")
@@ -520,7 +535,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     @classmethod
     def from_callable(
         cls: Type["Step[StepInT, StepOutT]"],
-        callable_: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
+        callable_: Callable[Concatenate[StepInT, P], Coroutine[object, object, StepOutT]],
         name: str | None = None,
         updates_context: bool = False,
         validate_fields: bool = False,  # New parameter
@@ -651,7 +666,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     @classmethod
     def from_mapper(
         cls: Type["Step[StepInT, StepOutT]"],
-        mapper: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
+        mapper: Callable[Concatenate[StepInT, P], Coroutine[object, object, StepOutT]],
         name: str | None = None,
         updates_context: bool = False,
         sink_to: str | None = None,
@@ -731,7 +746,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         from .loop import LoopStep  # local import
 
         # Task-local storage for the last artifact; safe under concurrency
-        last_artifact_var: contextvars.ContextVar[Any | None] = contextvars.ContextVar(
+        last_artifact_var: contextvars.ContextVar[object | None] = contextvars.ContextVar(
             f"{name}_last_artifact", default=None
         )
 

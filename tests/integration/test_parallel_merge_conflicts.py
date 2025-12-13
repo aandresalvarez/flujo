@@ -1,7 +1,7 @@
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.executor_helpers import make_execution_frame

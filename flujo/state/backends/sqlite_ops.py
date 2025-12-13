@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from datetime import datetime, timezone, timedelta
-from typing import Any, List, Optional, cast
+from typing import Any, List, Optional
 
 import aiosqlite
 import atexit
@@ -194,8 +194,8 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     "background_error": row[19],
                 }
 
-            result = await self._with_retries(_load)
-            return cast(Optional[JSONObject], result)
+            result: Optional[JSONObject] = await self._with_retries(_load)
+            return result
 
     async def delete_state(self, run_id: str) -> None:
         """Delete workflow state."""
@@ -730,8 +730,8 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                 finally:
                     await conn.close()
 
-            result = await self._with_retries(_cleanup)
-            return cast(int, result)
+            result: int = await self._with_retries(_cleanup)
+            return result
 
     # ------------------------------------------------------------------
     # New structured persistence API

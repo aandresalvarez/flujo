@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Tuple
 
-
-def _resolve_context_target(ctx: Any, target: str) -> Tuple[Any, Any]:
+def _resolve_context_target(ctx: object, target: str) -> tuple[object | None, str | None]:
     """Resolve a context.* target path to (parent, key)."""
     try:
         if not isinstance(target, str) or not target.startswith("context."):
@@ -39,7 +37,7 @@ def _resolve_context_target(ctx: Any, target: str) -> Tuple[Any, Any]:
         return None, None
 
 
-def _render_template_value(prev_output: Any, ctx: Any, tpl: Any) -> Any:
+def _render_template_value(prev_output: object, ctx: object, tpl: object) -> object:
     """Render a template string using context and previous output."""
     try:
         from ...utils.template_vars import (
@@ -58,8 +56,10 @@ def _render_template_value(prev_output: Any, ctx: Any, tpl: Any) -> Any:
         }
 
         try:
-            if ctx and hasattr(ctx, "hitl_history") and ctx.hitl_history:
-                fmt_ctx["resume_input"] = ctx.hitl_history[-1].human_response
+            if ctx is not None and hasattr(ctx, "hitl_history"):
+                hitl_history = getattr(ctx, "hitl_history", None)
+                if isinstance(hitl_history, list) and hitl_history:
+                    fmt_ctx["resume_input"] = getattr(hitl_history[-1], "human_response", None)
         except Exception:
             pass
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, Literal, List
+from typing import Literal
 from collections.abc import MutableMapping
 
 from ..base_model import BaseModel
@@ -61,14 +61,14 @@ def _get_nested(source: object, path: str) -> object | None:
     return value if present else None
 
 
-def _set_nested(target: Any, path: str, value: Any) -> None:
+def _set_nested(target: object, path: str, value: object) -> None:
     """Set a dotted path inside a mapping/object, creating intermediates as needed."""
     if not path:
         return
-    current: Any = target
+    current: object = target
     parts = path.split(".")
     for part in parts[:-1]:
-        next_val: Any = None
+        next_val: object | None = None
         if isinstance(current, MutableMapping):
             next_val = current.get(part)
             if not isinstance(next_val, MutableMapping):
@@ -100,7 +100,7 @@ def _set_nested(target: Any, path: str, value: Any) -> None:
                     pass
 
 
-class ImportStep(Step[Any, Any]):
+class ImportStep(Step[object, object]):
     """Compose an imported Pipeline as a first-class Step with policy-driven semantics.
 
     Fields
@@ -138,11 +138,11 @@ class ImportStep(Step[Any, Any]):
         - "continue_with_default": treat as success with empty/default output
     """
 
-    pipeline: Pipeline[Any, Any]
+    pipeline: Pipeline[object, object]
     inherit_context: bool = False
     input_to: Literal["initial_prompt", "import_artifacts", "both"] = "initial_prompt"
-    input_scratchpad_key: Optional[str] = "initial_input"
-    outputs: Optional[List[OutputMapping]] = None
+    input_scratchpad_key: str | None = "initial_input"
+    outputs: list[OutputMapping] | None = None
     inherit_conversation: bool = True
     propagate_hitl: bool = True
     on_failure: Literal["abort", "skip", "continue_with_default"] = "abort"
@@ -153,13 +153,13 @@ class ImportStep(Step[Any, Any]):
 
     def _project_output_to_parent(
         self,
-        child_output: dict[str, Any],
-        child_context: Optional["PipelineContext"],
-        parent_context: Optional["PipelineContext"],
+        child_output: dict[str, object],
+        child_context: "PipelineContext | None",
+        parent_context: "PipelineContext | None",
         updates_context: bool,
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Merge outputs from child context/output into parent context."""
-        result: dict[str, Any] = {}
+        result: dict[str, object] = {}
 
         if not updates_context:
             # If updates_context=False, only map outputs (default: none)

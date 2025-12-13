@@ -2,7 +2,6 @@ from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple
 
 from flujo.exceptions import ConfigurationError, MockDetectionError
 from flujo.infra import telemetry
@@ -31,13 +30,13 @@ class LoopResumeState:
     iteration: int = 1
     step_index: int = 0
     requires_hitl_payload: bool = False
-    last_output: Any | None = None
+    last_output: object | None = None
     paused_step_name: str | None = None
 
     STORAGE_KEY = "loop_resume_state"
 
     @classmethod
-    def from_context(cls, context: Any) -> Optional["LoopResumeState"]:
+    def from_context(cls, context: object) -> LoopResumeState | None:
         if context is None:
             return None
         maybe_iteration = getattr(context, "loop_iteration_index", None)
@@ -54,7 +53,7 @@ class LoopResumeState:
             )
         return None
 
-    def persist(self, context: Any, body_length: int) -> None:
+    def persist(self, context: object, body_length: int) -> None:
         bounded_index = max(0, min(self.step_index, body_length))
         if context is None:
             return
@@ -73,7 +72,7 @@ class LoopResumeState:
             pass
 
     @classmethod
-    def clear(cls, context: Any) -> None:
+    def clear(cls, context: object) -> None:
         if context is None:
             return
         try:
@@ -94,7 +93,7 @@ class LoopResumeState:
 # Shared utilities -----------------------------------------------------------
 
 
-def _unpack_agent_result(output: Any) -> Any:
+def _unpack_agent_result(output: object) -> object:
     """Best-effort unpacking of common agent result wrappers."""
 
     try:
@@ -113,13 +112,13 @@ def _unpack_agent_result(output: Any) -> Any:
     return output
 
 
-def _detect_mock_objects(obj: Any) -> None:
+def _detect_mock_objects(obj: object) -> None:
     """Raise MockDetectionError when the object is a unittest.mock instance."""
 
     try:
         from unittest.mock import Mock as _M, MagicMock as _MM
 
-        _mock_types: Tuple[type[Any], ...]
+        _mock_types: tuple[type[object], ...]
         try:
             from unittest.mock import AsyncMock as _AM  # py>=3.8
 
@@ -132,7 +131,7 @@ def _detect_mock_objects(obj: Any) -> None:
         return
 
 
-def _load_template_config() -> Tuple[bool, bool]:
+def _load_template_config() -> tuple[bool, bool]:
     """Load template configuration from flujo.toml with fallback to defaults."""
 
     from flujo.infra.config_manager import TemplateConfig, get_config_manager
@@ -152,7 +151,7 @@ def _load_template_config() -> Tuple[bool, bool]:
     return strict, log_resolution
 
 
-def _check_hitl_nesting_safety(step: Any, core: Any) -> None:
+def _check_hitl_nesting_safety(step: object, core: object) -> None:
     """Runtime safety check for HITL steps in nested contexts."""
 
     try:
@@ -162,7 +161,7 @@ def _check_hitl_nesting_safety(step: Any, core: Any) -> None:
 
         has_loop = False
         has_conditional = False
-        context_chain: List[str] = []
+        context_chain: list[str] = []
 
         for frame in execution_stack:
             frame_type = getattr(frame, "step_kind", None) or getattr(frame, "kind", None)
@@ -221,7 +220,7 @@ def _normalize_plugin_feedback(msg: str) -> str:
         return msg
 
 
-def _normalize_builtin_params(step: Any, data: Any) -> Any:
+def _normalize_builtin_params(step: object, data: object) -> object:
     """Normalize builtin skill parameters to support both 'params' and 'input'."""
 
     agent_spec = getattr(step, "agent", None)

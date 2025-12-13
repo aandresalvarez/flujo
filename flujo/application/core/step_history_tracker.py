@@ -1,15 +1,17 @@
 """Step execution history tracking and aggregation."""
 
 from __future__ import annotations
-from typing import Any, List, Optional
-from ...domain.models import StepResult, PipelineResult
+
+from pydantic import BaseModel as PydanticBaseModel
+
+from ...domain.models import PipelineResult, StepResult
 
 
 class StepHistoryTracker:
     """Manages step execution history tracking and aggregation."""
 
     def __init__(self) -> None:
-        self._history: List[StepResult] = []
+        self._history: list[StepResult] = []
 
     def clear_history(self) -> None:
         """Clear the current step history."""
@@ -19,11 +21,11 @@ class StepHistoryTracker:
         """Add a step result to the history."""
         self._history.append(step_result)
 
-    def extend_history(self, step_results: List[StepResult]) -> None:
+    def extend_history(self, step_results: list[StepResult]) -> None:
         """Extend history with multiple step results."""
         self._history.extend(step_results)
 
-    def get_history(self) -> List[StepResult]:
+    def get_history(self) -> list[StepResult]:
         """Get a copy of the current step history."""
         return self._history.copy()
 
@@ -31,11 +33,11 @@ class StepHistoryTracker:
         """Get the number of steps in the history."""
         return len(self._history)
 
-    def get_last_step_result(self) -> Optional[StepResult]:
+    def get_last_step_result(self) -> StepResult | None:
         """Get the last step result in the history."""
         return self._history[-1] if self._history else None
 
-    def aggregate_metrics(self) -> dict[str, Any]:
+    def aggregate_metrics(self) -> dict[str, float | int]:
         """Aggregate metrics from all step results in history."""
         total_cost = 0.0
         total_tokens = 0
@@ -54,8 +56,8 @@ class StepHistoryTracker:
         }
 
     def create_pipeline_result(
-        self, final_context: Optional[Any] = None, **kwargs: Any
-    ) -> PipelineResult[Any]:
+        self, final_context: PydanticBaseModel | None = None, **kwargs: object
+    ) -> PipelineResult[PydanticBaseModel]:
         """Create a PipelineResult with the current step history."""
         metrics = self.aggregate_metrics()
         return PipelineResult(
@@ -66,7 +68,7 @@ class StepHistoryTracker:
             **kwargs,
         )
 
-    def merge_nested_history(self, nested_result: PipelineResult[Any]) -> None:
+    def merge_nested_history(self, nested_result: PipelineResult[PydanticBaseModel]) -> None:
         """Merge step history from a nested pipeline execution."""
         if hasattr(nested_result, "step_history") and nested_result.step_history:
             self.extend_history(nested_result.step_history)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-from typing import Any, Optional, cast
+from typing import Any, Optional
 import typer
 import click
 import json
@@ -155,8 +155,12 @@ def run(
             pipeline_name=pipeline_name,
             json_output=json_output,
         )
-        pipeline_name = cast(str, cli_args["pipeline_name"])
-        json_output = cast(bool, cli_args["json_output"])
+        pipeline_name_val = cli_args.get("pipeline_name")
+        if isinstance(pipeline_name_val, str):
+            pipeline_name = pipeline_name_val
+        json_output_val = cli_args.get("json_output")
+        if isinstance(json_output_val, bool):
+            json_output = json_output_val
 
         # Detect raw flags to support JSON mode when alias parsing fails
         ctx = click.get_current_context()
@@ -456,15 +460,21 @@ state_uri = "sqlite:///flujo_ops.db"
         )
 
         # Execute pipeline using helper function
-        # mypy: ensure input_data is a concrete string at this point
-        from typing import cast as _cast
+        if json_output:
+            result_json = execute_pipeline_with_output_handling(
+                runner=runner,
+                input_data=input_data,
+                run_id=run_id,
+                json_output=True,
+            )
+            typer.echo(result_json)
+            return
 
-        input_data_str = _cast(str, input_data)
         result = execute_pipeline_with_output_handling(
             runner=runner,
-            input_data=input_data_str,
+            input_data=input_data,
             run_id=run_id,
-            json_output=json_output,
+            json_output=False,
         )
 
         # If execution yielded failures, print a concise credentials hint when likely.
@@ -597,139 +607,134 @@ state_uri = "sqlite:///flujo_ops.db"
                 # If resume fails, fall through to normal display (will show paused message)
                 pass
 
-        # Handle output
-        if json_output:
-            typer.echo(result)
-        else:
-            # Normalize visualization flags
-            eff_show_steps = show_steps
-            eff_show_context = show_context
-            if summary:
-                eff_show_steps = False
-                eff_show_context = False
+        # Normalize visualization flags
+        eff_show_steps = show_steps
+        eff_show_context = show_context
+        if summary:
+            eff_show_steps = False
+            eff_show_context = False
+        include_list = None
+        try:
+            if only_steps and only_steps.strip():
+                include_list = [s.strip() for s in only_steps.split(",") if s.strip()]
+        except Exception:
             include_list = None
+
+        display_pipeline_results(
+            result,
+            run_id,
+            json_output,
+            show_steps=eff_show_steps,
+            show_context=eff_show_context,
+            show_output_column=show_output_column,
+            output_preview_len=output_preview_len,
+            final_output_format=(final_output_format or "auto"),
+            pager=pager,
+            only_steps=include_list,
+        )
+        # When debugging, print a compact trace tree with step attributes and key events
+        if debug or debug_prompts:
             try:
-                if only_steps and only_steps.strip():
-                    include_list = [s.strip() for s in only_steps.split(",") if s.strip()]
-            except Exception:
-                include_list = None
+                from rich.console import Console
+                from rich.tree import Tree
 
-            display_pipeline_results(
-                result,
-                run_id,
-                json_output,
-                show_steps=eff_show_steps,
-                show_context=eff_show_context,
-                show_output_column=show_output_column,
-                output_preview_len=output_preview_len,
-                final_output_format=(final_output_format or "auto"),
-                pager=pager,
-                only_steps=include_list,
-            )
-            # When debugging, print a compact trace tree with step attributes and key events
-            if debug or debug_prompts:
-                try:
-                    from rich.console import Console
-                    from rich.tree import Tree
+                console = Console()
 
-                    console = Console()
+                def _span_label(span: Any) -> str:
+                    try:
+                        name = getattr(span, "name", "span")
+                        status = getattr(span, "status", "?")
+                        dur = 0.0
+                        st = getattr(span, "start_time", None)
+                        en = getattr(span, "end_time", None)
+                        if isinstance(st, (int, float)) and isinstance(en, (int, float)):
+                            dur = max(0.0, float(en) - float(st))
+                        return f"{name} [{status}] ({dur:.3f}s)"
+                    except Exception:
+                        return "span"
 
-                    def _span_label(span: Any) -> str:
+                def _add_span(tree: Tree, span: Any) -> None:
+                    node = tree.add(_span_label(span))
+                    # Attributes
+                    try:
+                        attrs = getattr(span, "attributes", {}) or {}
+                        # Show selected keys to keep it readable
+                        keys = [
+                            k
+                            for k in attrs.keys()
+                            if k.startswith("flujo.") or k in ("success", "latency_s", "step_input")
+                        ]
+                        for k in keys:
+                            v = attrs.get(k)
+                            node.add(f"[grey62]{k}: {v}[/grey62]")
+                    except Exception:
+                        pass
+                    # Events
+                    try:
+                        import os as _os
+
                         try:
-                            name = getattr(span, "name", "span")
-                            status = getattr(span, "status", "?")
-                            dur = 0.0
-                            st = getattr(span, "start_time", None)
-                            en = getattr(span, "end_time", None)
-                            if isinstance(st, (int, float)) and isinstance(en, (int, float)):
-                                dur = max(0.0, float(en) - float(st))
-                            return f"{name} [{status}] ({dur:.3f}s)"
+                            prev_len = int(_os.getenv("FLUJO_TRACE_PREVIEW_LEN", "1000"))
                         except Exception:
-                            return "span"
-
-                    def _add_span(tree: Tree, span: Any) -> None:
-                        node = tree.add(_span_label(span))
-                        # Attributes
-                        try:
-                            attrs = getattr(span, "attributes", {}) or {}
-                            # Show selected keys to keep it readable
-                            keys = [
-                                k
-                                for k in attrs.keys()
-                                if k.startswith("flujo.")
-                                or k in ("success", "latency_s", "step_input")
-                            ]
-                            for k in keys:
-                                v = attrs.get(k)
-                                node.add(f"[grey62]{k}: {v}[/grey62]")
-                        except Exception:
-                            pass
-                        # Events
-                        try:
-                            import os as _os
-
-                            try:
-                                prev_len = int(_os.getenv("FLUJO_TRACE_PREVIEW_LEN", "1000"))
-                            except Exception:
-                                prev_len = 1000
-                            full_flag = _os.getenv("FLUJO_DEBUG_PROMPTS") == "1"
-                            for ev in getattr(span, "events", []) or []:
-                                ename = str(ev.get("name"))
-                                eattrs = ev.get("attributes", {}) or {}
-                                # Specialized formatting for agent events with previews
-                                if ename in {
-                                    "agent.system",
-                                    "agent.input",
-                                    "agent.response",
-                                    "agent.prompt",
-                                }:
-                                    if ename == "agent.system":
-                                        txt = eattrs.get(
-                                            "system_prompt_full"
-                                            if full_flag
-                                            else "system_prompt_preview",
-                                            "",
-                                        )
-                                    elif ename == "agent.input":
-                                        txt = eattrs.get(
-                                            "input_full" if full_flag else "input_preview", ""
-                                        )
-                                    elif ename == "agent.response":
-                                        txt = eattrs.get(
-                                            "response_full" if full_flag else "response_preview", ""
-                                        )
-                                    else:  # agent.prompt from history injector
-                                        txt = eattrs.get("rendered_history", "")
-                                    s = str(txt)
-                                    if not full_flag and prev_len >= 0 and len(s) > prev_len:
-                                        s = s[:prev_len] + "..."
-                                    node.add(f"[yellow]event[/yellow] {ename}: {s}")
-                                elif ename == "agent.usage":
-                                    node.add(
-                                        f"[yellow]event[/yellow] {ename}: tokens_in={eattrs.get('input_tokens')} tokens_out={eattrs.get('output_tokens')} cost=${eattrs.get('cost_usd')}"
+                            prev_len = 1000
+                        full_flag = _os.getenv("FLUJO_DEBUG_PROMPTS") == "1"
+                        for ev in getattr(span, "events", []) or []:
+                            ename = str(ev.get("name"))
+                            eattrs = ev.get("attributes", {}) or {}
+                            # Specialized formatting for agent events with previews
+                            if ename in {
+                                "agent.system",
+                                "agent.input",
+                                "agent.response",
+                                "agent.prompt",
+                            }:
+                                if ename == "agent.system":
+                                    txt = eattrs.get(
+                                        "system_prompt_full"
+                                        if full_flag
+                                        else "system_prompt_preview",
+                                        "",
                                     )
-                                elif ename == "agent.system.vars":
-                                    node.add(f"[yellow]event[/yellow] {ename}: {eattrs}")
-                                else:
-                                    node.add(f"[yellow]event[/yellow] {ename}: {eattrs}")
-                        except Exception:
-                            pass
-                        # Children
-                        try:
-                            for ch in getattr(span, "children", []) or []:
-                                _add_span(node, ch)
-                        except Exception:
-                            pass
+                                elif ename == "agent.input":
+                                    txt = eattrs.get(
+                                        "input_full" if full_flag else "input_preview", ""
+                                    )
+                                elif ename == "agent.response":
+                                    txt = eattrs.get(
+                                        "response_full" if full_flag else "response_preview", ""
+                                    )
+                                else:  # agent.prompt from history injector
+                                    txt = eattrs.get("rendered_history", "")
+                                s = str(txt)
+                                if not full_flag and prev_len >= 0 and len(s) > prev_len:
+                                    s = s[:prev_len] + "..."
+                                node.add(f"[yellow]event[/yellow] {ename}: {s}")
+                            elif ename == "agent.usage":
+                                node.add(
+                                    f"[yellow]event[/yellow] {ename}: tokens_in={eattrs.get('input_tokens')} tokens_out={eattrs.get('output_tokens')} cost=${eattrs.get('cost_usd')}"
+                                )
+                            elif ename == "agent.system.vars":
+                                node.add(f"[yellow]event[/yellow] {ename}: {eattrs}")
+                            else:
+                                node.add(f"[yellow]event[/yellow] {ename}: {eattrs}")
+                    except Exception:
+                        pass
+                    # Children
+                    try:
+                        for ch in getattr(span, "children", []) or []:
+                            _add_span(node, ch)
+                    except Exception:
+                        pass
 
-                    trace_root = getattr(result, "trace_tree", None)
-                    if trace_root is not None:
-                        console.rule("[bold]Debug Trace")
-                        root_tree = Tree(_span_label(trace_root))
-                        for child in getattr(trace_root, "children", []) or []:
-                            _add_span(root_tree, child)
-                        console.print(root_tree)
-                except Exception:
-                    pass
+                trace_root = getattr(result, "trace_tree", None)
+                if trace_root is not None:
+                    console.rule("[bold]Debug Trace")
+                    root_tree = Tree(_span_label(trace_root))
+                    for child in getattr(trace_root, "children", []) or []:
+                        _add_span(root_tree, child)
+                    console.print(root_tree)
+            except Exception:
+                pass
 
         # If export enabled (via --debug-export) or --debug set and no explicit path, choose default path
         export_path: Optional[str] = None

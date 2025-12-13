@@ -8,7 +8,7 @@ visualization, and AI-driven modification.
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast, TYPE_CHECKING
+from typing import Any, Callable, Optional, TYPE_CHECKING
 from pydantic import TypeAdapter
 
 from ..domain.dsl.pipeline import Pipeline
@@ -31,6 +31,26 @@ if TYPE_CHECKING:  # pragma: no cover - used for typing only
 
 # Type adapter for command validation
 _command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
+_checklist_adapter: TypeAdapter[Checklist] = TypeAdapter(Checklist)
+
+
+def _extract_output_value(result: object) -> object:
+    """Return `result.output` when present, else `result`."""
+    return getattr(result, "output", result)
+
+
+def _coerce_checklist(value: object) -> Checklist:
+    if isinstance(value, Checklist):
+        return value
+    return _checklist_adapter.validate_python(value)
+
+
+def _coerce_text(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode()
+    raise TypeError(f"Expected a string output, got {type(value).__name__}")
 
 
 def make_default_pipeline(
@@ -75,16 +95,14 @@ def make_default_pipeline(
     async def review_step(data: str, *, context: PipelineContext) -> str:
         """Review the task and create a checklist."""
         result = await _invoke(review_agent, data, context=context)
-        checklist = cast(Checklist, getattr(result, "output", result))
-        checklist = cast(Checklist, getattr(result, "output", result))
+        checklist = _coerce_checklist(_extract_output_value(result))
         context.checklist = checklist
         return data
 
     async def solution_step(data: str, *, context: PipelineContext) -> str:
         """Generate a solution based on the task."""
         result = await _invoke(solution_agent, data, context=context)
-        solution = cast(str, getattr(result, "output", result))
-        solution = cast(str, getattr(result, "output", result))
+        solution = _coerce_text(_extract_output_value(result))
         context.solution = solution
         return solution
 
@@ -95,7 +113,7 @@ def make_default_pipeline(
             "checklist": getattr(context, "checklist", None) or Checklist(items=[]),
         }
         result = await _invoke(validator_agent, payload, context=context)
-        return cast(Checklist, getattr(result, "output", result))
+        return _coerce_checklist(_extract_output_value(result))
 
     # Create steps with configuration
     review_step_s = Step.from_callable(review_step, max_retries=max_retries)
@@ -146,11 +164,21 @@ def make_state_machine_pipeline(
     for key, val in nodes.items():
         normalized[key] = Pipeline.from_step(val) if isinstance(val, Step) else val
 
-    dispatcher: Step[Any, Any] = Step.branch_on(
+    def _route_state(_last: Any, ctx: PipelineContext | None) -> str:
+        if ctx is None:
+            raise ValueError("State machine requires a pipeline context")
+        value = getattr(ctx, router_field, None)
+        if value is None:
+            raise ValueError(f"State machine context is missing {router_field!r}")
+        return str(value)
+
+    route_state: Callable[[Any, PipelineContext | None], str] = _route_state
+
+    from ..domain.dsl.conditional import ConditionalStep
+
+    dispatcher: Step[Any, Any] = ConditionalStep[PipelineContext](
         name="state_dispatch",
-        condition_callable=lambda _last, ctx: getattr(ctx, router_field, None)
-        if ctx is not None
-        else None,
+        condition_callable=route_state,
         branches=normalized,
         default_branch_pipeline=None,
     )
@@ -278,13 +306,15 @@ def make_agentic_loop_pipeline(
             _log_if_new(log_entry, context)
             return log_entry
 
-    async def planner_step(data: str, *, context: PipelineContext) -> AgentCommand:
+    async def planner_step(data: str, *, context: PipelineContext) -> object:
         """Get the next command from the planner."""
         result = await _invoke(planner_agent, data, context=context)
-        return cast(AgentCommand, getattr(result, "output", result))
+        # Do not validate/normalize here: the executor is responsible for
+        # validating commands and logging invalid payloads as ExecutedCommandLog entries.
+        return _extract_output_value(result)
 
     async def command_executor_step(
-        data: AgentCommand, *, context: PipelineContext
+        data: object, *, context: PipelineContext
     ) -> ExecutedCommandLog:
         executor: _CommandExecutor = _CommandExecutor(agent_registry)
         return await executor.run(data, context=context)

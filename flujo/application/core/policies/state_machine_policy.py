@@ -1,20 +1,16 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
-from ._shared import (
-    Any,
-    Failure,
-    Optional,
-    PipelineResult,
-    StepOutcome,
-    StepResult,
-    Success,
-    _Any,
-    ContextManager,
-    ExecutionFrame,
-    PausedException,
-    telemetry,
-)
+from typing import Optional
+
+from flujo.domain.base_model import BaseModel as DomainBaseModel
+
+from flujo.application.core.context_manager import ContextManager
+from flujo.domain.models import Failure, PipelineResult, StepOutcome, StepResult, Success
+from flujo.exceptions import PausedException
+from flujo.infra import telemetry
+
+from ..types import ExecutionFrame
 
 # --- StateMachine policy executor (FSD-025) ---
 
@@ -26,7 +22,9 @@ class StateMachinePolicyExecutor:
     State is tracked in typed context fields (current_state/next_state).
     """
 
-    async def execute(self, core: _Any, frame: ExecutionFrame[_Any]) -> StepOutcome[StepResult]:
+    async def execute(
+        self, core: object, frame: ExecutionFrame[DomainBaseModel]
+    ) -> StepOutcome[StepResult]:
         step = frame.step
         data = frame.data
         context = frame.context
@@ -67,11 +65,11 @@ class StateMachinePolicyExecutor:
 
         # Helper: resolve transitions with first-match-wins semantics
         def _resolve_transition(
-            _step: Any,
+            _step: object,
             _from_state: Optional[str],
             _event: str,
             _payload: JSONObject,
-            _context: Optional[Any],
+            _context: DomainBaseModel | None,
         ) -> Optional[str]:
             try:
                 trs = getattr(_step, "transitions", None) or []
@@ -142,8 +140,11 @@ class StateMachinePolicyExecutor:
             except Exception:
                 pass
 
-            iteration_context = (
+            isolated_ctx = (
                 ContextManager.isolate(last_context) if last_context is not None else None
+            )
+            iteration_context: DomainBaseModel | None = (
+                isolated_ctx if isinstance(isolated_ctx, DomainBaseModel) else last_context
             )
 
             # Disable cache during state transitions to avoid stale context
@@ -151,9 +152,10 @@ class StateMachinePolicyExecutor:
             try:
                 setattr(core, "_enable_cache", False)
                 try:
-                    pipeline_result: PipelineResult[
-                        _Any
-                    ] = await core._execute_pipeline_via_policies(
+                    exec_fn = getattr(core, "_execute_pipeline_via_policies", None)
+                    if not callable(exec_fn):
+                        raise TypeError("ExecutorCore missing _execute_pipeline_via_policies()")
+                    pipeline_result: PipelineResult[DomainBaseModel] = await exec_fn(
                         state_pipeline,
                         data,
                         iteration_context,
@@ -265,7 +267,10 @@ class StateMachinePolicyExecutor:
                     pass
 
             # Merge sub-pipeline's final context back into the state machine's main context
-            sub_ctx = getattr(pipeline_result, "final_pipeline_context", iteration_context)
+            sub_ctx_raw = getattr(pipeline_result, "final_pipeline_context", iteration_context)
+            sub_ctx: DomainBaseModel | None = (
+                sub_ctx_raw if isinstance(sub_ctx_raw, DomainBaseModel) else iteration_context
+            )
             # Capture next_state/current_state from the sub-context BEFORE merge.
             # ContextManager.merge may exclude some fields for noise reduction; we extract
             # the intended hop here and re-apply it after the merge.
@@ -282,7 +287,8 @@ class StateMachinePolicyExecutor:
                 intended_next = None
                 intended_curr = None
             try:
-                last_context = ContextManager.merge(last_context, sub_ctx)
+                merged_ctx = ContextManager.merge(last_context, sub_ctx)
+                last_context = merged_ctx if isinstance(merged_ctx, DomainBaseModel) else sub_ctx
             except Exception:
                 # Defensive: if merge fails, fall back to sub_ctx to avoid losing progress
                 last_context = sub_ctx
@@ -423,9 +429,7 @@ class StateMachinePolicyExecutor:
         # ExecutionManager can persist it consistently across policy types.
         try:
             if frame.context_setter is not None:
-                from flujo.domain.models import PipelineResult as _PR
-
-                pr: _PR[Any] = _PR(
+                pr: PipelineResult[DomainBaseModel] = PipelineResult(
                     step_history=step_history,
                     total_cost_usd=total_cost,
                     total_tokens=total_tokens,

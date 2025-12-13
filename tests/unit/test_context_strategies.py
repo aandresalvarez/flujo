@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 import flujo.application.core.context_manager as cm
 from flujo.application.core.context_manager import ContextManager

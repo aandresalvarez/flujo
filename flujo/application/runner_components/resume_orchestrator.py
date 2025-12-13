@@ -35,7 +35,7 @@ class ResumeOrchestrator(Generic[_CtxT]):
         self._trace_manager = trace_manager
         self._agent_command_adapter = agent_command_adapter
 
-    def validate_resume(self, paused_result: PipelineResult[_CtxT]) -> PipelineContext:
+    def validate_resume(self, paused_result: PipelineResult[_CtxT]) -> _CtxT:
         ctx = paused_result.final_pipeline_context
         if ctx is None:
             raise ResumeError("Cannot resume pipeline without context")
@@ -53,29 +53,51 @@ class ResumeOrchestrator(Generic[_CtxT]):
         if pipeline is None or not getattr(pipeline, "steps", None):
             raise ResumeError("No steps remaining to resume")
 
-        # Heuristic: if step_outputs tracks executed top-level steps, resume after the last one.
+        steps = list(getattr(pipeline, "steps", []) or [])
         start_idx = len(paused_result.step_history)
+        hitl_index_resolved = False
+
+        # Prefer explicit HITL pause metadata when available.
+        # This avoids brittle heuristics based on step_history length, which may include
+        # placeholder StepResults for paused HITL steps.
         try:
-            executed_steps = getattr(ctx, "step_outputs", {})
-            if isinstance(executed_steps, dict) and executed_steps:
-                last_executed = list(executed_steps.keys())[-1]
-                for idx, st in enumerate(getattr(pipeline, "steps", []) or []):
-                    if getattr(st, "name", None) == last_executed:
-                        start_idx = min(idx + 1, len(pipeline.steps) - 1)
+            hd = getattr(ctx, "hitl_data", None)
+            last_hitl_step = hd.get("last_hitl_step") if isinstance(hd, dict) else None
+            if isinstance(last_hitl_step, str) and last_hitl_step:
+                for idx, st in enumerate(steps):
+                    if (
+                        isinstance(st, HumanInTheLoopStep)
+                        and getattr(st, "name", None) == last_hitl_step
+                    ):
+                        start_idx = idx
+                        hitl_index_resolved = True
                         break
         except Exception:
-            pass
+            hitl_index_resolved = False
 
-        if start_idx >= len(pipeline.steps):
+        # Heuristic: if step_outputs tracks executed top-level steps, resume after the last one.
+        # Skip this when we have explicit HITL pause metadata.
+        if not hitl_index_resolved:
+            try:
+                executed_steps = getattr(ctx, "step_outputs", {})
+                if isinstance(executed_steps, dict) and executed_steps:
+                    last_executed = list(executed_steps.keys())[-1]
+                    for idx, st in enumerate(steps):
+                        if getattr(st, "name", None) == last_executed:
+                            start_idx = min(idx + 1, len(steps) - 1)
+                            break
+            except Exception:
+                pass
+
+        if start_idx >= len(steps):
             # Common pause shape: the paused step is the last (or only) top-level step
             # (e.g., LoopStep pausing internally). In that case, resume from the last step.
-            if getattr(ctx, "status", None) == "paused" and pipeline.steps:
-                start_idx = len(pipeline.steps) - 1
+            if getattr(ctx, "status", None) == "paused" and steps:
+                start_idx = len(steps) - 1
             else:
                 raise ResumeError("No steps remaining to resume")
 
-        paused_step = pipeline.steps[start_idx]
-        from ...domain.dsl.step import HumanInTheLoopStep  # local to avoid import cycles
+        paused_step = steps[start_idx]
 
         if getattr(ctx, "status", None) == "paused":
             # Always attach the provided human input to the typed user_input field for downstream steps.

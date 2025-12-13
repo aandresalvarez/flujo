@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
-from ._shared import Any, ContextManager, LoopResumeState, telemetry
+from ._shared import BaseModel, ContextManager, LoopResumeState, telemetry
+
+
+class _NamedStep(Protocol):
+    name: str
 
 
 @dataclass
@@ -10,15 +15,17 @@ class LoopResumeConfig:
     saved_iteration: int
     saved_step_index: int
     is_resuming: bool
-    saved_last_output: Any
+    saved_last_output: object | None
     resume_requires_hitl_output: bool
-    resume_payload: Any
+    resume_payload: object
     paused_step_name: str | None
     iteration_count: int
     current_step_index: int
 
 
-def prepare_resume_config(loop_step: Any, current_context: Any, data: Any) -> LoopResumeConfig:
+def prepare_resume_config(
+    loop_step: _NamedStep, current_context: object | None, data: object
+) -> LoopResumeConfig:
     saved_iteration = 1
     saved_step_index = 0
     is_resuming = False
@@ -35,10 +42,26 @@ def prepare_resume_config(loop_step: Any, current_context: Any, data: Any) -> Lo
         resume_requires_hitl_output = resume_state.requires_hitl_payload
         paused_step_name = resume_state.paused_step_name
         LoopResumeState.clear(current_context)
-        if hasattr(current_context, "status"):
-            current_context.status = "paused" if resume_requires_hitl_output else "running"
-        if hasattr(current_context, "loop_resume_requires_hitl_output"):
-            current_context.loop_resume_requires_hitl_output = bool(resume_requires_hitl_output)
+        if current_context is not None and hasattr(current_context, "status"):
+            try:
+                setattr(
+                    current_context,
+                    "status",
+                    "paused" if resume_requires_hitl_output else "running",
+                )
+            except Exception:
+                pass
+        if current_context is not None and hasattr(
+            current_context, "loop_resume_requires_hitl_output"
+        ):
+            try:
+                setattr(
+                    current_context,
+                    "loop_resume_requires_hitl_output",
+                    bool(resume_requires_hitl_output),
+                )
+            except Exception:
+                pass
         telemetry.logfire.info(
             f"LoopStep '{loop_step.name}' RESUMING from iteration {saved_iteration}, step {saved_step_index}"
         )
@@ -67,8 +90,15 @@ def prepare_resume_config(loop_step: Any, current_context: Any, data: Any) -> Lo
                 f"LoopStep '{loop_step.name}' RESUMING from iteration {saved_iteration}, step {saved_step_index} (status={maybe_status})"
             )
             # Use typed field for status
-            if hasattr(current_context, "status"):
-                current_context.status = "paused" if resume_requires_hitl_output else "running"
+            if current_context is not None and hasattr(current_context, "status"):
+                try:
+                    setattr(
+                        current_context,
+                        "status",
+                        "paused" if resume_requires_hitl_output else "running",
+                    )
+                except Exception:
+                    pass
     resume_payload = _resolve_resume_payload(
         current_context=current_context,
         resume_requires_hitl_output=resume_requires_hitl_output,
@@ -99,7 +129,9 @@ def prepare_resume_config(loop_step: Any, current_context: Any, data: Any) -> Lo
     )
 
 
-def clear_hitl_markers(ctx: Any) -> None:
+def clear_hitl_markers(ctx: BaseModel | None) -> None:
+    if ctx is None:
+        return
     try:
         if hasattr(ctx, "hitl_data"):
             ctx.hitl_data = {}
@@ -113,35 +145,68 @@ def clear_hitl_markers(ctx: Any) -> None:
 
 def propagate_pause_state(
     *,
-    iteration_context: Any,
-    current_context: Any,
+    iteration_context: object | None,
+    current_context: object | None,
     iteration_count: int,
     current_step_index: int,
-    current_data: Any,
+    current_data: object,
     paused_step_name: str | None,
-    hitl_output: Any = None,
+    hitl_output: object | None = None,
 ) -> None:
     # Typed-only pause propagation (scratchpad is deprecated; no writes).
-    if hasattr(iteration_context, "status"):
-        iteration_context.status = "paused"
-    if hasattr(iteration_context, "loop_iteration_index"):
-        iteration_context.loop_iteration_index = iteration_count
-    if hasattr(iteration_context, "loop_step_index"):
-        iteration_context.loop_step_index = current_step_index + 1
-    if hasattr(iteration_context, "loop_last_output"):
-        iteration_context.loop_last_output = current_data
-    if hasattr(iteration_context, "loop_resume_requires_hitl_output"):
-        iteration_context.loop_resume_requires_hitl_output = True
-    if hasattr(iteration_context, "loop_paused_step_name"):
-        iteration_context.loop_paused_step_name = paused_step_name
+    if iteration_context is not None and hasattr(iteration_context, "status"):
+        try:
+            setattr(iteration_context, "status", "paused")
+        except Exception:
+            pass
+    if iteration_context is not None and hasattr(iteration_context, "loop_iteration_index"):
+        try:
+            setattr(iteration_context, "loop_iteration_index", iteration_count)
+        except Exception:
+            pass
+    if iteration_context is not None and hasattr(iteration_context, "loop_step_index"):
+        try:
+            setattr(iteration_context, "loop_step_index", current_step_index + 1)
+        except Exception:
+            pass
+    if iteration_context is not None and hasattr(iteration_context, "loop_last_output"):
+        try:
+            setattr(iteration_context, "loop_last_output", current_data)
+        except Exception:
+            pass
+    if iteration_context is not None and hasattr(
+        iteration_context, "loop_resume_requires_hitl_output"
+    ):
+        try:
+            setattr(iteration_context, "loop_resume_requires_hitl_output", True)
+        except Exception:
+            pass
+    if iteration_context is not None and hasattr(iteration_context, "loop_paused_step_name"):
+        try:
+            setattr(iteration_context, "loop_paused_step_name", paused_step_name)
+        except Exception:
+            pass
     if hitl_output is not None:
-        if hasattr(iteration_context, "paused_step_input"):
-            iteration_context.paused_step_input = hitl_output
+        if iteration_context is not None and hasattr(iteration_context, "paused_step_input"):
+            try:
+                setattr(iteration_context, "paused_step_input", hitl_output)
+            except Exception:
+                pass
         val = getattr(hitl_output, "human_response", None)
-        if hasattr(iteration_context, "user_input"):
-            iteration_context.user_input = val
-        if hasattr(iteration_context, "hitl_data") and val is not None:
-            iteration_context.hitl_data = {"human_response": val}
+        if iteration_context is not None and hasattr(iteration_context, "user_input"):
+            try:
+                setattr(iteration_context, "user_input", val)
+            except Exception:
+                pass
+        if (
+            iteration_context is not None
+            and hasattr(iteration_context, "hitl_data")
+            and val is not None
+        ):
+            try:
+                setattr(iteration_context, "hitl_data", {"human_response": val})
+            except Exception:
+                pass
     _append_pause_message(
         target_context=iteration_context,
         pause_message=getattr(iteration_context, "pause_message", None) or "",
@@ -169,14 +234,17 @@ def propagate_pause_state(
             target_context=current_context,
             pause_message=getattr(current_context, "pause_message", None) or "",
         )
-    try:
-        ContextManager.merge(current_context, iteration_context)
-    except Exception:
-        pass
+    if isinstance(current_context, BaseModel) and isinstance(iteration_context, BaseModel):
+        try:
+            ContextManager.merge(current_context, iteration_context)
+        except Exception:
+            pass
 
 
-def _append_pause_message(target_context: Any, pause_message: str) -> None:
+def _append_pause_message(target_context: object | None, pause_message: str) -> None:
     if not pause_message:
+        return
+    if target_context is None:
         return
     try:
         from flujo.domain.models import ConversationRole, ConversationTurn
@@ -193,12 +261,14 @@ def _append_pause_message(target_context: Any, pause_message: str) -> None:
 
 def _resolve_resume_payload(
     *,
-    current_context: Any,
+    current_context: object | None,
     resume_requires_hitl_output: bool,
     paused_step_name: str | None,
-    resume_payload: Any,
-) -> Any:
+    resume_payload: object,
+) -> object:
     if not resume_requires_hitl_output:
+        return resume_payload
+    if current_context is None:
         return resume_payload
     try:
         hitl_history = getattr(current_context, "hitl_history", None)

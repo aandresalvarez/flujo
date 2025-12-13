@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Optional, TYPE_CHECKING, TypeVar, cast
+from typing import Literal, TYPE_CHECKING, TypeVar
 
 from ..exceptions import ContextMergeError, PipelineAbortSignal, PausedException
 from ..domain.models import PipelineContext, PipelineResult
@@ -17,12 +17,14 @@ if TYPE_CHECKING:  # pragma: no cover
     from pydantic import TypeAdapter
 
 _CtxT = TypeVar("_CtxT", bound=PipelineContext)
+_InT = TypeVar("_InT")
+_OutT = TypeVar("_OutT")
 
 
 async def resume_async_inner(
-    runner: "Flujo[Any, Any, _CtxT]",
+    runner: "Flujo[_InT, _OutT, _CtxT]",
     paused_result: PipelineResult[_CtxT],
-    human_input: Any,
+    human_input: object,
     agent_command_adapter: "TypeAdapter[AgentCommand]",
 ) -> PipelineResult[_CtxT]:
     """Resume a paused pipeline with human input."""
@@ -138,7 +140,7 @@ async def resume_async_inner(
                 )
 
                 # Scan remaining steps (including conditional branches) for the next HITL
-                def _find_hitl(steps: list[Any]) -> _H | None:
+                def _find_hitl(steps: list[object]) -> _H | None:
                     for st in steps:
                         if isinstance(st, _H):
                             return st
@@ -173,7 +175,7 @@ async def resume_async_inner(
             async for chunk in runner._execute_steps(
                 resume_start_idx,
                 data,
-                cast(Optional[_CtxT], ctx),
+                ctx,
                 paused_result,
                 stream_last=False,
                 run_id=run_id_for_state,
@@ -269,7 +271,7 @@ async def resume_async_inner(
             except Exception:
                 pass
 
-        execution_manager.set_final_context(paused_result, cast(Optional[PipelineContext], ctx))
+        execution_manager.set_final_context(paused_result, ctx)
         try:
             await runner._dispatch_hook(
                 "post_run",
@@ -287,6 +289,8 @@ async def resume_async_inner(
         pass
 
 
-async def replay_from_trace(runner: "Flujo[Any, Any, _CtxT]", run_id: str) -> PipelineResult[_CtxT]:
+async def replay_from_trace(
+    runner: "Flujo[_InT, _OutT, _CtxT]", run_id: str
+) -> PipelineResult[_CtxT]:
     replay_executor = ReplayExecutor[_CtxT](runner)
     return await replay_executor.replay_from_trace(run_id)

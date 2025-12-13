@@ -12,11 +12,12 @@ Single Responsibility Principle and isolate agent creation concerns.
 from __future__ import annotations
 
 import os
-from typing import Any, Optional, Type, get_origin, cast
+from typing import Any, Optional, Type, get_origin
 
 from pydantic import TypeAdapter
 from pydantic_ai import Agent
 
+from .agent_like import AgentLike
 from ..domain.processors import AgentProcessors
 from ..exceptions import ConfigurationError
 from ..utils.model_utils import extract_provider_and_model
@@ -41,7 +42,7 @@ def make_agent(
     tools: list[Any] | None = None,
     processors: Optional[AgentProcessors] = None,
     **kwargs: Any,
-) -> tuple[Agent[Any, Any], AgentProcessors]:
+) -> tuple[AgentLike, AgentProcessors]:
     """Creates a pydantic_ai.Agent, injecting the correct API key and returns it with processors."""
     provider_name = model.split(":")[0].lower()
     base_model = model.split(":", 1)[1].lower() if ":" in model else ""
@@ -99,21 +100,21 @@ def make_agent(
 
         class _LocalMockAgent:
             def __init__(self) -> None:
-                self.model = model
-                self.output_type = actual_type
-                self.target_output_type = actual_type
+                self.model: object = model
+                self.output_type: object = actual_type
+                self.target_output_type: object = actual_type
 
-            async def run(self, *args: Any, **kwargs: Any) -> Any:
+            async def run(self, *args: Any, **kwargs: Any) -> object:
                 if args:
                     return args[0]
                 if "data" in kwargs:
                     return kwargs["data"]
                 return None
 
-            async def run_async(self, *args: Any, **kwargs: Any) -> Any:
+            async def run_async(self, *args: Any, **kwargs: Any) -> object:
                 return await self.run(*args, **kwargs)
 
-        return cast(Agent[Any, Any], _LocalMockAgent()), final_processors
+        return _LocalMockAgent(), final_processors
 
     try:
         # Specialized handling for OpenAI GPT-5 and other reasoning models using Responses API

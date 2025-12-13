@@ -1,12 +1,12 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
-from typing import Type, TypeGuard
+from typing import TypeGuard
 from collections.abc import MutableMapping
+from flujo.domain.models import BaseModel as DomainBaseModel
 from flujo.domain.models import ImportArtifacts
 
 from ._shared import (
-    Any,
     ImportStep,
     InfiniteRedirectError,
     NonRetryableError,
@@ -30,15 +30,19 @@ from ..types import ExecutionFrame
 
 
 class ImportStepExecutor(Protocol):
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
+    async def execute(
+        self, core: object, frame: ExecutionFrame[DomainBaseModel]
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultImportStepExecutor(StepPolicy[ImportStep]):
     @property
-    def handles_type(self) -> Type[ImportStep]:
+    def handles_type(self) -> type[ImportStep]:
         return ImportStep
 
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def execute(
+        self, core: object, frame: ExecutionFrame[DomainBaseModel]
+    ) -> StepOutcome[StepResult]:
         step = frame.step
         if not isinstance(step, ImportStep):
             raise TypeError(
@@ -208,7 +212,10 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
         # Execute the child pipeline directly via core orchestration to preserve control-flow semantics
         child_final_ctx = sub_context
         try:
-            pipeline_result: PipelineResult[Any] = await core._execute_pipeline_via_policies(
+            exec_pipeline = getattr(core, "_execute_pipeline_via_policies", None)
+            if not callable(exec_pipeline):
+                raise AttributeError("_execute_pipeline_via_policies is not available on core")
+            pipeline_result: PipelineResult[DomainBaseModel] = await exec_pipeline(
                 step.pipeline,
                 sub_initial_input,
                 sub_context,
@@ -234,7 +241,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         # Fallback to model-level merge when available
                         try:
                             merged_ctx = ContextManager.merge(context, sub_context)
-                            if merged_ctx is not None:
+                            if merged_ctx is not None and isinstance(merged_ctx, DomainBaseModel):
                                 context = merged_ctx
                         except Exception:
                             pass
@@ -540,9 +547,9 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                 pass
 
             # Sentinel to distinguish "path not found" from "path found with None value"
-            _NOT_FOUND: Any = object()
+            _NOT_FOUND: object = object()
 
-            def _traverse_path(obj: Any, parts: list[str]) -> Any:
+            def _traverse_path(obj: object, parts: list[str]) -> object:
                 """Traverse a path through an object (context or dict).
 
                 Returns _NOT_FOUND if the path doesn't exist, otherwise returns
@@ -563,7 +570,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         return _NOT_FOUND
                 return cur
 
-            def _get_child(path: str) -> tuple[Any, str] | Any:
+            def _get_child(path: str) -> tuple[object, str] | object:
                 """Get a value from child context or last step output.
 
                 Returns _NOT_FOUND if the path doesn't exist in either location.
@@ -574,7 +581,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                 def _is_import_artifacts(obj: object) -> TypeGuard[ImportArtifacts]:
                     return isinstance(obj, ImportArtifacts)
 
-                def _get_from_artifacts(artifact_path: list[str]) -> Any:
+                def _get_from_artifacts(artifact_path: list[str]) -> object:
                     try:
                         art = getattr(child_final_ctx, "import_artifacts", None)
                         if _is_import_artifacts(art) and len(artifact_path) == 1:
@@ -595,7 +602,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         if _is_import_artifacts(art):
                             return _NOT_FOUND
                         if isinstance(art, MutableMapping):
-                            cur_art: Any = art
+                            cur_art: object = art
                             for part in artifact_path:
                                 if isinstance(cur_art, MutableMapping) and part in cur_art:
                                     cur_art = cur_art[part]
@@ -632,13 +639,13 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
 
             parent_ctx = context
 
-            def _assign_parent(path: str, value: Any) -> None:
+            def _assign_parent(path: str, value: object) -> None:
                 parts = [p for p in path.split(".") if p]
                 if not parts:
                     return
 
                 def _assign_nested(
-                    target: MutableMapping[str, Any], keys: list[str], val: Any
+                    target: MutableMapping[str, object], keys: list[str], val: object
                 ) -> None:
                     cur = target
                     for k in keys[:-1]:

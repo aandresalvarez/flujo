@@ -53,7 +53,7 @@ class TestExecutorCoreConditionalStepDispatch:
         self, executor_core, mock_conditional_step
     ):
         """ConditionalStep parameters are forwarded via ExecutionFrame."""
-        from pydantic import BaseModel
+        from flujo.domain.models import BaseModel
 
         class TestContext(BaseModel):
             key: str = "value"
@@ -69,7 +69,9 @@ class TestExecutorCoreConditionalStepDispatch:
             test_data = "test_data"
             test_context = TestContext()
             test_resources = Mock()
-            test_limits = Mock()
+            from flujo.domain.models import UsageLimits
+
+            test_limits = UsageLimits(total_cost_usd_limit=10.0)
             test_context_setter = Mock()
 
             await executor_core._execute_complex_step(
@@ -94,7 +96,16 @@ class TestExecutorCoreConditionalStepDispatch:
         )
         assert captured_frame.resources is test_resources
         assert captured_frame.limits is test_limits
-        assert captured_frame.context_setter is test_context_setter
+        assert callable(captured_frame.context_setter)
+        from flujo.domain.models import PipelineResult
+
+        captured_frame.context_setter(
+            PipelineResult(
+                step_history=[], total_cost_usd=0.0, total_tokens=0, final_pipeline_context=None
+            ),
+            None,
+        )
+        assert test_context_setter.called
         assert getattr(captured_frame, "_fallback_depth") == 1
 
     async def test_execute_complex_step_conditionalstep_no_legacy_import(self, executor_core):

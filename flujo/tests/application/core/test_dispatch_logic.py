@@ -1,4 +1,4 @@
-from typing import Any, Dict, cast
+from typing import Any, Dict
 
 import pytest
 
@@ -33,7 +33,7 @@ async def test_registry_dispatch_invokes_correct_policies() -> None:
         called["agent"] = called.get("agent", 0) + 1
         return StepResult(name="s", output=1, success=True)
 
-    cast(Any, core.agent_step_executor).execute = agent_exec
+    core.agent_step_executor.execute = agent_exec  # type: ignore[assignment]
 
     # Loop
     orig_loop = core.loop_step_executor.execute
@@ -42,7 +42,7 @@ async def test_registry_dispatch_invokes_correct_policies() -> None:
         called["loop"] = called.get("loop", 0) + 1
         return StepResult(name="l", output=2, success=True)
 
-    cast(Any, core.loop_step_executor).execute = loop_exec
+    core.loop_step_executor.execute = loop_exec  # type: ignore[assignment]
 
     # Parallel
     orig_par = core.parallel_step_executor.execute
@@ -51,7 +51,7 @@ async def test_registry_dispatch_invokes_correct_policies() -> None:
         called["parallel"] = called.get("parallel", 0) + 1
         return StepResult(name="p", output=3, success=True)
 
-    cast(Any, core.parallel_step_executor).execute = par_exec
+    core.parallel_step_executor.execute = par_exec  # type: ignore[assignment]
 
     # Conditional
     orig_cond = core.conditional_step_executor.execute
@@ -60,7 +60,7 @@ async def test_registry_dispatch_invokes_correct_policies() -> None:
         called["conditional"] = called.get("conditional", 0) + 1
         return StepResult(name="c", output=4, success=True)
 
-    cast(Any, core.conditional_step_executor).execute = cond_exec
+    core.conditional_step_executor.execute = cond_exec  # type: ignore[assignment]
 
     # Dynamic Router
     orig_router = core.dynamic_router_step_executor.execute
@@ -69,7 +69,7 @@ async def test_registry_dispatch_invokes_correct_policies() -> None:
         called["router"] = called.get("router", 0) + 1
         return StepResult(name="r", output=5, success=True)
 
-    cast(Any, core.dynamic_router_step_executor).execute = router_exec
+    core.dynamic_router_step_executor.execute = router_exec  # type: ignore[assignment]
 
     # HITL
     orig_hitl = core.hitl_step_executor.execute
@@ -78,7 +78,7 @@ async def test_registry_dispatch_invokes_correct_policies() -> None:
         called["hitl"] = called.get("hitl", 0) + 1
         return StepResult(name="h", output=6, success=True)
 
-    cast(Any, core.hitl_step_executor).execute = hitl_exec
+    core.hitl_step_executor.execute = hitl_exec  # type: ignore[assignment]
 
     # Cache
     orig_cache = core.cache_step_executor.execute
@@ -88,7 +88,7 @@ async def test_registry_dispatch_invokes_correct_policies() -> None:
         sr: StepResult = StepResult(name="cache", output=7, success=True)
         return Success(step_result=sr)
 
-    cast(Any, core.cache_step_executor).execute = cache_exec
+    core.cache_step_executor.execute = cache_exec  # type: ignore[method-assign]
 
     # Trigger for each type
     await core.execute(step=Step(name="base", agent=object()), data=None)

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Optional, TypeAlias, TypeGuard
 
 from ..dsl import Pipeline, Step, StepConfig
 from ..dsl.import_step import ImportStep, OutputMapping
-from ..models import UsageLimits
+from ..models import BaseModel, UsageLimits
+from ..resources import AppResources
 from .loader_models import BlueprintError, BlueprintStepModel, ProcessingConfigModel
 from .loader_resolution import (
     _PassthroughAgent,
@@ -18,10 +20,20 @@ from .loader_steps_common import _finalize_step_types
 from .model_generator import generate_model_from_schema, _python_type_for_json_schema
 from flujo.type_definitions.common import JSONObject
 
-BuildStep = Callable[..., Step[Any, Any]]
+AnyStep: TypeAlias = Step[object, object]
+AnyPipeline: TypeAlias = Pipeline[object, object]
+CompiledAgents: TypeAlias = dict[str, object]
+CompiledImports: TypeAlias = dict[str, AnyPipeline]
+BuildStep = Callable[..., AnyStep]
+
+_CallableObj: TypeAlias = Callable[..., object]
 
 
-def build_hitl_step(model: BlueprintStepModel, step_config: StepConfig) -> Any:
+def _is_callable_obj(obj: object) -> TypeGuard[_CallableObj]:
+    return callable(obj)
+
+
+def build_hitl_step(model: BlueprintStepModel, step_config: StepConfig) -> AnyStep:
     from ..dsl.step import HumanInTheLoopStep
     from .model_generator import generate_model_from_schema
 
@@ -45,10 +57,10 @@ def build_cache_step(
     model: BlueprintStepModel,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[dict[str, Any]],
-    compiled_imports: Optional[dict[str, Any]],
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
     make_step_fn: BuildStep,
-) -> Any:
+) -> AnyStep:
     from flujo.steps.cache_step import CacheStep as _CacheStep
 
     if not model.wrapped_step:
@@ -66,7 +78,7 @@ def build_cache_step(
 def build_agentic_loop_step(
     model: BlueprintStepModel,
     step_config: StepConfig,
-) -> Any:
+) -> AnyStep:
     try:
         from ...recipes.factories import make_agentic_loop_pipeline as _make_agentic
     except Exception as e:
@@ -94,7 +106,7 @@ def build_agentic_loop_step(
         raise BlueprintError("agentic_loop requires 'registry' (dict or import path)")
 
     try:
-        p = _make_agentic(planner_agent=planner_agent, agent_registry=reg_obj)
+        p = _make_agentic(planner_agent=planner_agent, agent_registry=reg_obj)  # type: ignore[arg-type]
     except Exception as e:
         raise BlueprintError(f"Failed to create agentic loop pipeline: {e}")
 
@@ -104,7 +116,7 @@ def build_agentic_loop_step(
             fmt_tpl = str(model.output_template)
             orig_mapper = getattr(step0, "loop_output_mapper", None)
 
-            def _wrapped_output_mapper(output: Any, ctx: Optional[Any]) -> Any:
+            def _wrapped_output_mapper(output: object, ctx: BaseModel | None) -> object:
                 base = output
                 try:
                     if callable(orig_mapper):
@@ -140,7 +152,26 @@ def build_agentic_loop_step(
             pass
 
     try:
-        return p.as_step(name=model.name)
+        inner = p.as_step(name=model.name)
+
+        async def _runner(
+            data: object,
+            *,
+            context: BaseModel | None = None,
+            resources: AppResources | None = None,
+        ) -> object:
+            if not isinstance(data, str):
+                raise BlueprintError("agentic_loop steps expect string input")
+            return await inner.arun(data, context=context, resources=resources)
+
+        return Step.from_callable(
+            _runner,
+            name=model.name,
+            updates_context=model.updates_context,
+            validate_fields=model.validate_fields,
+            sink_to=model.sink_to,
+            config=step_config,
+        )
     except Exception as e:
         raise BlueprintError(f"Failed to wrap agentic loop pipeline as step: {e}")
 
@@ -150,17 +181,17 @@ def build_basic_step(
     step_config: StepConfig,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[dict[str, Any]],
-    compiled_imports: Optional[dict[str, Any]],
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
     make_step_fn: BuildStep,
-) -> Step[Any, Any]:
+) -> AnyStep:
     _use_history_extra = None
     try:
         _use_history_extra = getattr(model, "_use_history_extra", None)
     except Exception:
         _use_history_extra = None
-    agent_obj: Any = _PassthroughAgent()
-    st: Optional[Step[Any, Any]] = None
+    agent_obj: object = _PassthroughAgent()
+    st: AnyStep | None = None
     if model.uses:
         uses_spec = model.uses.strip()
         if uses_spec.startswith("agents."):
@@ -185,7 +216,7 @@ def build_basic_step(
             key = uses_spec.split(".", 1)[1]
             if key not in compiled_imports:
                 raise BlueprintError(f"Unknown imported pipeline referenced: {uses_spec}")
-            pipeline: Pipeline[Any, Any] = compiled_imports[key]
+            pipeline = compiled_imports[key]
             import_cfg: JSONObject = dict(model.config or {})
             inherit_context = bool(import_cfg.get("inherit_context", False))
             input_to_val = str(import_cfg.get("input_to", "initial_prompt"))
@@ -265,7 +296,7 @@ def build_basic_step(
             agent_obj=agent_obj,
         )
     if st is None:
-        st = Step[Any, Any](
+        st = Step[object, object](
             name=model.name,
             agent=agent_obj,
             config=step_config,
@@ -285,12 +316,22 @@ def build_basic_step(
             st.meta.update(model.meta)
     except Exception:
         pass
+    # Enforce adapter allowlist metadata even when supplied via YAML/meta.
+    meta = getattr(st, "meta", None)
+    if isinstance(meta, dict) and meta.get("is_adapter"):
+        adapter_id = meta.get("adapter_id")
+        adapter_allow = meta.get("adapter_allow")
+        if not adapter_id or not adapter_allow:
+            raise BlueprintError(
+                "Adapter steps must include adapter_id and adapter_allow (allowlist token)."
+            )
     # Propagate explicit JSON schemas to step IO types for validation
     try:
         if isinstance(model.input_schema, dict):
             schema_type = model.input_schema.get("type")
             if schema_type and schema_type != "object":
-                st.__step_input_type__ = _python_type_for_json_schema(model.input_schema)
+                ann = _python_type_for_json_schema(model.input_schema)
+                st.__step_input_type__ = ann if isinstance(ann, type) else object
             else:
                 schema_model_in = generate_model_from_schema(
                     f"{model.name}Input", model.input_schema
@@ -302,7 +343,8 @@ def build_basic_step(
         if isinstance(model.output_schema, dict):
             schema_type = model.output_schema.get("type")
             if schema_type and schema_type != "object":
-                st.__step_output_type__ = _python_type_for_json_schema(model.output_schema)
+                ann = _python_type_for_json_schema(model.output_schema)
+                st.__step_output_type__ = ann if isinstance(ann, type) else object
             else:
                 schema_model_out = generate_model_from_schema(
                     f"{model.name}Output", model.output_schema
@@ -355,10 +397,10 @@ def _build_callable_step(
     *,
     model: BlueprintStepModel,
     step_config: StepConfig,
-    agent_obj: Any,
-) -> Optional[Step[Any, Any]]:
-    st: Optional[Step[Any, Any]] = None
-    callable_obj: Any = agent_obj
+    agent_obj: object,
+) -> AnyStep | None:
+    st: AnyStep | None = None
+    callable_obj: object = agent_obj
     _params_for_callable: JSONObject = {}
     skill_id_for_attr = None
     try:
@@ -380,10 +422,10 @@ def _build_callable_step(
         except (AttributeError, KeyError, TypeError):
             is_builtin = False
 
-        def _with_params(func: Any) -> Any:
+        def _with_params(func: Callable[..., object]) -> Callable[..., object]:
             _params_for_callable_local = dict(_params_for_callable)
 
-            def _runner(data: Any, *args: Any, **kwargs: Any) -> Any:
+            def _runner(data: object, *args: object, **kwargs: object) -> object:
                 try:
                     call_kwargs = dict(_params_for_callable_local)
                     call_kwargs.update(kwargs)
@@ -437,12 +479,12 @@ def _build_callable_step(
                 pass
             return _runner
 
-        should_wrap = callable(agent_obj) and (_params_for_callable or is_builtin)
-        if should_wrap:
-            callable_obj = _with_params(agent_obj)
+        if _params_for_callable or is_builtin:
+            if _is_callable_obj(agent_obj):
+                callable_obj = _with_params(agent_obj)
             if skill_id_for_attr and not hasattr(callable_obj, "__name__"):
                 try:
-                    callable_obj.__name__ = skill_id_for_attr
+                    setattr(callable_obj, "__name__", skill_id_for_attr)
                 except (AttributeError, TypeError):
                     pass
     except Exception:
@@ -459,14 +501,14 @@ def _build_callable_step(
         )
         if skill_id_for_attr and st is not None and st.agent is not None:
             try:
-                st.agent.__name__ = skill_id_for_attr
+                setattr(st.agent, "__name__", skill_id_for_attr)
             except (AttributeError, TypeError):
                 pass
         return st
     return None
 
 
-def _attach_processing_meta(st: Step[Any, Any], model: BlueprintStepModel) -> None:
+def _attach_processing_meta(st: AnyStep, model: BlueprintStepModel) -> None:
     try:
         if isinstance(model.processing, dict) and model.processing:
             try:

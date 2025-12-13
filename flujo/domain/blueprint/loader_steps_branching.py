@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Optional
+from typing import Callable, Optional, TypeAlias, TypeGuard
 
-from ..dsl import ParallelStep, Pipeline, StepConfig
+from ..dsl import ParallelStep, Pipeline, Step, StepConfig
+from ..dsl.step import BranchKey
+from ..models import BaseModel
 from .loader_models import BlueprintError, BlueprintStepModel
 from .loader_resolution import _import_object, _resolve_agent_entry
 from .loader_steps_common import _normalize_branch_failure, _normalize_merge_strategy
 
-BuildBranch = Callable[..., Pipeline[Any, Any]]
+AnyPipeline: TypeAlias = Pipeline[object, object]
+AnyStep: TypeAlias = Step[object, object]
+CompiledAgents: TypeAlias = dict[str, object]
+CompiledImports: TypeAlias = dict[str, AnyPipeline]
+BuildBranch = Callable[..., AnyPipeline]
+ConditionCallable: TypeAlias = Callable[[object, BaseModel | None], object]
+
+
+def _is_condition_callable(obj: object) -> TypeGuard[ConditionCallable]:
+    return callable(obj)
 
 
 def build_parallel_step(
@@ -16,13 +27,13 @@ def build_parallel_step(
     step_config: StepConfig,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[dict[str, Any]],
-    compiled_imports: Optional[dict[str, Any]],
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
     build_branch: BuildBranch,
-) -> ParallelStep[Any]:
+) -> ParallelStep[BaseModel]:
     if not model.branches:
         raise BlueprintError("parallel step requires branches")
-    branches_map: dict[str, Pipeline[Any, Any]] = {}
+    branches_map: dict[str, AnyPipeline] = {}
     for branch_name, branch_spec in model.branches.items():
         branches_map[branch_name] = build_branch(
             branch_spec,
@@ -30,7 +41,7 @@ def build_parallel_step(
             compiled_agents=compiled_agents,
             compiled_imports=compiled_imports,
         )
-    st_par: ParallelStep[Any] = ParallelStep(
+    st_par: ParallelStep[BaseModel] = ParallelStep(
         name=model.name,
         branches=branches_map,
         context_include_keys=model.context_include_keys,
@@ -48,8 +59,8 @@ def build_parallel_step(
 
 def _attach_parallel_reduce(
     model: BlueprintStepModel,
-    st_par: ParallelStep[Any],
-    branches_map: dict[str, Pipeline[Any, Any]],
+    st_par: ParallelStep[BaseModel],
+    branches_map: dict[str, AnyPipeline],
 ) -> None:
     try:
         reduce_spec = model.reduce
@@ -65,20 +76,21 @@ def _attach_parallel_reduce(
         else:
             mode = str(reduce_spec.get("mode", "")).strip().lower()
 
-        def _reduce(output_map: dict[str, Any], _ctx: Optional[Any]) -> Any:
+        def _reduce(output_map: dict[str, object], _ctx: BaseModel | None) -> object:
             if mode == "keys":
                 return [bn for bn in branch_order if bn in output_map]
             if mode == "values":
                 return [output_map[bn] for bn in branch_order if bn in output_map]
             if mode == "union":
-                acc: dict[str, Any] = {}
+                acc: dict[str, object] = {}
                 for bn in branch_order:
                     val = output_map.get(bn)
                     if isinstance(val, dict):
-                        acc.update(val)
+                        for k, v in val.items():
+                            acc[str(k)] = v
                 return acc
             if mode == "concat":
-                res: list[Any] = []
+                res: list[object] = []
                 for bn in branch_order:
                     val = output_map.get(bn)
                     if isinstance(val, list):
@@ -111,17 +123,17 @@ def build_conditional_step(
     step_config: StepConfig,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[dict[str, Any]],
-    compiled_imports: Optional[dict[str, Any]],
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
     build_branch: BuildBranch,
-) -> Any:
+) -> AnyStep:
     from ..dsl.conditional import ConditionalStep
 
     if not model.branches:
         raise BlueprintError("conditional step requires branches")
-    branches_map: dict[Any, Pipeline[Any, Any]] = {}
+    branches_map: dict[BranchKey, AnyPipeline] = {}
     for key, branch_spec in model.branches.items():
-        branches_map[key] = build_branch(
+        branches_map[str(key) if not isinstance(key, (str, bool, int)) else key] = build_branch(
             branch_spec,
             base_path=f"{yaml_path}.branches.{key}" if yaml_path else None,
             compiled_agents=compiled_agents,
@@ -138,7 +150,7 @@ def build_conditional_step(
         if model.default_branch
         else None
     )
-    st_cond: ConditionalStep[Any] = ConditionalStep(
+    st_cond: ConditionalStep[BaseModel] = ConditionalStep(
         name=model.name,
         condition_callable=_cond_callable,
         branches=branches_map,
@@ -154,11 +166,16 @@ def build_conditional_step(
 
 
 def _build_condition_callable(
-    model: BlueprintStepModel, branches_map: dict[Any, Pipeline[Any, Any]]
-) -> Any:
+    model: BlueprintStepModel, branches_map: dict[BranchKey, AnyPipeline]
+) -> Callable[[object, BaseModel | None], BranchKey]:
     if model.condition:
         try:
-            _cond_callable = _import_object(model.condition)
+            raw_callable = _import_object(model.condition)
+            if not _is_condition_callable(raw_callable):
+                raise BlueprintError(
+                    f"condition '{model.condition}' did not resolve to a callable."
+                )
+            _cond_callable = raw_callable
             import asyncio
 
             if asyncio.iscoroutinefunction(_cond_callable):
@@ -167,17 +184,27 @@ def _build_condition_callable(
                     f"Conditional step conditions are called synchronously and cannot be async functions.\n"
                     f"\n"
                     f"Change your function from:\n"
-                    f"  async def my_condition(data, context) -> Any:\n"
+                    f"  async def my_condition(data, context) -> object:\n"
                     f"      ...\n"
                     f"\n"
                     f"To:\n"
-                    f"  def my_condition(data, context) -> Any:\n"
+                    f"  def my_condition(data, context) -> object:\n"
                     f"      ...\n"
                     f"\n"
                     f"Remove 'async' and any 'await' calls in your condition function.\n"
                     f"See: https://flujo.dev/docs/user_guide/pipeline_branching#conditional-steps"
                 )
-            return _cond_callable
+
+            def _checked(output: object, ctx: BaseModel | None) -> BranchKey:
+                res = _cond_callable(output, ctx)
+                if isinstance(res, (str, bool, int)):
+                    return res
+                raise BlueprintError(
+                    "condition callable must return a branch key (str | bool | int); "
+                    f"got {type(res)}"
+                )
+
+            return _checked
         except Exception as exc:
             try:
                 _cond_str = str(model.condition).strip()
@@ -200,15 +227,23 @@ def _build_condition_callable(
 
             _expr_fn = _compile_expr(str(model.condition_expression))
 
-            def _expr_cond(output: Any, _ctx: Optional[Any]) -> Any:
-                return _expr_fn(output, _ctx)
+            def _expr_cond(output: object, _ctx: BaseModel | None) -> BranchKey:
+                res = _expr_fn(output, _ctx)
+                if isinstance(res, (str, bool, int)):
+                    return res
+                raise BlueprintError(
+                    "condition_expression must evaluate to a branch key (str | bool | int); "
+                    f"got {type(res)}"
+                )
 
             return _expr_cond
         except Exception as e:
             raise BlueprintError(f"Invalid condition_expression: {e}") from e
 
-    def _default_cond(output: Any, _ctx: Optional[Any]) -> Any:
-        return output if output in branches_map else next(iter(branches_map))
+    def _default_cond(output: object, _ctx: BaseModel | None) -> BranchKey:
+        if isinstance(output, (str, bool, int)) and output in branches_map:
+            return output
+        return next(iter(branches_map))
 
     return _default_cond
 
@@ -218,16 +253,16 @@ def build_dynamic_router_step(
     step_config: StepConfig,
     *,
     yaml_path: Optional[str],
-    compiled_agents: Optional[dict[str, Any]],
-    compiled_imports: Optional[dict[str, Any]],
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
     build_branch: BuildBranch,
-) -> Any:
+) -> AnyStep:
     from ..dsl.dynamic_router import DynamicParallelRouterStep
 
     if not model.router or "router_agent" not in model.router or "branches" not in model.router:
         raise BlueprintError("dynamic_router requires router.router_agent and router.branches")
     router_agent = _resolve_agent_entry(model.router.get("router_agent") or "")
-    branches_router: dict[str, Pipeline[Any, Any]] = {}
+    branches_router: dict[str, AnyPipeline] = {}
     for bname, bspec in model.router.get("branches", {}).items():
         branches_router[bname] = build_branch(
             bspec,

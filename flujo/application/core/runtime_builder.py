@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeGuard
+from typing import TYPE_CHECKING, Callable, Generic, Optional, TypeGuard
 from urllib.parse import urlparse
 import importlib
 
@@ -15,6 +15,16 @@ from .cache_manager import CacheManager
 from .conditional_orchestrator import ConditionalOrchestrator
 from .context_update_manager import ContextUpdateManager
 from .dispatch_handler import DispatchHandler
+from .executor_protocols import (
+    IAgentRunner,
+    IHasher,
+    IPluginRunner,
+    IProcessorPipeline,
+    ISerializer,
+    ITelemetry,
+    IUsageMeter,
+    IValidatorRunner,
+)
 from .default_cache_components import (
     Blake3Hasher,
     DefaultCacheKeyGenerator,
@@ -57,6 +67,7 @@ from .step_history_tracker import StepHistoryTracker
 from .step_handler import StepHandler
 from .telemetry_handler import TelemetryHandler
 from .validation_orchestrator import ValidationOrchestrator
+from .types import TContext_w_Scratch
 from .step_policies import (
     AgentResultUnpacker,
     AgentStepExecutor,
@@ -73,6 +84,7 @@ from .step_policies import (
     DefaultPluginRedirector,
     DefaultSimpleStepExecutor,
     DefaultTimeoutRunner,
+    ImportStepExecutor,
     DefaultValidatorInvoker,
     DynamicRouterStepExecutor,
     HitlStepExecutor,
@@ -84,6 +96,7 @@ from .step_policies import (
     ValidatorInvoker,
 )
 from ...domain.memory import VectorStoreProtocol
+from ...domain.interfaces import StateProvider
 from ...domain.sandbox import SandboxProtocol
 from ...infra.memory import (
     NullVectorStore,
@@ -101,20 +114,20 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 @dataclass
-class ExecutorCoreDeps:
+class ExecutorCoreDeps(Generic[TContext_w_Scratch]):
     """Container for ExecutorCore injectables."""
 
-    agent_runner: Any
-    processor_pipeline: Any
-    validator_runner: Any
-    plugin_runner: Any
-    usage_meter: Any
-    telemetry: Any
+    agent_runner: IAgentRunner
+    processor_pipeline: IProcessorPipeline
+    validator_runner: IValidatorRunner
+    plugin_runner: IPluginRunner
+    usage_meter: IUsageMeter
+    telemetry: ITelemetry
     quota_manager: QuotaManager
     cache_manager: CacheManager
-    serializer: Any
-    hasher: Any
-    cache_key_generator: Any
+    serializer: ISerializer
+    hasher: IHasher
+    cache_key_generator: object
     fallback_handler: FallbackHandler
     hydration_manager: HydrationManager
     memory_store: VectorStoreProtocol
@@ -137,7 +150,7 @@ class ExecutorCoreDeps:
     dynamic_router_step_executor: DynamicRouterStepExecutor
     hitl_step_executor: HitlStepExecutor
     cache_step_executor: CacheStepExecutor
-    import_step_executor: Any
+    import_step_executor: ImportStepExecutor
     agent_orchestrator: AgentOrchestrator
     conditional_orchestrator: ConditionalOrchestrator
     loop_orchestrator: LoopOrchestrator
@@ -145,16 +158,28 @@ class ExecutorCoreDeps:
     import_orchestrator: ImportOrchestrator
     pipeline_orchestrator: PipelineOrchestrator
     validation_orchestrator: ValidationOrchestrator
-    policy_registry_factory: Callable[["ExecutorCore[Any]"], PolicyRegistry] | None = None
-    policy_handlers_factory: Callable[["ExecutorCore[Any]"], PolicyHandlers] | None = None
-    dispatcher_factory: (
-        Callable[[PolicyRegistry, "ExecutorCore[Any]"], ExecutionDispatcher] | None
+    policy_registry_factory: (
+        Callable[["ExecutorCore[TContext_w_Scratch]"], PolicyRegistry] | None
     ) = None
-    dispatch_handler_factory: Callable[["ExecutorCore[Any]"], DispatchHandler] | None = None
-    result_handler_factory: Callable[["ExecutorCore[Any]"], ResultHandler] | None = None
-    telemetry_handler_factory: Callable[["ExecutorCore[Any]"], TelemetryHandler] | None = None
-    step_handler_factory: Callable[["ExecutorCore[Any]"], StepHandler] | None = None
-    agent_handler_factory: Callable[["ExecutorCore[Any]"], AgentHandler] | None = None
+    policy_handlers_factory: (
+        Callable[["ExecutorCore[TContext_w_Scratch]"], PolicyHandlers[TContext_w_Scratch]] | None
+    ) = None
+    dispatcher_factory: (
+        Callable[[PolicyRegistry, "ExecutorCore[TContext_w_Scratch]"], ExecutionDispatcher] | None
+    ) = None
+    dispatch_handler_factory: (
+        Callable[["ExecutorCore[TContext_w_Scratch]"], DispatchHandler] | None
+    ) = None
+    result_handler_factory: Callable[["ExecutorCore[TContext_w_Scratch]"], ResultHandler] | None = (
+        None
+    )
+    telemetry_handler_factory: (
+        Callable[["ExecutorCore[TContext_w_Scratch]"], TelemetryHandler] | None
+    ) = None
+    step_handler_factory: Callable[["ExecutorCore[TContext_w_Scratch]"], StepHandler] | None = None
+    agent_handler_factory: Callable[["ExecutorCore[TContext_w_Scratch]"], AgentHandler] | None = (
+        None
+    )
     governance_engine: GovernanceEngine | None = None
     shadow_evaluator: ShadowEvaluator | None = None
 
@@ -165,17 +190,17 @@ class FlujoRuntimeBuilder:
     def build(
         self,
         *,
-        agent_runner: Optional[Any] = None,
-        processor_pipeline: Optional[Any] = None,
-        validator_runner: Optional[Any] = None,
-        plugin_runner: Optional[Any] = None,
-        usage_meter: Optional[Any] = None,
-        telemetry: Optional[Any] = None,
+        agent_runner: Optional[IAgentRunner] = None,
+        processor_pipeline: Optional[IProcessorPipeline] = None,
+        validator_runner: Optional[IValidatorRunner] = None,
+        plugin_runner: Optional[IPluginRunner] = None,
+        usage_meter: Optional[IUsageMeter] = None,
+        telemetry: Optional[ITelemetry] = None,
         quota_manager: Optional[QuotaManager] = None,
-        cache_backend: Any = None,
-        cache_key_generator: Any = None,
-        serializer: Any = None,
-        hasher: Any = None,
+        cache_backend: object | None = None,
+        cache_key_generator: object | None = None,
+        serializer: Optional[ISerializer] = None,
+        hasher: Optional[IHasher] = None,
         enable_cache: bool = True,
         cache_size: int = 1024,
         cache_ttl: int = 3600,
@@ -199,7 +224,7 @@ class FlujoRuntimeBuilder:
         dynamic_router_step_executor: Optional[DynamicRouterStepExecutor] = None,
         hitl_step_executor: Optional[HitlStepExecutor] = None,
         cache_step_executor: Optional[CacheStepExecutor] = None,
-        import_step_executor: Optional[Any] = None,
+        import_step_executor: Optional[ImportStepExecutor] = None,
         agent_orchestrator: Optional[AgentOrchestrator] = None,
         conditional_orchestrator: Optional[ConditionalOrchestrator] = None,
         loop_orchestrator: Optional[LoopOrchestrator] = None,
@@ -207,26 +232,43 @@ class FlujoRuntimeBuilder:
         import_orchestrator: Optional[ImportOrchestrator] = None,
         pipeline_orchestrator: Optional[PipelineOrchestrator] = None,
         validation_orchestrator: Optional[ValidationOrchestrator] = None,
-        state_providers: Optional[dict[str, Any]] = None,
+        state_providers: Optional[dict[str, StateProvider[object]]] = None,
         memory_store: Optional[VectorStoreProtocol] = None,
-        policy_registry_factory: Callable[["ExecutorCore[Any]"], PolicyRegistry] | None = None,
-        policy_handlers_factory: Callable[["ExecutorCore[Any]"], PolicyHandlers] | None = None,
-        dispatcher_factory: Callable[[PolicyRegistry, "ExecutorCore[Any]"], ExecutionDispatcher]
+        policy_registry_factory: (
+            Callable[["ExecutorCore[TContext_w_Scratch]"], PolicyRegistry] | None
+        ) = None,
+        policy_handlers_factory: (
+            Callable[["ExecutorCore[TContext_w_Scratch]"], PolicyHandlers[TContext_w_Scratch]]
+            | None
+        ) = None,
+        dispatcher_factory: Callable[
+            [PolicyRegistry, "ExecutorCore[TContext_w_Scratch]"], ExecutionDispatcher
+        ]
         | None = None,
-        dispatch_handler_factory: Callable[["ExecutorCore[Any]"], DispatchHandler] | None = None,
-        result_handler_factory: Callable[["ExecutorCore[Any]"], ResultHandler] | None = None,
-        telemetry_handler_factory: Callable[["ExecutorCore[Any]"], TelemetryHandler] | None = None,
-        step_handler_factory: Callable[["ExecutorCore[Any]"], StepHandler] | None = None,
-        agent_handler_factory: Callable[["ExecutorCore[Any]"], AgentHandler] | None = None,
+        dispatch_handler_factory: (
+            Callable[["ExecutorCore[TContext_w_Scratch]"], DispatchHandler] | None
+        ) = None,
+        result_handler_factory: (
+            Callable[["ExecutorCore[TContext_w_Scratch]"], ResultHandler] | None
+        ) = None,
+        telemetry_handler_factory: (
+            Callable[["ExecutorCore[TContext_w_Scratch]"], TelemetryHandler] | None
+        ) = None,
+        step_handler_factory: (
+            Callable[["ExecutorCore[TContext_w_Scratch]"], StepHandler] | None
+        ) = None,
+        agent_handler_factory: (
+            Callable[["ExecutorCore[TContext_w_Scratch]"], AgentHandler] | None
+        ) = None,
         governance_policies: tuple[GovernancePolicy, ...] | None = None,
         shadow_eval_enabled: bool | None = None,
         shadow_eval_sample_rate: float | None = None,
         shadow_eval_timeout_s: float | None = None,
         shadow_eval_judge_model: str | None = None,
         shadow_eval_sink: str | None = None,
-    ) -> ExecutorCoreDeps:
-        serializer_obj = serializer or OrjsonSerializer()
-        hasher_obj = hasher or Blake3Hasher()
+    ) -> ExecutorCoreDeps[TContext_w_Scratch]:
+        serializer_obj: ISerializer = serializer or OrjsonSerializer()
+        hasher_obj: IHasher = hasher or Blake3Hasher()
         cache_key_gen = cache_key_generator or DefaultCacheKeyGenerator(hasher_obj)
         backend = cache_backend or InMemoryLRUBackend(max_size=cache_size, ttl_s=cache_ttl)
         cache_manager = CacheManager(
@@ -332,9 +374,15 @@ class FlujoRuntimeBuilder:
             else NullMemoryManager()
         )
 
-        plugin_runner_obj = plugin_runner or DefaultPluginRunner()
-        agent_runner_obj = agent_runner or DefaultAgentRunner()
-        validator_runner_obj = validator_runner or DefaultValidatorRunner()
+        plugin_runner_obj: IPluginRunner = plugin_runner or DefaultPluginRunner()
+        agent_runner_obj: IAgentRunner = agent_runner or DefaultAgentRunner()
+        validator_runner_obj: IValidatorRunner = validator_runner or DefaultValidatorRunner()
+
+        processor_pipeline_obj: IProcessorPipeline = (
+            processor_pipeline or DefaultProcessorPipeline()
+        )
+        usage_meter_obj: IUsageMeter = usage_meter or ThreadSafeMeter()
+        telemetry_obj: ITelemetry = telemetry or DefaultTelemetry()
 
         timeout_runner_obj: TimeoutRunner = timeout_runner or DefaultTimeoutRunner()
         unpacker_obj: AgentResultUnpacker = unpacker or DefaultAgentResultUnpacker()
@@ -435,11 +483,11 @@ class FlujoRuntimeBuilder:
 
         return ExecutorCoreDeps(
             agent_runner=agent_runner_obj,
-            processor_pipeline=processor_pipeline or DefaultProcessorPipeline(),
+            processor_pipeline=processor_pipeline_obj,
             validator_runner=validator_runner_obj,
             plugin_runner=plugin_runner_obj,
-            usage_meter=usage_meter or ThreadSafeMeter(),
-            telemetry=telemetry or DefaultTelemetry(),
+            usage_meter=usage_meter_obj,
+            telemetry=telemetry_obj,
             quota_manager=quota_manager or QuotaManager(),
             cache_manager=cache_manager,
             memory_store=memory_store_obj,
@@ -519,5 +567,5 @@ class FlujoRuntimeBuilder:
             return None
 
 
-def _is_governance_policy(obj: Any) -> TypeGuard[GovernancePolicy]:
+def _is_governance_policy(obj: object) -> TypeGuard[GovernancePolicy]:
     return callable(getattr(obj, "evaluate", None))

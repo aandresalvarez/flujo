@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Generic, TypeGuard
 
 from ...domain.dsl.conditional import ConditionalStep
 from ...domain.dsl.dynamic_router import DynamicParallelRouterStep
@@ -9,27 +9,27 @@ from ...domain.dsl.import_step import ImportStep
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.dsl.step import HumanInTheLoopStep, Step
-from ...domain.models import Failure, StepOutcome, StepResult, Success
+from ...domain.models import BaseModel, Failure, StepOutcome, StepResult, Success
 from ...infra import telemetry as _telemetry
 from ...steps.cache_step import CacheStep
-from .policy_registry import PolicyRegistry, StepPolicy
-from .types import ExecutionFrame
+from .policy_registry import PolicyCallable, PolicyRegistry, StepPolicy
+from .types import ExecutionFrame, TContext_w_Scratch
 from .type_guards import normalize_outcome
 
 if TYPE_CHECKING:
     from .executor_core import ExecutorCore
 
 
-class PolicyHandlers:
+class PolicyHandlers(Generic[TContext_w_Scratch]):
     """Registry-ready policy callables extracted from ExecutorCore."""
 
-    def __init__(self, core: "ExecutorCore[Any]") -> None:
-        self._core: "ExecutorCore[Any]" = core
+    def __init__(self, core: "ExecutorCore[TContext_w_Scratch]") -> None:
+        self._core: "ExecutorCore[TContext_w_Scratch]" = core
 
-    async def cache_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def cache_step(self, frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
         return await self._core.cache_step_executor.execute(self._core, frame)
 
-    async def import_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def import_step(self, frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
         step = frame.step
         return await self._core._import_orchestrator.execute(
             core=self._core,
@@ -42,15 +42,15 @@ class PolicyHandlers:
             frame=frame,
         )
 
-    async def parallel_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def parallel_step(self, frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
         res_any = await self._core.parallel_step_executor.execute(self._core, frame)
         return normalize_outcome(res_any, step_name=getattr(frame.step, "name", "<unnamed>"))
 
-    async def loop_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def loop_step(self, frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
         res_any = await self._core.loop_step_executor.execute(self._core, frame)
         return normalize_outcome(res_any, step_name=getattr(frame.step, "name", "<unnamed>"))
 
-    async def conditional_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def conditional_step(self, frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
         step = frame.step
         # Emit a span around conditional policy execution so tests reliably capture it
         with _telemetry.logfire.span(getattr(step, "name", "<unnamed>")) as _span:
@@ -123,15 +123,17 @@ class PolicyHandlers:
             pass
         return normalize_outcome(res_any, step_name=getattr(frame.step, "name", "<unnamed>"))
 
-    async def dynamic_router_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def dynamic_router_step(
+        self, frame: ExecutionFrame[BaseModel]
+    ) -> StepOutcome[StepResult]:
         res_any = await self._core.dynamic_router_step_executor.execute(self._core, frame)
         return normalize_outcome(res_any, step_name=getattr(frame.step, "name", "<unnamed>"))
 
-    async def hitl_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def hitl_step(self, frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
         res_any = await self._core.hitl_step_executor.execute(self._core, frame)
         return normalize_outcome(res_any, step_name=getattr(frame.step, "name", "<unnamed>"))
 
-    async def default_step(self, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def default_step(self, frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
         step = frame.step
         cache_key = self._core._cache_key(frame) if self._core._enable_cache else None
         fb_depth_norm = int(getattr(frame, "_fallback_depth", 0) or 0)
@@ -156,7 +158,11 @@ class PolicyHandlers:
             )
         else:
             # Route via AgentOrchestrator to run retries/validation/plugins/fallback.
-            res_any = await self._core._agent_orchestrator.execute(
+            orchestrator = getattr(self._core, "_agent_orchestrator", None)
+            execute_fn = getattr(orchestrator, "execute", None)
+            if not callable(execute_fn):
+                raise TypeError("ExecutorCore missing _agent_orchestrator.execute")
+            res_any = await execute_fn(
                 core=self._core,
                 step=step,
                 data=frame.data,
@@ -211,8 +217,13 @@ class PolicyHandlers:
                 else:
                     from .policy_registry import CallableStepPolicy
 
-                    async def _fallback(frame: ExecutionFrame[Any]) -> StepOutcome[Any]:
-                        return await fallback.execute(self._core, frame)
+                    async def _fallback(
+                        frame: ExecutionFrame[BaseModel],
+                    ) -> StepOutcome[StepResult]:
+                        res_obj = await fallback.execute(self._core, frame)
+                        return normalize_outcome(
+                            res_obj, step_name=getattr(frame.step, "name", "<unnamed>")
+                        )
 
                     registry.register_fallback(CallableStepPolicy(Step, _fallback))
         except Exception:
@@ -220,41 +231,43 @@ class PolicyHandlers:
 
     def _adapt_existing_policies(self, registry: PolicyRegistry) -> None:
         try:
-            from typing import Any as _Any
 
-            def _wrap_policy(_p: _Any) -> _Any:
-                if isinstance(_p, StepPolicy):
-                    return _p
-                if callable(_p):
-                    return _p
-                exec_fn = getattr(_p, "execute", None)
+            def _wrap_policy(p: object) -> object:
+                if isinstance(p, StepPolicy):
+                    return p
+                if callable(p):
+                    return p
+                exec_fn = getattr(p, "execute", None)
                 if callable(exec_fn):
 
-                    async def _bound(frame: _Any) -> _Any:
-                        return await _p.execute(self._core, frame)
+                    async def _bound(frame: ExecutionFrame[BaseModel]) -> object:
+                        return await exec_fn(self._core, frame)
 
                     return _bound
-                return _p
+                return p
 
-            _current = dict(getattr(registry, "_registry", {}))
-            for _step_cls, _policy in _current.items():
-                wrapped = _wrap_policy(_policy)
-                if wrapped is not _policy:
-                    registry.register(_step_cls, wrapped)
+            def _is_policy_callable(obj: object) -> TypeGuard[PolicyCallable]:
+                return callable(obj)
+
+            current = dict(getattr(registry, "_registry", {}))
+            for step_cls, policy in current.items():
+                wrapped = _wrap_policy(policy)
+                if wrapped is not policy and (
+                    isinstance(wrapped, StepPolicy) or _is_policy_callable(wrapped)
+                ):
+                    registry.register(step_cls, wrapped)
         except Exception:
             # Defensive: do not fail core init due to extension policy issues
             pass
 
     def _ensure_state_machine_policy(self, registry: PolicyRegistry) -> None:
         try:
-            from typing import Any as _Any
-
             from ...domain.dsl.state_machine import StateMachineStep as _SM
             from .step_policies import StateMachinePolicyExecutor as _SMPolicy
 
             _sm_policy = _SMPolicy()
 
-            async def _sm_bound(frame: ExecutionFrame[_Any]) -> StepOutcome[StepResult]:
+            async def _sm_bound(frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
                 return await _sm_policy.execute(self._core, frame)
 
             if registry.get(_SM) is None:
@@ -266,13 +279,11 @@ class PolicyHandlers:
     def _ensure_granular_policy(self, registry: PolicyRegistry) -> None:
         """Register GranularStep policy for crash-safe, resumable agent execution."""
         try:
-            from typing import Any as _Any
-
             from .policies.granular_policy import GranularAgentStepExecutor as _GPolicy
 
             _g_policy = _GPolicy()
 
-            async def _g_bound(frame: ExecutionFrame[_Any]) -> StepOutcome[StepResult]:
+            async def _g_bound(frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
                 return await _g_policy.execute(self._core, frame)
 
             if registry.get(GranularStep) is None:

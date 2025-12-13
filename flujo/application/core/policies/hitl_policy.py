@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from typing import Type
 
+from flujo.domain.models import BaseModel
+
 from ._shared import (  # noqa: F401
-    Any,
     Callable,
     ConversationHistoryPromptProcessor,
     Dict,
@@ -32,7 +33,9 @@ from ..types import ExecutionFrame
 
 
 class HitlStepExecutor(Protocol):
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
+    async def execute(
+        self, core: object, frame: ExecutionFrame[BaseModel]
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
@@ -40,7 +43,9 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
     def handles_type(self) -> Type[HumanInTheLoopStep]:
         return HumanInTheLoopStep
 
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def execute(
+        self, core: object, frame: ExecutionFrame[BaseModel]
+    ) -> StepOutcome[StepResult]:
         """Handle Human-In-The-Loop step execution."""
         step = frame.step
         data = frame.data
@@ -377,9 +382,10 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
                 if data is not None and hasattr(context, "user_input"):
                     context.user_input = data
 
-                # Record loop resume requirements in typed fields only
-                if hasattr(context, "loop_resume_requires_hitl_output"):
-                    context.loop_resume_requires_hitl_output = True
+                # Do not set `loop_resume_requires_hitl_output` here.
+                # Loop/conditional orchestrators manage this flag when they need the next HITL
+                # to auto-consume a resume payload. For top-level HITL pauses, leaving it
+                # untouched ensures subsequent HITL steps still pause as expected.
 
                 # Append assistant turn to conversation history so loops in conversation:true
                 # Append assistant turn to conversation history so loops in conversation:true

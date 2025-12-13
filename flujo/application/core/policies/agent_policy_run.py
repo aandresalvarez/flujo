@@ -5,7 +5,6 @@ from flujo.type_definitions.common import JSONObject
 import inspect
 
 from ._shared import (  # noqa: F401
-    Any,
     Awaitable,
     Callable,
     Dict,
@@ -35,19 +34,20 @@ from ._shared import (  # noqa: F401
     _load_template_config,
     _normalize_plugin_feedback,
 )
+from ....domain.models import BaseModel as DomainBaseModel
 
 
 async def run_agent_execution(
-    executor: Any,
-    core: Any,
-    step: Any,
-    data: Any,
-    context: Optional[Any],
-    resources: Optional[Any],
-    limits: Optional[UsageLimits],
+    executor: object,
+    core: object,
+    step: object,
+    data: object,
+    context: DomainBaseModel | None,
+    resources: object | None,
+    limits: UsageLimits | None,
     stream: bool,
-    on_chunk: Optional[Callable[[Any], Awaitable[None]]],
-    cache_key: Optional[str],
+    on_chunk: Callable[[object], Awaitable[None]] | None,
+    cache_key: str | None,
     _fallback_depth: int = 0,
 ) -> StepOutcome[StepResult]:
     try:
@@ -90,7 +90,7 @@ async def run_agent_execution(
         step_history=[],
     )
 
-    def _unpack_agent_result(output: Any) -> Any:
+    def _unpack_agent_result(output: object) -> object:
         if isinstance(output, BaseModel):
             return output
         for attr in ("output", "content", "result", "data", "text", "message", "value"):
@@ -98,12 +98,12 @@ async def run_agent_execution(
                 return getattr(output, attr)
         return output
 
-    def _detect_mock_objects(obj: Any) -> None:
+    def _detect_mock_objects(obj: object) -> None:
         if isinstance(obj, (Mock, MagicMock, AsyncMock)):
             raise MockDetectionError(f"Step '{step.name}' returned a Mock object")
 
     overall_start_time = time.monotonic()
-    last_processed_output: Any = None
+    last_processed_output: object | None = None
     last_exception: Optional[Exception] = None
     try:
         telemetry.logfire.info(

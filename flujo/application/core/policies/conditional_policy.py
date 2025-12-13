@@ -1,35 +1,32 @@
 from __future__ import annotations
 
-from typing import Type
+import time
+from typing import Optional, Protocol, Type
 
-from flujo.domain.models import PipelineContext
-from ._shared import (  # noqa: F401
-    Any,
-    Callable,
-    ContextManager,
-    Dict,
+from flujo.application.core.context_manager import ContextManager
+from flujo.domain.dsl.conditional import ConditionalStep
+from flujo.domain.dsl.pipeline import Pipeline
+from flujo.domain.models import (
+    BaseModel,
     Failure,
-    Optional,
     Paused,
-    PausedException,
-    Pipeline,
+    PipelineContext,
     PipelineResult,
-    Protocol,
     StepOutcome,
     StepResult,
     Success,
-    UsageLimits,
-    telemetry,
-    time,
-    to_outcome,
 )
+from flujo.domain.outcomes import to_outcome
+from flujo.exceptions import PausedException
+from flujo.infra import telemetry
 from ..policy_registry import StepPolicy
 from ..types import ExecutionFrame
-from flujo.domain.dsl.conditional import ConditionalStep
 
 
 class ConditionalStepExecutor(Protocol):
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
+    async def execute(
+        self, core: object, frame: ExecutionFrame[BaseModel]
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]]):
@@ -39,8 +36,8 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
 
     async def execute(
         self,
-        core: Any,
-        frame: ExecutionFrame[Any],
+        core: object,
+        frame: ExecutionFrame[BaseModel],
     ) -> StepOutcome[StepResult]:
         """Handle ConditionalStep execution with proper context isolation and merging."""
         conditional_step = frame.step
@@ -62,11 +59,12 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
 
         # Defensive name helper to avoid attr errors on lightweight cores
         def _safe_name(obj: object) -> str:
-            try:
-                if hasattr(core, "_safe_step_name"):
-                    return str(core._safe_step_name(obj))
-            except Exception:
-                pass
+            safe_fn = getattr(core, "_safe_step_name", None)
+            if callable(safe_fn):
+                try:
+                    return str(safe_fn(obj))
+                except Exception:
+                    pass
             return str(getattr(obj, "name", "<unnamed>"))
 
         # Initialize result
@@ -236,15 +234,19 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
                                     branch_data = getattr(context, "user_input", branch_data)
                                 if resume_requires_hitl:
                                     # Preserve paused status and input so the HITL policy can auto-consume it.
-                                    if hasattr(context, "status"):
-                                        context.status = "paused"
-                                    if (
-                                        hasattr(context, "user_input")
-                                        and getattr(context, "user_input", None) is None
-                                    ):
-                                        context.user_input = branch_data
-                                    if hasattr(context, "hitl_data") and branch_data is not None:
-                                        context.hitl_data = {"human_response": branch_data}
+                                    if context is not None:
+                                        if hasattr(context, "status"):
+                                            context.status = "paused"
+                                        if (
+                                            hasattr(context, "user_input")
+                                            and getattr(context, "user_input", None) is None
+                                        ):
+                                            context.user_input = branch_data
+                                        if (
+                                            hasattr(context, "hitl_data")
+                                            and branch_data is not None
+                                        ):
+                                            context.hitl_data = {"human_response": branch_data}
                                 else:
                                     # Consume the user_input so subsequent HITL steps in later branches pause again.
                                     if context is not None:
@@ -254,7 +256,7 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
                                             context.hitl_data = {}
                                     try:
                                         # Use typed field for status
-                                        if hasattr(context, "status"):
+                                        if context is not None and hasattr(context, "status"):
                                             context.status = "running"
                                     except Exception:
                                         pass
@@ -276,10 +278,11 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
                                 )
                                 if remaining_hitl_count > 1:
                                     # Use typed field for status
-                                    if hasattr(context, "status"):
+                                    if context is not None and hasattr(context, "status"):
                                         context.status = "paused"
                                     if (
-                                        hasattr(context, "pause_message")
+                                        context is not None
+                                        and hasattr(context, "pause_message")
                                         and getattr(context, "pause_message", None) is None
                                     ):
                                         context.pause_message = getattr(
@@ -295,6 +298,9 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
 
                 # Execute selected branch
                 if branch_to_execute:
+                    execute_fn = getattr(core, "execute", None)
+                    if not callable(execute_fn):
+                        raise TypeError("ExecutorCore missing execute()")
                     if conditional_step.branch_input_mapper:
                         branch_data = conditional_step.branch_input_mapper(branch_data, context)
                     # Use ContextManager for proper deep isolation
@@ -318,7 +324,7 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
                             getattr(pipeline_step, "name", str(pipeline_step))
                         ):
                             try:
-                                res_any = await core.execute(
+                                res_any = await execute_fn(
                                     pipeline_step,
                                     branch_data,
                                     context=branch_context,
@@ -345,7 +351,9 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
                                                 merged_ctx = ContextManager.merge(
                                                     context, branch_context
                                                 )
-                                                if merged_ctx is not None:
+                                                if merged_ctx is not None and isinstance(
+                                                    merged_ctx, BaseModel
+                                                ):
                                                     context = merged_ctx
                                             except Exception:
                                                 pass
@@ -354,7 +362,11 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
                                             merged_ctx = ContextManager.merge(
                                                 context, branch_context
                                             )
-                                            if merged_ctx is not None and is_hitl:
+                                            if (
+                                                merged_ctx is not None
+                                                and is_hitl
+                                                and isinstance(merged_ctx, BaseModel)
+                                            ):
                                                 context = merged_ctx
                                         except Exception:
                                             pass
@@ -389,7 +401,9 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
                                                 merged_ctx = ContextManager.merge(
                                                     context, branch_context
                                                 )
-                                                if merged_ctx is not None:
+                                                if merged_ctx is not None and isinstance(
+                                                    merged_ctx, BaseModel
+                                                ):
                                                     context = merged_ctx
                                             except Exception:
                                                 pass
@@ -398,7 +412,9 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
                                             merged_ctx = ContextManager.merge(
                                                 context, branch_context
                                             )
-                                            if merged_ctx is not None:
+                                            if merged_ctx is not None and isinstance(
+                                                merged_ctx, BaseModel
+                                            ):
                                                 context = merged_ctx
                                         except Exception:
                                             pass
@@ -542,9 +558,7 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
                     # Invoke context setter on success when provided
                     if context_setter is not None:
                         try:
-                            from flujo.domain.models import PipelineResult
-
-                            pipeline_result: PipelineResult[PipelineContext] = PipelineResult(
+                            pipeline_result: PipelineResult[BaseModel] = PipelineResult(
                                 step_history=step_history,
                                 total_cost_usd=total_cost,
                                 total_tokens=total_tokens,

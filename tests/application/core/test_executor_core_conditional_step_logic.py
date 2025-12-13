@@ -291,7 +291,7 @@ class TestExecutorCoreConditionalStepLogic:
 
     async def test_context_setter_called_on_success(self, executor_core, mock_conditional_step):
         """Test that context setter is called on successful branch execution."""
-        from pydantic import BaseModel
+        from flujo.domain.models import BaseModel
 
         class TestContext(BaseModel):
             pass
@@ -380,7 +380,7 @@ class TestExecutorCoreConditionalStepLogic:
 
     async def test_error_handling_with_context(self, executor_core, mock_conditional_step):
         """Test error handling when context is provided."""
-        from pydantic import BaseModel
+        from flujo.domain.models import BaseModel
 
         class TestContext(BaseModel):
             test: str = "value"

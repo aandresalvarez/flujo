@@ -1,5 +1,15 @@
 from __future__ import annotations
-from typing import Any, ClassVar, Generic, Iterator, Optional, Sequence, TypeVar, TypeAlias
+from typing import (
+    Any,
+    ClassVar,
+    Generic,
+    Iterator,
+    Optional,
+    Sequence,
+    TypeVar,
+    TypeAlias,
+    TYPE_CHECKING,
+)
 from pydantic import ConfigDict, Field, PrivateAttr, field_validator
 
 from ..pipeline_validation import ValidationFinding, ValidationReport
@@ -14,15 +24,18 @@ from .pipeline_validation_helpers import (
     apply_suppressions_from_meta,
     run_state_machine_lints,
     run_hitl_nesting_validation,
-    run_step_validations,
 )
+from .pipeline_step_validations import run_step_validations
 from . import pipeline_io
 
 PipeInT = TypeVar("PipeInT")
 PipeOutT = TypeVar("PipeOutT")
 NewPipeOutT = TypeVar("NewPipeOutT")
 
-AnyStep: TypeAlias = Step[Any, Any]
+if TYPE_CHECKING:
+    AnyStep: TypeAlias = Step[Any, Any]
+else:
+    AnyStep = Step  # type: ignore[misc]
 
 __all__ = ["Pipeline"]
 
@@ -249,16 +262,16 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_yaml(cls, yaml_source: str, *, is_path: bool = True) -> "Pipeline[Any, Any]":
+    def from_yaml(cls, yaml_source: str, *, is_path: bool = True) -> "Pipeline[object, object]":
         """Load a Pipeline from YAML. When is_path=True, yaml_source is treated as a file path."""
         return pipeline_io.load_from_yaml(yaml_source, is_path=is_path)
 
     @classmethod
-    def from_yaml_text(cls, yaml_text: str) -> "Pipeline[Any, Any]":
+    def from_yaml_text(cls, yaml_text: str) -> "Pipeline[object, object]":
         return pipeline_io.load_from_yaml_text(yaml_text)
 
     @classmethod
-    def from_yaml_file(cls, path: str) -> "Pipeline[Any, Any]":
+    def from_yaml_file(cls, path: str) -> "Pipeline[object, object]":
         return pipeline_io.load_from_yaml_file(path)
 
     def to_yaml(self) -> str:

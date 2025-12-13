@@ -15,7 +15,6 @@ from typing import (
     Tuple,
     TypeVar,
     ValuesView,
-    cast,
 )
 from flujo.type_definitions.common import JSONObject
 from threading import RLock
@@ -25,7 +24,7 @@ import uuid
 from enum import Enum
 
 from .types import ContextT
-from .memory import ScoredMemory
+from .memory import ScoredMemory, VectorStoreProtocol
 from .sandbox import SandboxProtocol
 from .base_model import BaseModel
 
@@ -105,7 +104,7 @@ class Paused(StepOutcome[T]):
     """Human-in-the-loop pause. Contains message and optional token for resumption."""
 
     message: str
-    state_token: Any | None = None
+    state_token: JSONObject | None = None
 
 
 class Aborted(StepOutcome[T]):
@@ -285,7 +284,7 @@ class RefinementCheck(BaseModel):
     """Standardized output from a critic pipeline in a refinement loop."""
 
     is_complete: bool
-    feedback: Optional[Any] = None
+    feedback: str | JSONObject | None = None
 
 
 class UsageLimits(BaseModel):
@@ -649,7 +648,7 @@ class PipelineContext(BaseModel):
     )
     # Utility counter used by test hooks; kept in base context for simplicity
     call_count: int = 0
-    memory_store: Any | None = Field(default=None, exclude=True)
+    memory_store: "VectorStoreProtocol | None" = Field(default=None, exclude=True)
     _sandbox: SandboxProtocol | None = PrivateAttr(default=None)
 
     # -------------------------------------------------------------------------
@@ -777,11 +776,11 @@ class PipelineContext(BaseModel):
         If query_vector is not provided, an embedding model will be used when available.
         Returns an empty list when no memory store is configured.
         """
-        store = getattr(self, "memory_store", None)
+        store = self.memory_store
         if store is None:
             return []
         try:
-            from .memory import VectorQuery, ScoredMemory
+            from .memory import VectorQuery
             from flujo.embeddings import get_embedding_client
             from flujo.infra.settings import get_settings
         except Exception:
@@ -805,7 +804,7 @@ class PipelineContext(BaseModel):
                 return []
         try:
             results = await store.query(VectorQuery(vector=vector or [], limit=limit))
-            return cast(List[ScoredMemory], results)
+            return results
         except Exception:
             return []
 

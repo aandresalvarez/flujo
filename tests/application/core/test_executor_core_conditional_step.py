@@ -121,7 +121,7 @@ class TestExecutorCoreConditionalStep:
         self, executor_core, mock_conditional_step, monkeypatch
     ):
         """Test that all parameters are correctly passed to step execution."""
-        from pydantic import BaseModel
+        from flujo.domain.models import BaseModel
 
         class TestContext(BaseModel):
             key: str = "value"
@@ -200,7 +200,7 @@ class TestExecutorCoreConditionalStep:
         self, executor_core, mock_conditional_step, monkeypatch
     ):
         """Test ConditionalStep with limits and context setter."""
-        from pydantic import BaseModel
+        from flujo.domain.models import BaseModel
 
         class TestContext(BaseModel):
             test: str = "value"
