@@ -456,7 +456,9 @@ class SQLiteBackendBase(StateBackend):
                 # Close pooled async connections if present
                 for conn in list(self._connection_pool_map.values()):
                     try:
-                        await conn.close()
+                        await asyncio.wait_for(conn.close(), timeout=2.0)
+                    except TimeoutError as exc:
+                        logger.debug("Timed out closing pooled connection during shutdown: %s", exc)
                     except Exception as exc:  # noqa: BLE001 - best-effort cleanup
                         logger.debug(
                             "Non-fatal error closing pooled connection during shutdown: %s", exc
