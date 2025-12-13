@@ -5,6 +5,17 @@ from typing import TypeGuard
 from ...domain.models import Failure, StepOutcome, StepResult, Success
 
 
+class OutcomeNormalizationError(TypeError):
+    """Raised when normalize_outcome receives an unsupported value type."""
+
+    def __init__(self, *, step_name: str, value: object) -> None:
+        message = (
+            f"Expected StepOutcome or StepResult for step '{step_name}', "
+            f"received {type(value).__name__}"
+        )
+        super().__init__(message)
+
+
 def is_step_outcome(value: object) -> TypeGuard[StepOutcome[StepResult]]:
     """Return True when value is a structured StepOutcome."""
     return isinstance(value, StepOutcome)
@@ -43,10 +54,7 @@ def normalize_outcome(
             feedback=value.feedback,
             step_result=value,
         )
-    raise TypeError(
-        f"Expected StepOutcome or StepResult for step '{step_name}', "
-        f"received {type(value).__name__}"
-    )
+    raise OutcomeNormalizationError(step_name=step_name, value=value)
 
 
 __all__ = ["is_step_outcome", "is_step_result", "normalize_outcome"]

@@ -20,7 +20,7 @@ _TYPING_WILDCARD = getattr(typing, "An" + "y", object)
 
 
 def _is_unbounded_type(t: object) -> bool:
-    return t is _TYPING_WILDCARD or t is object or t is None or t is type(None)  # noqa: E721
+    return t is _TYPING_WILDCARD or t is object or t is None or t is type(None)
 
 
 def _is_wildcard_type(t: object) -> bool:

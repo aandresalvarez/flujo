@@ -24,7 +24,7 @@ async def test_dynamic_router_paused_returns_paused():
     router = DynamicParallelRouterStep(
         name="router",
         router_agent=_PausedRouterAgent(),
-        branches={},
+        branches={"noop": Pipeline.from_step(Step(name="noop", agent=object()))},
     )
 
     frame = make_execution_frame(

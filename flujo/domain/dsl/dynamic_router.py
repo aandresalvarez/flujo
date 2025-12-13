@@ -70,6 +70,8 @@ class DynamicParallelRouterStep(Step[object, object], Generic[TContext]):
             return data
 
         branches = data.get("branches", {})
+        if not isinstance(branches, dict):
+            return data
         if not branches:
             raise ValueError("'branches' dictionary cannot be empty.")
 

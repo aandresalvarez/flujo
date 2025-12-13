@@ -7,8 +7,8 @@ type safety in Flujo's test suite.
 # Import fixtures and mocks for easy access
 # These will be implemented incrementally as we migrate tests
 
-from .fakes import FakeAgent, FakeUsageMeter, FakeCacheBackend  # noqa: F401
-from .fixtures import (  # noqa: F401
+from .fakes import FakeAgent, FakeUsageMeter, FakeCacheBackend
+from .fixtures import (
     TEST_STEP_RESULT_FAILURE,
     TEST_STEP_RESULT_SUCCESS,
     create_test_pipeline,
@@ -16,7 +16,7 @@ from .fixtures import (  # noqa: F401
     create_test_step_result,
     create_test_usage_limits,
 )
-from .mocks import create_mock_executor_core  # noqa: F401
+from .mocks import create_mock_executor_core
 
 __all__ = [
     "FakeAgent",

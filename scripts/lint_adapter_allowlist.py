@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """AST-based lint to ensure adapters are explicitly allowlisted.
 
 This script uses Python's AST module to detect adapter class usages (instantiations,
@@ -152,7 +151,7 @@ class AdapterUsageVisitor(ast.NodeVisitor):
         return None
 
 
-def _load_allowlist() -> Dict[str, str]:
+def _load_allowlist() -> dict[str, str]:
     """Load the adapter allowlist from JSON."""
     if not ALLOWLIST_PATH.exists():
         sys.stderr.write(
@@ -161,10 +160,20 @@ def _load_allowlist() -> Dict[str, str]:
         sys.exit(1)
     try:
         loaded = json.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
-    except Exception as exc:
-        sys.stderr.write(f"Unable to parse adapter allowlist: {exc}\n")
+    except (OSError, json.JSONDecodeError) as exc:
+        sys.stderr.write(f"Unable to read/parse adapter allowlist: {exc}\n")
         sys.exit(1)
-    return loaded.get("allowed", {}) if isinstance(loaded, dict) else {}
+    if not isinstance(loaded, dict):
+        sys.stderr.write("Adapter allowlist must be a JSON object at the top level.\n")
+        sys.exit(1)
+    allowed = loaded.get("allowed")
+    if not isinstance(allowed, dict):
+        sys.stderr.write("Adapter allowlist must include an 'allowed' JSON object.\n")
+        sys.exit(1)
+    if not all(isinstance(k, str) and isinstance(v, str) for k, v in allowed.items()):
+        sys.stderr.write("Adapter allowlist 'allowed' values must be string-to-string mapping.\n")
+        sys.exit(1)
+    return allowed
 
 
 def _find_adapter_usages_ast(verbose: bool = False) -> List[AdapterUsage]:
@@ -184,7 +193,7 @@ def _find_adapter_usages_ast(verbose: bool = False) -> List[AdapterUsage]:
         except SyntaxError as e:
             if verbose:
                 print(f"  Skipping {file_path.relative_to(ROOT)}: {e}")
-        except Exception as e:
+        except (OSError, UnicodeDecodeError, ValueError) as e:
             if verbose:
                 print(f"  Error parsing {file_path.relative_to(ROOT)}: {e}")
 
@@ -232,7 +241,10 @@ def main() -> None:
     for file_path, adapters in file_adapters.items():
         try:
             source = file_path.read_text(encoding="utf-8")
-        except Exception:
+        except (OSError, UnicodeDecodeError) as exc:
+            violations.append(
+                f"Unable to read {file_path.relative_to(ROOT)} to verify allowlist token: {exc}"
+            )
             continue
 
         for adapter in adapters:

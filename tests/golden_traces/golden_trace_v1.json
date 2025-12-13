@@ -9,9 +9,49 @@
   "events": [],
   "children": [
     {
+      "name": "hitl",
+      "attributes": [
+        "flujo.cache.hit",
+        "flujo.step.policy",
+        "flujo.step.type",
+        "step_input"
+      ],
+      "events": [],
+      "children": []
+    },
+    {
+      "name": "loop",
+      "attributes": [
+        "flujo.budget.actual_cost_usd",
+        "flujo.budget.actual_tokens",
+        "flujo.cache.hit",
+        "flujo.step.policy",
+        "flujo.step.type",
+        "latency_s",
+        "step_input",
+        "success"
+      ],
+      "events": [],
+      "children": []
+    },
+    {
       "name": "par",
       "attributes": [
-        "feedback",
+        "flujo.budget.actual_cost_usd",
+        "flujo.budget.actual_tokens",
+        "flujo.cache.hit",
+        "flujo.step.policy",
+        "flujo.step.type",
+        "latency_s",
+        "step_input",
+        "success"
+      ],
+      "events": [],
+      "children": []
+    },
+    {
+      "name": "primary",
+      "attributes": [
         "flujo.budget.actual_cost_usd",
         "flujo.budget.actual_tokens",
         "flujo.cache.hit",

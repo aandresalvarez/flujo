@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Codemod to rewrite scratchpad accesses to typed context fields.
 
 This is a conservative search/replace helper meant for Phase 1 migration.
@@ -21,7 +20,7 @@ from typing import Iterable
 
 SCRATCHPAD_INDEX = re.compile(r"(?P<prefix>\b\w+)\.scratchpad\[\s*['\"](?P<key>[\w_]+)['\"]\s*\]")
 SCRATCHPAD_GET = re.compile(
-    r"(?P<prefix>\b\w+)\.scratchpad\.get\(\s*['\"](?P<key>[\w_]+)['\"]\s*(?:,\s*(?P<default>[^)]*))?\)"
+    r"(?P<prefix>\b\w+)\.scratchpad\.get\(\s*['\"](?P<key>[\w_]+)['\"]\s*(?:,\s*(?P<default>.*?))?\)\s*(?=[,;\n]|$)"
 )
 
 

@@ -29,8 +29,18 @@ Purpose: deliver compile-time confidence without breaking core architectural rul
 - Ownership: core maintainers approve additions; PRs adding adapters must include boundary tests and justification.
   
 ### Performance Budget & Benchmarks
-- Define hot-path budget for executor + policy dispatch; perf canary in CI fast tier with fail-fast threshold. Full benchmarks run on schedule.
-- Any perf regression requires root-cause fix; thresholds are not raised to mask regressions.
+- Perf budgets are explicitly measured and enforced in CI. Targets below are the initial baselines and should be tightened only when backed by data.
+
+**CI perf canary (runs on every PR, fail-fast):**
+- `Pipeline` creation (10 steps) average ≤ **50ms** (`tests/robustness/test_performance_regression.py`)
+- `ContextManager.isolate()` average ≤ **50ms** (`tests/robustness/test_performance_regression.py`)
+- Serialization (`StepResult.model_dump(mode="json")`) average ≤ **50ms** (`tests/robustness/test_performance_regression.py`)
+- Context hashing (`StateSerializer.compute_context_hash`) 5 runs total ≤ **75ms** (`tests/robustness/test_performance_regression.py`)
+- CLI stability: `flujo lens list` coefficient-of-variation ≤ **50%** across 3 post-warmup runs (`tests/unit/test_persistence_performance.py`)
+
+**Regression thresholds:**
+- Relative regression threshold: **+50%** over baseline triggers investigation (baseline manager; no threshold raising to “green” CI).
+- If a regression is detected, fix root cause; do not mask by relaxing thresholds.
 
 ### Observability & Instrumentation
 - Metrics: counts of `cast` in core, `Any` occurrences, adapter invocations, mock usage in tests, scratchpad writes.
