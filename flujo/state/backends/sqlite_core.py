@@ -440,8 +440,10 @@ class SQLiteBackendBase(StateBackend):
         """Return a new aiosqlite connection with daemonized worker thread."""
         conn = aiosqlite.connect(self.db_path)
         try:
-            conn.daemon = True
-            conn.name = f"flujo-sqlite-{id(self)}"
+            # aiosqlite.Connection is awaitable and may not expose Thread attrs in stubs;
+            # use setattr to avoid mypy attr-defined errors while keeping best-effort behavior.
+            setattr(conn, "daemon", True)
+            setattr(conn, "name", f"flujo-sqlite-{id(self)}")
         except AttributeError:
             pass
         return await conn
