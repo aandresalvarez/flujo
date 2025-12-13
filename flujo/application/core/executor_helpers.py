@@ -135,19 +135,13 @@ def normalize_frame_context(frame: object) -> None:
 def enforce_typed_context(context: object | None) -> BaseModel | None:
     """Enforce that context is a Pydantic BaseModel when strict mode is enabled.
 
-    For backward compatibility, legacy dict contexts are coerced into a
-    ``PipelineContext``. This keeps older `ExecutorCore.execute(..., context={...})`
-    call sites working while still rejecting removed/unsafe legacy fields (e.g.
-    `scratchpad`) via model validation.
+    Strict mode rejects legacy dict contexts instead of attempting coercion, to
+    avoid silent shape drift and to keep context contracts explicit.
     """
     if context is None:
         return None
     if isinstance(context, BaseModel):
         return context
-    if isinstance(context, dict):
-        from ...domain.models import PipelineContext
-
-        return PipelineContext.model_validate(context)
 
     # Strict-only posture: no opt-out for non-Pydantic contexts.
     raise TypeError("Context must be a Pydantic BaseModel (strict mode enforced).")
@@ -583,7 +577,16 @@ async def execute_entrypoint(
             except Exception:
                 fb_depth_norm = 0
 
-        context = enforce_typed_context(kwargs.get("context"))
+        context_raw = kwargs.get("context")
+        context: BaseModel | None
+        if isinstance(context_raw, dict):
+            # Backward compatibility for legacy ExecutorCore.execute(..., context={...}).
+            # `PipelineContext` rejects removed/unsafe legacy fields (e.g. scratchpad).
+            from ...domain.models import PipelineContext
+
+            context = PipelineContext.model_validate(context_raw)
+        else:
+            context = enforce_typed_context(context_raw)
 
         resources = kwargs.get("resources")
 
