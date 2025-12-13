@@ -7,7 +7,7 @@ try:
 except ImportError:
     from typing_extensions import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ..models import BaseModel
 from .step import Step, MergeStrategy, BranchFailureStrategy
@@ -61,34 +61,14 @@ class ParallelStep(Step[object, object], Generic[TContext]):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    @property
-    def is_complex(self) -> bool:
-        # ✅ Override to mark as complex.
-        return True
-
+    @model_validator(mode="before")
     @classmethod
-    def model_validate(
-        cls: type[Self],
-        obj: object,
-        *,
-        strict: bool | None = None,
-        from_attributes: bool | None = None,
-        context: object | None = None,
-        by_alias: bool | None = None,
-        by_name: bool | None = None,
-    ) -> Self:
+    def _normalize_branches(cls: type[Self], data: object) -> object:
         """Validate and normalize branches before creating the instance."""
-        if not isinstance(obj, dict):
-            return super().model_validate(
-                obj,
-                strict=strict,
-                from_attributes=from_attributes,
-                context=context,
-                by_alias=by_alias,
-                by_name=by_name,
-            )
+        if not isinstance(data, dict):
+            return data
 
-        branches = obj.get("branches", {})
+        branches = data.get("branches", {})
         if not branches:
             raise ValueError("'branches' dictionary cannot be empty.")
 
@@ -99,15 +79,12 @@ class ParallelStep(Step[object, object], Generic[TContext]):
             else:
                 normalized[key] = branch
 
-        normalized_obj = dict(obj, branches=normalized)
-        return super().model_validate(
-            normalized_obj,
-            strict=strict,
-            from_attributes=from_attributes,
-            context=context,
-            by_alias=by_alias,
-            by_name=by_name,
-        )
+        return dict(data, branches=normalized)
+
+    @property
+    def is_complex(self) -> bool:
+        # ✅ Override to mark as complex.
+        return True
 
     def __repr__(self) -> str:
         return f"ParallelStep(name={self.name!r}, branches={list(self.branches.keys())})"

@@ -131,6 +131,11 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
                     working["exit_condition_callable"] = _legacy_exit
         except Exception:
             pass
+        loop_body = working.get("loop_body_pipeline")
+        if loop_body is not None and not isinstance(loop_body, Pipeline):
+            raise ValueError(
+                f"loop_body_pipeline must be a Pipeline instance, got {type(loop_body)}"
+            )
         return working
 
     def get_max_loops(self) -> int:
@@ -169,33 +174,6 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
     def is_complex(self) -> bool:
         # ✅ Override to mark as complex.
         return True
-
-    # Runtime validation of pipeline type
-    @classmethod
-    def model_validate(
-        cls: type[Self],
-        obj: object,
-        *,
-        strict: bool | None = None,
-        from_attributes: bool | None = None,
-        context: object | None = None,
-        by_alias: bool | None = None,
-        by_name: bool | None = None,
-    ) -> Self:
-        if isinstance(obj, dict):
-            loop_body = obj.get("loop_body_pipeline")
-            if loop_body is not None and not isinstance(loop_body, Pipeline):
-                raise ValueError(
-                    f"loop_body_pipeline must be a Pipeline instance, got {type(loop_body)}"
-                )
-        return super().model_validate(
-            obj,
-            strict=strict,
-            from_attributes=from_attributes,
-            context=context,
-            by_alias=by_alias,
-            by_name=by_name,
-        )
 
     def __repr__(self) -> str:
         return f"LoopStep(name={self.name!r}, loop_body_pipeline={self.loop_body_pipeline!r})"
