@@ -110,13 +110,16 @@ async def test_task_client_registry_resume(sqlite_backend):
         pipeline_version="1.0.0",
     )
     paused = None
-    async for result in runner.run_async(
-        "goal",
-        run_id="registry-resume-test",
-        initial_context_data={"pipeline_name": "test-pipeline", "pipeline_version": "1.0.0"},
-    ):
-        paused = result
-        break
+    try:
+        async for result in runner.run_async(
+            "goal",
+            run_id="registry-resume-test",
+            initial_context_data={"pipeline_name": "test-pipeline", "pipeline_version": "1.0.0"},
+        ):
+            paused = result
+            break
+    finally:
+        await runner.aclose()
 
     assert paused is not None
 
@@ -142,8 +145,11 @@ async def test_task_client_registry_resume_missing_pipeline(sqlite_backend):
     pipeline = Pipeline.from_step(Step.human_in_the_loop("Approval", message_for_user="Approve?"))
 
     runner = Flujo(pipeline=pipeline, state_backend=sqlite_backend, delete_on_completion=False)
-    async for result in runner.run_async("goal", run_id="missing-pipeline-test"):
-        break
+    try:
+        async for _ in runner.run_async("goal", run_id="missing-pipeline-test"):
+            break
+    finally:
+        await runner.aclose()
 
     # Try to resume with empty registry
     registry = PipelineRegistry()
@@ -169,12 +175,15 @@ async def test_task_client_registry_resume_no_pipeline_or_registry(sqlite_backen
         state_backend=sqlite_backend,
         delete_on_completion=False,
     )
-    async for result in runner.run_async(
-        "goal",
-        run_id="no-pipeline-test",
-        initial_context_data={"pipeline_name": "test-pipeline", "pipeline_version": "1.0.0"},
-    ):
-        break
+    try:
+        async for _ in runner.run_async(
+            "goal",
+            run_id="no-pipeline-test",
+            initial_context_data={"pipeline_name": "test-pipeline", "pipeline_version": "1.0.0"},
+        ):
+            break
+    finally:
+        await runner.aclose()
 
     client = TaskClient(backend=sqlite_backend)
 
@@ -207,12 +216,15 @@ async def test_task_client_registry_resume_fallback_to_latest(sqlite_backend):
         pipeline_name="test-pipeline",
         pipeline_version="1.0.0",  # Run with version 1.0.0 (not in registry)
     )
-    async for result in runner.run_async(
-        "goal",
-        run_id="fallback-test",
-        initial_context_data={"pipeline_name": "test-pipeline", "pipeline_version": "1.0.0"},
-    ):
-        break
+    try:
+        async for _ in runner.run_async(
+            "goal",
+            run_id="fallback-test",
+            initial_context_data={"pipeline_name": "test-pipeline", "pipeline_version": "1.0.0"},
+        ):
+            break
+    finally:
+        await runner.aclose()
 
     # Resume should fall back to "latest" (which resolves to "2.0.0") when "1.0.0" not found
     client = TaskClient(backend=sqlite_backend)

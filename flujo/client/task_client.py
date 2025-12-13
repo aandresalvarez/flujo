@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import inspect
 from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
@@ -213,7 +214,11 @@ class TaskClient:
             pipeline_name=p_name,
             enable_tracing=True,
         )
-        return await runner.resume_async(paused_result, actual_input_data)
+        try:
+            return await runner.resume_async(paused_result, actual_input_data)
+        finally:
+            with contextlib.suppress(Exception):
+                await runner.aclose()
 
     async def set_system_state(self, key: str, value: JSONObject) -> SystemState:
         """Persist a system-wide marker (e.g., connector watermark)."""
