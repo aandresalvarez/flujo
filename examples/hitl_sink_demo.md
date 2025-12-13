@@ -34,7 +34,7 @@ steps:
   
   - kind: step
     name: use_data
-    input: "Name: {{ context.scratchpad.store_name }}"
+    input: "Name: {{ context.import_artifacts.store_name }}"
 ```
 
 ## ✨ After (New Way - 3 steps)
@@ -44,16 +44,16 @@ steps:
   - kind: hitl
     name: get_user_name
     message: "What's your name?"
-    sink_to: "scratchpad.user_name"  # ✅ Automatic!
+    sink_to: "import_artifacts.user_name"  # ✅ Automatic!
   
   - kind: hitl
     name: get_preferences
     message: "Preferences?"
-    sink_to: "scratchpad.user_preferences"  # ✅ Automatic!
+    sink_to: "import_artifacts.user_preferences"  # ✅ Automatic!
   
   - kind: step
     name: use_data
-    input: "Name: {{ context.scratchpad.user_name }}"
+    input: "Name: {{ context.import_artifacts.user_name }}"
 ```
 
 **Result**: 50% fewer steps, clearer intent! 🚀
@@ -76,10 +76,10 @@ uv run flujo run examples/hitl_sink_demo.yaml
 
 ## 🎓 Key Features
 
-1. **Nested paths**: `sink_to: "scratchpad.settings.user.name"`
+1. **Nested paths**: `sink_to: "import_artifacts.settings.user.name"`
 2. **Structured input**: Works with `input_schema`
 3. **Graceful errors**: Invalid paths warn but don't crash
-4. **Backward compatible**: Optional field, existing pipelines unaffected
+4. **Backward compatible**: Existing pipelines unaffected
 
 ## 📚 See Also
 

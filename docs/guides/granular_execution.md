@@ -170,13 +170,13 @@ agent = make_agent_async(..., output_type=AgentResponse)
 
 ### 3. Monitor Turn Count
 ```python
-# Check progress in scratchpad
-ctx.scratchpad.get("granular_state", {}).get("turn_index", 0)
+# Check progress in granular_state
+(ctx.granular_state or {}).get("turn_index", 0)
 ```
 
 ## State Schema
 
-The granular state is stored in `context.scratchpad["granular_state"]`:
+The granular state is stored in `context.granular_state`:
 
 ```python
 {

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib
-from typing import Any, Awaitable, Callable, List, Optional, TYPE_CHECKING
+import inspect
+from collections.abc import AsyncIterator
+from typing import Awaitable, Callable, TYPE_CHECKING, TypeGuard
 
 from ...domain.validation import ValidationResult
 from ...exceptions import (
@@ -39,22 +41,49 @@ else:  # pragma: no cover - mock types only used for isinstance checks in tests
             pass
 
 
+def _is_callable(obj: object) -> TypeGuard[Callable[..., object]]:
+    return callable(obj)
+
+
+def _is_awaitable(obj: object) -> TypeGuard[Awaitable[object]]:
+    return inspect.isawaitable(obj)
+
+
+def _is_async_iterator(obj: object) -> TypeGuard[AsyncIterator[object]]:
+    return hasattr(obj, "__aiter__")
+
+
+def _all_str(items: list[object]) -> TypeGuard[list[str]]:
+    return all(isinstance(x, str) for x in items)
+
+
+def _all_bytes(items: list[object]) -> TypeGuard[list[bytes]]:
+    return all(isinstance(x, bytes) for x in items)
+
+
 # -----------------------------
 # Runners
 # -----------------------------
 class DefaultProcessorPipeline:
     """Default processor pipeline implementation."""
 
-    async def apply_prompt(self, processors: Any, data: Any, *, context: Any) -> Any:
-        import inspect
-
-        processor_list = (
-            processors.prompt_processors if hasattr(processors, "prompt_processors") else processors
-        )
+    async def apply_prompt(self, processors: object, data: object, *, context: object) -> object:
+        processor_source: (
+            list[object] | tuple[object, ...] | AsyncIterator[object] | object | None
+        ) = getattr(processors, "prompt_processors", processors)
+        if processor_source is None:
+            return data
+        processor_list: list[object]
+        if isinstance(processor_source, (list, tuple)):
+            processor_list = list(processor_source)
+        elif _is_async_iterator(processor_source):
+            processor_list = [processor_source]
+        else:
+            processor_list = [processor_source]
         if not processor_list:
             return data
 
-        processed_data = data
+        processed_data: object = data
         for proc in processor_list:
             try:
                 if isinstance(processed_data, str) and processed_data.isdigit():
@@ -87,16 +116,23 @@ class DefaultProcessorPipeline:
 
         return processed_data
 
-    async def apply_output(self, processors: Any, data: Any, *, context: Any) -> Any:
-        import inspect
-
-        processor_list = (
-            processors.output_processors if hasattr(processors, "output_processors") else processors
-        )
+    async def apply_output(self, processors: object, data: object, *, context: object) -> object:
+        processor_source: (
+            list[object] | tuple[object, ...] | AsyncIterator[object] | object | None
+        ) = getattr(processors, "output_processors", processors)
+        if processor_source is None:
+            return data
+        processor_list: list[object]
+        if isinstance(processor_source, (list, tuple)):
+            processor_list = list(processor_source)
+        elif _is_async_iterator(processor_source):
+            processor_list = [processor_source]
+        else:
+            processor_list = [processor_source]
         if not processor_list:
             return data
 
-        processed_data = data
+        processed_data: object = data
         _slots_fallback_used = False
         for proc in processor_list:
             try:
@@ -147,11 +183,11 @@ class DefaultProcessorPipeline:
             except Exception as e:
                 if not _slots_fallback_used:
                     try:
-                        scratch = (
-                            getattr(context, "scratchpad", None) if context is not None else None
+                        hitl_data = (
+                            getattr(context, "hitl_data", None) if context is not None else None
                         )
-                        if isinstance(scratch, dict) and "slots" in scratch:
-                            processed_data = {"slots": scratch.get("slots", {})}
+                        if isinstance(hitl_data, dict) and "slots" in hitl_data:
+                            processed_data = {"slots": hitl_data.get("slots", {})}
                             _slots_fallback_used = True
                             continue
                     except Exception:
@@ -169,21 +205,38 @@ class DefaultValidatorRunner:
     """Default validator runner implementation."""
 
     async def validate(
-        self, validators: List[Any], data: Any, *, context: Any
-    ) -> List[ValidationResult]:
+        self, validators: list[object], data: object, *, context: object
+    ) -> list[ValidationResult]:
         if not validators:
             return []
 
-        validation_results: List[ValidationResult] = []
+        validation_results: list[ValidationResult] = []
         for validator in validators:
             try:
                 # Support both validator objects with .validate and bare callables
-                validate_fn = getattr(validator, "validate", None) or validator
+                validate_fn_obj = getattr(validator, "validate", None) or validator
+                if not _is_callable(validate_fn_obj):
+                    feedback_msg = (
+                        f"Validator {type(validator).__name__} returned invalid result type"
+                    )
+                    validation_results.append(
+                        ValidationResult(
+                            is_valid=False,
+                            feedback=feedback_msg,
+                            validator_name=type(validator).__name__,
+                        )
+                    )
+                    continue
+                validate_fn = validate_fn_obj
                 # Prefer passing context when accepted; fall back to data-only
                 try:
-                    result = await validate_fn(data, context=context)
+                    result_obj = validate_fn(data, context=context)
                 except TypeError:
-                    result = await validate_fn(data)
+                    result_obj = validate_fn(data)
+                if _is_awaitable(result_obj):
+                    result = await result_obj
+                else:
+                    result = result_obj
                 if isinstance(result, ValidationResult):
                     validation_results.append(result)
                 elif hasattr(result, "is_valid"):
@@ -197,7 +250,7 @@ class DefaultValidatorRunner:
 
                     validation_results.append(
                         ValidationResult(
-                            is_valid=result.is_valid,
+                            is_valid=bool(getattr(result, "is_valid")),
                             feedback=feedback,
                             validator_name=validator_name,
                         )
@@ -225,10 +278,9 @@ class DefaultValidatorRunner:
         return validation_results
 
 
-def _should_pass_context_to_plugin(context: Optional[Any], func: Callable[..., Any]) -> bool:
+def _should_pass_context_to_plugin(context: object | None, func: Callable[..., object]) -> bool:
     if context is None:
         return False
-    import inspect
 
     sig = inspect.signature(func)
     return any(
@@ -237,10 +289,9 @@ def _should_pass_context_to_plugin(context: Optional[Any], func: Callable[..., A
     )
 
 
-def _should_pass_resources_to_plugin(resources: Optional[Any], func: Callable[..., Any]) -> bool:
+def _should_pass_resources_to_plugin(resources: object | None, func: Callable[..., object]) -> bool:
     if resources is None:
         return False
-    import inspect
 
     sig = inspect.signature(func)
     return any(
@@ -254,24 +305,32 @@ class DefaultPluginRunner:
 
     async def run_plugins(
         self,
-        plugins: List[tuple[Any, int]],
-        data: Any,
+        plugins: list[tuple[object, int]],
+        data: object,
         *,
-        context: Any,
-        resources: Optional[Any] = None,
-    ) -> Any:
+        context: object,
+        resources: object | None = None,
+    ) -> object:
         from ...domain.plugins import PluginOutcome
 
-        processed_data = data
+        processed_data: object = data
         for plugin, priority in sorted(plugins, key=lambda x: x[1], reverse=True):
             try:
-                plugin_kwargs: dict[str, Any] = {}
-                if _should_pass_context_to_plugin(context, plugin.validate):
+                validate_obj = getattr(plugin, "validate", None)
+                if validate_obj is None or not _is_callable(validate_obj):
+                    plugin_name = getattr(plugin, "name", type(plugin).__name__)
+                    raise ValueError(f"Plugin {plugin_name} has no validate method")
+                plugin_kwargs: dict[str, object] = {}
+                if _should_pass_context_to_plugin(context, validate_obj):
                     plugin_kwargs["context"] = context
-                if _should_pass_resources_to_plugin(resources, plugin.validate):
+                if _should_pass_resources_to_plugin(resources, validate_obj):
                     plugin_kwargs["resources"] = resources
 
-                result = await plugin.validate(processed_data, **plugin_kwargs)
+                result_obj = validate_obj(processed_data, **plugin_kwargs)
+                if _is_awaitable(result_obj):
+                    result = await result_obj
+                else:
+                    result = result_obj
 
                 if isinstance(result, PluginOutcome):
                     if not result.success:
@@ -295,16 +354,15 @@ class DefaultAgentRunner:
 
     async def run(
         self,
-        agent: Any,
-        payload: Any,
+        agent: object,
+        payload: object,
         *,
-        context: Any,
-        resources: Any,
-        options: dict[str, Any],
+        context: object,
+        resources: object,
+        options: dict[str, object],
         stream: bool = False,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-    ) -> Any:
-        import inspect
+        on_chunk: Callable[[object], Awaitable[None]] | None = None,
+    ) -> object:
         from ...application.core.context_manager import _should_pass_context
         from flujo.domain.interfaces import get_skill_resolver
 
@@ -327,8 +385,9 @@ class DefaultAgentRunner:
                     target_agent = getattr(mod, attr) if attr else mod
             elif isinstance(agent, dict):
                 skill_id = agent.get("id") or agent.get("path")
-                params = agent.get("params", {}) if isinstance(agent, dict) else {}
-                if skill_id:
+                params_obj = agent.get("params", {}) if isinstance(agent, dict) else {}
+                params: dict[str, object] = params_obj if isinstance(params_obj, dict) else {}
+                if isinstance(skill_id, str) and skill_id:
                     reg = get_skill_resolver()
                     entry = reg.get(skill_id) if reg is not None else None
                     if entry is not None:
@@ -346,10 +405,10 @@ class DefaultAgentRunner:
         if isinstance(target_agent, dict) and isinstance(target_agent.get("id"), str):
             agent_id = target_agent.get("id")
 
-            def _passthrough_fn(x: Any, **_k: Any) -> Any:
+            def _passthrough_fn(x: object, **_k: object) -> object:
                 return x
 
-            def _stringify_fn(x: Any, **_k: Any) -> str:
+            def _stringify_fn(x: object, **_k: object) -> str:
                 return str(x)
 
             if agent_id == "flujo.builtins.passthrough":
@@ -381,7 +440,12 @@ class DefaultAgentRunner:
             else:
                 raise RuntimeError(f"Agent {type(agent).__name__} has no executable method")
 
-        filtered_kwargs: dict[str, Any] = {}
+        executable_obj = executable_func
+        if executable_obj is None or not _is_callable(executable_obj):
+            raise RuntimeError(f"Agent {type(agent).__name__} has no executable method")
+        executable_func = executable_obj
+
+        filtered_kwargs: dict[str, object] = {}
 
         if isinstance(executable_func, (Mock, MagicMock, AsyncMock)):
             filtered_kwargs.update(options)
@@ -446,7 +510,7 @@ class DefaultAgentRunner:
                 pass
 
         # Helper to call function with or without payload based on builtin unpacking
-        def _call_args() -> tuple[tuple[Any, ...], dict[str, Any]]:
+        def _call_args() -> tuple[tuple[object, ...], dict[str, object]]:
             if _skip_payload:
                 return (), filtered_kwargs
             # Always pass payload as first arg, even if None (agents may expect it)
@@ -457,16 +521,18 @@ class DefaultAgentRunner:
                 # Case 1: async generator function
                 if inspect.isasyncgenfunction(executable_func):
                     args, kwargs = _call_args()
-                    async_generator = executable_func(*args, **kwargs)
+                    async_generator_obj = executable_func(*args, **kwargs)
+                    if not _is_async_iterator(async_generator_obj):
+                        raise TypeError("Expected async iterator from async generator")
                     chunks = []
-                    async for chunk in async_generator:
+                    async for chunk in async_generator_obj:
                         chunks.append(chunk)
                         if on_chunk is not None:
                             await on_chunk(chunk)
                     if chunks:
-                        if all(isinstance(chunk, str) for chunk in chunks):
+                        if _all_str(chunks):
                             return "".join(chunks)
-                        if all(isinstance(chunk, bytes) for chunk in chunks):
+                        if _all_bytes(chunks):
                             return b"".join(chunks)
                         return str(chunks)
                     return "" if on_chunk is None else chunks
@@ -474,45 +540,47 @@ class DefaultAgentRunner:
                 # Case 2: coroutine function that returns an async iterator
                 if inspect.iscoroutinefunction(executable_func):
                     args, kwargs = _call_args()
-                    result = await executable_func(*args, **kwargs)
-                    if hasattr(result, "__aiter__"):
+                    result_obj = await executable_func(*args, **kwargs)
+                    if _is_async_iterator(result_obj):
                         chunks = []
-                        async for chunk in result:
+                        async for chunk in result_obj:
                             chunks.append(chunk)
                             if on_chunk is not None:
                                 await on_chunk(chunk)
                         if chunks:
-                            if all(isinstance(chunk, str) for chunk in chunks):
+                            if _all_str(chunks):
                                 return "".join(chunks)
-                            if all(isinstance(chunk, bytes) for chunk in chunks):
+                            if _all_bytes(chunks):
                                 return b"".join(chunks)
                             return str(chunks)
                         return "" if on_chunk is None else chunks
                     # Not an iterator: treat as single result
                     if on_chunk is not None:
-                        await on_chunk(result)
-                    return result
+                        await on_chunk(result_obj)
+                    return result_obj
 
                 # Case 3: regular callable returning an async iterator/generator
                 args, kwargs = _call_args()
-                result = executable_func(*args, **kwargs)
-                if hasattr(result, "__aiter__"):
+                result_obj = executable_func(*args, **kwargs)
+                if _is_awaitable(result_obj):
+                    result_obj = await result_obj
+                if _is_async_iterator(result_obj):
                     chunks = []
-                    async for chunk in result:
+                    async for chunk in result_obj:
                         chunks.append(chunk)
                         if on_chunk is not None:
                             await on_chunk(chunk)
                     if chunks:
-                        if all(isinstance(chunk, str) for chunk in chunks):
+                        if _all_str(chunks):
                             return "".join(chunks)
-                        if all(isinstance(chunk, bytes) for chunk in chunks):
+                        if _all_bytes(chunks):
                             return b"".join(chunks)
                         return str(chunks)
                     return "" if on_chunk is None else chunks
                 # Fallback: single value passthrough
                 if on_chunk is not None:
-                    await on_chunk(result)
-                return result
+                    await on_chunk(result_obj)
+                return result_obj
 
             # Non-streaming execution
             args, kwargs = _call_args()
@@ -520,12 +588,12 @@ class DefaultAgentRunner:
                 _res = await executable_func(*args, **kwargs)
             else:
                 _res = executable_func(*args, **kwargs)
-                if inspect.iscoroutine(_res):
+                if _is_awaitable(_res):
                     _res = await _res
 
             # Detect mock objects in agent outputs
             # Mock detection: don't swallow exceptions; only guard imports
-            def _is_mock(obj: Any) -> bool:
+            def _is_mock(obj: object) -> bool:
                 try:
                     from unittest.mock import Mock as _M, MagicMock as _MM
 
@@ -561,22 +629,22 @@ class DefaultAgentRunner:
 class DefaultTelemetry:
     """Default telemetry implementation."""
 
-    def trace(self, name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+    def trace(self, name: str) -> Callable[[Callable[..., object]], Callable[..., object]]:
+        def decorator(func: Callable[..., object]) -> Callable[..., object]:
             return func
 
         return decorator
 
-    def info(self, message: str, *args: Any, **kwargs: Any) -> None:
+    def info(self, message: str, *args: object, **kwargs: object) -> None:
         pass
 
-    def warning(self, message: str, *args: Any, **kwargs: Any) -> None:
+    def warning(self, message: str, *args: object, **kwargs: object) -> None:
         pass
 
-    def error(self, message: str, *args: Any, **kwargs: Any) -> None:
+    def error(self, message: str, *args: object, **kwargs: object) -> None:
         pass
 
-    def debug(self, message: str, *args: Any, **kwargs: Any) -> None:
+    def debug(self, message: str, *args: object, **kwargs: object) -> None:
         pass
 
 

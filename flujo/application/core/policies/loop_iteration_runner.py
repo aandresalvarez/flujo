@@ -1,8 +1,9 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
+from typing import Protocol
+
 from ._shared import (
-    Any,
     Awaitable,
     Callable,
     ConversationHistoryPromptProcessor,
@@ -13,7 +14,6 @@ from ._shared import (
     Paused,
     PausedException,
     Pipeline,
-    PipelineContext,
     PipelineResult,
     Step,
     StepOutcome,
@@ -38,17 +38,21 @@ from ._shared import HumanInTheLoopStep  # noqa: F401  # used via isinstance che
 from ..step_result_pool import build_pooled_step_result
 
 
+class _NamedStep(Protocol):
+    name: str
+
+
 async def run_loop_iterations(
     *,
-    core: Any,
-    loop_step: Any,
-    body_pipeline: Pipeline | Any,
-    current_data: Any,
-    current_context: PipelineContext | Any,
-    resources: Any,
+    core: object,
+    loop_step: _NamedStep,
+    body_pipeline: Pipeline | object,
+    current_data: object,
+    current_context: object | None,
+    resources: object,
     limits: UsageLimits | None,
     stream: bool,
-    on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+    on_chunk: Optional[Callable[[object], Awaitable[None]]],
     cache_key: Optional[str],
     conv_enabled: bool,
     history_cfg: HistoryStrategyConfig | None,
@@ -61,16 +65,16 @@ async def run_loop_iterations(
     saved_step_index: int,
     is_resuming: bool,
     resume_requires_hitl_output: bool,
-    resume_payload: Any,
-    saved_last_output: Any,
+    resume_payload: object,
+    saved_last_output: object,
     paused_step_name: str | None,
     iteration_count: int,
     current_step_index: int,
     start_time: float,
-    context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+    context_setter: Optional[Callable[[PipelineResult[object], object | None], None]],
     _fallback_depth: int,
 ) -> StepOutcome[StepResult]:
-    loop_body_steps: list[Any] = []
+    loop_body_steps: list[object] = []
     steps_attr = getattr(body_pipeline, "steps", None) if hasattr(body_pipeline, "steps") else None
     steps_len = 0
     try:
@@ -87,7 +91,7 @@ async def run_loop_iterations(
         telemetry.logfire.info(
             f"LoopStep '{loop_step.name}' using regular execution (single/no-step pipeline)"
         )
-    stashed_exec_lists: list[Any] = []
+    stashed_exec_lists: list[object] = []
     if is_resuming:
         total_steps = len(loop_body_steps)
         if total_steps == 0:
@@ -222,13 +226,6 @@ async def run_loop_iterations(
                         setattr(iteration_context, "_last_loop_iterations", iteration_count)
                     except Exception:
                         pass
-                try:
-                    scratch = getattr(iteration_context, "scratchpad", None)
-                    if isinstance(scratch, dict):
-                        scratch["_loop_iteration_active"] = True
-                        scratch["_loop_iteration_index"] = iteration_count
-                except Exception:
-                    pass
                 prev_loop_flag = getattr(core, "_inside_loop_iteration", False)
                 try:
                     object.__setattr__(core, "_inside_loop_iteration", True)
@@ -237,7 +234,7 @@ async def run_loop_iterations(
                         setattr(core, "_inside_loop_iteration", True)
                     except Exception:
                         pass
-                step_force_prev: dict[Any, Any] = {}
+                step_force_prev: dict[object, object] = {}
                 try:
                     for st in getattr(body_pipeline, "steps", []) or []:
                         try:
@@ -252,18 +249,11 @@ async def run_loop_iterations(
                     pass
                 token = _CACHE_OVERRIDE.set(False)
                 try:
-                    pipeline_result: PipelineResult[Any] = await core._execute_pipeline(
+                    pipeline_result: PipelineResult[object] = await core._execute_pipeline(
                         body_pipeline, current_data, iteration_context, resources, limits, stream
                     )
                 finally:
                     _CACHE_OVERRIDE.reset(token)
-                try:
-                    scratch = getattr(iteration_context, "scratchpad", None)
-                    if isinstance(scratch, dict):
-                        scratch["_loop_iteration_active"] = False
-                        scratch["_loop_iteration_index"] = iteration_count
-                except Exception:
-                    pass
                 try:
                     for st, prev_val in step_force_prev.items():
                         try:
@@ -343,7 +333,7 @@ async def run_loop_iterations(
             telemetry.logfire.info(
                 f"LoopStep '{loop_step.name}': executing loop body step-by-step with {len(loop_body_steps)} steps"
             )
-            pipeline_result = PipelineResult[Any](
+            pipeline_result = PipelineResult[object](
                 step_history=[],
                 total_cost_usd=0.0,
                 total_tokens=0,
@@ -358,19 +348,26 @@ async def run_loop_iterations(
                 current_data = resume_payload
                 resume_requires_hitl_output = False
                 try:
-                    if isinstance(getattr(iteration_context, "scratchpad", None), dict):
-                        iteration_context.scratchpad.pop("loop_resume_requires_hitl_output", None)
-                        iteration_context.scratchpad.pop("paused_step_input", None)
-                        iteration_context.scratchpad.pop("hitl_data", None)
-                        iteration_context.scratchpad["status"] = "running"
+                    if hasattr(iteration_context, "loop_resume_requires_hitl_output"):
+                        iteration_context.loop_resume_requires_hitl_output = False
+                    if hasattr(iteration_context, "paused_step_input"):
+                        iteration_context.paused_step_input = None
+                    if hasattr(iteration_context, "hitl_data"):
+                        iteration_context.hitl_data = {}
+                    if hasattr(iteration_context, "status"):
+                        iteration_context.status = "running"
                 except Exception:
                     pass
                 try:
-                    if isinstance(getattr(current_context, "scratchpad", None), dict):
-                        current_context.scratchpad.pop("loop_resume_requires_hitl_output", None)
-                        current_context.scratchpad.pop("paused_step_input", None)
-                        current_context.scratchpad.pop("hitl_data", None)
-                        current_context.scratchpad["status"] = "running"
+                    if current_context is not None:
+                        if hasattr(current_context, "loop_resume_requires_hitl_output"):
+                            current_context.loop_resume_requires_hitl_output = False
+                        if hasattr(current_context, "paused_step_input"):
+                            current_context.paused_step_input = None
+                        if hasattr(current_context, "hitl_data"):
+                            current_context.hitl_data = {}
+                        if hasattr(current_context, "status"):
+                            current_context.status = "running"
                 except Exception:
                     pass
             while current_step_index < len(current_step_list):
@@ -412,10 +409,8 @@ async def run_loop_iterations(
                         except Exception:
                             pass
                     try:
-                        scratch = getattr(iteration_context, "scratchpad", None)
-                        if isinstance(scratch, dict):
-                            scratch["_loop_iteration_active"] = True
-                            scratch["_loop_iteration_index"] = iteration_count
+                        # scratchpad writes removed (deprecated); use context attrs only.
+                        pass
                     except Exception:
                         pass
                     if getattr(body_step, "is_complex", False):
@@ -463,22 +458,51 @@ async def run_loop_iterations(
                     if not sr.success:
                         if sr.feedback == "hitl_pause" or isinstance(sr.output, Paused):
                             try:
-                                scratchpad = iteration_context.scratchpad
-                                if isinstance(scratchpad, dict):
-                                    scratchpad["status"] = "paused"
-                                    scratchpad["loop_iteration"] = iteration_count
-                                    scratchpad["loop_step_index"] = current_step_index + 1
-                                    scratchpad["loop_last_output"] = current_data
-                                    scratchpad["loop_resume_requires_hitl_output"] = True
-                                    scratchpad["loop_paused_step_name"] = step_name
-                                    scratchpad["paused_step_input"] = sr.output
-                                    scratchpad["hitl_data"] = getattr(
-                                        sr.output, "human_response", None
-                                    )
-                                if current_context is not None and isinstance(
-                                    getattr(current_context, "scratchpad", None), dict
-                                ):
-                                    current_context.scratchpad.update(iteration_context.scratchpad)
+                                if hasattr(iteration_context, "status"):
+                                    iteration_context.status = "paused"
+                                if hasattr(iteration_context, "loop_iteration_index"):
+                                    iteration_context.loop_iteration_index = iteration_count
+                                if hasattr(iteration_context, "loop_step_index"):
+                                    iteration_context.loop_step_index = current_step_index + 1
+                                if hasattr(iteration_context, "loop_last_output"):
+                                    iteration_context.loop_last_output = current_data
+                                if hasattr(iteration_context, "loop_resume_requires_hitl_output"):
+                                    iteration_context.loop_resume_requires_hitl_output = True
+                                if hasattr(iteration_context, "loop_paused_step_name"):
+                                    iteration_context.loop_paused_step_name = step_name
+                                if hasattr(iteration_context, "paused_step_input"):
+                                    iteration_context.paused_step_input = sr.output
+
+                                val = getattr(sr.output, "human_response", None)
+                                if hasattr(iteration_context, "user_input"):
+                                    iteration_context.user_input = val
+                                if hasattr(iteration_context, "hitl_data") and val is not None:
+                                    # Preserve HITL payload for auditing/resume without using scratchpad
+                                    iteration_context.hitl_data = {"human_response": val}
+
+                                if current_context is not None:
+                                    if hasattr(current_context, "status"):
+                                        current_context.status = "paused"
+                                    if hasattr(current_context, "loop_iteration_index"):
+                                        current_context.loop_iteration_index = (
+                                            iteration_context.loop_iteration_index
+                                        )
+                                    if hasattr(current_context, "loop_step_index"):
+                                        current_context.loop_step_index = (
+                                            iteration_context.loop_step_index
+                                        )
+                                    if hasattr(current_context, "loop_last_output"):
+                                        current_context.loop_last_output = current_data
+                                    if hasattr(current_context, "loop_resume_requires_hitl_output"):
+                                        current_context.loop_resume_requires_hitl_output = True
+                                    if hasattr(current_context, "loop_paused_step_name"):
+                                        current_context.loop_paused_step_name = step_name
+                                    if hasattr(current_context, "paused_step_input"):
+                                        current_context.paused_step_input = sr.output
+                                    if hasattr(current_context, "user_input"):
+                                        current_context.user_input = val
+                                    if hasattr(current_context, "hitl_data") and val is not None:
+                                        current_context.hitl_data = {"human_response": val}
                             except Exception:
                                 pass
                             raise PausedException("Loop step paused via HITL")
@@ -524,13 +548,6 @@ async def run_loop_iterations(
                             setattr(iteration_context, "_loop_iteration_index", iteration_count)
                         except Exception:
                             pass
-                    try:
-                        scratch = getattr(iteration_context, "scratchpad", None)
-                        if isinstance(scratch, dict):
-                            scratch["_loop_iteration_active"] = False
-                            scratch["_loop_iteration_index"] = iteration_count
-                    except Exception:
-                        pass
                     current_step_index += 1
                     if current_step_index >= len(current_step_list) and stashed_exec_lists:
                         current_step_list = stashed_exec_lists.pop()
@@ -681,10 +698,13 @@ async def run_loop_iterations(
         # use the fresh loop output instead of a stale resume payload.
         if resume_requires_hitl_output:
             resume_requires_hitl_output = False
-            if current_context is not None and isinstance(
-                getattr(current_context, "scratchpad", None), dict
+            if current_context is not None and hasattr(
+                current_context, "loop_resume_requires_hitl_output"
             ):
-                current_context.scratchpad.pop("loop_resume_requires_hitl_output", None)
+                try:
+                    current_context.loop_resume_requires_hitl_output = False
+                except Exception:
+                    pass
         iteration_results_all.extend(iteration_results)
         cumulative_cost += pipeline_result.total_cost_usd
         cumulative_tokens += pipeline_result.total_tokens
@@ -889,20 +909,25 @@ async def run_loop_iterations(
                 success_flag = False
                 feedback_msg = "reached max_loops"
     completed_iterations = iteration_count if exit_reason == "condition" else iteration_count - 1
-    if current_context is not None and hasattr(current_context, "scratchpad"):
+    if current_context is not None:
         try:
-            scratchpad = current_context.scratchpad
-            if isinstance(scratchpad, dict):
-                scratchpad.pop("loop_iteration", None)
-                scratchpad.pop("loop_step_index", None)
-                scratchpad.pop("loop_last_output", None)
-                scratchpad.pop("loop_resume_requires_hitl_output", None)
-                scratchpad.pop("loop_paused_step_name", None)
-                if scratchpad.get("status") == "paused":
-                    scratchpad["status"] = "completed"
-                telemetry.logfire.info(
-                    f"LoopStep '{loop_step.name}' cleaned up resume state on completion"
-                )
+            # Typed-only cleanup (scratchpad is deprecated; no writes).
+            if hasattr(current_context, "loop_iteration_index"):
+                current_context.loop_iteration_index = None
+            if hasattr(current_context, "loop_step_index"):
+                current_context.loop_step_index = None
+            if hasattr(current_context, "loop_last_output"):
+                current_context.loop_last_output = None
+            if hasattr(current_context, "loop_resume_requires_hitl_output"):
+                current_context.loop_resume_requires_hitl_output = False
+            if hasattr(current_context, "loop_paused_step_name"):
+                current_context.loop_paused_step_name = None
+            if getattr(current_context, "status", None) == "paused":
+                if hasattr(current_context, "status"):
+                    current_context.status = "completed"
+            telemetry.logfire.info(
+                f"LoopStep '{loop_step.name}' cleaned up resume state on completion"
+            )
         except Exception as cleanup_error:
             telemetry.logfire.warning(
                 f"LoopStep '{loop_step.name}' failed to clean up resume state: {cleanup_error}"

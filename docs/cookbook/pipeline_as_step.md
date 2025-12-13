@@ -62,8 +62,8 @@ from flujo.domain.models import PipelineContext
 class Incrementer:
     async def run(self, data: int, *, context: PipelineContext | None = None) -> dict:
         assert context is not None
-        current = context.scratchpad.get("counter", 0)
-        return {"scratchpad": {"counter": current + data}}
+        current = context.import_artifacts.get("counter", 0)
+        return {"import_artifacts": {"counter": current + data}}
 
 # Create a sub-pipeline that updates context
 inner_runner = Flujo(
@@ -81,14 +81,14 @@ async for item in runner.run_async(
     2,
     initial_context_data={
         "initial_prompt": "goal",
-        "scratchpad": {"counter": 1}
+        "import_artifacts": {"counter": 1}
     }
 ):
     result = item
 assert result is not None
 
 # The context is automatically propagated
-assert result.final_pipeline_context.scratchpad["counter"] == 3
+assert result.final_pipeline_context.import_artifacts["counter"] == 3
 ```
 
 ## Context Firewall: `inherit_context=False`
@@ -99,8 +99,8 @@ Sometimes you want to isolate a sub-pipeline's context to prevent unintended sid
 class Incrementer:
     async def run(self, data: int, *, context: PipelineContext | None = None) -> dict:
         assert context is not None
-        current = context.scratchpad.get("counter", 0)
-        return {"scratchpad": {"counter": current + data}}
+        current = context.import_artifacts.get("counter", 0)
+        return {"import_artifacts": {"counter": current + data}}
 
 inner_runner = Flujo(
     Step("inc", Incrementer(), updates_context=True),
@@ -116,14 +116,14 @@ async for item in runner.run_async(
     2,
     initial_context_data={
         "initial_prompt": "goal",
-        "scratchpad": {"counter": 1}
+        "import_artifacts": {"counter": 1}
     }
 ):
     result = item
 assert result is not None
 
 # The context is NOT propagated - counter remains 1
-assert result.final_pipeline_context.scratchpad["counter"] == 1
+assert result.final_pipeline_context.import_artifacts["counter"] == 1
 ```
 
 ## Managing Shared Resources

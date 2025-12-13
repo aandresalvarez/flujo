@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Optional, TYPE_CHECKING, TypeVar, cast
+from typing import Literal, TYPE_CHECKING, TypeVar
 
 from ..exceptions import ContextMergeError, PipelineAbortSignal, PausedException
 from ..domain.models import PipelineContext, PipelineResult
@@ -17,12 +17,14 @@ if TYPE_CHECKING:  # pragma: no cover
     from pydantic import TypeAdapter
 
 _CtxT = TypeVar("_CtxT", bound=PipelineContext)
+_InT = TypeVar("_InT")
+_OutT = TypeVar("_OutT")
 
 
 async def resume_async_inner(
-    runner: "Flujo[Any, Any, _CtxT]",
+    runner: "Flujo[_InT, _OutT, _CtxT]",
     paused_result: PipelineResult[_CtxT],
-    human_input: Any,
+    human_input: object,
     agent_command_adapter: "TypeAdapter[AgentCommand]",
 ) -> PipelineResult[_CtxT]:
     """Resume a paused pipeline with human input."""
@@ -38,22 +40,23 @@ async def resume_async_inner(
         )
 
         ctx = orchestrator.validate_resume(paused_result)
-        scratch = getattr(ctx, "scratchpad", {})
-        pause_msg = scratch.get("pause_message") if isinstance(scratch, dict) else None
+        pause_msg = getattr(ctx, "pause_message", None)
 
         start_idx, paused_step = orchestrator.resolve_paused_step(paused_result, ctx, human_input)
-        if isinstance(scratch, dict) and scratch.get("status") == "paused":
-            scratch.pop("hitl_data", None)
-            scratch["user_input"] = human_input
+        if getattr(ctx, "status", None) == "paused":
+            try:
+                if hasattr(ctx, "hitl_data"):
+                    ctx.hitl_data = {}
+                if hasattr(ctx, "user_input"):
+                    ctx.user_input = human_input
+            except Exception:
+                pass
         human_input = orchestrator.coerce_human_input(paused_step, human_input)
 
         paused_step_result = orchestrator.build_step_result(paused_step, human_input)
 
         if isinstance(ctx, PipelineContext):
-            if not isinstance(scratch, dict):
-                scratch = {}
-                ctx.scratchpad = scratch
-            orchestrator.record_hitl_interaction(ctx, scratch, human_input, pause_msg)
+            orchestrator.record_hitl_interaction(ctx, human_input, pause_msg)
             orchestrator.update_conversation_history(ctx, human_input, pause_msg)
             orchestrator.apply_sink_to(ctx, paused_step, human_input)
             orchestrator.update_steps_map(ctx, paused_step, human_input)
@@ -107,19 +110,21 @@ async def resume_async_inner(
             data = human_input
             resume_start_idx = start_idx
 
-        # For conditional branches that will hit a HITL immediately, mark scratchpad so the next
+        # For conditional branches that will hit a HITL immediately, mark the context so the next
         # HITL can auto-consume this resume input. Avoid applying this to loop steps, which handle
         # their own resume semantics.
         try:
-            scratch = getattr(ctx, "scratchpad", None)
             from ..domain.dsl.conditional import ConditionalStep as _Cond
 
-            if isinstance(scratch, dict) and isinstance(paused_step, _Cond):
-                scratch["loop_resume_requires_hitl_output"] = True
-                scratch["status"] = "paused"
-                scratch.setdefault("user_input", human_input)
-                if "hitl_data" not in scratch:
-                    scratch["hitl_data"] = human_input
+            if isinstance(paused_step, _Cond):
+                if hasattr(ctx, "loop_resume_requires_hitl_output"):
+                    ctx.loop_resume_requires_hitl_output = True
+                if hasattr(ctx, "status"):
+                    ctx.status = "paused"
+                if hasattr(ctx, "user_input"):
+                    ctx.user_input = ctx.user_input or human_input
+                if hasattr(ctx, "hitl_data"):
+                    ctx.hitl_data = {"human_response": human_input}
         except Exception:
             pass
 
@@ -129,13 +134,13 @@ async def resume_async_inner(
         try:
             from ..domain.dsl.step import HumanInTheLoopStep as _H
 
-            if isinstance(ctx, PipelineContext) and isinstance(ctx.scratchpad, dict):
+            if isinstance(ctx, PipelineContext):
                 remaining_steps = (
                     runner.pipeline.steps[resume_start_idx:] if runner.pipeline else []
                 )
 
                 # Scan remaining steps (including conditional branches) for the next HITL
-                def _find_hitl(steps: list[Any]) -> _H | None:
+                def _find_hitl(steps: list[object]) -> _H | None:
                     for st in steps:
                         if isinstance(st, _H):
                             return st
@@ -170,7 +175,7 @@ async def resume_async_inner(
             async for chunk in runner._execute_steps(
                 resume_start_idx,
                 data,
-                cast(Optional[_CtxT], ctx),
+                ctx,
                 paused_result,
                 stream_last=False,
                 run_id=run_id_for_state,
@@ -184,29 +189,20 @@ async def resume_async_inner(
                         chunk_ctx = chunk.final_pipeline_context
                         if (
                             isinstance(chunk_ctx, PipelineContext)
-                            and getattr(chunk_ctx, "scratchpad", {}).get("status") == "paused"
+                            and getattr(chunk_ctx, "status", None) == "paused"
                         ):
                             paused_during_resume = True
                     except Exception:
                         pass
         except (PipelineAbortSignal, PausedException):
             if isinstance(ctx, PipelineContext):
-                ctx.scratchpad["status"] = "paused"
+                ctx.status = "paused"
             paused_during_resume = True
 
         expected_len = len(runner.pipeline.steps) if runner.pipeline is not None else 0
         history_len = len(paused_result.step_history)
-        scratch_status = None
-        try:
-            if isinstance(ctx, PipelineContext):
-                scratch = getattr(ctx, "scratchpad", {})
-                if isinstance(scratch, dict):
-                    scratch_status = scratch.get("status")
-        except Exception:
-            scratch_status = None
-
-        final_status: Literal["running", "paused", "completed", "failed", "cancelled"]
-        if paused_during_resume or scratch_status == "paused":
+        final_status: Literal["running", "paused", "completed", "failed"]
+        if paused_during_resume or getattr(ctx, "status", None) == "paused":
             final_status = "paused"
         elif expected_len and history_len < expected_len:
             # Resume should stay paused until the pipeline covers all steps.
@@ -221,7 +217,7 @@ async def resume_async_inner(
 
         if isinstance(ctx, PipelineContext):
             try:
-                ctx.scratchpad["status"] = final_status
+                ctx.status = final_status
             except Exception:
                 pass
 
@@ -275,7 +271,7 @@ async def resume_async_inner(
             except Exception:
                 pass
 
-        execution_manager.set_final_context(paused_result, cast(Optional[PipelineContext], ctx))
+        execution_manager.set_final_context(paused_result, ctx)
         try:
             await runner._dispatch_hook(
                 "post_run",
@@ -293,6 +289,8 @@ async def resume_async_inner(
         pass
 
 
-async def replay_from_trace(runner: "Flujo[Any, Any, _CtxT]", run_id: str) -> PipelineResult[_CtxT]:
+async def replay_from_trace(
+    runner: "Flujo[_InT, _OutT, _CtxT]", run_id: str
+) -> PipelineResult[_CtxT]:
     replay_executor = ReplayExecutor[_CtxT](runner)
     return await replay_executor.replay_from_trace(run_id)

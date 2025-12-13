@@ -3,7 +3,6 @@ from flujo.type_definitions.common import JSONObject
 # mypy: ignore-errors
 
 from ._shared import (  # noqa: F401
-    Any,
     Awaitable,
     Callable,
     Dict,
@@ -34,20 +33,21 @@ from ._shared import (  # noqa: F401
     _normalize_plugin_feedback,
 )
 from ..types import ExecutionFrame
+from ....domain.models import BaseModel as DomainBaseModel
 
 
 async def prepare_agent_execution(
-    core: Any,
-    frame: ExecutionFrame[Any],
+    core: object,
+    frame: ExecutionFrame[DomainBaseModel],
 ) -> tuple[
-    Any,
-    Any,
-    Optional[Any],
-    Optional[Any],
-    Optional[Any],
+    object,
+    object,
+    DomainBaseModel | None,
+    object | None,
+    UsageLimits | None,
     bool,
-    Optional[Callable[[Any], Awaitable[None]]],
-    Optional[str],
+    Callable[[object], Awaitable[None]] | None,
+    str | None,
     int,
 ]:
     step = frame.step

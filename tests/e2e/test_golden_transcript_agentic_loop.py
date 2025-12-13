@@ -121,9 +121,9 @@ async def test_golden_transcript_agentic_loop():
         assert final_context.command_log[1].question == "Please review the first result"
 
     # Verify the pipeline paused correctly
-    assert final_context.scratchpad.get("status") == "paused"
-    assert "paused_step_input" in final_context.scratchpad
-    assert final_context.scratchpad.get("pause_message") == "Please review the first result"
+    assert final_context.status == "paused"
+    assert final_context.paused_step_input is not None
+    assert final_context.pause_message == "Please review the first result"
 
 
 @pytest.mark.asyncio

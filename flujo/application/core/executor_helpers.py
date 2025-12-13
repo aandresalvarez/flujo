@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Optional, Callable, Awaitable, TypeVar, Union, TypeGuard, cast
+from typing import Optional, Callable, Awaitable, TypeVar, Union
 
-from pydantic import BaseModel
+from ...domain.models import BaseModel
 
 from ...exceptions import UsageLimitExceededError
 from ...domain.models import UsageLimits, Quota
 from ...domain.sandbox import SandboxProtocol
-from .default_cache_components import OrjsonSerializer, Blake3Hasher
+from .executor_protocols import IHasher, ISerializer
 from .context_manager import ContextManager
-from .types import ContextWithScratchpad, ExecutionFrame
+from .types import ExecutionFrame
 from ...steps.cache_step import CacheStep
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.parallel import ParallelStep
@@ -27,7 +27,6 @@ from ...exceptions import (
     InfiniteRedirectError,
 )
 from ...domain.models import PipelineResult, StepResult, StepOutcome, Failure, Success
-from ...infra.settings import get_settings
 from .failure_builder import build_failure_outcome
 from .context_vars import _CACHE_OVERRIDE
 
@@ -35,8 +34,7 @@ __all__ = ["_CACHE_OVERRIDE"]  # Re-export for backward compatibility
 
 Outcome = Union[StepOutcome[StepResult], StepResult]
 
-TContext = TypeVar("TContext")
-TCtx = TypeVar("TCtx", bound=ContextWithScratchpad)
+TCtx = TypeVar("TCtx", bound=BaseModel)
 
 
 # Backward-compatible error types used by other modules
@@ -80,19 +78,19 @@ class ContextMergeError(Exception):
 class _Frame:
     """Frame class for backward compatibility with tests."""
 
-    step: Any
-    data: Any
-    context: Optional[Any] = None
-    resources: Optional[Any] = None
+    step: object
+    data: object
+    context: object | None = None
+    resources: object | None = None
 
 
 StepExecutor = Callable[
-    [Step[Any, Any], Any, Optional[Any], Optional[Any], Optional[Any]],
+    [Step[object, object], object, object | None, object | None, object | None],
     Awaitable[StepResult],
 ]
 
 
-def safe_step_name(step: Any) -> str:
+def safe_step_name(step: object) -> str:
     """Return a best-effort, mock-tolerant step name for logging/telemetry."""
     try:
         if hasattr(step, "name"):
@@ -125,7 +123,7 @@ def format_feedback(
     return msg
 
 
-def normalize_frame_context(frame: Any) -> None:
+def normalize_frame_context(frame: object) -> None:
     """Retain context/resources/limits on the frame for policy access."""
     # Accessors kept for completeness; policies pull from frame directly
     _ = getattr(frame, "context", None)
@@ -134,59 +132,52 @@ def normalize_frame_context(frame: Any) -> None:
     _ = getattr(frame, "on_chunk", None)
 
 
-def enforce_typed_context(context: Any) -> Any:
-    """Optionally enforce that context is a Pydantic BaseModel when configured.
+def enforce_typed_context(context: object | None) -> BaseModel | None:
+    """Enforce that context is a Pydantic BaseModel when strict mode is enabled.
 
-    When FLUJO_ENFORCE_TYPED_CONTEXT=1 (or settings.enforce_typed_context), plain
-    dict contexts are rejected to steer users toward typed models. By default,
-    the check is advisory and logs a warning.
+    Strict mode rejects legacy dict contexts instead of attempting coercion, to
+    avoid silent shape drift and to keep context contracts explicit.
     """
     if context is None:
         return None
     if isinstance(context, BaseModel):
         return context
 
-    try:
-        settings = get_settings()
-        enforce = bool(getattr(settings, "enforce_typed_context", False))
-    except Exception:
-        enforce = False
-
-    if not enforce:
-        try:
-            from ...infra import telemetry as _telemetry
-
-            _telemetry.logfire.warning(
-                "Context is not a Pydantic BaseModel; typed contexts are recommended "
-                "(set FLUJO_ENFORCE_TYPED_CONTEXT=1 to enforce)."
-            )
-        except Exception:
-            pass
-        return context
-
-    raise TypeError("Context must be a Pydantic BaseModel when FLUJO_ENFORCE_TYPED_CONTEXT=1.")
+    # Strict-only posture: no opt-out for non-Pydantic contexts.
+    raise TypeError("Context must be a Pydantic BaseModel (strict mode enforced).")
 
 
-def _is_context_with_scratchpad(obj: object) -> TypeGuard[ContextWithScratchpad]:
-    """Narrow to contexts that expose scratchpad/branch bookkeeping."""
-    if not isinstance(obj, BaseModel):
-        return False
-    # Protocol guard: scratchpad + executed_branches must exist
-    return hasattr(obj, "scratchpad") and hasattr(obj, "executed_branches")
-
-
-def _coerce_context_with_scratchpad(
-    context: Optional[TCtx],
-) -> Optional[TCtx]:
-    """Validate and narrow incoming contexts to the scratchpad-bearing protocol."""
+def _coerce_context_model(context: Optional[TCtx]) -> Optional[TCtx]:
+    """Validate and narrow incoming contexts to typed Pydantic models."""
     if context is None:
         return None
-    if _is_context_with_scratchpad(context):
-        return cast(TCtx, context)
-    raise TypeError("Context must provide scratchpad and executed_branches for execution.")
+    if not isinstance(context, BaseModel):
+        raise TypeError("Context must be a Pydantic BaseModel (strict mode enforced).")
+    return context
 
 
-def attach_sandbox_to_context(context: Any, sandbox: SandboxProtocol | None) -> None:
+def _ensure_same_context_type(value: BaseModel, reference: TCtx) -> TCtx:
+    """Ensure ContextManager returns the same context model type as provided."""
+    if not isinstance(value, type(reference)):
+        raise TypeError(
+            f"ContextManager returned {type(value).__name__}, expected {type(reference).__name__}"
+        )
+    return value
+
+
+def _ensure_outcome(value: object, *, step_name: str = "") -> Outcome:
+    """Runtime guard to enforce Outcome shape and avoid unsafe casts."""
+    if isinstance(value, StepOutcome):
+        return value
+    if isinstance(value, StepResult):
+        return value
+    raise TypeError(
+        f"Expected StepOutcome or StepResult for step '{step_name or '<unknown>'}', "
+        f"got {type(value).__name__}"
+    )
+
+
+def attach_sandbox_to_context(context: object | None, sandbox: SandboxProtocol | None) -> None:
     """Attach sandbox handle to context when present without mutating dict contexts."""
     if context is None or sandbox is None:
         return
@@ -215,7 +206,7 @@ def attach_sandbox_to_context(context: Any, sandbox: SandboxProtocol | None) -> 
         pass
 
 
-def attach_memory_store_to_context(context: Any, store: Any) -> None:
+def attach_memory_store_to_context(context: object | None, store: object | None) -> None:
     """Attach memory store handle to context when present without mutating dict contexts."""
     if context is None or store is None:
         return
@@ -239,48 +230,57 @@ def attach_memory_store_to_context(context: Any, store: Any) -> None:
         pass
 
 
-async def set_quota_and_hydrate(frame: Any, quota_manager: Any, hydration_manager: Any) -> None:
+async def set_quota_and_hydrate(
+    frame: object, quota_manager: object, hydration_manager: object
+) -> None:
     """Assign quota to the execution context and hydrate managed state."""
     try:
-        quota_manager.set_current_quota(getattr(frame, "quota", None))
+        setter = getattr(quota_manager, "set_current_quota", None)
+        if callable(setter):
+            setter(getattr(frame, "quota", None))
     except Exception:
         pass
     try:
-        await hydration_manager.hydrate_context(getattr(frame, "context", None))
+        hydrate = getattr(hydration_manager, "hydrate_context", None)
+        if callable(hydrate):
+            await hydrate(getattr(frame, "context", None))
     except Exception:
         pass
 
 
-def get_current_quota(quota_manager: Any) -> Optional[Quota]:
+def get_current_quota(quota_manager: object) -> Optional[Quota]:
     """Best-effort getter for the current quota using the manager first."""
     try:
-        quota = cast(Optional[Quota], quota_manager.get_current_quota())
-        if quota is not None:
-            return quota
+        getter = getattr(quota_manager, "get_current_quota", None)
+        quota = getter() if callable(getter) else None
+        return quota if isinstance(quota, Quota) else None
     except Exception:
         pass
     return None
 
 
-def set_current_quota(quota_manager: Any, quota: Optional[Quota]) -> Optional[object]:
+def set_current_quota(quota_manager: object, quota: Optional[Quota]) -> object | None:
     """Best-effort setter for the current quota (returns token when available)."""
     try:
-        return cast(Optional[object], quota_manager.set_current_quota(quota))
+        setter = getattr(quota_manager, "set_current_quota", None)
+        return setter(quota) if callable(setter) else None
     except Exception:
         return None
 
 
-def reset_current_quota(quota_manager: Any, token: Optional[object]) -> None:
+def reset_current_quota(quota_manager: object, token: Optional[object]) -> None:
     """Best-effort reset for quota context tokens."""
     try:
         if token is not None and hasattr(token, "old_value"):
-            quota_manager.set_current_quota(token.old_value)
+            setter = getattr(quota_manager, "set_current_quota", None)
+            if callable(setter):
+                setter(token.old_value)
             return
     except Exception:
         pass
 
 
-def hash_obj(obj: Any, serializer: OrjsonSerializer, hasher: Blake3Hasher) -> str:
+def hash_obj(obj: object | None, serializer: ISerializer, hasher: IHasher) -> str:
     """Hash arbitrary objects using provided serializer/hasher."""
     if obj is None:
         return "None"
@@ -295,62 +295,98 @@ def hash_obj(obj: Any, serializer: OrjsonSerializer, hasher: Blake3Hasher) -> st
         return hasher.digest(str(obj).encode("utf-8"))
 
 
-async def maybe_launch_background(core: Any, frame: Any) -> Optional[Any]:
+async def maybe_launch_background(core: object, frame: ExecutionFrame[TCtx]) -> object | None:
     """Launch background step if applicable and return outcome."""
     try:
-        bg_outcome = await core._background_task_manager.maybe_launch_background_step(
-            core=core, frame=frame
-        )
+        bg_mgr = getattr(core, "_background_task_manager", None)
+        if bg_mgr is None:
+            return None
+        launch = getattr(bg_mgr, "maybe_launch_background_step", None)
+        if not callable(launch):
+            return None
+        bg_outcome = await launch(core=core, frame=frame)
+        if bg_outcome is None:
+            return None
+        if not isinstance(bg_outcome, (StepOutcome, StepResult)):
+            raise TypeError(
+                f"Background task manager returned unsupported type {type(bg_outcome).__name__}"
+            )
+        return bg_outcome
     except Exception:
         return None
-    return bg_outcome
 
 
-def log_step_start(core: Any, step: Any, *, stream: bool, fallback_depth: int) -> None:
+def log_step_start(core: object, step: object, *, stream: bool, fallback_depth: int) -> None:
     """Delegate telemetry logging for step start."""
-    core._telemetry_handler.log_step_start(step, stream=stream, fallback_depth=fallback_depth)
+    try:
+        telemetry_handler = getattr(core, "_telemetry_handler", None)
+        log_fn = getattr(telemetry_handler, "log_step_start", None)
+        if callable(log_fn):
+            log_fn(step, stream=stream, fallback_depth=fallback_depth)
+    except Exception:
+        return
 
 
-def log_execution_error(core: Any, step_name: str, exc: Exception) -> None:
+def log_execution_error(core: object, step_name: str, exc: Exception) -> None:
     """Delegate telemetry logging for execution errors."""
-    core._telemetry_handler.log_execution_error(step_name, exc)
+    try:
+        telemetry_handler = getattr(core, "_telemetry_handler", None)
+        log_fn = getattr(telemetry_handler, "log_execution_error", None)
+        if callable(log_fn):
+            log_fn(step_name, exc)
+    except Exception:
+        return
 
 
 async def execute_flow(
-    core: Any, frame: ExecutionFrame[Any], called_with_frame: bool
+    core: object,
+    frame: ExecutionFrame[TCtx],
+    called_with_frame: bool,
 ) -> StepOutcome[StepResult] | StepResult:
     """Execute a frame through cache/dispatch/persist pipeline."""
-    await core._set_quota_and_hydrate(frame)
+    set_quota_and_hydrate_fn = getattr(core, "_set_quota_and_hydrate", None)
+    if callable(set_quota_and_hydrate_fn):
+        await set_quota_and_hydrate_fn(frame)
 
     step = frame.step
 
     bg_outcome = await maybe_launch_background(core, frame)
     if bg_outcome is not None:
-        return cast(Outcome, bg_outcome)
+        return _ensure_outcome(bg_outcome, step_name=getattr(step, "name", ""))
 
-    core._normalize_frame_context(frame)
+    normalize_frame_context_fn = getattr(core, "_normalize_frame_context", None)
+    if callable(normalize_frame_context_fn):
+        normalize_frame_context_fn(frame)
     stream = getattr(frame, "stream", False)
     _fallback_depth = getattr(frame, "_fallback_depth", 0)
 
     log_step_start(core, step, stream=stream, fallback_depth=_fallback_depth)
 
-    cached_outcome, cache_key = await core._maybe_use_cache(
-        frame, called_with_frame=called_with_frame
-    )
+    maybe_use_cache_fn = getattr(core, "_maybe_use_cache", None)
+    if not callable(maybe_use_cache_fn):
+        raise TypeError("ExecutorCore missing _maybe_use_cache")
+    cached_outcome, cache_key = await maybe_use_cache_fn(frame, called_with_frame=called_with_frame)
     if cached_outcome is not None:
-        return cast(Outcome, cached_outcome)
+        return _ensure_outcome(cached_outcome, step_name=getattr(step, "name", ""))
 
     try:
-        result_outcome = cast(
-            Outcome, await core._dispatch_frame(frame, called_with_frame=called_with_frame)
+        dispatch_fn = getattr(core, "_dispatch_frame", None)
+        if not callable(dispatch_fn):
+            raise TypeError("ExecutorCore missing _dispatch_frame")
+        result_outcome = _ensure_outcome(
+            await dispatch_fn(frame, called_with_frame=called_with_frame),
+            step_name=getattr(step, "name", ""),
         )
     except asyncio.CancelledError:
         # Preserve cancellation semantics for signal handling tests and callers.
         raise
     except MissingAgentError as e:
-        handled = core._handle_missing_agent_exception(e, step, called_with_frame=called_with_frame)
+        handle_missing_agent_fn = getattr(core, "_handle_missing_agent_exception", None)
+        if not callable(handle_missing_agent_fn):
+            raise
+        handled = handle_missing_agent_fn(e, step, called_with_frame=called_with_frame)
         if handled is not None:
-            return cast(Outcome, handled)
+            return _ensure_outcome(handled, step_name=getattr(step, "name", ""))
         raise
     except (UsageLimitExceededError, MockDetectionError):
         raise
@@ -360,120 +396,146 @@ async def execute_flow(
     except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
         raise
     except Exception as exc:
-        return cast(
-            Outcome,
-            core._handle_unexpected_exception(
-                step=step, frame=frame, exc=exc, called_with_frame=called_with_frame
-            ),
+        unexpected_fn = getattr(core, "_handle_unexpected_exception", None)
+        if not callable(unexpected_fn):
+            raise
+        return _ensure_outcome(
+            unexpected_fn(step=step, frame=frame, exc=exc, called_with_frame=called_with_frame),
+            step_name=getattr(step, "name", ""),
         )
 
     if isinstance(result_outcome, StepOutcome):
         return result_outcome
     result = result_outcome
 
-    return cast(
-        Outcome,
-        await core._persist_and_finalize(
+    persist_fn = getattr(core, "_persist_and_finalize", None)
+    if not callable(persist_fn):
+        raise TypeError("ExecutorCore missing _persist_and_finalize")
+    return _ensure_outcome(
+        await persist_fn(
             step=step,
             result=result,
             cache_key=cache_key,
             called_with_frame=called_with_frame,
             frame=frame if called_with_frame else None,
         ),
+        step_name=getattr(step, "name", ""),
     )
 
 
 def build_failure(
-    core: Any,
+    core: object,
     *,
-    step: Any,
-    frame: ExecutionFrame[Any],
+    step: object,
+    frame: ExecutionFrame[TCtx],
     exc: Exception,
     called_with_frame: bool,
 ) -> Failure[StepResult]:
     """Delegate failure outcome construction."""
+    safe_step_name_fn = getattr(core, "_safe_step_name", safe_step_name)
     return build_failure_outcome(
         step=step,
         frame=frame,
         exc=exc,
         called_with_frame=called_with_frame,
-        safe_step_name=core._safe_step_name,
+        safe_step_name=safe_step_name_fn,
     )
 
 
 def handle_missing_agent_exception(
-    core: Any, err: Any, step: Any, *, called_with_frame: bool
+    core: object,
+    err: MissingAgentError,
+    step: object,
+    *,
+    called_with_frame: bool,
 ) -> StepOutcome[StepResult] | StepResult:
     """Delegate missing agent handling."""
-    return cast(
-        Outcome,
-        core._result_handler.handle_missing_agent_exception(
-            err, step, called_with_frame=called_with_frame
-        ),
-    )
+    result_handler = getattr(core, "_result_handler", None)
+    if result_handler is None:
+        raise TypeError("ExecutorCore missing _result_handler")
+    handle_fn = getattr(result_handler, "handle_missing_agent_exception", None)
+    if not callable(handle_fn):
+        raise TypeError("ExecutorCore missing ResultHandler.handle_missing_agent_exception")
+    handled = handle_fn(err, step, called_with_frame=called_with_frame)
+    return _ensure_outcome(handled, step_name=getattr(step, "name", ""))
 
 
 async def persist_and_finalize(
-    core: Any,
+    core: object,
     *,
-    step: Any,
+    step: object,
     result: StepResult,
     cache_key: Optional[str],
     called_with_frame: bool,
-    frame: ExecutionFrame[Any] | None = None,
+    frame: ExecutionFrame[TCtx] | None = None,
 ) -> StepOutcome[StepResult] | StepResult:
     """Delegate cache persist/finalize."""
-    return cast(
-        Outcome,
-        await core._result_handler.persist_and_finalize(
-            step=step,
-            result=result,
-            cache_key=cache_key,
-            called_with_frame=called_with_frame,
-            frame=frame,
-        ),
+    result_handler = getattr(core, "_result_handler", None)
+    if result_handler is None:
+        raise TypeError("ExecutorCore missing _result_handler")
+    persist_fn = getattr(result_handler, "persist_and_finalize", None)
+    if not callable(persist_fn):
+        raise TypeError("ExecutorCore missing ResultHandler.persist_and_finalize")
+    finalized = await persist_fn(
+        step=step,
+        result=result,
+        cache_key=cache_key,
+        called_with_frame=called_with_frame,
+        frame=frame,
     )
+    return _ensure_outcome(finalized, step_name=getattr(step, "name", ""))
 
 
 def handle_unexpected_exception(
-    core: Any,
+    core: object,
     *,
-    step: Any,
-    frame: ExecutionFrame[Any],
+    step: object,
+    frame: ExecutionFrame[TCtx],
     exc: Exception,
     called_with_frame: bool,
 ) -> StepOutcome[StepResult] | StepResult:
     """Delegate unexpected exception handling."""
-    return cast(
-        Outcome,
-        core._result_handler.handle_unexpected_exception(
-            step=step, frame=frame, exc=exc, called_with_frame=called_with_frame
-        ),
-    )
+    result_handler = getattr(core, "_result_handler", None)
+    if result_handler is None:
+        raise TypeError("ExecutorCore missing _result_handler")
+    handle_fn = getattr(result_handler, "handle_unexpected_exception", None)
+    if not callable(handle_fn):
+        raise TypeError("ExecutorCore missing ResultHandler.handle_unexpected_exception")
+    handled = handle_fn(step=step, frame=frame, exc=exc, called_with_frame=called_with_frame)
+    return _ensure_outcome(handled, step_name=getattr(step, "name", ""))
 
 
 async def maybe_use_cache(
-    core: Any, frame: ExecutionFrame[Any], *, called_with_frame: bool
+    core: object,
+    frame: ExecutionFrame[TCtx],
+    *,
+    called_with_frame: bool,
 ) -> tuple[Optional[StepOutcome[StepResult] | StepResult], Optional[str]]:
     """Delegate cache hit retrieval."""
-    cached = await core._result_handler.maybe_use_cache(frame, called_with_frame=called_with_frame)
-    return cast(
-        tuple[Optional[Outcome], Optional[str]],
-        cached,
-    )
+    result_handler = getattr(core, "_result_handler", None)
+    if result_handler is None:
+        raise TypeError("ExecutorCore missing _result_handler")
+    cache_fn = getattr(result_handler, "maybe_use_cache", None)
+    if not callable(cache_fn):
+        raise TypeError("ExecutorCore missing ResultHandler.maybe_use_cache")
+    cached_outcome, cache_key = await cache_fn(frame, called_with_frame=called_with_frame)
+    if cached_outcome is None:
+        return None, cache_key
+    return _ensure_outcome(cached_outcome, step_name=getattr(frame.step, "name", "")), cache_key
 
 
 async def execute_entrypoint(
-    core: Any,
-    frame_or_step: Any | None = None,
-    data: Any | None = None,
-    **kwargs: Any,
+    core: object,
+    frame_or_step: object | None = None,
+    data: object | None = None,
+    **kwargs: object,
 ) -> StepOutcome[StepResult] | StepResult:
     """Entrypoint for ExecutorCore.execute (frame or step signature)."""
-    called_with_frame = isinstance(frame_or_step, ExecutionFrame)
-    if called_with_frame:
-        frame = cast(ExecutionFrame[Any], frame_or_step)
+    if isinstance(frame_or_step, ExecutionFrame):
+        called_with_frame = True
+        frame = frame_or_step
     else:
+        called_with_frame = False
         allowed_keys = {
             "step",
             "data",
@@ -497,7 +559,10 @@ async def execute_entrypoint(
             )
         # New run: reset per-run history to avoid unbounded growth across executions.
         try:
-            core._step_history_tracker.clear_history()
+            step_history_tracker = getattr(core, "_step_history_tracker", None)
+            clear_fn = getattr(step_history_tracker, "clear_history", None)
+            if callable(clear_fn):
+                clear_fn()
         except Exception:
             pass
         step_obj = frame_or_step if frame_or_step is not None else kwargs.get("step")
@@ -505,59 +570,125 @@ async def execute_entrypoint(
             raise ValueError("ExecutorCore.execute requires a Step or ExecutionFrame")
         payload = data if data is not None else kwargs.get("data")
         fb_depth_raw = kwargs.get("_fallback_depth", 0)
-        try:
-            fb_depth_norm = int(fb_depth_raw)
-        except Exception:
-            fb_depth_norm = 0
+        fb_depth_norm = 0
+        if isinstance(fb_depth_raw, (int, float, str)):
+            try:
+                fb_depth_norm = int(fb_depth_raw)
+            except Exception:
+                fb_depth_norm = 0
+
+        context_raw = kwargs.get("context")
+        context: BaseModel | None
+        if isinstance(context_raw, dict):
+            # Backward compatibility for legacy ExecutorCore.execute(..., context={...}).
+            # `PipelineContext` rejects removed/unsafe legacy fields (e.g. scratchpad).
+            from ...domain.models import PipelineContext
+
+            context = PipelineContext.model_validate(context_raw)
+        else:
+            context = enforce_typed_context(context_raw)
+
+        resources = kwargs.get("resources")
+
+        limits_raw = kwargs.get("limits")
+        limits = limits_raw if isinstance(limits_raw, UsageLimits) else None
+        usage_limits_raw = kwargs.get("usage_limits")
+        if limits is None and isinstance(usage_limits_raw, UsageLimits):
+            limits = usage_limits_raw
+
+        context_setter_raw = kwargs.get("context_setter")
+        context_setter: Callable[[PipelineResult[BaseModel], BaseModel | None], None] | None = None
+        if callable(context_setter_raw):
+            context_setter_fn = context_setter_raw
+
+            def _context_setter(res: PipelineResult[BaseModel], ctx: BaseModel | None) -> None:
+                try:
+                    context_setter_fn(res, ctx)
+                except TypeError:
+                    context_setter_fn(res)
+
+            context_setter = _context_setter
+
+        stream = bool(kwargs.get("stream", False))
+
+        on_chunk_raw = kwargs.get("on_chunk")
+        on_chunk: Callable[[object], Awaitable[None]] | None = None
+        if callable(on_chunk_raw):
+            import inspect
+
+            on_chunk_fn = on_chunk_raw
+
+            async def _on_chunk(chunk: object) -> None:
+                res = on_chunk_fn(chunk)
+                if inspect.isawaitable(res):
+                    await res
+
+            on_chunk = _on_chunk
+
+        quota_raw = kwargs.get("quota")
+        quota = quota_raw if isinstance(quota_raw, Quota) else None
+
+        result_raw = kwargs.get("result")
+        result = result_raw if isinstance(result_raw, StepResult) else None
         frame = make_execution_frame(
             core,
-            cast(Step[Any, Any], step_obj),
+            step_obj,
             payload,
-            kwargs.get("context"),
-            kwargs.get("resources"),
-            kwargs.get("limits"),
-            kwargs.get("context_setter"),
-            stream=kwargs.get("stream", False),
-            on_chunk=kwargs.get("on_chunk"),
+            context,
+            resources,
+            limits,
+            context_setter,
+            stream=stream,
+            on_chunk=on_chunk,
             fallback_depth=fb_depth_norm,
-            quota=kwargs.get("quota"),
-            result=kwargs.get("result"),
+            quota=quota,
+            result=result,
         )
 
     return await execute_flow(core, frame, called_with_frame)
 
 
 async def run_validation(
-    core: Any,
+    core: object,
     *,
-    step: Step[Any, Any],
-    output: Any,
-    context: Optional[Any],
-    limits: Optional[Any],
-    data: Any,
-    attempt_context: Optional[Any],
-    attempt_resources: Optional[Any],
+    step: Step[object, object],
+    output: object,
+    context: object | None,
+    limits: object | None,
+    data: object,
+    attempt_context: object | None,
+    attempt_resources: object | None,
     stream: bool,
-    on_chunk: Optional[Any],
+    on_chunk: object | None,
     fallback_depth: int,
-) -> Optional[StepOutcome[StepResult]]:
+) -> StepOutcome[StepResult] | None:
     """Centralized validation + fallback handling."""
-    validation_result = cast(
-        Optional[Union[StepOutcome[StepResult], StepResult]],
-        await core._validation_orchestrator.validate(
-            core=core,
-            step=step,
-            output=output,
-            context=context,
-            limits=limits,
-            data=data,
-            attempt_context=attempt_context,
-            attempt_resources=attempt_resources,
-            stream=stream,
-            on_chunk=on_chunk,
-            fallback_depth=fallback_depth,
-        ),
+    validation_orchestrator = getattr(core, "_validation_orchestrator", None)
+    validate_fn = getattr(validation_orchestrator, "validate", None)
+    if not callable(validate_fn):
+        raise TypeError("ExecutorCore missing _validation_orchestrator.validate")
+    validation_raw = await validate_fn(
+        core=core,
+        step=step,
+        output=output,
+        context=context,
+        limits=limits,
+        data=data,
+        attempt_context=attempt_context,
+        attempt_resources=attempt_resources,
+        stream=stream,
+        on_chunk=on_chunk,
+        fallback_depth=fallback_depth,
     )
+    validation_result: Optional[Union[StepOutcome[StepResult], StepResult]]
+    if validation_raw is None:
+        validation_result = None
+    elif isinstance(validation_raw, (StepOutcome, StepResult)):
+        validation_result = validation_raw
+    else:
+        raise TypeError(
+            f"Validation orchestrator returned unsupported type {type(validation_raw).__name__}"
+        )
     if validation_result is None:
         return None
     if isinstance(validation_result, StepResult) and validation_result.success:
@@ -572,20 +703,20 @@ async def run_validation(
 
 
 def make_execution_frame(
-    core: Any,
-    step: Any,
-    data: Any,
-    context: Optional[Any],
-    resources: Optional[Any],
-    limits: Optional[UsageLimits],
-    context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+    core: object,
+    step: object,
+    data: object,
+    context: BaseModel | None,
+    resources: object | None,
+    limits: UsageLimits | None,
+    context_setter: Callable[[PipelineResult[BaseModel], BaseModel | None], None] | None,
     *,
     stream: bool = False,
-    on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
+    on_chunk: Callable[[object], Awaitable[None]] | None = None,
     fallback_depth: int = 0,
-    quota: Optional[Quota] = None,
-    result: Optional[StepResult] = None,
-) -> ExecutionFrame[Any]:
+    quota: Quota | None = None,
+    result: StepResult | None = None,
+) -> ExecutionFrame[BaseModel]:
     """Create an ExecutionFrame with the current quota context."""
     context = enforce_typed_context(context)
     sandbox = getattr(core, "sandbox", None)
@@ -594,13 +725,21 @@ def make_execution_frame(
         attach_memory_store_to_context(context, getattr(core, "memory_store", None))
     except Exception:
         pass
+    quota_value = quota
+    if quota_value is None:
+        try:
+            quota_manager = getattr(core, "_quota_manager", None)
+            get_quota_fn = getattr(quota_manager, "get_current_quota", None)
+            quota_value = get_quota_fn() if callable(get_quota_fn) else None
+        except Exception:
+            quota_value = None
     return ExecutionFrame(
         step=step,
         data=data,
         context=context,
         resources=resources,
         limits=limits,
-        quota=quota if quota is not None else core._quota_manager.get_current_quota(),
+        quota=quota_value,
         stream=stream,
         on_chunk=on_chunk,
         context_setter=context_setter or (lambda _res, _ctx: None),
@@ -610,14 +749,14 @@ def make_execution_frame(
 
 
 async def execute_simple_step(
-    core: Any,
-    step: Any,
-    data: Any,
-    context: Optional[Any],
-    resources: Optional[Any],
-    limits: Optional[UsageLimits],
+    core: object,
+    step: object,
+    data: object,
+    context: BaseModel | None,
+    resources: object | None,
+    limits: UsageLimits | None,
     stream: bool,
-    on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+    on_chunk: Callable[[object], Awaitable[None]] | None,
     cache_key: Optional[str],
     _fallback_depth: int | None = 0,
     _from_policy: bool = False,
@@ -643,30 +782,42 @@ async def execute_simple_step(
         result=None,
         quota=None,
     )
-    outcome = await core.simple_step_executor.execute(core, frame)
-    return cast(
-        StepResult, core._unwrap_outcome_to_step_result(outcome, core._safe_step_name(step))
-    )
+    del cache_key  # maintained for signature compatibility
+    simple_step_executor = getattr(core, "simple_step_executor", None)
+    execute_fn = getattr(simple_step_executor, "execute", None)
+    if not callable(execute_fn):
+        raise TypeError("ExecutorCore missing simple_step_executor.execute")
+    outcome = await execute_fn(core, frame)
+    unwrap_fn = getattr(core, "_unwrap_outcome_to_step_result", None)
+    safe_step_name_fn = getattr(core, "_safe_step_name", safe_step_name)
+    if not callable(unwrap_fn):
+        raise TypeError("ExecutorCore missing _unwrap_outcome_to_step_result")
+    step_result = unwrap_fn(outcome, safe_step_name_fn(step))
+    assert isinstance(step_result, StepResult)
+    return step_result
 
 
 async def execute_step_compat(
-    core: Any,
-    step: Any,
-    data: Any,
-    context: Optional[Any] = None,
-    resources: Optional[Any] = None,
-    limits: Optional[UsageLimits] = None,
+    core: object,
+    step: object,
+    data: object,
+    context: BaseModel | None = None,
+    resources: object | None = None,
+    limits: UsageLimits | None = None,
     stream: bool = False,
-    on_chunk: Optional[Callable[[Any], Awaitable[None]]] = None,
-    context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]] = None,
-    result: Optional[StepResult] = None,
+    on_chunk: Callable[[object], Awaitable[None]] | None = None,
+    context_setter: Callable[[PipelineResult[BaseModel], BaseModel | None], None] | None = None,
+    result: StepResult | None = None,
     _fallback_depth: int = 0,
-    usage_limits: Optional[UsageLimits] = None,
+    usage_limits: UsageLimits | None = None,
 ) -> StepResult:
     """Legacy shim: delegate to core.execute and unwrap to StepResult."""
     if usage_limits is not None and limits is None:
         limits = usage_limits
-    outcome = await core.execute(
+    execute_fn = getattr(core, "execute", None)
+    if not callable(execute_fn):
+        raise TypeError("ExecutorCore missing execute")
+    outcome = await execute_fn(
         step,
         data,
         context=context,
@@ -678,21 +829,27 @@ async def execute_step_compat(
         result=result,
         _fallback_depth=_fallback_depth,
     )
-    return cast(
-        StepResult, core._unwrap_outcome_to_step_result(outcome, core._safe_step_name(step))
-    )
+    unwrap_fn = getattr(core, "_unwrap_outcome_to_step_result", None)
+    safe_step_name_fn = getattr(core, "_safe_step_name", safe_step_name)
+    if not callable(unwrap_fn):
+        raise TypeError("ExecutorCore missing _unwrap_outcome_to_step_result")
+    step_result = unwrap_fn(outcome, safe_step_name_fn(step))
+    assert isinstance(step_result, StepResult)
+    return step_result
 
 
 def isolate_context(context: Optional[TCtx], *, strict_context_isolation: bool) -> Optional[TCtx]:
     """Isolate context using ContextManager with strict toggle (typed)."""
-    ctx_model = _coerce_context_with_scratchpad(context)
+    ctx_model = _coerce_context_model(context)
     if ctx_model is None:
         return None
     if strict_context_isolation:
-        isolated = ContextManager.isolate_strict(cast(BaseModel, ctx_model))
+        isolated = ContextManager.isolate_strict(ctx_model)
     else:
-        isolated = ContextManager.isolate(cast(BaseModel, ctx_model))
-    return cast(Optional[TCtx], isolated)
+        isolated = ContextManager.isolate(ctx_model)
+    if isolated is None:
+        return None
+    return _ensure_same_context_type(isolated, ctx_model)
 
 
 def merge_context_updates(
@@ -705,22 +862,22 @@ def merge_context_updates(
     if main_context is None and branch_context is None:
         return None
     if main_context is None:
-        return _coerce_context_with_scratchpad(branch_context)
+        return _coerce_context_model(branch_context)
     if branch_context is None:
-        return _coerce_context_with_scratchpad(main_context)
+        return _coerce_context_model(main_context)
 
-    main_ctx = _coerce_context_with_scratchpad(main_context)
-    branch_ctx = _coerce_context_with_scratchpad(branch_context)
+    main_ctx = _coerce_context_model(main_context)
+    branch_ctx = _coerce_context_model(branch_context)
+    assert main_ctx is not None
+    assert branch_ctx is not None
 
     if strict_context_merge:
-        merged = ContextManager.merge_strict(
-            cast(Optional[BaseModel], main_ctx), cast(Optional[BaseModel], branch_ctx)
-        )
+        merged = ContextManager.merge_strict(main_ctx, branch_ctx)
     else:
-        merged = ContextManager.merge(
-            cast(Optional[BaseModel], main_ctx), cast(Optional[BaseModel], branch_ctx)
-        )
-    return cast(Optional[TCtx], merged)
+        merged = ContextManager.merge(main_ctx, branch_ctx)
+    if merged is None:
+        return None
+    return _ensure_same_context_type(merged, main_ctx)
 
 
 def accumulate_loop_context(
@@ -731,33 +888,31 @@ def accumulate_loop_context(
 ) -> Optional[TCtx]:
     """Merge loop iteration context into current context."""
     if current_context is None:
-        return _coerce_context_with_scratchpad(iteration_context)
+        return _coerce_context_model(iteration_context)
     if iteration_context is None:
-        return _coerce_context_with_scratchpad(current_context)
+        return _coerce_context_model(current_context)
     return merge_context_updates(
         current_context, iteration_context, strict_context_merge=strict_context_merge
     )
 
 
-def update_context_state(context: Optional[Any], state: str) -> None:
-    """Annotate context scratchpad state best-effort."""
+def update_context_state(context: object | None, state: str) -> None:
+    """Annotate context state best-effort (typed field preferred; no scratchpad writes)."""
     if context is None:
         return
     try:
-        if hasattr(context, "scratchpad"):
-            try:
-                scratchpad = getattr(context, "scratchpad")
-                if isinstance(scratchpad, dict):
-                    scratchpad["state"] = state
-                else:
-                    setattr(scratchpad, "state", state)
-            except Exception:
-                pass
+        if hasattr(context, "status"):
+            # Only set when it matches our known execution states.
+            if state in {"running", "paused", "completed", "failed"}:
+                try:
+                    context.status = state
+                except Exception:
+                    pass
     except Exception:
         pass
 
 
-def is_complex_step(step: Any) -> bool:
+def is_complex_step(step: object) -> bool:
     """Identify complex steps for dispatch decisions."""
     try:
         if hasattr(step, "is_complex"):

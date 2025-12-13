@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any, Callable, Optional, Union, cast
+from typing import Any, Callable, Optional, Union
 import os
 import os as _os
 
@@ -537,7 +537,7 @@ class ConfigManager:
 
         # Step 2: Create Settings with defaults + environment variables
         # pydantic-settings automatically loads: defaults < environment variables
-        settings = cast(Callable[[], Settings], Settings)()
+        settings = Settings()
 
         # Step 3: Apply TOML overrides, but only if no environment variable is set
         # This ensures environment variables have the highest precedence

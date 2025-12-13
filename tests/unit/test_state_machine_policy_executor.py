@@ -120,7 +120,7 @@ def test_policy_iterates_and_stops_on_end_state() -> None:
         pass
 
     iter_ctx = _Ctx(initial_prompt="")
-    iter_ctx.scratchpad["next_state"] = "s2"
+    iter_ctx.next_state = "s2"
     fake_pr = PipelineResult(
         step_history=[_make_step_result()],
         total_cost_usd=0.0,

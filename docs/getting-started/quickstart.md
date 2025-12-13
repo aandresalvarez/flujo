@@ -124,4 +124,8 @@ flujo lens spans <run_id>
 
 ## 7. Next Steps
 
-Now that you've seen the basics, explore the [Tutorial](tutorial.md) and [Concepts](../user_guide/concepts.md) pages for a deeper dive.
+Now that you've seen the basics, explore:
+
+- [Type-Safe Patterns](type_safe_patterns.md) — typed contexts and adapter best practices
+- [Tutorial](tutorial.md) — deeper dive into pipeline composition
+- [Concepts](../user_guide/concepts.md) — understand the Flujo architecture

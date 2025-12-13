@@ -72,12 +72,12 @@ async def test_hitl_pause_persists_state_and_context() -> None:
             step_history=result.step_history,
         )
 
-    # Context scratchpad reflects paused state set by StepCoordinator
+    # Context reflects paused state set by StepCoordinator
     fctx = ctx
-    assert fctx.scratchpad.get("status") == "paused"
-    assert fctx.scratchpad.get("pause_message") == "need input"
+    assert fctx.status == "paused"
+    assert fctx.pause_message == "need input"
     # paused_step_input should be the data that was passed to the paused step ('mid' from s1)
-    assert fctx.scratchpad.get("paused_step_input") == "mid"
+    assert fctx.paused_step_input == "mid"
 
     # Persisted workflow state reflects paused status and index 1 (second step)
     saved = await backend.load_state(run_id)

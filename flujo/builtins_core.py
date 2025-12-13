@@ -100,7 +100,7 @@ def _register_builtins() -> None:
     reg.register(
         "flujo.builtins.context_set",
         _context_set_factory,
-        description="Set a context field at a dot-separated path (e.g., 'scratchpad.counter')",
+        description="Set a context field at a dot-separated path (e.g., 'import_artifacts.counter')",
         arg_schema={
             "type": "object",
             "properties": {"path": {"type": "string"}, "value": {}},
@@ -111,7 +111,7 @@ def _register_builtins() -> None:
     reg.register(
         "flujo.builtins.context_merge",
         _context_merge_factory,
-        description="Merge a dictionary into context at a path (e.g., 'scratchpad.settings')",
+        description="Merge a dictionary into context at a path (e.g., 'import_artifacts.extras.settings')",
         arg_schema={
             "type": "object",
             "properties": {"path": {"type": "string"}, "value": {"type": "object"}},
@@ -203,7 +203,9 @@ def _register_builtins() -> None:
         side_effects=False,
     )
 
-    async def to_csv(rows: Any, *, headers: Optional[List[str]] = None) -> str:
+    async def to_csv(
+        rows: list[JSONObject] | JSONObject, *, headers: Optional[List[str]] = None
+    ) -> str:
         import csv
         import io
 
@@ -253,7 +255,12 @@ def _register_builtins() -> None:
         side_effects=False,
     )
 
-    async def aggregate(data: Any, *, operation: str, field: Optional[str] = None) -> float | int:
+    async def aggregate(
+        data: list[JSONObject] | JSONObject,
+        *,
+        operation: str,
+        field: Optional[str] = None,
+    ) -> float | int:
         op = (operation or "").strip().lower()
         items: List[JSONObject]
         if isinstance(data, list) and all(isinstance(x, dict) for x in data):
@@ -312,8 +319,11 @@ def _register_builtins() -> None:
     )
 
     async def select_fields(
-        data: Any, *, include: Optional[List[str]] = None, rename: Optional[Dict[str, str]] = None
-    ) -> Any:
+        data: list[JSONObject] | JSONObject,
+        *,
+        include: Optional[List[str]] = None,
+        rename: Optional[Dict[str, str]] = None,
+    ) -> list[JSONObject] | JSONObject:
         includes = list(include) if include else None
         ren = dict(rename) if rename else {}
 
@@ -354,7 +364,7 @@ def _register_builtins() -> None:
         side_effects=False,
     )
 
-    async def flatten(items: Any) -> List[Any]:
+    async def flatten(items: list[Any]) -> list[Any]:
         if not isinstance(items, list):
             return []
         out: List[Any] = []

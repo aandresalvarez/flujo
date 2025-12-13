@@ -8,7 +8,7 @@ visualization, and AI-driven modification.
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast, TYPE_CHECKING
+from typing import Any, Callable, Optional, TYPE_CHECKING
 from pydantic import TypeAdapter
 
 from ..domain.dsl.pipeline import Pipeline
@@ -31,6 +31,26 @@ if TYPE_CHECKING:  # pragma: no cover - used for typing only
 
 # Type adapter for command validation
 _command_adapter: TypeAdapter[AgentCommand] = TypeAdapter(AgentCommand)
+_checklist_adapter: TypeAdapter[Checklist] = TypeAdapter(Checklist)
+
+
+def _extract_output_value(result: object) -> object:
+    """Return `result.output` when present, else `result`."""
+    return getattr(result, "output", result)
+
+
+def _coerce_checklist(value: object) -> Checklist:
+    if isinstance(value, Checklist):
+        return value
+    return _checklist_adapter.validate_python(value)
+
+
+def _coerce_text(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode()
+    raise TypeError(f"Expected a string output, got {type(value).__name__}")
 
 
 def make_default_pipeline(
@@ -75,25 +95,25 @@ def make_default_pipeline(
     async def review_step(data: str, *, context: PipelineContext) -> str:
         """Review the task and create a checklist."""
         result = await _invoke(review_agent, data, context=context)
-        checklist = cast(Checklist, getattr(result, "output", result))
-        context.scratchpad["checklist"] = checklist
+        checklist = _coerce_checklist(_extract_output_value(result))
+        context.checklist = checklist
         return data
 
     async def solution_step(data: str, *, context: PipelineContext) -> str:
         """Generate a solution based on the task."""
         result = await _invoke(solution_agent, data, context=context)
-        solution = cast(str, getattr(result, "output", result))
-        context.scratchpad["solution"] = solution
+        solution = _coerce_text(_extract_output_value(result))
+        context.solution = solution
         return solution
 
     async def validate_step(_data: Any, *, context: PipelineContext) -> Checklist:
         """Validate the solution against the checklist."""
         payload = {
-            "solution": context.scratchpad.get("solution", ""),
-            "checklist": context.scratchpad.get("checklist", Checklist(items=[])),
+            "solution": getattr(context, "solution", "") or "",
+            "checklist": getattr(context, "checklist", None) or Checklist(items=[]),
         }
         result = await _invoke(validator_agent, payload, context=context)
-        return cast(Checklist, getattr(result, "output", result))
+        return _coerce_checklist(_extract_output_value(result))
 
     # Create steps with configuration
     review_step_s = Step.from_callable(review_step, max_retries=max_retries)
@@ -144,11 +164,21 @@ def make_state_machine_pipeline(
     for key, val in nodes.items():
         normalized[key] = Pipeline.from_step(val) if isinstance(val, Step) else val
 
-    dispatcher: Step[Any, Any] = Step.branch_on(
+    def _route_state(_last: Any, ctx: PipelineContext | None) -> str:
+        if ctx is None:
+            raise ValueError("State machine requires a pipeline context")
+        value = getattr(ctx, router_field, None)
+        if value is None:
+            raise ValueError(f"State machine context is missing {router_field!r}")
+        return str(value)
+
+    route_state: Callable[[Any, PipelineContext | None], str] = _route_state
+
+    from ..domain.dsl.conditional import ConditionalStep
+
+    dispatcher: Step[Any, Any] = ConditionalStep[PipelineContext](
         name="state_dispatch",
-        condition_callable=lambda _last, ctx: getattr(ctx, router_field, None)
-        if ctx is not None
-        else None,
+        condition_callable=route_state,
         branches=normalized,
         default_branch_pipeline=None,
     )
@@ -230,7 +260,8 @@ def make_agentic_loop_pipeline(
                 elif cmd.type == "ask_human":
                     if isinstance(context, PipelineContext):
                         # If we already have HITL data (resume path), consume it and continue.
-                        hitl_data = context.scratchpad.get("hitl_data")
+                        # Prefer typed user_input field
+                        hitl_data = getattr(context, "user_input", None)
                         if hitl_data is not None:
                             exec_result = hitl_data
                             log_entry = ExecutedCommandLog(
@@ -240,12 +271,17 @@ def make_agentic_loop_pipeline(
                             )
                             _log_if_new(log_entry, context)
                             # Clear resume marker now that we've consumed the payload.
-                            context.scratchpad.pop("loop_resume_requires_hitl_output", None)
-                            context.scratchpad["status"] = "running"
+                            if hasattr(context, "status"):
+                                context.status = "running"
+                            if hasattr(context, "loop_resume_requires_hitl_output"):
+                                context.loop_resume_requires_hitl_output = False
                             return log_entry
-                        context.scratchpad["paused_step_input"] = cmd
-                        context.scratchpad["loop_resume_requires_hitl_output"] = True
-                        context.scratchpad["status"] = "paused"
+                        if hasattr(context, "paused_step_input"):
+                            context.paused_step_input = cmd
+                        if hasattr(context, "loop_resume_requires_hitl_output"):
+                            context.loop_resume_requires_hitl_output = True
+                        if hasattr(context, "status"):
+                            context.status = "paused"
                     # Do NOT create or append a log entry here; only log on resume
                     from flujo.infra import telemetry
 
@@ -270,13 +306,15 @@ def make_agentic_loop_pipeline(
             _log_if_new(log_entry, context)
             return log_entry
 
-    async def planner_step(data: str, *, context: PipelineContext) -> AgentCommand:
+    async def planner_step(data: str, *, context: PipelineContext) -> object:
         """Get the next command from the planner."""
         result = await _invoke(planner_agent, data, context=context)
-        return cast(AgentCommand, getattr(result, "output", result))
+        # Do not validate/normalize here: the executor is responsible for
+        # validating commands and logging invalid payloads as ExecutedCommandLog entries.
+        return _extract_output_value(result)
 
     async def command_executor_step(
-        data: AgentCommand, *, context: PipelineContext
+        data: object, *, context: PipelineContext
     ) -> ExecutedCommandLog:
         executor: _CommandExecutor = _CommandExecutor(agent_registry)
         return await executor.run(data, context=context)
@@ -387,20 +425,21 @@ def make_agentic_loop_pipeline(
             from flujo.exceptions import PausedException as _Paused
 
             if isinstance(log, _AskHuman) and ctx is not None:
-                if hasattr(ctx, "scratchpad") and isinstance(ctx.scratchpad, dict):
-                    ctx.scratchpad["status"] = "paused"
-                    ctx.scratchpad["pause_message"] = getattr(log, "question", "Paused")
-                    # Save the pending command so resume can convert/log it
-                    ctx.scratchpad["paused_step_input"] = log
+                if hasattr(ctx, "status"):
+                    ctx.status = "paused"
+                if hasattr(ctx, "pause_message"):
+                    ctx.pause_message = getattr(log, "question", "Paused")
+                # Save the pending command so resume can convert/log it (typed field only)
+                if hasattr(ctx, "paused_step_input"):
+                    ctx.paused_step_input = log
                 raise _Paused(getattr(log, "question", "Paused"))
         except Exception:
             pass
 
         # If paused, do not log to preserve clean pause state
-        if ctx is not None and isinstance(getattr(ctx, "scratchpad", None), dict):
-            if ctx.scratchpad.get("status") == "paused":
-                goal = ctx.initial_prompt if ctx is not None else ""
-                return {"last_command_result": None, "goal": goal}
+        if ctx is not None and getattr(ctx, "status", None) == "paused":
+            goal = ctx.initial_prompt if ctx is not None else ""
+            return {"last_command_result": None, "goal": goal}
         _log_if_new(log, ctx)
         goal = ctx.initial_prompt if ctx is not None else ""
         return {"last_command_result": log.execution_result, "goal": goal}
@@ -454,7 +493,15 @@ async def run_default_pipeline(
         Candidate with solution and checklist, or None if failed
     """
     runner: Flujo[str, Checklist, PipelineContext] = Flujo(pipeline)
-    result = await gather_result(runner, task.prompt)
+    try:
+        result = await gather_result(runner, task.prompt)
+    except Exception as exc:
+        from flujo.exceptions import TypeMismatchError
+
+        # Treat type mismatch as pipeline failure for convenience helper
+        if isinstance(exc, TypeMismatchError):
+            return None
+        raise
 
     # Extract solution from context and checklist from the validator step output
     context = result.final_pipeline_context
@@ -463,9 +510,9 @@ async def run_default_pipeline(
 
     try:
         # Primary sources filled by step callables
-        if context is not None and hasattr(context, "scratchpad"):
-            solution = context.scratchpad.get("solution")
-            # Do not take checklist from scratchpad yet; prefer validator output below
+        if context is not None:
+            solution = getattr(context, "solution", None)
+            # Do not take checklist from context yet; prefer validator output below
     except Exception:
         # Best-effort: proceed to fallbacks below
         pass
@@ -493,15 +540,15 @@ async def run_default_pipeline(
             except Exception:
                 continue
 
-    # 3) If still missing, fallback to the review scratchpad checklist
+    # 3) If still missing, fallback to checklist stored on context
     if checklist is None:
         try:
-            if context is not None and hasattr(context, "scratchpad"):
-                checklist = context.scratchpad.get("checklist")
+            if context is not None:
+                checklist = getattr(context, "checklist", None)
         except Exception:
             pass
 
-    # 4) Derive solution from the named solution step when scratchpad is empty
+    # 4) Derive solution from the named solution step when missing
     if solution is None:
         for step in result.step_history:
             try:

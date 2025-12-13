@@ -113,12 +113,12 @@ Consider:
 - kind: hitl
   name: ask_user
   message: "Name?"
-  sink_to: "scratchpad.user_name"
+  sink_to: "import_artifacts.user_name"
 
 - kind: step
   name: greet
   # ✅ Correct
-  input: "Hello {{ context.scratchpad.user_name }}"
+  input: "Hello {{ context.import_artifacts.user_name }}"
   # ❌ Wrong
   # input: "Hello {{ context.user_name }}"
 ```
@@ -140,10 +140,10 @@ See: [HITL sink_to Documentation](../user_guide/template_variables_nested_contex
 ```python
 # Check pipeline status
 result = await flujo.run_async(input)
-print(f"Status: {result.final_pipeline_context.scratchpad.get('status')}")
+print(f"Status: {result.final_pipeline_context.status}")
 
 # Should show 'paused'
-assert result.final_pipeline_context.scratchpad.get('status') == 'paused'
+assert result.final_pipeline_context.status == 'paused'
 
 # Resume with user input
 resumed = await flujo.resume_async(result, user_input)
@@ -171,4 +171,3 @@ flujo run pipeline.yaml --debug
 - [Template Variables in Nested Contexts](../user_guide/template_variables_nested_contexts.md)
 - [Loop Step Scoping](../user_guide/loop_step_scoping.md)
 - [Configuration Guide](configuration.md)
-

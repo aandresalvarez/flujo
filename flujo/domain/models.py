@@ -15,17 +15,16 @@ from typing import (
     Tuple,
     TypeVar,
     ValuesView,
-    cast,
 )
 from flujo.type_definitions.common import JSONObject
 from threading import RLock
-from pydantic import Field, ConfigDict, field_validator, PrivateAttr
+from pydantic import Field, ConfigDict, field_validator, PrivateAttr, model_validator
 from datetime import datetime, timezone
 import uuid
 from enum import Enum
 
 from .types import ContextT
-from .memory import ScoredMemory
+from .memory import ScoredMemory, VectorStoreProtocol
 from .sandbox import SandboxProtocol
 from .base_model import BaseModel
 
@@ -105,7 +104,7 @@ class Paused(StepOutcome[T]):
     """Human-in-the-loop pause. Contains message and optional token for resumption."""
 
     message: str
-    state_token: Any | None = None
+    state_token: JSONObject | None = None
 
 
 class Aborted(StepOutcome[T]):
@@ -253,17 +252,18 @@ class PipelineResult(BaseModel, Generic[ContextT]):
     # Legacy top-level success indicator expected by some tests and integrations
     success: bool = True
 
-    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
+    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True, "extra": "allow"}
 
     @property
     def status(self) -> str:
         """Best-effort status indicator for backward compatibility."""
         try:
             ctx = self.final_pipeline_context
-            if ctx is not None and hasattr(ctx, "scratchpad"):
-                scratch = getattr(ctx, "scratchpad")
-                if isinstance(scratch, dict) and "status" in scratch:
-                    return str(scratch.get("status") or "unknown")
+            # Prefer typed status field.
+            if ctx is not None:
+                st = getattr(ctx, "status", None)
+                if isinstance(st, str) and st:
+                    return st
         except Exception:
             pass
         return "completed" if self.success else "failed"
@@ -284,7 +284,7 @@ class RefinementCheck(BaseModel):
     """Standardized output from a critic pipeline in a refinement loop."""
 
     is_complete: bool
-    feedback: Optional[Any] = None
+    feedback: str | JSONObject | None = None
 
 
 class UsageLimits(BaseModel):
@@ -628,18 +628,10 @@ class PipelineContext(BaseModel):
     automatically created for every call to :meth:`Flujo.run`. Custom context
     models should inherit from this class to add application specific fields
     while retaining the built in ones.
-
-    User data MUST NOT be stored in ``scratchpad``; it is reserved for framework
-    metadata only. Use typed context fields for application data.
     """
 
     run_id: str = Field(default_factory=lambda: f"run_{uuid.uuid4().hex}")
     initial_prompt: Optional[str] = None
-    # Reserved for framework metadata only; user data is disallowed.
-    scratchpad: JSONObject = Field(
-        default_factory=dict,
-        description="Framework-reserved metadata bag (user data disallowed).",
-    )
     # Structured slot for import-related artifacts to avoid scratchpad usage.
     import_artifacts: ImportArtifacts = Field(default_factory=ImportArtifacts)
     hitl_history: List[HumanInteraction] = Field(default_factory=list)
@@ -656,23 +648,121 @@ class PipelineContext(BaseModel):
     )
     # Utility counter used by test hooks; kept in base context for simplicity
     call_count: int = 0
-    memory_store: Any | None = Field(default=None, exclude=True)
+    memory_store: "VectorStoreProtocol | None" = Field(default=None, exclude=True)
     _sandbox: SandboxProtocol | None = PrivateAttr(default=None)
+
+    # -------------------------------------------------------------------------
+    # Typed fields (promoted from scratchpad)
+    # -------------------------------------------------------------------------
+    status: Literal["running", "paused", "completed", "failed"] = Field(
+        default="running",
+        description="Current execution status of the pipeline.",
+    )
+    pause_message: str | None = Field(
+        default=None,
+        description="Human-readable message when pipeline is paused (HITL).",
+    )
+    step_outputs: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Step outputs keyed by step name. Replaces scratchpad['steps'].",
+    )
+    current_state: str | None = Field(
+        default=None,
+        description="Current state for state-machine pipelines.",
+    )
+    next_state: str | None = Field(
+        default=None,
+        description="Next state for state-machine pipelines.",
+    )
+    paused_step_input: Any | None = Field(
+        default=None,
+        description="Input data preserved when a step pauses for HITL.",
+    )
+    user_input: Any | None = Field(
+        default=None,
+        description="User-provided input during HITL resume.",
+    )
+    hitl_data: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional HITL metadata.",
+    )
+    loop_iteration_index: int | None = Field(
+        default=None,
+        description="Current loop iteration index.",
+    )
+    loop_step_index: int | None = Field(
+        default=None,
+        description="Current step index within the loop.",
+    )
+    loop_last_output: Any | None = Field(
+        default=None,
+        description="Output from last loop iteration.",
+    )
+    loop_resume_requires_hitl_output: bool = Field(
+        default=False,
+        description="Flag indicating if the loop resume requires HITL output.",
+    )
+    loop_paused_step_name: str | None = Field(
+        default=None,
+        description="Name of the step where the loop paused.",
+    )
+    granular_state: dict[str, Any] | None = Field(
+        default=None,
+        description="Granular execution state for GranularStep.",
+    )
+    # Background task bookkeeping (migrated from scratchpad)
+    is_background_task: bool = Field(
+        default=False,
+        description="True when this context is executing inside a background task.",
+    )
+    task_id: str | None = Field(
+        default=None,
+        description="Background task id when is_background_task=True.",
+    )
+    parent_run_id: str | None = Field(
+        default=None,
+        description="Parent run id for background tasks when applicable.",
+    )
+    background_error: str | None = Field(
+        default=None,
+        description="Error message for background task failures (if any).",
+    )
+    background_error_category: str | None = Field(
+        default=None,
+        description="Optional structured category for background task failures.",
+    )
+    # Recipe-specific fields (Candidate/Checklist pattern)
+    solution: str | None = Field(
+        default=None,
+        description="Current solution content (Chain of Thought pattern).",
+    )
+    checklist: Checklist | None = Field(
+        default=None,
+        description="Evaluation checklist (Self-Correction pattern).",
+    )
 
     model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
+    def get(self, key: str, default: Any = None) -> Any:  # pragma: no cover - small helper
+        try:
+            return getattr(self, key)
+        except Exception:
+            return default
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_scratchpad(cls, data: Any) -> Any:
+        """Reject legacy scratchpad payloads; field has been removed."""
+        if isinstance(data, dict) and "scratchpad" in data:
+            raise ValueError(
+                "scratchpad has been removed; migrate to typed fields (status, step_outputs, import_artifacts, etc.)."
+            )
+        return data
+
     @property
     def steps(self) -> JSONObject:
-        """Expose recorded step outputs stored in scratchpad['steps']."""
-        try:
-            sp = getattr(self, "scratchpad", {})
-            if isinstance(sp, dict):
-                steps_map = sp.get("steps")
-                if isinstance(steps_map, dict):
-                    return steps_map
-        except Exception:
-            pass
-        return {}
+        """Expose recorded step outputs."""
+        return self.step_outputs
 
     async def retrieve(
         self,
@@ -686,11 +776,11 @@ class PipelineContext(BaseModel):
         If query_vector is not provided, an embedding model will be used when available.
         Returns an empty list when no memory store is configured.
         """
-        store = getattr(self, "memory_store", None)
+        store = self.memory_store
         if store is None:
             return []
         try:
-            from .memory import VectorQuery, ScoredMemory
+            from .memory import VectorQuery
             from flujo.embeddings import get_embedding_client
             from flujo.infra.settings import get_settings
         except Exception:
@@ -714,7 +804,7 @@ class PipelineContext(BaseModel):
                 return []
         try:
             results = await store.query(VectorQuery(vector=vector or [], limit=limit))
-            return cast(List[ScoredMemory], results)
+            return results
         except Exception:
             return []
 

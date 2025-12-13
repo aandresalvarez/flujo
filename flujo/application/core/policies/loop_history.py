@@ -1,10 +1,15 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
-from ._shared import Any, Optional
+from typing import Optional, Protocol
 
 
-def seed_conversation_history(iteration_context: Any, current_data: Any) -> None:
+class _PipelineResultLike(Protocol):
+    step_history: list[object]
+    final_pipeline_context: object | None
+
+
+def seed_conversation_history(iteration_context: object, current_data: object) -> None:
     """Initialize conversation history for the current iteration."""
     from flujo.domain.models import ConversationRole, ConversationTurn
 
@@ -34,14 +39,14 @@ def seed_conversation_history(iteration_context: Any, current_data: Any) -> None
         pass
 
 
-def collect_step_name_sources(body_pipeline: Any) -> tuple[set[str], set[str]]:
+def collect_step_name_sources(body_pipeline: object) -> tuple[set[str], set[str]]:
     """Collect HITL and agent step names for conversation sourcing."""
     from ._shared import HumanInTheLoopStep, Step
 
     hitl_step_names: set[str] = set()
     agent_step_names: set[str] = set()
 
-    def _collect_names_recursive(p: Any) -> None:
+    def _collect_names_recursive(p: object) -> None:
         try:
             steps_list = list(getattr(p, "steps", []) or [])
         except Exception:
@@ -88,9 +93,9 @@ def collect_step_name_sources(body_pipeline: Any) -> tuple[set[str], set[str]]:
 
 def sync_conversation_history(
     *,
-    current_context: Any,
-    iteration_context: Any,
-    pipeline_result: Any,
+    current_context: object | None,
+    iteration_context: object | None,
+    pipeline_result: _PipelineResultLike,
     conv_enabled: bool,
     ai_src: str,
     user_src: list[str],
@@ -118,10 +123,10 @@ def sync_conversation_history(
         if not isinstance(hist, list):
             return
 
-        def _flatten(results: list[Any]) -> list[Any]:
-            flat: list[Any] = []
+        def _flatten(results: list[object]) -> list[object]:
+            flat: list[object] = []
 
-            def _rec(items: list[Any]) -> None:
+            def _rec(items: list[object]) -> None:
                 for _sr in items or []:
                     flat.append(_sr)
                     try:
@@ -157,7 +162,7 @@ def sync_conversation_history(
         except Exception:
             pass
 
-        def _extract_assistant_question(val: Any) -> tuple[Optional[str], Optional[str]]:
+        def _extract_assistant_question(val: object) -> tuple[Optional[str], Optional[str]]:
             try:
                 if isinstance(val, dict):
                     act = val.get("action")

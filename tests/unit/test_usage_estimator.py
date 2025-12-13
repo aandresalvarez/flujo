@@ -64,7 +64,7 @@ def test_registry_and_factory_selects_minimal_for_adapter_or_validation():
     factory = build_default_estimator_factory()
 
     class _Step:
-        meta = {"is_adapter": True}
+        meta = {"is_adapter": True, "adapter_id": "generic-adapter", "adapter_allow": "generic"}
         config = type("_Cfg", (), {})()
         agent = object()
 

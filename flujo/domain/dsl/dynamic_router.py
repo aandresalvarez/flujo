@@ -1,14 +1,14 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
-from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar, Union
+from typing import Callable, Generic, TypeVar
 
 try:
     from typing import Self
 except ImportError:
     from typing_extensions import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ..models import BaseModel
 from .step import Step, MergeStrategy, BranchFailureStrategy
@@ -19,7 +19,7 @@ TContext = TypeVar("TContext", bound=BaseModel)
 __all__ = ["DynamicParallelRouterStep"]
 
 
-class DynamicParallelRouterStep(Step[Any, Any], Generic[TContext]):
+class DynamicParallelRouterStep(Step[object, object], Generic[TContext]):
     """Dynamically execute a subset of branches in parallel.
 
     ``router_agent`` is invoked first and should return a list of branch
@@ -35,15 +35,15 @@ class DynamicParallelRouterStep(Step[Any, Any], Generic[TContext]):
     ... )
     """
 
-    router_agent: Any = Field(description="Agent that returns branches to run.")
-    branches: Dict[str, Pipeline[Any, Any]] = Field(
+    router_agent: object = Field(description="Agent that returns branches to run.")
+    branches: dict[str, Pipeline[object, object]] = Field(
         description="Mapping of branch names to pipelines."
     )
-    context_include_keys: Optional[List[str]] = Field(
+    context_include_keys: list[str] | None = Field(
         default=None,
         description="Context keys to include when copying context to branches.",
     )
-    merge_strategy: Union[MergeStrategy, Callable[[TContext, JSONObject], None]] = Field(
+    merge_strategy: MergeStrategy | Callable[[TContext, JSONObject], None] = Field(
         default=MergeStrategy.NO_MERGE,
         description="Strategy for merging branch contexts back.",
     )
@@ -51,7 +51,7 @@ class DynamicParallelRouterStep(Step[Any, Any], Generic[TContext]):
         default=BranchFailureStrategy.PROPAGATE,
         description="How to handle branch failures.",
     )
-    field_mapping: Optional[Dict[str, List[str]]] = Field(
+    field_mapping: dict[str, list[str]] | None = Field(
         default=None,
         description="Explicit mapping of branch names to context fields that should be merged. "
         "Only used with CONTEXT_UPDATE merge strategy.",
@@ -63,27 +63,26 @@ class DynamicParallelRouterStep(Step[Any, Any], Generic[TContext]):
 
     model_config = {"arbitrary_types_allowed": True}
 
+    @model_validator(mode="before")
     @classmethod
-    def model_validate(cls: type[Self], *args: Any, **kwargs: Any) -> Self:  # noqa: D401
-        if args and isinstance(args[0], dict):
-            branches = args[0].get("branches", {})
-        else:
-            branches = kwargs.get("branches", {})
+    def _normalize_branches(cls: type[Self], data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+
+        branches = data.get("branches", {})
+        if not isinstance(branches, dict):
+            return data
         if not branches:
             raise ValueError("'branches' dictionary cannot be empty.")
 
-        normalized: Dict[str, Pipeline[Any, Any]] = {}
+        normalized: dict[str, object] = {}
         for key, branch in branches.items():
             if isinstance(branch, Step):
                 normalized[key] = Pipeline.from_step(branch)
             else:
                 normalized[key] = branch
 
-        if args and isinstance(args[0], dict):
-            args = (dict(args[0], branches=normalized),) + args[1:]
-        else:
-            kwargs["branches"] = normalized
-        return super().model_validate(*args, **kwargs)
+        return dict(data, branches=normalized)
 
     def __repr__(self) -> str:  # pragma: no cover - simple repr
         return (

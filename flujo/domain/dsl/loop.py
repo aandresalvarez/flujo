@@ -40,8 +40,8 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
     output is returned.
     """
 
-    loop_body_pipeline: Any = Field(description="The pipeline to execute in each iteration.")
-    exit_condition_callable: Callable[[Any, Optional[TContext]], bool] = Field(
+    loop_body_pipeline: object = Field(description="The pipeline to execute in each iteration.")
+    exit_condition_callable: Callable[[object, Optional[TContext]], bool] = Field(
         description=(
             "Callable that takes (last_body_output, pipeline_context) and returns True to exit loop."
         )
@@ -50,15 +50,17 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
         default=5, ge=1, description="Number of retries after initial iteration.", alias="max_loops"
     )
 
-    initial_input_to_loop_body_mapper: Optional[Callable[[Any, Optional[TContext]], Any]] = Field(
-        default=None,
-        description=("Callable to map LoopStep's input to the first iteration's body input."),
+    initial_input_to_loop_body_mapper: Optional[Callable[[object, Optional[TContext]], object]] = (
+        Field(
+            default=None,
+            description=("Callable to map LoopStep's input to the first iteration's body input."),
+        )
     )
-    iteration_input_mapper: Optional[Callable[[Any, Optional[TContext], int], Any]] = Field(
+    iteration_input_mapper: Optional[Callable[[object, Optional[TContext], int], object]] = Field(
         default=None,
         description=("Callable to map previous iteration's body output to next iteration's input."),
     )
-    loop_output_mapper: Optional[Callable[[Any, Optional[TContext]], Any]] = Field(
+    loop_output_mapper: Optional[Callable[[object, Optional[TContext]], object]] = Field(
         default=None,
         description=("Callable to map the final successful output to the LoopStep's output."),
     )
@@ -67,7 +69,7 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
 
     @model_validator(mode="before")
     @classmethod
-    def _coerce_legacy_fields(cls: type[Self], data: Any) -> Any:
+    def _coerce_legacy_fields(cls: type[Self], data: object) -> object:
         """Support legacy construction using 'body' and 'exit_expression' keys."""
         if not isinstance(data, dict):
             return data
@@ -77,8 +79,6 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
             if "loop_body_pipeline" not in working and "body" in working:
                 body_steps = working.pop("body")
                 if isinstance(body_steps, list):
-                    from .pipeline import Pipeline
-
                     working["loop_body_pipeline"] = Pipeline(steps=body_steps)
         except Exception:
             pass
@@ -92,13 +92,13 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
                     if expr_str.startswith("{{") and expr_str.endswith("}}"):
                         expr_str = expr_str[2:-2].strip()
 
-                    def _resolve_path(path: str, output: Any, ctx: Optional[TContext]) -> Any:
-                        names: dict[str, Any] = {
+                    def _resolve_path(path: str, output: object, ctx: Optional[TContext]) -> object:
+                        names: dict[str, object] = {
                             "previous_step": output,
                             "output": output,
                             "context": ctx,
                         }
-                        target: Any = names
+                        target: object = names
                         for part in path.split("."):
                             if isinstance(target, dict):
                                 target = target.get(part)
@@ -111,7 +111,7 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
                     if " is defined" in expr_str:
                         path = expr_str.split(" is defined", 1)[0].strip()
 
-                        def _legacy_exit(output: Any, ctx: Optional[TContext]) -> bool:
+                        def _legacy_exit(output: object, ctx: Optional[TContext]) -> bool:
                             return _resolve_path(path, output, ctx) is not None
 
                     else:
@@ -119,7 +119,7 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
 
                         expr_fn = compile_expression_to_callable(expr_str)
 
-                        def _legacy_exit(output: Any, ctx: Optional[TContext]) -> bool:
+                        def _legacy_exit(output: object, ctx: Optional[TContext]) -> bool:
                             val = expr_fn(output, ctx)
                             try:
                                 return bool(val)
@@ -129,31 +129,38 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
                     working["exit_condition_callable"] = _legacy_exit
         except Exception:
             pass
+        loop_body = working.get("loop_body_pipeline")
+        if loop_body is not None and not isinstance(loop_body, Pipeline):
+            raise ValueError(
+                f"loop_body_pipeline must be a Pipeline instance, got {type(loop_body)}"
+            )
         return working
 
     def get_max_loops(self) -> int:
         """Get the maximum number of loops."""
         return self.max_retries
 
-    def get_loop_body_pipeline(self) -> Any:
+    def get_loop_body_pipeline(self) -> object:
         """Get the loop body pipeline."""
         return self.loop_body_pipeline
 
-    def get_exit_condition_callable(self) -> Callable[[Any, Optional[TContext]], bool]:
+    def get_exit_condition_callable(self) -> Callable[[object, Optional[TContext]], bool]:
         """Get the exit condition callable."""
         return self.exit_condition_callable
 
     def get_initial_input_to_loop_body_mapper(
         self,
-    ) -> Optional[Callable[[Any, Optional[TContext]], Any]]:
+    ) -> Optional[Callable[[object, Optional[TContext]], object]]:
         """Get the initial input mapper."""
         return self.initial_input_to_loop_body_mapper
 
-    def get_iteration_input_mapper(self) -> Optional[Callable[[Any, Optional[TContext], int], Any]]:
+    def get_iteration_input_mapper(
+        self,
+    ) -> Optional[Callable[[object, Optional[TContext], int], object]]:
         """Get the iteration input mapper."""
         return self.iteration_input_mapper
 
-    def get_loop_output_mapper(self) -> Optional[Callable[[Any, Optional[TContext]], Any]]:
+    def get_loop_output_mapper(self) -> Optional[Callable[[object, Optional[TContext]], object]]:
         """Get the loop output mapper."""
         return self.loop_output_mapper
 
@@ -165,16 +172,6 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
     def is_complex(self) -> bool:
         # ✅ Override to mark as complex.
         return True
-
-    # Runtime validation of pipeline type
-    @classmethod
-    def model_validate(cls: type[Self], *args: Any, **kwargs: Any) -> Self:
-        loop_body = kwargs.get("loop_body_pipeline")
-        if loop_body is not None and not isinstance(loop_body, Pipeline):
-            raise ValueError(
-                f"loop_body_pipeline must be a Pipeline instance, got {type(loop_body)}"
-            )
-        return super().model_validate(*args, **kwargs)
 
     def __repr__(self) -> str:
         return f"LoopStep(name={self.name!r}, loop_body_pipeline={self.loop_body_pipeline!r})"
@@ -194,14 +191,14 @@ class MapStep(LoopStep[TContext]):
     pipeline_to_run: Pipeline[Any, Any] = Field(description="The pipeline to execute for each item")
 
     # Internal state for a single execution (excluded from serialization)
-    items: Optional[List[Any]] = Field(default=None, exclude=True)
-    results: Optional[List[Any]] = Field(default=None, exclude=True)
+    items: Optional[List[object]] = Field(default=None, exclude=True)
+    results: Optional[List[object]] = Field(default=None, exclude=True)
     original_body_pipeline: Optional[Pipeline[Any, Any]] = Field(default=None, exclude=True)
     # Context-local state for concurrency safety
-    _items_var: ClassVar[contextvars.ContextVar[List[Any]]] = contextvars.ContextVar(
+    _items_var: ClassVar[contextvars.ContextVar[List[object]]] = contextvars.ContextVar(
         "map_items", default=[]
     )
-    _results_var: ClassVar[contextvars.ContextVar[List[Any]]] = contextvars.ContextVar(
+    _results_var: ClassVar[contextvars.ContextVar[List[object]]] = contextvars.ContextVar(
         "map_results", default=[]
     )
     _max_loops_var: ClassVar[contextvars.ContextVar[int]] = contextvars.ContextVar(
@@ -212,10 +209,10 @@ class MapStep(LoopStep[TContext]):
     )
 
     # Override the required fields from LoopStep with appropriate defaults
-    loop_body_pipeline: Optional[Any] = Field(
+    loop_body_pipeline: Optional[object] = Field(
         default=None, description="The pipeline to execute in each iteration."
     )
-    exit_condition_callable: Callable[[Any, Optional[TContext]], bool] = Field(
+    exit_condition_callable: Callable[[object, Optional[TContext]], bool] = Field(
         default=lambda _o, _c: True,
         description="Callable that takes (last_body_output, pipeline_context) and returns True to exit loop.",
     )
@@ -229,10 +226,10 @@ class MapStep(LoopStep[TContext]):
         items = self._items_var.get()
         return len(items) if items else 0
 
-    def get_exit_condition_callable(self) -> Callable[[Any, Optional[TContext]], bool]:
+    def get_exit_condition_callable(self) -> Callable[[object, Optional[TContext]], bool]:
         """Get the exit condition callable for mapping."""
 
-        def _exit_condition(output: Any, ctx: Optional[TContext]) -> bool:
+        def _exit_condition(output: object, ctx: Optional[TContext]) -> bool:
             # Exit when the current (last) output would complete the results
             items = self._items_var.get()
             results = self._results_var.get()
@@ -242,10 +239,12 @@ class MapStep(LoopStep[TContext]):
 
         return _exit_condition
 
-    def get_initial_input_to_loop_body_mapper(self) -> Callable[[Any, Optional[TContext]], Any]:
+    def get_initial_input_to_loop_body_mapper(
+        self,
+    ) -> Callable[[object, Optional[TContext]], object]:
         """Get the initial input mapper for mapping."""
 
-        def _initial_mapper(input_data: Any, ctx: Optional[TContext]) -> Any:
+        def _initial_mapper(input_data: object, ctx: Optional[TContext]) -> object:
             # For MapStep, we need to extract the iterable from context
             if ctx is None:
                 raise ValueError("MapStep requires a context")
@@ -277,10 +276,12 @@ class MapStep(LoopStep[TContext]):
 
         return _initial_mapper
 
-    def get_iteration_input_mapper(self) -> Callable[[Any, Optional[TContext], int], Any]:
+    def get_iteration_input_mapper(
+        self,
+    ) -> Callable[[object, Optional[TContext], int], object]:
         """Get the iteration input mapper for mapping."""
 
-        def _iteration_mapper(output: Any, ctx: Optional[TContext], iteration: int) -> Any:
+        def _iteration_mapper(output: object, ctx: Optional[TContext], iteration: int) -> object:
             # Store the result from previous iteration
             results = self._results_var.get()
             results.append(output)
@@ -298,10 +299,10 @@ class MapStep(LoopStep[TContext]):
 
         return _iteration_mapper
 
-    def get_loop_output_mapper(self) -> Callable[[Any, Optional[TContext]], List[Any]]:
+    def get_loop_output_mapper(self) -> Callable[[object, Optional[TContext]], List[object]]:
         """Get the loop output mapper for mapping."""
 
-        def _output_mapper(output: Any, ctx: Optional[TContext]) -> List[Any]:
+        def _output_mapper(output: object, ctx: Optional[TContext]) -> List[object]:
             # Return collected results only (unit tests expect not to include current output)
             base = self._results_var.get()
             if base:
@@ -310,7 +311,7 @@ class MapStep(LoopStep[TContext]):
 
         return _output_mapper
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: object) -> None:
         """Ensure transient runtime state is cleared and defaults initialized."""
         super().model_post_init(__context)
         self.items = None
@@ -324,7 +325,7 @@ class MapStep(LoopStep[TContext]):
         class _NoOpStep(Step[Any, Any]):
             name: str = "noop"
 
-            async def execute(self, input_data: Any, context: Optional[Any]) -> Any:
+            async def execute(self, input_data: object, context: Optional[object]) -> object:
                 return input_data
 
         self.loop_body_pipeline = Pipeline(steps=[_NoOpStep()])
@@ -351,7 +352,7 @@ class MapStep(LoopStep[TContext]):
         name: str,
         pipeline: Pipeline[Any, Any],
         iterable_input: str,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> "MapStep[TContext]":
         """Create a MapStep from a pipeline.
 

@@ -1,7 +1,8 @@
 from __future__ import annotations
-from typing import Any, Awaitable, Callable, Optional, cast
+from typing import Any, Awaitable, Callable, Optional
 
 from flujo.domain.models import BaseModel as DomainBaseModel
+from pydantic import BaseModel as PydanticBaseModel
 from flujo.infra.jinja_utils import create_jinja_environment
 from flujo.infra.skill_models import SkillRegistration
 from flujo.infra.skill_registry import get_skill_registry
@@ -62,8 +63,8 @@ def _resolve_sandbox(context: DomainBaseModel | None) -> SandboxProtocol:
         for attr in ("sandbox", "_sandbox"):
             try:
                 sandbox = getattr(context, attr)
-                if sandbox is not None:
-                    return cast(SandboxProtocol, sandbox)
+                if isinstance(sandbox, SandboxProtocol):
+                    return sandbox
             except Exception:
                 continue
     return NullSandbox()
@@ -138,7 +139,7 @@ def _register_builtins() -> None:
                 **SkillRegistration(
                     id="flujo.builtins.context_set",
                     factory=lambda **_params: context_set,
-                    description="Set a context field at a dot-separated path (e.g., 'scratchpad.counter')",
+                    description="Set a context field at a dot-separated path (e.g., 'call_count' or 'import_artifacts.counter')",
                     input_schema={
                         "type": "object",
                         "properties": {
@@ -155,7 +156,7 @@ def _register_builtins() -> None:
                 **SkillRegistration(
                     id="flujo.builtins.context_merge",
                     factory=lambda **_params: context_merge,
-                    description="Merge a dictionary into context at a path (e.g., 'scratchpad.settings')",
+                    description="Merge a dictionary into context at a path (e.g., 'hitl_data' or 'import_artifacts.extras')",
                     input_schema={
                         "type": "object",
                         "properties": {
@@ -230,7 +231,7 @@ def _register_builtins() -> None:
 
         # --- FSD-024: analyze_project (safe filesystem scan)
         async def analyze_project(
-            _data: Any = None, *, directory: str = ".", max_files: int = 200
+            _data: JSONObject | None = None, *, directory: str = ".", max_files: int = 200
         ) -> JSONObject:
             import os
 
@@ -257,8 +258,10 @@ def _register_builtins() -> None:
             except Exception:
                 return {"project_summary": "Error analyzing project"}
 
-        def _make_analyze_runner(directory: str = ".", max_files: int = 200) -> Any:
-            async def _runner(_data: Any = None, **_k: Any) -> JSONObject:
+        def _make_analyze_runner(
+            directory: str = ".", max_files: int = 200
+        ) -> Callable[..., Awaitable[JSONObject]]:
+            async def _runner(_data: JSONObject | None = None, **_k: Any) -> JSONObject:
                 return await analyze_project(_data, directory=directory, max_files=max_files)
 
             return _runner
@@ -278,7 +281,9 @@ def _register_builtins() -> None:
         )
 
         # --- FSD-024: visualize_plan -> Mermaid
-        async def visualize_plan(plan: Any) -> dict[str, str]:
+        async def visualize_plan(
+            plan: list[JSONObject] | JSONObject,
+        ) -> dict[str, str]:
             try:
                 lines: list[str] = ["graph TD"]
                 if isinstance(plan, list):
@@ -303,7 +308,9 @@ def _register_builtins() -> None:
         )
 
         # --- FSD-024: estimate_plan_cost (sum registry est_cost)
-        async def estimate_plan_cost(plan: Any) -> dict[str, float]:
+        async def estimate_plan_cost(
+            plan: list[JSONObject],
+        ) -> dict[str, float]:
             total = 0.0
             try:
                 registry = get_skill_registry()
@@ -771,13 +778,19 @@ def _register_builtins() -> None:
         )
 
         # In-memory YAML validation that returns a ValidationReport and never raises on invalid YAML
-        def _resolve_validate_yaml(**_params: Any) -> Any:
+        def _resolve_validate_yaml(
+            **_params: Any,
+        ) -> Callable[..., Any]:
             # Dynamic resolution so test monkeypatches to flujo.builtins.validate_yaml take effect
             try:
                 import importlib as _importlib
+                from types import ModuleType as _ModuleType
 
-                mod = _importlib.import_module("flujo.builtins")
-                return getattr(mod, "validate_yaml")
+                mod: _ModuleType = _importlib.import_module("flujo.builtins")
+                resolved: object = getattr(mod, "validate_yaml", None)
+                if callable(resolved):
+                    return resolved
+                return validate_yaml
             except Exception:
                 return validate_yaml
 
@@ -800,7 +813,9 @@ def _register_builtins() -> None:
 
         # Aggregator: combine mapped results with goal and (optional) skills
         async def aggregate_plan(
-            mapped_step_results: Any, *, context: DomainBaseModel | None = None
+            mapped_step_results: list[JSONObject] | JSONObject,
+            *,
+            context: DomainBaseModel | None = None,
         ) -> JSONObject:
             try:
                 user_goal = getattr(context, "user_goal", None) or getattr(
@@ -848,7 +863,9 @@ def _register_builtins() -> None:
 
         # Adapter: build input for tool matcher from a step item and context skills
         async def build_tool_match_input(
-            item: Any, *, context: DomainBaseModel | None = None
+            item: JSONObject | PydanticBaseModel,
+            *,
+            context: DomainBaseModel | None = None,
         ) -> JSONObject:
             name = None
             purpose = None

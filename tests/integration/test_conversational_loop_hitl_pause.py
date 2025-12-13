@@ -48,7 +48,7 @@ async def test_conversational_loop_hitl_pause_and_resume(tmp_path):
     assert paused is not None
     ctx = paused.final_pipeline_context  # type: ignore[union-attr]
     assert isinstance(ctx, PipelineContext)
-    assert ctx.scratchpad.get("status") == "paused"
+    assert ctx.status == "paused"
 
     # Resume with human input
     resumed = await runner.resume_async(paused, human_input="Tomorrow")

@@ -734,17 +734,19 @@ from flujo.domain import MergeStrategy, BranchFailureStrategy
 parallel = Step.parallel(
     name="parallel_merge",
     branches={"a": Pipeline.from_step(Step("a", a_agent)), "b": Pipeline.from_step(Step("b", b_agent))},
-    merge_strategy=MergeStrategy.MERGE_SCRATCHPAD,
+    merge_strategy=MergeStrategy.CONTEXT_UPDATE,
     on_branch_failure=BranchFailureStrategy.IGNORE,
 )
 ```
 
 Available `MergeStrategy` values:
 
-- `CONTEXT_UPDATE` (default) – apply validated updates; conflicts on the same field now raise a configuration error unless resolved via `field_mapping`.
+- `CONTEXT_UPDATE` (default) – apply validated updates; conflicts on the same field now raise a configuration error unless resolved via `field_mapping`. Use this to merge structured branch outputs explicitly.
 - `ERROR_ON_CONFLICT` – explicitly fail on any conflicting field updates.
 - `OVERWRITE` – context from the last declared successful branch overwrites matching fields.
-- `MERGE_SCRATCHPAD` – merge `scratchpad` dictionaries from all successful branches. Branch scratchpads are merged in alphabetical order and key collisions raise a `ValueError`.
+- `NO_MERGE` – skip merging branch contexts (returns per-branch outputs only).
+- `KEEP_FIRST` – keep the first occurrence of each key when merging (non-validating).
+- `MERGE_SCRATCHPAD` has been removed; scratchpad is framework-reserved and must not be merged from branches. Use typed context fields and `CONTEXT_UPDATE` instead.
 
 `on_branch_failure` accepts `PROPAGATE` (default) or `IGNORE`. When set to
 `IGNORE`, the parallel step succeeds as long as one branch succeeds and the

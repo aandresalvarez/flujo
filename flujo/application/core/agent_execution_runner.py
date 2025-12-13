@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
-from ...domain.models import StepOutcome, StepResult, Success
+from ...domain.models import BaseModel, StepOutcome, StepResult, Success, UsageLimits
 from ...exceptions import InfiniteFallbackError
 from ...infra import telemetry
 from .agent_fallback_handler import AgentFallbackHandler, FallbackState
@@ -22,8 +23,8 @@ class AgentExecutionRunner:
     def __init__(
         self,
         *,
-        plugin_runner: Optional[AgentPluginRunner] = None,
-        fallback_handler: Optional[AgentFallbackHandler] = None,
+        plugin_runner: AgentPluginRunner | None = None,
+        fallback_handler: AgentFallbackHandler | None = None,
     ) -> None:
         self._plugin_runner = plugin_runner or AgentPluginRunner()
         self._fallback_handler = fallback_handler or AgentFallbackHandler()
@@ -31,15 +32,15 @@ class AgentExecutionRunner:
     async def execute(
         self,
         *,
-        core: "ExecutorCore[Any]",
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[Any],
+        core: "ExecutorCore[BaseModel]",
+        step: object,
+        data: object,
+        context: BaseModel | None,
+        resources: object | None,
+        limits: object | None,
         stream: bool,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
-        cache_key: Optional[str],
+        on_chunk: Callable[[object], Awaitable[None]] | None,
+        cache_key: str | None,
         fallback_depth: int,
     ) -> StepOutcome[StepResult]:
         """Orchestrate agent execution with retries, telemetry, validation, plugins, fallback."""
@@ -212,7 +213,7 @@ class AgentExecutionRunner:
         best_primary_cost_usd: float = 0.0
 
         # Last plugin failure text to surface if needed
-        last_plugin_failure_feedback: Optional[str] = None
+        last_plugin_failure_feedback: str | None = None
 
         # Snapshot context for retry isolation
         pre_attempt_context = None
@@ -291,8 +292,9 @@ class AgentExecutionRunner:
                 # Dynamic input templating per attempt
                 try:
                     templ_spec = None
-                    if hasattr(step, "meta") and isinstance(step.meta, dict):
-                        templ_spec = step.meta.get("templated_input")
+                    meta_obj = getattr(step, "meta", None)
+                    if isinstance(meta_obj, dict):
+                        templ_spec = meta_obj.get("templated_input")
                     if templ_spec is not None:
                         from flujo.utils.prompting import AdvancedPromptFormatter
                         from flujo.utils.template_vars import (
@@ -398,44 +400,51 @@ class AgentExecutionRunner:
 
                     est_cost = 0.0
                     est_tokens = 0
-                    estimate_obj = None
-                    try:
-                        est = getattr(core, "_usage_estimator", None)
-                        if est is not None and hasattr(est, "estimate"):
-                            estimate_obj = est.estimate(step, data, context)
-                    except Exception:
-                        estimate_obj = None
-                    if estimate_obj is None:
+                    cfg_est = getattr(step, "config", None)
+                    cfg_expected_cost = (
+                        getattr(cfg_est, "expected_cost_usd", None) if cfg_est else None
+                    )
+                    cfg_expected_tokens = (
+                        getattr(cfg_est, "expected_tokens", None) if cfg_est else None
+                    )
+
+                    if cfg_est is not None and (
+                        cfg_expected_cost is not None or cfg_expected_tokens is not None
+                    ):
                         try:
-                            factory = getattr(core, "_estimator_factory", None)
-                            if factory is not None and hasattr(factory, "select"):
-                                sel = factory.select(step)
-                                if sel is not None and hasattr(sel, "estimate"):
-                                    estimate_obj = sel.estimate(step, data, context)
-                        except Exception:
-                            estimate_obj = None
-                    if estimate_obj is not None:
-                        try:
-                            est_cost = float(getattr(estimate_obj, "cost_usd", 0.0) or 0.0)
+                            if cfg_expected_cost is not None:
+                                est_cost = float(cfg_expected_cost)
                         except Exception:
                             est_cost = 0.0
                         try:
-                            est_tokens = int(getattr(estimate_obj, "tokens", 0) or 0)
+                            if cfg_expected_tokens is not None:
+                                est_tokens = int(cfg_expected_tokens)
                         except Exception:
                             est_tokens = 0
                     else:
-                        cfg_est = getattr(step, "config", None)
-                        if cfg_est is not None:
+                        estimate_obj = None
+                        try:
+                            est = getattr(core, "_usage_estimator", None)
+                            if est is not None and hasattr(est, "estimate"):
+                                estimate_obj = est.estimate(step, data, context)
+                        except Exception:
+                            estimate_obj = None
+                        if estimate_obj is None:
                             try:
-                                cval = getattr(cfg_est, "expected_cost_usd", None)
-                                if cval is not None:
-                                    est_cost = float(cval)
+                                factory = getattr(core, "_estimator_factory", None)
+                                if factory is not None and hasattr(factory, "select"):
+                                    sel = factory.select(step)
+                                    if sel is not None and hasattr(sel, "estimate"):
+                                        estimate_obj = sel.estimate(step, data, context)
+                            except Exception:
+                                estimate_obj = None
+                        if estimate_obj is not None:
+                            try:
+                                est_cost = float(getattr(estimate_obj, "cost_usd", 0.0) or 0.0)
                             except Exception:
                                 est_cost = 0.0
                             try:
-                                tval = getattr(cfg_est, "expected_tokens", None)
-                                if tval is not None:
-                                    est_tokens = int(tval)
+                                est_tokens = int(getattr(estimate_obj, "tokens", 0) or 0)
                             except Exception:
                                 est_tokens = 0
 
@@ -444,7 +453,9 @@ class AgentExecutionRunner:
                     if current_quota is not None and not current_quota.reserve(_estimate):
                         from .usage_messages import format_reservation_denial as _fmt_denial
 
-                        denial = _fmt_denial(_estimate, limits)
+                        denial = _fmt_denial(
+                            _estimate, limits if isinstance(limits, UsageLimits) else None
+                        )
                         raise UsageLimitExceededError(denial.human)
                 except UsageLimitExceededError:
                     raise
@@ -460,7 +471,7 @@ class AgentExecutionRunner:
                             timeout_s = float(cfg.timeout_s)
                     except Exception:
                         timeout_s = None
-                    options: dict[str, Any] = {}
+                    options: dict[str, object] = {}
                     try:
                         cfg2 = getattr(step, "config", None)
                         if cfg2 is not None:
@@ -473,7 +484,7 @@ class AgentExecutionRunner:
                     except Exception:
                         pass
                     agent_coro = core._agent_runner.run(
-                        step.agent,
+                        getattr(step, "agent", None),
                         processed_output,
                         context=attempt_context,
                         resources=attempt_resources,
@@ -504,7 +515,7 @@ class AgentExecutionRunner:
                         raise MockDetectionError(
                             f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object"
                         )
-                    pmeta: dict[str, Any] = {}
+                    pmeta: dict[str, object] = {}
                     try:
                         meta_obj = getattr(step, "meta", {}) or {}
                         if isinstance(meta_obj, dict):
@@ -553,7 +564,7 @@ class AgentExecutionRunner:
 
                     ptokens, ctokens, cost = _step_policies.extract_usage_metrics(
                         raw_output=processed_output,
-                        agent=step.agent,
+                        agent=getattr(step, "agent", None),
                         step_name=core._safe_step_name(step),
                     )
                     prompt_tokens_latest = ptokens
@@ -600,12 +611,6 @@ class AgentExecutionRunner:
                             or getattr(attempt_context, "_loop_iteration_active", False)
                             or getattr(core, "_inside_loop_iteration", False)
                             or getattr(step, "_force_loop_fallback", False)
-                            or (
-                                isinstance(getattr(attempt_context, "scratchpad", None), dict)
-                                and getattr(attempt_context, "scratchpad", {}).get(
-                                    "_loop_iteration_active", False
-                                )
-                            )
                         )
                     except Exception:
                         is_loop_context = False
@@ -647,7 +652,10 @@ class AgentExecutionRunner:
                     fb_sr.metadata_["original_error"] = result.feedback
                     return Success(step_result=fb_sr)
 
-                # Validation steps: run hybrid validation over the agent output
+                # Validation steps: run the agent, then validate its (possibly transformed) output.
+                #
+                # Plugins can supply a `new_solution` (or return transformed output) and validators
+                # should be evaluated against the final candidate output.
                 if is_validation_step:
                     checked_output, hybrid_feedback = await run_hybrid_check(
                         processed_output,
@@ -732,7 +740,7 @@ class AgentExecutionRunner:
 
                 validation_result = await run_validation(
                     core=core,
-                    step=step,
+                    step=step,  # type: ignore[arg-type]
                     output=processed_output,
                     context=attempt_context,
                     limits=limits,
@@ -756,7 +764,7 @@ class AgentExecutionRunner:
                     if not primary_tokens_known:
                         ptokens, ctokens, cost = _step_policies.extract_usage_metrics(
                             raw_output=processed_output,
-                            agent=step.agent,
+                            agent=getattr(step, "agent", None),
                             step_name=core._safe_step_name(step),
                         )
                         prompt_tokens_latest = ptokens
@@ -805,12 +813,14 @@ class AgentExecutionRunner:
                                 pass
                 except Exception:
                     pass
+
                 try:
                     step_name = getattr(step, "name", "")
-                    is_mapper = step_name.endswith("_output_mapper") or (
-                        isinstance(getattr(step, "meta", None), dict)
-                        and step.meta.get("is_adapter")
+                    meta_obj = getattr(step, "meta", None)
+                    is_adapter = (
+                        bool(meta_obj.get("is_adapter")) if isinstance(meta_obj, dict) else False
                     )
+                    is_mapper = step_name.endswith("_output_mapper") or is_adapter
                     if is_mapper and attempt_context is not None:
                         iter_count = getattr(attempt_context, "_last_loop_iterations", None)
                         if iter_count is not None:
@@ -852,34 +862,13 @@ class AgentExecutionRunner:
                 # Record step output for templating
                 try:
                     if attempt_context is not None:
-                        sp = getattr(attempt_context, "scratchpad", None)
-                        if sp is None:
-                            setattr(attempt_context, "scratchpad", {"steps": {}})
-                            sp = getattr(attempt_context, "scratchpad", None)
-                        if isinstance(sp, dict):
-                            steps_map_raw = sp.get("steps")
-                            scratch_steps: dict[str, Any] = (
-                                steps_map_raw if isinstance(steps_map_raw, dict) else {}
-                            )
-                            if not isinstance(steps_map_raw, dict):
-                                sp["steps"] = scratch_steps
-                            scratch_steps[getattr(step, "name", "")] = result.output
+                        outputs = getattr(attempt_context, "step_outputs", None)
+                        if isinstance(outputs, dict):
+                            outputs[getattr(step, "name", "")] = result.output
                         if context is not None and context is not attempt_context:
-                            try:
-                                sp_main = getattr(context, "scratchpad", None)
-                                if sp_main is None:
-                                    setattr(context, "scratchpad", {"steps": {}})
-                                    sp_main = getattr(context, "scratchpad", None)
-                                if isinstance(sp_main, dict):
-                                    steps_main_raw = sp_main.get("steps")
-                                    scratch_steps_main: dict[str, Any] = (
-                                        steps_main_raw if isinstance(steps_main_raw, dict) else {}
-                                    )
-                                    if not isinstance(steps_main_raw, dict):
-                                        sp_main["steps"] = scratch_steps_main
-                                    scratch_steps_main[getattr(step, "name", "")] = result.output
-                            except Exception:
-                                pass
+                            outputs_main = getattr(context, "step_outputs", None)
+                            if isinstance(outputs_main, dict):
+                                outputs_main[getattr(step, "name", "")] = result.output
                 except Exception:
                     pass
                 try:

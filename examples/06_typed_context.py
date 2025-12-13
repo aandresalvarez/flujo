@@ -1,7 +1,7 @@
 """
 Demonstrates using a Typed Pipeline Context to share state across steps.
 
-A Typed Context is a Pydantic model that acts as a shared "scratchpad" for
+A Typed Context is a Pydantic model that acts as shared, type-safe state for
 a single pipeline run. It's perfect for passing data between non-adjacent
 steps or for accumulating information throughout a workflow.
 For more details, see docs/pipeline_context.md.

@@ -14,6 +14,17 @@ from flujo.domain.dsl import HumanInTheLoopStep, Pipeline
 from flujo.domain.blueprint import load_pipeline_blueprint_from_yaml
 from tests.conftest import create_test_flujo
 from flujo.testing.utils import gather_result
+from pydantic import Field
+from flujo.domain.models import PipelineContext
+
+
+class _Ctx(PipelineContext):
+    user_name: str | None = None
+    loop_input: str | None = None
+    nested_value: str | None = None
+    items: list[str] = Field(default_factory=list)
+    first_value: str | None = None
+    second_value: str | None = None
 
 
 @pytest.mark.asyncio
@@ -47,35 +58,28 @@ steps:
         - kind: hitl
           name: ask_in_conditional
           message: "Enter value:"
-          sink_to: "scratchpad.user_input"
+          sink_to: "user_input"
 
   - kind: step
     name: verify
     agent: { id: "flujo.builtins.stringify" }
-    input: "Value: {{ context.scratchpad.user_input }}"
+    input: "Value: {{ context.user_input }}"
 """
 
     pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
-    runner = create_test_flujo(pipeline)
+    runner = create_test_flujo(pipeline, context_model=_Ctx)
 
     # Run until pause
     paused_result = await gather_result(runner, "initial_input")
     assert paused_result is not None
-    assert paused_result.final_pipeline_context.scratchpad.get("status") == "paused"
+    assert paused_result.final_pipeline_context.status == "paused"
 
     # Resume with user input
     resumed = await runner.resume_async(paused_result, "test123")
 
     # Verify sink_to worked
     final_ctx = resumed.final_pipeline_context
-    assert hasattr(final_ctx, "scratchpad") or isinstance(final_ctx.scratchpad, dict)
-
-    if hasattr(final_ctx.scratchpad, "user_input"):
-        assert final_ctx.scratchpad.user_input == "test123"
-    elif isinstance(final_ctx.scratchpad, dict):
-        assert final_ctx.scratchpad.get("user_input") == "test123"
-    else:
-        pytest.fail("scratchpad.user_input not found in context after conditional branch")
+    assert final_ctx.user_input == "test123"
 
     # Verify the verify step saw the value
     final_output = resumed.step_history[-1].output
@@ -107,35 +111,28 @@ steps:
         - kind: hitl
           name: ask_in_loop
           message: "Enter value:"
-          sink_to: "scratchpad.loop_input"
+          sink_to: "loop_input"
 """
 
     pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
-    runner = create_test_flujo(pipeline)
+    runner = create_test_flujo(pipeline, context_model=_Ctx)
 
     # Run until first pause
     paused_result = await gather_result(runner, "initial_input")
     assert paused_result is not None
-    assert paused_result.final_pipeline_context.scratchpad.get("status") == "paused"
+    assert paused_result.final_pipeline_context.status == "paused"
 
     # Resume with user input - loop will hit max_loops and exit
     resumed = await runner.resume_async(paused_result, "loop_value_1")
 
     # The pipeline should complete now (loop exits after max_loops)
-    assert (
-        resumed.final_pipeline_context.scratchpad.get("status") != "paused"
-    ), f"Pipeline still paused after loop completion. Status: {resumed.final_pipeline_context.scratchpad.get('status')}"
+    assert resumed.final_pipeline_context.status != "paused", (
+        f"Pipeline still paused after loop completion. Status: {resumed.final_pipeline_context.status}"
+    )
 
     # Verify sink_to worked in loop
     final_ctx = resumed.final_pipeline_context
-    if hasattr(final_ctx.scratchpad, "loop_input"):
-        assert final_ctx.scratchpad.loop_input == "loop_value_1"
-    elif isinstance(final_ctx.scratchpad, dict):
-        assert (
-            final_ctx.scratchpad.get("loop_input") == "loop_value_1"
-        ), f"loop_input not found in scratchpad. Keys: {list(final_ctx.scratchpad.keys())}"
-    else:
-        pytest.fail("scratchpad.loop_input not found after loop")
+    assert final_ctx.loop_input == "loop_value_1"
 
 
 @pytest.mark.asyncio
@@ -169,17 +166,17 @@ steps:
               - kind: hitl
                 name: nested_ask
                 message: "Enter nested value:"
-                sink_to: "scratchpad.nested_value"
-      exit_expression: "len(context.scratchpad.get('items', [])) >= 1"
+                sink_to: "nested_value"
+      exit_expression: "len(context.items) >= 1"
 
   - kind: step
     name: verify
     agent: { id: "flujo.builtins.stringify" }
-    input: "Nested: {{ context.scratchpad.nested_value }}"
+    input: "Nested: {{ context.nested_value }}"
 """
 
     pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
-    runner = create_test_flujo(pipeline)
+    runner = create_test_flujo(pipeline, context_model=_Ctx)
 
     # Run until pause
     paused_result = await gather_result(runner, "initial_input")
@@ -187,17 +184,12 @@ steps:
 
     # Resume and exit loop
     ctx = paused_result.final_pipeline_context
-    ctx.scratchpad["items"] = ["done"]
+    ctx.items = ["done"]
     resumed = await runner.resume_async(paused_result, "nested123")
 
     # Verify sink_to survived double nesting
     final_ctx = resumed.final_pipeline_context
-    if hasattr(final_ctx.scratchpad, "nested_value"):
-        assert final_ctx.scratchpad.nested_value == "nested123"
-    elif isinstance(final_ctx.scratchpad, dict):
-        assert final_ctx.scratchpad.get("nested_value") == "nested123"
-    else:
-        pytest.fail("scratchpad.nested_value not found after nested conditional in loop")
+    assert final_ctx.nested_value == "nested123"
 
 
 @pytest.mark.asyncio
@@ -209,31 +201,23 @@ async def test_hitl_sink_to_top_level_still_works():
     Ensures we didn't break the existing functionality when fixing nested contexts.
     """
     hitl = HumanInTheLoopStep(
-        name="get_user_name", message_for_user="What is your name?", sink_to="scratchpad.user_name"
+        name="get_user_name", message_for_user="What is your name?", sink_to="user_name"
     )
 
     pipeline = Pipeline(steps=[hitl])
-    runner = create_test_flujo(pipeline)
+    runner = create_test_flujo(pipeline, context_model=_Ctx)
 
     # Run until pause
     paused_result = await gather_result(runner, "initial_input")
     assert paused_result is not None
-    assert paused_result.final_pipeline_context.scratchpad.get("status") == "paused"
+    assert paused_result.final_pipeline_context.status == "paused"
 
     # Resume with user response
     resumed = await runner.resume_async(paused_result, "Alice")
 
     # Verify response was sunk to context
     final_ctx = resumed.final_pipeline_context
-    assert hasattr(final_ctx, "scratchpad") or isinstance(final_ctx.scratchpad, dict)
-
-    # Check if user_name was stored
-    if hasattr(final_ctx.scratchpad, "user_name"):
-        assert final_ctx.scratchpad.user_name == "Alice"
-    elif isinstance(final_ctx.scratchpad, dict):
-        assert final_ctx.scratchpad.get("user_name") == "Alice"
-    else:
-        pytest.fail("scratchpad.user_name not found in context")
+    assert final_ctx.user_name == "Alice"
 
 
 @pytest.mark.asyncio
@@ -261,7 +245,7 @@ steps:
         - kind: hitl
           name: ask_first
           message: "Enter first value:"
-          sink_to: "scratchpad.first_value"
+          sink_to: "first_value"
 
   - kind: conditional
     name: second_conditional
@@ -271,16 +255,16 @@ steps:
         - kind: hitl
           name: ask_second
           message: "Enter second value:"
-          sink_to: "scratchpad.second_value"
+          sink_to: "second_value"
 
   - kind: step
     name: verify
     agent: { id: "flujo.builtins.stringify" }
-    input: "Both: {{ context.scratchpad.first_value }} and {{ context.scratchpad.second_value }}"
+    input: "Both: {{ context.first_value }} and {{ context.second_value }}"
 """
 
     pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
-    runner = create_test_flujo(pipeline)
+    runner = create_test_flujo(pipeline, context_model=_Ctx)
 
     # First pause
     paused_result = await gather_result(runner, "initial_input")
@@ -290,22 +274,15 @@ steps:
     resumed_once = await runner.resume_async(paused_result, "value1")
 
     # Second pause
-    assert resumed_once.final_pipeline_context.scratchpad.get("status") == "paused"
+    assert resumed_once.final_pipeline_context.status == "paused"
 
     # Resume second HITL
     final = await runner.resume_async(resumed_once, "value2")
 
     # Verify both values persisted
     final_ctx = final.final_pipeline_context
-
-    if isinstance(final_ctx.scratchpad, dict):
-        assert final_ctx.scratchpad.get("first_value") == "value1"
-        assert final_ctx.scratchpad.get("second_value") == "value2"
-    else:
-        assert hasattr(final_ctx.scratchpad, "first_value")
-        assert hasattr(final_ctx.scratchpad, "second_value")
-        assert final_ctx.scratchpad.first_value == "value1"
-        assert final_ctx.scratchpad.second_value == "value2"
+    assert final_ctx.first_value == "value1"
+    assert final_ctx.second_value == "value2"
 
     # Verify final output has both values
     final_output = str(final.step_history[-1].output)

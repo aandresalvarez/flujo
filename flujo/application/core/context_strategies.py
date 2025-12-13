@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Protocol
-from pydantic import BaseModel
+from ...domain.models import BaseModel
 
 
 class ContextIsolationStrategy(Protocol):

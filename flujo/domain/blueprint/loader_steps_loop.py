@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Callable, Optional, TypeAlias
 
 from flujo.type_definitions.common import JSONObject
 
-from ..dsl import Pipeline, StepConfig
+from ..dsl import Pipeline, Step, StepConfig
 from .loader_models import BlueprintError, BlueprintStepModel
 from .loader_resolution import _import_object
 from .loader_templates import _render_template_value, _resolve_context_target
 
-BuildBranch = Callable[..., Pipeline[Any, Any]]
+AnyPipeline: TypeAlias = Pipeline[object, object]
+AnyStep: TypeAlias = Step[object, object]
+BuildBranch = Callable[..., AnyPipeline]
 
 
 def build_loop_step(
@@ -20,9 +22,10 @@ def build_loop_step(
     compiled_agents: Optional[JSONObject],
     compiled_imports: Optional[JSONObject],
     build_branch: BuildBranch,
-) -> Any:
+) -> AnyStep:
     from typing import Callable as _Callable, Optional as _Optional
     from ..dsl.loop import LoopStep
+    from ..models import BaseModel as _BaseModel
 
     if not model.loop or "body" not in model.loop:
         raise BlueprintError("loop step requires loop.body")
@@ -73,7 +76,7 @@ def build_loop_step(
             _expr_fn2 = _compile_expr(str(model.loop["exit_expression"]))
 
             def _exit_condition(
-                _output: Any, _ctx: Optional[Any], *, _state: Optional[dict[str, int]] = None
+                _output: object, _ctx: object | None, *, _state: dict[str, int] | None = None
             ) -> bool:
                 return bool(_expr_fn2(_output, _ctx))
 
@@ -82,7 +85,7 @@ def build_loop_step(
     else:
 
         def _exit_condition(
-            _output: Any, _ctx: Optional[Any], *, _state: Optional[dict[str, int]] = None
+            _output: object, _ctx: object | None, *, _state: dict[str, int] | None = None
         ) -> bool:
             if _state is None:
                 _state = {"count": 0}
@@ -91,13 +94,13 @@ def build_loop_step(
                 return _state["count"] >= max_loops
             return _state["count"] >= 1
 
-    _initial_mapper_override: _Optional[_Callable[[Any, Optional[Any]], Any]] = None
-    _iteration_mapper_override: _Optional[_Callable[[Any, Optional[Any], int], Any]] = None
-    _output_mapper_override: _Optional[_Callable[[Any, Optional[Any]], Any]] = None
+    _initial_mapper_override: _Optional[_Callable[[object, object | None], object]] = None
+    _iteration_mapper_override: _Optional[_Callable[[object, object | None, int], object]] = None
+    _output_mapper_override: _Optional[_Callable[[object, object | None], object]] = None
 
-    _state_apply_fn: _Optional[_Callable[[Any, Any], None]] = None
-    _compiled_init_ops: _Optional[_Callable[[Any, Any], None]] = None
-    _compiled_iter_prop: _Optional[_Callable[[Any, Optional[Any], int], Any]] = None
+    _state_apply_fn: _Optional[_Callable[[object, object], None]] = None
+    _compiled_init_ops: _Optional[_Callable[[object, object], None]] = None
+    _compiled_iter_prop: _Optional[_Callable[[object, object | None, int], object]] = None
 
     try:
         state_spec = model.loop.get("state") if isinstance(model.loop, dict) else None
@@ -112,10 +115,10 @@ def build_loop_step(
             ops_set = state_spec.get("set") or []
             ops_merge = state_spec.get("merge") or []
 
-            def _render_value(output: Any, ctx: Any, tpl: str) -> str:
+            def _render_value(output: object, ctx: object, tpl: str) -> str:
                 return str(_render_template_value(output, ctx, tpl))
 
-            def _apply_state_ops(output: Any, ctx: Any) -> None:
+            def _apply_state_ops(output: object, ctx: object) -> None:
                 for spec in ops_append:
                     try:
                         target = str(spec.get("target"))
@@ -123,10 +126,9 @@ def build_loop_step(
                         if parent is None or key is None:
                             continue
                         val = _render_value(output, ctx, spec.get("value", ""))
-                        seq = None
-                        try:
-                            seq = parent[key]
-                        except Exception:
+                        if isinstance(parent, dict):
+                            seq = parent.get(key)
+                        else:
                             seq = getattr(parent, key, None)
                         if not isinstance(seq, list):
                             seq = []
@@ -192,15 +194,17 @@ def build_loop_step(
 
             _state_apply_fn = _apply_state_ops
 
-            def _initial_mapper_override(input_data: Any, ctx: Optional[Any]) -> Any:
+            def _initial_mapper_override(input_data: object, ctx: object | None) -> object:
                 return input_data
 
-            def _iteration_mapper_override(output: Any, ctx: Optional[Any], _iteration: int) -> Any:
+            def _iteration_mapper_override(
+                output: object, ctx: object | None, _iteration: int
+            ) -> object:
                 if ctx is not None:
                     _apply_state_ops(output, ctx)
                 return output
 
-            def _output_mapper_override(output: Any, ctx: Optional[Any]) -> Any:
+            def _output_mapper_override(output: object, ctx: object | None) -> object:
                 return output
 
         except Exception:
@@ -214,9 +218,9 @@ def build_loop_step(
         try:
             import json as _json2
 
-            ops_init_append: list[dict[str, Any]] = []
-            ops_init_set: list[dict[str, Any]] = []
-            ops_init_merge: list[dict[str, Any]] = []
+            ops_init_append: list[dict[str, object]] = []
+            ops_init_set: list[dict[str, object]] = []
+            ops_init_merge: list[dict[str, object]] = []
 
             if isinstance(init_spec, dict):
                 ops_init_append = list(init_spec.get("append") or [])
@@ -271,17 +275,16 @@ def build_loop_step(
                     except Exception:
                         continue
 
-            def _init_ops(prev_output: Any, ctx: Any) -> None:
+            def _init_ops(prev_output: object, ctx: object) -> None:
                 for spec in ops_init_append:
                     try:
                         parent, key = _resolve_context_target(ctx, str(spec.get("target")))
                         if parent is None or key is None:
                             continue
                         val = _render_template_value(prev_output, ctx, spec.get("value", ""))
-                        seq = None
-                        try:
-                            seq = parent[key]
-                        except Exception:
+                        if isinstance(parent, dict):
+                            seq = parent.get(key)
+                        else:
                             seq = getattr(parent, key, None)
                         if not isinstance(seq, list):
                             seq = []
@@ -317,7 +320,12 @@ def build_loop_step(
                             continue
                         val_raw = _render_template_value(prev_output, ctx, spec.get("value", "{}"))
                         try:
-                            val_obj = _json2.loads(val_raw)
+                            val_text = (
+                                val_raw
+                                if isinstance(val_raw, (str, bytes, bytearray))
+                                else str(val_raw)
+                            )
+                            val_obj = _json2.loads(val_text)
                         except Exception:
                             continue
                         if not isinstance(val_obj, dict):
@@ -361,8 +369,8 @@ def build_loop_step(
             if isinstance(next_input_val, str) and next_input_val.strip().lower() == "context":
 
                 def _propagate_ctx(
-                    _output: Any, _ctx: Optional[Any], _iteration: int
-                ) -> Optional[Any]:
+                    _output: object, _ctx: object | None, _iteration: int
+                ) -> object | None:
                     return _ctx
 
                 _iteration_mapper_override = _propagate_ctx
@@ -371,7 +379,7 @@ def build_loop_step(
                 _prefix = str(propagate_spec.get("prefix", "loop_"))
                 _path = str(propagate_spec.get("path", "context"))
 
-                def _iter_prop(output: Any, ctx: Optional[Any], _iteration: int) -> Any:
+                def _iter_prop(output: object, ctx: object | None, _iteration: int) -> object:
                     if ctx is None:
                         return output
                     target, key = None, None
@@ -400,7 +408,7 @@ def build_loop_step(
         else LoopStep.model_fields["max_retries"].default
     )
 
-    st_loop: LoopStep[Any] = LoopStep(
+    st_loop: LoopStep[_BaseModel] = LoopStep(
         name=model.name,
         loop_body_pipeline=body,
         max_retries=max_retries_val,
@@ -468,8 +476,9 @@ def build_map_step(
     compiled_agents: Optional[JSONObject],
     compiled_imports: Optional[JSONObject],
     build_branch: BuildBranch,
-) -> Any:
+) -> AnyStep:
     from ..dsl.loop import MapStep
+    from ..models import BaseModel as _BaseModel
 
     if not model.map or "iterable_input" not in model.map or "body" not in model.map:
         raise BlueprintError("map step requires map.iterable_input and map.body")
@@ -480,7 +489,7 @@ def build_map_step(
         compiled_imports=compiled_imports,
     )
     iterable_input = model.map.get("iterable_input")
-    st_map: MapStep[Any] = MapStep.from_pipeline(
+    st_map: MapStep[_BaseModel] = MapStep.from_pipeline(
         name=model.name, pipeline=body, iterable_input=str(iterable_input)
     )
 
@@ -492,9 +501,9 @@ def build_map_step(
         try:
             import json as _jsonm
 
-            m_ops_append: list[dict[str, Any]] = []
-            m_ops_set: list[dict[str, Any]] = []
-            m_ops_merge: list[dict[str, Any]] = []
+            m_ops_append: list[dict[str, object]] = []
+            m_ops_set: list[dict[str, object]] = []
+            m_ops_merge: list[dict[str, object]] = []
             if isinstance(map_init, dict):
                 m_ops_append = list(map_init.get("append") or [])
                 m_ops_set = list(map_init.get("set") or [])
@@ -531,17 +540,16 @@ def build_map_step(
                     except Exception:
                         continue
 
-            def _map_init_ops(prev_output: Any, ctx: Any) -> None:
+            def _map_init_ops(prev_output: object, ctx: object) -> None:
                 for spec in m_ops_append:
                     try:
                         parent, key = _resolve_context_target(ctx, str(spec.get("target")))
                         if parent is None or key is None:
                             continue
                         val = _render_template_value(prev_output, ctx, spec.get("value", ""))
-                        seq = None
-                        try:
-                            seq = parent[key]
-                        except Exception:
+                        if isinstance(parent, dict):
+                            seq = parent.get(key)
+                        else:
                             seq = getattr(parent, key, None)
                         if not isinstance(seq, list):
                             seq = []
@@ -577,7 +585,12 @@ def build_map_step(
                             continue
                         val_raw = _render_template_value(prev_output, ctx, spec.get("value", "{}"))
                         try:
-                            val_obj = _jsonm.loads(val_raw)
+                            val_text = (
+                                val_raw
+                                if isinstance(val_raw, (str, bytes, bytearray))
+                                else str(val_raw)
+                            )
+                            val_obj = _jsonm.loads(val_text)
                         except Exception:
                             continue
                         if not isinstance(val_obj, dict):
@@ -622,7 +635,7 @@ def build_map_step(
             if isinstance(output_template_spec, str) and output_template_spec.strip():
                 tpl = output_template_spec.strip()
 
-                def _finalize_mapper(prev_output: Any, ctx: Optional[Any]) -> Any:
+                def _finalize_mapper(prev_output: object, ctx: object | None) -> object:
                     if ctx is None:
                         return prev_output
                     return _render_template_value(prev_output, ctx, tpl)
@@ -631,7 +644,7 @@ def build_map_step(
             elif isinstance(output_mapping_spec, dict) and output_mapping_spec:
                 items = [(str(k), str(v)) for k, v in output_mapping_spec.items()]
 
-                def _finalize_map(prev_output: Any, ctx: Optional[Any]) -> Any:
+                def _finalize_map(prev_output: object, ctx: object | None) -> object:
                     if ctx is None:
                         return {k: None for k, _ in items}
                     out: JSONObject = {}

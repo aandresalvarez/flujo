@@ -25,4 +25,4 @@ async def test_validation_repair_loop_sets_validation_next_state() -> None:
     decision = await decide_step.agent.run(capture_out, context=ctx)
 
     assert capture_out["yaml_is_valid"] is False
-    assert decision["scratchpad"]["next_state"] == "Validation"
+    assert decision["next_state"] == "Validation"

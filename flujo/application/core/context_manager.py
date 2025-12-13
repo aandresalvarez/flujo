@@ -1,21 +1,11 @@
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    TypeGuard,
-    Union,
-    get_args,
-    get_origin,
-)
+from typing import Callable, TypeGuard, Union, get_args, get_origin
 import copy
 import inspect
 import os
 import weakref
 import types
 import logging
-from pydantic import BaseModel
+from ...domain.models import BaseModel
 from ...utils.context import safe_merge_context_updates
 from ...exceptions import ContextMutationError
 from .context_strategies import (
@@ -28,7 +18,7 @@ from .context_strategies import (
 try:
     from ...infra.settings import get_settings as _get_settings_default
 
-    _SETTINGS_DEFAULTS: Any | None = _get_settings_default()
+    _SETTINGS_DEFAULTS: object | None = _get_settings_default()
 except Exception:
     _SETTINGS_DEFAULTS = None
 
@@ -55,7 +45,7 @@ class ContextManager:
             try:
                 from unittest.mock import AsyncMock as _AsyncMock
 
-                _mock_types: tuple[type[Any], ...] = (Mock, MagicMock, _AsyncMock)
+                _mock_types: tuple[type[object], ...] = (Mock, MagicMock, _AsyncMock)
             except Exception:
                 _mock_types = (Mock, MagicMock)
             return isinstance(obj, _mock_types)
@@ -74,12 +64,12 @@ class ContextManager:
 
     @staticmethod
     def _resolve_strategy(
-        include_keys: Optional[List[str]] = None,
+        include_keys: list[str] | None = None,
     ) -> ContextIsolationStrategy:
         """Select an isolation strategy based on settings and include_keys."""
         strict_iso = False
         strict_merge = False
-        settings_obj: Any = _SETTINGS_DEFAULTS
+        settings_obj: object | None = _SETTINGS_DEFAULTS
         if settings_obj is None:
             try:
                 # Fallback: fetch settings lazily to support tests that monkeypatch env
@@ -128,8 +118,8 @@ class ContextManager:
 
     @staticmethod
     def _isolate_lenient_impl(
-        context: Optional[BaseModel], include_keys: Optional[List[str]] = None
-    ) -> Optional[BaseModel]:
+        context: BaseModel | None, include_keys: list[str] | None = None
+    ) -> BaseModel | None:
         """Return a deep copy of the context for isolation (lenient behavior)."""
         if context is None:
             return None
@@ -146,7 +136,7 @@ class ContextManager:
                         # Prefer explicit field map (Pydantic v2)
                         fields = getattr(model_cls, "model_fields", None)
                         if isinstance(fields, dict) and fields:
-                            new_data: dict[str, Any] = {}
+                            new_data: dict[str, object] = {}
                             for name, field in fields.items():
                                 if name in include_keys:
                                     # Preserve included fields from original context
@@ -171,7 +161,7 @@ class ContextManager:
                         # Fallback for Pydantic v1 (__fields__)
                         fields_v1 = getattr(model_cls, "__fields__", None)
                         if isinstance(fields_v1, dict) and fields_v1:
-                            new_data_v1: dict[str, Any] = {}
+                            new_data_v1: dict[str, object] = {}
                             for name, field in fields_v1.items():
                                 if name in include_keys:
                                     new_data_v1[name] = getattr(context, name, None)
@@ -214,8 +204,8 @@ class ContextManager:
 
     @staticmethod
     def isolate_strict(
-        context: Optional[BaseModel], include_keys: Optional[List[str]] = None
-    ) -> Optional[BaseModel]:
+        context: BaseModel | None, include_keys: list[str] | None = None
+    ) -> BaseModel | None:
         """Isolate context strictly: raise if deep isolation cannot be guaranteed.
 
         - Returns original object only for unittest.mock instances (perf tests).
@@ -226,11 +216,11 @@ class ContextManager:
 
     @staticmethod
     def isolate(
-        context: Optional[BaseModel],
-        include_keys: Optional[List[str]] = None,
+        context: BaseModel | None,
+        include_keys: list[str] | None = None,
         *,
         purpose: str = "unknown",
-    ) -> Optional[BaseModel]:
+    ) -> BaseModel | None:
         """Isolate context using the configured strategy.
 
         Args:
@@ -258,8 +248,8 @@ class ContextManager:
 
     @staticmethod
     def _isolate_strict_impl(
-        context: Optional[BaseModel], include_keys: Optional[List[str]] = None
-    ) -> Optional[BaseModel]:
+        context: BaseModel | None, include_keys: list[str] | None = None
+    ) -> BaseModel | None:
         last_error: Exception | None = None
         if context is None:
             return None
@@ -278,13 +268,6 @@ class ContextManager:
         try:
             if ContextManager._is_base_model(context):
                 isolated = context.model_copy(deep=True)
-                # Deep-copy scratchpad when possible
-                if hasattr(isolated, "scratchpad") and hasattr(context, "scratchpad"):
-                    try:
-                        isolated.scratchpad = copy.deepcopy(getattr(context, "scratchpad"))
-                    except Exception:
-                        # Fall back to reference; not fatal for strict isolation
-                        setattr(isolated, "scratchpad", getattr(context, "scratchpad"))
                 return isolated
         except Exception as e:
             last_error = e
@@ -308,13 +291,12 @@ class ContextManager:
 
     @staticmethod
     def verify_isolation(
-        original: Optional[BaseModel],
-        isolated: Optional[BaseModel],
+        original: BaseModel | None,
+        isolated: BaseModel | None,
     ) -> None:
         """Verify that isolated context hasn't mutated original (strict mode).
 
-        This method checks for shared references, particularly in scratchpad,
-        which is the most common mutation point.
+        This method checks for shared references in common mutable fields.
 
         Args:
             original: The original context
@@ -328,19 +310,38 @@ class ContextManager:
         if original is None or isolated is None:
             return
 
-        # Deep comparison of scratchpad (most common mutation point)
-        orig_scratch = getattr(original, "scratchpad", None)
-        iso_scratch = getattr(isolated, "scratchpad", None)
+        from collections.abc import MutableMapping as _MutableMapping
 
-        # Check if scratchpad references are shared (mutation risk)
-        if orig_scratch is iso_scratch and orig_scratch is not None:
-            purpose = getattr(isolated, "_isolation_purpose", "unknown")
-            raise ContextMutationError(
-                f"Isolated context shares scratchpad reference with original. "
-                f"Isolation purpose: {purpose}",
-                suggestion="Ensure context isolation creates deep copies of mutable fields",
-                code="CONTEXT_MUTATION_VIOLATION",
-            )
+        def _collect_mutables(ctx: BaseModel) -> dict[str, object]:
+            out: dict[str, object] = {}
+            for name in (
+                "step_outputs",
+                "hitl_history",
+                "command_log",
+                "conversation_history",
+                "hitl_data",
+                "import_artifacts",
+            ):
+                try:
+                    val = getattr(ctx, name, None)
+                    if isinstance(val, (dict, list, _MutableMapping)):
+                        out[name] = val
+                except Exception:
+                    continue
+            return out
+
+        orig_mut = _collect_mutables(original)
+        iso_mut = _collect_mutables(isolated)
+        for name, orig_val in orig_mut.items():
+            iso_val = iso_mut.get(name)
+            if orig_val is iso_val and orig_val is not None:
+                purpose = getattr(isolated, "_isolation_purpose", "unknown")
+                raise ContextMutationError(
+                    f"Isolated context shares '{name}' reference with original. "
+                    f"Isolation purpose: {purpose}",
+                    suggestion="Ensure context isolation deep-copies mutable fields",
+                    code="CONTEXT_MUTATION_VIOLATION",
+                )
 
         # Additional check: verify context IDs match tracking
         if hasattr(isolated, "_original_context_id"):
@@ -355,24 +356,22 @@ class ContextManager:
                 )
 
     @staticmethod
-    def merge(
-        main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
-    ) -> Optional[BaseModel]:
+    def merge(main_context: BaseModel | None, branch_context: BaseModel | None) -> BaseModel | None:
         """Merge updates from branch_context into main_context using configured strategy."""
         strategy = ContextManager._resolve_strategy()
         return strategy.merge(main_context, branch_context)
 
     @staticmethod
     def merge_strict(
-        main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
-    ) -> Optional[BaseModel]:
+        main_context: BaseModel | None, branch_context: BaseModel | None
+    ) -> BaseModel | None:
         """Strict merge with robust fallbacks and error signaling."""
         return ContextManager._merge_strict_impl(main_context, branch_context)
 
     @staticmethod
     def _merge_lenient_impl(
-        main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
-    ) -> Optional[BaseModel]:
+        main_context: BaseModel | None, branch_context: BaseModel | None
+    ) -> BaseModel | None:
         """Merge updates from branch_context into main_context and return the result."""
         # NOTE: Removed thread check that was skipping merge on non-main threads.
         # This caused test failures in CI when running with pytest-xdist (parallel workers)
@@ -393,7 +392,7 @@ class ContextManager:
             try:
                 from unittest.mock import AsyncMock as _AsyncMock
 
-                _mock_types: tuple[type[Any], ...] = (Mock, MagicMock, _AsyncMock)
+                _mock_types: tuple[type[object], ...] = (Mock, MagicMock, _AsyncMock)
             except Exception:
                 _mock_types = (Mock, MagicMock)
             if isinstance(branch_context, _mock_types):
@@ -405,8 +404,8 @@ class ContextManager:
 
     @staticmethod
     def _merge_strict_impl(
-        main_context: Optional[BaseModel], branch_context: Optional[BaseModel]
-    ) -> Optional[BaseModel]:
+        main_context: BaseModel | None, branch_context: BaseModel | None
+    ) -> BaseModel | None:
         """Strict merge with robust fallbacks and error signaling.
 
         - Tries safe_merge_context_updates first; if it raises, raise ContextMergeError.
@@ -438,7 +437,7 @@ class ContextManager:
                 f"Shallow copy of main_context failed: {copy_err}"
             ) from copy_err
 
-        def _public_attrs(obj: Any) -> List[str]:
+        def _public_attrs(obj: object) -> list[str]:
             try:
                 return [a for a in dir(obj) if not a.startswith("_")]
             except Exception:
@@ -463,19 +462,21 @@ class ContextManager:
 # Cache for parameter acceptance checks. We only cache weak-ref-able callables to avoid
 # id()-based collisions when Python reuses memory addresses after garbage collection.
 _accepts_param_cache_weak: weakref.WeakKeyDictionary[
-    Callable[..., Any], Dict[str, Optional[bool]]
+    Callable[..., object], dict[str, bool | None]
 ] = weakref.WeakKeyDictionary()
 
 
-def _get_validation_flags(step: Any) -> tuple[bool, bool]:
+def _get_validation_flags(step: object) -> tuple[bool, bool]:
     """Return (is_validation_step, is_strict) flags from step metadata."""
-    is_validation_step = bool(step.meta.get("is_validation_step", False))
-    is_strict = bool(step.meta.get("strict_validation", False)) if is_validation_step else False
+    meta_obj = getattr(step, "meta", None)
+    meta: dict[str, object] = meta_obj if isinstance(meta_obj, dict) else {}
+    is_validation_step = bool(meta.get("is_validation_step", False))
+    is_strict = bool(meta.get("strict_validation", False)) if is_validation_step else False
     return is_validation_step, is_strict
 
 
 def _apply_validation_metadata(
-    result: Any,
+    result: object,
     *,
     validation_failed: bool,
     is_validation_step: bool,
@@ -483,11 +484,20 @@ def _apply_validation_metadata(
 ) -> None:
     """Set result metadata when non-strict validation fails."""
     if validation_failed and is_validation_step and not is_strict:
-        result.metadata_ = result.metadata_ or {}
-        result.metadata_["validation_passed"] = False
+        metadata_obj = getattr(result, "metadata_", None)
+        metadata: dict[str, object]
+        if isinstance(metadata_obj, dict):
+            metadata = metadata_obj
+        else:
+            metadata = {}
+            try:
+                setattr(result, "metadata_", metadata)
+            except Exception:
+                return
+        metadata["validation_passed"] = False
 
 
-def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
+def _accepts_param(func: Callable[..., object], param: str) -> bool | None:
     """Return True if callable's signature includes ``param`` or ``**kwargs``."""
     try:
         cache = _accepts_param_cache_weak.setdefault(func, {})
@@ -537,7 +547,7 @@ def _accepts_param(func: Callable[..., Any], param: str) -> Optional[bool]:
     return result
 
 
-def _extract_missing_fields(cause: Any) -> list[str]:
+def _extract_missing_fields(cause: object) -> list[str]:
     """Return list of missing field names from a Pydantic ValidationError."""
     missing_fields: list[str] = []
     if cause is not None and hasattr(cause, "errors"):
@@ -551,7 +561,7 @@ def _extract_missing_fields(cause: Any) -> list[str]:
     return missing_fields
 
 
-def _should_pass_context(spec: Any, context: Optional[Any], func: Callable[..., Any]) -> bool:
+def _should_pass_context(spec: object, context: object | None, func: Callable[..., object]) -> bool:
     """Determine if context should be passed to a function based on signature analysis.
 
     Args:
@@ -569,10 +579,11 @@ def _should_pass_context(spec: Any, context: Optional[Any], func: Callable[..., 
     # Runtime check: context is not None ensures that a context object is available, and
     # bool(accepts_context) verifies if the function can dynamically accept the context parameter.
     accepts_context = _accepts_param(func, "context")
-    return spec.needs_context or (context is not None and bool(accepts_context))
+    needs_context = bool(getattr(spec, "needs_context", False))
+    return needs_context or (context is not None and bool(accepts_context))
 
 
-def _clone_context(obj: Optional[BaseModel]) -> Optional[BaseModel]:
+def _clone_context(obj: BaseModel | None) -> BaseModel | None:
     """Efficient deep clone favoring Pydantic's model_copy over stdlib deepcopy."""
     log = logging.getLogger("flujo.context")
     if obj is None:
@@ -585,7 +596,7 @@ def _clone_context(obj: Optional[BaseModel]) -> Optional[BaseModel]:
             pass
         # Field-wise deepcopy with skip-on-failure to avoid shared mutable resources
         try:
-            data: dict[str, Any] = {}
+            data: dict[str, object] = {}
             for name in getattr(obj, "model_fields", {}):
                 val = getattr(obj, name, None)
                 try:
@@ -622,11 +633,21 @@ def _clone_context(obj: Optional[BaseModel]) -> Optional[BaseModel]:
             return obj
 
 
-def _types_compatible(a: Any, b: Any) -> bool:
+def _types_compatible(a: object, b: object) -> bool:
     """Return ``True`` if type ``a`` is compatible with type ``b``."""
 
     # --- Helper utilities to keep the core logic readable ---
-    def _is_union_type(tp: Any) -> bool:
+    def _is_typing_any(tp: object) -> bool:
+        try:
+            name = getattr(tp, "_name", None)
+            if isinstance(name, str) and name.lower() == "any":
+                return True
+            rep = repr(tp)
+            return isinstance(rep, str) and rep.lower() in {"typing.any", "any"}
+        except Exception:
+            return False
+
+    def _is_union_type(tp: object) -> bool:
         try:
             origin = get_origin(tp)
             if origin is Union:
@@ -636,24 +657,24 @@ def _types_compatible(a: Any, b: Any) -> bool:
         except Exception:
             return False
 
-    def _iter_union_args(tp: Any) -> list[Any]:
+    def _iter_union_args(tp: object) -> list[object]:
         try:
             origin = get_origin(tp)
             if origin is Union:
                 return list(get_args(tp))
             if hasattr(types, "UnionType") and isinstance(tp, types.UnionType):
-                return list(tp.__args__)
+                return list(getattr(tp, "__args__", ()))
         except Exception:
             pass
         return []
 
-    def _issubclass_safe(sub: Any, sup: Any) -> bool:
+    def _issubclass_safe(sub: object, sup: object) -> bool:
         try:
             return isinstance(sub, type) and isinstance(sup, type) and issubclass(sub, sup)
         except Exception:
             return False
 
-    def _compare_tuple(a_args: tuple[Any, ...], b_args: tuple[Any, ...]) -> bool:
+    def _compare_tuple(a_args: tuple[object, ...], b_args: tuple[object, ...]) -> bool:
         # Tuple[T, ...] variadic form
         if len(b_args) == 2 and b_args[1] is Ellipsis:
             elem_b = b_args[0]
@@ -666,7 +687,7 @@ def _types_compatible(a: Any, b: Any) -> bool:
         # Be permissive if actual lacks args
         return True
 
-    def _compare_dict(a_args: tuple[Any, ...], b_args: tuple[Any, ...]) -> bool:
+    def _compare_dict(a_args: tuple[object, ...], b_args: tuple[object, ...]) -> bool:
         if not b_args:
             return bool(a_args) or True if not a_args else True
         if a_args and len(a_args) == 2 and len(b_args) == 2:
@@ -676,7 +697,7 @@ def _types_compatible(a: Any, b: Any) -> bool:
         return True
 
     def _compare_single_param_container(
-        ob: Any, a_args: tuple[Any, ...], b_args: tuple[Any, ...]
+        ob: object, a_args: tuple[object, ...], b_args: tuple[object, ...]
     ) -> bool:
         if not b_args:
             return bool(a_args) or _issubclass_safe(a, ob)
@@ -684,7 +705,7 @@ def _types_compatible(a: Any, b: Any) -> bool:
             return _types_compatible(a_args[0], b_args[0])
         return True
 
-    def _compare_generic_aliases(a: Any, b: Any, origin_a: Any, origin_b: Any) -> bool:
+    def _compare_generic_aliases(a: object, b: object, origin_a: object, origin_b: object) -> bool:
         # Normalize bare classes to their origin where possible
         oa = origin_a if origin_a is not None else (a if isinstance(a, type) else None)
         ob = origin_b if origin_b is not None else (b if isinstance(b, type) else None)
@@ -734,8 +755,8 @@ def _types_compatible(a: Any, b: Any) -> bool:
 
     # Explicit handling for None/type(None) to avoid issubclass errors and crashy validation
     if a is None or a is type(None):  # noqa: E721 - intentional NoneType check
-        # Any always compatible
-        if b is Any:
+        # typing wildcard always compatible
+        if _is_typing_any(b):
             return True
         # Normalize b for union inspection below
         origin_b = get_origin(b)
@@ -758,7 +779,7 @@ def _types_compatible(a: Any, b: Any) -> bool:
         b = type(b)
 
     # Trivial compatibilities
-    if a is Any or b is Any:
+    if _is_typing_any(a) or _is_typing_any(b):
         return True
 
     origin_a, origin_b = get_origin(a), get_origin(b)

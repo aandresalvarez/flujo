@@ -17,7 +17,7 @@ When using template variables (like `{{ context.field }}` or `{{ previous_step.o
 |---------------|----------------|---------|
 | **Previous step output** | `{{ previous_step.field }}` | `{{ previous_step.question }}` |
 | **Named step output** | `{{ steps.step_name.output.field }}` | `{{ steps.clarify.output.question }}` |
-| **Explicit context field** | `{{ context.scratchpad.field }}` | `{{ context.scratchpad.user_goal }}` |
+| **Explicit context field** | `{{ context.import_artifacts.field }}` | `{{ context.import_artifacts.user_goal }}` |
 
 ---
 
@@ -165,14 +165,14 @@ uv run flujo run pipeline.yaml
   name: agent
   uses: agents.my_agent
   updates_context: true
-  sink_to: "scratchpad.current_question"  # ✅ Explicit storage
-  # Stores output at context.scratchpad.current_question
+  sink_to: "import_artifacts.current_question"  # ✅ Explicit storage
+  # Stores output at context.import_artifacts.current_question
 
 - kind: conditional
   branches:
     true:
       - kind: hitl
-        message: "{{ context.scratchpad.current_question }}"  # ✅ Works!
+        message: "{{ context.import_artifacts.current_question }}"  # ✅ Works!
 ```
 
 **Pros:**
@@ -195,14 +195,14 @@ context path without writing a custom processor.
 - kind: hitl
   name: ask_user
   message: "Name?"
-  sink_to: "scratchpad.user_name"
+  sink_to: "import_artifacts.user_name"
 
 - kind: step
   name: greet
-  input: "Hello {{ context.scratchpad.user_name }}"
+  input: "Hello {{ context.import_artifacts.user_name }}"
 ```
 
-- Paths are dotted (e.g., `scratchpad.user_name`) and are created automatically.
+- Paths are dotted (e.g., `import_artifacts.user_name`) and are created automatically under `import_artifacts`.
 - Works alongside `updates_context: true`; `sink_to` just controls the destination.
 - Useful for HITL prompts or guardrail steps that capture simple fields.
 
@@ -223,7 +223,7 @@ context path without writing a custom processor.
   message: "{{ context.question }}"  # ❌ WRONG! Field doesn't exist
 ```
 
-**Why it fails:** With `updates_context: true`, the output is merged to `context.scratchpad.steps.agent.question`, NOT `context.question`.
+**Why it fails:** With `updates_context: true`, the output is recorded under `steps.agent.output.question` (in `context.step_outputs`), NOT `context.question`.
 
 **Fix:** Use `{{ previous_step.question }}` or `{{ steps.agent.output.question }}`
 
@@ -434,7 +434,7 @@ message: "{% if context.ready %}Ready{% else %}Not ready{% endif %}"
             - kind: hitl
               name: ask_user
               message: "{{ previous_step.question }}"
-              sink_to: "scratchpad.user_response"
+              sink_to: "import_artifacts.user_response"
     
     exit_expression: "previous_step.action == 'finish'"
     max_loops: 10
@@ -447,7 +447,7 @@ message: "{% if context.ready %}Ready{% else %}Not ready{% endif %}"
 - kind: hitl
   name: get_goal
   message: "What is your goal?"
-  sink_to: "scratchpad.initial_goal"
+  sink_to: "import_artifacts.initial_goal"
 
 # Use it in nested contexts
 - kind: loop
@@ -457,7 +457,7 @@ message: "{% if context.ready %}Ready{% else %}Not ready{% endif %}"
         name: clarify
         uses: agents.clarifier
         # Template input references stored goal
-        input: "Goal: {{ context.scratchpad.initial_goal }}, ask clarification"
+        input: "Goal: {{ context.import_artifacts.initial_goal }}, ask clarification"
       
       - kind: conditional
         branches:
@@ -465,7 +465,7 @@ message: "{% if context.ready %}Ready{% else %}Not ready{% endif %}"
             - kind: hitl
               # ✅ Reference both stored context and current step
               message: |
-                Goal: {{ context.scratchpad.initial_goal }}
+                Goal: {{ context.import_artifacts.initial_goal }}
                 Question: {{ previous_step.question }}
 ```
 

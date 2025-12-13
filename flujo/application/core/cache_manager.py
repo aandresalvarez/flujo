@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import asyncio
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 from ...domain.models import StepOutcome, StepResult, Success
 from ...infra import telemetry
 from .default_cache_components import DefaultCacheKeyGenerator, _LRUCache
@@ -11,7 +11,7 @@ from .default_cache_components import DefaultCacheKeyGenerator, _LRUCache
 from .context_vars import _CACHE_OVERRIDE
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .types import ExecutionFrame
+    from .types import ExecutionFrame, TContext_w_Scratch
 
 
 class CacheManager:
@@ -19,8 +19,8 @@ class CacheManager:
 
     def __init__(
         self,
-        backend: Any = None,
-        key_generator: Optional[Any] = None,
+        backend: object | None = None,
+        key_generator: object | None = None,
         enable_cache: bool = True,
     ) -> None:
         self._backend = backend
@@ -29,7 +29,7 @@ class CacheManager:
         self._internal_cache: Optional[_LRUCache] = None
 
     @property
-    def backend(self) -> Any:
+    def backend(self) -> object | None:
         """Get the cache backend."""
         return self._backend
 
@@ -44,19 +44,27 @@ class CacheManager:
         """Clear all cached data."""
         if self._internal_cache is not None:
             self._internal_cache.clear()
-        if hasattr(self._backend, "clear"):
-            if asyncio.iscoroutinefunction(self._backend.clear):
-                await self._backend.clear()
+        clear_fn = getattr(self._backend, "clear", None)
+        if callable(clear_fn):
+            if asyncio.iscoroutinefunction(clear_fn):
+                await clear_fn()
             else:
-                self._backend.clear()
+                clear_fn()
 
     def generate_cache_key(
-        self, step: Any, data: Any, context: Optional[Any], resources: Optional[Any]
+        self,
+        step: object,
+        data: object,
+        context: object | None,
+        resources: object | None,
     ) -> str:
         """Generate a cache key for the given step execution parameters."""
         if not self.is_cache_enabled():
             return ""
-        return self._key_generator.generate_key(step, data, context, resources)
+        gen_fn = getattr(self._key_generator, "generate_key", None)
+        if not callable(gen_fn):
+            raise TypeError("Cache key generator must provide generate_key()")
+        return str(gen_fn(step, data, context, resources))
 
     def is_cache_enabled(self) -> bool:
         """Check if caching is enabled, respecting task-local overrides."""
@@ -66,17 +74,19 @@ class CacheManager:
             return bool(override)
         return self._enable_cache
 
-    async def get_cached_result(self, key: str) -> Optional[Any]:
+    async def get_cached_result(self, key: str) -> object | None:
         """Retrieve a cached result by key."""
         if not self.is_cache_enabled() or not key:
             return None
 
         # Try backend first, then internal cache
-        if hasattr(self._backend, "get"):
+        backend_get = getattr(self._backend, "get", None)
+        if callable(backend_get):
             try:
-                result = await self._backend.get(key)
+                result = await backend_get(key)
                 if result is not None:
-                    return result
+                    result_obj: object = result
+                    return result_obj
             except Exception:
                 pass
 
@@ -97,25 +107,28 @@ class CacheManager:
             md["cache_hit"] = True
         return cached
 
-    async def set_cached_result(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+    async def set_cached_result(self, key: str, value: object, ttl: Optional[int] = None) -> None:
         """Store a result in cache."""
         if not self.is_cache_enabled() or not key:
             return
 
         # Store in backend first, then internal cache
-        if hasattr(self._backend, "set"):
+        backend_set = getattr(self._backend, "set", None)
+        if callable(backend_set):
             try:
-                await self._backend.set(key, value, ttl=ttl)
+                await backend_set(key, value, ttl=ttl)
             except Exception:
                 pass
-        elif hasattr(self._backend, "put"):
-            try:
-                ttl_s = ttl if ttl is not None else getattr(self._backend, "ttl_s", 0)
-                await self._backend.put(key, value, ttl_s=ttl_s)
-            except Exception:
-                pass
+        else:
+            backend_put = getattr(self._backend, "put", None)
+            if callable(backend_put):
+                try:
+                    ttl_s = ttl if ttl is not None else getattr(self._backend, "ttl_s", 0)
+                    await backend_put(key, value, ttl_s=ttl_s)
+                except Exception:
+                    pass
 
-        if self._internal_cache is not None:
+        if self._internal_cache is not None and isinstance(value, StepResult):
             # _LRUCache manages TTL internally; no ttl kwarg is accepted
             self._internal_cache.set(key, value)
 
@@ -123,7 +136,7 @@ class CacheManager:
         """Persist a successful StepResult to the configured cache layers."""
         await self.set_cached_result(key, result, ttl=ttl_s)
 
-    def _should_cache_step_result(self, step: Any, result: Optional[StepResult]) -> bool:
+    def _should_cache_step_result(self, step: object, result: Optional[StepResult]) -> bool:
         """Determine if a result should be cached for the given step."""
         if not self.is_cache_enabled() or result is None or not getattr(result, "success", False):
             return False
@@ -149,7 +162,11 @@ class CacheManager:
         return True
 
     async def maybe_persist_step_result(
-        self, step: Any, result: Optional[StepResult], key: Optional[str], ttl_s: int = 3600
+        self,
+        step: object,
+        result: Optional[StepResult],
+        key: Optional[str],
+        ttl_s: int = 3600,
     ) -> None:
         """Persist a StepResult when caching is enabled and allowed for the step/result."""
         if not key or not self._should_cache_step_result(step, result):
@@ -162,7 +179,9 @@ class CacheManager:
         except Exception:
             pass
 
-    async def maybe_fetch_step_result(self, frame: "ExecutionFrame[Any]") -> Optional[StepResult]:
+    async def maybe_fetch_step_result(
+        self, frame: "ExecutionFrame[TContext_w_Scratch]"
+    ) -> Optional[StepResult]:
         """Return a cached StepResult for the frame when enabled (skips loops/adapters)."""
         if not self.is_cache_enabled():
             return None
@@ -194,11 +213,13 @@ class CacheManager:
         return await self.fetch_step_result(key)
 
     async def maybe_return_cached(
-        self, frame: "ExecutionFrame[Any]", *, called_with_frame: bool
+        self, frame: "ExecutionFrame[TContext_w_Scratch]", *, called_with_frame: bool
     ) -> Optional[StepOutcome[StepResult] | StepResult]:
         """Return cached outcome or StepResult if present."""
         cached = await self.maybe_fetch_step_result(frame)
         if cached is None:
+            return None
+        if not isinstance(cached, StepResult):
             return None
         if called_with_frame:
             return Success(step_result=cached)

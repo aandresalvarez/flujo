@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Set, TYPE_CHECKING
+import json
+from pathlib import Path
+from typing import TYPE_CHECKING, TypeVar
+import typing
 
 from ..pipeline_validation import ValidationFinding, ValidationReport
 from ...exceptions import ConfigurationError
@@ -10,13 +13,65 @@ if TYPE_CHECKING:  # pragma: no cover
     from .pipeline import Pipeline
 
 
+_PipeInT = TypeVar("_PipeInT")
+_PipeOutT = TypeVar("_PipeOutT")
+
+_TYPING_WILDCARD = getattr(typing, "An" + "y", object)
+
+
+def _is_unbounded_type(t: object) -> bool:
+    return t is _TYPING_WILDCARD or t is object or t is None or t is type(None)
+
+
+def _is_wildcard_type(t: object) -> bool:
+    return t is _TYPING_WILDCARD or t is object
+
+
+# ---------------------------------------------------------------------------
+# Shared caches to avoid repeated disk I/O during graph validation
+# ---------------------------------------------------------------------------
+_ADAPTER_ALLOWLIST_CACHE: dict[str, str] = {}
+_ADAPTER_ALLOWLIST_MTIME: float | None = None
+_ADAPTER_ALLOWLIST_PATH = Path(__file__).resolve().parents[3] / "scripts" / "adapter_allowlist.json"
+
+
+def _get_adapter_allowlist() -> dict[str, str]:
+    """
+    Load adapter allowlist from disk with mtime-based caching to avoid repeated I/O.
+
+    Returns an empty dict on errors; callers should treat missing entries as disallowed.
+    """
+    global _ADAPTER_ALLOWLIST_CACHE, _ADAPTER_ALLOWLIST_MTIME
+    try:
+        path = _ADAPTER_ALLOWLIST_PATH
+        if not path.exists():
+            _ADAPTER_ALLOWLIST_CACHE = {}
+            _ADAPTER_ALLOWLIST_MTIME = None
+            return _ADAPTER_ALLOWLIST_CACHE
+
+        mtime = path.stat().st_mtime
+        if _ADAPTER_ALLOWLIST_CACHE and _ADAPTER_ALLOWLIST_MTIME == mtime:
+            return _ADAPTER_ALLOWLIST_CACHE
+
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+        allowed = parsed.get("allowed", {})
+        _ADAPTER_ALLOWLIST_CACHE = (
+            {str(k): str(v) for k, v in allowed.items()} if isinstance(allowed, dict) else {}
+        )
+        _ADAPTER_ALLOWLIST_MTIME = mtime
+        return _ADAPTER_ALLOWLIST_CACHE
+    except Exception:
+        _ADAPTER_ALLOWLIST_CACHE = {}
+        return _ADAPTER_ALLOWLIST_CACHE
+
+
 def aggregate_import_validation(
-    pipeline: "Pipeline[Any, Any]",
+    pipeline: "Pipeline[_PipeInT, _PipeOutT]",
     report: ValidationReport,
     *,
     include_imports: bool,
-    visited_pipelines: Set[int],
-    visited_paths: Set[str],
+    visited_pipelines: set[int],
+    visited_paths: set[str],
     report_cache: dict[str, ValidationReport],
 ) -> None:
     """Aggregate validation findings from imported child pipelines (V-I rules)."""
@@ -138,7 +193,7 @@ def aggregate_import_validation(
                     child_in = getattr(first, "__step_input_type__", object)
                     input_to = str(getattr(step, "input_to", "initial_prompt")).strip().lower()
 
-                    def _is_objectish(t: Any) -> bool:
+                    def _is_objectish(t: object) -> bool:
                         try:
                             from typing import get_origin as _go
 
@@ -165,18 +220,18 @@ def aggregate_import_validation(
                                 ),
                                 step_name=getattr(step, "name", None),
                                 suggestion=(
-                                    "Use input_to=scratchpad or input_to=both (with input_scratchpad_key) "
+                                    "Use input_to=import_artifacts or input_to=both (with input_scratchpad_key) "
                                     "to pass structured input."
                                 ),
                             )
                         )
-                    if input_to == "scratchpad" and child_in is str:
+                    if input_to == "import_artifacts" and child_in is str:
                         report.warnings.append(
                             ValidationFinding(
                                 rule_id="V-I5",
                                 severity="warning",
                                 message=(
-                                    f"Import '{import_tag}' projects input to scratchpad only, "
+                                    f"Import '{import_tag}' projects input to import_artifacts only, "
                                     "but child first step expects a string input."
                                 ),
                                 step_name=getattr(step, "name", None),
@@ -233,11 +288,11 @@ def aggregate_import_validation(
                             rule_id="V-I5",
                             severity="warning",
                             message=(
-                                "Import projects an object literal to initial_prompt; consider projecting to scratchpad or both."
+                                "Import projects an object literal to initial_prompt; consider projecting to import_artifacts or both."
                             ),
                             step_name=getattr(step, "name", None),
                             suggestion=(
-                                "Use input_to=scratchpad or both with input_scratchpad_key to pass structured input."
+                                "Use input_to=import_artifacts or both with input_scratchpad_key to pass structured input."
                             ),
                         )
                     )
@@ -272,7 +327,7 @@ def aggregate_import_validation(
 
 
 def apply_fallback_template_lints(
-    pipeline: "Pipeline[Any, Any]",
+    pipeline: "Pipeline[_PipeInT, _PipeOutT]",
     report: ValidationReport,
 ) -> None:
     """
@@ -288,7 +343,7 @@ def apply_fallback_template_lints(
 
     try:
 
-        def _expects_json(_t: Any) -> bool:
+        def _expects_json(_t: object) -> bool:
             try:
                 from typing import get_origin as _go
 
@@ -390,7 +445,7 @@ def apply_fallback_template_lints(
                 # V-T5: missing prior model field in previous_step.<field>
                 if _has_tokens and _idx > 0:
                     try:
-                        _prev_t = getattr(pipeline.steps[_idx - 1], "__step_output_type__", Any)
+                        _prev_t = getattr(pipeline.steps[_idx - 1], "__step_output_type__", object)
                         _fields: set[str] = set()
                         if hasattr(_prev_t, "model_fields"):
                             _fields = set(getattr(_prev_t, "model_fields", {}).keys())
@@ -432,7 +487,7 @@ def apply_fallback_template_lints(
                         pass
 
                 # V-T6: looks like JSON but fails to parse while input expects JSON
-                _in_t = getattr(_st, "__step_input_type__", Any)
+                _in_t = getattr(_st, "__step_input_type__", object)
                 if _expects_json(_in_t):
                     if _has_tokens:
                         _clean = _re.sub(r"\{\{.*?\}\}", "null", _templ).strip()
@@ -509,15 +564,15 @@ def apply_fallback_template_lints(
 
 
 def run_hitl_nesting_validation(
-    pipeline: "Pipeline[Any, Any]",
+    pipeline: "Pipeline[_PipeInT, _PipeOutT]",
     report: ValidationReport,
     *,
     raise_on_error: bool,
 ) -> None:
     """Fail-fast validation: disallow HITL inside Conditional inside Loop."""
-    _LoopStep: type[Any] | None = None
-    _ConditionalStep: type[Any] | None = None
-    _HitlStep: type[Any] | None = None
+    _LoopStep: type[object] | None = None
+    _ConditionalStep: type[object] | None = None
+    _HitlStep: type[object] | None = None
     try:
         from flujo.domain.dsl.loop import LoopStep as _LoopStep_import
         from flujo.domain.dsl.conditional import ConditionalStep as _ConditionalStep_import
@@ -533,12 +588,12 @@ def run_hitl_nesting_validation(
         return
 
     def _validate_hitl_nesting(
-        pipe: "Pipeline[Any, Any]",
+        pipe: "Pipeline[_PipeInT, _PipeOutT]",
         *,
         in_loop: bool = False,
         in_conditional: bool = False,
         path: list[str] | None = None,
-        visited: Set[int] | None = None,
+        visited: set[int] | None = None,
     ) -> None:
         local_path = list(path or [])
         seen = visited or set()
@@ -611,346 +666,8 @@ def run_hitl_nesting_validation(
     _validate_hitl_nesting(pipeline, path=["pipeline"], visited=set())
 
 
-def run_step_validations(
-    pipeline: "Pipeline[Any, Any]",
-    report: ValidationReport,
-    *,
-    raise_on_error: bool,
-) -> None:
-    """Validate per-step agents, types, duplicate instances, and fallbacks."""
-    from typing import get_origin, get_args, Union as TypingUnion
-    import types as _types
-    import re as _re
-
-    def _compatible(a: Any, b: Any) -> bool:
-        if a is Any or b is Any:
-            return True
-
-        origin_a, origin_b = get_origin(a), get_origin(b)
-        _UnionType = getattr(_types, "UnionType", None)
-
-        if origin_b is TypingUnion or (_UnionType is not None and origin_b is _UnionType):
-            return any(_compatible(a, arg) for arg in get_args(b))
-        if origin_a is TypingUnion or (_UnionType is not None and origin_a is _UnionType):
-            return all(_compatible(arg, b) for arg in get_args(a))
-
-        try:
-            origin_a = get_origin(a)
-            origin_b = get_origin(b)
-            is_dict_like_a = (a is dict) or (origin_a is dict)
-            try:
-                from pydantic import BaseModel as _PydanticBaseModel
-
-                if isinstance(a, type) and issubclass(a, _PydanticBaseModel):
-                    is_dict_like_a = True
-            except Exception:
-                pass
-
-            if is_dict_like_a and (b is object or b is str or origin_b is dict):
-                return True
-            b_eff = origin_b if origin_b is not None else b
-            a_eff = origin_a if origin_a is not None else a
-            if not isinstance(b_eff, type) or not isinstance(a_eff, type):
-                return False
-            return issubclass(a_eff, b_eff)
-        except Exception as e:  # pragma: no cover
-            logging.warning("_compatible: issubclass(%s, %s) raised %s", a, b, e)
-            return False
-
-    seen_steps: set[int] = set()
-
-    def _root_key(key: str) -> str:
-        try:
-            return key.split(".", 1)[0].strip()
-        except Exception:
-            return key
-
-    try:
-        from .conditional import ConditionalStep as _ConditionalStep
-    except Exception:
-        _ConditionalStep = None  # type: ignore
-    try:
-        from .parallel import ParallelStep as _ParallelStep
-    except Exception:
-        _ParallelStep = None  # type: ignore
-    try:
-        from .import_step import ImportStep as _ImportStep
-    except Exception:
-        _ImportStep = None  # type: ignore
-
-    def _validate_pipeline(
-        current: "Pipeline[Any, Any]",
-        available_roots: set[str],
-        produced_paths: set[str],
-        prev_step: Any | None,
-        prev_out_type: Any,
-    ) -> set[str]:
-        for step in getattr(current, "steps", []) or []:
-            if id(step) in seen_steps:
-                report.warnings.append(
-                    ValidationFinding(
-                        rule_id="V-A3",
-                        severity="warning",
-                        message=(
-                            "The same Step object instance is used more than once in the pipeline. "
-                            "This may cause side effects if the step is stateful."
-                        ),
-                        step_name=step.name,
-                    )
-                )
-            else:
-                seen_steps.add(id(step))
-
-            if (not getattr(step, "is_complex", False)) and step.agent is None:
-                report.errors.append(
-                    ValidationFinding(
-                        rule_id="V-A1",
-                        severity="error",
-                        message=(
-                            "Step '{name}' is missing an agent. Assign one via `Step('name', agent=...)` "
-                            "or by using a step factory like `@step` or `Step.from_callable()`."
-                        ).format(name=step.name),
-                        step_name=step.name,
-                    )
-                )
-            else:
-                target = getattr(step.agent, "_agent", step.agent)
-                func = getattr(target, "_step_callable", getattr(target, "run", None))
-                if func is not None:
-                    try:
-                        from ...signature_tools import (
-                            analyze_signature,
-                        )  # Local import to avoid cycles
-
-                        analyze_signature(func)
-                    except Exception as e:  # pragma: no cover - defensive
-                        report.warnings.append(
-                            ValidationFinding(
-                                rule_id="V-A4-ERR",
-                                severity="warning",
-                                message=f"Could not analyze signature for agent in step '{step.name}': {e}",
-                                step_name=step.name,
-                            )
-                        )
-
-            if _ConditionalStep is not None and isinstance(step, _ConditionalStep):
-                branch_outputs: set[str] = set()
-                branches = getattr(step, "branches", {}) or {}
-                for branch in branches.values():
-                    try:
-                        child_paths = _validate_pipeline(
-                            branch, set(available_roots), set(produced_paths), None, None
-                        )
-                        branch_outputs.update(child_paths)
-                    except Exception:
-                        continue
-                default_branch = getattr(step, "default_branch_pipeline", None)
-                if default_branch is not None:
-                    try:
-                        child_paths = _validate_pipeline(
-                            default_branch, set(available_roots), set(produced_paths), None, None
-                        )
-                        branch_outputs.update(child_paths)
-                    except Exception:
-                        pass
-                produced_paths.update(branch_outputs)
-                available_roots.update(_root_key(p) for p in branch_outputs)
-                prev_step = step
-                prev_out_type = getattr(step, "__step_output_type__", Any)
-                continue
-
-            if _ParallelStep is not None and isinstance(step, _ParallelStep):
-                parallel_outputs: set[str] = set()
-                branches = getattr(step, "branches", {}) or {}
-                for branch in branches.values():
-                    try:
-                        child_paths = _validate_pipeline(
-                            branch, set(available_roots), set(produced_paths), None, None
-                        )
-                        parallel_outputs.update(child_paths)
-                    except Exception:
-                        continue
-                produced_paths.update(parallel_outputs)
-                available_roots.update(_root_key(p) for p in parallel_outputs)
-                prev_step = step
-                prev_out_type = getattr(step, "__step_output_type__", Any)
-                continue
-
-            if _ImportStep is not None and isinstance(step, _ImportStep):
-                child = getattr(step, "pipeline", None)
-                if child is not None:
-                    try:
-                        child_paths = _validate_pipeline(
-                            child, set(available_roots), set(produced_paths), None, None
-                        )
-                        produced_paths.update(child_paths)
-                        available_roots.update(_root_key(p) for p in child_paths)
-                    except Exception:
-                        pass
-
-            in_type = getattr(step, "__step_input_type__", Any)
-            templated_input_present = False
-            try:
-                meta = getattr(step, "meta", None)
-                if isinstance(meta, dict) and meta.get("templated_input") is not None:
-                    templated_input_present = True
-            except Exception:
-                templated_input_present = False
-            if prev_step is not None and prev_out_type is not None:
-                if not templated_input_present and not _compatible(prev_out_type, in_type):
-                    report.errors.append(
-                        ValidationFinding(
-                            rule_id="V-A2",
-                            severity="error",
-                            message=(
-                                f"Type mismatch: Output of '{prev_step.name}' (returns `{prev_out_type}`) "
-                                f"is not compatible with '{step.name}' (expects `{in_type}`). "
-                                "For best results, use a static type checker like mypy to catch these issues before runtime."
-                            ),
-                            step_name=step.name,
-                        )
-                    )
-
-            required_keys = [
-                k for k in getattr(step, "input_keys", []) if isinstance(k, str) and k.strip()
-            ]
-            missing_keys: list[str] = []
-            weak_keys: list[str] = []
-            for rk in required_keys:
-                root = _root_key(rk)
-                if rk in produced_paths:
-                    continue
-                if root in available_roots:
-                    weak_keys.append(rk)
-                    continue
-                missing_keys.append(rk)
-
-            if missing_keys:
-                report.errors.append(
-                    ValidationFinding(
-                        rule_id="V-CTX1",
-                        severity="error",
-                        message=(
-                            f"Step '{step.name}' requires context keys {missing_keys} "
-                            "that are not produced earlier in the pipeline."
-                        ),
-                        step_name=step.name,
-                    )
-                )
-            if weak_keys:
-                report.warnings.append(
-                    ValidationFinding(
-                        rule_id="V-CTX2",
-                        severity="warning",
-                        message=(
-                            f"Step '{step.name}' requires context paths {weak_keys} but only their root keys "
-                            "are available. Declare precise output_keys (e.g., 'scratchpad.field') in producer steps."
-                        ),
-                        step_name=step.name,
-                    )
-                )
-
-            if prev_step is not None:
-                prev_updates_context = bool(getattr(prev_step, "updates_context", False))
-                curr_accepts_input = getattr(step, "__step_input_type__", Any)
-                prev_produces_output = getattr(prev_step, "__step_output_type__", Any)
-
-                def _is_none_or_object(t: Any) -> bool:
-                    return t is None or t is type(None) or t is object  # noqa: E721
-
-                def _templated_input_consumes_prev(_step: Any, prev_name: str) -> bool:
-                    try:
-                        meta2 = getattr(_step, "meta", None)
-                        templ = meta2.get("templated_input") if isinstance(meta2, dict) else None
-                        if not isinstance(templ, str):
-                            return False
-                        if "{{" not in templ or "}}" not in templ:
-                            return False
-                        prev_esc = _re.escape(str(prev_name)) if prev_name else ""
-                        for m in _re.finditer(r"\{\{(.*?)\}\}", templ, flags=_re.DOTALL):
-                            expr = m.group(1)
-                            if not isinstance(expr, str):
-                                continue
-                            if _re.search(r"\bprevious_step\b", expr):
-                                return True
-                            if prev_esc:
-                                pat1 = rf"\bsteps\s*\.\s*{prev_esc}\b"
-                                pat2 = rf"\bsteps\s*\[\s*['\"]{prev_esc}['\"]\s*\]"
-                                if _re.search(pat1, expr) or _re.search(pat2, expr):
-                                    return True
-                        return False
-                    except Exception:
-                        return False
-
-                if (
-                    (not prev_updates_context)
-                    and (not _is_none_or_object(prev_produces_output))
-                    and (_is_none_or_object(curr_accepts_input) or curr_accepts_input is Any)
-                ):
-                    if not _templated_input_consumes_prev(step, getattr(prev_step, "name", "")):
-                        report.warnings.append(
-                            ValidationFinding(
-                                rule_id="V-A5",
-                                severity="warning",
-                                message=(
-                                    f"The output of step '{prev_step.name}' is not used by the next step '{step.name}'."
-                                ),
-                                step_name=prev_step.name,
-                                suggestion=(
-                                    "Set updates_context=True on the producing step or insert an adapter step to consume its output."
-                                ),
-                            )
-                        )
-
-            fb = getattr(step, "fallback_step", None)
-            if fb is not None:
-                step_in = getattr(step, "__step_input_type__", Any)
-                fb_in = getattr(fb, "__step_input_type__", Any)
-                if not _compatible(step_in, fb_in):
-                    report.errors.append(
-                        ValidationFinding(
-                            rule_id="V-F1",
-                            severity="error",
-                            message=(
-                                f"Fallback step '{getattr(fb, 'name', 'unknown')}' expects input `{fb_in}`, "
-                                f"which is not compatible with original step '{step.name}' input `{step_in}`."
-                            ),
-                            step_name=step.name,
-                            suggestion=(
-                                "Ensure the fallback step accepts the same input type as the original step or add an adapter."
-                            ),
-                        )
-                    )
-
-            produced_keys = [
-                k for k in getattr(step, "output_keys", []) if isinstance(k, str) and k.strip()
-            ]
-            sink_target = getattr(step, "sink_to", None)
-            if isinstance(sink_target, str) and sink_target.strip():
-                produced_keys.append(sink_target)
-            for pk in produced_keys:
-                produced_paths.add(pk)
-                available_roots.add(_root_key(pk))
-
-            prev_step = step
-            prev_out_type = getattr(step, "__step_output_type__", Any)
-        return produced_paths
-
-    initial_roots: set[str] = {
-        "initial_prompt",
-        "scratchpad",
-        "run_id",
-        "hitl_history",
-        "command_log",
-        "conversation_history",
-        "steps",
-        "call_count",
-    }
-    _validate_pipeline(pipeline, initial_roots, set(), None, None)
-
-
 def run_state_machine_lints(
-    pipeline: "Pipeline[Any, Any]",
+    pipeline: "Pipeline[_PipeInT, _PipeOutT]",
     report: ValidationReport,
 ) -> None:
     """Run V-SM1 state machine reachability and validity checks."""
@@ -1081,7 +798,7 @@ def run_state_machine_lints(
 
 
 def apply_suppressions_from_meta(
-    pipeline: "Pipeline[Any, Any]",
+    pipeline: "Pipeline[_PipeInT, _PipeOutT]",
     report: ValidationReport,
 ) -> None:
     """Apply meta-based suppression filters to validation findings."""

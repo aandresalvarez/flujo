@@ -143,13 +143,13 @@ def test_step_history_serialization_full_and_minimal() -> None:
 def test_deserialize_context_round_trip_pipeline_context() -> None:
     ser: StateSerializer[PipelineContext] = StateSerializer()
     ctx = make_ctx("round")
-    ctx.scratchpad["k"] = "v"
+    ctx.import_artifacts["k"] = "v"
     data = ser.serialize_context_full(ctx)
     restored = ser.deserialize_context(data, PipelineContext)
     assert restored is not None
     assert restored.initial_prompt == ctx.initial_prompt
     assert restored.run_id == ctx.run_id
-    assert restored.scratchpad == ctx.scratchpad
+    assert restored.import_artifacts == ctx.import_artifacts
 
 
 def test_deserialize_context_with_custom_model() -> None:

@@ -21,7 +21,7 @@ def test_trace_manager_post_run_marks_paused() -> None:
 
     # Build paused result
     ctx = PipelineContext()
-    ctx.scratchpad["status"] = "paused"
+    ctx.status = "paused"
     res: PipelineResult[PipelineContext] = PipelineResult()
     res.final_pipeline_context = ctx
     res.success = False
@@ -30,4 +30,5 @@ def test_trace_manager_post_run_marks_paused() -> None:
     asyncio.run(tm._handle_post_run(post))
 
     assert tm._root_span is not None  # noqa: S101
+    # Paused pipelines should be reflected as paused rather than failed.
     assert tm._root_span.status == "paused"  # noqa: S101

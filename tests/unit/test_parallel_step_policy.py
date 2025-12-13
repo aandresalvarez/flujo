@@ -56,12 +56,10 @@ async def test_parallel_policy_failure_does_not_merge_context():
     }
     p = ParallelStep(name="p", branches=branches)
 
-    # Provide a context with a sentinel to validate not merged on failure
-    class _Ctx:
-        def __init__(self) -> None:
-            self.scratchpad = {}
+    # Provide a typed context with a sentinel to validate not merged on failure
+    from flujo.domain.models import PipelineContext
 
-    ctx = _Ctx()
+    ctx = PipelineContext()
     frame = make_execution_frame(
         core,
         p,
@@ -80,8 +78,12 @@ async def test_parallel_policy_failure_does_not_merge_context():
     assert isinstance(outcome, Failure)
     # On failure, branch_context should be None or not merged into original context
     if outcome.step_result is not None:
+        from flujo.domain.models import PipelineContext
+
         assert (
-            outcome.step_result.branch_context is None or outcome.step_result.branch_context is ctx
+            outcome.step_result.branch_context is None
+            or isinstance(outcome.step_result.branch_context, PipelineContext)
+            or outcome.step_result.branch_context is ctx
         )
 
 

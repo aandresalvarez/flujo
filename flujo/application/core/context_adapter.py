@@ -5,15 +5,11 @@ import threading
 import types
 from contextlib import contextmanager
 from typing import (
-    Any,
-    Dict,
     Iterator,
     Optional,
-    Type,
     TypeGuard,
     TypeVar,
     Union,
-    cast,
     get_args,
     get_type_hints,
 )
@@ -54,13 +50,13 @@ class TypeResolutionContext:
     """
 
     def __init__(self) -> None:
-        self._resolvers: Dict[str, "_ModuleTypeResolver"] = {}
-        self._current_module: Optional[Any] = None
+        self._resolvers: dict[str, _ModuleTypeResolver] = {}
+        self._current_module: object | None = None
         self._lock = threading.RLock()
-        self._global_type_cache: Dict[str, Type[Any]] = {}
+        self._global_type_cache: dict[str, type[object]] = {}
 
     @contextmanager
-    def module_scope(self, module: Any) -> Iterator[None]:
+    def module_scope(self, module: object) -> Iterator[None]:
         """Set the current module scope for type resolution."""
         with self._lock:
             self._current_module = module
@@ -69,7 +65,7 @@ class TypeResolutionContext:
             finally:
                 self._current_module = None
 
-    def resolve_type(self, type_name: str, base_type: Type[T]) -> Optional[Type[T]]:
+    def resolve_type(self, type_name: str, base_type: type[T]) -> type[T] | None:
         """
         Resolve type with validation using current module scope.
 
@@ -89,7 +85,7 @@ class TypeResolutionContext:
             if cache_key in self._global_type_cache:
                 cached_type = self._global_type_cache[cache_key]
                 if self._validate_type_resolution(cached_type, base_type):
-                    return cast(Type[T], cached_type)
+                    return cached_type
 
             module_name = getattr(self._current_module, "__name__", str(id(self._current_module)))
             resolver = self._resolvers.get(module_name)
@@ -102,20 +98,17 @@ class TypeResolutionContext:
             if type_obj is not None and self._validate_type_resolution(type_obj, base_type):
                 # Add to global cache for future lookups
                 self._global_type_cache[cache_key] = type_obj
-                return cast(Type[T], type_obj)
+                return type_obj
 
             return None
 
-    def _validate_type_resolution(self, type_obj: Any, expected_base: Type[Any]) -> bool:
+    def _validate_type_resolution(
+        self, type_obj: object, expected_base: type[T]
+    ) -> TypeGuard[type[T]]:
         """Validate that resolved object is actually a valid type."""
         if not isinstance(type_obj, type):
             return False
-
-        # Check if it's a subclass of expected base
-        if not issubclass(type_obj, expected_base):
-            return False
-
-        return True
+        return issubclass(type_obj, expected_base)
 
     def clear_global_cache(self) -> None:
         """Clear the global type cache."""
@@ -126,12 +119,12 @@ class TypeResolutionContext:
 class _ModuleTypeResolver:
     """Module-scoped type resolver with caching."""
 
-    def __init__(self, module: Any) -> None:
+    def __init__(self, module: object) -> None:
         self.module = module
-        self._cache: Dict[str, Type[Any]] = {}
+        self._cache: dict[str, type[object]] = {}
         self._type_hints_cache: Optional[JSONObject] = None
 
-    def resolve_type(self, type_name: str) -> Optional[Type[Any]]:
+    def resolve_type(self, type_name: str) -> type[object] | None:
         """Resolve type from module scope with caching."""
         if type_name in self._cache:
             return self._cache[type_name]
@@ -167,7 +160,7 @@ class _ModuleTypeResolver:
 _type_context = TypeResolutionContext()
 
 
-def register_custom_type(type_class: Type[T]) -> None:
+def register_custom_type(type_class: type[T]) -> None:
     """
     Register a custom type for serialization and type resolution.
 
@@ -187,7 +180,7 @@ def register_custom_type(type_class: Type[T]) -> None:
         # Check if this is a Flujo BaseModel to avoid circular dependency
         from flujo.domain.base_model import BaseModel as FlujoBaseModel
 
-        def serialize_custom_type(obj: Any) -> Any:
+        def serialize_custom_type(obj: object) -> object:
             """Serializer that avoids circular dependency with Flujo BaseModel."""
             if isinstance(obj, FlujoBaseModel):
                 try:
@@ -216,7 +209,7 @@ def register_custom_type(type_class: Type[T]) -> None:
             getattr(type_class, "model_validate", None)
         ):
             # Use a type-safe approach to call model_validate
-            def safe_model_validate(data: Any) -> Any:
+            def safe_model_validate(data: object) -> object:
                 model_validate = getattr(type_class, "model_validate", None)
                 if callable(model_validate):
                     return model_validate(data)
@@ -227,7 +220,7 @@ def register_custom_type(type_class: Type[T]) -> None:
             register_custom_deserializer(type_class, safe_model_validate)
 
 
-def _resolve_type_from_string(type_str: str) -> Optional[Type[Any]]:
+def _resolve_type_from_string(type_str: str) -> type[object] | None:
     """
     Robust type resolution using Python's type system.
 
@@ -263,13 +256,13 @@ def _resolve_type_from_string(type_str: str) -> Optional[Type[Any]]:
     return None
 
 
-def _extract_union_types(union_type: Any) -> list[Type[Any]]:
+def _extract_union_types(union_type: object) -> list[object]:
     """
     Extract non-None types from a Union type annotation.
 
     Uses Python's type system properly instead of regex parsing.
     """
-    non_none_types: list[Type[Any]] = []
+    non_none_types: list[object] = []
 
     # Handle Python 3.10+ Union syntax (types.UnionType)
     if isinstance(union_type, types.UnionType):
@@ -280,25 +273,30 @@ def _extract_union_types(union_type: Any) -> list[Type[Any]]:
             # Fallback: try to extract from string representation
             type_str = str(union_type)
             # Use proper type parsing instead of regex
-            non_none_types = _parse_type_string(type_str)
+            non_none_types = [t for t in _parse_type_string(type_str)]
         return non_none_types
 
     # Handle traditional Union[T, None] syntax
-    if hasattr(union_type, "__origin__") and union_type.__origin__ is Union:
-        non_none_types = [t for t in union_type.__args__ if t is not type(None)]
-    elif hasattr(union_type, "__union_params__"):
-        non_none_types = [t for t in union_type.__union_params__ if t is not type(None)]
+    origin = getattr(union_type, "__origin__", None)
+    if origin is Union:
+        args_obj = getattr(union_type, "__args__", ())
+        if isinstance(args_obj, tuple):
+            non_none_types = [t for t in args_obj if t is not type(None)]
+    else:
+        params_obj = getattr(union_type, "__union_params__", ())
+        if isinstance(params_obj, tuple):
+            non_none_types = [t for t in params_obj if t is not type(None)]
 
     return non_none_types
 
 
-def _parse_type_string(type_str: str) -> list[Type[Any]]:
+def _parse_type_string(type_str: str) -> list[type[object]]:
     """
     Parse type string using proper type system integration.
 
     This replaces regex-based parsing with proper type analysis.
     """
-    types_found: list[Type[Any]] = []
+    types_found: list[type[object]] = []
 
     try:
         # Try to get type hints from current module
@@ -315,7 +313,7 @@ def _parse_type_string(type_str: str) -> list[Type[Any]]:
     return types_found
 
 
-def _resolve_actual_type(field_type: Any) -> Optional[Type[Any]]:
+def _resolve_actual_type(field_type: object) -> type[object] | None:
     """
     Resolve the actual type from a field annotation using type system.
 
@@ -344,120 +342,15 @@ def _resolve_actual_type(field_type: Any) -> Optional[Type[Any]]:
                 resolved = _resolve_type_from_string(first)
                 if resolved is not None:
                     return resolved
-            return first
+            if isinstance(first, type):
+                return first
+            return None
         return None
 
-    return cast(Type[Any], field_type)
+    return field_type if isinstance(field_type, type) else None
 
 
-# --------------------------------------------------------------------------- #
-# Scratchpad enforcement (framework-reserved metadata only)
-# --------------------------------------------------------------------------- #
-
-_SCRATCHPAD_ALLOWED_KEYS: set[str] = {
-    # Core status/flow control
-    "status",
-    "pause_message",
-    "steps",
-    "last_state_update",
-    # Loop bookkeeping (prefix guarded)
-    "paused_step_input",
-    # HITL flow (prefix guarded)
-    "user_input",
-    "pending_human_input_schema",
-    "pending_resume_schema",
-    "pending_human_input",
-    # State machine
-    "current_state",
-    "next_state",
-    # Background tasks / tracing (prefix guarded)
-    "is_background_task",
-    "task_id",
-    "parent_run_id",
-    # General pipeline identifiers
-    "pipeline_id",
-    "pipeline_name",
-    "pipeline_version",
-    "run_id",
-    # Legacy/import projections handled via redirect
-    "_loop_iteration_active",
-    "_loop_iteration_index",
-    "result",
-    "initial_input",
-    "marker",
-    "counter",
-}
-
-_SCRATCHPAD_ALLOWED_PREFIXES: tuple[str, ...] = (
-    "loop_",
-    "hitl_",
-    "background_",
-    "resume_",
-    "state_",
-    "trace_",
-    "steps.",
-)
-
-
-def _scratchpad_enforcement_enabled() -> bool:
-    import os
-
-    flag = str(os.environ.get("FLUJO_ENFORCE_SCRATCHPAD_BAN", "1")).strip().lower()
-    return flag in {"1", "true", "yes", "on"}
-
-
-def _is_allowed_scratchpad_key(key: str) -> bool:
-    if key in _SCRATCHPAD_ALLOWED_KEYS:
-        return True
-    return any(key.startswith(prefix) for prefix in _SCRATCHPAD_ALLOWED_PREFIXES)
-
-
-def _validate_scratchpad(
-    value: dict[str, Any], *, allowed_extra_keys: set[str] | None = None
-) -> dict[str, Any]:
-    """Enforce framework-reserved scratchpad keys; drop or raise on user keys.
-
-    allowed_extra_keys lets explicitly mapped keys (e.g., ImportStep outputs) bypass
-    the reserved-key filter while keeping the general guardrails in place.
-    """
-    if not _scratchpad_enforcement_enabled():
-        return value
-    allowed_extra_keys = allowed_extra_keys or set()
-    invalid = [
-        k
-        for k in list(value.keys())
-        if k not in allowed_extra_keys and not _is_allowed_scratchpad_key(str(k))
-    ]
-    # Preserve framework-approved keys but allow special handling
-    if "result" in value and value["result"] is not None:
-        # Do not allow overriding result with non-None user data; retain key with None
-        value["result"] = None
-    invalid = [
-        k
-        for k in list(value.keys())
-        if k not in allowed_extra_keys and not _is_allowed_scratchpad_key(str(k))
-    ]
-    if not invalid:
-        return value
-
-    import os
-
-    strict = str(os.environ.get("FLUJO_SCRATCHPAD_BAN_STRICT", "1")).strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    if strict:
-        raise ValueError(
-            "Scratchpad is framework-reserved; refusing to set user keys: "
-            f"{', '.join(sorted(invalid))}"
-        )
-    # Soft mode: allow but keep data (ban is advisory)
-    return value
-
-
-def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseModel]) -> Any:
+def _deserialize_value(value: object, field_type: object, context_model: type[BaseModel]) -> object:
     """
     Deserialize a value according to its field type.
 
@@ -479,7 +372,7 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
                 and callable(getattr(resolved_element_type, "model_validate", None))
                 and issubclass(resolved_element_type, BaseModel)
             ):
-                deserialized: list[Any] = []
+                deserialized: list[object] = []
                 for item in value:
                     if isinstance(item, resolved_element_type):
                         deserialized.append(item)
@@ -529,12 +422,14 @@ def _deserialize_value(value: Any, field_type: Any, context_model: Type[BaseMode
     return value
 
 
-def _build_context_update(output: BaseModel | dict[str, Any] | Any) -> dict[str, Any] | None:
+def _build_context_update(
+    output: BaseModel | JSONObject | object,
+) -> JSONObject | None:
     """Return context update dict extracted from a step output."""
     if isinstance(output, (BaseModel, PydanticBaseModel)):
         # Handle PipelineResult objects from as_step
         # Important: use full dump (exclude_unset=False) so in-place mutations
-        # to lists/dicts (e.g., command_log, scratchpad) are preserved.
+        # to lists/dicts (e.g., command_log) are preserved.
         if hasattr(output, "final_pipeline_context") and output.final_pipeline_context is not None:
             result = output.final_pipeline_context.model_dump(exclude_unset=False)
             return result if isinstance(result, dict) else None
@@ -546,7 +441,7 @@ def _build_context_update(output: BaseModel | dict[str, Any] | Any) -> dict[str,
     return None
 
 
-def _deep_merge_dicts(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+def _deep_merge_dicts(base: JSONObject, update: JSONObject) -> JSONObject:
     """Deep merge update dict into base dict, handling nested structures."""
     result = base.copy()
 
@@ -563,13 +458,15 @@ def _deep_merge_dicts(base: dict[str, Any], update: dict[str, Any]) -> dict[str,
 
 def _inject_context_with_deep_merge(
     context: BaseModel,
-    update_data: dict[str, Any],
-    context_model: Type[BaseModel],
+    update_data: JSONObject,
+    context_model: type[BaseModel],
 ) -> Optional[str]:
     """Apply ``update_data`` to ``context`` with deep merge for nested dicts.
 
     Returns an error message if validation fails, otherwise ``None``.
     """
+    if "scratchpad" in update_data:
+        return "scratchpad field has been removed; migrate data to typed fields"
     # Micro-optimization fast path for hot paths:
     # If the update only contains a few scalar fields that exist on the model and
     # types match exactly, assign them directly without performing a full
@@ -749,8 +646,6 @@ def _inject_context_with_deep_merge(
                                 pass
                             elif hasattr(field_type, "model_validate"):
                                 field_type.model_validate(value)
-                            elif hasattr(field_type, "__call__"):
-                                field_type(value)
                         except Exception as validation_error:
                             return f"Field '{key}' validation failed: {validation_error}"
 
@@ -758,24 +653,6 @@ def _inject_context_with_deep_merge(
                     return f"Field '{key}' type check failed: {type_check_error}"
 
             # Apply the validated value to the specific field
-            if key == "steps":
-                # Map steps updates into scratchpad['steps'] to avoid assigning to
-                # the read-only PipelineContext.steps property.
-                try:
-                    current_scratchpad = getattr(context, "scratchpad", {}) or {}
-                    if not isinstance(current_scratchpad, dict):
-                        current_scratchpad = {}
-                    steps_map = current_scratchpad.get("steps", {})
-                    if not isinstance(steps_map, dict):
-                        steps_map = {}
-                    if isinstance(value, dict):
-                        steps_map = _deep_merge_dicts(steps_map, value)
-                        current_scratchpad["steps"] = steps_map
-                        setattr(context, "scratchpad", current_scratchpad)
-                        continue
-                except Exception:
-                    # Fall back to normal assignment below if anything goes wrong
-                    pass
 
             if key == "import_artifacts":
                 try:
@@ -805,89 +682,37 @@ def _inject_context_with_deep_merge(
                 except Exception:
                     pass
 
-            if key == "scratchpad" and isinstance(value, dict) and hasattr(context, "scratchpad"):
-                # Redirect legacy import-projection keys into import_artifacts to avoid scratchpad growth.
-                try:
-                    legacy_import_keys = {
-                        "cohort_definition",
-                        "concept_sets",
-                        "final_sql",
-                        "captured",
-                        "child_echo",
-                        "foo",
-                        "value",
-                        "echo",
-                        "marker",
-                    }
-                    sibling_artifacts = update_data.get("import_artifacts")
-                    allowed_from_artifacts: set[str] = set()
-                    try:
-                        if isinstance(sibling_artifacts, MutableMapping):
-                            allowed_from_artifacts = {
-                                k for k in value.keys() if k in sibling_artifacts
-                            }
-                    except Exception:
-                        allowed_from_artifacts = set()
-                    legacy_payload = {
-                        k: value.pop(k)
-                        for k in list(value.keys())
-                        if k in legacy_import_keys and k not in allowed_from_artifacts
-                    }
-                    if legacy_payload:
-                        artifacts = getattr(context, "import_artifacts", None)
-                        if isinstance(artifacts, MutableMapping):
-                            artifacts.update(legacy_payload)
-                        else:
-                            try:
-                                new_artifacts = ImportArtifacts.model_validate(legacy_payload)
-                            except Exception:
-                                new_artifacts = ImportArtifacts(**legacy_payload)
-                            setattr(context, "import_artifacts", new_artifacts)
-                except Exception:
-                    pass
-
-                # Special handling for scratchpad: deep merge nested dicts
-                value = _validate_scratchpad(value, allowed_extra_keys=allowed_from_artifacts)
-                current_scratchpad = getattr(context, "scratchpad", {})
-                if isinstance(current_scratchpad, dict):
-                    merged_scratchpad = _deep_merge_dicts(current_scratchpad, value)
-                    if "user_input" not in merged_scratchpad and "hitl_data" in merged_scratchpad:
-                        merged_scratchpad["user_input"] = merged_scratchpad.get("hitl_data")
-                    setattr(context, key, merged_scratchpad)
-                else:
-                    setattr(context, key, value)
-            else:
-                # For list-typed fields, deserialize elements into declared model types
-                try:
-                    if (
-                        field_type is not None
-                        and hasattr(field_type, "__origin__")
-                        and field_type.__origin__ is list
-                        and isinstance(value, list)
-                    ):
-                        value = _deserialize_value(value, field_type, context_model)
-                except Exception:
-                    pass
-                setattr(context, key, value)
+            # For list-typed fields, deserialize elements into declared model types
+            try:
+                if (
+                    field_type is not None
+                    and hasattr(field_type, "__origin__")
+                    and field_type.__origin__ is list
+                    and isinstance(value, list)
+                ):
+                    value = _deserialize_value(value, field_type, context_model)
+            except Exception:
+                pass
+            setattr(context, key, value)
         else:
             # Allow dynamic or previously-added attributes (Pydantic BaseModel blocks setattr)
             if key == "steps":
+                # Migrate to step_outputs
                 try:
-                    current_scratchpad = getattr(context, "scratchpad", {}) or {}
-                    if not isinstance(current_scratchpad, dict):
-                        current_scratchpad = {}
-                    steps_map = current_scratchpad.get("steps", {})
-                    if not isinstance(steps_map, dict):
-                        steps_map = {} if isinstance(value, dict) else {"value": value}
-                    if isinstance(value, dict):
-                        steps_map = _deep_merge_dicts(steps_map, value)
-                    else:
-                        steps_map["value"] = value
-                    current_scratchpad["steps"] = steps_map
-                    setattr(context, "scratchpad", current_scratchpad)
+                    if hasattr(context, "step_outputs"):
+                        current_outputs = getattr(context, "step_outputs", {}) or {}
+                        if not isinstance(current_outputs, dict):
+                            current_outputs = {}
+
+                        # Normalize value
+                        val_dict = value if isinstance(value, dict) else {"value": value}
+
+                        # Merge
+                        merged = _deep_merge_dicts(current_outputs, val_dict)
+                        context.step_outputs = merged
                 except Exception:
                     pass
-                # Always skip setting context.steps directly
+                # Always skip setting context.steps directly (it is read-only)
                 continue
             try:
                 object.__setattr__(context, key, value)
@@ -910,13 +735,15 @@ def _inject_context_with_deep_merge(
 
 def _inject_context(
     context: BaseModel,
-    update_data: dict[str, Any],
-    context_model: Type[BaseModel],
+    update_data: JSONObject,
+    context_model: type[BaseModel],
 ) -> Optional[str]:
     """Apply ``update_data`` to ``context`` validating against ``context_model``.
 
     Returns an error message if validation fails, otherwise ``None``.
     """
+    if "scratchpad" in update_data:
+        return "scratchpad field has been removed; migrate data to typed fields"
     original = context.model_dump()
 
     # Process update data with proper field mapping
@@ -925,15 +752,8 @@ def _inject_context(
             field_info = context_model.model_fields[key]
             field_type = field_info.annotation
 
-            if key == "scratchpad" and isinstance(value, dict):
-                allowed_from_artifacts: set[str] = set()
-                try:
-                    sibling_artifacts = update_data.get("import_artifacts")
-                    if isinstance(sibling_artifacts, MutableMapping):
-                        allowed_from_artifacts = {k for k in value.keys() if k in sibling_artifacts}
-                except Exception:
-                    allowed_from_artifacts = set()
-                value = _validate_scratchpad(value, allowed_extra_keys=allowed_from_artifacts)
+            if key == "scratchpad":
+                return "scratchpad field has been removed; migrate data to typed fields"
 
             # TYPE VALIDATION: Ensure the value matches the declared field type
             if field_type is not None:
@@ -964,8 +784,6 @@ def _inject_context(
                         try:
                             if hasattr(field_type, "model_validate"):
                                 field_type.model_validate(value)
-                            elif hasattr(field_type, "__call__"):
-                                field_type(value)
                         except Exception as validation_error:
                             return f"Field '{key}' validation failed: {validation_error}"
 

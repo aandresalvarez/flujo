@@ -13,6 +13,7 @@ from .dsl import (
     MergeStrategy,
     BranchFailureStrategy,
 )
+from .context_mixins import BaseContext, typed_context
 from .models import (
     Task,
     Candidate,
@@ -47,6 +48,8 @@ __all__ = [
     "ParallelStep",
     "MergeStrategy",
     "BranchFailureStrategy",
+    "BaseContext",
+    "typed_context",
     "mapper",
     # Models
     "Task",

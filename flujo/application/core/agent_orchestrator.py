@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
+import inspect
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
-from ...domain.models import StepOutcome, StepResult, Success
+from ...domain.models import BaseModel, StepOutcome, StepResult, Success
 from ...infra import telemetry
 from .agent_execution_runner import AgentExecutionRunner
 from .agent_fallback_handler import AgentFallbackHandler
@@ -17,7 +19,7 @@ if TYPE_CHECKING:  # pragma: no cover
 class AgentOrchestrator:
     """Coordinates agent execution using injected runners."""
 
-    def __init__(self, *, plugin_runner: Optional[Any] = None) -> None:
+    def __init__(self, *, plugin_runner: object | None = None) -> None:
         plugin_helper = plugin_runner if isinstance(plugin_runner, AgentPluginRunner) else None
         self._execution_runner = AgentExecutionRunner(
             plugin_runner=plugin_helper or AgentPluginRunner(),
@@ -27,15 +29,15 @@ class AgentOrchestrator:
     async def execute(
         self,
         *,
-        core: "ExecutorCore[Any]",
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[Any],
+        core: "ExecutorCore[BaseModel]",
+        step: object,
+        data: object,
+        context: BaseModel | None,
+        resources: object | None,
+        limits: object | None,
         stream: bool,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
-        cache_key: Optional[str],
+        on_chunk: Callable[[object], Awaitable[None]] | None,
+        cache_key: str | None,
         fallback_depth: int,
     ) -> StepOutcome[StepResult]:
         """Orchestrate agent execution with retries, validation, plugins, fallback."""
@@ -65,58 +67,75 @@ class AgentOrchestrator:
     async def cache_success_if_applicable(
         self,
         *,
-        core: Any,
-        step: Any,
-        cache_key: Optional[str],
+        core: object,
+        step: object,
+        cache_key: str | None,
         outcome: StepOutcome[StepResult],
     ) -> None:
         """Persist successful agent outcomes via CacheManager."""
         try:
-            if isinstance(outcome, Success) and cache_key and core._enable_cache:
-                await core._cache_manager.maybe_persist_step_result(
-                    step, outcome.step_result, cache_key, ttl_s=3600
-                )
+            enable_cache = bool(getattr(core, "_enable_cache", False))
+            cache_mgr = getattr(core, "_cache_manager", None)
+            persist_fn = (
+                getattr(cache_mgr, "maybe_persist_step_result", None)
+                if cache_mgr is not None
+                else None
+            )
+            if isinstance(outcome, Success) and cache_key and enable_cache and callable(persist_fn):
+                res = persist_fn(step, outcome.step_result, cache_key, ttl_s=3600)
+                if inspect.isawaitable(res):
+                    await res
         except Exception:
             telemetry.logfire.debug(
                 f"[AgentOrchestrator] cache persist failed for {getattr(step, 'name', '<unnamed>')}"
             )
 
-    def reset_fallback_chain(self, core: Any, depth: int) -> None:
+    def reset_fallback_chain(self, core: object, depth: int) -> None:
         """Reset fallback handler at top-level invocations."""
         try:
             if int(depth) == 0:
-                core._fallback_handler.reset()
+                handler = getattr(core, "_fallback_handler", None)
+                reset_fn = getattr(handler, "reset", None) if handler is not None else None
+                if callable(reset_fn):
+                    reset_fn()
         except Exception:
             pass
 
-    def guard_fallback_loop(self, core: Any, step: Any, depth: int) -> None:
+    def guard_fallback_loop(self, core: object, step: object, depth: int) -> None:
         """Guard against fallback loops."""
         handler = getattr(core, "_fallback_handler", None)
         if handler is None:
             return
 
         # Check chain length first
-        if depth > handler.MAX_CHAIN_LENGTH:
+        max_len_obj = getattr(handler, "MAX_CHAIN_LENGTH", None)
+        max_len = max_len_obj if isinstance(max_len_obj, int) else None
+        if max_len is not None and depth > max_len:
             from ...exceptions import InfiniteFallbackError
 
-            telemetry.logfire.warning(
-                f"Fallback chain length exceeded maximum of {handler.MAX_CHAIN_LENGTH}"
-            )
-            raise InfiniteFallbackError(
-                f"Fallback chain exceeded maximum length ({handler.MAX_CHAIN_LENGTH})"
-            )
+            telemetry.logfire.warning(f"Fallback chain length exceeded maximum of {max_len}")
+            raise InfiniteFallbackError(f"Fallback chain exceeded maximum length ({max_len})")
 
         # Check for cycles
-        if depth > 0 and handler.is_step_in_chain(step):
-            from ...exceptions import InfiniteFallbackError
+        is_in_chain_fn = getattr(handler, "is_step_in_chain", None)
+        if depth > 0 and callable(is_in_chain_fn):
+            try:
+                if bool(is_in_chain_fn(step)):
+                    from ...exceptions import InfiniteFallbackError
 
-            telemetry.logfire.warning(
-                f"Infinite fallback loop detected for step '{getattr(step, 'name', '<unnamed>')}'"
-            )
-            raise InfiniteFallbackError(
-                f"Infinite fallback loop detected: step '{getattr(step, 'name', '<unnamed>')}' is already in the chain"
-            )
+                    telemetry.logfire.warning(
+                        f"Infinite fallback loop detected for step '{getattr(step, 'name', '<unnamed>')}'"
+                    )
+                    raise InfiniteFallbackError(
+                        f"Infinite fallback loop detected: step '{getattr(step, 'name', '<unnamed>')}' is already in the chain"
+                    )
+            except InfiniteFallbackError:
+                raise
+            except Exception:
+                pass
 
         # Add to chain if safe
         if depth > 0:
-            handler.push_to_chain(step)
+            push_fn = getattr(handler, "push_to_chain", None)
+            if callable(push_fn):
+                push_fn(step)

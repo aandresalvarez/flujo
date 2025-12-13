@@ -121,6 +121,11 @@ class TestExecutorCoreConditionalStep:
         self, executor_core, mock_conditional_step, monkeypatch
     ):
         """Test that all parameters are correctly passed to step execution."""
+        from flujo.domain.models import BaseModel
+
+        class TestContext(BaseModel):
+            key: str = "value"
+
         # Add a step to the branch
         mock_step = Mock(spec=Step)
         mock_step.name = "test_step"
@@ -129,7 +134,7 @@ class TestExecutorCoreConditionalStep:
         mock_conditional_step.branches["branch_a"].steps = [mock_step]
 
         test_data = "test_data"
-        test_context = Mock()
+        test_context = TestContext()
         test_resources = Mock()
         test_limits = UsageLimits(total_cost_usd_limit=10.0)
         test_context_setter = Mock()
@@ -195,9 +200,14 @@ class TestExecutorCoreConditionalStep:
         self, executor_core, mock_conditional_step, monkeypatch
     ):
         """Test ConditionalStep with limits and context setter."""
+        from flujo.domain.models import BaseModel
+
+        class TestContext(BaseModel):
+            test: str = "value"
+
         test_limits = UsageLimits(total_cost_usd_limit=10.0)
         test_context_setter = Mock()
-        test_context = {"test": "value"}
+        test_context = TestContext()
 
         with patch.object(executor_core, "execute", new_callable=AsyncMock) as mock_execute:
             mock_execute.return_value = StepResult(

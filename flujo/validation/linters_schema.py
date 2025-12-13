@@ -239,16 +239,17 @@ class ContextLinter(BaseLinter):
                         except Exception:
                             parent_path = ""
                         if parent_path.strip() == "scratchpad":
+                            sev = _override_severity("V-C2", "error")
                             out.append(
                                 ValidationFinding(
                                     rule_id="V-C2",
-                                    severity="warning",
+                                    severity=sev or "error",
                                     message=(
-                                        "Mapping into 'scratchpad' root may assign a non-dict and corrupt shape; map under scratchpad.<key>."
+                                        "Mapping into 'scratchpad' root is no longer supported; scratchpad has been removed."
                                     ),
                                     step_name=getattr(st, "name", None),
                                     suggestion=(
-                                        "Change parent to 'scratchpad.<key>' or ensure the child value is an object."
+                                        "Change parent to import_artifacts.<key> or another typed context field."
                                     ),
                                     location_path="steps[].config.outputs",
                                 )

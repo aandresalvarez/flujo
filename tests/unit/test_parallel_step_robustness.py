@@ -345,7 +345,7 @@ class TestParallelStepRobustness:
         class TestContext:
             def __init__(self, value):
                 self.value = value
-                self.scratchpad = {}
+                self.data_store = {}
 
         initial_context = TestContext("initial")
 
@@ -364,7 +364,7 @@ class TestParallelStepRobustness:
             # Modify the context
             if context:
                 context.value = f"modified_by_{step.name}"
-                context.scratchpad[f"step_{step.name}"] = "executed"
+                context.data_store[f"step_{step.name}"] = "executed"
 
             return StepResult(
                 name=step.name,

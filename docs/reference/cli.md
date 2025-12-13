@@ -87,7 +87,7 @@ Example:
 - `--debug-export-path PATH`: Write the full JSON debug log to PATH.
   - `trace_tree`: complete spans, attributes, and events
   - `result.step_history`: full recursive step history with outputs/feedback/metrics
-  - `final_context`: serialized context plus `scratchpad`, `conversation_history`, `hitl_history`, `command_log`
+  - `final_context`: serialized context including `import_artifacts`, `step_outputs`, `conversation_history`, `hitl_history`, `command_log`
   - `env`: debug-related flags active for the run
 
 Examples:

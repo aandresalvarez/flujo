@@ -16,29 +16,29 @@ async def clarify(goal: str | dict | None, *, context: PipelineContext | None = 
     else:
         basis = {"goal": str(goal or getattr(context, "initial_prompt", ""))}
     cohort_definition = {"name": basis.get("name") or "demo", "criteria": ["age > 18"]}
-    return {"scratchpad": {"cohort_definition": cohort_definition}}
+    return {"import_artifacts": {"cohort_definition": cohort_definition}}
 
 
 async def discover_concepts(_data: object, *, context: PipelineContext | None = None) -> JSONObject:
     """Derive concept sets from the cohort definition in context."""
     assert context is not None
-    cd = context.scratchpad.get("cohort_definition") or {}
+    cd = context.import_artifacts.get("cohort_definition") or {}
     name = cd.get("name", "demo") if isinstance(cd, dict) else "demo"
     concept_sets: List[int] = [1, 2, 3] if name else []
-    return {"scratchpad": {"concept_sets": concept_sets}}
+    return {"import_artifacts": {"concept_sets": concept_sets}}
 
 
 async def build_sql(_data: object, *, context: PipelineContext | None = None) -> JSONObject:
     """Build a final SQL string from cohort_definition and concept_sets in context."""
     assert context is not None
-    cd = context.scratchpad.get("cohort_definition")
-    cs = context.scratchpad.get("concept_sets") or []
+    cd = context.import_artifacts.get("cohort_definition")
+    cs = context.import_artifacts.get("concept_sets") or []
     final_sql = f"-- cohorts: {str(cd)}; concepts: {len(cs)}"
-    return {"scratchpad": {"final_sql": final_sql}}
+    return {"import_artifacts": {"final_sql": final_sql}}
 
 
 async def accept_review(_data: object, *, context: PipelineContext | None = None) -> JSONObject:
-    """Map the last human response from HITL into scratchpad.cohort_definition.
+    """Map the last human response from HITL into import_artifacts.cohort_definition.
 
     If the user pasted JSON, try to parse `{ "name": ..., "criteria": [...] }`.
     Otherwise, store a simple structured wrapper.
@@ -56,7 +56,7 @@ async def accept_review(_data: object, *, context: PipelineContext | None = None
     # Fallback to compact steps map value
     if human is None:
         try:
-            steps_map = context.scratchpad.get("steps", {})
+            steps_map = context.step_outputs
             human = steps_map.get("review")
         except Exception:
             human = None
@@ -74,4 +74,4 @@ async def accept_review(_data: object, *, context: PipelineContext | None = None
                 cd = {"name": "user", "criteria": [text]}
         except Exception:
             cd = {"name": "user", "criteria": [text]}
-    return {"scratchpad": {"cohort_definition": cd}}
+    return {"import_artifacts": {"cohort_definition": cd}}

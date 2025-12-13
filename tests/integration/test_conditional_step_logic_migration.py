@@ -82,7 +82,12 @@ class TestConditionalStepLogicMigration:
 
     async def test_conditional_step_with_context_updates(self, executor_core):
         """Test ConditionalStep with context updates."""
-        context = {"counter": 0}
+        from flujo.domain.models import PipelineContext
+
+        class _Ctx(PipelineContext):
+            counter: int = 0
+
+        context = _Ctx()
 
         def condition_callable(data, ctx):
             return "increment" if data.get("action") == "increment" else "decrement"
@@ -310,18 +315,17 @@ class TestConditionalStepLogicMigration:
 
     async def test_conditional_step_with_complex_context(self, executor_core):
         """Test ConditionalStep with complex context handling."""
-        context = {
-            "user_id": 123,
-            "session_data": {"preferences": ["option_a", "option_b"]},
-            "execution_count": 0,
-        }
+        from flujo.domain.models import PipelineContext
+
+        context = PipelineContext(
+            user_id=123,
+            session_data={"preferences": ["option_a", "option_b"]},
+            execution_count=0,
+        )
 
         def condition_callable(data, ctx):
-            return (
-                "option_a"
-                if "option_a" in ctx.get("session_data", {}).get("preferences", [])
-                else "option_b"
-            )
+            prefs = ctx.get("session_data", {}).get("preferences", ["option_a", "option_b"])
+            return "option_a" if "option_a" in prefs else "option_b"
 
         conditional_step = ConditionalStep(
             name="test_conditional",

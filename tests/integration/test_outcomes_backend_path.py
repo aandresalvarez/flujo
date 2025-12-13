@@ -5,6 +5,8 @@ from flujo.application.core.types import ExecutionFrame
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.conditional import ConditionalStep
 from flujo.domain.models import StepResult, StepOutcome, Success
+from flujo.domain.dsl.pipeline import Pipeline
+from flujo.domain.dsl.step import Step
 
 
 class _FakeParallelExecutor:
@@ -23,7 +25,7 @@ class _FakeConditionalExecutor:
 async def test_parallel_adapter_returns_outcome_in_backend_path():
     core = ExecutorCore()
     core.parallel_step_executor = _FakeParallelExecutor()
-    step = ParallelStep(name="p_test", branches={})
+    step = ParallelStep(name="p_test", branches={"noop": Pipeline.from_step(Step(name="noop"))})
     frame = ExecutionFrame(
         step=step,
         data=None,

@@ -1,20 +1,16 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
-from ._shared import (
-    Any,
-    Failure,
-    Optional,
-    PipelineResult,
-    StepOutcome,
-    StepResult,
-    Success,
-    _Any,
-    ContextManager,
-    ExecutionFrame,
-    PausedException,
-    telemetry,
-)
+from typing import Optional
+
+from flujo.domain.base_model import BaseModel as DomainBaseModel
+
+from flujo.application.core.context_manager import ContextManager
+from flujo.domain.models import Failure, PipelineResult, StepOutcome, StepResult, Success
+from flujo.exceptions import PausedException
+from flujo.infra import telemetry
+
+from ..types import ExecutionFrame
 
 # --- StateMachine policy executor (FSD-025) ---
 
@@ -23,11 +19,12 @@ class StateMachinePolicyExecutor:
     """Policy executor for StateMachineStep.
 
     Iteratively executes the pipeline for the current state until an end state is reached.
-    State is tracked in the context scratchpad under 'current_state'.
-    Next state may be specified by setting 'next_state' in the context scratchpad.
+    State is tracked in typed context fields (current_state/next_state).
     """
 
-    async def execute(self, core: _Any, frame: ExecutionFrame[_Any]) -> StepOutcome[StepResult]:
+    async def execute(
+        self, core: object, frame: ExecutionFrame[DomainBaseModel]
+    ) -> StepOutcome[StepResult]:
         step = frame.step
         data = frame.data
         context = frame.context
@@ -39,14 +36,9 @@ class StateMachinePolicyExecutor:
         except Exception:
             pass
 
-        current_state: Optional[str] = None
-        try:
-            if context is not None and hasattr(context, "scratchpad"):
-                sp = getattr(context, "scratchpad")
-                if isinstance(sp, dict):
-                    current_state = sp.get("current_state")
-        except Exception:
-            current_state = None
+        current_state: Optional[str] = (
+            getattr(context, "current_state", None) if context is not None else None
+        )
         if not isinstance(current_state, str):
             current_state = getattr(step, "start_state", None)
 
@@ -55,14 +47,9 @@ class StateMachinePolicyExecutor:
         # (e.g., pause/empty-state pipelines). Setting it up‑front prevents loss during
         # later merges and ensures tests can assert on it even if a pause occurs early.
         try:
-            if (
-                context is not None
-                and hasattr(context, "scratchpad")
-                and isinstance(getattr(context, "scratchpad"), dict)
-                and current_state is not None  # Defensive check
-                and isinstance(current_state, str)
-            ):
-                context.scratchpad["current_state"] = current_state
+            if context is not None and isinstance(current_state, str):
+                if hasattr(context, "current_state"):
+                    context.current_state = current_state
         except Exception:
             pass
 
@@ -78,11 +65,11 @@ class StateMachinePolicyExecutor:
 
         # Helper: resolve transitions with first-match-wins semantics
         def _resolve_transition(
-            _step: Any,
+            _step: object,
             _from_state: Optional[str],
             _event: str,
             _payload: JSONObject,
-            _context: Optional[Any],
+            _context: DomainBaseModel | None,
         ) -> Optional[str]:
             try:
                 trs = getattr(_step, "transitions", None) or []
@@ -147,15 +134,17 @@ class StateMachinePolicyExecutor:
 
             # Persist control metadata so resume knows current state
             try:
-                if last_context is not None and hasattr(last_context, "scratchpad"):
-                    spm = getattr(last_context, "scratchpad")
-                    if isinstance(spm, dict) and isinstance(current_state, str):
-                        spm["current_state"] = current_state
+                if last_context is not None and isinstance(current_state, str):
+                    if hasattr(last_context, "current_state"):
+                        last_context.current_state = current_state
             except Exception:
                 pass
 
-            iteration_context = (
+            isolated_ctx = (
                 ContextManager.isolate(last_context) if last_context is not None else None
+            )
+            iteration_context: DomainBaseModel | None = (
+                isolated_ctx if isinstance(isolated_ctx, DomainBaseModel) else last_context
             )
 
             # Disable cache during state transitions to avoid stale context
@@ -163,9 +152,10 @@ class StateMachinePolicyExecutor:
             try:
                 setattr(core, "_enable_cache", False)
                 try:
-                    pipeline_result: PipelineResult[
-                        _Any
-                    ] = await core._execute_pipeline_via_policies(
+                    exec_fn = getattr(core, "_execute_pipeline_via_policies", None)
+                    if not callable(exec_fn):
+                        raise TypeError("ExecutorCore missing _execute_pipeline_via_policies()")
+                    pipeline_result: PipelineResult[DomainBaseModel] = await exec_fn(
                         state_pipeline,
                         data,
                         iteration_context,
@@ -185,45 +175,42 @@ class StateMachinePolicyExecutor:
                         target = _resolve_transition(
                             step, current_state, "pause", pause_payload, iteration_context
                         )
-                        if (
-                            isinstance(target, str)
-                            and last_context is not None
-                            and hasattr(last_context, "scratchpad")
-                        ):
-                            scd = getattr(last_context, "scratchpad")
-                            if isinstance(scd, dict):
-                                scd["current_state"] = target
-                                scd["next_state"] = target
-                                # Mark paused status and message on main context for persistence
-                                try:
-                                    scd["status"] = "paused"
-                                    msg = getattr(e, "message", None)
-                                    # Use plain message for backward compatibility
-                                    scd["pause_message"] = (
+                        if isinstance(target, str) and last_context is not None:
+                            if hasattr(last_context, "current_state"):
+                                last_context.current_state = target
+                            if hasattr(last_context, "next_state"):
+                                last_context.next_state = target
+                            # Mark paused status and message on main context for persistence
+                            try:
+                                if hasattr(last_context, "status"):
+                                    last_context.status = "paused"
+                                msg = getattr(e, "message", None)
+                                if hasattr(last_context, "pause_message"):
+                                    last_context.pause_message = (
                                         msg if isinstance(msg, str) else getattr(e, "message", "")
                                     )
-                                except Exception:
-                                    pass
+                            except Exception:
+                                pass
                         # Best‑effort: reflect pause metadata on the outer context as well so
                         # finalization code that uses the original reference also sees it.
                         try:
-                            if (
-                                context is not None
-                                and hasattr(context, "scratchpad")
-                                and isinstance(getattr(context, "scratchpad"), dict)
-                            ):
+                            if context is not None:
                                 if isinstance(target, str):
-                                    context.scratchpad["current_state"] = target
-                                    context.scratchpad["next_state"] = target
-                                context.scratchpad.setdefault("status", "paused")
-                                # Only set if not already set (loop policy or recipe may have set it already)
-                                if "pause_message" not in context.scratchpad:
-                                    context.scratchpad["pause_message"] = (
+                                    if hasattr(context, "current_state"):
+                                        context.current_state = target
+                                    if hasattr(context, "next_state"):
+                                        context.next_state = target
+                                if hasattr(context, "status"):
+                                    context.status = "paused"
+                                if (
+                                    hasattr(context, "pause_message")
+                                    and context.pause_message is None
+                                ):
+                                    context.pause_message = (
                                         getattr(e, "message", "")
                                         if isinstance(getattr(e, "message", None), str)
                                         else getattr(e, "message", "")
                                     )
-                                # If already set, preserve it (loop policy/recipe already set it correctly)
                         except Exception:
                             pass
                         telemetry.logfire.info(
@@ -268,129 +255,54 @@ class StateMachinePolicyExecutor:
                 pass
 
             # Defensive: Ensure current_state is preserved in the final result context
-            # This handles cases where context merge might have dropped it or sub-pipeline didn't return it
+            # (typed field; no scratchpad writes).
             if current_state is not None:
                 try:
                     if getattr(pipeline_result, "final_pipeline_context", None) is not None:
                         ctx = getattr(pipeline_result, "final_pipeline_context")
-                        if hasattr(ctx, "scratchpad") and isinstance(ctx.scratchpad, dict):
-                            if "current_state" not in ctx.scratchpad:
-                                ctx.scratchpad["current_state"] = current_state
+                        if ctx is not None and hasattr(ctx, "current_state"):
+                            if getattr(ctx, "current_state", None) is None:
+                                ctx.current_state = current_state
                 except Exception:
                     pass
 
             # Merge sub-pipeline's final context back into the state machine's main context
-            sub_ctx = getattr(pipeline_result, "final_pipeline_context", iteration_context)
-            # Capture next_state/current_state from the sub-context BEFORE merge. The generic
-            # ContextManager.merge intentionally excludes certain fields (like 'scratchpad')
-            # for noise reduction, which can drop state transitions. We extract the intended
-            # hop here and re-apply it after the merge.
+            sub_ctx_raw = getattr(pipeline_result, "final_pipeline_context", iteration_context)
+            sub_ctx: DomainBaseModel | None = (
+                sub_ctx_raw if isinstance(sub_ctx_raw, DomainBaseModel) else iteration_context
+            )
+            # Capture next_state/current_state from the sub-context BEFORE merge.
+            # ContextManager.merge may exclude some fields for noise reduction; we extract
+            # the intended hop here and re-apply it after the merge.
             intended_next: Optional[str] = None
             intended_curr: Optional[str] = None
             try:
-                if sub_ctx is not None and hasattr(sub_ctx, "scratchpad"):
-                    sc = getattr(sub_ctx, "scratchpad")
-                    if isinstance(sc, dict):
-                        nxt = sc.get("next_state")
-                        cur = sc.get("current_state")
-                        intended_next = str(nxt) if isinstance(nxt, str) else None
-                        intended_curr = str(cur) if isinstance(cur, str) else None
+                # Prefer typed fields
+                if sub_ctx is not None:
+                    nxt = getattr(sub_ctx, "next_state", None)
+                    cur = getattr(sub_ctx, "current_state", None)
+                    intended_next = str(nxt) if isinstance(nxt, str) else None
+                    intended_curr = str(cur) if isinstance(cur, str) else None
             except Exception:
                 intended_next = None
                 intended_curr = None
             try:
-                last_context = ContextManager.merge(last_context, sub_ctx)
+                merged_ctx = ContextManager.merge(last_context, sub_ctx)
+                last_context = merged_ctx if isinstance(merged_ctx, DomainBaseModel) else sub_ctx
             except Exception:
                 # Defensive: if merge fails, fall back to sub_ctx to avoid losing progress
                 last_context = sub_ctx
-            # Ensure scratchpad updates from the sub-context are preserved
+            # NOTE: scratchpad deep-merges removed. State propagation is via typed fields only.
+            # Re-apply intended state transition to the merged context when available (typed fields).
             try:
-                if (
-                    sub_ctx is not None
-                    and last_context is not None
-                    and hasattr(sub_ctx, "scratchpad")
-                    and hasattr(last_context, "scratchpad")
-                ):
-                    sc = getattr(sub_ctx, "scratchpad")
-                    lc = getattr(last_context, "scratchpad")
-                    if isinstance(sc, dict) and isinstance(lc, dict):
-                        lc.update(sc)
-            except Exception:
-                pass
-            # Additionally, merge any context updates emitted via step outputs
-            # Priority: perform a deep merge of scratchpad updates, then apply
-            # broader context updates when present (e.g., PipelineResult from as_step).
-            try:
-                if last_context is not None and hasattr(last_context, "scratchpad"):
-                    lcd = getattr(last_context, "scratchpad")
-                    if isinstance(lcd, dict):
-
-                        def _deep_merge_dict(a: JSONObject, b: JSONObject) -> JSONObject:
-                            res = dict(a)
-                            for k, v in b.items():
-                                if k in res and isinstance(res[k], dict) and isinstance(v, dict):
-                                    res[k] = _deep_merge_dict(res[k], v)
-                                else:
-                                    res[k] = v
-                            return res
-
-                        def _merge_out(out_obj: Any) -> None:
-                            # 1) Scratchpad-only fast path
-                            if isinstance(out_obj, dict):
-                                sp = out_obj.get("scratchpad")
-                                if isinstance(sp, dict):
-                                    try:
-                                        merged = _deep_merge_dict(lcd, sp)
-                                        lcd.clear()
-                                        lcd.update(merged)
-                                    except Exception:
-                                        # Fallback to shallow update if deep merge fails
-                                        lcd.update(sp)
-                                # 2) Broader context updates via _build_context_update
-                                try:
-                                    from flujo.application.core.context_adapter import (
-                                        _build_context_update,
-                                    )
-
-                                    update_data = _build_context_update(out_obj)
-                                except Exception:
-                                    update_data = None
-                                if isinstance(update_data, dict):
-                                    # Only merge scratchpad portion here; other fields are handled by
-                                    # ContextManager.merge already. This ensures we don't lose
-                                    # state-machine hops due to excluded-fields behavior.
-                                    sp2 = update_data.get("scratchpad")
-                                    if isinstance(sp2, dict):
-                                        try:
-                                            merged2 = _deep_merge_dict(lcd, sp2)
-                                            lcd.clear()
-                                            lcd.update(merged2)
-                                        except Exception:
-                                            lcd.update(sp2)
-
-                        # Merge top-level step outputs
-                        for _sr in getattr(pipeline_result, "step_history", []) or []:
-                            _merge_out(getattr(_sr, "output", None))
-                            # Also merge nested outputs (e.g., ImportStep may carry child history)
-                            try:
-                                for _nsr in getattr(_sr, "step_history", []) or []:
-                                    _merge_out(getattr(_nsr, "output", None))
-                            except Exception:
-                                pass
-            except Exception:
-                pass
-            # Re-apply intended state transition to the merged context when available
-            try:
-                if last_context is not None and hasattr(last_context, "scratchpad"):
-                    lcd = getattr(last_context, "scratchpad")
-                    if isinstance(lcd, dict):
-                        if isinstance(intended_next, str):
-                            lcd["next_state"] = intended_next
-                            # Update current_state to reflect the intended hop
-                            if isinstance(intended_curr, str):
-                                lcd["current_state"] = intended_curr
-                            else:
-                                lcd["current_state"] = intended_next
+                if last_context is not None:
+                    if isinstance(intended_next, str) and hasattr(last_context, "next_state"):
+                        last_context.next_state = intended_next
+                    if hasattr(last_context, "current_state"):
+                        if isinstance(intended_curr, str):
+                            last_context.current_state = intended_curr
+                        elif isinstance(intended_next, str):
+                            last_context.current_state = intended_next
             except Exception:
                 pass
             # Decide transition based on pipeline_result event before legacy fallbacks
@@ -427,13 +339,12 @@ class StateMachinePolicyExecutor:
                 )
                 if isinstance(target, str):
                     next_state = target
-                    # Persist transition into context scratchpad
                     try:
-                        if last_context is not None and hasattr(last_context, "scratchpad"):
-                            lcd2 = getattr(last_context, "scratchpad")
-                            if isinstance(lcd2, dict):
-                                lcd2["next_state"] = str(target)
-                                lcd2["current_state"] = str(target)
+                        if last_context is not None:
+                            if hasattr(last_context, "next_state"):
+                                last_context.next_state = str(target)
+                            if hasattr(last_context, "current_state"):
+                                last_context.current_state = str(target)
                         telemetry.logfire.info(
                             f"[StateMachinePolicy] event={event} from={current_state!r} matched to={target!r}"
                         )
@@ -444,11 +355,10 @@ class StateMachinePolicyExecutor:
 
             # If no transition rule matched, look for explicit next_state in context
             try:
-                if last_context is not None and hasattr(last_context, "scratchpad"):
-                    sp2 = getattr(last_context, "scratchpad")
-                    if isinstance(sp2, dict):
-                        if not isinstance(next_state, str):
-                            next_state = sp2.get("next_state")
+                if last_context is not None and not isinstance(next_state, str):
+                    nxt = getattr(last_context, "next_state", None)
+                    if isinstance(nxt, str):
+                        next_state = nxt
             except Exception:
                 next_state = None
 
@@ -462,22 +372,21 @@ class StateMachinePolicyExecutor:
                         out = getattr(sr, "output", None)
                         telemetry.logfire.info(f"[StateMachinePolicy] Step output: {out}")
                         if isinstance(out, dict):
-                            sp = out.get("scratchpad")
-                            telemetry.logfire.info(f"[StateMachinePolicy] Step scratchpad: {sp}")
-                            if isinstance(sp, dict) and isinstance(sp.get("next_state"), str):
-                                next_state = sp.get("next_state")
+                            if isinstance(out.get("next_state"), str):
+                                next_state = out.get("next_state")
                                 telemetry.logfire.info(
                                     f"[StateMachinePolicy] Found next_state: {next_state}"
                                 )
-                                # Best-effort: persist into context scratchpad for downstream steps
+                                # Best-effort: persist into typed fields for downstream steps
                                 try:
-                                    if last_context is not None and hasattr(
-                                        last_context, "scratchpad"
-                                    ):
-                                        lcd = getattr(last_context, "scratchpad")
-                                        if isinstance(lcd, dict):
-                                            lcd["next_state"] = str(next_state)
-                                            lcd.setdefault("current_state", str(next_state))
+                                    if last_context is not None:
+                                        if hasattr(last_context, "next_state"):
+                                            last_context.next_state = str(next_state)
+                                        if (
+                                            hasattr(last_context, "current_state")
+                                            and getattr(last_context, "current_state", None) is None
+                                        ):
+                                            last_context.current_state = str(next_state)
                                 except Exception:
                                     pass
                                 break
@@ -490,18 +399,17 @@ class StateMachinePolicyExecutor:
                     break
                 break
 
-        # Final safeguard: ensure the final state is visible on the caller context
-        # Use direct assignment instead of setdefault to ensure the final state is always set
+        # Final safeguard: ensure the final state is visible on the caller context (typed fields only).
         try:
             if isinstance(current_state, str):
                 for ctx_obj in (last_context, context):
-                    if ctx_obj is not None and hasattr(ctx_obj, "scratchpad"):
-                        spf = getattr(ctx_obj, "scratchpad")
-                        if isinstance(spf, dict):
-                            spf["current_state"] = current_state
-                            # If a hop was decided, mirror it to next_state for clarity
-                            if not isinstance(spf.get("next_state"), str):
-                                spf["next_state"] = current_state
+                    if ctx_obj is not None:
+                        if hasattr(ctx_obj, "current_state"):
+                            ctx_obj.current_state = current_state
+                        if hasattr(ctx_obj, "next_state") and not isinstance(
+                            getattr(ctx_obj, "next_state", None), str
+                        ):
+                            ctx_obj.next_state = current_state
         except Exception:
             pass
 
@@ -521,9 +429,7 @@ class StateMachinePolicyExecutor:
         # ExecutionManager can persist it consistently across policy types.
         try:
             if frame.context_setter is not None:
-                from flujo.domain.models import PipelineResult as _PR
-
-                pr: _PR[Any] = _PR(
+                pr: PipelineResult[DomainBaseModel] = PipelineResult(
                     step_history=step_history,
                     total_cost_usd=total_cost,
                     total_tokens=total_tokens,

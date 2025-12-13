@@ -79,9 +79,9 @@ def test_transitions_when_expression_parses_at_load_time() -> None:
         "      - from: s1\n"
         "        on: success\n"
         "        to: s2\n"
-        "        when: \"context.scratchpad.get('x')\"\n"
+        "        when: \"context.import_artifacts.get('x')\"\n"
     )
     pipe: Pipeline[Any, Any] = load_pipeline_blueprint_from_yaml(yaml_text)
     sm = pipe.steps[0]
     assert isinstance(sm, StateMachineStep)
-    assert sm.transitions and sm.transitions[0].when == "context.scratchpad.get('x')"
+    assert sm.transitions and sm.transitions[0].when == "context.import_artifacts.get('x')"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Literal, cast
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Literal
 
 from ..domain.events import (
     HookPayload,
@@ -14,6 +15,17 @@ from ..domain.events import (
 from typing import Any as _Any
 
 __all__ = ["ConsoleTracer"]
+
+
+@dataclass(frozen=True, slots=True)
+class _PlainPanel:
+    title: str
+    body: str
+
+    def __str__(self) -> str:
+        if self.body:
+            return f"{self.title} :: {self.body}"
+        return self.title
 
 
 class ConsoleTracer:
@@ -77,45 +89,51 @@ class ConsoleTracer:
             self._rich_available = False
         self._depth = 0
         self.event_handlers: Dict[str, Callable[[HookPayload], Any]] = {
-            "pre_run": cast(Callable[[HookPayload], Any], self._handle_pre_run),
-            "post_run": cast(Callable[[HookPayload], Any], self._handle_post_run),
-            "pre_step": cast(Callable[[HookPayload], Any], self._handle_pre_step),
-            "post_step": cast(Callable[[HookPayload], Any], self._handle_post_step),
-            "on_step_failure": cast(Callable[[HookPayload], Any], self._handle_on_step_failure),
+            "pre_run": self._handle_pre_run,
+            "post_run": self._handle_post_run,
+            "pre_step": self._handle_pre_step,
+            "post_step": self._handle_post_step,
+            "on_step_failure": self._handle_on_step_failure,
         }
 
-    def _handle_pre_run(self, payload: PreRunPayload) -> None:
+    def _emit_panel(self, title: str, body: str) -> None:
+        if self._rich_available and self._RPanel is not None and self._RText is not None:
+            text = self._RText(body)
+            self.console.print(self._RPanel(text, title=title))
+        else:
+            self.console.print(_PlainPanel(title=title, body=body))
+
+    def _handle_pre_run(self, payload: HookPayload) -> None:
         """Handle the ``pre_run`` event."""
+        if not isinstance(payload, PreRunPayload):
+            return
         if getattr(payload, "is_background", False):
             return
         initial_input = payload.initial_input
         title = "Pipeline Start"
-        if self._rich_available and self._RPanel is not None and self._RText is not None:
-            details = self._RText(f"Input: {initial_input!r}")
-            self.console.print(self._RPanel(details, title=title, border_style="bold blue"))
-        else:
-            self.console.print(f"{title} :: Input: {initial_input!r}")
+        self._emit_panel(title, f"Input: {initial_input!r}")
         self._depth = 0
 
-    def _handle_post_run(self, payload: PostRunPayload) -> None:
+    def _handle_post_run(self, payload: HookPayload) -> None:
         """Handle the ``post_run`` event.
 
         Correctly reflect paused/failed/completed final state. Previously this handler
         inferred success solely from ``step_history`` which reports ``all([]) == True``
         in paused-early cases, causing a misleading "COMPLETED" panel. We now:
         - Prefer ``pipeline_result.success`` when available (runner sets this).
-        - Detect a paused state from ``payload.context.scratchpad['status']`` (or
+        - Detect a paused state from ``payload.context.status`` (or
           ``pipeline_result.final_pipeline_context`` as a fallback).
         - Adjust the title and styling accordingly.
         """
+        if not isinstance(payload, PostRunPayload):
+            return
         if getattr(payload, "is_background", False):
             return
         pipeline_result = payload.pipeline_result
 
         # Determine final status
         ctx = payload.context or getattr(pipeline_result, "final_pipeline_context", None)
-        scratch = getattr(ctx, "scratchpad", None) if ctx is not None else None
-        paused = isinstance(scratch, dict) and scratch.get("status") == "paused"
+        paused = bool(ctx is not None and getattr(ctx, "status", None) == "paused")
 
         # Prefer the explicit success flag set by the runner; fall back to step_history
         is_success = bool(getattr(pipeline_result, "success", False))
@@ -135,35 +153,37 @@ class ConsoleTracer:
 
         if self._rich_available and self._RPanel is not None and self._RText is not None:
             details = self._RText()
-            details.append(f"Final Status: {status_text}\n", style=status_style)
+            details.append(f"Status: {status_text}\n", style=status_style)
             details.append(f"Total Steps Executed: {len(pipeline_result.step_history)}\n")
             details.append(f"Total Cost: ${pipeline_result.total_cost_usd:.6f}")
             self.console.print(self._RPanel(details, title=title, border_style="bold blue"))
         else:
-            self.console.print(
-                f"{title} :: {status_text} :: Steps={len(pipeline_result.step_history)} :: Cost=${pipeline_result.total_cost_usd:.6f}"
+            self._emit_panel(
+                title,
+                (
+                    f"Status: {status_text} :: Steps={len(pipeline_result.step_history)} "
+                    f":: Cost=${pipeline_result.total_cost_usd:.6f}"
+                ),
             )
 
-    def _handle_pre_step(self, payload: PreStepPayload) -> None:
+    def _handle_pre_step(self, payload: HookPayload) -> None:
         """Handle the ``pre_step`` event."""
+        if not isinstance(payload, PreStepPayload):
+            return
         if getattr(payload, "is_background", False):
             return
         step = payload.step
         step_input = payload.step_input
         indent = "  " * self._depth
         title = f"{indent}Step Start: {step.name if step else ''}"
-        if self._rich_available and self._RPanel is not None and self._RText is not None:
-            if self.level == "debug" and self.log_inputs:
-                body = self._RText(repr(step_input))
-            else:
-                body = self._RText("running")
-            self.console.print(self._RPanel(body, title=title))
-        else:
-            self.console.print(f"{title} :: running")
+        body = repr(step_input) if (self.level == "debug" and self.log_inputs) else "running"
+        self._emit_panel(title, body)
         self._depth += 1
 
-    def _handle_post_step(self, payload: PostStepPayload) -> None:
+    def _handle_post_step(self, payload: HookPayload) -> None:
         """Handle the ``post_step`` event."""
+        if not isinstance(payload, PostStepPayload):
+            return
         if getattr(payload, "is_background", False):
             return
         step_result = payload.step_result
@@ -178,13 +198,15 @@ class ConsoleTracer:
                 body_text.append(f"\nOutput: {repr(step_result.output)}")
             self.console.print(self._RPanel(body_text, title=title))
         else:
+            body = f"Status: {status}"
             if self.level == "debug" and self.log_outputs:
-                self.console.print(f"{title} :: {status} :: Output: {repr(step_result.output)}")
-            else:
-                self.console.print(f"{title} :: {status}")
+                body = f"{body} :: Output: {repr(step_result.output)}"
+            self._emit_panel(title, body)
 
-    def _handle_on_step_failure(self, payload: OnStepFailurePayload) -> None:
+    def _handle_on_step_failure(self, payload: HookPayload) -> None:
         """Handle the ``on_step_failure`` event."""
+        if not isinstance(payload, OnStepFailurePayload):
+            return
         if getattr(payload, "is_background", False):
             return
         step_result = payload.step_result
@@ -198,7 +220,7 @@ class ConsoleTracer:
             )
             self.console.print(self._RPanel(details, title=title, border_style="bold red"))
         else:
-            self.console.print(f"{title} :: FAILED :: Feedback: {step_result.feedback}")
+            self._emit_panel(title, f"Status: FAILED :: Feedback: {step_result.feedback}")
 
     async def hook(self, payload: HookPayload) -> None:
         """Dispatch hook payloads to the appropriate handler."""

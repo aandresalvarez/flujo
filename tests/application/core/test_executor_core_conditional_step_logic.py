@@ -291,6 +291,11 @@ class TestExecutorCoreConditionalStepLogic:
 
     async def test_context_setter_called_on_success(self, executor_core, mock_conditional_step):
         """Test that context setter is called on successful branch execution."""
+        from flujo.domain.models import BaseModel
+
+        class TestContext(BaseModel):
+            pass
+
         mock_conditional_step.branches["branch_a"].steps = []
         mock_context_setter = Mock()
 
@@ -302,7 +307,7 @@ class TestExecutorCoreConditionalStepLogic:
             await executor_core._handle_conditional_step(
                 mock_conditional_step,
                 data="test_data",
-                context={},
+                context=TestContext(),
                 resources=None,
                 limits=None,
                 context_setter=mock_context_setter,
@@ -375,8 +380,13 @@ class TestExecutorCoreConditionalStepLogic:
 
     async def test_error_handling_with_context(self, executor_core, mock_conditional_step):
         """Test error handling when context is provided."""
+        from flujo.domain.models import BaseModel
+
+        class TestContext(BaseModel):
+            test: str = "value"
+
         mock_conditional_step.condition_callable.side_effect = Exception("Test error")
-        context = {"test": "value"}
+        context = TestContext()
 
         result = await executor_core._handle_conditional_step(
             mock_conditional_step,

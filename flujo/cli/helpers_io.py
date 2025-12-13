@@ -5,7 +5,7 @@ import json
 import os
 import runpy
 import sys
-from typing import Any, List, Optional, Type, Union, cast
+from typing import Any, List, Optional, Type, Union
 
 import yaml
 from typer import Exit
@@ -37,11 +37,25 @@ def print_rich_or_typer(msg: str, *, style: Optional[str] = None, stderr: bool =
 
 
 def load_pipeline_from_file(
-    pipeline_file: str, pipeline_name: str = "pipeline"
+    pipeline_file: str,
+    pipeline_name: str = "pipeline",
+    *,
+    lenient_dsl: bool = False,
 ) -> tuple["Pipeline[Any, Any]", str]:
     """Load a pipeline from a Python file."""
+    prev_strict: str | None = None
     try:
-        ns: JSONObject = runpy.run_path(pipeline_file)
+        if lenient_dsl:
+            prev_strict = os.environ.get("FLUJO_STRICT_DSL")
+            os.environ["FLUJO_STRICT_DSL"] = "0"
+        try:
+            ns: JSONObject = runpy.run_path(pipeline_file)
+        finally:
+            if lenient_dsl:
+                if prev_strict is None:
+                    os.environ.pop("FLUJO_STRICT_DSL", None)
+                else:
+                    os.environ["FLUJO_STRICT_DSL"] = prev_strict
     except ModuleNotFoundError as e:
         mod = getattr(e, "name", None) or str(e)
         try:
@@ -66,7 +80,18 @@ def load_pipeline_from_file(
             import os as _os
             import traceback as _tb
 
-            secho(f"Failed to load pipeline file: {type(e).__name__}: {e}", fg="red", err=True)
+            msg = f"Failed to load pipeline file: {type(e).__name__}: {e}"
+            try:
+                if isinstance(e, ValueError):
+                    txt = str(e)
+                    if (
+                        "Type mismatch between steps" in txt
+                        or "accepts a generic input type" in txt
+                    ):
+                        msg = f"Pipeline validation failed before run: {txt}"
+            except Exception:
+                pass
+            secho(msg, fg="red", err=True)
             if _os.getenv("FLUJO_CLI_VERBOSE") == "1" or _os.getenv("FLUJO_CLI_TRACE") == "1":
                 secho("\nTraceback:", fg="yellow", err=True)
                 secho("".join(_tb.format_exception(e)), err=True)
@@ -173,7 +198,12 @@ def parse_context_data(
         try:
             from flujo.cli.main import safe_deserialize
 
-            return cast(Optional[JSONObject], safe_deserialize(json.loads(context_data)))
+            raw = safe_deserialize(json.loads(context_data))
+            if raw is None:
+                return None
+            if isinstance(raw, dict):
+                return raw
+            raise Exit(1)
         except json.JSONDecodeError:
             raise Exit(1)
 
@@ -181,11 +211,16 @@ def parse_context_data(
         try:
             with open(context_file, "r") as f:
                 if context_file.endswith((".yaml", ".yml")):
-                    return cast(Optional[JSONObject], yaml.safe_load(f))
+                    raw = yaml.safe_load(f)
                 else:
                     from flujo.cli.main import safe_deserialize
 
-                    return cast(Optional[JSONObject], safe_deserialize(json.load(f)))
+                    raw = safe_deserialize(json.load(f))
+                if raw is None:
+                    return None
+                if isinstance(raw, dict):
+                    return raw
+                raise Exit(1)
         except Exception:
             raise Exit(1)
 
@@ -293,15 +328,29 @@ def load_weights_file(weights_path: str) -> List[dict[str, Union[str, float]]]:
     try:
         with open(weights_path, "r") as f:
             if weights_path.endswith((".yaml", ".yml")):
-                weights = yaml.safe_load(f)
+                raw_weights = yaml.safe_load(f)
             else:
                 from flujo.cli.main import safe_deserialize
 
-                weights = cast(List[dict[str, Union[str, float]]], safe_deserialize(json.load(f)))
+                raw_weights = safe_deserialize(json.load(f))
 
-        if not isinstance(weights, list) or not all(
-            isinstance(w, dict) and "item" in w and "weight" in w for w in weights
-        ):
+        if not isinstance(raw_weights, list):
+            raw_weights = None
+
+        weights: List[dict[str, Union[str, float]]] = []
+        if raw_weights is not None:
+            for raw in raw_weights:
+                if not isinstance(raw, dict):
+                    raw_weights = None
+                    break
+                item = raw.get("item")
+                weight = raw.get("weight")
+                if not isinstance(item, str) or not isinstance(weight, (int, float)):
+                    raw_weights = None
+                    break
+                weights.append({"item": item, "weight": float(weight)})
+
+        if raw_weights is None:
             try:
                 from typer import secho
 

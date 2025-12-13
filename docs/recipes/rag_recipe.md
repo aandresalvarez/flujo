@@ -15,7 +15,7 @@ memory_embedding_model = "openai:text-embedding-3-small"
 ### Write a pipeline step that stores outputs
 - Ensure steps declare outputs so they can be indexed:
 ```python
-Step(name="summarize", agent=..., output_keys=["scratchpad.summary"])
+Step(name="summarize", agent=..., output_keys=["summary"])
 ```
 - MemoryManager indexes successful step outputs automatically when enabled.
 
@@ -35,4 +35,3 @@ async def recall(data, context: PipelineContext):
 ### CLI tips
 - Ensure migrations are applied (`flujo migrate`) so `memories` (pgvector) tables exist.
 - Use `FLUJO_MEMORY_INDEXING_ENABLED=1` and `FLUJO_MEMORY_EMBEDDING_MODEL=...` in CI or env overrides.
-

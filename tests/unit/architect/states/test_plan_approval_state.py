@@ -13,4 +13,4 @@ async def test_plan_approval_defaults_to_parameter_collection() -> None:
     out = await _plan_approval_runner(context=ctx)
 
     assert out["plan_approved"] is True
-    assert out["scratchpad"]["next_state"] == "ParameterCollection"
+    assert out["next_state"] == "ParameterCollection"

@@ -27,7 +27,7 @@ steps:
           name: double
           uses: "tests.integration.test_map_declarative:double"
       init:
-        - set: "context.scratchpad.note"
+        - set: "context.import_artifacts.note"
           value: "mapping"
       finalize:
         output:

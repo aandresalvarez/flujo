@@ -1,10 +1,9 @@
 from __future__ import annotations
-from typing import Type
 from ..policy_registry import StepPolicy
 from ..types import ExecutionFrame
 from flujo.domain.dsl.loop import LoopStep
+from flujo.domain.models import BaseModel as DomainBaseModel
 from ._shared import (  # noqa: F401
-    Any,
     Awaitable,
     Callable,
     Dict,
@@ -39,17 +38,19 @@ from .loop_mapper import map_initial_input
 class LoopStepExecutor(Protocol):
     async def execute(
         self,
-        core: Any,
-        frame: ExecutionFrame[Any],
+        core: object,
+        frame: ExecutionFrame[DomainBaseModel],
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultLoopStepExecutor(StepPolicy[LoopStep[Any]]):
+class DefaultLoopStepExecutor(StepPolicy[LoopStep[DomainBaseModel]]):
     @property
-    def handles_type(self) -> Type[LoopStep[Any]]:
+    def handles_type(self) -> type[LoopStep[DomainBaseModel]]:
         return LoopStep
 
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def execute(
+        self, core: object, frame: ExecutionFrame[DomainBaseModel]
+    ) -> StepOutcome[StepResult]:
         loop_step = frame.step
         data = frame.data
         context = frame.context
@@ -60,7 +61,8 @@ class DefaultLoopStepExecutor(StepPolicy[LoopStep[Any]]):
         cache_key = None
         if getattr(core, "_enable_cache", False):
             try:
-                cache_key = core._cache_key(frame)
+                cache_key_fn = getattr(core, "_cache_key", None)
+                cache_key = cache_key_fn(frame) if callable(cache_key_fn) else None
             except Exception:
                 cache_key = None
         try:

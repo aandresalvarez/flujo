@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
+import os
 from pydantic import BaseModel
 
 from .loader import (
@@ -13,10 +14,7 @@ from ...agents import make_agent_async, make_templated_agent_async
 from flujo.type_definitions.common import JSONObject
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from typing import Any, Optional
-    from ...agents import AsyncAgentWrapper
     from ..dsl import Pipeline as _Pipeline
-import os
 from ...exceptions import ConfigurationError
 
 
@@ -36,13 +34,13 @@ class DeclarativeBlueprintCompiler:
         _visited: Optional[list[str]] = None,
     ) -> None:
         self.blueprint = blueprint
-        self._compiled_agents: dict[str, Any] = {}
-        self._compiled_imports: dict[str, Any] = {}
+        self._compiled_agents: dict[str, object] = {}
+        self._compiled_imports: dict[str, _Pipeline[object, object]] = {}
         self._base_dir: Optional[str] = base_dir
         self._visited = _visited
 
     def _validate_and_coerce_max_retries(
-        self, max_retries_opt: Any, agent_name: str
+        self, max_retries_opt: object, agent_name: str
     ) -> tuple[int, list[str]]:
         """Validate/coerce max_retries and collect warnings instead of raising.
 
@@ -71,7 +69,7 @@ class DeclarativeBlueprintCompiler:
         return max_retries, warnings
 
     def _validate_and_coerce_timeout(
-        self, timeout_opt: Any, agent_name: str
+        self, timeout_opt: object, agent_name: str
     ) -> tuple[Optional[int], list[str]]:
         """Validate/coerce timeout to int seconds; collect warnings. None if invalid."""
         warnings: list[str] = []
@@ -95,7 +93,7 @@ class DeclarativeBlueprintCompiler:
             return None, warnings
 
     def _compile_agents(self) -> None:
-        agents: Optional[dict[str, Any]] = getattr(self.blueprint, "agents", None)
+        agents: Optional[dict[str, object]] = getattr(self.blueprint, "agents", None)
         if not agents:
             return
         for name, spec in agents.items():
@@ -208,7 +206,7 @@ class DeclarativeBlueprintCompiler:
             output_type = generate_model_from_schema(name, output_schema)
 
             # If from_file is present, always use templated wrapper (variables are optional)
-            agent_wrapper: "AsyncAgentWrapper[Any, Any]"
+            agent_wrapper: object
             if isinstance(prompt_spec, dict) and "from_file" in prompt_spec:
                 # Variables are optional when using from_file - use empty dict if absent
                 variables_spec = {}
@@ -334,7 +332,7 @@ class DeclarativeBlueprintCompiler:
                     f"Failed to compile import '{alias}' from '{rel_path}': {e}"
                 ) from e
 
-    def compile_to_pipeline(self) -> "_Pipeline[Any, Any]":
+    def compile_to_pipeline(self) -> "_Pipeline[object, object]":
         # Compile agents and imports first
         self._compile_agents()
         self._compile_imports()

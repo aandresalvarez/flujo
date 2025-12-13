@@ -16,7 +16,7 @@ steps:
         - kind: hitl
           name: ask_user_in_conditional
           message: "Need input?"
-          sink_to: "scratchpad.input"
+          sink_to: "import_artifacts.input"
         
         - kind: step
           name: process
@@ -38,7 +38,7 @@ steps:
               - kind: hitl
                 name: ask_user_deeply_nested
                 message: "Deeply nested question?"
-                sink_to: "scratchpad.nested_answer"
+                sink_to: "import_artifacts.nested_answer"
       
       max_loops: 2
   
@@ -46,4 +46,4 @@ steps:
   - kind: hitl
     name: ask_user_top_level
     message: "This is fine - top-level HITL"
-    sink_to: "scratchpad.top_level_answer"
+    sink_to: "import_artifacts.top_level_answer"

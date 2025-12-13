@@ -1,6 +1,8 @@
+import os
+from typing import Any
+
 from flujo import Pipeline, step
 from flujo.domain.models import BaseModel
-from typing import Any
 from pydantic import BaseModel as PydBaseModel
 from flujo.domain.dsl.step import Step
 from flujo.domain.blueprint.loader import _finalize_step_types
@@ -53,9 +55,21 @@ def test_pydantic_output_bridges_to_dict_input() -> None:
     # Next step expects a dict[str, Any]
     s2 = Step.from_callable(_consume_dict, name="s2")
 
-    p = Pipeline.model_construct(steps=[s1, s2])
+    prev_strict = os.environ.get("FLUJO_STRICT_DSL")
+    os.environ["FLUJO_STRICT_DSL"] = "0"
+    try:
+        p = Pipeline.model_construct(steps=[s1, s2])
+    finally:
+        if prev_strict is None:
+            os.environ.pop("FLUJO_STRICT_DSL", None)
+        else:
+            os.environ["FLUJO_STRICT_DSL"] = prev_strict
     report = p.validate_graph()
-    assert not report.errors, f"Unexpected validation errors: {[e.message for e in report.errors]}"
+    # Strict mode: Pydantic -> dict is not allowed without an explicit adapter.
+    assert any(e.rule_id == "V-A2-TYPE" for e in report.errors), (
+        "Expected V-A2-TYPE error when piping a Pydantic model output into a dict input "
+        "without an adapter."
+    )
 
 
 def test_templated_input_tojson_skips_type_mismatch() -> None:
@@ -83,6 +97,6 @@ def test_finalize_types_uses_wrapper_target_output_type() -> None:
 
     _finalize_step_types(step_obj)
 
-    assert (
-        step_obj.__step_output_type__ is MyOutModel
-    ), "Expected finalize to copy target_output_type to step output type"
+    assert step_obj.__step_output_type__ is MyOutModel, (
+        "Expected finalize to copy target_output_type to step output type"
+    )

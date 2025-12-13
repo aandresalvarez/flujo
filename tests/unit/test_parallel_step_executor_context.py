@@ -1,19 +1,21 @@
-import types
 from typing import Any, Optional, Dict
 
 import pytest
+from pydantic import Field
 
 from flujo.domain.dsl.step import Step, MergeStrategy
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.models import StepResult
+from flujo.domain.models import BaseModel
 from flujo.application.core.step_policies import DefaultParallelStepExecutor
 from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.context_manager import ContextManager
 
 
-class _Ctx(types.SimpleNamespace):
-    pass
+class _Ctx(BaseModel):
+    executed_branches: list[str] = Field(default_factory=list)
+    tag: str | None = None
 
 
 @pytest.mark.asyncio
@@ -28,7 +30,9 @@ async def test_parallel_executor_isolates_context_per_branch(
     ) -> Any:
         called["isolate"] += 1
         # Return a shallow copy-like namespace for visibility
-        return _Ctx(**getattr(ctx, "__dict__", {}))
+        if isinstance(ctx, BaseModel):
+            return _Ctx(**ctx.model_dump())
+        return _Ctx()
 
     monkeypatch.setattr(ContextManager, "isolate", staticmethod(fake_isolate))
 
@@ -94,7 +98,7 @@ async def test_parallel_executor_merges_successful_branch_contexts(
     """Test that parallel executor handles context merging for successful branches.
 
     Note: When context_include_keys is None (default), the executor manually merges
-    specific attributes (scratchpad, branch_results, context_updates) instead of
+    specific typed attributes (step_outputs, import_artifacts, branch_results, context_updates) instead of
     calling ContextManager.merge. This test verifies the result has proper branch_context.
     """
     base_context = _Ctx()

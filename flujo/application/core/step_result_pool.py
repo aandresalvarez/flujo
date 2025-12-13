@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, List
 
 from flujo.domain.models import StepResult
 
@@ -59,15 +58,15 @@ def build_pooled_step_result(
     *,
     name: str,
     success: bool,
-    output: Any = None,
+    output: object = None,
     attempts: int = 0,
     latency_s: float = 0.0,
-    token_counts: int | dict[str, Any] = 0,
+    token_counts: int | dict[str, object] = 0,
     cost_usd: float = 0.0,
     feedback: str | None = None,
-    branch_context: Any = None,
-    metadata: dict[str, Any] | None = None,
-    step_history: List[StepResult] | None = None,
+    branch_context: object | None = None,
+    metadata: dict[str, object] | None = None,
+    step_history: list[StepResult] | None = None,
 ) -> StepResult:
     """Build a StepResult using a pooled instance to reduce allocations."""
     sr = _STEP_RESULT_POOL.acquire()
@@ -77,7 +76,18 @@ def build_pooled_step_result(
     sr.attempts = attempts
     sr.latency_s = latency_s
     if isinstance(token_counts, dict):
-        sr.token_counts = int(token_counts.get("total", 0))
+        token_total = token_counts.get("total", 0)
+        if isinstance(token_total, (int, bool)):
+            sr.token_counts = int(token_total)
+        elif isinstance(token_total, float):
+            sr.token_counts = int(token_total)
+        elif isinstance(token_total, str):
+            try:
+                sr.token_counts = int(token_total)
+            except ValueError:
+                sr.token_counts = 0
+        else:
+            sr.token_counts = 0
     else:
         sr.token_counts = token_counts
     sr.cost_usd = cost_usd

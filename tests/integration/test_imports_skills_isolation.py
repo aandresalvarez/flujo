@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from textwrap import dedent
 
 
 def _write_child_project(
@@ -27,60 +28,76 @@ def test_imported_children_resolve_isolated_skills_and_merge_outputs(tmp_path: P
     """
 
     # Clarification child: writes cohort_definition
-    clarify_tools = """
-from __future__ import annotations
-from typing import Any
-from flujo.domain.models import PipelineContext
+    clarify_tools = dedent(
+        """
+        from __future__ import annotations
+        from typing import Any
+        from flujo.domain.models import PipelineContext
 
-async def make_output(_data: Any, *, context: PipelineContext | None = None) -> dict:
-    # emit a distinct value so we can detect module bleed
-    return {"scratchpad": {"cohort_definition": {"source": "clarification", "id": 1}}}
-        """.strip()
-    clarify_yaml = """
-version: "0.1"
-steps:
-  - name: Clarify
-    uses: skills.custom_tools:make_output
-    updates_context: true
-        """.strip()
+        async def make_output(_data: Any, *, context: PipelineContext | None = None) -> dict:
+            # emit a distinct value so we can detect module bleed
+            return {"import_artifacts": {"cohort_definition": {"source": "clarification", "id": 1}}}
+        """
+    ).strip()
+    clarify_yaml = dedent(
+        """
+        version: "0.1"
+        steps:
+          - name: Clarify
+            uses: skills.custom_tools:make_output
+            updates_context: true
+        """
+    ).strip()
 
     # Concept Discovery child: writes concept_sets
-    concept_tools = """
-from __future__ import annotations
-from typing import Any
-from flujo.domain.models import PipelineContext
+    concept_tools = dedent(
+        """
+        from __future__ import annotations
+        from typing import Any
+        from flujo.domain.models import PipelineContext
 
-async def make_output(_data: Any, *, context: PipelineContext | None = None) -> dict:
-    return {"scratchpad": {"concept_sets": ["cs-A", "cs-B"]}}
-        """.strip()
-    concept_yaml = """
-version: "0.1"
-steps:
-  - name: Discover Concepts
-    uses: skills.custom_tools:make_output
-    updates_context: true
-        """.strip()
+        async def make_output(_data: Any, *, context: PipelineContext | None = None) -> dict:
+            return {"import_artifacts": {"concept_sets": ["cs-A", "cs-B"]}}
+        """
+    ).strip()
+    concept_yaml = dedent(
+        """
+        version: "0.1"
+        steps:
+          - name: Discover Concepts
+            uses: skills.custom_tools:make_output
+            updates_context: true
+        """
+    ).strip()
 
     # Query Builder child: reads prior fields and writes final_sql
-    query_tools = """
-from __future__ import annotations
-from typing import Any
-from flujo.domain.models import PipelineContext
+    query_tools = dedent(
+        """
+        from __future__ import annotations
+        from typing import Any
+        from flujo.domain.models import PipelineContext
 
-async def make_output(_data: Any, *, context: PipelineContext | None = None) -> dict:
-    assert context is not None
-    cd = context.scratchpad.get("cohort_definition")
-    cs = context.scratchpad.get("concept_sets")
-    # Build a final_sql that reflects both inputs to catch wrong skills usage
-    return {"scratchpad": {"final_sql": f"-- cd:{cd['source'] if isinstance(cd, dict) else 'nil'}; cs:{len(cs or [])}"}}
-        """.strip()
-    query_yaml = """
-version: "0.1"
-steps:
-  - name: Build Query
-    uses: skills.custom_tools:make_output
-    updates_context: true
-        """.strip()
+        async def make_output(_data: Any, *, context: PipelineContext | None = None) -> dict:
+            assert context is not None
+            cd = context.import_artifacts.get("cohort_definition")
+            cs = context.import_artifacts.get("concept_sets")
+            # Build a final_sql that reflects both inputs to catch wrong skills usage
+            return {
+                "import_artifacts": {
+                    "final_sql": f"-- cd:{cd['source'] if isinstance(cd, dict) else 'nil'}; cs:{len(cs or [])}"
+                }
+            }
+        """
+    ).strip()
+    query_yaml = dedent(
+        """
+        version: "0.1"
+        steps:
+          - name: Build Query
+            uses: skills.custom_tools:make_output
+            updates_context: true
+        """
+    ).strip()
 
     # Layout: tmp/{main,clarification,concept_discovery,query_builder}
     main = tmp_path / "main"
@@ -90,35 +107,37 @@ steps:
     _write_child_project(tmp_path, "query_builder", query_tools, query_yaml)
 
     # Parent pipeline importing the three children and mapping outputs
-    parent_yaml = """
-version: "0.1"
-imports:
-  clarification: "../clarification/pipeline.yaml"
-  concept_discovery: "../concept_discovery/pipeline.yaml"
-  query_builder: "../query_builder/pipeline.yaml"
-steps:
-  - name: Clarification
-    uses: imports.clarification
-    updates_context: true
-    config:
-      inherit_context: true
-      outputs:
-        - { child: "scratchpad.cohort_definition", parent: "scratchpad.cohort_definition" }
-  - name: Concept Discovery
-    uses: imports.concept_discovery
-    updates_context: true
-    config:
-      inherit_context: true
-      outputs:
-        - { child: "scratchpad.concept_sets", parent: "scratchpad.concept_sets" }
-  - name: Query Builder
-    uses: imports.query_builder
-    updates_context: true
-    config:
-      inherit_context: true
-      outputs:
-        - { child: "scratchpad.final_sql", parent: "scratchpad.final_sql" }
-""".strip()
+    parent_yaml = dedent(
+        """
+        version: "0.1"
+        imports:
+          clarification: "../clarification/pipeline.yaml"
+          concept_discovery: "../concept_discovery/pipeline.yaml"
+          query_builder: "../query_builder/pipeline.yaml"
+        steps:
+          - name: Clarification
+            uses: imports.clarification
+            updates_context: true
+            config:
+              inherit_context: true
+              outputs:
+                - { child: "import_artifacts.cohort_definition", parent: "import_artifacts.cohort_definition" }
+          - name: Concept Discovery
+            uses: imports.concept_discovery
+            updates_context: true
+            config:
+              inherit_context: true
+              outputs:
+                - { child: "import_artifacts.concept_sets", parent: "import_artifacts.concept_sets" }
+          - name: Query Builder
+            uses: imports.query_builder
+            updates_context: true
+            config:
+              inherit_context: true
+              outputs:
+                - { child: "import_artifacts.final_sql", parent: "import_artifacts.final_sql" }
+        """
+    ).strip()
 
     (main / "pipeline.yaml").write_text(parent_yaml)
 
@@ -136,12 +155,12 @@ steps:
     assert ctx is not None
 
     artifacts = getattr(ctx, "import_artifacts", {})
-    # From clarification child (fallback to scratchpad for legacy)
-    cd = artifacts.get("cohort_definition") or ctx.scratchpad.get("cohort_definition", {})
+    # From clarification child
+    cd = artifacts.get("cohort_definition") or {}
     assert isinstance(cd, dict) and cd.get("source") == "clarification"
     # From concept discovery child
-    concepts = artifacts.get("concept_sets") or ctx.scratchpad.get("concept_sets")
+    concepts = artifacts.get("concept_sets")
     assert concepts == ["cs-A", "cs-B"]
     # From query builder child; ensure it saw the above values
-    final_sql = artifacts.get("final_sql") or ctx.scratchpad.get("final_sql", "")
+    final_sql = artifacts.get("final_sql") or ""
     assert str(final_sql).startswith("-- cd:clarification; cs:2")

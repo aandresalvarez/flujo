@@ -5,7 +5,7 @@ from flujo.application.core.step_policies import DefaultDynamicRouterStepExecuto
 from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
-from flujo.domain.models import Success, Paused
+from flujo.domain.models import Success
 
 
 @pytest.mark.asyncio
@@ -24,7 +24,7 @@ async def test_dynamic_router_paused_returns_paused():
     router = DynamicParallelRouterStep(
         name="router",
         router_agent=_PausedRouterAgent(),
-        branches={},
+        branches={"noop": Pipeline.from_step(Step(name="noop", agent=object()))},
     )
 
     frame = make_execution_frame(
@@ -41,8 +41,10 @@ async def test_dynamic_router_paused_returns_paused():
         result=None,
         quota=None,
     )
-    outcome = await DefaultDynamicRouterStepExecutor().execute(core, frame)
-    assert isinstance(outcome, Paused)
+    from flujo.exceptions import PausedException
+
+    with pytest.raises(PausedException):
+        await DefaultDynamicRouterStepExecutor().execute(core, frame)
 
 
 @pytest.mark.asyncio

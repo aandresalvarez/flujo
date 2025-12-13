@@ -319,7 +319,7 @@ async def test_resume_from_persisted_background_state(tmp_path: Path) -> None:
         "pipeline_name": "pipe",
         "pipeline_version": "1.0",
         "current_step_index": 0,
-        "pipeline_context": {"run_id": run_id, "scratchpad": {}},
+        "pipeline_context": {"run_id": run_id},
         "last_step_output": None,
         "step_history": [],
         "status": "failed",

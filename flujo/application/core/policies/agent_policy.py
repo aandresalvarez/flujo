@@ -1,10 +1,7 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
-from typing import Type
-
 from ._shared import (  # noqa: F401
-    Any,
     Awaitable,
     Callable,
     Dict,
@@ -37,6 +34,7 @@ from ._shared import (  # noqa: F401
 from ..policy_registry import StepPolicy
 from ..types import ExecutionFrame
 from ....domain.dsl.step import Step
+from ....domain.models import BaseModel as DomainBaseModel
 
 
 from .agent_policy_execution import prepare_agent_execution
@@ -45,18 +43,20 @@ from .agent_policy_run import run_agent_execution
 
 # --- Agent Step Executor policy ---
 class AgentStepExecutor(Protocol):
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
+    async def execute(
+        self, core: object, frame: ExecutionFrame[DomainBaseModel]
+    ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultAgentStepExecutor(StepPolicy[Step[Any, Any]]):
+class DefaultAgentStepExecutor(StepPolicy[Step[object, object]]):
     @property
-    def handles_type(self) -> Type[Step[Any, Any]]:
+    def handles_type(self) -> type[Step[object, object]]:
         return Step
 
     async def execute(
         self,
-        core: Any,
-        frame: ExecutionFrame[Any],
+        core: object,
+        frame: ExecutionFrame[DomainBaseModel],
     ) -> StepOutcome[StepResult]:
         (
             step,
@@ -83,7 +83,7 @@ class DefaultAgentStepExecutor(StepPolicy[Step[Any, Any]]):
             _fallback_depth=_fallback_depth,
         )
 
-    def _estimate_usage(self, step: Any, data: Any, context: Optional[Any]) -> UsageEstimate:
+    def _estimate_usage(self, step: object, data: object, context: object | None) -> UsageEstimate:
         try:
             cfg = getattr(step, "config", None)
             if cfg is not None:
@@ -106,15 +106,15 @@ class DefaultAgentStepExecutor(StepPolicy[Step[Any, Any]]):
 class AgentStepExecutorOutcomes(Protocol):
     async def execute(
         self,
-        core: Any,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
+        core: object,
+        step: object,
+        data: object,
+        context: object | None,
+        resources: object | None,
+        limits: UsageLimits | None,
         stream: bool,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
-        cache_key: Optional[str],
+        on_chunk: Callable[[object], Awaitable[None]] | None,
+        cache_key: str | None,
         _fallback_depth: int = 0,
     ) -> StepOutcome[StepResult]: ...
 

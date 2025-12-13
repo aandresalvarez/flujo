@@ -48,22 +48,19 @@ YAML_FULL = """
 version: "0.1"
 agents:
   categorizer:
-    model: "openai:gpt-4o-mini"
-    system_prompt: "You are a JSON categorizer."
-    output_schema:
-      type: object
-      properties:
-        category:
-          type: string
-          enum: [a, b]
-      required: [category]
+    id: "flujo.builtins.stringify"
+    model: "openai:gpt-4o"
+    system_prompt: "categorize"
+    output_schema: { type: string }
 steps:
   - kind: step
     name: categorize
     uses: agents.categorizer
+    input: "hi"
   - kind: step
     name: subpipe
     uses: imports.support
+    input: "{{ previous_step.output }}"
 """
 
 
@@ -71,7 +68,7 @@ def test_run_fully_declarative_yaml(tmp_path, monkeypatch):
     # Monkeypatch agent factory to avoid real API keys/network
     def _fake_make_agent_async(*args: object, **kwargs: object):
         async def _agent(x: object, *_a: object, **_k: object) -> object:
-            return {"category": "a"}
+            return "a"
 
         return _agent
 
@@ -92,21 +89,24 @@ imports:
   support: "./support.yaml"
 agents:
   categorizer:
-    model: "openai:gpt-4o-mini"
-    system_prompt: "You are a JSON categorizer."
-    output_schema:
-      type: object
-      properties:
-        category:
-          type: string
-      required: [category]
+    id: "tests.unit.test_error_messages.need_str"
+    model: "local:mock"
+    system_prompt: "typed"
+    output_schema: { type: string }
 steps:
   - kind: step
     name: categorize
     uses: agents.categorizer
+    input: "hi"
   - kind: step
     name: use_support
     uses: imports.support
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
+    input_schema: { type: string }
+    input: "{{ previous_step.output }}"
 """
     p.write_text(yaml_text)
     result = runner.invoke(app, ["run", str(p), "--input", "hello", "--json"])
@@ -124,7 +124,13 @@ steps:
   - kind: step
     name: inner_support
     agent:
-      id: "flujo.builtins.stringify"
+      id: "tests.unit.test_error_messages.need_str"
+      model: "local:mock"
+      system_prompt: "typed"
+    output_schema:
+      type: string
+    output_schema:
+      type: string
         """.strip()
     )
 
@@ -139,10 +145,22 @@ steps:
   - kind: step
     name: greet
     agent:
-      id: "flujo.builtins.stringify"
+      id: "tests.unit.test_error_messages.need_str"
+      model: "local:mock"
+      system_prompt: "typed"
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
+    output_schema: {{ type: string }}
   - kind: step
     name: support_assist
     uses: imports.support
+    meta:
+      is_adapter: true
+      adapter_id: generic-adapter
+      adapter_allow: generic
+    input_schema: {{ type: string }}
         """.strip()
     )
 

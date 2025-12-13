@@ -1,26 +1,29 @@
 from __future__ import annotations
-# mypy: ignore-errors
 
 from ._shared import (
-    Any,
     Awaitable,
     BaseModel,
     InfiniteRedirectError,
     Optional,
     Protocol,
-    Tuple,
     asyncio,
     telemetry,
 )
+from typing import Sequence, TypeVar
+
+from ..executor_protocols import IAgentRunner, IPluginRunner, IValidatorRunner
 
 
 # --- Timeout runner policy ---
+T = TypeVar("T")
+
+
 class TimeoutRunner(Protocol):
-    async def run_with_timeout(self, coro: Awaitable[Any], timeout_s: Optional[float]) -> Any: ...
+    async def run_with_timeout(self, coro: Awaitable[T], timeout_s: Optional[float]) -> T: ...
 
 
 class DefaultTimeoutRunner:
-    async def run_with_timeout(self, coro: Awaitable[Any], timeout_s: Optional[float]) -> Any:
+    async def run_with_timeout(self, coro: Awaitable[T], timeout_s: Optional[float]) -> T:
         if timeout_s is None:
             return await coro
         return await asyncio.wait_for(coro, timeout_s)
@@ -28,13 +31,24 @@ class DefaultTimeoutRunner:
 
 # --- Agent result unpacker policy ---
 class AgentResultUnpacker(Protocol):
-    def unpack(self, output: Any) -> Any: ...
+    def unpack(self, output: object) -> object: ...
 
 
 class DefaultAgentResultUnpacker:
-    def unpack(self, output: Any) -> Any:
+    def unpack(self, output: object) -> object:
         if isinstance(output, BaseModel):
             return output
+        # Avoid unwrapping structured Pydantic models (including user-defined ones)
+        # just because they have common attribute names like `.text`.
+        try:
+            from pydantic import (
+                BaseModel as PydanticBaseModel,
+            )  # local import to avoid hard dep at import time
+
+            if isinstance(output, PydanticBaseModel):
+                return output
+        except Exception:
+            pass
         for attr in ("output", "content", "result", "data", "text", "message", "value"):
             if hasattr(output, attr):
                 return getattr(output, attr)
@@ -42,20 +56,25 @@ class DefaultAgentResultUnpacker:
 
 
 # --- Plugin redirector policy ---
+class SupportsPlugins(Protocol):
+    @property
+    def plugins(self) -> Sequence[tuple[object, int]]: ...
+
+
 class PluginRedirector(Protocol):
     async def run(
         self,
-        initial: Any,
-        step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
+        initial: object,
+        step: SupportsPlugins,
+        data: object,
+        context: object,
+        resources: object,
         timeout_s: Optional[float],
-    ) -> Any: ...
+    ) -> object: ...
 
 
 class DefaultPluginRedirector:
-    def __init__(self, plugin_runner: Any, agent_runner: Any):
+    def __init__(self, plugin_runner: IPluginRunner, agent_runner: IAgentRunner):
         self._plugin_runner = plugin_runner
         self._agent_runner = agent_runner
 
@@ -73,7 +92,7 @@ class DefaultPluginRedirector:
             hasher.update(text[i : i + chunk_size].encode("utf-8"))
         return hasher.hexdigest()
 
-    def _get_agent_signature(self, agent: Any) -> Tuple[Any, Optional[str], str]:
+    def _get_agent_signature(self, agent: object) -> tuple[type[object] | None, str | None, str]:
         """Generate a stable logical signature for an agent to detect redirect loops.
 
         The signature combines:
@@ -117,29 +136,31 @@ class DefaultPluginRedirector:
 
     async def run(
         self,
-        initial: Any,
-        step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
+        initial: object,
+        step: SupportsPlugins,
+        data: object,
+        context: object,
+        resources: object,
         timeout_s: Optional[float],
-    ) -> Any:
+    ) -> object:
         telemetry.logfire.info("[Redirector] Start plugin redirect loop")
-        redirect_chain: list[Any] = []
-        redirect_chain_signatures: list[Tuple[Any, Optional[str], str]] = []
-        processed = initial
+        redirect_chain: list[object] = []
+        redirect_chain_signatures: list[tuple[type[object] | None, str | None, str]] = []
+        processed: object = initial
         unpacker = DefaultAgentResultUnpacker()
         while True:
             # Normalize plugin input to expected dict shape
-            plugin_input = processed
-            if not isinstance(plugin_input, dict):
+            plugin_input: object
+            if isinstance(processed, dict):
+                plugin_input = processed
+            else:
                 try:
-                    plugin_input = {"output": unpacker.unpack(plugin_input)}
+                    plugin_input = {"output": unpacker.unpack(processed)}
                 except Exception:
-                    plugin_input = {"output": plugin_input}
+                    plugin_input = {"output": processed}
             outcome = await asyncio.wait_for(
                 self._plugin_runner.run_plugins(
-                    step.plugins,
+                    list(step.plugins),
                     plugin_input,
                     context=context,
                     resources=resources,
@@ -154,9 +175,10 @@ class DefaultPluginRedirector:
             except Exception:
                 pass
             # Handle redirect_to
-            if hasattr(outcome, "redirect_to") and outcome.redirect_to is not None:
+            redirect_to = getattr(outcome, "redirect_to", None)
+            if redirect_to is not None:
                 # Compute logical identity-based signature for loop detection
-                redirect_agent = outcome.redirect_to
+                redirect_agent = redirect_to
                 agent_sig = self._get_agent_signature(redirect_agent)
 
                 # Check against previously seen agent signatures in this redirect chain
@@ -170,10 +192,10 @@ class DefaultPluginRedirector:
 
                 redirect_chain.append(redirect_agent)
                 redirect_chain_signatures.append(agent_sig)
-                telemetry.logfire.info(f"[Redirector] Redirecting to agent {outcome.redirect_to}")
+                telemetry.logfire.info(f"[Redirector] Redirecting to agent {redirect_agent}")
                 raw = await asyncio.wait_for(
                     self._agent_runner.run(
-                        agent=outcome.redirect_to,
+                        agent=redirect_agent,
                         payload=data,
                         context=context,
                         resources=resources,
@@ -185,13 +207,16 @@ class DefaultPluginRedirector:
                 processed = unpacker.unpack(raw)
                 continue
             # Failure
-            if hasattr(outcome, "success") and not outcome.success:
+            success = getattr(outcome, "success", None)
+            if success is False:
                 # Core will wrap generic exceptions as its own PluginError and add retry semantics
-                fb = outcome.feedback or "Plugin failed without feedback"
+                feedback = getattr(outcome, "feedback", None)
+                fb = feedback or "Plugin failed without feedback"
                 raise Exception(f"Plugin validation failed: {fb}")
             # New solution
-            if hasattr(outcome, "new_solution") and outcome.new_solution is not None:
-                processed = outcome.new_solution
+            new_solution = getattr(outcome, "new_solution", None)
+            if new_solution is not None:
+                processed = new_solution
                 continue
             # Dict-based contract with 'output' overrides processed value
             if isinstance(outcome, dict) and "output" in outcome:
@@ -205,33 +230,28 @@ class DefaultPluginRedirector:
 # --- Validator invocation policy ---
 class ValidatorInvoker(Protocol):
     async def validate(
-        self, output: Any, step: Any, context: Any, timeout_s: Optional[float]
+        self, output: object, step: object, context: object | None, timeout_s: Optional[float]
     ) -> None: ...
 
 
 class DefaultValidatorInvoker:
-    def __init__(self, validator_runner: Any):
+    def __init__(self, validator_runner: IValidatorRunner):
         self._validator_runner = validator_runner
 
     async def validate(
-        self, output: Any, step: Any, context: Any, timeout_s: Optional[float]
+        self, output: object, step: object, context: object | None, timeout_s: Optional[float]
     ) -> None:
         # No validators
-        if not getattr(step, "validators", []):
+        validators = getattr(step, "validators", None)
+        if not validators:
             return
+        validators_list: list[object] = (
+            validators if isinstance(validators, list) else list(validators)
+        )
         results = await asyncio.wait_for(
-            self._validator_runner.validate(step.validators, output, context=context),
+            self._validator_runner.validate(validators_list, output, context=context),
             timeout_s,
         )
-        # ✅ FLUJO BEST PRACTICE: Robust NoneType and iterable validation
-        # Critical fix: Handle cases where validator results might be None or not iterable
-        if results is None:
-            return
-
-        # Ensure results is iterable before iterating
-        if not hasattr(results, "__iter__"):
-            return
-
         for r in results:
             if not getattr(r, "is_valid", False):
                 # Raise a generic exception; core wraps/handles uniformly for retries/fallback

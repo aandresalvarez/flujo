@@ -16,13 +16,13 @@ def _write_child_project(base: Path, name: str, tool_src: str, pipeline_yaml: st
 
 
 def test_state_machine_with_import_step_executes_and_merges_context(tmp_path: Path) -> None:
-    # Child emits scratchpad.foo = "bar"
+    # Child emits import_artifacts.foo = "bar"
     tools = (
         "from __future__ import annotations\n"
         "from typing import Any\n"
         "from flujo.domain.models import PipelineContext\n\n"
         "async def make_output(_data: Any, *, context: PipelineContext | None = None) -> dict:\n"
-        '    return {"scratchpad": {"foo": "bar"}}\n'
+        '    return {"import_artifacts": {"foo": "bar"}}\n'
     )
     child_yaml = (
         'version: "0.1"\n'
@@ -51,7 +51,7 @@ def test_state_machine_with_import_step_executes_and_merges_context(tmp_path: Pa
         "          config:\n"
         "            inherit_context: true\n"
         "            outputs:\n"
-        '              - { child: "scratchpad.foo", parent: "scratchpad.foo" }\n'
+        '              - { child: "import_artifacts.foo", parent: "import_artifacts.foo" }\n'
         "      done:\n"
         "        - kind: step\n"
         "          name: Done\n"
@@ -69,4 +69,4 @@ def test_state_machine_with_import_step_executes_and_merges_context(tmp_path: Pa
 
     ctx = result.final_pipeline_context
     assert ctx is not None
-    assert ctx.scratchpad.get("foo") == "bar"
+    assert ctx.import_artifacts.get("foo") == "bar"

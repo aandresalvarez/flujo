@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 from ...domain.models import BackgroundLaunched, Failure, Paused, StepOutcome, StepResult, Success
 from ...exceptions import MissingAgentError, PausedException
@@ -9,16 +9,17 @@ from ...infra import telemetry
 if TYPE_CHECKING:
     from .executor_core import ExecutorCore
     from .types import ExecutionFrame
+    from .types import TContext_w_Scratch
 
 
 class ResultHandler:
     """Handles cache persistence and exception wrapping for ExecutorCore."""
 
-    def __init__(self, core: "ExecutorCore[Any]") -> None:
-        self._core: "ExecutorCore[Any]" = core
+    def __init__(self, core: "ExecutorCore[TContext_w_Scratch]") -> None:
+        self._core: "ExecutorCore[TContext_w_Scratch]" = core
 
     def handle_missing_agent_exception(
-        self, err: MissingAgentError, step: Any, *, called_with_frame: bool
+        self, err: MissingAgentError, step: object, *, called_with_frame: bool
     ) -> StepOutcome[StepResult] | StepResult:
         """Optimized handling for MissingAgentError when configured."""
         if not self._core.enable_optimized_error_handling:
@@ -75,7 +76,7 @@ class ResultHandler:
             except Exception:
                 pass
 
-        def _unwrap_sr(obj: Any) -> StepResult:
+        def _unwrap_sr(obj: object) -> StepResult:
             try:
                 from ...domain.models import (
                     StepOutcome as _StepOutcome,
@@ -139,11 +140,11 @@ class ResultHandler:
     async def persist_and_finalize(
         self,
         *,
-        step: Any,
+        step: object,
         result: StepResult,
         cache_key: Optional[str],
         called_with_frame: bool,
-        frame: ExecutionFrame[Any] | None = None,
+        frame: ExecutionFrame[TContext_w_Scratch] | None = None,
     ) -> StepOutcome[StepResult] | StepResult:
         """Persist cache if applicable and return standardized result."""
         await self._core._cache_manager.maybe_persist_step_result(
@@ -173,8 +174,8 @@ class ResultHandler:
     def handle_unexpected_exception(
         self,
         *,
-        step: Any,
-        frame: ExecutionFrame[Any],
+        step: object,
+        frame: ExecutionFrame[TContext_w_Scratch],
         exc: Exception,
         called_with_frame: bool,
     ) -> StepOutcome[StepResult] | StepResult:
@@ -193,7 +194,7 @@ class ResultHandler:
         return self._core._unwrap_outcome_to_step_result(failure_outcome, step_name)
 
     async def maybe_use_cache(
-        self, frame: ExecutionFrame[Any], *, called_with_frame: bool
+        self, frame: ExecutionFrame[TContext_w_Scratch], *, called_with_frame: bool
     ) -> tuple[Optional[StepOutcome[StepResult] | StepResult], Optional[str]]:
         """Return cached outcome if present and compute cache key when enabled."""
         cache_key: Optional[str] = None

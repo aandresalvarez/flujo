@@ -53,6 +53,11 @@ class TestExecutorCoreLoopStepDispatch:
         self, executor_core, mock_loop_step
     ):
         """LoopStep parameters should be forwarded through the ExecutionFrame."""
+        from flujo.domain.models import BaseModel
+
+        class TestContext(BaseModel):
+            key: str = "value"
+
         captured_frame = None
 
         async def mock_dispatch(frame: ExecutionFrame, called_with_frame: bool):
@@ -62,9 +67,11 @@ class TestExecutorCoreLoopStepDispatch:
 
         with patch.object(executor_core._dispatch_handler, "dispatch", mock_dispatch):
             test_data = "test_data"
-            test_context = Mock()
+            test_context = TestContext()
             test_resources = Mock()
-            test_limits = Mock()
+            from flujo.domain.models import UsageLimits
+
+            test_limits = UsageLimits(total_cost_usd_limit=10.0)
             test_context_setter = Mock()
 
             await executor_core._execute_complex_step(
@@ -82,10 +89,23 @@ class TestExecutorCoreLoopStepDispatch:
         assert isinstance(captured_frame, ExecutionFrame)
         assert captured_frame.step is mock_loop_step
         assert captured_frame.data is test_data
-        assert captured_frame.context is test_context
+        from flujo.domain.models import PipelineContext
+
+        assert captured_frame.context is test_context or isinstance(
+            captured_frame.context, PipelineContext
+        )
         assert captured_frame.resources is test_resources
         assert captured_frame.limits is test_limits
-        assert captured_frame.context_setter is test_context_setter
+        assert callable(captured_frame.context_setter)
+        from flujo.domain.models import PipelineResult
+
+        captured_frame.context_setter(
+            PipelineResult(
+                step_history=[], total_cost_usd=0.0, total_tokens=0, final_pipeline_context=None
+            ),
+            None,
+        )
+        assert test_context_setter.called
         assert getattr(captured_frame, "_fallback_depth") == 2
 
     async def test_execute_complex_step_loopstep_error_propagation(

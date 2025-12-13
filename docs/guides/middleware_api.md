@@ -163,7 +163,7 @@ async def chat_turn(conversation_id: str, user_message: str):
     elif result.status == "paused":
         # The AI hit a HumanInTheLoopStep
         ctx = result.final_pipeline_context
-        question = ctx.scratchpad.get("pause_message")
+        question = ctx.pause_message
         return {"type": "question", "text": question}
 ```
 

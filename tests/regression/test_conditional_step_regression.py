@@ -142,7 +142,9 @@ class TestConditionalStepRegression:
 
     async def test_context_handling_regression(self, executor_core):
         """Test that context handling behavior is preserved."""
-        context = {"test": "value"}
+        from flujo.domain.models import PipelineContext, ImportArtifacts
+
+        context = PipelineContext(initial_prompt="test", import_artifacts=ImportArtifacts())
         context_setter_called = False
 
         def mock_context_setter(result, ctx):
@@ -180,8 +182,8 @@ class TestConditionalStepRegression:
                 context_setter=mock_context_setter,
             )
 
-            # Verify context handling is preserved
-            assert context_setter_called is True
+        # Verify context handling is preserved
+        assert context_setter_called is True
 
     async def test_branch_output_mapper_regression(self, executor_core):
         """Test that branch output mapper behavior is preserved."""

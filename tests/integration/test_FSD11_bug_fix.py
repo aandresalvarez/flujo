@@ -8,11 +8,11 @@ rather than the wrapper's signature.
 
 import pytest
 from typing import Any, Optional
-from pydantic import BaseModel
 from unittest.mock import AsyncMock
 
 from flujo import Pipeline, Step
 from flujo.agents import make_agent_async
+from flujo.domain.models import BaseModel
 from flujo.domain.models import PipelineContext
 from tests.conftest import create_test_flujo
 from flujo.testing.utils import gather_result

@@ -3,56 +3,54 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Awaitable, Callable, Optional, Type, Union
 
 from ...domain.models import Failure, StepOutcome, StepResult
-from .types import ExecutionFrame
-from .policy_registry import PolicyRegistry, StepPolicy
+from .types import ExecutionFrame, TContext_w_Scratch
+from .policy_registry import PolicyCallable, PolicyRegistry, StepPolicy, StepType
 
 
-PolicyCallable = Callable[[ExecutionFrame[Any]], Awaitable[StepOutcome[Any]]]
-RegisteredPolicy = Union[PolicyCallable, StepPolicy[Any]]
+RegisteredPolicy = PolicyCallable | StepPolicy[StepType]
 
 
 class ExecutionDispatcher:
     """Routes step execution to the appropriate policy handler."""
 
     def __init__(
-        self, registry: Optional[PolicyRegistry] = None, *, core: Optional[Any] = None
+        self, registry: PolicyRegistry | None = None, *, core: object | None = None
     ) -> None:
         self._registry: PolicyRegistry = registry or PolicyRegistry()
         self._core = core
 
-    def register(self, step_type: Type[Any], policy: PolicyCallable) -> None:
+    def register(self, step_type: type[StepType], policy: PolicyCallable) -> None:
         """Register a policy; thin wrapper around PolicyRegistry."""
         self._registry.register(step_type, policy)
 
-    def get_policy(self, step: Any) -> Optional[RegisteredPolicy]:
+    def get_policy(self, step: StepType) -> RegisteredPolicy | None:
         """Return the policy callable for a step instance, if any."""
         policy = self._registry.get(type(step))
         return policy
 
-    async def dispatch(self, frame: ExecutionFrame[Any]) -> StepOutcome[Any]:
+    async def dispatch(self, frame: ExecutionFrame[TContext_w_Scratch]) -> StepOutcome[StepResult]:
         """Dispatch execution to the appropriate policy or return a Failure."""
-        step = frame.step
+        step: StepType = frame.step
         policy = self.get_policy(step)
         if policy is None:
             return Failure(
                 error=TypeError(f"No policy registered for step type: {type(step).__name__}"),
                 feedback=f"Unhandled step type: {type(step).__name__}",
-                step_result=StepResult(name=step.name, success=False),
+                step_result=StepResult(name=str(getattr(step, "name", "<unknown>")), success=False),
             )
         if isinstance(policy, StepPolicy):
-            core_obj: Any | None = (
+            core_obj: object | None = (
                 self._core if self._core is not None else getattr(frame, "core", None)
             )
             if core_obj is None:
                 raise TypeError("Executor core is required for policy execution")
             self._validate_frame_signature(policy)
-            return await policy.execute(core_obj, frame)
-        return await policy(frame)
+            return await policy.execute(core_obj, frame)  # type: ignore[arg-type]
+        return await policy(frame)  # type: ignore[arg-type]
 
-    def _validate_frame_signature(self, policy: StepPolicy[Any]) -> None:
+    def _validate_frame_signature(self, policy: StepPolicy[StepType]) -> None:
         """Ensure the policy execute method accepts a `frame` parameter."""
         try:
             sig = inspect.signature(policy.execute)

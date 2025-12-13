@@ -13,14 +13,15 @@ from typing import (
     Coroutine,
     Generic,
     List,
+    NoReturn,
     Optional,
     TypeVar,
     Dict,
     Type,
     Union,
-    cast,
     TYPE_CHECKING,
     Literal,
+    get_origin,
 )
 
 try:
@@ -34,7 +35,7 @@ from enum import Enum
 from flujo.domain.base_model import BaseModel
 from flujo.domain.models import RefinementCheck, UsageLimits  # noqa: F401
 from flujo.domain.resources import AppResources
-from pydantic import Field, ConfigDict
+from pydantic import Field, ConfigDict, model_validator
 from ..agent_protocol import AsyncAgentProtocol
 from ..plugins import ValidationPlugin
 from ..validation import Validator
@@ -61,8 +62,9 @@ P = ParamSpec("P")
 
 ContextModelT = TypeVar("ContextModelT", bound=BaseModel)
 
-# BranchKey type alias for ConditionalStep
-BranchKey = Any
+# BranchKey type alias for ConditionalStep.
+# Keys must be JSON/YAML-friendly and stable for persistence/serialization.
+BranchKey = str | bool | int
 
 
 class MergeStrategy(Enum):
@@ -75,7 +77,6 @@ class MergeStrategy(Enum):
 
     NO_MERGE = "no_merge"
     OVERWRITE = "overwrite"
-    MERGE_SCRATCHPAD = "merge_scratchpad"
     CONTEXT_UPDATE = "context_update"  # Proper context updates with validation
     ERROR_ON_CONFLICT = "error_on_conflict"  # Explicitly error on any conflicting field
     KEEP_FIRST = "keep_first"  # Keep first occurrence of each key when merging
@@ -87,6 +88,68 @@ class BranchFailureStrategy(Enum):
 
     PROPAGATE = "propagate"
     IGNORE = "ignore"
+
+
+_TYPE_FALLBACK: type[object] = object
+
+
+def _log_type_warning(message: str, step_name: str, *, error: Exception | None = None) -> None:
+    """Best-effort telemetry logging without introducing import-time cycles."""
+    try:
+        from flujo.infra import telemetry as _telemetry
+
+        extra: dict[str, object] = {"step": step_name}
+        if error is not None:
+            extra["error"] = str(error)
+        _telemetry.logfire.warn(message, extra=extra)
+    except Exception:
+        # Telemetry must never break DSL import or execution
+        return
+
+
+def _normalize_signature_type(candidate: object) -> type[object]:
+    """Map signature-derived types to safe, non-Any fallbacks."""
+    if candidate is Any or candidate is None or candidate is type(None):  # noqa: E721
+        return _TYPE_FALLBACK
+    try:
+        origin = get_origin(candidate)
+    except Exception:
+        origin = None
+    if origin is dict:
+        return dict
+    if isinstance(candidate, type):
+        return candidate
+    return _TYPE_FALLBACK
+
+
+def _infer_agent_io_types(agent: object, *, step_name: str) -> tuple[type[object], type[object]]:
+    """Infer input/output types from an agent or callable, defaulting to object on failure."""
+    executable = (
+        agent.run
+        if hasattr(agent, "run") and callable(getattr(agent, "run"))
+        else (agent if callable(agent) else None)
+    )
+    if executable is None:
+        _log_type_warning(
+            "Unable to infer step IO types; agent exposes no executable", step_name=step_name
+        )
+        return (_TYPE_FALLBACK, _TYPE_FALLBACK)
+
+    try:
+        from flujo.signature_tools import analyze_signature
+
+        sig_info = analyze_signature(executable)
+        return (
+            _normalize_signature_type(getattr(sig_info, "input_type", _TYPE_FALLBACK)),
+            _normalize_signature_type(getattr(sig_info, "output_type", _TYPE_FALLBACK)),
+        )
+    except Exception as exc:
+        _log_type_warning(
+            "Failed to infer step IO types from agent signature; using object fallback",
+            step_name=step_name,
+            error=exc,
+        )
+        return (_TYPE_FALLBACK, _TYPE_FALLBACK)
 
 
 class StepConfig(BaseModel):
@@ -132,13 +195,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     """
 
     name: str
-    agent: Any | None = Field(default=None)
+    agent: object | None = Field(default=None)
     config: StepConfig = Field(default_factory=StepConfig)
     plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
     validators: List[Validator] = Field(default_factory=list)
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
     processors: "AgentProcessors" = Field(default_factory=AgentProcessors)
-    fallback_step: Optional[Any] = Field(default=None, exclude=True)
+    fallback_step: object | None = Field(default=None, exclude=True)
     usage_limits: Optional[UsageLimits] = Field(
         default=None,
         description="Usage limits for this step (cost and token limits).",
@@ -152,7 +215,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         description=("Append ValidationResult objects to this context attribute (must be a list)."),
     )
     # Optional declarative input (templated). Alias preserves legacy ``input`` param.
-    input_: Any | None = Field(
+    input_: object | None = Field(
         default=None,
         alias="input",
         description="Explicit step input (can be templated).",
@@ -174,14 +237,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         description="Context keys this step will populate upon completion.",
     )
     # Optional sink_to for simple steps: store the step's output directly into
-    # a context path (e.g., "counter" or "scratchpad.field"). This is useful
+    # a context path (e.g., "counter" or "result"). This is useful
     # when the step returns a scalar value that should be persisted in context
-    # without requiring a dict-shaped output.
+    # without requiring a dict-shaped output. Scratchpad is reserved and will fail validation.
     sink_to: str | None = Field(
         default=None,
         description=(
             "Context path to automatically store the step output "
-            "(e.g., 'counter' or 'scratchpad.value')."
+            "(e.g., 'counter' or 'result'). Scratchpad targets are not allowed."
         ),
     )
     meta: JSONObject = Field(
@@ -204,6 +267,19 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
     }
+
+    @model_validator(mode="after")
+    def _validate_adapter_metadata(self) -> "Step[StepInT, StepOutT]":
+        """Adapters must always declare identity and allowlist token."""
+        meta = getattr(self, "meta", None)
+        if isinstance(meta, dict) and meta.get("is_adapter"):
+            adapter_id = meta.get("adapter_id")
+            adapter_allow = meta.get("adapter_allow")
+            if not adapter_id or not adapter_allow:
+                raise ValueError(
+                    "Adapter steps must include adapter_id and adapter_allow (allowlist token)."
+                )
+        return self
 
     # ---------------------------------------------------------------------
     # Utility / dunder helpers
@@ -230,7 +306,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         return f"Step(name={self.name!r}, agent={agent_repr}{config_repr})"
 
     @property
-    def input(self) -> Any | None:
+    def input(self) -> object | None:
         """Return the declarative input value (legacy alias)."""
         return self.input_
 
@@ -245,7 +321,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 # Do not fail initialization if meta isn't mutable
                 pass
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover - behavior
+    def __call__(self, *args: Any, **kwargs: Any) -> NoReturn:  # pragma: no cover - behavior
         """Disallow direct invocation of a Step."""
         from ...exceptions import ImproperStepInvocationError
 
@@ -313,12 +389,12 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     # Execution helpers
     # ------------------------------------------------------------------
 
-    def arun(self, data: StepInT, **kwargs: Any) -> Coroutine[Any, Any, StepOutT]:
+    def arun(self, data: StepInT, **kwargs: Any) -> Coroutine[object, object, StepOutT]:
         """Return the agent coroutine to run this step directly in tests."""
         if self.agent is None:
             raise ValueError(f"Step '{self.name}' has no agent to run.")
 
-        return cast(Coroutine[Any, Any, StepOutT], self.agent.run(data, **kwargs))
+        return self.agent.run(data, **kwargs)
 
     def fallback(self, fallback_step: "Step[Any, Any]") -> "Step[StepInT, StepOutT]":
         """Set a fallback step to execute if this step fails.
@@ -364,39 +440,21 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         Also infers input/output types from the agent's signature for pipeline validation.
         """
-        step_instance = cast(
-            "Step[Any, Any]",
-            cls.model_validate(
-                {
-                    "name": "review",
-                    "agent": agent,
-                    "plugins": plugins or [],
-                    "validators": validators or [],
-                    "processors": processors or AgentProcessors(),
-                    "persist_feedback_to_context": persist_feedback_to_context,
-                    "persist_validation_results_to": persist_validation_results_to,
-                    "config": StepConfig(**config),
-                }
-            ),
+        step_instance: "Step[Any, Any]" = cls.model_validate(
+            {
+                "name": "review",
+                "agent": agent,
+                "plugins": plugins or [],
+                "validators": validators or [],
+                "processors": processors or AgentProcessors(),
+                "persist_feedback_to_context": persist_feedback_to_context,
+                "persist_validation_results_to": persist_validation_results_to,
+                "config": StepConfig(**config),
+            }
         )
-
-        # Infer types from agent.run or the agent itself if callable
-        try:
-            from flujo.signature_tools import analyze_signature
-
-            executable = (
-                agent.run
-                if hasattr(agent, "run") and callable(getattr(agent, "run"))
-                else (agent if callable(agent) else None)
-            )
-            if executable is not None:
-                sig_info = analyze_signature(executable)
-                step_instance.__step_input_type__ = getattr(sig_info, "input_type", Any)
-                step_instance.__step_output_type__ = getattr(sig_info, "output_type", Any)
-        except Exception:
-            step_instance.__step_input_type__ = Any
-            step_instance.__step_output_type__ = Any
-
+        input_type, output_type = _infer_agent_io_types(agent, step_name=step_instance.name)
+        step_instance.__step_input_type__ = input_type
+        step_instance.__step_output_type__ = output_type
         return step_instance
 
     @classmethod
@@ -415,39 +473,21 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         Also infers input/output types from the agent's signature for pipeline validation.
         """
-        step_instance = cast(
-            "Step[Any, Any]",
-            cls.model_validate(
-                {
-                    "name": "solution",
-                    "agent": agent,
-                    "plugins": plugins or [],
-                    "validators": validators or [],
-                    "processors": processors or AgentProcessors(),
-                    "persist_feedback_to_context": persist_feedback_to_context,
-                    "persist_validation_results_to": persist_validation_results_to,
-                    "config": StepConfig(**config),
-                }
-            ),
+        step_instance: "Step[Any, Any]" = cls.model_validate(
+            {
+                "name": "solution",
+                "agent": agent,
+                "plugins": plugins or [],
+                "validators": validators or [],
+                "processors": processors or AgentProcessors(),
+                "persist_feedback_to_context": persist_feedback_to_context,
+                "persist_validation_results_to": persist_validation_results_to,
+                "config": StepConfig(**config),
+            }
         )
-
-        # Infer types from agent.run or the agent itself if callable
-        try:
-            from flujo.signature_tools import analyze_signature
-
-            executable = (
-                agent.run
-                if hasattr(agent, "run") and callable(getattr(agent, "run"))
-                else (agent if callable(agent) else None)
-            )
-            if executable is not None:
-                sig_info = analyze_signature(executable)
-                step_instance.__step_input_type__ = getattr(sig_info, "input_type", Any)
-                step_instance.__step_output_type__ = getattr(sig_info, "output_type", Any)
-        except Exception:
-            step_instance.__step_input_type__ = Any
-            step_instance.__step_output_type__ = Any
-
+        input_type, output_type = _infer_agent_io_types(agent, step_name=step_instance.name)
+        step_instance.__step_input_type__ = input_type
+        step_instance.__step_output_type__ = output_type
         return step_instance
 
     @classmethod
@@ -467,43 +507,25 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         Also infers input/output types from the agent's signature for pipeline validation.
         """
-        step_instance = cast(
-            "Step[Any, Any]",
-            cls.model_validate(
-                {
-                    "name": "validate",
-                    "agent": agent,
-                    "plugins": plugins or [],
-                    "validators": validators or [],
-                    "processors": processors or AgentProcessors(),
-                    "persist_feedback_to_context": persist_feedback_to_context,
-                    "persist_validation_results_to": persist_validation_results_to,
-                    "config": StepConfig(**config),
-                    "meta": {
-                        "is_validation_step": True,
-                        "strict_validation": strict,
-                    },
-                }
-            ),
+        step_instance: "Step[Any, Any]" = cls.model_validate(
+            {
+                "name": "validate",
+                "agent": agent,
+                "plugins": plugins or [],
+                "validators": validators or [],
+                "processors": processors or AgentProcessors(),
+                "persist_feedback_to_context": persist_feedback_to_context,
+                "persist_validation_results_to": persist_validation_results_to,
+                "config": StepConfig(**config),
+                "meta": {
+                    "is_validation_step": True,
+                    "strict_validation": strict,
+                },
+            }
         )
-
-        # Infer types from agent.run or the agent itself if callable
-        try:
-            from flujo.signature_tools import analyze_signature
-
-            executable = (
-                agent.run
-                if hasattr(agent, "run") and callable(getattr(agent, "run"))
-                else (agent if callable(agent) else None)
-            )
-            if executable is not None:
-                sig_info = analyze_signature(executable)
-                step_instance.__step_input_type__ = getattr(sig_info, "input_type", Any)
-                step_instance.__step_output_type__ = getattr(sig_info, "output_type", Any)
-        except Exception:
-            step_instance.__step_input_type__ = Any
-            step_instance.__step_output_type__ = Any
-
+        input_type, output_type = _infer_agent_io_types(agent, step_name=step_instance.name)
+        step_instance.__step_input_type__ = input_type
+        step_instance.__step_output_type__ = output_type
         return step_instance
 
     # ------------------------------------------------------------------
@@ -513,7 +535,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     @classmethod
     def from_callable(
         cls: Type["Step[StepInT, StepOutT]"],
-        callable_: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
+        callable_: Callable[Concatenate[StepInT, P], Coroutine[object, object, StepOutT]],
         name: str | None = None,
         updates_context: bool = False,
         validate_fields: bool = False,  # New parameter
@@ -522,6 +544,8 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         persist_feedback_to_context: Optional[str] = None,
         persist_validation_results_to: Optional[str] = None,
         is_adapter: bool = False,
+        adapter_id: str | None = None,
+        adapter_allow: str | None = None,
         config: StepConfig | None = None,
         **config_kwargs: Any,
     ) -> "Step[StepInT, StepOutT]":
@@ -532,11 +556,21 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         # Infer injection signature & wrap callable into an agent-like object
         func = callable_
-        from flujo.signature_tools import analyze_signature
+        sig_info = None
+        try:
+            from flujo.signature_tools import analyze_signature
+
+            sig_info = analyze_signature(func)
+        except Exception as exc:
+            _log_type_warning(
+                "Failed to analyze callable signature; using object fallback",
+                step_name=name,
+                error=exc,
+            )
 
         class _CallableAgent:  # pylint: disable=too-few-public-methods
             _step_callable = func
-            _injection_spec = analyze_signature(func)
+            _injection_spec = sig_info
 
             # Store the original function signature for parameter names
             _original_sig = inspect.signature(func)
@@ -580,19 +614,29 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 callable_kwargs.update(kwargs)
 
                 # Call the original function directly
-                return await cast(Callable[..., Any], func)(*call_args, **callable_kwargs)
-
-        # Analyze signature for type info
-        from flujo.signature_tools import analyze_signature
-
-        sig_info = analyze_signature(func)
-        input_type = sig_info.input_type if hasattr(sig_info, "input_type") else Any
-        output_type = sig_info.output_type if hasattr(sig_info, "output_type") else Any
+                return await func(*call_args, **callable_kwargs)
 
         merged_config: dict[str, Any] = {}
         if config is not None:
             merged_config.update(config.model_dump())
         merged_config.update(config_kwargs)
+
+        # Enforce explicit adapter identity/token to prevent generic, untracked adapters.
+        adapter_id_val = merged_config.pop("adapter_id", adapter_id)
+        adapter_allow_val = merged_config.pop("adapter_allow", adapter_allow)
+
+        if is_adapter:
+            if not adapter_id_val or not adapter_allow_val:
+                raise ValueError(
+                    "Adapter steps must provide adapter_id and adapter_allow (allowlist token)."
+                )
+            meta: dict[str, Any] = {
+                "is_adapter": True,
+                "adapter_id": adapter_id_val,
+                "adapter_allow": adapter_allow_val,
+            }
+        else:
+            meta = {}
 
         step_instance = cls.model_validate(
             {
@@ -606,19 +650,23 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "updates_context": updates_context,
                 "validate_fields": validate_fields,
                 "sink_to": sink_to,
-                "meta": {"is_adapter": True} if is_adapter else {},
+                "meta": meta,
                 "config": StepConfig(**merged_config),
             }
         )
         # Set type info for pipeline validation
-        step_instance.__step_input_type__ = input_type
-        step_instance.__step_output_type__ = output_type
+        step_instance.__step_input_type__ = _normalize_signature_type(
+            getattr(sig_info, "input_type", _TYPE_FALLBACK)
+        )
+        step_instance.__step_output_type__ = _normalize_signature_type(
+            getattr(sig_info, "output_type", _TYPE_FALLBACK)
+        )
         return step_instance
 
     @classmethod
     def from_mapper(
         cls: Type["Step[StepInT, StepOutT]"],
-        mapper: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
+        mapper: Callable[Concatenate[StepInT, P], Coroutine[object, object, StepOutT]],
         name: str | None = None,
         updates_context: bool = False,
         sink_to: str | None = None,
@@ -698,7 +746,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         from .loop import LoopStep  # local import
 
         # Task-local storage for the last artifact; safe under concurrency
-        last_artifact_var: contextvars.ContextVar[Any | None] = contextvars.ContextVar(
+        last_artifact_var: contextvars.ContextVar[object | None] = contextvars.ContextVar(
             f"{name}_last_artifact", default=None
         )
 
@@ -779,11 +827,9 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                         if la is not None:
                             return la
                         # 1) Prefer the exact captured artifact recorded during the last iteration
-                        sp = getattr(context, "scratchpad", None)
-                        if isinstance(sp, dict):
-                            steps = sp.get("steps") or {}
-                            if isinstance(steps, dict) and "_capture_artifact" in steps:
-                                return steps.get("_capture_artifact")
+                        outputs = getattr(context, "step_outputs", None)
+                        if isinstance(outputs, dict) and "_capture_artifact" in outputs:
+                            return outputs.get("_capture_artifact")
                         # 2) Fallback to any context-scoped attribute set by the capture step
                         if hasattr(context, "_last_refine_artifact"):
                             return getattr(context, "_last_refine_artifact")
@@ -791,9 +837,12 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                     pass
             return out
 
-        mapper_step = cast(
-            "Step[Any, Any]",
-            cls.from_callable(_post_output_mapper, name=f"{name}_output_mapper", is_adapter=True),
+        mapper_step: "Step[Any, Any]" = cls.from_callable(
+            _post_output_mapper,
+            name=f"{name}_output_mapper",
+            is_adapter=True,
+            adapter_id="generic-adapter",
+            adapter_allow="generic",
         )
         # Compose pipeline: loop then post mapping step
         return core_loop >> mapper_step
@@ -950,15 +999,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
 
         # Exit when granular_state.is_complete is True
         def _exit_condition(output: Any, ctx: Optional[ContextModelT]) -> bool:
-            # Check for completion flag in output or scratchpad
+            # Check for completion flag in output or granular_state
             if hasattr(output, "is_complete"):
                 return bool(output.is_complete)
             if ctx is not None:
-                scratch = getattr(ctx, "scratchpad", None)
-                if isinstance(scratch, dict):
-                    gs = scratch.get("granular_state")
-                    if isinstance(gs, dict):
-                        return bool(gs.get("is_complete", False))
+                gs = getattr(ctx, "granular_state", None)
+                if isinstance(gs, dict):
+                    return bool(gs.get("is_complete", False))
             return False
 
         # Loop until complete or max_turns
@@ -988,7 +1035,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 return data.get(key)
             raise TypeError("use_input expects a dict-like input")
 
-        adapter = Step.from_callable(_select, name=f"select_{key}", is_adapter=True)
+        adapter = Step.from_callable(
+            _select,
+            name=f"select_{key}",
+            is_adapter=True,
+            adapter_id="generic-adapter",
+            adapter_allow="generic",
+        )
         return Pipeline.from_step(adapter) >> self
 
     @classmethod
@@ -1010,9 +1063,13 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 raise TypeError("Gather step expects dict input")
             return {k: data.get(k) for k in wait_for}
 
-        return cast(
-            "Step[Any, JSONObject]",
-            cls.from_callable(_gather, name=name, is_adapter=True, **config_kwargs),
+        return Step.from_callable(
+            _gather,
+            name=name,
+            is_adapter=True,
+            adapter_id="generic-adapter",
+            adapter_allow="generic",
+            **config_kwargs,
         )
 
     @classmethod
@@ -1041,14 +1098,14 @@ class HumanInTheLoopStep(Step[Any, Any]):
         message_for_user: Optional message to display to the user
         input_schema: Optional schema for validating user input
         sink_to: Optional context path to automatically store the human response
-                 (e.g., "scratchpad.user_answer" or "scratchpad.nested.field")
+                 (e.g., "hitl_data.user_answer" or "user_input")
     """
 
     message_for_user: str | None = Field(default=None)
     input_schema: Any | None = Field(default=None)
     sink_to: str | None = Field(
         default=None,
-        description="Context path to automatically store the human response (e.g., 'scratchpad.user_name')",
+        description="Context path to automatically store the human response (e.g., 'hitl_data.user_name')",
     )
 
     model_config = {"arbitrary_types_allowed": True}

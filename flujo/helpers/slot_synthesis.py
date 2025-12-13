@@ -106,10 +106,10 @@ async def synthesize_slots(
 
     - Reads context.hitl_history (list of {message_to_human, human_response}).
     - Assigns replies to slots based on assistant question text.
-    - Produces a consolidated slots dict under context.scratchpad.slots when used with updates_context: true.
+    - Produces a consolidated slots dict under context.hitl_data.slots when used with updates_context: true.
 
     Returns a dict suitable for updates_context merging:
-      { "scratchpad": { "slots": { ... }, "slots_filled": [...], "slots_missing": [...], "slots_text_summary": "..." } }
+      { "hitl_data": { "slots": { ... }, "slots_filled": [...], "slots_missing": [...], "slots_text_summary": "..." } }
     """
     slots: JSONObject = {
         "metric": None,
@@ -120,7 +120,7 @@ async def synthesize_slots(
     }
     if context is None:
         return {
-            "scratchpad": {"slots": slots, "slots_filled": [], "slots_missing": list(slots.keys())}
+            "hitl_data": {"slots": slots, "slots_filled": [], "slots_missing": list(slots.keys())}
         }
 
     history = getattr(context, "hitl_history", None) or []
@@ -221,7 +221,7 @@ async def synthesize_slots(
     slots_text_summary = "; ".join(summary_parts)
 
     return {
-        "scratchpad": {
+        "hitl_data": {
             "slots": slots,
             "slots_filled": filled,
             "slots_missing": missing,

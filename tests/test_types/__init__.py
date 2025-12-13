@@ -7,6 +7,26 @@ type safety in Flujo's test suite.
 # Import fixtures and mocks for easy access
 # These will be implemented incrementally as we migrate tests
 
+from .fakes import FakeAgent, FakeUsageMeter, FakeCacheBackend
+from .fixtures import (
+    TEST_STEP_RESULT_FAILURE,
+    TEST_STEP_RESULT_SUCCESS,
+    create_test_pipeline,
+    create_test_step,
+    create_test_step_result,
+    create_test_usage_limits,
+)
+from .mocks import create_mock_executor_core
+
 __all__ = [
-    # Will be populated as we create typed fixtures
+    "FakeAgent",
+    "FakeUsageMeter",
+    "FakeCacheBackend",
+    "TEST_STEP_RESULT_FAILURE",
+    "TEST_STEP_RESULT_SUCCESS",
+    "create_mock_executor_core",
+    "create_test_pipeline",
+    "create_test_step",
+    "create_test_step_result",
+    "create_test_usage_limits",
 ]

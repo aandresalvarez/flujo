@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import nullcontext
-from typing import Any, Callable, Optional, Protocol, TypeAlias, TypeVar, cast, runtime_checkable
+from typing import Any, Callable, Optional, Protocol, TypeAlias, TypeVar, runtime_checkable
 
 from flujo.type_definitions.common import JSONObject
 
@@ -15,8 +15,6 @@ StepOutT = TypeVar("StepOutT")
 @runtime_checkable
 class PipelineContextLike(Protocol):
     """Context contract required by execution/CLI."""
-
-    scratchpad: Any
 
     def model_dump(self, *args: Any, **kwargs: Any) -> Any: ...
 
@@ -141,7 +139,7 @@ class SkillResolver(Protocol):
     ) -> Optional[JSONObject]: ...
 
 
-class SkillRegistry(Protocol):
+class SkillRegistry(SkillResolver, Protocol):
     def register(
         self,
         id: str,
@@ -188,14 +186,15 @@ def get_skill_registry_provider() -> SkillRegistryProvider:
 
 
 def get_skill_resolver() -> SkillResolver:
-    resolver = globals().get("_DEFAULT_SKILL_RESOLVER")
-    if resolver is not None:
-        return cast(SkillResolver, resolver)
+    if _DEFAULT_SKILL_RESOLVER is not None:
+        return _DEFAULT_SKILL_RESOLVER
     provider = get_skill_registry_provider()
-    return cast(SkillResolver, provider.get_registry())
+    return provider.get_registry()
 
 
 def set_default_skill_resolver(resolver: SkillResolver) -> None:
+    global _DEFAULT_SKILL_RESOLVER
+    _DEFAULT_SKILL_RESOLVER = resolver
     globals()["_DEFAULT_SKILL_RESOLVER"] = resolver
 
 

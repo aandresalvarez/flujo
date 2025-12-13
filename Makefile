@@ -52,6 +52,8 @@ format: .uv ## Auto-format the code with ruff
 lint: .uv ## Lint the code for issues
 	@echo "🔎 Linting code..."
 	@uv run ruff check flujo/ tests/ scripts/
+	@uv run python scripts/lint_type_safety.py
+	@uv run python scripts/lint_adapter_allowlist.py
 
 .PHONY: precommit
 precommit: .uv ## Run pre-commit hooks on staged files and typecheck (install hooks with `pre-commit install`)

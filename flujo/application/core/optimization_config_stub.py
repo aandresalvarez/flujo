@@ -11,7 +11,7 @@ continue working while emitting deprecation warnings.
 from __future__ import annotations
 
 import warnings
-from typing import Any
+from collections.abc import Mapping
 
 
 class OptimizationConfig:
@@ -45,7 +45,7 @@ class OptimizationConfig:
         enable_automatic_optimization: bool = False,
         max_concurrent_executions: int = 10,
         cache_max_size: int = 1024,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> None:
         """Initialize a deprecated OptimizationConfig.
 
@@ -76,7 +76,7 @@ class OptimizationConfig:
         """Validate configuration (always returns empty list - no validation needed)."""
         return []
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Convert to dictionary (for compatibility)."""
         return {
             "enable_object_pool": self.enable_object_pool,
@@ -92,9 +92,16 @@ class OptimizationConfig:
         }
 
     @classmethod
-    def from_dict(cls, config_dict: dict[str, Any]) -> "OptimizationConfig":
+    def from_dict(cls, config_dict: Mapping[str, object]) -> "OptimizationConfig":
         """Create from dictionary (for compatibility)."""
-        return cls(**config_dict)
+        inst = cls()
+        for key, value in config_dict.items():
+            try:
+                if hasattr(inst, key):
+                    setattr(inst, key, value)
+            except Exception:
+                continue
+        return inst
 
 
 __all__ = ["OptimizationConfig"]

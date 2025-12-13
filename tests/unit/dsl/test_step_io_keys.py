@@ -4,13 +4,15 @@ from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.step import Step
 
 
-def _agent(x: object) -> object:
+def _agent(x: dict[str, object]) -> dict[str, object]:
     return x
 
 
 def test_step_io_keys_validation_passes_when_produced() -> None:
     s1 = Step(name="first", agent=_agent, output_keys=["summary"])
+    s1.__step_output_type__ = dict[str, object]
     s2 = Step(name="second", agent=_agent, input_keys=["summary"])
+    s2.__step_input_type__ = dict[str, object]
 
     pipeline = Pipeline.model_construct(steps=[s1, s2], hooks=[], on_finish=[])
     report = pipeline.validate_graph()
@@ -29,8 +31,10 @@ def test_step_io_keys_validation_errors_when_missing() -> None:
 
 
 def test_step_io_keys_warns_when_only_root_available() -> None:
-    s1 = Step(name="first", agent=_agent, output_keys=["scratchpad"])
-    s2 = Step(name="second", agent=_agent, input_keys=["scratchpad.summary"])
+    s1 = Step(name="first", agent=_agent, output_keys=["import_artifacts"])
+    s1.__step_output_type__ = dict[str, object]
+    s2 = Step(name="second", agent=_agent, input_keys=["import_artifacts.summary"])
+    s2.__step_input_type__ = dict[str, object]
 
     pipeline = Pipeline.model_construct(steps=[s1, s2], hooks=[], on_finish=[])
     report = pipeline.validate_graph()
@@ -40,18 +44,18 @@ def test_step_io_keys_warns_when_only_root_available() -> None:
 
 
 def test_step_io_keys_follow_branch_union_for_conditional() -> None:
-    branch_a = Pipeline.model_construct(
-        steps=[Step(name="branch-a-step", agent=_agent, output_keys=["branch_value"])],
-        hooks=[],
-        on_finish=[],
-    )
+    branch_step = Step(name="branch-a-step", agent=_agent, output_keys=["branch_value"])
+    branch_step.__step_output_type__ = dict[str, object]
+    branch_a = Pipeline.model_construct(steps=[branch_step], hooks=[], on_finish=[])
     cond = ConditionalStep(
         name="choose",
         agent=_agent,
         branches={"a": branch_a},
         condition_callable=lambda *_: "a",
     )
+    cond.__step_output_type__ = dict[str, object]
     consumer = Step(name="after-cond", agent=_agent, input_keys=["branch_value"])
+    consumer.__step_input_type__ = dict[str, object]
 
     pipeline = Pipeline.model_construct(steps=[cond, consumer], hooks=[], on_finish=[])
     report = pipeline.validate_graph()
@@ -80,26 +84,24 @@ def test_step_io_keys_require_branch_outputs_when_missing() -> None:
 
 
 def test_step_io_keys_union_parallel_branch_outputs() -> None:
-    branch_one = Pipeline.model_construct(
-        steps=[Step(name="branch-one", agent=_agent, output_keys=["branch_value"])],
-        hooks=[],
-        on_finish=[],
-    )
-    branch_two = Pipeline.model_construct(
-        steps=[Step(name="branch-two", agent=_agent, output_keys=["other_value"])],
-        hooks=[],
-        on_finish=[],
-    )
+    branch_one_step = Step(name="branch-one", agent=_agent, output_keys=["branch_value"])
+    branch_one_step.__step_output_type__ = dict[str, object]
+    branch_one = Pipeline.model_construct(steps=[branch_one_step], hooks=[], on_finish=[])
+    branch_two_step = Step(name="branch-two", agent=_agent, output_keys=["other_value"])
+    branch_two_step.__step_output_type__ = dict[str, object]
+    branch_two = Pipeline.model_construct(steps=[branch_two_step], hooks=[], on_finish=[])
     parallel = ParallelStep(
         name="parallel",
         agent=_agent,
         branches={"one": branch_one, "two": branch_two},
     )
+    parallel.__step_output_type__ = dict[str, object]
     consumer = Step(
         name="after-parallel",
         agent=_agent,
         input_keys=["branch_value", "other_value"],
     )
+    consumer.__step_input_type__ = dict[str, object]
 
     pipeline = Pipeline.model_construct(steps=[parallel, consumer], hooks=[], on_finish=[])
     report = pipeline.validate_graph()

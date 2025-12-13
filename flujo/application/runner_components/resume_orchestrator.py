@@ -35,12 +35,11 @@ class ResumeOrchestrator(Generic[_CtxT]):
         self._trace_manager = trace_manager
         self._agent_command_adapter = agent_command_adapter
 
-    def validate_resume(self, paused_result: PipelineResult[_CtxT]) -> PipelineContext:
+    def validate_resume(self, paused_result: PipelineResult[_CtxT]) -> _CtxT:
         ctx = paused_result.final_pipeline_context
         if ctx is None:
             raise ResumeError("Cannot resume pipeline without context")
-        scratch = getattr(ctx, "scratchpad", {})
-        if not isinstance(scratch, dict) or scratch.get("status") != "paused":
+        if getattr(ctx, "status", None) != "paused":
             raise ResumeError("Pipeline is not paused")
         return ctx
 
@@ -54,33 +53,63 @@ class ResumeOrchestrator(Generic[_CtxT]):
         if pipeline is None or not getattr(pipeline, "steps", None):
             raise ResumeError("No steps remaining to resume")
 
-        scratch = getattr(ctx, "scratchpad", {})
-        if not isinstance(scratch, dict):
-            scratch = {}
-            ctx.scratchpad = scratch
-
-        # Heuristic: if the scratchpad tracks executed top-level steps, resume after the last one.
+        steps = list(getattr(pipeline, "steps", []) or [])
         start_idx = len(paused_result.step_history)
+        hitl_index_resolved = False
+
+        # Prefer explicit HITL pause metadata when available.
+        # This avoids brittle heuristics based on step_history length, which may include
+        # placeholder StepResults for paused HITL steps.
         try:
-            executed_steps = scratch.get("steps") if isinstance(scratch, dict) else None
-            if isinstance(executed_steps, dict) and executed_steps:
-                last_executed = list(executed_steps.keys())[-1]
-                for idx, st in enumerate(getattr(pipeline, "steps", []) or []):
-                    if getattr(st, "name", None) == last_executed:
-                        start_idx = min(idx + 1, len(pipeline.steps) - 1)
+            hd = getattr(ctx, "hitl_data", None)
+            last_hitl_step = hd.get("last_hitl_step") if isinstance(hd, dict) else None
+            if isinstance(last_hitl_step, str) and last_hitl_step:
+                for idx, st in enumerate(steps):
+                    if (
+                        isinstance(st, HumanInTheLoopStep)
+                        and getattr(st, "name", None) == last_hitl_step
+                    ):
+                        start_idx = idx
+                        hitl_index_resolved = True
                         break
         except Exception:
-            pass
+            hitl_index_resolved = False
 
-        if start_idx >= len(pipeline.steps):
-            raise ResumeError("No steps remaining to resume")
+        # Heuristic: if step_outputs tracks executed top-level steps, resume after the last one.
+        # Skip this when we have explicit HITL pause metadata.
+        if not hitl_index_resolved:
+            try:
+                executed_steps = getattr(ctx, "step_outputs", {})
+                if isinstance(executed_steps, dict) and executed_steps:
+                    last_executed = list(executed_steps.keys())[-1]
+                    for idx, st in enumerate(steps):
+                        if getattr(st, "name", None) == last_executed:
+                            start_idx = min(idx + 1, len(steps) - 1)
+                            break
+            except Exception:
+                pass
 
-        paused_step = pipeline.steps[start_idx]
-        from ...domain.dsl.step import HumanInTheLoopStep  # local to avoid import cycles
+        if start_idx >= len(steps):
+            # Common pause shape: the paused step is the last (or only) top-level step
+            # (e.g., LoopStep pausing internally). In that case, resume from the last step.
+            if getattr(ctx, "status", None) == "paused" and steps:
+                start_idx = len(steps) - 1
+            else:
+                raise ResumeError("No steps remaining to resume")
 
-        if scratch.get("status") == "paused" and isinstance(paused_step, HumanInTheLoopStep):
-            scratch["hitl_data"] = human_input
-            scratch["user_input"] = human_input
+        paused_step = steps[start_idx]
+
+        if getattr(ctx, "status", None) == "paused":
+            # Always attach the provided human input to the typed user_input field for downstream steps.
+            if hasattr(ctx, "user_input"):
+                ctx.user_input = human_input
+            # Only set paused_step_input for HITL steps when it's not already holding a pending command.
+            if (
+                isinstance(paused_step, HumanInTheLoopStep)
+                and getattr(ctx, "paused_step_input", None) is None
+            ):
+                if hasattr(ctx, "paused_step_input"):
+                    ctx.paused_step_input = human_input
 
         return start_idx, paused_step
 
@@ -92,7 +121,6 @@ class ResumeOrchestrator(Generic[_CtxT]):
     def record_hitl_interaction(
         self,
         ctx: PipelineContext,
-        scratch: dict[str, Any],
         human_input: Any,
         pause_message: str | None,
     ) -> None:
@@ -102,7 +130,8 @@ class ResumeOrchestrator(Generic[_CtxT]):
                 human_response=human_input,
             )
         )
-        scratch["status"] = "running"
+        # Use typed field instead of scratchpad for status
+        ctx.status = "running"
 
     def update_conversation_history(
         self,
@@ -151,14 +180,15 @@ class ResumeOrchestrator(Generic[_CtxT]):
         human_input: Any,
     ) -> None:
         try:
-            sp = getattr(ctx, "scratchpad", None)
-            if not isinstance(sp, dict):
-                ctx.scratchpad = {"steps": {}}
-                sp = ctx.scratchpad
-            steps_map = sp.get("steps")
-            if not isinstance(steps_map, dict):
-                steps_map = {}
-                sp["steps"] = steps_map
+            # Write to step_outputs (primary)
+            if hasattr(ctx, "step_outputs"):
+                current_outputs = getattr(ctx, "step_outputs", {})
+                if not isinstance(current_outputs, dict):
+                    current_outputs = {}
+                    ctx.step_outputs = current_outputs
+                steps_map = current_outputs
+            else:
+                return
             val = human_input
             if isinstance(val, bytes):
                 try:
@@ -179,10 +209,15 @@ class ResumeOrchestrator(Generic[_CtxT]):
         paused_step: Step[Any, Any],
         human_input: Any,
     ) -> None:
-        scratch = getattr(ctx, "scratchpad", {})
-        pending = scratch.pop("paused_step_input", None)
+        pending = getattr(ctx, "paused_step_input", None)
         if pending is None:
             return
+        # Consume pending command payload so subsequent resumes don't re-log it.
+        try:
+            if hasattr(ctx, "paused_step_input"):
+                ctx.paused_step_input = None
+        except Exception:
+            pass
         adapter = self._agent_command_adapter
         pending_cmd: AgentCommand | AskHumanCommand | FinishCommand | RunAgentCommand | None
         pending_cmd = None
@@ -207,13 +242,13 @@ class ResumeOrchestrator(Generic[_CtxT]):
                 log_entry = ExecutedCommandLog(
                     turn=len(ctx.command_log) + 1,
                     generated_command=AskHumanCommand(
-                        question=scratch.get("pause_message", "Paused")
+                        question=getattr(ctx, "pause_message", None) or "Paused"
                     ),
                     execution_result=human_input,
                 )
             ctx.command_log.append(log_entry)
-            if isinstance(ctx.scratchpad, dict):
-                ctx.scratchpad["loop_last_output"] = log_entry
+            if hasattr(ctx, "loop_last_output"):
+                ctx.loop_last_output = log_entry
         except Exception:
             pass
 

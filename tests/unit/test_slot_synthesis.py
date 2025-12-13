@@ -30,8 +30,8 @@ async def test_synthesize_slots_extracts_fields_from_hitl_history():
     update = await synthesize_slots(None, context=ctx)
 
     assert isinstance(update, dict)
-    scratch = update.get("scratchpad") or {}
-    slots = scratch.get("slots") or {}
+    hitl_data = update.get("hitl_data") or {}
+    slots = hitl_data.get("slots") or {}
 
     assert slots.get("metric") == "count"
     cohort = slots.get("cohort") or {}
@@ -47,5 +47,5 @@ async def test_synthesize_slots_extracts_fields_from_hitl_history():
     assert slots.get("filters") is None  # 'no' implies no filters
 
     # Also ensure filled/missing bookkeeping present
-    assert set(scratch.get("slots_filled") or [])
-    assert isinstance(scratch.get("slots_text_summary"), str)
+    assert set(hitl_data.get("slots_filled") or [])
+    assert isinstance(hitl_data.get("slots_text_summary"), str)

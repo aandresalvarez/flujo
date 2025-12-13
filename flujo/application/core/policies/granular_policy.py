@@ -13,13 +13,14 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from typing import Any, Dict, List, Optional, Type
+from typing import Optional, Type
 
 from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.policy_registry import StepPolicy
 from flujo.application.core.types import ExecutionFrame
 from flujo.domain.dsl.granular import GranularStep, GranularState, ResumeError
 from flujo.domain.models import (
+    BaseModel,
     Failure,
     StepOutcome,
     StepResult,
@@ -37,18 +38,11 @@ from flujo.infra import telemetry
 __all__ = ["GranularAgentStepExecutor", "DefaultGranularAgentStepExecutor"]
 
 
-# Storage key for granular state in scratchpad
-GRANULAR_STATE_KEY = "granular_state"
-
-
-def _get_granular_state(context: Any) -> Optional[GranularState]:
-    """Extract granular_state from context scratchpad."""
+def _get_granular_state(context: object | None) -> Optional[GranularState]:
+    """Extract granular_state from context.granular_state."""
     if context is None:
         return None
-    scratch = getattr(context, "scratchpad", None)
-    if not isinstance(scratch, dict):
-        return None
-    raw = scratch.get(GRANULAR_STATE_KEY)
+    raw = getattr(context, "granular_state", None)
     if isinstance(raw, dict):
         return GranularState(
             turn_index=int(raw.get("turn_index", 0)),
@@ -60,21 +54,21 @@ def _get_granular_state(context: Any) -> Optional[GranularState]:
     return None
 
 
-def _set_granular_state(context: Any, state: GranularState) -> None:
-    """Store granular_state in context scratchpad."""
+def _set_granular_state(context: object | None, state: GranularState) -> None:
+    """Store granular_state in context.granular_state."""
     if context is None:
         return
-    scratch = getattr(context, "scratchpad", None)
-    if not isinstance(scratch, dict):
+    payload = dict(state)
+    try:
+        object.__setattr__(context, "granular_state", payload)
+    except Exception:
         try:
-            scratch = {}
-            object.__setattr__(context, "scratchpad", scratch)
+            setattr(context, "granular_state", payload)
         except Exception:
             return
-    scratch[GRANULAR_STATE_KEY] = dict(state)
 
 
-def _get_run_id(context: Any) -> str:
+def _get_run_id(context: object | None) -> str:
     """Extract run_id from context or generate a fallback."""
     if context is None:
         return f"run_{int(time.time() * 1000)}"
@@ -83,26 +77,16 @@ def _get_run_id(context: Any) -> str:
         val = getattr(context, attr, None)
         if isinstance(val, str) and val:
             return val
-    scratch = getattr(context, "scratchpad", None)
-    if isinstance(scratch, dict):
-        for key in ("run_id", "_run_id"):
-            val = scratch.get(key)
-            if isinstance(val, str) and val:
-                return val
     return f"run_{id(context)}"
 
 
-def _get_loop_iteration_index(context: Any) -> int:
+def _get_loop_iteration_index(context: object | None) -> int:
     """Get current loop iteration from context (for logging only)."""
     if context is None:
         return 0
-    scratch = getattr(context, "scratchpad", None)
-    if isinstance(scratch, dict):
-        # Try internal loop tracking key first
-        for key in ("_loop_iteration_index", "loop_iteration"):
-            val = scratch.get(key)
-            if isinstance(val, int):
-                return val
+    val = getattr(context, "loop_iteration_index", None)
+    if isinstance(val, int):
+        return val
     return 0
 
 
@@ -123,8 +107,8 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
     async def execute(
         self,
-        core: Any,
-        frame: ExecutionFrame[Any],
+        core: object,
+        frame: ExecutionFrame[BaseModel],
     ) -> StepOutcome[StepResult]:
         step: GranularStep = frame.step
         data = frame.data
@@ -252,7 +236,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                 raise ValueError(f"GranularStep '{step_name}' has no agent configured")
 
             # Build history for agent context
-            history: List[Dict[str, Any]] = []
+            history: list[dict[str, object]] = []
             if stored_state is not None:
                 history = list(stored_state.get("history", []))
 
@@ -264,7 +248,11 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
             # Run the agent
             try:
-                agent_output = await core._agent_runner.run(
+                agent_runner = getattr(core, "_agent_runner", None)
+                run_fn = getattr(agent_runner, "run", None)
+                if not callable(run_fn):
+                    raise TypeError("ExecutorCore missing _agent_runner.run")
+                agent_output = await run_fn(
                     agent=agent,
                     payload=data,
                     context=isolated_context,
@@ -371,7 +359,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
             result.latency_s = self._ns_to_seconds(time.perf_counter_ns() - start_ns)
 
-    def _compute_fingerprint(self, step: GranularStep, data: Any, context: Any) -> str:
+    def _compute_fingerprint(self, step: GranularStep, data: object, context: object | None) -> str:
         """Compute deterministic fingerprint for run configuration."""
         agent = getattr(step, "agent", None)
 
@@ -381,7 +369,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
         system_prompt = getattr(agent, "_system_prompt", None)
 
         # Extract tools
-        tools: List[Dict[str, Any]] = []
+        tools: list[dict[str, object]] = []
         agent_tools = getattr(agent, "_tools", None) or getattr(agent, "tools", None)
         if agent_tools:
             for tool in agent_tools:
@@ -406,7 +394,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             settings=settings,
         )
 
-    def _estimate_usage(self, step: Any, data: Any, context: Any) -> UsageEstimate:
+    def _estimate_usage(self, step: object, data: object, context: object | None) -> UsageEstimate:
         """Estimate token usage for quota reservation."""
         # Conservative default estimate
         try:
@@ -423,15 +411,15 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
     def _truncate_history(
         self,
-        history: List[Dict[str, Any]],
+        history: list[dict[str, object]],
         max_tokens: int,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, object]]:
         """Apply middle-out truncation to history (§8.2)."""
         if not history:
             return history
 
         # Simple token estimation (4 chars ≈ 1 token)
-        def estimate_tokens(item: Dict[str, Any]) -> int:
+        def estimate_tokens(item: dict[str, object]) -> int:
             text = json.dumps(item, ensure_ascii=True)
             return len(text) // 4
 
@@ -451,7 +439,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
         remaining_budget = max_tokens - first_tokens - 50  # 50 tokens for placeholder
 
         # Collect from tail until budget exhausted
-        tail: List[Dict[str, Any]] = []
+        tail: list[dict[str, object]] = []
         tail_tokens = 0
         for item in reversed(history[1:]):
             item_tokens = estimate_tokens(item)
@@ -464,7 +452,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
         dropped_count = len(history) - 1 - len(tail)
 
         if dropped_count > 0:
-            placeholder: Dict[str, Any] = {
+            placeholder: dict[str, object] = {
                 "role": "system",
                 "content": f"... [Context Truncated: {dropped_count} messages omitted] ...",
             }
@@ -472,7 +460,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
 
         return [first] + tail
 
-    def _check_completion(self, output: Any) -> bool:
+    def _check_completion(self, output: object) -> bool:
         """Check if agent output indicates completion."""
         if hasattr(output, "is_complete"):
             return bool(output.is_complete)
@@ -484,7 +472,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             return bool(output.get("is_complete") or output.get("done") or output.get("finished"))
         return False
 
-    def _is_json_serializable(self, obj: Any) -> bool:
+    def _is_json_serializable(self, obj: object) -> bool:
         """Check if object is JSON serializable."""
         try:
             json.dumps(obj)

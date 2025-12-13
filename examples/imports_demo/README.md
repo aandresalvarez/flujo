@@ -5,9 +5,9 @@ This example shows how to chain three imported pipelines (clarification → conc
 ## Files
 
 - `main.yaml` — Parent pipeline with `imports` and three ImportStep steps.
-- `clarification.yaml` — Child pipeline that writes `scratchpad.cohort_definition`.
-- `concept_discovery.yaml` — Child pipeline that writes `scratchpad.concept_sets`.
-- `query_builder.yaml` — Child pipeline that writes `scratchpad.final_sql`.
+- `clarification.yaml` — Child pipeline that writes `import_artifacts.cohort_definition`.
+- `concept_discovery.yaml` — Child pipeline that writes `import_artifacts.concept_sets`.
+- `query_builder.yaml` — Child pipeline that writes `import_artifacts.final_sql`.
 - `skills/helpers.py` — Simple Python skills used by the children.
 
 ## Run
@@ -38,6 +38,6 @@ uv run flujo run examples/imports_demo/main_with_hitl.yaml --project examples/im
 
 - The pipeline will pause at the imported `human_review` child and prompt you.
 - Enter either a short confirmation (e.g., `Looks good`) or paste a JSON object like `{"name": "demo", "criteria": ["age > 18"]}`.
-- The child maps the response to `scratchpad.cohort_definition`; downstream steps proceed automatically.
+- The child maps the response to `import_artifacts.cohort_definition`; downstream steps proceed automatically.
 
 Tip: If running non-interactively, you can resume programmatically via the Python API using `runner.resume_async(result, human_input)`. The CLI also auto-prompts in a TTY.

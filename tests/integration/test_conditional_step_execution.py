@@ -1,5 +1,5 @@
 import pytest
-from pydantic import BaseModel
+from flujo.domain.models import BaseModel
 
 from flujo.domain import Step, Pipeline
 from flujo.testing.utils import StubAgent, DummyPlugin, gather_result

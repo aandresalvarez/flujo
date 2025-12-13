@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Optional, Sequence
 from urllib.parse import urlparse
 import os
 import importlib.util
@@ -30,7 +30,7 @@ from flujo.application.core.executor_protocols import (
     IPluginRunner,
     IUsageMeter,
 )
-from flujo.application.core.policy_registry import PolicyRegistry, StepPolicy
+from flujo.application.core.policy_registry import PolicyRegistry, StepPolicy, StepType
 from flujo.infra.backends import LocalBackend
 from flujo.state.backends.memory import InMemoryBackend
 from flujo.state.backends.postgres import PostgresBackend
@@ -38,6 +38,7 @@ from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.state.backends.base import StateBackend
 from flujo.utils.config import get_settings, Settings
 from flujo.infra.config_manager import get_config_manager, get_state_uri
+from flujo.domain.models import BaseModel as DomainBaseModel
 from flujo.domain.interfaces import StateProvider
 
 
@@ -54,9 +55,9 @@ class ExecutorFactory:
         validator_runner: IValidatorRunner | None = None,
         plugin_runner: IPluginRunner | None = None,
         usage_meter: IUsageMeter | None = None,
-        state_providers: Optional[Dict[str, StateProvider[Any]]] = None,
+        state_providers: dict[str, StateProvider[object]] | None = None,
         policy_registry: PolicyRegistry | None = None,
-        policy_overrides: Sequence[StepPolicy[Any]] | None = None,
+        policy_overrides: Sequence[StepPolicy[StepType]] | None = None,
     ) -> None:
         self._telemetry = telemetry
         self._cache_backend = cache_backend
@@ -69,10 +70,10 @@ class ExecutorFactory:
         self._policy_registry = policy_registry
         self._policy_overrides = list(policy_overrides) if policy_overrides else []
 
-    def create_executor(self) -> ExecutorCore[Any]:
+    def create_executor(self) -> ExecutorCore[DomainBaseModel]:
         """Return a configured ExecutorCore."""
         registry = self._policy_registry or PolicyRegistry()
-        executor: ExecutorCore[Any] = ExecutorCore(
+        executor: ExecutorCore[DomainBaseModel] = ExecutorCore(
             serializer=OrjsonSerializer(),
             hasher=Blake3Hasher(),
             cache_backend=self._cache_backend or InMemoryLRUBackend(),
@@ -101,8 +102,8 @@ class BackendFactory:
         self._state_backend_cache: dict[str, StateBackend] = {}
 
     def create_execution_backend(
-        self, executor: ExecutorCore[Any] | None = None
-    ) -> LocalBackend[Any]:
+        self, executor: ExecutorCore[DomainBaseModel] | None = None
+    ) -> LocalBackend[DomainBaseModel]:
         exec_core = executor or self._executor_factory.create_executor()
         return LocalBackend(executor=exec_core)
 

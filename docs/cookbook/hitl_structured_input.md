@@ -17,7 +17,7 @@ runner = Flujo(pipeline)
 paused = None
 async for item in runner.run_async("x"):
     paused = item
-# paused.final_pipeline_context.scratchpad["pause_message"] has the question
+# paused.final_pipeline_context.pause_message has the question
 resumed = await runner.resume_async(paused, {"choice": 1})
 assert isinstance(resumed.step_history[-1].output, Answer)
 ```

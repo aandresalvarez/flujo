@@ -1,7 +1,12 @@
 from __future__ import annotations
-from typing import Any, Awaitable, Optional, Callable, TYPE_CHECKING
+
+from collections.abc import Awaitable, Callable
+from typing import Optional, Protocol, TYPE_CHECKING
 import time
 from unittest.mock import Mock, MagicMock, AsyncMock
+
+from pydantic import BaseModel
+
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.exceptions import (
     MissingAgentError,
@@ -22,15 +27,31 @@ from flujo.infra import telemetry
 from .policy_primitives import _detect_mock_objects, _unpack_agent_result
 
 
+class _StepConfigLike(Protocol):
+    max_retries: int
+    temperature: float | None
+    top_k: int | None
+    top_p: float | None
+
+
+class _AgentStepLike(Protocol):
+    name: str
+    agent: object | None
+    config: _StepConfigLike
+    processors: object
+    validators: object
+    plugins: object
+
+
 async def _execute_agent_step(
     self: ExecutorCore,
-    step: Any,
-    data: Any,
-    context: Optional[Any],
-    resources: Optional[Any],
+    step: _AgentStepLike,
+    data: object,
+    context: BaseModel | None,
+    resources: object | None,
     limits: Optional[UsageLimits],
     stream: bool,
-    on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+    on_chunk: Callable[[object], Awaitable[None]] | None,
     cache_key: Optional[str],
     _fallback_depth: int = 0,
 ) -> StepResult:
@@ -107,13 +128,13 @@ async def _execute_agent_step(
 
         start_time = time_perf_ns()
         try:
-            processed_data = data
+            processed_data: object = data
             if hasattr(step, "processors") and getattr(step, "processors", None):
                 processed_data = await self._processor_pipeline.apply_prompt(
                     step.processors, data, context=attempt_context
                 )
 
-            options = {}
+            options: dict[str, object] = {}
             if hasattr(step, "config") and step.config:
                 if hasattr(step.config, "temperature") and step.config.temperature is not None:
                     options["temperature"] = step.config.temperature
@@ -147,7 +168,7 @@ async def _execute_agent_step(
             )
             result.cost_usd = cost_usd
             result.token_counts = prompt_tokens + completion_tokens
-            processed_output = agent_output
+            processed_output: object = agent_output
             if hasattr(step, "processors") and step.processors:
                 try:
                     processed_output = await self._processor_pipeline.apply_output(

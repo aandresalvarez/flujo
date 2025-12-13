@@ -5,6 +5,5 @@ imports:
 steps:
   - name: run_child
     uses: imports.child
-    input_to: scratchpad  # placeholder for incoherent projection case
+    input_to: import_artifacts  # placeholder for incoherent projection case
     updates_context: true
-
