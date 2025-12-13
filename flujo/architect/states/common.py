@@ -36,16 +36,15 @@ def normalize_name_from_goal(goal: Optional[str]) -> str:
 
 
 async def goto(state: str, context: BaseModel | None = None) -> JSONObject:
-    """Set next_state in the context scratchpad for SM transitions."""
+    """Set next_state in typed context for SM transitions."""
     try:
-        sp: JSONObject = {"next_state": state}
         try:
             telemetry().info(f"[ArchitectSM] goto -> {state}")
         except Exception:
             pass
-        return {"scratchpad": sp}
+        return {"next_state": state}
     except Exception:
-        return {"scratchpad": {"next_state": state}}
+        return {"next_state": state}
 
 
 def make_transition_guard(target_state: str) -> Callable[[Any], Awaitable[JSONObject]]:
@@ -55,7 +54,7 @@ def make_transition_guard(target_state: str) -> Callable[[Any], Awaitable[JSONOb
             telemetry().info(f"[ArchitectSM] guard -> forcing next_state={target_state}")
         except Exception:
             pass
-        return {"scratchpad": {"next_state": target_state}}
+        return {"next_state": target_state}
 
     return _guard
 
@@ -63,8 +62,7 @@ def make_transition_guard(target_state: str) -> Callable[[Any], Awaitable[JSONOb
 async def trace_next_state(_x: Any = None, context: BaseModel | None = None) -> JSONObject:
     """Pure observer of next_state; does not modify context."""
     try:
-        sp = getattr(context, "scratchpad", {}) if context is not None else {}
-        ns = sp.get("next_state") if isinstance(sp, dict) else None
+        ns = getattr(context, "next_state", None) if context is not None else None
         try:
             telemetry().info(f"[ArchitectSM] trace next_state={ns}")
         except Exception:

@@ -16,7 +16,7 @@ async def test_import_step_outputs_none_merges_full_child_context() -> None:
 
     async def child_writer(_data: object, *, context: PipelineContext | None = None) -> dict:
         assert context is not None
-        return {"scratchpad": {"foo": 42}}
+        return {"import_artifacts": {"foo": 42}}
 
     child = Pipeline.from_step(Step.from_callable(child_writer, name="child", updates_context=True))
 
@@ -34,9 +34,7 @@ async def test_import_step_outputs_none_merges_full_child_context() -> None:
     res = await gather_result(runner, "ignored")
     ctx = res.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    # Legacy keys are redirected into import_artifacts; scratchpad should stay clean.
     assert ctx.import_artifacts.get("foo") == 42
-    assert ctx.scratchpad.get("foo") is None
 
 
 @pytest.mark.asyncio
@@ -51,7 +49,7 @@ async def test_import_step_outputs_empty_list_merges_nothing() -> None:
 
     async def child_writer(_data: object, *, context: PipelineContext | None = None) -> dict:
         assert context is not None
-        return {"scratchpad": {"bar": "no-merge"}}
+        return {"import_artifacts": {"bar": "no-merge"}}
 
     child = Pipeline.from_step(Step.from_callable(child_writer, name="child", updates_context=True))
 
@@ -70,7 +68,7 @@ async def test_import_step_outputs_empty_list_merges_nothing() -> None:
     ctx = res.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
     # Ensure nothing was merged from child
-    assert "bar" not in ctx.scratchpad
+    assert ctx.import_artifacts.get("bar") is None
 
 
 @pytest.mark.asyncio
@@ -83,8 +81,8 @@ async def test_import_step_outputs_preserves_explicit_none_values() -> None:
 
     Scenario:
     - Child pipeline has two steps
-    - First step sets scratchpad.value to None (explicit null)
-    - Second step's OUTPUT (not context) has scratchpad.value = "from_output"
+    - First step sets import_artifacts.value to None (explicit null)
+    - Second step's OUTPUT (not context) has import_artifacts.value = "from_output"
     - When mapping outputs, the None from context should be used, NOT the output
     """
     from flujo.domain.dsl.step import Step
@@ -96,7 +94,7 @@ async def test_import_step_outputs_preserves_explicit_none_values() -> None:
     async def step1_sets_none(_data: object, *, context: PipelineContext | None = None) -> dict:
         """First step explicitly sets value to None in context."""
         assert context is not None
-        return {"scratchpad": {"value": None, "marker": "step1_ran"}}
+        return {"import_artifacts": {"value": None, "marker": "step1_ran"}}
 
     async def step2_returns_different(
         _data: object, *, context: PipelineContext | None = None
@@ -108,7 +106,7 @@ async def test_import_step_outputs_preserves_explicit_none_values() -> None:
         """
         # This step does NOT have updates_context=True, so this output won't merge
         # But inner_sr.output will contain this value
-        return {"scratchpad": {"value": "from_output", "step2_marker": "step2_ran"}}
+        return {"import_artifacts": {"value": "from_output", "step2_marker": "step2_ran"}}
 
     child = Pipeline(
         steps=[
@@ -117,14 +115,14 @@ async def test_import_step_outputs_preserves_explicit_none_values() -> None:
         ]
     )
 
-    # Create import step that maps child's scratchpad.value to parent import artifacts
+    # Create import step that maps child's import_artifacts.value to parent import artifacts
     import_step = ImportStep(
         name="run_child",
         pipeline=child,
         inherit_context=True,
         outputs=[
-            OutputMapping(child="scratchpad.value", parent="result"),
-            OutputMapping(child="scratchpad.marker", parent="marker"),
+            OutputMapping(child="import_artifacts.value", parent="import_artifacts.result"),
+            OutputMapping(child="import_artifacts.marker", parent="import_artifacts.marker"),
         ],
         updates_context=True,
     )
@@ -138,7 +136,7 @@ async def test_import_step_outputs_preserves_explicit_none_values() -> None:
     # The key assertion: explicit None from child context should be preserved,
     # NOT replaced by "from_output" from the last step's output
     assert "result" in ctx.import_artifacts, "result key should exist even if value is None"
-    assert (
-        ctx.import_artifacts.get("result") is None
-    ), "Explicit None from context should be preserved, not replaced by output"
+    assert ctx.import_artifacts.get("result") is None, (
+        "Explicit None from context should be preserved, not replaced by output"
+    )
     assert ctx.import_artifacts.get("marker") == "step1_ran"

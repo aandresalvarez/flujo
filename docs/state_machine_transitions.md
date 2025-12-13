@@ -11,7 +11,7 @@ Declare how the state machine moves between states based on outcome events and o
 - Destination: `to` (state name or a terminal entry in `end_states`)
 - Condition: `when` (safe expression evaluated with `output` and `context`)
 
-Transitions are evaluated in list order (first-match-wins) and take precedence over legacy `scratchpad.next_state` fallback.
+Transitions are evaluated in list order (first-match-wins) and take precedence over legacy scratchpad-based fallbacks. Use the typed `next_state` field to drive transitions from within a state.
 
 ## YAML Example
 
@@ -43,7 +43,7 @@ Transitions are evaluated in list order (first-match-wins) and take precedence o
     - from: clarification
       on: success
       to: concept_discovery
-      when: "context.scratchpad.get('cohort_definition')"
+      when: "context.import_artifacts.get('cohort_definition')"
     - from: concept_discovery
       on: success
       to: review
@@ -58,24 +58,24 @@ Transitions are evaluated in list order (first-match-wins) and take precedence o
 - failure: sub-pipeline completed; last step failed.
 - pause: sub-pipeline raised a HITL pause (`HumanInTheLoopStep`).
 
-On `pause`, the policy updates control metadata (`scratchpad.current_state` and `scratchpad.next_state`) and re-raises, allowing the runner to orchestrate resume.
+On `pause`, the policy updates control metadata (`current_state` and `next_state`) and re-raises, allowing the runner to orchestrate resume.
 
 ## Conditions (`when`)
 
 Use the safe expression engine with the following names:
-- `context`: TemplateContextProxy for the pipeline context (e.g., `context.scratchpad.get('x')`).
+- `context`: TemplateContextProxy for the pipeline context (e.g., `context.import_artifacts.get('x')`).
 - `output`: A small payload `{event, last_output, last_step}`.
 
 Examples:
-- `context.scratchpad.get('flag')`
-- `output.event == 'success' and context.scratchpad.status == 'ready'`
+- `context.import_artifacts.get('flag')`
+- `output.event == 'success' and context.status == 'ready'`
 
 Invalid expressions at runtime are treated as non-matches and logged; expressions are compiled at load time.
 
 ## Precedence and Backward Compatibility
 
 - If transitions exist, they are applied first.
-- If no transition matches, the policy falls back to `scratchpad.next_state` from the sub-pipeline context or outputs.
+- If no transition matches, the policy falls back to `next_state` from the sub-pipeline context or outputs.
 - `end_states` remain terminal regardless of transitions.
 - Pipelines without `transitions` behave exactly as before.
 

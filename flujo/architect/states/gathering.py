@@ -1,7 +1,7 @@
 from __future__ import annotations
 # mypy: disable-error-code=arg-type
 
-from typing import Any, Callable, Coroutine, Union, cast
+from typing import Any, Union
 
 from flujo.architect.states.common import (
     goto,
@@ -78,7 +78,7 @@ def build_gathering_state() -> Pipeline[Any, Any]:
         return await goto("GoalClarification", context=context)
 
     goto_goal = Step.from_callable(
-        cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _goto_goal),
+        _goto_goal,
         name="GotoGoalClarification",
         updates_context=True,
     )

@@ -102,7 +102,8 @@ class TestTypeSafetyCompliance:
             concerning_any_uses.append(occurrence)
 
         # Allow some baseline Any usage but prevent significant new usage
-        max_allowed_any = 600  # Baseline adjusted to current codebase footprint
+        # Lowered from 600 to 500 - current DSL Any ~443, prevent regression
+        max_allowed_any = 500
 
         if len(concerning_any_uses) > max_allowed_any:
             pytest.fail(
@@ -218,26 +219,13 @@ class TestTypeSafetyCompliance:
                 continue
             filtered.append(occ)
 
-        # Baseline: keep below 150 non-allowlisted casts to prevent regressions.
-        if len(filtered) > 150:
+        # Baseline: keep below 10 non-allowlisted casts (current baseline ~1)
+        # Tightened from 50 to 10 to align with near-zero baseline and prevent regression
+        if len(filtered) > 10:
             pytest.fail(
-                f"Excessive typing.cast usage detected ({len(filtered)} > 150 baseline). "
+                f"Excessive typing.cast usage detected ({len(filtered)} > 10 baseline). "
                 "Please replace casts with precise types/TypeGuards. "
                 "Examples:\n" + "\n".join(filtered[:5])
-            )
-
-    def test_scratchpad_allowlist_is_not_expanded(self):
-        """Prevent unreviewed growth of scratchpad allowlist (framework-reserved)."""
-        from flujo.application.core import context_adapter as ca
-
-        allowed = getattr(ca, "_SCRATCHPAD_ALLOWED_KEYS", set())
-        assert isinstance(allowed, set)
-        # Baseline derived from current framework-reserved keys; tighten over time.
-        max_allowed = 24
-        if len(allowed) > max_allowed:
-            pytest.fail(
-                f"Scratchpad allowlist expanded unexpectedly ({len(allowed)} > {max_allowed}). "
-                "Reserve scratchpad for framework metadata only; migrate user data to typed fields."
             )
 
 

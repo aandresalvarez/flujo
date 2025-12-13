@@ -1,12 +1,12 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 
-from typing import Type, TypeGuard, cast
+from typing import TypeGuard
 from collections.abc import MutableMapping
+from flujo.domain.models import BaseModel as DomainBaseModel
 from flujo.domain.models import ImportArtifacts
 
 from ._shared import (
-    Any,
     ImportStep,
     InfiniteRedirectError,
     NonRetryableError,
@@ -30,16 +30,24 @@ from ..types import ExecutionFrame
 
 
 class ImportStepExecutor(Protocol):
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
+    async def execute(
+        self, core: object, frame: ExecutionFrame[DomainBaseModel]
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultImportStepExecutor(StepPolicy[ImportStep]):
     @property
-    def handles_type(self) -> Type[ImportStep]:
+    def handles_type(self) -> type[ImportStep]:
         return ImportStep
 
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
-        step = cast(ImportStep, frame.step)
+    async def execute(
+        self, core: object, frame: ExecutionFrame[DomainBaseModel]
+    ) -> StepOutcome[StepResult]:
+        step = frame.step
+        if not isinstance(step, ImportStep):
+            raise TypeError(
+                f"DefaultImportStepExecutor received non-ImportStep: {type(step).__name__}"
+            )
         data = frame.data
         context = frame.context
         resources = frame.resources
@@ -116,7 +124,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                 except Exception:
                     pass
 
-        # Seed child import artifacts from parent and mirror for legacy scratchpad readers.
+        # Seed child import artifacts from parent.
         try:
             if context is not None and sub_context is not None:
                 parent_artifacts = getattr(context, "import_artifacts", None)
@@ -129,61 +137,41 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                             setattr(sub_context, "import_artifacts", parent_artifacts)
                     except Exception:
                         pass
-                    try:
-                        child_sp = getattr(sub_context, "scratchpad", None)
-                        if isinstance(child_sp, dict):
-                            for k, v in parent_artifacts.items():
-                                if v is None:
-                                    continue
-                                child_sp.setdefault(k, v)
-                            setattr(sub_context, "scratchpad", child_sp)
-                    except Exception:
-                        pass
         except Exception:
             pass
 
         # Project input into child run and compute the child's initial_input explicitly,
         # honoring explicit inputs over inherited conversation or parent data.
         # Precedence:
-        #   1) sub_context.scratchpad[input_scratchpad_key] when present (explicit artifact)
+        #   1) sub_context.import_artifacts[input_scratchpad_key] when present (explicit artifact)
         #   2) provided data argument (parent current_data)
         #   3) empty string fallback
         resolved_origin = "parent_data"
         sub_initial_input = data
         try:
-            if sub_context is not None and hasattr(sub_context, "scratchpad"):
-                sp = getattr(sub_context, "scratchpad")
-                if isinstance(sp, dict):
+            if sub_context is not None and hasattr(sub_context, "import_artifacts"):
+                art = getattr(sub_context, "import_artifacts", None)
+                if isinstance(art, MutableMapping):
                     key = step.input_scratchpad_key or "initial_input"
-                    if key in sp and sp.get(key) is not None:
-                        sub_initial_input = sp.get(key)
-                        resolved_origin = f"scratchpad:{key}"
+                    if key in art and art.get(key) is not None:
+                        sub_initial_input = art.get(key)
+                        resolved_origin = f"import_artifacts:{key}"
         except Exception:
             pass
         try:
-            # scratchpad projection (deep merge for dicts)
-            if step.input_to in ("scratchpad", "both") and sub_context is not None:
-                sp = getattr(sub_context, "scratchpad", None)
-                if isinstance(sp, dict):
+            # import_artifacts projection
+            if step.input_to in ("import_artifacts", "both") and sub_context is not None:
+                art = getattr(sub_context, "import_artifacts", None)
+                if isinstance(art, MutableMapping):
                     if isinstance(data, dict):
-
-                        def _deep_merge_dict(a: JSONObject, b: JSONObject) -> JSONObject:
-                            res: JSONObject = dict(a)
-                            for k, v in b.items():
-                                if k in res and isinstance(res[k], dict) and isinstance(v, dict):
-                                    res[k] = _deep_merge_dict(res[k], v)
-                                else:
-                                    res[k] = v
-                            return res
-
-                        merged = _deep_merge_dict(sp, copy.deepcopy(data))
                         try:
-                            setattr(sub_context, "scratchpad", merged)
+                            art.update(copy.deepcopy(data))
                         except Exception:
-                            sp.update(copy.deepcopy(data))
+                            for k, v in copy.deepcopy(data).items():
+                                art[k] = v
                     else:
                         key = step.input_scratchpad_key or "initial_input"
-                        sp[key] = data
+                        art[key] = data
 
             # initial_prompt projection and precedence for child's initial_input
             if step.input_to in ("initial_prompt", "both"):
@@ -224,7 +212,10 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
         # Execute the child pipeline directly via core orchestration to preserve control-flow semantics
         child_final_ctx = sub_context
         try:
-            pipeline_result: PipelineResult[Any] = await core._execute_pipeline_via_policies(
+            exec_pipeline = getattr(core, "_execute_pipeline_via_policies", None)
+            if not callable(exec_pipeline):
+                raise AttributeError("_execute_pipeline_via_policies is not available on core")
+            pipeline_result: PipelineResult[DomainBaseModel] = await exec_pipeline(
                 step.pipeline,
                 sub_initial_input,
                 sub_context,
@@ -250,31 +241,12 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         # Fallback to model-level merge when available
                         try:
                             merged_ctx = ContextManager.merge(context, sub_context)
-                            if merged_ctx is not None:
+                            if merged_ctx is not None and isinstance(merged_ctx, DomainBaseModel):
                                 context = merged_ctx
                         except Exception:
                             pass
-                # Ensure parent scratchpad reflects child pause markers
-                try:
-                    if (
-                        context is not None
-                        and hasattr(context, "scratchpad")
-                        and isinstance(context.scratchpad, dict)
-                        and sub_context is not None
-                        and hasattr(sub_context, "scratchpad")
-                        and isinstance(sub_context.scratchpad, dict)
-                    ):
-                        for key in (
-                            "status",
-                            "pause_message",
-                            "hitl_message",
-                            "hitl_data",
-                            "paused_step_input",
-                        ):
-                            if key in sub_context.scratchpad:
-                                context.scratchpad[key] = sub_context.scratchpad[key]
-                except Exception:
-                    pass
+                # No scratchpad propagation: prefer typed fields for pause markers and HITL data.
+                # Context merges above (_safe_merge / ContextManager.merge) already handle typed fields.
                 # Default to propagating unless explicitly disabled on the step
                 try:
                     propagate = bool(getattr(step, "propagate_hitl", True))
@@ -282,17 +254,16 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                     propagate = True
                 # Mark parent context as paused only when propagation is enabled
                 if propagate:
-                    if context is not None and hasattr(context, "scratchpad"):
+                    if context is not None:
                         try:
-                            sp = getattr(context, "scratchpad")
-                            if isinstance(sp, dict):
-                                sp["status"] = "paused"
-                                msg = getattr(e, "message", None)
-                                # Use plain message for backward compatibility
-                                sp["pause_message"] = (
+                            # Use typed field for status and pause_message
+                            if hasattr(context, "status"):
+                                context.status = "paused"
+                            msg = getattr(e, "message", None)
+                            if hasattr(context, "pause_message"):
+                                context.pause_message = (
                                     msg if isinstance(msg, str) else getattr(e, "message", "")
                                 )
-                                sp.setdefault("hitl_message", sp.get("pause_message"))
                         except Exception:
                             pass
                     # Also preserve assistant turn so resume later has both roles
@@ -313,13 +284,15 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         pass
                 else:
                     # Ensure status remains running when not propagating
-                    if context is not None and hasattr(context, "scratchpad"):
+                    if context is not None:
                         try:
-                            sp = getattr(context, "scratchpad")
-                            if isinstance(sp, dict):
-                                if sp.get("status") == "paused":
-                                    sp["status"] = "running"
-                                sp.pop("pause_message", None)
+                            # Use typed field for status
+                            if hasattr(context, "status"):
+                                current_status = getattr(context, "status", None)
+                                if current_status == "paused":
+                                    context.status = "running"
+                            if hasattr(context, "pause_message"):
+                                context.pause_message = None
                         except Exception:
                             pass
             except Exception:
@@ -445,7 +418,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                     warn_msg = (
                         "ImportStep received a status-like string as initial input; "
                         "if the child expects structured content, route an explicit artifact "
-                        "via scratchpad or ensure the correct payload is provided."
+                        "via import_artifacts or ensure the correct payload is provided."
                     )
                     telemetry.logfire.warn(warn_msg)
                     md["import.initial_input_warning"] = warn_msg
@@ -463,22 +436,43 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                     child_final_ctx = last_ctx
         except Exception:
             pass
-        # Proactively merge child scratchpad into parent context to avoid state leakage
-        # when upstream merge strategies or exclusions skip scratchpad fields.
+        # Proactively merge child *typed* framework fields into parent context (no scratchpad writes).
         # Skip this merge when outputs is specified, as the outputs mapping will handle it.
         try:
             outputs = getattr(step, "outputs", None)
             # Only do proactive merge when outputs is None (not when outputs is specified or empty list)
             if outputs is None:
-                if (
-                    context is not None
-                    and child_final_ctx is not None
-                    and hasattr(context, "scratchpad")
-                    and hasattr(child_final_ctx, "scratchpad")
-                    and isinstance(context.scratchpad, dict)
-                    and isinstance(child_final_ctx.scratchpad, dict)
-                ):
-                    context.scratchpad.update(child_final_ctx.scratchpad)
+                if context is not None and child_final_ctx is not None:
+                    for attr in (
+                        "status",
+                        "pause_message",
+                        "current_state",
+                        "next_state",
+                        "paused_step_input",
+                        "user_input",
+                        "hitl_data",
+                        "loop_iteration_index",
+                        "loop_step_index",
+                        "loop_last_output",
+                        "loop_resume_requires_hitl_output",
+                        "loop_paused_step_name",
+                    ):
+                        if hasattr(child_final_ctx, attr) and hasattr(context, attr):
+                            try:
+                                setattr(context, attr, getattr(child_final_ctx, attr))
+                            except Exception:
+                                pass
+                    # Merge step_outputs if present
+                    if hasattr(context, "step_outputs") and isinstance(
+                        getattr(context, "step_outputs", None), dict
+                    ):
+                        if hasattr(child_final_ctx, "step_outputs") and isinstance(
+                            getattr(child_final_ctx, "step_outputs", None), dict
+                        ):
+                            try:
+                                context.step_outputs.update(child_final_ctx.step_outputs)
+                            except Exception:
+                                pass
                     # Keep branch_context aligned with parent after merge to simplify callers
                     child_final_ctx = context
         except Exception:
@@ -532,10 +526,30 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
             # Build a minimal context update dict using outputs mapping
             update_data: JSONObject = {}
 
-            # Sentinel to distinguish "path not found" from "path found with None value"
-            _NOT_FOUND: Any = object()
+            # Fail fast on legacy scratchpad paths.
+            try:
+                for mapping in step.outputs:
+                    child_path = str(getattr(mapping, "child", "") or "").strip()
+                    parent_path = str(getattr(mapping, "parent", "") or "").strip()
+                    if child_path.startswith("scratchpad") or parent_path.startswith("scratchpad"):
+                        parent_sr.success = False
+                        parent_sr.feedback = (
+                            "scratchpad has been removed; update ImportStep outputs mapping "
+                            "to import_artifacts or typed context fields."
+                        )
+                        return Failure(
+                            error=ValueError(parent_sr.feedback),
+                            feedback=parent_sr.feedback,
+                            step_result=parent_sr,
+                        )
+            except Exception:
+                # Let mapping evaluation continue if preflight fails unexpectedly.
+                pass
 
-            def _traverse_path(obj: Any, parts: list[str]) -> Any:
+            # Sentinel to distinguish "path not found" from "path found with None value"
+            _NOT_FOUND: object = object()
+
+            def _traverse_path(obj: object, parts: list[str]) -> object:
                 """Traverse a path through an object (context or dict).
 
                 Returns _NOT_FOUND if the path doesn't exist, otherwise returns
@@ -556,7 +570,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         return _NOT_FOUND
                 return cur
 
-            def _get_child(path: str) -> tuple[Any, str] | Any:
+            def _get_child(path: str) -> tuple[object, str] | object:
                 """Get a value from child context or last step output.
 
                 Returns _NOT_FOUND if the path doesn't exist in either location.
@@ -567,7 +581,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                 def _is_import_artifacts(obj: object) -> TypeGuard[ImportArtifacts]:
                     return isinstance(obj, ImportArtifacts)
 
-                def _get_from_artifacts(artifact_path: list[str]) -> Any:
+                def _get_from_artifacts(artifact_path: list[str]) -> object:
                     try:
                         art = getattr(child_final_ctx, "import_artifacts", None)
                         if _is_import_artifacts(art) and len(artifact_path) == 1:
@@ -588,7 +602,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         if _is_import_artifacts(art):
                             return _NOT_FOUND
                         if isinstance(art, MutableMapping):
-                            cur_art: Any = art
+                            cur_art: object = art
                             for part in artifact_path:
                                 if isinstance(cur_art, MutableMapping) and part in cur_art:
                                     cur_art = cur_art[part]
@@ -605,19 +619,6 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                     if isinstance(inner_output, dict):
                         inner_candidate = _traverse_path(inner_output, parts)
 
-                if parts and parts[0] == "scratchpad":
-                    # Prefer redirected import artifacts when scratchpad keys were migrated.
-                    artifact_value = _get_from_artifacts(parts[1:])
-                    if artifact_value is not _NOT_FOUND:
-                        if artifact_value is not None:
-                            return artifact_value, "artifacts"
-                        # If artifacts contain an explicit None, still fall back to scratchpad in case
-                        # the scratchpad has a concrete value.
-                        result_ctx = _traverse_path(child_final_ctx, parts)
-                        if result_ctx is not _NOT_FOUND:
-                            return result_ctx, "context"
-                        return None, "artifacts"
-
                 # First: try to get from child's final context (branch_context)
                 result = _traverse_path(child_final_ctx, parts)
                 if result is not _NOT_FOUND:
@@ -630,7 +631,7 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                         return inner_candidate, "output"
                     return result, "context"  # Found in context (may be None, that's valid)
                 # Second: check the last step's output if context didn't have the value
-                # This handles tool steps that return {"scratchpad": {...}} as output
+                # This handles tool steps that return dict-shaped updates
                 # but haven't had that output merged into context yet.
                 if inner_candidate is not _NOT_FOUND:
                     return inner_candidate, "output"  # Found in output (may be None, that's valid)
@@ -638,13 +639,13 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
 
             parent_ctx = context
 
-            def _assign_parent(path: str, value: Any) -> None:
+            def _assign_parent(path: str, value: object) -> None:
                 parts = [p for p in path.split(".") if p]
                 if not parts:
                     return
 
                 def _assign_nested(
-                    target: MutableMapping[str, Any], keys: list[str], val: Any
+                    target: MutableMapping[str, object], keys: list[str], val: object
                 ) -> None:
                     cur = target
                     for k in keys[:-1]:
@@ -664,17 +665,12 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                     except Exception:
                         normalized = value
 
-                # Preserve scratchpad mapping when explicitly requested
-                scratch_keys = None
-                if parts[0] == "scratchpad":
-                    scratch_keys = parts[1:]
-                    if scratch_keys:
-                        sp_target = update_data.setdefault("scratchpad", {})
-                        if isinstance(sp_target, MutableMapping):
-                            _assign_nested(sp_target, scratch_keys, normalized)
-
-                # Route mapped outputs into import_artifacts for deterministic propagation
-                tgt_parts = parts[1:] if parts[0] == "scratchpad" else parts
+                # Route mapped outputs into import_artifacts for deterministic propagation.
+                # Parent paths may be bare (relative to import_artifacts) or already rooted
+                # with "import_artifacts.*". Avoid double-nesting by stripping the root.
+                tgt_parts = parts
+                if tgt_parts and tgt_parts[0] == "import_artifacts":
+                    tgt_parts = tgt_parts[1:]
                 if not tgt_parts:
                     return
 
@@ -715,8 +711,14 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
                             and hasattr(parent_ctx, "import_artifacts")
                         ):
                             try:
-                                existing = getattr(parent_ctx.import_artifacts, parent_path, None)
-                                if existing is None:
+                                existing_key = str(parent_path)
+                                if existing_key.startswith("import_artifacts."):
+                                    existing_key = existing_key.split(".", 1)[1]
+                                if (
+                                    "." not in existing_key
+                                    and existing_key in parent_ctx.import_artifacts
+                                    and parent_ctx.import_artifacts.get(existing_key) is None
+                                ):
                                     _assign_parent(parent_path, None)
                                     continue
                             except Exception:

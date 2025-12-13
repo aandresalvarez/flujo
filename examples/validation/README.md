@@ -19,7 +19,7 @@ Schema
 
 Context
 
-- V‑C2: mapping to scratchpad root (use scratchpad.<key> instead)
+- V‑C2: legacy mapping to removed scratchpad root (use import_artifacts.<key> instead)
   - context/vc2_bad.yaml
   - context/vc2_good.yaml
 

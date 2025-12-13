@@ -1,7 +1,16 @@
 from __future__ import annotations
-from typing import Any, ClassVar, Generic, Iterator, Optional, Sequence, TypeVar
-import logging
-from pydantic import ConfigDict, Field, field_validator
+from typing import (
+    Any,
+    ClassVar,
+    Generic,
+    Iterator,
+    Optional,
+    Sequence,
+    TypeVar,
+    TypeAlias,
+    TYPE_CHECKING,
+)
+from pydantic import ConfigDict, Field, PrivateAttr, field_validator
 
 from ..pipeline_validation import ValidationFinding, ValidationReport
 from ..models import BaseModel
@@ -15,13 +24,18 @@ from .pipeline_validation_helpers import (
     apply_suppressions_from_meta,
     run_state_machine_lints,
     run_hitl_nesting_validation,
-    run_step_validations,
 )
+from .pipeline_step_validations import run_step_validations
 from . import pipeline_io
 
 PipeInT = TypeVar("PipeInT")
 PipeOutT = TypeVar("PipeOutT")
 NewPipeOutT = TypeVar("NewPipeOutT")
+
+if TYPE_CHECKING:
+    AnyStep: TypeAlias = Step[Any, Any]
+else:
+    AnyStep = Step  # type: ignore[misc]
 
 __all__ = ["Pipeline"]
 
@@ -35,14 +49,134 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     class.
     """
 
-    steps: Sequence[Step[Any, Any]]
+    steps: Sequence[AnyStep]
     hooks: list[HookCallable] = Field(default_factory=list)
     on_finish: list[HookCallable] = Field(default_factory=list)
+
+    # Capture head/tail typing for the composed pipeline to aid static/dynamic checks.
+    _input_type: Any = PrivateAttr(default=Any)
+    _output_type: Any = PrivateAttr(default=Any)
 
     model_config: ClassVar[ConfigDict] = {
         "arbitrary_types_allowed": True,
         "revalidate_instances": "never",
     }
+
+    # -----------------------------
+    # Internal helpers
+    # -----------------------------
+
+    @staticmethod
+    def _extract_step_io(step: AnyStep) -> tuple[object, object]:
+        """Return the declared input/output types for a step."""
+        return (
+            getattr(step, "__step_input_type__", Any),
+            getattr(step, "__step_output_type__", Any),
+        )
+
+    @staticmethod
+    def _compatible_types(a: Any, b: Any, *, is_adapter: bool = False) -> bool:
+        """Strict type compatibility for adjacent steps.
+
+        Mirrors V-A2/V-A2-STRICT/V-A2-TYPE logic: disallow Any/object fallthrough and
+        require adapters for unsafe bridges (e.g., Pydantic->dict).
+        """
+        from typing import get_origin, get_args, Union as TypingUnion
+        import types as _types
+
+        if a in (Any, object, None, type(None)) or b in (Any, object, None, type(None)):  # noqa: E721
+            return False
+
+        origin_a, origin_b = get_origin(a), get_origin(b)
+        try:
+            from pydantic import BaseModel as _PydanticBaseModel
+
+            if isinstance(a, type) and issubclass(a, _PydanticBaseModel):
+                # Allow Pydantic model outputs to flow into dict expectations only via adapters.
+                if b is dict or origin_b is dict:
+                    return is_adapter
+        except Exception:
+            pass
+        _UnionType = getattr(_types, "UnionType", None)
+
+        if origin_b is TypingUnion or (_UnionType is not None and origin_b is _UnionType):
+            return any(
+                Pipeline._compatible_types(a, arg, is_adapter=is_adapter) for arg in get_args(b)
+            )
+        if origin_a is TypingUnion or (_UnionType is not None and origin_a is _UnionType):
+            return all(
+                Pipeline._compatible_types(arg, b, is_adapter=is_adapter) for arg in get_args(a)
+            )
+
+        try:
+            b_eff = origin_b if origin_b is not None else b
+            a_eff = origin_a if origin_a is not None else a
+            if not isinstance(b_eff, type) or not isinstance(a_eff, type):
+                return False
+            return issubclass(a_eff, b_eff)
+        except Exception:
+            return False
+
+    def _assert_adjacent_types_strict(self) -> None:
+        try:
+            from ...infra.settings import get_settings as _get_settings
+
+            strict_mode = bool(getattr(_get_settings(), "strict_dsl", True))
+        except Exception:
+            strict_mode = True
+
+        if not strict_mode:
+            return
+
+        prev_step: AnyStep | None = None
+        prev_out_type: object | None = None
+        for step in self.steps:
+            in_type = getattr(step, "__step_input_type__", Any)
+            out_type = getattr(step, "__step_output_type__", Any)
+            meta = getattr(step, "meta", {}) or {}
+            templated_input_present = (
+                isinstance(meta, dict) and meta.get("templated_input") is not None
+            )
+            is_adapter_step = isinstance(meta, dict) and bool(meta.get("is_adapter", False))
+            if prev_step is not None and prev_out_type is not None:
+                generic_types = (Any, object, None, type(None))
+                if (
+                    not templated_input_present
+                    and not is_adapter_step
+                    and prev_out_type not in generic_types  # noqa: E721
+                    and in_type not in generic_types  # noqa: E721
+                    and not self._compatible_types(
+                        prev_out_type, in_type, is_adapter=is_adapter_step
+                    )
+                ):
+                    raise ValueError(
+                        f"Type mismatch between steps '{prev_step.name}' (returns {prev_out_type}) and "
+                        f"'{step.name}' (expects {in_type}). Insert an adapter step or adjust types."
+                    )
+            prev_step = step
+            prev_out_type = out_type
+
+    def _initialize_io_types(self) -> None:
+        """Populate pipeline head/tail types from contained steps."""
+        if not getattr(self, "steps", None):
+            self._input_type = Any
+            self._output_type = Any
+            return
+        self._assert_adjacent_types_strict()
+        first_step = self.steps[0]
+        last_step = self.steps[-1]
+        self._input_type = self._extract_step_io(first_step)[0]
+        self._output_type = self._extract_step_io(last_step)[1]
+
+    @property
+    def input_type(self) -> Any:
+        """Head input type for the pipeline (derived from the first step)."""
+        return self._input_type
+
+    @property
+    def output_type(self) -> Any:
+        """Tail output type for the pipeline (derived from the last step)."""
+        return self._output_type
 
     # ------------------------------------------------------------------
     # Construction & composition helpers
@@ -50,7 +184,43 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
     @classmethod
     def from_step(cls, step: Step[PipeInT, PipeOutT]) -> "Pipeline[PipeInT, PipeOutT]":
-        return cls.model_construct(steps=[step], hooks=[], on_finish=[])
+        pipeline = cls.model_construct(steps=[step], hooks=[], on_finish=[])
+        pipeline._initialize_io_types()
+        return pipeline
+
+    @classmethod
+    def model_validate(cls, obj: Any, *args: Any, **kwargs: Any) -> "Pipeline[Any, Any]":
+        """
+        Preserve concrete Step subclasses (e.g., ParallelStep) when instances are provided.
+
+        When callers pass already-constructed Step/ParallelStep objects, bypass Pydantic
+        re-validation/coercion to avoid losing subclass-specific fields (like branches).
+        """
+        try:
+            if isinstance(obj, dict):
+                steps_val = obj.get("steps")
+                if isinstance(steps_val, (list, tuple)) and all(
+                    isinstance(s, Step) for s in steps_val
+                ):
+                    pipeline = cls.model_construct(
+                        steps=list(steps_val),
+                        hooks=list(obj.get("hooks", []) or []),
+                        on_finish=list(obj.get("on_finish", []) or []),
+                    )
+                    pipeline._initialize_io_types()
+                    return pipeline
+        except Exception:
+            pass
+        pipeline = super().model_validate(obj, *args, **kwargs)
+        try:
+            pipeline._initialize_io_types()
+        except Exception:
+            pass
+        return pipeline
+
+    def model_post_init(self, __context: Any) -> None:  # noqa: D401
+        """Ensure head/tail types are initialized after construction."""
+        self._initialize_io_types()
 
     # Preserve concrete Step subclasses (e.g., CacheStep, HumanInTheLoopStep)
     @field_validator("steps", mode="before")
@@ -71,16 +241,20 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         base_finish = list(getattr(self, "on_finish", []) or [])
         if isinstance(other, Step):
             new_steps = list(self.steps) + [other]
-            return Pipeline.model_construct(
+            pipeline: Pipeline[PipeInT, NewPipeOutT] = Pipeline.model_construct(
                 steps=new_steps, hooks=base_hooks, on_finish=base_finish
             )
+            pipeline._initialize_io_types()
+            return pipeline
         if isinstance(other, Pipeline):
             new_steps = list(self.steps) + list(other.steps)
             merged_hooks = base_hooks + list(getattr(other, "hooks", []) or [])
             merged_finish = base_finish + list(getattr(other, "on_finish", []) or [])
-            return Pipeline.model_construct(
+            combined_pipeline: Pipeline[PipeInT, NewPipeOutT] = Pipeline.model_construct(
                 steps=new_steps, hooks=merged_hooks, on_finish=merged_finish
             )
+            combined_pipeline._initialize_io_types()
+            return combined_pipeline
         raise TypeError("Can only chain Pipeline with Step or Pipeline")
 
     # ------------------------------------------------------------------
@@ -88,16 +262,16 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_yaml(cls, yaml_source: str, *, is_path: bool = True) -> "Pipeline[Any, Any]":
+    def from_yaml(cls, yaml_source: str, *, is_path: bool = True) -> "Pipeline[object, object]":
         """Load a Pipeline from YAML. When is_path=True, yaml_source is treated as a file path."""
         return pipeline_io.load_from_yaml(yaml_source, is_path=is_path)
 
     @classmethod
-    def from_yaml_text(cls, yaml_text: str) -> "Pipeline[Any, Any]":
+    def from_yaml_text(cls, yaml_text: str) -> "Pipeline[object, object]":
         return pipeline_io.load_from_yaml_text(yaml_text)
 
     @classmethod
-    def from_yaml_file(cls, path: str) -> "Pipeline[Any, Any]":
+    def from_yaml_file(cls, path: str) -> "Pipeline[object, object]":
         return pipeline_io.load_from_yaml_file(path)
 
     def to_yaml(self) -> str:
@@ -133,50 +307,6 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
             _lb._OVERRIDE_CACHE = None
         except Exception:
             pass
-        from typing import Any, get_origin, get_args, Union as TypingUnion
-        import types as _types
-
-        def _compatible(a: Any, b: Any) -> bool:
-            if a is Any or b is Any:
-                return True
-
-            origin_a, origin_b = get_origin(a), get_origin(b)
-            _UnionType = getattr(_types, "UnionType", None)
-
-            if origin_b is TypingUnion or (_UnionType is not None and origin_b is _UnionType):
-                return any(_compatible(a, arg) for arg in get_args(b))
-            if origin_a is TypingUnion or (_UnionType is not None and origin_a is _UnionType):
-                return all(_compatible(arg, b) for arg in get_args(a))
-
-            try:
-                # Relaxed compatibility for common dict-like bridges
-                # Many built-in skills return JSONObject. Allow flowing into object/str inputs,
-                # because YAML param templating often selects a concrete field at runtime.
-                # Treat both direct dict and typing.Dict origins as dict-like.
-                origin_a = get_origin(a)
-                origin_b = get_origin(b)
-                is_dict_like_a = (a is dict) or (origin_a is dict)
-                # Treat Pydantic models as dict-like for validation bridge
-                try:
-                    from pydantic import BaseModel as _PydanticBaseModel
-
-                    if isinstance(a, type) and issubclass(a, _PydanticBaseModel):
-                        is_dict_like_a = True
-                except Exception:
-                    pass
-
-                if is_dict_like_a and (b is object or b is str or origin_b is dict):
-                    return True
-                # Avoid issubclass checks with typing constructs (e.g., typing.Dict)
-                b_eff = origin_b if origin_b is not None else b
-                a_eff = origin_a if origin_a is not None else a
-                if not isinstance(b_eff, type) or not isinstance(a_eff, type):
-                    return False
-                return issubclass(a_eff, b_eff)
-            except Exception as e:  # pragma: no cover
-                logging.warning("_compatible: issubclass(%s, %s) raised %s", a, b, e)
-                return False
-
         report = ValidationReport()
         # Initialize visited sets/caches to guard recursion/cycles and enable caching
         if _visited_pipelines is None:

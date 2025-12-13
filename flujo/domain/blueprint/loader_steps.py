@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+from typing import Optional, TypeAlias
 
 from ..dsl import Pipeline, Step, StepConfig
 from .loader_models import (
@@ -23,14 +23,19 @@ from .loader_steps_misc import (
     build_hitl_step,
 )
 
+AnyStep: TypeAlias = Step[object, object]
+AnyPipeline: TypeAlias = Pipeline[object, object]
+CompiledAgents: TypeAlias = dict[str, object]
+CompiledImports: TypeAlias = dict[str, AnyPipeline]
+
 
 def _make_step_from_blueprint(
-    model: Any,
+    model: object,
     *,
     yaml_path: Optional[str] = None,
-    compiled_agents: Optional[dict[str, Any]] = None,
-    compiled_imports: Optional[dict[str, Any]] = None,
-) -> Step[Any, Any]:
+    compiled_agents: CompiledAgents | None = None,
+    compiled_imports: CompiledImports | None = None,
+) -> AnyStep:
     if isinstance(model, dict):
         _raw_use_history = None
         try:
@@ -43,7 +48,7 @@ def _make_step_from_blueprint(
             try:
                 branches_raw = model.get("branches")
                 if isinstance(branches_raw, dict):
-                    coerced: dict[str, Any] = {}
+                    coerced: dict[str, object] = {}
                     for _k, _v in branches_raw.items():
                         if isinstance(_k, bool):
                             coerced[str(_k).lower()] = _v
@@ -65,7 +70,7 @@ def _make_step_from_blueprint(
             states_raw = model.get("states") or {}
             if not isinstance(states_raw, dict):
                 raise BlueprintError("StateMachine.states must be a mapping of state → steps")
-            coerced_states: dict[str, Pipeline[Any, Any]] = {}
+            coerced_states: dict[str, AnyPipeline] = {}
             for _state_name, _branch_spec in states_raw.items():
                 coerced_states[str(_state_name)] = _build_pipeline_from_branch(
                     _branch_spec,
@@ -80,7 +85,7 @@ def _make_step_from_blueprint(
             if isinstance(transitions_raw, list):
                 for _idx, _rule in enumerate(transitions_raw):
                     if isinstance(_rule, dict):
-                        _coerced: dict[str, Any] = {}
+                        _coerced: dict[str, object] = {}
                         for _k, _v in _rule.items():
                             if _k is True:
                                 _coerced["on"] = _v
@@ -156,6 +161,11 @@ def _make_step_from_blueprint(
                 return step_obj
             raise BlueprintError(f"Unknown step kind: {kind_val}")
 
+    if not isinstance(model, BlueprintStepModel):
+        raise BlueprintError(
+            f"Invalid step model: expected dict or BlueprintStepModel, got {type(model).__name__}"
+        )
+
     if hasattr(model, "config") and model.config:
         cfg_dict = dict(model.config)
         if "timeout" in cfg_dict and "timeout_s" not in cfg_dict:
@@ -168,80 +178,62 @@ def _make_step_from_blueprint(
         step_config = StepConfig()
 
     if getattr(model, "kind", None) == "parallel":
-        return cast(
-            Step[Any, Any],
-            build_parallel_step(
-                model,
-                step_config,
-                yaml_path=yaml_path,
-                compiled_agents=compiled_agents,
-                compiled_imports=compiled_imports,
-                build_branch=_build_pipeline_from_branch,
-            ),
+        return build_parallel_step(
+            model,
+            step_config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            build_branch=_build_pipeline_from_branch,
         )
     if getattr(model, "kind", None) == "conditional":
-        return cast(
-            Step[Any, Any],
-            build_conditional_step(
-                model,
-                step_config,
-                yaml_path=yaml_path,
-                compiled_agents=compiled_agents,
-                compiled_imports=compiled_imports,
-                build_branch=_build_pipeline_from_branch,
-            ),
+        return build_conditional_step(
+            model,
+            step_config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            build_branch=_build_pipeline_from_branch,
         )
     if getattr(model, "kind", None) == "loop":
-        return cast(
-            Step[Any, Any],
-            build_loop_step(
-                model,
-                step_config,
-                yaml_path=yaml_path,
-                compiled_agents=compiled_agents,
-                compiled_imports=compiled_imports,
-                build_branch=_build_pipeline_from_branch,
-            ),
+        return build_loop_step(
+            model,
+            step_config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            build_branch=_build_pipeline_from_branch,
         )
     if getattr(model, "kind", None) == "map":
-        return cast(
-            Step[Any, Any],
-            build_map_step(
-                model,
-                step_config,
-                yaml_path=yaml_path,
-                compiled_agents=compiled_agents,
-                compiled_imports=compiled_imports,
-                build_branch=_build_pipeline_from_branch,
-            ),
+        return build_map_step(
+            model,
+            step_config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            build_branch=_build_pipeline_from_branch,
         )
     if getattr(model, "kind", None) == "dynamic_router":
-        return cast(
-            Step[Any, Any],
-            build_dynamic_router_step(
-                model,
-                step_config,
-                yaml_path=yaml_path,
-                compiled_agents=compiled_agents,
-                compiled_imports=compiled_imports,
-                build_branch=_build_pipeline_from_branch,
-            ),
+        return build_dynamic_router_step(
+            model,
+            step_config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            build_branch=_build_pipeline_from_branch,
         )
     if getattr(model, "kind", None) == "hitl":
-        return cast(Step[Any, Any], build_hitl_step(model, step_config))
+        return build_hitl_step(model, step_config)
     if getattr(model, "kind", None) == "cache":
-        return cast(
-            Step[Any, Any],
-            build_cache_step(
-                model,
-                yaml_path=yaml_path,
-                compiled_agents=compiled_agents,
-                compiled_imports=compiled_imports,
-                make_step_fn=_make_step_from_blueprint,
-            ),
+        return build_cache_step(
+            model,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            make_step_fn=_make_step_from_blueprint,
         )
     if getattr(model, "kind", None) == "agentic_loop":
-        return cast(Step[Any, Any], build_agentic_loop_step(model, step_config))
+        return build_agentic_loop_step(model, step_config)
 
     return build_basic_step(
         model,
@@ -254,14 +246,14 @@ def _make_step_from_blueprint(
 
 
 def _build_pipeline_from_branch(
-    branch_spec: Any,
+    branch_spec: object,
     *,
     base_path: Optional[str] = None,
-    compiled_agents: Optional[dict[str, Any]] = None,
-    compiled_imports: Optional[dict[str, Any]] = None,
-) -> Pipeline[Any, Any]:
+    compiled_agents: CompiledAgents | None = None,
+    compiled_imports: CompiledImports | None = None,
+) -> AnyPipeline:
     if isinstance(branch_spec, list):
-        steps: list[Step[Any, Any]] = []
+        steps: list[AnyStep] = []
         for idx, s in enumerate(branch_spec):
             steps.append(
                 _make_step_from_blueprint(
@@ -277,7 +269,7 @@ def _build_pipeline_from_branch(
             if "steps" in branch_spec:
                 steps_val = branch_spec.get("steps")
                 if isinstance(steps_val, list):
-                    step_list: list[Step[Any, Any]] = []
+                    step_list: list[AnyStep] = []
                     for idx, s in enumerate(steps_val):
                         step_list.append(
                             _make_step_from_blueprint(
@@ -315,10 +307,10 @@ def _build_pipeline_from_branch(
 
 def build_pipeline_from_blueprint(
     model: BlueprintPipelineModel,
-    compiled_agents: Optional[dict[str, Any]] = None,
-    compiled_imports: Optional[dict[str, Any]] = None,
-) -> Pipeline[Any, Any]:
-    steps: list[Step[Any, Any]] = []
+    compiled_agents: CompiledAgents | None = None,
+    compiled_imports: CompiledImports | None = None,
+) -> AnyPipeline:
+    steps: list[AnyStep] = []
     for idx, s in enumerate(model.steps):
         steps.append(
             _make_step_from_blueprint(
@@ -328,7 +320,7 @@ def build_pipeline_from_blueprint(
                 compiled_imports=compiled_imports,
             )
         )
-    p: Pipeline[Any, Any] = Pipeline.model_construct(steps=steps)
+    p: AnyPipeline = Pipeline.model_construct(steps=steps)
     try:
         for st in p.steps:
             _finalize_step_types(st)

@@ -25,7 +25,7 @@ if not paused:
 
 run_id = paused[0].run_id
 detail = await client.get_task(run_id)
-print(detail.last_prompt)  # HITL pause message from the context scratchpad
+print(detail.last_prompt)  # HITL pause message from context.pause_message
 
 # Resume by reusing your pipeline object
 pipeline = Pipeline.from_step(Step.human_in_the_loop("Approval"))

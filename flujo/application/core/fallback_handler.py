@@ -2,30 +2,30 @@
 
 from __future__ import annotations
 import contextvars
-from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
+from typing import Protocol
 
 from ...exceptions import InfiniteFallbackError
 
-if TYPE_CHECKING:
-    from ...domain.dsl.step import Step as _DSLStep
 
-    StepType = _DSLStep[Any, Any]
-else:
-    StepType = Any  # type: ignore
+class StepType(Protocol):
+    """Minimal step contract for fallback tracking."""
+
+    name: str
+
 
 # Context variables for tracking (initialized lazily to avoid shared mutable defaults)
-_FALLBACK_RELATIONSHIPS: contextvars.ContextVar[Optional[Dict[str, str]]] = contextvars.ContextVar(
+_FALLBACK_RELATIONSHIPS: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "fallback_relationships", default=None
 )
-_FALLBACK_CHAIN: contextvars.ContextVar[Optional[List[StepType]]] = contextvars.ContextVar(
+_FALLBACK_CHAIN: contextvars.ContextVar[list[StepType] | None] = contextvars.ContextVar(
     "fallback_chain", default=None
 )
-_FALLBACK_GRAPH_CACHE: contextvars.ContextVar[Optional[Dict[str, bool]]] = contextvars.ContextVar(
+_FALLBACK_GRAPH_CACHE: contextvars.ContextVar[dict[str, bool] | None] = contextvars.ContextVar(
     "fallback_graph_cache", default=None
 )
 
 
-def _get_relationships() -> Dict[str, str]:
+def _get_relationships() -> dict[str, str]:
     rel = _FALLBACK_RELATIONSHIPS.get()
     if rel is None:
         rel = {}
@@ -33,7 +33,7 @@ def _get_relationships() -> Dict[str, str]:
     return rel
 
 
-def _get_chain() -> List[StepType]:
+def _get_chain() -> list[StepType]:
     chain = _FALLBACK_CHAIN.get()
     if chain is None:
         chain = []
@@ -41,7 +41,7 @@ def _get_chain() -> List[StepType]:
     return chain
 
 
-def _get_graph_cache() -> Dict[str, bool]:
+def _get_graph_cache() -> dict[str, bool]:
     cache = _FALLBACK_GRAPH_CACHE.get()
     if cache is None:
         cache = {}
@@ -56,15 +56,15 @@ class FallbackHandler:
     MAX_DETECTION_ITERATIONS: int = 100
 
     def __init__(self) -> None:
-        self._visited_steps: Set[str] = set()
+        self._visited_steps: set[str] = set()
 
-    def register_fallback(self, primary_step: "StepType", fallback_step: "StepType") -> None:
+    def register_fallback(self, primary_step: StepType, fallback_step: StepType) -> None:
         """Register a fallback relationship for loop detection."""
         relationships = _get_relationships()
         relationships[primary_step.name] = fallback_step.name
         _FALLBACK_RELATIONSHIPS.set(relationships)
 
-    def push_to_chain(self, step: "StepType") -> None:
+    def push_to_chain(self, step: StepType) -> None:
         """Add step to the current fallback chain."""
         chain = _get_chain()
         if len(chain) >= self.MAX_CHAIN_LENGTH:
@@ -83,7 +83,7 @@ class FallbackHandler:
             chain.pop()
             _FALLBACK_CHAIN.set(chain)
 
-    def check_for_loop(self, step: "StepType") -> bool:
+    def check_for_loop(self, step: StepType) -> bool:
         """Check if adding this step would create a loop."""
         cache = _get_graph_cache()
         step_name = step.name
@@ -114,7 +114,7 @@ class FallbackHandler:
         """Get the current length of the fallback chain."""
         return len(_get_chain())
 
-    def is_step_in_chain(self, step: "StepType") -> bool:
+    def is_step_in_chain(self, step: StepType) -> bool:
         """Check if a step is already in the current fallback chain."""
         chain = _get_chain()
         chain_names = {s.name for s in chain}

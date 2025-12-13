@@ -55,7 +55,7 @@ def test_v_p2_parallel_explicit_conflicts_detected() -> None:
             "name": "runA",
             "pipeline": a_child,
             "updates_context": True,
-            "outputs": [OutputMapping(child="scratchpad.value", parent="scratchpad.k")],
+            "outputs": [OutputMapping(child="import_artifacts.value", parent="import_artifacts.k")],
         }
     )
     # Branch B
@@ -77,7 +77,7 @@ def test_v_p2_parallel_explicit_conflicts_detected() -> None:
             "name": "runB",
             "pipeline": b_child,
             "updates_context": True,
-            "outputs": [OutputMapping(child="scratchpad.value", parent="scratchpad.k")],
+            "outputs": [OutputMapping(child="import_artifacts.value", parent="import_artifacts.k")],
         }
     )
 

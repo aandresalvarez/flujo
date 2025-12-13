@@ -101,14 +101,18 @@ This improvement plan is prioritized by the **Impact/Effort Ratio**. We start wi
   - Pricing exception propagation regression test (AgentExecutionRunner).
   - Sync/async bridge hardened (`_run_coro_sync` via BlockingPortal); sqlite bridge tests pass.
   - Executor DI accepts injected deps/builder; regression tests added.
-  - Typed contexts: scratchpad reserved for framework metadata, runtime enforcement flag (`FLUJO_ENFORCE_SCRATCHPAD_BAN`) and tests.
+  - Executor DI accepts injected deps/builder; regression tests added.
+  - Typed contexts: scratchpad reserved for framework metadata, enforcement always-on (no env opt-out, hard gate), tests passing.
   - Serialization cleanup: base_model uses native model_dump; backends (sqlite/base/memory/postgres) and cache/CLI/agents use pydantic/dataclass serialization; `serialize_jsonable` removed from runtime/tests; `_serialize_for_json` hardened and applied across tests/benchmarks; placeholders standardized.
   - Circular-import hardening: interfaces in `domain.interfaces`, core depends on interfaces; CLI/runner smoke tests added.
   - Type-safety guardrails: reduced unsafe casts in core; TypeGuard for governance policy loading; bounded-cast architecture test added to prevent regressions; type validator uses typed accessors; scratchpad allowlist growth lint added (hard-fail scratchpad ban default).
-  - DSL/import migration off scratchpad: `ImportArtifacts` wiring complete; ImportStep policy now prefers artifacts and preserves explicit `None`; scratchpad allowlist tightened to 24; cast gate raised to 150 with TypeGuarded merges; telemetry redaction hardened with generic key patterns.
+  - DSL/import migration off scratchpad: `ImportArtifacts` wiring complete; ImportStep policy now prefers artifacts and preserves explicit `None`; scratchpad allowlist tightened to 24; cast gate raised to 50 with TypeGuarded merges; telemetry redaction hardened with generic key patterns.
   - Dynamic merge/isolation paths TypeGuarded; context serializer hashing fixed to avoid large-context slowdowns; make all/precommit green.
+  - Scratchpad writes migrated: `status` reads/writes migrated to typed `context.status` field (28 instances across 10 files); dual-writes added for `current_state`, `next_state`, `pause_message`, `user_input`, `paused_step_input`.
 - Remaining:
-  - None pending from this plan; keep guardrails enforced and revisit baselines only when new typed fields land.
+  - **Scratchpad field removal**: `PipelineContext.scratchpad` field still exists in `domain/models.py`. Migration is in progress (Phase 4: Remove Dual-Writes).
+  - **TypeVar container gap**: `Pipeline.steps` is typed `Sequence[Step[Any, Any]]` (pipeline.py:38) despite head/tail tracking via `_input_type`/`_output_type`. Consider adding architecture test to guard this or documenting as accepted trade-off.
+  - **Cast threshold alignment**: Current threshold (50) is generous vs baseline (1). Consider tightening or documenting rationale for the margin.
 
 ### Phase 1 — Critical Stability
 - Nested HITL gate

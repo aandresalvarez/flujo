@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from .step import Step, HumanInTheLoopStep
 from .loop import LoopStep
@@ -9,17 +9,23 @@ from .parallel import ParallelStep
 
 if TYPE_CHECKING:
     from .pipeline import Pipeline
-    from .loop import LoopStep
-    from .conditional import ConditionalStep
-    from .parallel import ParallelStep
+
+from ..models import BaseModel
+
+PipeInT = TypeVar("PipeInT")
+PipeOutT = TypeVar("PipeOutT")
+InnerPipeInT = TypeVar("InnerPipeInT")
+InnerPipeOutT = TypeVar("InnerPipeOutT")
 
 
-def to_mermaid(pipeline: "Pipeline[Any, Any]") -> str:
+def to_mermaid(pipeline: "Pipeline[PipeInT, PipeOutT]") -> str:
     """Generate a Mermaid graph definition for visualizing this pipeline."""
     return to_mermaid_with_detail_level(pipeline, "auto")
 
 
-def to_mermaid_with_detail_level(pipeline: "Pipeline[Any, Any]", detail_level: str = "auto") -> str:
+def to_mermaid_with_detail_level(
+    pipeline: "Pipeline[PipeInT, PipeOutT]", detail_level: str = "auto"
+) -> str:
     """Generate a Mermaid graph definition with configurable detail levels."""
     if detail_level == "auto":
         detail_level = _determine_optimal_detail_level(pipeline)
@@ -36,7 +42,7 @@ def to_mermaid_with_detail_level(pipeline: "Pipeline[Any, Any]", detail_level: s
     )
 
 
-def _determine_optimal_detail_level(pipeline: "Pipeline[Any, Any]") -> str:
+def _determine_optimal_detail_level(pipeline: "Pipeline[PipeInT, PipeOutT]") -> str:
     """Heuristic to pick a detail level based on pipeline complexity."""
     complexity_score = _calculate_complexity_score(pipeline)
     if complexity_score >= 15:
@@ -46,7 +52,7 @@ def _determine_optimal_detail_level(pipeline: "Pipeline[Any, Any]") -> str:
     return "high"
 
 
-def _calculate_complexity_score(pipeline: "Pipeline[Any, Any]") -> int:
+def _calculate_complexity_score(pipeline: "Pipeline[PipeInT, PipeOutT]") -> int:
     from .loop import LoopStep  # Runtime import to avoid circular dependency
     from .conditional import (
         ConditionalStep,
@@ -76,12 +82,14 @@ def _calculate_complexity_score(pipeline: "Pipeline[Any, Any]") -> int:
     return score
 
 
-def _generate_high_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:  # noqa: C901 – complexity inherited
-    lines: List[str] = ["graph TD"]
+def _generate_high_detail_mermaid(  # noqa: C901 – complexity inherited
+    pipeline: "Pipeline[PipeInT, PipeOutT]",
+) -> str:
+    lines: list[str] = ["graph TD"]
     node_counter = 0
-    step_nodes: Dict[int, str] = {}
+    step_nodes: dict[int, str] = {}
 
-    def get_node_id(step: Step[Any, Any]) -> str:
+    def get_node_id(step: Step[object, object]) -> str:
         nonlocal node_counter
         step_id = id(step)
         if step_id not in step_nodes:
@@ -89,7 +97,7 @@ def _generate_high_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:  # noq
             step_nodes[step_id] = f"s{node_counter}"
         return step_nodes[step_id]
 
-    def add_node(step: Step[Any, Any], node_id: str) -> None:
+    def add_node(step: Step[object, object], node_id: str) -> None:
         from .loop import LoopStep  # Runtime import to avoid circular dependency
         from .conditional import (
             ConditionalStep,
@@ -119,7 +127,7 @@ def _generate_high_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:  # noq
         else:
             lines.append(f"    {from_node} {style} {to_node};")
 
-    def process_step(step: Step[Any, Any], prev_node: Optional[str] = None) -> str:
+    def process_step(step: Step[object, object], prev_node: str | None = None) -> str:
         node_id = get_node_id(step)
         add_node(step, node_id)
         if prev_node:
@@ -128,10 +136,10 @@ def _generate_high_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:  # noq
         return node_id
 
     def process_pipeline(
-        sub_pipeline: "Pipeline[Any, Any]",
-        prev_node: Optional[str] = None,
-        subgraph_name: Optional[str] = None,
-    ) -> Optional[str]:
+        sub_pipeline: "Pipeline[InnerPipeInT, InnerPipeOutT]",
+        prev_node: str | None = None,
+        subgraph_name: str | None = None,
+    ) -> str | None:
         from .loop import LoopStep  # Runtime import to avoid circular dependency
         from .conditional import (
             ConditionalStep,
@@ -159,7 +167,7 @@ def _generate_high_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:  # noq
 
         return last_node
 
-    def process_loop_step(step: "LoopStep[Any]", prev_node: Optional[str] = None) -> str:
+    def process_loop_step(step: "LoopStep[BaseModel]", prev_node: str | None = None) -> str:
         loop_node_id = get_node_id(step)
         add_node(step, loop_node_id)
         if prev_node:
@@ -181,14 +189,14 @@ def _generate_high_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:  # noq
         return exit_node_id
 
     def process_conditional_step(
-        step: "ConditionalStep[Any]", prev_node: Optional[str] = None
+        step: "ConditionalStep[BaseModel]", prev_node: str | None = None
     ) -> str:
         cond_node_id = get_node_id(step)
         add_node(step, cond_node_id)
         if prev_node:
             add_edge(prev_node, cond_node_id)
 
-        branch_end_nodes: List[str] = []
+        branch_end_nodes: list[str] = []
         for branch_key, branch_pipeline in step.branches.items():
             lines.append(f'    subgraph "Branch: {branch_key}"')
             branch_end = process_pipeline(branch_pipeline)
@@ -214,13 +222,13 @@ def _generate_high_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:  # noq
             add_edge(branch_end, join_node_id)
         return join_node_id
 
-    def process_parallel_step(step: "ParallelStep[Any]", prev_node: Optional[str] = None) -> str:
+    def process_parallel_step(step: "ParallelStep[BaseModel]", prev_node: str | None = None) -> str:
         para_node_id = get_node_id(step)
         add_node(step, para_node_id)
         if prev_node:
             add_edge(prev_node, para_node_id)
 
-        branch_end_nodes: List[str] = []
+        branch_end_nodes: list[str] = []
         for branch_name, branch_pipeline in step.branches.items():
             lines.append(f'    subgraph "Parallel: {branch_name}"')
             branch_end = process_pipeline(branch_pipeline)
@@ -241,7 +249,7 @@ def _generate_high_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:  # noq
     return "\n".join(lines)
 
 
-def _generate_medium_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:
+def _generate_medium_detail_mermaid(pipeline: "Pipeline[PipeInT, PipeOutT]") -> str:
     # Medium detail: nodes with emoji for step types, validation annotation, no subgraphs
     from .loop import LoopStep  # Runtime import to avoid circular dependency
     from .conditional import (
@@ -273,7 +281,7 @@ def _generate_medium_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:
     return "\n".join(lines)
 
 
-def _generate_low_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:
+def _generate_low_detail_mermaid(pipeline: "Pipeline[PipeInT, PipeOutT]") -> str:
     # Low detail: group consecutive simple steps as 'Processing:', show special steps with emoji
     from .loop import LoopStep  # Runtime import to avoid circular dependency
     from .conditional import (
@@ -285,10 +293,10 @@ def _generate_low_detail_mermaid(pipeline: "Pipeline[Any, Any]") -> str:
 
     lines = ["graph TD"]
     node_counter = 0
-    simple_group: list[Step[Any, Any]] = []
+    simple_group: list[Step[object, object]] = []
     prev_node = None
 
-    def is_special(step: Step[Any, Any]) -> bool:
+    def is_special(step: Step[object, object]) -> bool:
         return isinstance(step, (LoopStep, ConditionalStep, ParallelStep, HumanInTheLoopStep))
 
     steps = list(pipeline.steps)

@@ -48,7 +48,7 @@ Notes:
 - Finalization: Terminal; returns `{"generated_yaml", "yaml_text"}` as final output.
 - Failure: Reserved terminal for future error routing.
 
-All transitions are driven by `context.scratchpad.next_state`.
+All transitions are driven by `context.next_state`.
 
 ## Agent Contracts (Pydantic Models)
 
@@ -111,7 +111,7 @@ See `flujo/architect/models.py` for the canonical schema definitions.
 - Swap in your own planner/tool-matcher/yaml-writer by registering skills with the same IDs.
 - Improve parameter collection (typing-aware prompts, detectors).
 - Add HITL in `PlanApproval` with `flujo.builtins.ask_user` + `flujo.builtins.check_user_confirmation`.
-- Add new states by extending `StateMachineStep.states` and driving transitions via `scratchpad.next_state`.
+- Add new states by extending `StateMachineStep.states` and driving transitions via `context.next_state`.
 
 ## Testing
 
@@ -143,4 +143,3 @@ See `flujo/architect/models.py` for the canonical schema definitions.
 - `context.py`: ArchitectContext.
 - `models.py`: Pydantic models for agent contracts.
 - `README.md`: This guide.
-

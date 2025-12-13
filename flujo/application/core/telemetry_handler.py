@@ -1,20 +1,21 @@
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from ...infra import telemetry
 
 if TYPE_CHECKING:
     from .executor_core import ExecutorCore
+    from .types import TContext_w_Scratch
 
 
 class TelemetryHandler:
     """Handles lightweight telemetry/logging concerns for ExecutorCore."""
 
-    def __init__(self, core: "ExecutorCore[Any]") -> None:
-        self._core: "ExecutorCore[Any]" = core
+    def __init__(self, core: "ExecutorCore[TContext_w_Scratch]") -> None:
+        self._core: "ExecutorCore[TContext_w_Scratch]" = core
 
-    def log_step_start(self, step: Any, *, stream: bool, fallback_depth: int) -> None:
+    def log_step_start(self, step: object, *, stream: bool, fallback_depth: int) -> None:
         try:
             telemetry.logfire.debug(
                 f"Executing step: {self._core._safe_step_name(step)} "

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import random
 from dataclasses import dataclass
-from typing import Any
 
 from ...infra import telemetry
 from ...agents.wrapper import make_agent_async
@@ -26,7 +25,7 @@ class ShadowEvaluator:
         self,
         *,
         config: ShadowEvalConfig,
-        background_task_manager: Any,
+        background_task_manager: object | None,
     ) -> None:
         self._config = config
         self._bg = background_task_manager
@@ -35,7 +34,12 @@ class ShadowEvaluator:
         self._failed: int = 0
 
     def maybe_schedule(
-        self, *, core: Any, step: Any, result: Any, frame: Any | None = None
+        self,
+        *,
+        core: object,
+        step: object,
+        result: object,
+        frame: object | None = None,
     ) -> None:
         cfg = self._config
         if not cfg.enabled or cfg.sample_rate <= 0.0:
@@ -98,12 +102,14 @@ class ShadowEvaluator:
         try:
             task = asyncio.create_task(_run_eval(), name=f"shadow_eval_{step_name}")
             if self._bg is not None:
-                self._bg.add_task(task)
+                add_task = getattr(self._bg, "add_task", None)
+                if callable(add_task):
+                    add_task(task)
         except Exception:
             # Shadow eval is best-effort; swallow failures quietly.
             pass
 
-    async def _run_judge(self, *, core: Any, payload: dict[str, Any]) -> None:
+    async def _run_judge(self, *, core: object, payload: dict[str, object]) -> None:
         model = self._config.judge_model
         step_name = payload.get("step_name")
         run_id = payload.get("run_id")

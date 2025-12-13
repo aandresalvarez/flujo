@@ -1,7 +1,7 @@
 from __future__ import annotations
 # mypy: disable-error-code=arg-type
 
-from typing import Any, Callable, Coroutine, cast
+from typing import Any
 
 from flujo.type_definitions.common import JSONObject
 
@@ -19,7 +19,7 @@ def build_goal_clarification_state() -> Pipeline[Any, Any]:
         return await goto("Planning", context=context)
 
     goto_plan = Step.from_callable(
-        cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _goto_plan),
+        _goto_plan,
         name="GotoPlanning",
         updates_context=True,
     )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 # mypy: disable-error-code=arg-type
 
-from typing import Any, Callable, Coroutine, cast
+from typing import Any
 
 from flujo.architect.states.common import (
     goto,
@@ -31,7 +31,7 @@ def build_dry_run_offer_state() -> Pipeline[Any, Any]:
         return await goto("Finalization", context=context)
 
     goto_final = Step.from_callable(
-        cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _goto_final),
+        _goto_final,
         name="GotoFinal",
         updates_context=True,
     )
@@ -77,7 +77,7 @@ def build_dry_run_execution_state() -> Pipeline[Any, Any]:
         return await goto("Finalization", context=context)
 
     goto_final = Step.from_callable(
-        cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _goto_final),
+        _goto_final,
         name="GotoFinal2",
         updates_context=True,
     )

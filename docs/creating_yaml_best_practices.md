@@ -438,7 +438,7 @@ The `as_step` functionality is automatically available through `imports`, where 
 
 ImportStep tips:
 - Use `updates_context: true` and an explicit `config.outputs` mapping to make merges predictable and reviewable in PRs.
-- Prefer `config.input_to: scratchpad` for structured handoff between parent and child; reserve `initial_prompt` for purely conversational handoffs.
+- Prefer `config.input_to: import_artifacts` for structured handoff between parent and child; reserve `initial_prompt` for purely conversational handoffs.
 - When a child can pause for HITL, set `config.propagate_hitl: true` (default) so the question surfaces to the parent runner and pause and resume work end to end.
 - Explicit `config.input_to` always determines the child’s initial input even when `inherit_conversation: true`; this prevents the previous assistant/user message from becoming the child’s prompt accidentally.
 - Keep child blueprints self‑contained and place any local skills (`skills.yaml`, Python modules) next to the child YAML; Flujo auto‑loads them relative to the child file.
@@ -456,9 +456,9 @@ steps:
     updates_context: true
     config:
       propagate_hitl: true
-      input_to: scratchpad
+      input_to: import_artifacts
       outputs:
-        - { child: scratchpad.artifact, parent: scratchpad.artifact }
+        - { child: import_artifacts.artifact, parent: import_artifacts.artifact }
 ```
 
 ## Error Handling and Resilience

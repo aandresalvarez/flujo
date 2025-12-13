@@ -48,11 +48,22 @@ runner = CliRunner()
 
 YAML_SPEC = """
 version: "0.1"
+agents:
+  typed:
+    id: "tests.unit.test_error_messages.need_str"
+    model: "local:mock"
+    system_prompt: "typed"
+    output_schema: { type: string }
 steps:
   - kind: step
     name: s1
+    uses: agents.typed
+    input: "Hello YAML"
   - kind: step
     name: s2
+    uses: agents.typed
+    input_schema: { type: string }
+    input: "{{ previous_step.output }}"
 """
 
 

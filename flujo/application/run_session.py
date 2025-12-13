@@ -5,7 +5,6 @@ import copy
 import warnings
 from datetime import datetime, timezone
 from typing import (
-    Any,
     Awaitable,
     AsyncIterator,
     Callable,
@@ -14,7 +13,6 @@ from typing import (
     Optional,
     Type,
     TypeVar,
-    cast,
 )
 
 from pydantic import ValidationError
@@ -51,6 +49,15 @@ RunnerOutT = TypeVar("RunnerOutT")
 class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
     """Encapsulate a single execution session for a Flujo runner."""
 
+    def _as_context_t(self, ctx: PipelineContext | None) -> Optional[ContextT]:
+        if ctx is None:
+            return None
+        if self.context_model is not None and not isinstance(ctx, self.context_model):
+            raise PipelineContextInitializationError(
+                f"Expected context of type {self.context_model.__name__}, got {type(ctx).__name__}"
+            )
+        return ctx  # type: ignore[return-value]
+
     def __init__(
         self,
         *,
@@ -66,7 +73,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
         backend: ExecutionBackend,
         state_backend: Optional[StateBackend],
         delete_on_completion: bool,
-        trace_manager: Any,
+        trace_manager: object,
         ensure_pipeline: Callable[[], Pipeline[RunnerInT, RunnerOutT]],
         refresh_pipeline_meta: Callable[[], tuple[Optional[str], str]],
         dispatch_hook: Callable[..., Awaitable[None]],
@@ -115,7 +122,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
             "post_step",
             "on_step_failure",
         ],
-        **kwargs: Any,
+        **kwargs: object,
     ) -> None:
         await self._dispatch_hook_cb(event_name, **kwargs)
 
@@ -125,7 +132,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
     async def execute_steps(
         self,
         start_idx: int,
-        data: Any,
+        data: object,
         context: Optional[ContextT],
         result: PipelineResult[ContextT],
         *,
@@ -133,7 +140,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
         run_id: str | None = None,
         state_backend: StateBackend | None = None,
         state_created_at: datetime | None = None,
-    ) -> AsyncIterator[Any]:
+    ) -> AsyncIterator[object]:
         """Execute pipeline steps using the execution manager."""
         assert self.pipeline is not None
 
@@ -177,10 +184,10 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
         *,
         run_id: str | None = None,
         initial_context_data: Optional[JSONObject] = None,
-    ) -> AsyncIterator[PipelineResult[ContextT]]:
+    ) -> AsyncIterator[object]:
         """Internal implementation for async pipeline execution."""
 
-        async def _run_generator() -> AsyncIterator[PipelineResult[ContextT]]:
+        async def _run_generator() -> AsyncIterator[object]:
             try:
                 if get_settings().warn_legacy:
                     warnings.warn(
@@ -255,8 +262,8 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                     raise PipelineContextInitializationError(msg) from e
 
             else:
-                current_context_instance = cast(
-                    Optional[ContextT], PipelineContext(initial_prompt=str(initial_input))
+                current_context_instance = self._as_context_t(
+                    PipelineContext(initial_prompt=str(initial_input))
                 )
                 try:
                     merged_data: JSONObject = {}
@@ -264,18 +271,18 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         merged_data.update(copy.deepcopy(self.initial_context_data))
                     if isinstance(initial_context_data, dict):
                         merged_data.update(copy.deepcopy(initial_context_data))
+                    if "scratchpad" in merged_data:
+                        raise PipelineContextInitializationError(
+                            "scratchpad has been removed; migrate initial context data to typed fields "
+                            "(status, step_outputs, import_artifacts, etc.)."
+                        )
                     for key, value in merged_data.items():
-                        if key == "scratchpad" and isinstance(value, dict):
-                            try:
-                                scratch = getattr(current_context_instance, "scratchpad", None)
-                                if isinstance(scratch, dict):
-                                    scratch.update(value)
-                            except Exception:
-                                pass
-                        elif key in ("initial_prompt", "run_id"):
+                        if key in ("initial_prompt", "run_id"):
                             object.__setattr__(current_context_instance, key, value)
                         else:
                             object.__setattr__(current_context_instance, key, value)
+                except PipelineContextInitializationError:
+                    raise
                 except Exception:
                     pass
                 if run_id is not None:
@@ -286,10 +293,10 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                     object.__setattr__(current_context_instance, "_artifacts", [])
 
             if isinstance(current_context_instance, PipelineContext):
-                current_context_instance.scratchpad["status"] = "running"
+                current_context_instance.status = "running"
 
             start_idx = 0
-            data: Any = initial_input
+            data: object = initial_input
             pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
             state_created_at: datetime | None = None
             state_manager: StateManager[ContextT] = StateManager[ContextT](self.state_backend)
@@ -297,7 +304,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
 
             if run_id_for_state is None:
                 run_id_for_state = state_manager.get_run_id_from_context(
-                    cast(Optional[ContextT], current_context_instance)
+                    self._as_context_t(current_context_instance)
                 )
 
             if run_id_for_state:
@@ -359,7 +366,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                 if _num_steps > 1:
                     await state_manager.persist_workflow_state_optimized(
                         run_id=run_id_for_state,
-                        context=cast(Optional[ContextT], current_context_instance),
+                        context=self._as_context_t(current_context_instance),
                         current_step_index=start_idx,
                         last_step_output=data,
                         status="running",
@@ -392,6 +399,10 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                 )
                 _yielded_pipeline_result = False
 
+                def _has_missing_terminal_outcome(step_result: object) -> bool:
+                    fb = getattr(step_result, "feedback", None)
+                    return isinstance(fb, str) and "no terminal outcome" in fb.lower()
+
                 def _prepare_pipeline_result_for_emit(
                     *, pad_missing: bool = True
                 ) -> PipelineResult[ContextT]:
@@ -401,11 +412,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         have = len(pipeline_result_obj.step_history)
                         if expected_steps > 0 and have < expected_steps and start_idx == 0:
                             missing_outcome_detected = any(
-                                (
-                                    isinstance(getattr(sr, "feedback", None), str)
-                                    and "no terminal outcome"
-                                    in cast(str, getattr(sr, "feedback", None)).lower()
-                                )
+                                _has_missing_terminal_outcome(sr)
                                 for sr in pipeline_result_obj.step_history
                             ) or all(
                                 getattr(sr, "success", True)
@@ -447,7 +454,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                 async for chunk in self.execute_steps(
                     start_idx,
                     data,
-                    cast(Optional[ContextT], current_context_instance),
+                    self._as_context_t(current_context_instance),
                     pipeline_result_obj,
                     stream_last=True,
                     run_id=run_id_for_state,
@@ -460,7 +467,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         is_paused = False
                         try:
                             ctx = chunk.final_pipeline_context
-                            if ctx and getattr(ctx, "scratchpad", {}).get("status") == "paused":
+                            if ctx and getattr(ctx, "status", None) == "paused":
                                 is_paused = True
                         except Exception:
                             pass
@@ -472,12 +479,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                             and start_idx == 0
                         ):
                             missing_outcome_detected = any(
-                                (
-                                    isinstance(getattr(sr, "feedback", None), str)
-                                    and "no terminal outcome"
-                                    in cast(str, getattr(sr, "feedback", None)).lower()
-                                )
-                                for sr in chunk.step_history
+                                _has_missing_terminal_outcome(sr) for sr in chunk.step_history
                             ) or all(getattr(sr, "success", True) for sr in chunk.step_history)
                             if missing_outcome_detected:
                                 from flujo.domain.models import StepResult as _SR
@@ -512,7 +514,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                             ctx = chunk.final_pipeline_context
                             if (
                                 isinstance(ctx, PipelineContext)
-                                and ctx.scratchpad.get("status") == "paused"
+                                and getattr(ctx, "status", None) == "paused"
                             ):
                                 paused = True
                                 pipeline_result_obj = chunk
@@ -524,11 +526,11 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                 yield chunk
                                 return
                             if isinstance(ctx, PipelineContext) and (
-                                "loop_iteration" in ctx.scratchpad
-                                or "loop_step_index" in ctx.scratchpad
+                                getattr(ctx, "loop_iteration_index", None) is not None
+                                or getattr(ctx, "loop_step_index", None) is not None
                             ):
                                 try:
-                                    ctx.scratchpad["status"] = "paused"
+                                    ctx.status = "paused"
                                     pipeline_result_obj = chunk
                                     paused = True
                                     _yielded_pipeline_result = True
@@ -542,8 +544,8 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         pipeline_result_obj = chunk
                         try:
                             if chunk.final_pipeline_context is not None:
-                                current_context_instance = cast(
-                                    Optional[ContextT], chunk.final_pipeline_context
+                                current_context_instance = self._as_context_t(
+                                    chunk.final_pipeline_context
                                 )
                         except Exception:
                             pass
@@ -566,12 +568,11 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                 paused = True
                 try:
                     if isinstance(current_context_instance, PipelineContext):
-                        current_context_instance.scratchpad["status"] = "paused"
-                        current_context_instance.scratchpad.setdefault(
-                            "pause_message", str(e) or "Paused for HITL"
-                        )
-                        pipeline_result_obj.final_pipeline_context = cast(
-                            Optional[ContextT], current_context_instance
+                        current_context_instance.status = "paused"
+                        if current_context_instance.pause_message is None:
+                            current_context_instance.pause_message = str(e) or "Paused for HITL"
+                        pipeline_result_obj.final_pipeline_context = self._as_context_t(
+                            current_context_instance
                         )
                 except Exception:
                     pass
@@ -587,7 +588,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                     if pipeline_result_obj.final_pipeline_context is None:
                         execution_manager.set_final_context(
                             pipeline_result_obj,
-                            cast(Optional[ContextT], current_context_instance),
+                            self._as_context_t(current_context_instance),
                         )
                     if isinstance(e, UsageLimitExceededError):
                         if e.result is None:
@@ -603,7 +604,9 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                     self._trace_manager is not None
                     and getattr(self._trace_manager, "_root_span", None) is not None
                 ):
-                    pipeline_result_obj.trace_tree = self._trace_manager._root_span
+                    pipeline_result_obj.trace_tree = getattr(
+                        self._trace_manager, "_root_span", None
+                    )
                 if current_context_instance is not None:
                     assert self.pipeline is not None
                     exec_manager = ExecutionManager(
@@ -613,14 +616,14 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                     if pipeline_result_obj.final_pipeline_context is None:
                         exec_manager.set_final_context(
                             pipeline_result_obj,
-                            cast(Optional[ContextT], current_context_instance),
+                            self._as_context_t(current_context_instance),
                         )
                     # If we resumed and did not execute any new steps (empty history), force paused so HITL can continue
                     if start_idx > 0 and not pipeline_result_obj.step_history:
                         paused = True
                         try:
                             if isinstance(current_context_instance, PipelineContext):
-                                current_context_instance.scratchpad["status"] = "paused"
+                                current_context_instance.status = "paused"
                         except Exception:
                             pass
                     final_status: Literal[
@@ -631,7 +634,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                         final_status = "failed"
                     elif paused or (
                         isinstance(current_context_instance, PipelineContext)
-                        and current_context_instance.scratchpad.get("status") == "paused"
+                        and getattr(current_context_instance, "status", None) == "paused"
                     ):
                         final_status = "paused"
                     elif start_idx > 0:
@@ -661,7 +664,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
 
                     await exec_manager.persist_final_state(
                         run_id=run_id_for_state,
-                        context=cast(Optional[ContextT], current_context_instance),
+                        context=self._as_context_t(current_context_instance),
                         result=pipeline_result_obj,
                         start_idx=start_idx,
                         state_created_at=state_created_at,

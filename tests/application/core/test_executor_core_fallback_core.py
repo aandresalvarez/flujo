@@ -562,11 +562,16 @@ class TestExecutorCoreFallback:
         self, executor_core, create_step_with_fallback
     ):
         """Test fallback behavior with context and resources."""
+        from flujo.domain.models import BaseModel
+
+        class TestContext(BaseModel):
+            key: str = "value"
+
         # Arrange
         primary_step, fallback_step = create_step_with_fallback(
             primary_fails=True, fallback_succeeds=True
         )
-        context = {"key": "value"}
+        context = TestContext()
         resources = {"resource": "data"}
 
         # Ensure step doesn't have persist_feedback_to_context attribute

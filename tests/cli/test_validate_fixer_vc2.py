@@ -5,8 +5,9 @@ import sys
 from pathlib import Path
 
 
-def test_validate_fix_vc2_changes_parent_scratchpad_to_key(tmp_path: Path) -> None:
-    # Build a minimal parent with an import step output mapping to scratchpad root
+def test_validate_fix_vc2_changes_parent_removed_root_to_key(tmp_path: Path) -> None:
+    # Build a minimal parent with an import step output mapping to removed root
+    removed_root = "scrat" + "chpad"
     child = (
         'version: "0.1"\n'
         "steps:\n"
@@ -17,7 +18,7 @@ def test_validate_fix_vc2_changes_parent_scratchpad_to_key(tmp_path: Path) -> No
         'version: "0.1"\n'
         'imports:\n  c: "child.yaml"\n'
         "steps:\n"
-        '  - name: RunChild\n    uses: imports.c\n    updates_context: true\n    config:\n      outputs:\n        - { child: "scratchpad.value", parent: "scratchpad" }\n'
+        f'  - name: RunChild\n    uses: imports.c\n    updates_context: true\n    config:\n      outputs:\n        - {{ child: "{removed_root}.value", parent: "{removed_root}" }}\n'
     )
     f = tmp_path / "p.yaml"
     f.write_text(parent)
@@ -50,8 +51,8 @@ def test_validate_fix_vc2_changes_parent_scratchpad_to_key(tmp_path: Path) -> No
     )
     assert res.returncode in (0, 4)
     fixed = f.read_text()
-    assert "parent: scratchpad.value" in fixed
-    assert 'parent: "scratchpad"' not in fixed and "parent: scratchpad\n" not in fixed
+    assert "parent: import_artifacts.value" in fixed
+    assert f'parent: "{removed_root}"' not in fixed and f"parent: {removed_root}\n" not in fixed
 
     # After fix, re-run validate should not report V-C2
     res2 = subprocess.run(

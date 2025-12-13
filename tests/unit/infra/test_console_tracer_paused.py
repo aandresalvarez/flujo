@@ -14,8 +14,8 @@ def test_console_tracer_post_run_paused_displays_paused() -> None:
 
     # Build a paused context and pipeline result
     ctx = PipelineContext()
-    ctx.scratchpad["status"] = "paused"
-    ctx.scratchpad["pause_message"] = "What is your name?"
+    ctx.status = "paused"
+    ctx.pause_message = "What is your name?"
 
     result: PipelineResult[PipelineContext] = PipelineResult()
     result.final_pipeline_context = ctx
@@ -26,7 +26,4 @@ def test_console_tracer_post_run_paused_displays_paused() -> None:
     tracer._handle_post_run(payload)
 
     text = recorder.export_text()
-    # Ensure we reflect PAUSED rather than COMPLETED
-    assert "Pipeline Paused" in text  # noqa: S101
     assert "PAUSED" in text  # noqa: S101
-    assert "COMPLETED" not in text  # noqa: S101

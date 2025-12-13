@@ -167,7 +167,7 @@ class ResearchContext(PipelineContext):
     research_topic: str = "Unknown"
     sources_found: int = 0
     summary: str | None = None
-    # Inherits: initial_prompt, scratchpad, hitl_history, command_log
+    # Inherits: initial_prompt, import_artifacts, step_outputs, hitl_history, command_log
 ```
 
 Use in any agent:

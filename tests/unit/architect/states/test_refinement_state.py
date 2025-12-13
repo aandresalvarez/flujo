@@ -18,4 +18,4 @@ async def test_refinement_state_collects_feedback_and_loops() -> None:
 
     assert "refinement_feedback" in feedback
     assert feedback["refinement_feedback"]
-    assert transition["scratchpad"]["next_state"] == "Planning"
+    assert transition["next_state"] == "Planning"

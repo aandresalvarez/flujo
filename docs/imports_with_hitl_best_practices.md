@@ -9,7 +9,7 @@ Key goals:
 
 ## Recommended Pattern
 
-- Use `ImportStep.input_to = "scratchpad"` or `"both"` and provide the artifact under `scratchpad.initial_input` (or a custom key via `input_scratchpad_key`).
+- Use `ImportStep.input_to = "import_artifacts"` or `"both"` and provide the artifact under `import_artifacts.initial_input` (or a custom key via `input_scratchpad_key`).
 - Keep `inherit_conversation = true` when you need the child to see prior turns, but always route the artifact explicitly.
 - Optionally add a status step before the import to print the first N characters of the artifact for easy log inspection.
 
@@ -32,9 +32,9 @@ imp = ImportStep(
     pipeline=child,
     inherit_context=True,
     inherit_conversation=True,
-    input_to="both",  # seed initial_prompt and scratchpad
+    input_to="both",  # seed initial_prompt and import_artifacts
     input_scratchpad_key="initial_input",  # default
-    outputs=[OutputMapping(child="scratchpad.echo", parent="scratchpad.child_echo")],
+    outputs=[OutputMapping(child="import_artifacts.echo", parent="import_artifacts.child_echo")],
     updates_context=True,
 )
 
@@ -51,7 +51,7 @@ explicit_artifact = {"cohort_definition": "Influenza, SNOMED 6142004"}
 runner = Flujo(
     pipeline=parent,
     context_model=PipelineContext,
-    initial_context_data={"scratchpad": {"initial_input": explicit_artifact}},
+    initial_context_data={"import_artifacts": {"initial_input": explicit_artifact}},
 )
 result = runner.run(initial_input="ignored")
 ```
@@ -60,7 +60,7 @@ result = runner.run(initial_input="ignored")
 
 - Import input precedence is enforced in `ImportStep` policies:
   - When `input_to` includes `initial_prompt`, the child’s effective input is resolved from:
-    1) `scratchpad[input_scratchpad_key]` when present (explicit), else
+    1) `import_artifacts[input_scratchpad_key]` when present (explicit), else
     2) the parent step’s `data` (current output), else
     3) empty string.
   - A trace metadata entry `import.initial_input_resolved` records the origin and a short preview.
@@ -72,15 +72,14 @@ result = runner.run(initial_input="ignored")
 ## Testing Checklist
 
 - Repeated imports: verify each import reads the intended artifact when `initial_input` changes between steps.
-- Outputs mapping: use `outputs=[{child:"scratchpad.echo", parent:"scratchpad.child_echo"}]` to make merges explicit.
-- Conversation: when `inherit_conversation=true`, prefer passing the artifact via `scratchpad` or `both` so it cannot be shadowed by status messages.
+- Outputs mapping: use `outputs=[{child:"import_artifacts.echo", parent:"import_artifacts.child_echo"}]` to make merges explicit.
+- Conversation: when `inherit_conversation=true`, prefer passing the artifact via `import_artifacts` or `both` so it cannot be shadowed by status messages.
 
 ## Troubleshooting
 
 - Child saw a status string instead of your artifact:
-  - Route the artifact via `scratchpad.initial_input` and set `input_to="both"`.
+  - Route the artifact via `import_artifacts.initial_input` and set `input_to="both"`.
   - Check `import.initial_input_resolved` in step metadata to confirm the origin.
 - Still no candidates for a query (e.g., “Influenza”):
   - Add a low‑noise status step showing the first 500 chars of the artifact.
   - Add temporary diagnostics in your tools (e.g., print first raw candidate keys once per run).
-

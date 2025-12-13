@@ -95,7 +95,7 @@ Execute multiple operations concurrently and merge their results.
 - `overwrite`: Merges all branch contexts, with later branches overwriting earlier ones in case of conflicts.
 - `no_merge`: No context merging is performed.
 - `error_on_conflict`: Fails the entire step if any merge conflict is detected.
-- `merge_scratchpad`: Merges only the `scratchpad` dictionary from each branch.
+- `merge_scratchpad` has been removed; scratchpad no longer exists. Use `context_update` or explicit typed fields instead.
 
 **Branch Failure Handling:**
 - `propagate`: (Default) Fail the entire step if any branch fails.
@@ -219,7 +219,7 @@ Declarative per-iteration state updates can be specified under `loop.state`:
     max_loops: 5
     state:
       append:
-        - target: "context.scratchpad.history"
+        - target: "context.import_artifacts.history"
           value: "OUT: {{ previous_step }}"
       set:
         - target: "context.summary"
@@ -242,7 +242,7 @@ Declarative init/propagation/output (no Python helpers required):
   loop:
     # 1) Init runs once before the first iteration (on isolated context)
     init:
-      - append: { target: "context.scratchpad.history", value: "User: {{ steps.get_goal.output }}" }
+      - append: { target: "context.import_artifacts.history", value: "User: {{ steps.get_goal.output }}" }
 
     # 2) Loop body (steps omitted)
     body:
@@ -256,8 +256,8 @@ Declarative init/propagation/output (no Python helpers required):
       next_input: context   # presets: context | previous_output | auto | template string
 
     # 4) Exit condition and final output mapping
-    exit_expression: "context.scratchpad.last_agent_command.action == 'finish'"
-    output_template: "{{ context.scratchpad.history | join('\\n') }}"
+    exit_expression: "context.import_artifacts.last_agent_command.action == 'finish'"
+    output_template: "{{ context.import_artifacts.history | join('\\n') }}"
 ```
 
 Friendly presets (natural-language aliases):
@@ -291,7 +291,7 @@ Auto propagation preset:
         name: clarify
         updates_context: true
     propagation: auto   # chooses 'context' because a body step updates the context
-    exit_expression: "context.scratchpad.counter >= 2"
+    exit_expression: "context.import_artifacts.counter >= 2"
 ```
 ```
 
@@ -481,7 +481,7 @@ steps:
           config:
             inherit_context: true
             outputs:
-              - { child: "scratchpad.foo", parent: "scratchpad.foo" }
+              - { child: "import_artifacts.foo", parent: "import_artifacts.foo" }
       done:
         - kind: step
           name: Done
@@ -489,7 +489,7 @@ steps:
 
 Tips:
 - Set `updates_context: true` on the import step and use `config.outputs` to map explicit fields from the child back to the parent context.
-- Use `config.input_to` (`initial_prompt` | `scratchpad` | `both`) to route the parent input into the child. For scratchpad routing of scalars, `config.input_scratchpad_key` can help.
+- Use `config.input_to` (`initial_prompt` | `import_artifacts` | `both`) to route the parent input into the child. For scalar routing into import_artifacts, `config.input_scratchpad_key` can help.
 
 ### 9. Agentic Loop (`kind: agentic_loop`)
 
@@ -1283,8 +1283,8 @@ Flujo's YAML syntax provides a powerful, declarative way to define complex AI wo
 Imported blueprints are compiled relative to the parent YAML directory and wrapped as a first‑class ImportStep with policy‑driven execution. This enables predictable input propagation and context merging without ad‑hoc adapters.
 
 Key options (under `steps[*].config` when `uses: imports.<alias>`):
-- `input_to`: Where to project the parent step input for the child run. One of `initial_prompt`, `scratchpad`, or `both`.
-- `input_scratchpad_key`: Key name used when the input is a scalar and `input_to: scratchpad` (default: `initial_input`).
+- `input_to`: Where to project the parent step input for the child run. One of `initial_prompt`, `import_artifacts`, or `both`.
+- `input_scratchpad_key`: Key name used when the input is a scalar and `input_to: import_artifacts` or `both` (default: `initial_input`).
 - `outputs`: List of mappings `{ child: <path>, parent: <path> }` for deterministic merges when `updates_context: true`.
 - `inherit_context`: Whether to inherit and deep‑copy the parent context into the child run (default: false).
 - `inherit_conversation`: Whether HITL prompts from the child participate in the parent conversation (default: true).
@@ -1312,30 +1312,30 @@ steps:
     input_to: initial_prompt
     propagate_hitl: true  # Surface child HITL questions to the parent
     outputs:
-      - { child: scratchpad.cohort_definition, parent: scratchpad.cohort_definition }
+      - { child: import_artifacts.cohort_definition, parent: import_artifacts.cohort_definition }
 
   - kind: step
     name: concept_discovery
     uses: imports.concept_discovery
     updates_context: true
     config:
-      input_to: scratchpad
+      input_to: import_artifacts
       outputs:
-        - { child: scratchpad.concept_sets, parent: scratchpad.concept_sets }
+        - { child: import_artifacts.concept_sets, parent: import_artifacts.concept_sets }
 
   - kind: step
     name: query_builder
     uses: imports.query_builder
     updates_context: true
     config:
-      input_to: scratchpad
+      input_to: import_artifacts
       outputs:
-        - { child: scratchpad.final_sql, parent: scratchpad.final_sql }
+        - { child: import_artifacts.final_sql, parent: import_artifacts.final_sql }
 ```
 
 Notes:
 - Child‑local skills resolve robustly: `skills.*` modules next to each child YAML are resolved relative to that child with per‑import namespace isolation. This avoids `sys.modules` collisions across multiple imported children with the same `skills` package name and works in both `dev validate` and `run` without PYTHONPATH hacks.
-- For JSON inputs to child `initial_prompt`, dict/list inputs are JSON‑encoded; for `scratchpad` inputs, dicts deep‑merge and scalars store under `input_scratchpad_key`.
+- For JSON inputs to child `initial_prompt`, dict/list inputs are JSON‑encoded; for `import_artifacts` inputs, dicts deep‑merge and scalars store under `input_scratchpad_key`.
 - Control-flow propagation:
   - HITL pauses propagate to the parent only when `propagate_hitl: true`.
   - Aborts/redirects always propagate to the parent (independent of `propagate_hitl`).
@@ -1358,7 +1358,7 @@ MapStep pre/post hooks (sugars):
         name: transform
         # ...
     init:
-      - set: "context.scratchpad.note"
+      - set: "context.import_artifacts.note"
         value: "mapping"
     finalize:
       output:

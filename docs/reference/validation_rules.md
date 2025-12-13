@@ -19,7 +19,7 @@ Categories
 
 - Context (V‑C1..V‑C3)
   - V‑C1: `updates_context` without a mergeable output.
-  - V‑C2: Scratchpad root mapping risk (write to `scratchpad.<key>` instead).
+  - V‑C2: Legacy scratchpad root mapping is now an error (map to `import_artifacts.<key>` instead).
   - V‑C3: Extremely large literal in templates (performance risk).
 
 - Agents (V‑A1..V‑A8)
@@ -65,11 +65,10 @@ Safe, opt‑in fixers can automatically fix some issues in YAML:
 
 - V‑T1: rewrite `previous_step.output` to `previous_step | tojson`.
 - V‑T3: correct common filter typos (`to_json`→`tojson`, `lowercase`→`lower`, etc.).
-- V‑C2: replace `parent: scratchpad` with `parent: scratchpad.<key>`.
+- V‑C2: replace `parent: scratchpad` with `parent: import_artifacts.<key>` (uses `import_artifacts.value` as a conservative default key).
 
 Run with `--fix` (preview + apply) or `--fix-dry-run` (patch only), and restrict with `--fix-rules`.
 
 SARIF
 
 - `--format sarif` emits SARIF 2.1.0 with rule IDs, names, and help URIs (catalog linked). Map rule IDs in your code scanning tool as needed.
-

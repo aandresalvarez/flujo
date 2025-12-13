@@ -17,7 +17,7 @@ class _FakeStateBackend:
             {"step_name": "s1", "output": "foo"},
         ]
         self._trace = {"events": [{"name": "flujo.resumed", "attributes": {"human_input": "bar"}}]}
-        self._state = {"pipeline_context": {"scratchpad": {"status": "running"}}}
+        self._state = {"pipeline_context": {"status": "running"}}
 
     async def get_run_details(self, run_id: str) -> Any:
         return self._details
@@ -66,11 +66,8 @@ class _Runner:
     async def resume_async(
         self, paused_result: PipelineResult[PipelineContext], human_input: Any
     ) -> PipelineResult[PipelineContext]:
-        pr = PipelineResult(
-            step_history=[],
-            final_pipeline_context=PipelineContext(),
-        )
-        pr.final_pipeline_context.scratchpad["status"] = "running"
+        pr = PipelineResult(step_history=[], final_pipeline_context=PipelineContext())
+        pr.final_pipeline_context.status = "running"
         return pr
 
 

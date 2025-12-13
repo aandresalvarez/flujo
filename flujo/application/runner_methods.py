@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import copy
 import inspect
-from typing import TYPE_CHECKING, Any, AsyncIterator, Optional, Type, TypeVar, Generic, cast
+from collections.abc import AsyncIterator, Callable, Iterator
+from typing import TYPE_CHECKING, Optional, TypeVar, Generic
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -13,7 +14,7 @@ from ..exceptions import (
     PipelineContextInitializationError,
 )
 from ..domain.commands import AgentCommand
-from ..domain.dsl.step import Step
+from ..domain.dsl.step import Step, StepConfig
 from ..domain.models import (
     BaseModel,
     Chunk,
@@ -25,6 +26,7 @@ from ..domain.models import (
     StepResult,
     Success,
 )
+from ..domain.processors import AgentProcessors
 from ..domain.resources import AppResources
 from ..type_definitions.common import JSONObject
 from .core.context_manager import _extract_missing_fields
@@ -45,13 +47,13 @@ ContextT = TypeVar("ContextT", bound=PipelineContext)
 class _RunAsyncHandle(Generic[ContextT]):
     """Async iterable that is also awaitable (returns final PipelineResult)."""
 
-    def __init__(self, factory: Any) -> None:
+    def __init__(self, factory: Callable[[], AsyncIterator[object]]) -> None:
         self._factory = factory
 
-    def __aiter__(self) -> AsyncIterator[PipelineResult[ContextT]]:
-        return cast(AsyncIterator[PipelineResult[ContextT]], self._factory())
+    def __aiter__(self) -> AsyncIterator[object]:
+        return self._factory()
 
-    def __await__(self) -> Any:
+    def __await__(self) -> Iterator[object]:
         async def _consume() -> PipelineResult[ContextT]:
             agen = self._factory()
             last_pr: PipelineResult[ContextT] | None = None
@@ -67,7 +69,11 @@ class _RunAsyncHandle(Generic[ContextT]):
                 return last_pr
             finally:
                 try:
-                    await agen.aclose()
+                    aclose = getattr(agen, "aclose", None)
+                    if callable(aclose):
+                        res = aclose()
+                        if inspect.isawaitable(res):
+                            await res
                 except Exception:
                     pass
 
@@ -119,7 +125,7 @@ async def run_outcomes_async(
             ctx = pipeline_result_obj.final_pipeline_context
             msg = None
             if isinstance(ctx, PipelineContext):
-                msg = ctx.scratchpad.get("pause_message")
+                msg = getattr(ctx, "pause_message", None)
         except Exception:
             msg = None
         yield Paused(message=msg or "Paused for HITL")
@@ -129,9 +135,9 @@ async def run_outcomes_async(
         if isinstance(pipeline_result_obj, PipelineResult):
             ctx = pipeline_result_obj.final_pipeline_context
             if isinstance(ctx, PipelineContext):
-                status = ctx.scratchpad.get("status") if hasattr(ctx, "scratchpad") else None
+                status = getattr(ctx, "status", None)
                 if status == "paused":
-                    msg = ctx.scratchpad.get("pause_message")
+                    msg = getattr(ctx, "pause_message", None)
                     yield Paused(message=msg or "Paused for HITL")
                     return
     except Exception:
@@ -160,9 +166,9 @@ async def run_outcomes_async(
         try:
             ctx = pipeline_result_obj.final_pipeline_context
             if isinstance(ctx, PipelineContext):
-                status = ctx.scratchpad.get("status") if hasattr(ctx, "scratchpad") else None
+                status = getattr(ctx, "status", None)
                 if status == "paused":
-                    msg = ctx.scratchpad.get("pause_message")
+                    msg = getattr(ctx, "pause_message", None)
                     yield Paused(message=msg or "Paused for HITL")
                     return
         except Exception:
@@ -179,12 +185,13 @@ async def _consume_run_async_to_result(
 ) -> PipelineResult[ContextT]:
     """Consume run_async and return the final PipelineResult."""
     result: PipelineResult[ContextT] | None = None
-    async for r in self.run_async(
+    async for item in self.run_async(
         initial_input,
         run_id=run_id,
         initial_context_data=initial_context_data,
     ):
-        result = r
+        if isinstance(item, PipelineResult):
+            result = item
     if result is None:
         return PipelineResult()
 
@@ -207,7 +214,7 @@ async def _consume_run_async_to_result(
     try:
         res = getattr(self, "resources", None)
         if res is not None:
-            res_cm: Any | None = None
+            res_cm: object | None = None
             if hasattr(res, "__aexit__"):
                 res_cm = res.__aexit__(None, None, None)
             elif hasattr(res, "__exit__"):
@@ -225,14 +232,15 @@ async def stream_async(
     initial_input: RunnerInT,
     *,
     initial_context_data: Optional[JSONObject] = None,
-) -> AsyncIterator[Any]:
+) -> AsyncIterator[object]:
     pipeline = self._ensure_pipeline()
     last_step = pipeline.steps[-1]
     has_stream = hasattr(last_step.agent, "stream")
     if not has_stream:
         final_result: PipelineResult[ContextT] | None = None
         async for item in self.run_async(initial_input, initial_context_data=initial_context_data):
-            final_result = item
+            if isinstance(item, PipelineResult):
+                final_result = item
         if final_result is not None:
             yield final_result
     else:
@@ -288,10 +296,19 @@ def as_step(
     name: str,
     *,
     inherit_context: bool = True,
-    **kwargs: Any,
+    validate_fields: bool = False,
+    sink_to: str | None = None,
+    processors: AgentProcessors | None = None,
+    persist_feedback_to_context: str | None = None,
+    persist_validation_results_to: str | None = None,
+    is_adapter: bool = False,
+    adapter_id: str | None = None,
+    adapter_allow: str | None = None,
+    config: StepConfig | None = None,
+    **config_kwargs: object,
 ) -> Step[RunnerInT, PipelineResult[ContextT]]:
     async def _runner(
-        initial_input: Any,
+        initial_input: RunnerInT,
         *,
         context: BaseModel | None = None,
         resources: AppResources | None = None,
@@ -309,7 +326,7 @@ def as_step(
             initial_sub_context_data["initial_prompt"] = str(initial_input)
 
         try:
-            runner_cls: Type[Flujo[Any, Any, Any]] = type(self)
+            runner_cls = type(self)
             self._ensure_pipeline()
 
             if self.context_model is not None and inherit_context and context is not None:
@@ -345,11 +362,15 @@ def as_step(
                 pipeline_version=self.pipeline_version,
             )
 
-            async for result in sub_runner.run_async(
+            final_result: PipelineResult[ContextT] | None = None
+            async for item in sub_runner.run_async(
                 initial_input,
                 initial_context_data=initial_sub_context_data,
             ):
                 pass
+                if isinstance(item, PipelineResult):
+                    final_result = item
+            result = final_result or PipelineResult()
             try:
                 if (
                     inherit_context
@@ -402,16 +423,30 @@ def as_step(
             )
             raise context_inheritance_error
 
-    return Step.from_callable(_runner, name=name, updates_context=inherit_context, **kwargs)
+    return Step.from_callable(
+        _runner,
+        name=name,
+        updates_context=inherit_context,
+        validate_fields=validate_fields,
+        sink_to=sink_to,
+        processors=processors,
+        persist_feedback_to_context=persist_feedback_to_context,
+        persist_validation_results_to=persist_validation_results_to,
+        is_adapter=is_adapter,
+        adapter_id=adapter_id,
+        adapter_allow=adapter_allow,
+        config=config,
+        **config_kwargs,
+    )
 
 
-def create_default_backend(self: Flujo[Any, Any, Any]) -> "ExecutionBackend":
+def create_default_backend(self: Flujo[RunnerInT, RunnerOutT, ContextT]) -> "ExecutionBackend":
     """Create a default LocalBackend with properly wired ExecutorCore."""
     executor = self._executor_factory.create_executor()
     return self._backend_factory.create_execution_backend(executor=executor)
 
 
-def close_runner(self: Flujo[Any, Any, Any]) -> None:
+def close_runner(self: Flujo[RunnerInT, RunnerOutT, ContextT]) -> None:
     """Synchronously release runner-owned resources (best-effort in async contexts)."""
     try:
         loop = asyncio.get_running_loop()
@@ -422,7 +457,7 @@ def close_runner(self: Flujo[Any, Any, Any]) -> None:
     task = loop.create_task(self.aclose())
     self._pending_close_tasks.append(task)
 
-    def _on_done(t: asyncio.Task[Any]) -> None:
+    def _on_done(t: asyncio.Task[object]) -> None:
         try:
             self._pending_close_tasks.remove(t)
         except ValueError:
@@ -474,7 +509,7 @@ def make_session(
 async def resume_async(
     self: Flujo[RunnerInT, RunnerOutT, ContextT],
     paused_result: PipelineResult[ContextT],
-    human_input: Any,
+    human_input: object,
 ) -> PipelineResult[ContextT]:
     try:
         return await resume_async_inner(self, paused_result, human_input, _agent_command_adapter)

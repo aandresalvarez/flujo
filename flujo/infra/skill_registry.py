@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, List, Optional, TYPE_CHECKING, cast
+from typing import Any, Callable, List, Optional, TYPE_CHECKING
 
 from flujo.type_definitions.common import JSONObject
 
@@ -102,8 +102,8 @@ class SkillRegistry(SkillRegistryProtocol):
             # parsing arbitrary version strings.
             if "latest" in versions:
                 latest_entry = versions.get("latest")
-                if latest_entry is not None:
-                    return cast(dict[str, Any], latest_entry)
+                if isinstance(latest_entry, dict):
+                    return latest_entry
             # Return the latest registered version by lexical order
             try:
                 from packaging.version import Version

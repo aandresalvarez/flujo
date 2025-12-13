@@ -43,7 +43,7 @@ async def main() -> None:
     result = None
     async for item in runner.run_async("start", initial_context_data={"run_id": run_id}):
         result = item
-    if result and result.final_pipeline_context.scratchpad.get("status") == "paused":
+    if result and result.final_pipeline_context.status == "paused":
         print("Pipeline paused. Resuming...")
         runner2 = Flujo(
             registry=registry,

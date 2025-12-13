@@ -6,7 +6,7 @@ import importlib
 import importlib.util
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional, Tuple
 
 from flujo.state.backends.base import StateBackend, _to_jsonable
 from flujo.type_definitions.common import JSONObject
@@ -72,17 +72,17 @@ class PostgresBackend(StateBackend):
                 pool = await pg.create_pool(
                     self._dsn, min_size=self._pool_min_size, max_size=self._pool_max_size
                 )
-                self._pool = cast("Pool", pool)
-        return cast("Pool", self._pool)
+                self._pool = pool
+        assert self._pool is not None
+        return self._pool
 
     async def _ensure_init(self) -> None:
-        await self._ensure_pool()
+        pool = await self._ensure_pool()
         if self._initialized:
             return
         async with self._get_init_lock():
             if self._initialized:
                 return
-            pool = cast("Pool", self._pool)
             if self._auto_migrate:
                 await self._init_schema(pool)
             else:
@@ -547,7 +547,10 @@ class PostgresBackend(StateBackend):
             record = await conn.fetchrow("SELECT trace_data FROM traces WHERE run_id = $1", run_id)
             if record is None:
                 return None
-            return cast(JSONObject, safe_deserialize(record["trace_data"]))
+            raw = safe_deserialize(record["trace_data"])
+            if isinstance(raw, dict):
+                return raw
+            return None
 
     async def get_spans(
         self, run_id: str, status: Optional[str] = None, name: Optional[str] = None

@@ -471,11 +471,11 @@ class TestBoundaryConditionHandling:
 
         # Test None in context
         context = PipelineContext()
-        context.scratchpad = {"null_value": None, "empty_dict": {}, "empty_list": []}
+        context.step_outputs = {"null_value": None, "empty_dict": {}, "empty_list": []}
 
-        assert context.scratchpad["null_value"] is None
-        assert context.scratchpad["empty_dict"] == {}
-        assert context.scratchpad["empty_list"] == []
+        assert context.step_outputs["null_value"] is None
+        assert context.step_outputs["empty_dict"] == {}
+        assert context.step_outputs["empty_list"] == []
 
         # Test None in results
         result = StepResult(name="test", output=None, success=True)

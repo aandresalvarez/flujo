@@ -68,15 +68,15 @@ class TestConcurrencySafety:
 
         # Verify each thread got a valid result
         for thread_id, result in results:
-            assert isinstance(
-                result, StepResult
-            ), f"Thread {thread_id} got invalid result: {result}"
+            assert isinstance(result, StepResult), (
+                f"Thread {thread_id} got invalid result: {result}"
+            )
             assert result.success, f"Thread {thread_id} execution failed: {result.feedback}"
 
     def test_context_isolation_under_concurrency(self):
         """Test that context isolation works correctly under concurrent access."""
         base_context = PipelineContext()
-        base_context.scratchpad = {"counter": 0, "shared_data": []}
+        base_context.step_outputs = {"counter": 0, "shared_data": []}
 
         results = []
         errors = []
@@ -88,14 +88,14 @@ class TestConcurrencySafety:
                 isolated = ContextManager.isolate(base_context)
 
                 # Modify isolated context
-                isolated.scratchpad["thread_id"] = thread_id
-                isolated.scratchpad["counter"] = thread_id * 10
+                isolated.step_outputs["thread_id"] = thread_id
+                isolated.step_outputs["counter"] = thread_id * 10
 
                 # Simulate some work
                 time.sleep(0.01)
 
                 # Store result
-                results.append((thread_id, isolated.scratchpad.copy()))
+                results.append((thread_id, isolated.step_outputs.copy()))
 
                 # Try to merge back (should not affect base context during concurrent access)
                 if thread_id % 2 == 0:  # Only some threads merge
@@ -122,9 +122,11 @@ class TestConcurrencySafety:
 
         # Verify isolation worked - each thread should have its own data
         thread_ids = set()
-        for thread_id, scratchpad in results:
-            assert scratchpad["thread_id"] == thread_id, f"Thread {thread_id} data corruption"
-            assert scratchpad["counter"] == thread_id * 10, f"Thread {thread_id} counter corruption"
+        for thread_id, per_thread_data in results:
+            assert per_thread_data["thread_id"] == thread_id, f"Thread {thread_id} data corruption"
+            assert per_thread_data["counter"] == thread_id * 10, (
+                f"Thread {thread_id} counter corruption"
+            )
             thread_ids.add(thread_id)
 
         assert len(thread_ids) == num_threads, "Thread ID collision detected"
@@ -134,9 +136,9 @@ class TestConcurrencySafety:
         # one of the even thread_id * 10 values (depends on merge order)
         # The important thing is that the counter is a valid value from one of the merges
         valid_counters = {i * 10 for i in range(0, num_threads, 2)}
-        assert (
-            base_context.scratchpad["counter"] in valid_counters
-        ), f"Base context counter has unexpected value: {base_context.scratchpad['counter']}"
+        assert base_context.step_outputs["counter"] in valid_counters, (
+            f"Base context counter has unexpected value: {base_context.step_outputs['counter']}"
+        )
 
     def test_async_task_safety(self):
         """Test that async operations are safe under high concurrency."""
@@ -227,9 +229,9 @@ class TestConcurrencySafety:
 
         # Verify no errors
         assert len(errors) == 0, f"Cache thread safety errors: {errors}"
-        assert (
-            len(results) == num_threads
-        ), f"Expected {num_threads} successful threads, got {len(results)}"
+        assert len(results) == num_threads, (
+            f"Expected {num_threads} successful threads, got {len(results)}"
+        )
 
     def test_shared_resource_access_safety(self):
         """Test that shared resources are accessed safely."""
@@ -387,15 +389,15 @@ class TestConcurrencySafety:
                 successful_threads += 1
                 assert len(result) == 3, f"Thread {thread_id} got {len(result)} results, expected 3"
                 for task_id, step_result in result:
-                    assert isinstance(
-                        step_result, StepResult
-                    ), f"Invalid result in thread {thread_id}"
+                    assert isinstance(step_result, StepResult), (
+                        f"Invalid result in thread {thread_id}"
+                    )
             else:
                 pytest.fail(f"Thread {thread_id} failed: {result}")
 
-        assert (
-            successful_threads == 3
-        ), f"Only {successful_threads}/3 threads completed successfully"
+        assert successful_threads == 3, (
+            f"Only {successful_threads}/3 threads completed successfully"
+        )
 
 
 if __name__ == "__main__":

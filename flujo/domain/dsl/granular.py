@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, ClassVar, Dict, List, Optional, TypedDict
+from collections.abc import Mapping
+from typing import ClassVar, TypedDict
 
 from pydantic import ConfigDict, Field
 
@@ -20,7 +21,7 @@ __all__ = ["GranularStep", "GranularState", "ResumeError"]
 
 
 class GranularState(TypedDict):
-    """State schema for granular execution, persisted in scratchpad.
+    """State schema for granular execution, persisted in context.granular_state.
 
     Attributes:
         turn_index: Committed turn count (0 = start, incremented after each turn)
@@ -31,9 +32,9 @@ class GranularState(TypedDict):
     """
 
     turn_index: int
-    history: List[Dict[str, Any]]
+    history: list[dict[str, object]]
     is_complete: bool
-    final_output: Any
+    final_output: object
     fingerprint: str
 
 
@@ -51,7 +52,7 @@ class ResumeError(Exception):
         self.message = message
 
 
-class GranularStep(Step[Any, Any]):
+class GranularStep(Step[object, object]):
     """Execute an agent one turn at a time with crash-safe persistence.
 
     Each turn is persisted atomically with CAS guards to prevent double-execution.
@@ -64,6 +65,10 @@ class GranularStep(Step[Any, Any]):
     """
 
     model_config: ClassVar[ConfigDict] = ConfigDict(arbitrary_types_allowed=True)
+
+    @staticmethod
+    def _default_meta() -> dict[str, object]:
+        return {"policy": "granular_agent"}
 
     # Granular-specific fields
     history_max_tokens: int = Field(
@@ -80,12 +85,12 @@ class GranularStep(Step[Any, Any]):
     )
 
     # Override meta to route to granular policy
-    meta: Dict[str, Any] = Field(
-        default_factory=lambda: {"policy": "granular_agent"},
+    meta: dict[str, object] = Field(
+        default_factory=_default_meta,
         description="Metadata for policy routing",
     )
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: object) -> None:
         """Ensure policy routing is set."""
         super().model_post_init(__context)
         # Guarantee policy routing even if meta was overridden
@@ -99,20 +104,25 @@ class GranularStep(Step[Any, Any]):
     @staticmethod
     def compute_fingerprint(
         *,
-        input_data: Any,
-        system_prompt: Optional[str],
+        input_data: object,
+        system_prompt: str | None,
         model_id: str,
-        provider: Optional[str],
-        tools: List[Dict[str, Any]],
-        settings: Dict[str, Any],
+        provider: str | None,
+        tools: list[dict[str, object]],
+        settings: Mapping[str, object],
     ) -> str:
         """Compute deterministic fingerprint for run-shaping config.
 
         Returns a SHA-256 hash of canonical JSON representation.
         """
+
+        def _tool_sort_key(tool: dict[str, object]) -> str:
+            name = tool.get("name")
+            return name if isinstance(name, str) else ""
+
         # Normalize tools to sorted name + signature hash
         normalized_tools = []
-        for tool in sorted(tools, key=lambda t: t.get("name", "")):
+        for tool in sorted(tools, key=_tool_sort_key):
             tool_repr = {
                 "name": tool.get("name", ""),
                 "sig_hash": tool.get("sig_hash", ""),
@@ -148,10 +158,10 @@ class GranularStep(Step[Any, Any]):
         return True
 
 
-def _sort_keys_recursive(obj: Any) -> Any:
+def _sort_keys_recursive(obj: object) -> object:
     """Recursively sort dictionary keys for canonical representation."""
     if isinstance(obj, dict):
         return {k: _sort_keys_recursive(v) for k, v in sorted(obj.items())}
-    elif isinstance(obj, list):
+    if isinstance(obj, list):
         return [_sort_keys_recursive(item) for item in obj]
     return obj

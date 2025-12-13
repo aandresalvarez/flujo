@@ -3,14 +3,12 @@ from __future__ import annotations
 import inspect
 import os
 from typing import (
-    Any,
     Sequence,
     get_type_hints,
     get_origin,
     get_args,
     Union,
     Literal,
-    cast,
 )
 
 import logging
@@ -37,7 +35,7 @@ _root_logger = logging.getLogger()
 
 def _get_hook_params(
     hook: HookCallable,
-) -> tuple[list[inspect.Parameter], dict[str, Any]]:
+) -> tuple[list[inspect.Parameter], dict[str, object]]:
     """Extract parameter information from a hook function."""
     try:
         sig = inspect.signature(hook)
@@ -45,13 +43,13 @@ def _get_hook_params(
     except (TypeError, ValueError):
         params = []
     try:
-        hints = get_type_hints(hook)
+        hints: dict[str, object] = dict(get_type_hints(hook))
     except Exception:
         hints = {}
     return params, hints
 
 
-def _should_dispatch(annotation: Any, payload: HookPayload) -> bool:
+def _should_dispatch(annotation: object, payload: HookPayload) -> bool:
     """Determine if a hook should be dispatched based on its annotation."""
     if annotation is inspect.Signature.empty:
         return True
@@ -63,11 +61,10 @@ def _should_dispatch(annotation: Any, payload: HookPayload) -> bool:
     return True
 
 
-def _is_background_context(context: Any) -> bool:
+def _is_background_context(context: object) -> bool:
     """Best-effort determination of background execution based on context."""
     try:
-        scratch = getattr(context, "scratchpad", None)
-        if isinstance(scratch, dict) and scratch.get("is_background_task"):
+        if bool(getattr(context, "is_background_task", False)):
             return True
     except Exception:
         pass
@@ -82,7 +79,7 @@ def _is_background_context(context: Any) -> bool:
     return False
 
 
-def _is_background_step(step: Any) -> bool:
+def _is_background_step(step: object) -> bool:
     """Detect if a step is configured for background execution."""
     try:
         cfg = getattr(step, "config", None)
@@ -144,7 +141,7 @@ async def _dispatch_hook(
         "post_step",
         "on_step_failure",
     ],
-    **kwargs: Any,
+    **kwargs: object,
 ) -> None:
     """Dispatch hooks for the given event, handling errors gracefully."""
     payload_map: dict[str, type[HookPayload]] = {
@@ -164,7 +161,7 @@ async def _dispatch_hook(
         step_obj = kwargs.get("step")
         kwargs["is_background"] = _is_background_context(ctx) or _is_background_step(step_obj)
 
-    payload = PayloadCls(event_name=cast(Any, event_name), **kwargs)
+    payload = PayloadCls(event_name=event_name, **kwargs)
 
     for hook in hooks:
         try:

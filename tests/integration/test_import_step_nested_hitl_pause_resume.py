@@ -102,7 +102,7 @@ async def test_import_step_preserves_hitl_state_on_pause_resume() -> None:
     assert paused is not None
     ctx = paused.final_pipeline_context  # type: ignore[union-attr]
     assert isinstance(ctx, PipelineContext)
-    assert ctx.scratchpad.get("status") == "paused"
+    assert ctx.status == "paused"
 
     # Resume with user's clarification; should advance and finish
     resumed = await runner.resume_async(paused, human_input="count over all time")

@@ -1,7 +1,7 @@
 """Settings and configuration for flujo."""
 
 import os
-from typing import Any, Callable, ClassVar, Dict, Literal, Optional, cast
+from typing import Any, Callable, ClassVar, Dict, Literal, Optional
 
 import dotenv
 from pydantic import (
@@ -159,15 +159,19 @@ class Settings(BaseSettings):
     shadow_eval: ShadowEvalSettings = ShadowEvalSettings()
 
     # --- Core strictness toggles ---
-    # Enforce strict context isolation and merging (CI-friendly). Can be overridden per-executor.
-    strict_context_isolation: bool = False
-    strict_context_merge: bool = False
+    # Strict mode is the default; opt-out is not supported in CI.
+    strict_dsl: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("FLUJO_STRICT_DSL", "flujo_strict_dsl"),
+        description="Enable strict DSL/type enforcement (no loose Any/object flows).",
+    )
+    # Enforce strict context isolation and merging.
+    strict_context_isolation: bool = True
+    strict_context_merge: bool = True
     enforce_typed_context: bool = Field(
-        default=False,
+        default=True,
         validation_alias=AliasChoices("FLUJO_ENFORCE_TYPED_CONTEXT", "flujo_enforce_typed_context"),
-        description=(
-            "When true, contexts must be Pydantic BaseModel instances; plain dicts are rejected."
-        ),
+        description="[DEPRECATED] Always True - strict mode enforced in executor_helpers.py (env flag ignored).",
     )
     governance_policy_module: Optional[str] = Field(
         default=None,
@@ -308,7 +312,7 @@ class ExecutionConfig(BaseModel):
 # Singleton instance, fail fast if critical vars missing
 # Note: This will be overridden by the configuration manager when available
 try:
-    settings = cast(Callable[[], Settings], Settings)()
+    settings = Settings()
 except ValidationError as e:
     # Use custom exception for better error handling downstream
     raise SettingsError(f"Invalid or missing environment variables for Settings:\n{e}")

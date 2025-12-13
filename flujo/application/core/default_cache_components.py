@@ -7,7 +7,7 @@ import hashlib
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Protocol
+from typing import Protocol
 
 from ...domain.models import StepResult, UsageLimits
 
@@ -27,7 +27,7 @@ class OrjsonSerializer:
             self._json = json
             self._use_orjson = False
 
-    def serialize(self, obj: Any) -> bytes:
+    def serialize(self, obj: object) -> bytes:
         try:
             from pydantic import BaseModel as _BM
 
@@ -57,7 +57,7 @@ class OrjsonSerializer:
         s = self._json.dumps(serialized_obj, sort_keys=True, separators=(",", ":"))
         return s.encode("utf-8")
 
-    def deserialize(self, blob: bytes) -> Any:
+    def deserialize(self, blob: bytes) -> object:
         from flujo.utils.serialization import safe_deserialize
 
         if self._use_orjson:
@@ -95,10 +95,10 @@ class DefaultCacheKeyGenerator:
     def __init__(self, hasher: _HasherProtocol | None = None):
         self._hasher: _HasherProtocol = hasher or Blake3Hasher()
 
-    def _get_agent(self, step: Any) -> Any:
+    def _get_agent(self, step: object) -> object | None:
         return getattr(step, "agent", None)
 
-    def _get_agent_type(self, agent: Any) -> Optional[str]:
+    def _get_agent_type(self, agent: object | None) -> str | None:
         if agent is None:
             return None
         try:
@@ -106,7 +106,7 @@ class DefaultCacheKeyGenerator:
         except Exception:
             return None
 
-    def _get_agent_model_id(self, agent: Any) -> Optional[str]:
+    def _get_agent_model_id(self, agent: object | None) -> str | None:
         if agent is None:
             return None
         try:
@@ -114,7 +114,7 @@ class DefaultCacheKeyGenerator:
         except Exception:
             return None
 
-    def _get_agent_system_prompt(self, agent: Any) -> Optional[Any]:
+    def _get_agent_system_prompt(self, agent: object | None) -> object | None:
         if agent is None:
             return None
         try:
@@ -125,7 +125,7 @@ class DefaultCacheKeyGenerator:
         except Exception:
             return None
 
-    def _hash_text_sha256(self, text: Any) -> Optional[str]:
+    def _hash_text_sha256(self, text: object) -> str | None:
         try:
             import hashlib as _hashlib
 
@@ -135,7 +135,7 @@ class DefaultCacheKeyGenerator:
         except Exception:
             return None
 
-    def _get_processor_names(self, step: Any, attribute_name: str) -> List[str]:
+    def _get_processor_names(self, step: object, attribute_name: str) -> list[str]:
         try:
             processors_obj = getattr(step, "processors", None)
             if processors_obj is None:
@@ -147,7 +147,7 @@ class DefaultCacheKeyGenerator:
         except Exception:
             return []
 
-    def _get_validator_names(self, step: Any) -> List[str]:
+    def _get_validator_names(self, step: object) -> list[str]:
         try:
             validators = getattr(step, "validators", [])
             if not isinstance(validators, list):
@@ -156,7 +156,7 @@ class DefaultCacheKeyGenerator:
         except Exception:
             return []
 
-    def _build_step_section(self, step: Any) -> dict[str, Any]:
+    def _build_step_section(self, step: object) -> dict[str, object]:
         agent = self._get_agent(step)
         agent_type = self._get_agent_type(agent)
         model_id = self._get_agent_model_id(agent)
@@ -182,8 +182,10 @@ class DefaultCacheKeyGenerator:
             "validators": self._get_validator_names(step),
         }
 
-    def _build_payload(self, step: Any, data: Any, context: Any, resources: Any) -> dict[str, Any]:
-        def _serialize(obj: Any) -> Any:
+    def _build_payload(
+        self, step: object, data: object, context: object, resources: object
+    ) -> dict[str, object]:
+        def _serialize(obj: object) -> object:
             try:
                 from pydantic import BaseModel as _BM
 
@@ -207,7 +209,7 @@ class DefaultCacheKeyGenerator:
             "resources": _serialize(resources),
         }
 
-    def generate_key(self, step: Any, data: Any, context: Any, resources: Any) -> str:
+    def generate_key(self, step: object, data: object, context: object, resources: object) -> str:
         try:
             from flujo.domain.dsl.step import Step as _DSLStep
 
@@ -230,7 +232,7 @@ class DefaultCacheKeyGenerator:
         except Exception:
             step_name = getattr(step, "name", str(type(step).__name__))
 
-            def _safe_repr(obj: Any) -> Any:
+            def _safe_repr(obj: object) -> object:
                 try:
                     from pydantic import BaseModel as _BM
 
@@ -289,7 +291,7 @@ class _LRUCache:
         self._store[key] = (value, current_time)
         self._store.move_to_end(key)
 
-    def get(self, key: str) -> Optional[StepResult]:
+    def get(self, key: str) -> StepResult | None:
         if key not in self._store:
             return None
         value, timestamp = self._store[key]
@@ -310,7 +312,7 @@ class InMemoryLRUBackend:
 
     max_size: int = 1024
     ttl_s: int = 3600
-    _lock: Optional[asyncio.Lock] = field(init=False, default=None)
+    _lock: asyncio.Lock | None = field(init=False, default=None)
     _store: OrderedDict[str, tuple[StepResult, float, int]] = field(
         init=False, default_factory=OrderedDict
     )
@@ -321,7 +323,7 @@ class InMemoryLRUBackend:
             self._lock = asyncio.Lock()
         return self._lock
 
-    async def get(self, key: str) -> Optional[StepResult]:
+    async def get(self, key: str) -> StepResult | None:
         async with self._get_lock():
             if key not in self._store:
                 return None
@@ -354,7 +356,7 @@ class ThreadSafeMeter:
     total_cost_usd: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    _lock: Optional[asyncio.Lock] = field(init=False, default=None)
+    _lock: asyncio.Lock | None = field(init=False, default=None)
 
     def _get_lock(self) -> asyncio.Lock:
         """Lazily create the asyncio lock on first access."""
@@ -367,7 +369,7 @@ class ThreadSafeMeter:
         self.prompt_tokens += prompt_tokens
         self.completion_tokens += completion_tokens
 
-    async def guard(self, limits: UsageLimits, step_history: Optional[List[Any]] = None) -> None:
+    async def guard(self, limits: UsageLimits, step_history: list[object] | None = None) -> None:
         return None
 
     async def snapshot(self) -> tuple[float, int, int]:

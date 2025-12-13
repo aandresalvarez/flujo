@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Callable, TypeVar
+from ...domain.models import BaseModel
 
 from ...domain.models import Failure, StepResult
 from .types import ExecutionFrame
 
 
+ContextT = TypeVar("ContextT", bound=BaseModel)
+
+
 def build_failure_outcome(
     *,
-    step: Any,
-    frame: ExecutionFrame[Any],
+    step: object,
+    frame: ExecutionFrame[ContextT],
     exc: Exception,
     called_with_frame: bool,
-    safe_step_name: Callable[[Any], str],
+    safe_step_name: Callable[[object], str],
 ) -> Failure[StepResult]:
     """Create a Failure outcome with branch context when appropriate."""
     step_name = safe_step_name(step)

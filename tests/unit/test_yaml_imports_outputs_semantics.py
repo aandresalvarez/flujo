@@ -30,7 +30,7 @@ steps:
     uses: imports.c
     updates_context: true
     config:
-      outputs: { "scratchpad.foo": "scratchpad.bar" }
+      outputs: { "import_artifacts.foo": "import_artifacts.bar" }
 """.strip()
     )
 
@@ -44,8 +44,8 @@ steps:
     assert step0.outputs is not None
     assert len(step0.outputs) == 1
     assert isinstance(step0.outputs[0], OutputMapping)
-    assert step0.outputs[0].child == "scratchpad.foo"
-    assert step0.outputs[0].parent == "scratchpad.bar"
+    assert step0.outputs[0].child == "import_artifacts.foo"
+    assert step0.outputs[0].parent == "import_artifacts.bar"
 
 
 def test_yaml_imports_outputs_unset_is_none(tmp_path: Path) -> None:

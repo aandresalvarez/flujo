@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
-from flujo.type_definitions.common import JSONObject
+from collections.abc import Mapping
 
 __all__ = [
     "StepValueProxy",
@@ -20,9 +19,9 @@ class StepValueProxy:
     - str(proxy) stringifies to the value for convenience
     """
 
-    _value: Any
+    _value: object
 
-    def __getattr__(self, name: str) -> Any:  # pragma: no cover - trivial
+    def __getattr__(self, name: str) -> object:  # pragma: no cover - trivial
         if name in {"output", "result", "value"}:
             return self._value
         raise AttributeError(name)
@@ -30,7 +29,7 @@ class StepValueProxy:
     def __str__(self) -> str:  # pragma: no cover - trivial
         return str(self._value)
 
-    def unwrap(self) -> Any:
+    def unwrap(self) -> object:
         return self._value
 
 
@@ -42,19 +41,17 @@ class TemplateContextProxy:
 
     def __init__(
         self,
-        base: Optional[Any] = None,
+        base: object | None = None,
         *,
-        steps: Optional[Mapping[str, Any]] = None,
+        steps: Mapping[str, object] | None = None,
     ) -> None:
-        self._base: Any = base if base is not None else {}
-        self._steps: Mapping[str, Any] = steps or {}
+        self._base: object = base if base is not None else {}
+        self._steps: Mapping[str, object] = steps or {}
 
-    def __getattr__(self, name: str) -> Any:
+    def __getattr__(self, name: str) -> object:
         # Mapping-style lookup
         try:
-            from collections.abc import Mapping as _Mapping
-
-            if isinstance(self._base, _Mapping) and name in self._base:
+            if isinstance(self._base, Mapping) and name in self._base:
                 return self._base[name]
         except Exception:
             pass
@@ -71,11 +68,9 @@ class TemplateContextProxy:
             return v if isinstance(v, StepValueProxy) else StepValueProxy(v)
         raise AttributeError(name)
 
-    def __getitem__(self, key: str) -> Any:  # pragma: no cover - simple delegator
+    def __getitem__(self, key: str) -> object:  # pragma: no cover - simple delegator
         try:
-            from collections.abc import Mapping as _Mapping
-
-            if isinstance(self._base, _Mapping) and key in self._base:
+            if isinstance(self._base, Mapping) and key in self._base:
                 return self._base[key]
         except Exception:
             pass
@@ -91,14 +86,14 @@ class TemplateContextProxy:
         raise KeyError(key)
 
 
-def get_steps_map_from_context(context: Any) -> JSONObject:
-    """Extract mapping of prior step outputs from context.scratchpad['steps'] when present."""
+def get_steps_map_from_context(context: object) -> dict[str, object]:
+    """Extract mapping of prior step outputs from context.step_outputs when present."""
     try:
-        scratchpad = getattr(context, "scratchpad", None)
-        if isinstance(scratchpad, Mapping):
-            steps = scratchpad.get("steps")
-            if isinstance(steps, Mapping):
-                return dict(steps)
+        # Prefer typed field if available
+        if hasattr(context, "step_outputs"):
+            outputs = getattr(context, "step_outputs")
+            if isinstance(outputs, Mapping):
+                return dict(outputs)
     except Exception:
         pass
     return {}
@@ -107,9 +102,9 @@ def get_steps_map_from_context(context: Any) -> JSONObject:
 def render_template(
     template: str,
     *,
-    context: Optional[Mapping[str, Any]] = None,
-    steps: Optional[Mapping[str, Any]] = None,
-    previous_step: Any = None,
+    context: Mapping[str, object] | None = None,
+    steps: Mapping[str, object] | None = None,
+    previous_step: object = None,
 ) -> str:
     """Helper for tests: render with AdvancedPromptFormatter using proxies.
 
@@ -121,7 +116,7 @@ def render_template(
         # Fallback simple replacement if formatter import breaks in isolated tests
         return template
 
-    steps_map: dict[str, Any] = {}
+    steps_map: dict[str, object] = {}
     if steps:
         for k, v in steps.items():
             steps_map[k] = v if isinstance(v, StepValueProxy) else StepValueProxy(v)

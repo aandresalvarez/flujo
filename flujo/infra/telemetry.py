@@ -2,7 +2,7 @@ import logging
 import sys
 import os
 import atexit
-from typing import TYPE_CHECKING, Any, Callable, Optional, List, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, List
 from typing import Any as _TypeAny  # local alias to avoid name clash
 
 set_default_telemetry_sink_fn: Optional[Callable[[Any], None]]
@@ -137,8 +137,8 @@ class _SafeLogfireWrapper:
 
     def instrument(self, name: str, *args: Any, **kwargs: Any) -> Callable[[Any], Any]:
         try:
-            result = self._real_logfire.instrument(name, *args, **kwargs)
-            return cast(Callable[[Any], Any], result)
+            decorator: Callable[[Any], Any] = self._real_logfire.instrument(name, *args, **kwargs)
+            return decorator
         except (ValueError, OSError, RuntimeError) as e:
             if _is_cleanup_io_error(e):
                 # Return a no-op decorator during cleanup

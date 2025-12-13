@@ -31,13 +31,13 @@ def _write_child_project(base: Path, name: str, tool_src: str, pipeline_yaml: st
 
 
 def test_yaml_loader_compiles_state_machine_states_with_imports(tmp_path: Path) -> None:
-    # Create a child project that writes to scratchpad
+    # Create a child project that writes to import_artifacts
     tools = (
         "from __future__ import annotations\n"
         "from typing import Any\n"
         "from flujo.domain.models import PipelineContext\n\n"
         "async def make_output(_data: Any, *, context: PipelineContext | None = None) -> dict:\n"
-        '    return {"scratchpad": {"foo": "bar"}}\n'
+        '    return {"import_artifacts": {"foo": "bar"}}\n'
     )
     child_yaml = (
         'version: "0.1"\n'
@@ -66,7 +66,7 @@ def test_yaml_loader_compiles_state_machine_states_with_imports(tmp_path: Path) 
         "          config:\n"
         "            inherit_context: true\n"
         "            outputs:\n"
-        '              - { child: "scratchpad.foo", parent: "scratchpad.foo" }\n'
+        '              - { child: "import_artifacts.foo", parent: "import_artifacts.foo" }\n'
         "      done:\n"
         "        - kind: step\n"
         "          name: Done\n"

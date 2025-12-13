@@ -23,13 +23,13 @@ async def test_regression_state_machine_import_step_no_missing_agent(tmp_path: P
     Mirrors the original scenario name 'run_clarification_subpipeline'.
     """
 
-    # Child pipeline emits scratchpad.value = 1
+    # Child pipeline emits import_artifacts.value = 1
     tools = (
         "from __future__ import annotations\n"
         "from typing import Any\n"
         "from flujo.domain.models import PipelineContext\n\n"
         "async def emit(_data: Any, *, context: PipelineContext | None = None) -> dict:\n"
-        '    return {"scratchpad": {"value": 1}}\n'
+        '    return {"import_artifacts": {"value": 1}}\n'
     )
     child_yaml = (
         'version: "0.1"\n'
@@ -58,7 +58,7 @@ async def test_regression_state_machine_import_step_no_missing_agent(tmp_path: P
         "          config:\n"
         "            inherit_context: true\n"
         "            outputs:\n"
-        '              - { child: "scratchpad.value", parent: "scratchpad.value" }\n'
+        '              - { child: "import_artifacts.value", parent: "import_artifacts.value" }\n'
         "      done:\n"
         "        - kind: step\n"
         "          name: Done\n"
@@ -85,4 +85,4 @@ async def test_regression_state_machine_import_step_no_missing_agent(tmp_path: P
     res = await runner.run_async("")
     ctx = res.final_pipeline_context
     assert ctx is not None
-    assert ctx.scratchpad.get("value") == 1
+    assert ctx.import_artifacts.get("value") == 1

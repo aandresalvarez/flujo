@@ -1,0 +1,652 @@
+from __future__ import annotations
+
+import logging
+import typing
+from typing import TYPE_CHECKING, TypeVar
+
+from ..pipeline_validation import ValidationFinding, ValidationReport
+from .pipeline_validation_helpers import (
+    _get_adapter_allowlist,
+    _is_unbounded_type,
+    _is_wildcard_type,
+)
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .pipeline import Pipeline
+
+_PipeInT = TypeVar("_PipeInT")
+_PipeOutT = TypeVar("_PipeOutT")
+
+
+def run_step_validations(
+    pipeline: "Pipeline[_PipeInT, _PipeOutT]",
+    report: ValidationReport,
+    *,
+    raise_on_error: bool,
+) -> None:
+    """Validate per-step agents, types, duplicate instances, and fallbacks."""
+    from typing import get_origin, get_args, Union as TypingUnion
+    import types as _types
+    import re as _re
+
+    def _compatible(a: object, b: object) -> bool:
+        """Strict compatibility: no wildcard fallthrough, explicit bridges only."""
+        if _is_unbounded_type(a) or _is_unbounded_type(b):
+            return False
+
+        origin_a, origin_b = get_origin(a), get_origin(b)
+        _UnionType = getattr(_types, "UnionType", None)
+
+        try:
+            from pydantic import BaseModel as _PydanticBaseModel
+
+            if isinstance(a, type) and issubclass(a, _PydanticBaseModel):
+                if b is dict or origin_b is dict:
+                    return True
+        except Exception:
+            pass
+
+        if origin_b is TypingUnion or (_UnionType is not None and origin_b is _UnionType):
+            return any(_compatible(a, arg) for arg in get_args(b))
+        if origin_a is TypingUnion or (_UnionType is not None and origin_a is _UnionType):
+            return all(_compatible(arg, b) for arg in get_args(a))
+
+        try:
+            b_eff = origin_b if origin_b is not None else b
+            a_eff = origin_a if origin_a is not None else a
+            if not isinstance(b_eff, type) or not isinstance(a_eff, type):
+                return False
+            return issubclass(a_eff, b_eff)
+        except Exception as e:  # pragma: no cover
+            logging.warning("_compatible: issubclass(%s, %s) raised %s", a, b, e)
+            return False
+
+    seen_steps: set[int] = set()
+
+    def _root_key(key: str) -> str:
+        try:
+            return key.split(".", 1)[0].strip()
+        except Exception:
+            return key
+
+    try:
+        from .conditional import ConditionalStep as _ConditionalStep
+    except Exception:
+        _ConditionalStep = None  # type: ignore
+    try:
+        from .parallel import ParallelStep as _ParallelStep
+    except Exception:
+        _ParallelStep = None  # type: ignore
+    try:
+        from .import_step import ImportStep as _ImportStep
+    except Exception:
+        _ImportStep = None  # type: ignore
+
+    try:
+        from ...infra.settings import get_settings as _get_settings
+
+        strict_mode = bool(getattr(_get_settings(), "strict_dsl", True))
+    except Exception:
+        strict_mode = True
+
+    adapter_allowlist = _get_adapter_allowlist()
+
+    def _validate_pipeline(
+        current: "Pipeline[_PipeInT, _PipeOutT]",
+        available_roots: set[str],
+        produced_paths: set[str],
+        prev_step: object | None,
+        prev_out_type: object | None,
+    ) -> set[str]:
+        for idx_step, step in enumerate(getattr(current, "steps", []) or []):
+            meta = getattr(step, "meta", None)
+            _yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
+            templated_input = meta.get("templated_input") if isinstance(meta, dict) else None
+            is_adapter_step = bool(meta.get("is_adapter")) if isinstance(meta, dict) else False
+            if id(step) in seen_steps:
+                report.warnings.append(
+                    ValidationFinding(
+                        rule_id="V-A3",
+                        severity="warning",
+                        message=(
+                            "The same Step object instance is used more than once in the pipeline. "
+                            "This may cause side effects if the step is stateful."
+                        ),
+                        step_name=step.name,
+                    )
+                )
+            else:
+                seen_steps.add(id(step))
+
+            if (not getattr(step, "is_complex", False)) and step.agent is None:
+                report.errors.append(
+                    ValidationFinding(
+                        rule_id="V-A1",
+                        severity="error",
+                        message=(
+                            "Step '{name}' is missing an agent. Assign one via `Step('name', agent=...)` "
+                            "or by using a step factory like `@step` or `Step.from_callable()`."
+                        ).format(name=step.name),
+                        step_name=step.name,
+                    )
+                )
+            else:
+                target = getattr(step.agent, "_agent", step.agent)
+                func = getattr(target, "_step_callable", getattr(target, "run", None))
+                if func is not None:
+                    try:
+                        from ...signature_tools import (
+                            analyze_signature,
+                        )  # Local import to avoid cycles
+
+                        analyze_signature(func)
+                    except Exception as e:  # pragma: no cover - defensive
+                        report.warnings.append(
+                            ValidationFinding(
+                                rule_id="V-A4-ERR",
+                                severity="warning",
+                                message=(
+                                    f"Could not analyze signature for agent in step '{step.name}': {e}"
+                                ),
+                                step_name=step.name,
+                            )
+                        )
+
+            if _ConditionalStep is not None and isinstance(step, _ConditionalStep):
+                branch_outputs: set[str] = set()
+                branches = getattr(step, "branches", {}) or {}
+                for branch in branches.values():
+                    try:
+                        child_paths = _validate_pipeline(
+                            branch, set(available_roots), set(produced_paths), None, None
+                        )
+                        branch_outputs.update(child_paths)
+                    except Exception:
+                        continue
+                default_branch = getattr(step, "default_branch_pipeline", None)
+                if default_branch is not None:
+                    try:
+                        child_paths = _validate_pipeline(
+                            default_branch, set(available_roots), set(produced_paths), None, None
+                        )
+                        branch_outputs.update(child_paths)
+                    except Exception:
+                        pass
+                produced_paths.update(branch_outputs)
+                available_roots.update(_root_key(p) for p in branch_outputs)
+                prev_step = step
+                prev_out_type = getattr(step, "__step_output_type__", object)
+                continue
+
+            if _ParallelStep is not None and isinstance(step, _ParallelStep):
+                try:
+                    from .step import MergeStrategy as _MergeStrategy  # local import
+                except Exception:
+                    _MergeStrategy = None  # type: ignore
+
+                merge_strategy = getattr(step, "merge_strategy", None)
+                # Block deprecated scratchpad merge strategy outright
+                if isinstance(merge_strategy, str) and merge_strategy.lower() == "merge_scratchpad":
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id="V-P-SCRATCHPAD",
+                            severity="error",
+                            message=(
+                                f"Parallel step '{step.name}' uses merge_strategy=MERGE_SCRATCHPAD, "
+                                "which is removed. Use CONTEXT_UPDATE with explicit field_mapping or "
+                                "OVERWRITE/NO_MERGE instead."
+                            ),
+                            step_name=getattr(step, "name", None),
+                        )
+                    )
+                if _MergeStrategy is not None and merge_strategy == getattr(
+                    _MergeStrategy, "MERGE_SCRATCHPAD", None
+                ):
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id="V-P-SCRATCHPAD",
+                            severity="error",
+                            message=(
+                                f"Parallel step '{step.name}' uses merge_strategy=MERGE_SCRATCHPAD, "
+                                "which is removed. Use CONTEXT_UPDATE with explicit field_mapping or "
+                                "OVERWRITE/NO_MERGE instead."
+                            ),
+                            step_name=getattr(step, "name", None),
+                        )
+                    )
+                if (
+                    _MergeStrategy is not None
+                    and (
+                        merge_strategy == _MergeStrategy.CONTEXT_UPDATE
+                        or (
+                            isinstance(merge_strategy, str)
+                            and merge_strategy.lower() == _MergeStrategy.CONTEXT_UPDATE.value
+                        )
+                    )
+                    and not bool(getattr(step, "ignore_branch_names", False))
+                ):
+                    fm = getattr(step, "field_mapping", None)
+                    context_include = getattr(step, "context_include_keys", None) or []
+                    if isinstance(fm, dict) and fm:
+                        seen: set[str] = set()
+                        dup: set[str] = set()
+                        for dests in fm.values():
+                            if not isinstance(dests, (list, tuple)):
+                                continue
+                            for d in dests:
+                                key = str(d)
+                                if key in seen:
+                                    dup.add(key)
+                                else:
+                                    seen.add(key)
+                        if dup or context_include:
+                            report.errors.append(
+                                ValidationFinding(
+                                    rule_id="V-P1",
+                                    severity="error",
+                                    message=(
+                                        f"Parallel step '{step.name}' merges overlapping keys via field_mapping: {sorted(dup)}."
+                                        if dup
+                                        else (
+                                            "Parallel step uses context_include_keys with field_mapping "
+                                            "but no destination keys provided."
+                                        )
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                )
+                            )
+                    else:
+                        if context_include:
+                            report.errors.append(
+                                ValidationFinding(
+                                    rule_id="V-P1",
+                                    severity="error",
+                                    message=(
+                                        f"Parallel step '{step.name}' uses merge_strategy=CONTEXT_UPDATE with "
+                                        "context_include_keys but no field_mapping; branches may conflict."
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                )
+                            )
+
+                parallel_outputs: set[str] = set()
+                branches = getattr(step, "branches", {}) or {}
+                for branch in branches.values():
+                    try:
+                        child_paths = _validate_pipeline(
+                            branch, set(available_roots), set(produced_paths), None, None
+                        )
+                        parallel_outputs.update(child_paths)
+                    except Exception:
+                        continue
+                produced_paths.update(parallel_outputs)
+                available_roots.update(_root_key(p) for p in parallel_outputs)
+                prev_step = step
+                prev_out_type = getattr(step, "__step_output_type__", object)
+                continue
+
+            if _ImportStep is not None and isinstance(step, _ImportStep):
+                child = getattr(step, "pipeline", None)
+                if child is not None:
+                    try:
+                        child_paths = _validate_pipeline(
+                            child, set(available_roots), set(produced_paths), None, None
+                        )
+                        produced_paths.update(child_paths)
+                        available_roots.update(_root_key(p) for p in child_paths)
+                    except Exception:
+                        pass
+
+            in_type = getattr(step, "__step_input_type__", object)
+            templated_input_present = False
+            try:
+                meta = getattr(step, "meta", None)
+                if isinstance(meta, dict) and meta.get("templated_input") is not None:
+                    templated_input_present = True
+            except Exception:
+                templated_input_present = False
+            if prev_step is not None and prev_out_type is not None:
+                if (
+                    not templated_input_present
+                    and not is_adapter_step
+                    and not _compatible(prev_out_type, in_type)
+                ):
+                    prev_name = str(getattr(prev_step, "name", ""))
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id="V-A2",
+                            severity="error",
+                            message=(
+                                f"Type mismatch: Output of '{prev_name}' (returns `{prev_out_type}`) "
+                                f"is not compatible with '{step.name}' (expects `{in_type}`). "
+                                "For best results, use a static type checker like mypy to catch these issues before runtime."
+                            ),
+                            step_name=step.name,
+                        )
+                    )
+
+            required_keys = [
+                k for k in getattr(step, "input_keys", []) if isinstance(k, str) and k.strip()
+            ]
+            missing_keys: list[str] = []
+            weak_keys: list[str] = []
+            for rk in required_keys:
+                root = _root_key(rk)
+                if rk in produced_paths:
+                    continue
+                if root in available_roots:
+                    weak_keys.append(rk)
+                    continue
+                missing_keys.append(rk)
+
+            if missing_keys:
+                report.errors.append(
+                    ValidationFinding(
+                        rule_id="V-CTX1",
+                        severity="error",
+                        message=(
+                            f"Step '{step.name}' requires context keys {missing_keys} "
+                            "that are not produced earlier in the pipeline."
+                        ),
+                        step_name=step.name,
+                    )
+                )
+            if weak_keys:
+                report.warnings.append(
+                    ValidationFinding(
+                        rule_id="V-CTX2",
+                        severity="warning",
+                        message=(
+                            f"Step '{step.name}' requires context paths {weak_keys} but only their root keys "
+                            "are available. Declare precise output_keys (e.g., 'import_artifacts.field' or other typed fields) in producer steps."
+                        ),
+                        step_name=step.name,
+                    )
+                )
+
+            def _strict_types_match(src: object, dst: object, *, is_adapter: bool) -> bool:
+                """Strict type compatibility: disallow wildcard fallthrough and dict-to-object bypass.
+
+                Pydantic->dict bridging is only allowed when step is an adapter.
+                """
+                if _is_unbounded_type(src) or _is_unbounded_type(dst):
+                    return False
+                origin_s, origin_d = get_origin(src), get_origin(dst)
+                try:
+                    from pydantic import BaseModel as _PydanticBaseModel
+
+                    if isinstance(src, type) and issubclass(src, _PydanticBaseModel):
+                        # Allow Pydantic model outputs to flow into dict expectations only via adapters.
+                        if dst is dict or origin_d is dict:
+                            return is_adapter
+                except Exception:
+                    pass
+                if origin_d is typing.Union:
+                    return any(
+                        _strict_types_match(src, arg, is_adapter=is_adapter)
+                        for arg in get_args(dst)
+                    )
+                if origin_s is typing.Union:
+                    return all(
+                        _strict_types_match(arg, dst, is_adapter=is_adapter)
+                        for arg in get_args(src)
+                    )
+                src_eff = origin_s if origin_s is not None else src
+                dst_eff = origin_d if origin_d is not None else dst
+                if not isinstance(src_eff, type) or not isinstance(dst_eff, type):
+                    return False
+                try:
+                    return issubclass(src_eff, dst_eff)
+                except Exception:
+                    return False
+
+            if is_adapter_step:
+                adapter_id = meta.get("adapter_id") if isinstance(meta, dict) else None
+                adapter_token = meta.get("adapter_allow") if isinstance(meta, dict) else None
+                if not adapter_id or adapter_id not in adapter_allowlist:
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id="V-ADAPT-ALLOW",
+                            severity="error",
+                            message=(
+                                f"Adapter step '{getattr(step, 'name', '')}' lacks an allowlisted adapter_id."
+                            ),
+                            step_name=getattr(step, "name", None),
+                        )
+                    )
+                elif adapter_allowlist.get(adapter_id) != adapter_token:
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id="V-ADAPT-ALLOW",
+                            severity="error",
+                            message=(
+                                f"Adapter step '{getattr(step, 'name', '')}' missing correct adapter token "
+                                f"(expected '{adapter_allowlist.get(adapter_id)}')."
+                            ),
+                            step_name=getattr(step, "name", None),
+                        )
+                    )
+
+            if prev_step is not None:
+                prev_updates_context = bool(getattr(prev_step, "updates_context", False))
+                curr_accepts_input = getattr(step, "__step_input_type__", object)
+                prev_produces_output = getattr(prev_step, "__step_output_type__", object)
+
+                def _templated_input_consumes_prev(_step: object, prev_name: str) -> bool:
+                    try:
+                        meta2 = getattr(_step, "meta", None)
+                        templ = meta2.get("templated_input") if isinstance(meta2, dict) else None
+                        if not isinstance(templ, str):
+                            return False
+                        if "{{" not in templ or "}}" not in templ:
+                            return False
+                        prev_esc = _re.escape(str(prev_name)) if prev_name else ""
+                        for m in _re.finditer(r"\{\{(.*?)\}\}", templ, flags=_re.DOTALL):
+                            expr = m.group(1)
+                            if not isinstance(expr, str):
+                                continue
+                            if _re.search(r"\bprevious_step\b", expr):
+                                return True
+                            if prev_esc:
+                                pat1 = rf"\bsteps\s*\.\s*{prev_esc}\b"
+                                pat2 = rf"\bsteps\s*\[\s*['\"]{prev_esc}['\"]\s*\]"
+                                if _re.search(pat1, expr) or _re.search(pat2, expr):
+                                    return True
+                        return False
+                    except Exception:
+                        return False
+
+                curr_generic = _is_unbounded_type(curr_accepts_input)
+                meta2 = getattr(step, "meta", None)
+                templated_input = meta2.get("templated_input") if isinstance(meta2, dict) else None
+                has_explicit_templated_input = templated_input is not None
+                if (
+                    (not prev_updates_context)
+                    and (prev_produces_output is not None)
+                    and (curr_generic or has_explicit_templated_input)
+                ):
+                    prev_name = str(getattr(prev_step, "name", ""))
+                    if not _templated_input_consumes_prev(step, prev_name):
+                        report.warnings.append(
+                            ValidationFinding(
+                                rule_id="V-A5",
+                                severity="warning",
+                                message=(
+                                    f"The output of step '{prev_name}' is not used by '{step.name}'."
+                                ),
+                                step_name=prev_name,
+                                suggestion=(
+                                    "Set updates_context=True on the producing step or insert an adapter step to consume its output."
+                                ),
+                            )
+                        )
+
+                # Disallow implicit wildcard bridging without explicit adapter
+                if _is_wildcard_type(curr_accepts_input) and prev_produces_output is not None:
+                    if not is_adapter_step:
+                        report.errors.append(
+                            ValidationFinding(
+                                rule_id="V-A2-STRICT",
+                                severity="error",
+                                message=(
+                                    f"Step '{step.name}' accepts '{curr_accepts_input}' which is too generic "
+                                    f"for upstream output '{getattr(prev_step, 'name', '')}'. "
+                                    "Use an explicit adapter step with is_adapter=True."
+                                ),
+                                step_name=getattr(step, "name", None),
+                            )
+                        )
+                    else:
+                        adapter_id = meta.get("adapter_id") if isinstance(meta, dict) else None
+                        adapter_token = (
+                            meta.get("adapter_allow") if isinstance(meta, dict) else None
+                        )
+                        if not adapter_id or adapter_id not in adapter_allowlist:
+                            report.errors.append(
+                                ValidationFinding(
+                                    rule_id="V-ADAPT-ALLOW",
+                                    severity="error",
+                                    message=(
+                                        f"Adapter step '{getattr(step, 'name', '')}' lacks an allowlisted adapter_id."
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                )
+                            )
+                        elif adapter_allowlist.get(adapter_id) != adapter_token:
+                            report.errors.append(
+                                ValidationFinding(
+                                    rule_id="V-ADAPT-ALLOW",
+                                    severity="error",
+                                    message=(
+                                        f"Adapter step '{getattr(step, 'name', '')}' missing correct adapter token "
+                                        f"(expected '{adapter_allowlist.get(adapter_id)}')."
+                                    ),
+                                    step_name=getattr(step, "name", None),
+                                )
+                            )
+
+                # Fail on concrete type mismatches in strict mode (non-generic, non-adapter).
+                if (
+                    strict_mode
+                    and prev_produces_output is not None
+                    and curr_accepts_input is not None
+                    and not is_adapter_step
+                    and not curr_generic
+                ):
+                    if not _strict_types_match(
+                        prev_produces_output, curr_accepts_input, is_adapter=is_adapter_step
+                    ):
+                        report.errors.append(
+                            ValidationFinding(
+                                rule_id="V-A2-TYPE",
+                                severity="error",
+                                message=(
+                                    f"Type mismatch: Output of '{getattr(prev_step, 'name', '')}' "
+                                    f"({prev_produces_output}) is not compatible with '{step.name}' "
+                                    f"input ({curr_accepts_input})."
+                                ),
+                                step_name=getattr(step, "name", None),
+                            )
+                        )
+
+            fb = getattr(step, "fallback_step", None)
+            if fb is not None:
+                step_in = getattr(step, "__step_input_type__", object)
+                fb_in = getattr(fb, "__step_input_type__", object)
+                if not _compatible(step_in, fb_in):
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id="V-F1",
+                            severity="error",
+                            message=(
+                                f"Fallback step '{getattr(fb, 'name', 'unknown')}' expects input `{fb_in}`, "
+                                f"which is not compatible with original step '{step.name}' input `{step_in}`."
+                            ),
+                            step_name=step.name,
+                            suggestion=(
+                                "Ensure the fallback step accepts the same input type as the original step or add an adapter."
+                            ),
+                        )
+                    )
+
+            produced_keys = [
+                k for k in getattr(step, "output_keys", []) if isinstance(k, str) and k.strip()
+            ]
+            sink_target = getattr(step, "sink_to", None)
+            if isinstance(sink_target, str) and sink_target.strip():
+                produced_keys.append(sink_target)
+            for pk in produced_keys:
+                produced_paths.add(pk)
+                available_roots.add(_root_key(pk))
+
+            if isinstance(sink_target, str) and sink_target.startswith("scratchpad"):
+                report.errors.append(
+                    ValidationFinding(
+                        rule_id="CTX-SCRATCHPAD",
+                        severity="error",
+                        message=(
+                            f"Step '{step.name}' writes to scratchpad via sink_to='{sink_target}'. "
+                            "User data must be stored in typed context fields instead."
+                        ),
+                        step_name=getattr(step, "name", None),
+                        location_path=_yloc.get("path")
+                        if isinstance(_yloc, dict)
+                        else f"steps[{idx_step}]",
+                        file=_yloc.get("file") if isinstance(_yloc, dict) else None,
+                        line=_yloc.get("line") if isinstance(_yloc, dict) else None,
+                        column=_yloc.get("column") if isinstance(_yloc, dict) else None,
+                    )
+                )
+
+            if isinstance(templated_input, str) and "scratchpad" in templated_input:
+                report.errors.append(
+                    ValidationFinding(
+                        rule_id="CTX-SCRATCHPAD",
+                        severity="error",
+                        message=(
+                            f"Step '{step.name}' templated_input references scratchpad. "
+                            "Move data to typed context fields."
+                        ),
+                        step_name=getattr(step, "name", None),
+                        location_path=_yloc.get("path")
+                        if isinstance(_yloc, dict)
+                        else f"steps[{idx_step}]",
+                        file=_yloc.get("file") if isinstance(_yloc, dict) else None,
+                        line=_yloc.get("line") if isinstance(_yloc, dict) else None,
+                        column=_yloc.get("column") if isinstance(_yloc, dict) else None,
+                    )
+                )
+
+            if getattr(step, "updates_context", False) and not produced_keys:
+                report.errors.append(
+                    ValidationFinding(
+                        rule_id="CTX-OUTPUT-KEYS",
+                        severity="error",
+                        message=(
+                            f"Step '{step.name}' sets updates_context=True but declares no output_keys/sink_to. "
+                            "Declare typed context fields to persist outputs."
+                        ),
+                        step_name=getattr(step, "name", None),
+                        location_path=_yloc.get("path")
+                        if isinstance(_yloc, dict)
+                        else f"steps[{idx_step}]",
+                        file=_yloc.get("file") if isinstance(_yloc, dict) else None,
+                        line=_yloc.get("line") if isinstance(_yloc, dict) else None,
+                        column=_yloc.get("column") if isinstance(_yloc, dict) else None,
+                    )
+                )
+
+            prev_step = step
+            prev_out_type = getattr(step, "__step_output_type__", object)
+        return produced_paths
+
+    initial_roots: set[str] = {
+        "initial_prompt",
+        "run_id",
+        "hitl_history",
+        "command_log",
+        "conversation_history",
+        "steps",
+        "call_count",
+    }
+    _validate_pipeline(pipeline, initial_roots, set(), None, None)

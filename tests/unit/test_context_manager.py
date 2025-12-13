@@ -9,7 +9,7 @@ class MockContext(BaseModel):
 
     value: int = 0
     nested: dict = {}
-    scratchpad: dict = {}
+    data_store: dict = {}
 
 
 class MockContextManager:
@@ -37,11 +37,11 @@ class MockContextManager:
 
     def test_isolate_with_include_keys(self):
         """Test context isolation with specific keys."""
-        original = MockContext(value=42, nested={"key": "value"}, scratchpad={"data": "test"})
-        isolated = ContextManager.isolate(original, include_keys=["value", "scratchpad"])
+        original = MockContext(value=42, nested={"key": "value"}, data_store={"data": "test"})
+        isolated = ContextManager.isolate(original, include_keys=["value", "data_store"])
 
         assert isolated.value == 42
-        assert isolated.scratchpad == {"data": "test"}
+        assert isolated.data_store == {"data": "test"}
         # nested should be empty/default since not included
         assert isolated.nested == {}
 
@@ -64,8 +64,8 @@ class MockContextManager:
 
     def test_merge_basic_contexts(self):
         """Test basic context merging."""
-        target = MockContext(value=10, nested={"existing": "data"}, scratchpad={"old": "value"})
-        source = MockContext(value=20, nested={"new": "data"}, scratchpad={"new": "value"})
+        target = MockContext(value=10, nested={"existing": "data"}, data_store={"old": "value"})
+        source = MockContext(value=20, nested={"new": "data"}, data_store={"new": "value"})
 
         result = ContextManager.merge(target, source)
 
@@ -75,36 +75,36 @@ class MockContextManager:
         # Should merge values
         assert result.value == 20  # source overwrites target
         assert result.nested == {"existing": "data", "new": "data"}  # dicts merged
-        assert result.scratchpad == {"old": "value", "new": "value"}  # dicts merged
+        assert result.data_store == {"old": "value", "new": "value"}  # dicts merged
 
     def test_merge_preserves_target_structure(self):
         """Test that merging preserves the target context structure."""
         target = MockContext(value=10)
-        source = MockContext(value=20, nested={"key": "value"}, scratchpad={"data": "test"})
+        source = MockContext(value=20, nested={"key": "value"}, data_store={"data": "test"})
 
         result = ContextManager.merge(target, source)
 
         # Should have all fields from target structure
         assert hasattr(result, "value")
         assert hasattr(result, "nested")
-        assert hasattr(result, "scratchpad")
+        assert hasattr(result, "data_store")
 
         # Should merge values correctly
         assert result.value == 20
         assert result.nested == {"key": "value"}
-        assert result.scratchpad == {"data": "test"}
+        assert result.data_store == {"data": "test"}
 
     def test_merge_deep_nested_structures(self):
         """Test merging with deeply nested structures."""
         target = MockContext(
             value=1,
             nested={"level1": {"level2": {"target": "data"}}},
-            scratchpad={"deep": {"nested": {"target": "value"}}},
+            data_store={"deep": {"nested": {"target": "value"}}},
         )
         source = MockContext(
             value=2,
             nested={"level1": {"level2": {"source": "data"}}},
-            scratchpad={"deep": {"nested": {"source": "value"}}},
+            data_store={"deep": {"nested": {"source": "value"}}},
         )
 
         result = ContextManager.merge(target, source)
@@ -112,8 +112,8 @@ class MockContextManager:
         # Should merge nested structures
         assert result.nested["level1"]["level2"]["target"] == "data"
         assert result.nested["level1"]["level2"]["source"] == "data"
-        assert result.scratchpad["deep"]["nested"]["target"] == "value"
-        assert result.scratchpad["deep"]["nested"]["source"] == "value"
+        assert result.data_store["deep"]["nested"]["target"] == "value"
+        assert result.data_store["deep"]["nested"]["source"] == "value"
 
     def test_merge_handles_missing_attributes(self):
         """Test that merging handles missing attributes gracefully."""
@@ -142,10 +142,10 @@ class MockContextManager:
         target = MockContext(
             value=1,
             nested={"list": [1, 2, 3], "dict": {"a": 1, "b": 2}},
-            scratchpad={"set": {1, 2, 3}},
+            data_store={"set": {1, 2, 3}},
         )
         source = MockContext(
-            value=2, nested={"list": [4, 5], "dict": {"c": 3}}, scratchpad={"set": {4, 5}}
+            value=2, nested={"list": [4, 5], "dict": {"c": 3}}, data_store={"set": {4, 5}}
         )
 
         result = ContextManager.merge(target, source)
@@ -154,12 +154,12 @@ class MockContextManager:
         assert result.nested["list"] == [1, 2, 3, 4, 5]  # lists concatenated
         assert result.nested["dict"] == {"a": 1, "b": 2, "c": 3}  # dicts merged
         # Note: sets are not handled specially by the merge function, so they get overwritten
-        assert result.scratchpad["set"] == {4, 5}  # sets overwritten
+        assert result.data_store["set"] == {4, 5}  # sets overwritten
 
     def test_context_isolation_integration(self):
         """Integration test for context isolation workflow."""
         # Create initial context
-        original = MockContext(value=0, scratchpad={"counter": 0})
+        original = MockContext(value=0, data_store={"counter": 0})
 
         # Isolate for parallel execution
         branch1_context = ContextManager.isolate(original)
@@ -167,13 +167,13 @@ class MockContextManager:
 
         # Modify in parallel branches
         branch1_context.value = 10
-        branch1_context.scratchpad["counter"] = 1
+        branch1_context.data_store["counter"] = 1
         branch2_context.value = 20
-        branch2_context.scratchpad["counter"] = 2
+        branch2_context.data_store["counter"] = 2
 
         # Original should remain unchanged
         assert original.value == 0
-        assert original.scratchpad["counter"] == 0
+        assert original.data_store["counter"] == 0
 
         # Merge results back
         merged = ContextManager.merge(original, branch1_context)
@@ -181,4 +181,4 @@ class MockContextManager:
 
         # Should have combined results
         assert final.value == 20  # last write wins
-        assert final.scratchpad["counter"] == 2  # last write wins
+        assert final.data_store["counter"] == 2  # last write wins

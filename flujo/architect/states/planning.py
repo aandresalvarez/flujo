@@ -2,7 +2,7 @@ from __future__ import annotations
 # mypy: disable-error-code=arg-type
 
 import os as _os
-from typing import Any, Callable, Coroutine, List, cast
+from typing import Any, List
 
 from flujo.type_definitions.common import JSONObject
 
@@ -210,7 +210,7 @@ def build_planning_state() -> Pipeline[Any, Any]:
         return await goto("PlanApproval", context=context)
 
     goto_approval_step = Step.from_callable(
-        cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _goto_approval),
+        _goto_approval,
         name="GotoApproval",
         updates_context=True,
     )

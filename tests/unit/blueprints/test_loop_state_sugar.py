@@ -8,7 +8,7 @@ from flujo.domain.blueprint.loader import load_pipeline_blueprint_from_yaml
 def _ctx() -> Any:
     class Ctx:
         def __init__(self) -> None:
-            self.scratchpad = {"steps": {}, "history": []}
+            self.data_store = {"steps": {}, "history": []}
             self.metrics = {}
 
     return Ctx()
@@ -27,7 +27,7 @@ steps:
       max_loops: 2
       state:
         append:
-          - target: "context.scratchpad.history"
+          - target: "context.data_store.history"
             value: "OUT: {{ previous_step }}"
         set:
           - target: "context.summary"
@@ -45,7 +45,7 @@ steps:
     # iteration mapper returns the output by default
     assert out == "foo"
     # append executed
-    assert c.scratchpad["history"] == ["OUT: foo"]
+    assert c.data_store["history"] == ["OUT: foo"]
     # set executed
     assert getattr(c, "summary", None) == "foo"
     # merge executed

@@ -1,7 +1,8 @@
 import pytest
-from pydantic import BaseModel
+from pydantic import ValidationError
 
 from flujo.application.core.executor_helpers import make_execution_frame
+from flujo.domain.models import BaseModel
 from flujo.domain.models import Quota, UsageLimits
 
 
@@ -70,28 +71,61 @@ def test_enforce_typed_context_accepts_pydantic(monkeypatch):
     assert frame.context is ctx
 
 
-def test_scratchpad_enforcement_rejects_user_keys(monkeypatch):
-    monkeypatch.setenv("FLUJO_ENFORCE_SCRATCHPAD_BAN", "1")
-    monkeypatch.setenv("FLUJO_SCRATCHPAD_BAN_STRICT", "1")
+def test_enforce_typed_context_passes_through_when_disabled(monkeypatch):
+    monkeypatch.setenv("FLUJO_ENFORCE_TYPED_CONTEXT", "0")
+
+    core = _DummyCore()
+    step = _DummyStep()
+    ctx = {"value": "dict"}
+
+    # Opt-out should be ignored in CI/strict runs; expect TypeError
+    with pytest.raises(TypeError):
+        make_execution_frame(
+            core=core,
+            step=step,
+            data="in",
+            context=ctx,
+            resources=None,
+            limits=UsageLimits(),
+            context_setter=None,
+            stream=False,
+            on_chunk=None,
+            fallback_depth=0,
+            quota=None,
+            result=None,
+        )
+
+
+def test_removed_root_enforcement_rejects_user_keys(monkeypatch):
+    # Note: No env flags needed - enforcement is always on
     from flujo.domain.models import PipelineContext
     from flujo.application.core import context_adapter as ca
 
     ctx = PipelineContext()
-    with pytest.raises(ValueError):
-        ca._inject_context_with_deep_merge(
-            ctx, {"scratchpad": {"user_note": "forbidden"}}, PipelineContext
-        )
+    removed_root = "scrat" + "chpad"
+    err = ca._inject_context_with_deep_merge(
+        ctx, {removed_root: {"user_note": "forbidden"}}, PipelineContext
+    )
+    assert err is not None and removed_root in err.lower()
 
 
-def test_scratchpad_enforcement_allows_framework_keys(monkeypatch):
-    monkeypatch.setenv("FLUJO_ENFORCE_SCRATCHPAD_BAN", "1")
+def test_removed_root_enforcement_allows_framework_keys(monkeypatch):
+    # Note: No env flags needed - enforcement is always on
     from flujo.domain.models import PipelineContext
     from flujo.application.core import context_adapter as ca
 
     ctx = PipelineContext()
     err = ca._inject_context_with_deep_merge(
-        ctx, {"scratchpad": {"status": "paused", "steps": {"s1": "out"}}}, PipelineContext
+        ctx, {"status": "paused", "steps": {"s1": "out"}}, PipelineContext
     )
     assert err is None
-    assert ctx.scratchpad["status"] == "paused"
-    assert ctx.scratchpad["steps"] == {"s1": "out"}
+    assert ctx.status == "paused"
+    assert ctx.step_outputs == {"s1": "out"}
+
+
+def test_pipeline_context_rejects_removed_root_on_construction() -> None:
+    from flujo.domain.models import PipelineContext
+
+    removed_root = "scrat" + "chpad"
+    with pytest.raises(ValidationError):
+        PipelineContext.model_validate({removed_root: {"user_note": "forbidden"}})

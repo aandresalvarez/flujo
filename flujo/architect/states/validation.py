@@ -121,7 +121,7 @@ def build_validation_state() -> Pipeline[Any, Any]:
                 telemetry().info("[ArchitectSM] ValidationDecision -> DryRunOffer")
             except Exception:
                 pass
-            return {"scratchpad": {"next_state": "DryRunOffer"}}
+            return {"next_state": "DryRunOffer"}
 
         try:
             telemetry().info("[ArchitectSM] ValidationDecision -> Validation (repair attempt)")
@@ -143,7 +143,7 @@ def build_validation_state() -> Pipeline[Any, Any]:
         except Exception:
             out = {}
 
-        out["scratchpad"] = {"next_state": "Validation"}
+        out["next_state"] = "Validation"
         return out
 
     decide_next = Step.from_callable(_decide_next, name="ValidationDecision", updates_context=True)

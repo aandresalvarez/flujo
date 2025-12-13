@@ -91,6 +91,6 @@ Safe, opt‑in fixers are applied only to YAML files and prompt for confirmation
 
 - V‑T1: Rewrite `previous_step.output` → `previous_step | tojson`.
 - V‑T3: Correct common filter typos (e.g., `to_json`→`tojson`, `lowercase`→`lower`).
-- V‑C2: Replace `parent: scratchpad` with `parent: scratchpad.<key>` (uses `scratchpad.value` as a conservative default key).
+- V‑C2: Replace `parent: scratchpad` with `parent: import_artifacts.<key>` (uses `import_artifacts.value` as a conservative default key).
 
 Use `--fix-rules` to restrict which fixers run, and `--fix-dry-run` to preview the patch without writing.

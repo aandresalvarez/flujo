@@ -41,11 +41,11 @@ async def test_yaml_pause_transition_self_reentry() -> None:
     ctx = paused.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
     # Pause metadata
-    assert ctx.scratchpad.get("status") == "paused"
-    assert isinstance(ctx.scratchpad.get("pause_message"), str)
+    assert ctx.status == "paused"
+    assert isinstance(ctx.pause_message, str)
     # State machine control metadata
-    assert ctx.scratchpad.get("current_state") == "s1"
-    assert ctx.scratchpad.get("next_state") == "s1"
+    assert ctx.current_state == "s1"
+    assert ctx.next_state == "s1"
 
 
 def _yaml_multi_state_with_when() -> str:
@@ -66,7 +66,7 @@ def _yaml_multi_state_with_when() -> str:
         "      - from: s1\n"
         "        on: success\n"
         "        to: s2\n"
-        "        when: \"context.scratchpad.get('go_s2')\"\n"
+        "        when: \"context.import_artifacts.get('go_s2')\"\n"
         "      - from: s1\n"
         "        on: success\n"
         "        to: s3\n"
@@ -80,13 +80,13 @@ async def test_yaml_multi_state_flow_with_when_true() -> None:
     runner = create_test_flujo(pipeline)
     final = None
     async for item in runner.stream_async(
-        "start", initial_context_data={"scratchpad": {"go_s2": True}}
+        "start", initial_context_data={"import_artifacts": {"go_s2": True}}
     ):
         final = item
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    assert ctx.scratchpad.get("current_state") == "s2"
+    assert ctx.current_state == "s2"
 
 
 @pytest.mark.asyncio
@@ -100,4 +100,4 @@ async def test_yaml_multi_state_flow_with_when_false() -> None:
     assert final is not None
     ctx = final.final_pipeline_context
     assert isinstance(ctx, PipelineContext)
-    assert ctx.scratchpad.get("current_state") == "s3"
+    assert ctx.current_state == "s3"

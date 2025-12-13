@@ -2,20 +2,36 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from collections.abc import Awaitable, Callable
+from typing import Protocol
 
 from ...domain.models import (
+    BaseModel as DomainBaseModel,
     Failure,
     Paused,
     PipelineResult,
+    Quota,
     StepResult,
     Success,
+    StepOutcome,
     UsageLimits,
 )
 from ...exceptions import PausedException, UsageLimitExceededError
 from ...infra import telemetry
-from .types import ExecutionFrame
 from .step_history_tracker import StepHistoryTracker
+from .executor_helpers import make_execution_frame
+
+
+class _ExecutorCoreLike(Protocol):
+    def _get_current_quota(self) -> Quota | None: ...
+    def _safe_step_name(self, step: object) -> str: ...
+
+    def execute(
+        self,
+        frame_or_step: object | None = None,
+        data: object | None = None,
+        **kwargs: object,
+    ) -> Awaitable[StepOutcome[StepResult] | StepResult]: ...
 
 
 class PipelineOrchestrator:
@@ -24,14 +40,15 @@ class PipelineOrchestrator:
     async def execute(
         self,
         *,
-        core: Any,
-        pipeline: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-    ) -> PipelineResult[Any]:
+        core: _ExecutorCoreLike,
+        pipeline: object,
+        data: object,
+        context: DomainBaseModel | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+        | None,
+    ) -> PipelineResult[DomainBaseModel]:
         current_data = data
         current_context = context
         history_tracker = StepHistoryTracker()
@@ -44,20 +61,19 @@ class PipelineOrchestrator:
                 telemetry.logfire.info(
                     f"[PipelineOrchestrator] executing step {getattr(step, 'name', 'unnamed')}"
                 )
-
-                frame: ExecutionFrame[Any] = ExecutionFrame(
-                    step=step,
-                    data=current_data,
-                    context=current_context,
-                    resources=resources,
-                    limits=limits,
-                    quota=core._get_current_quota()
-                    if hasattr(core, "_get_current_quota")
-                    else None,
+                frame = make_execution_frame(
+                    core,
+                    step,
+                    current_data,
+                    current_context,
+                    resources,
+                    limits,
+                    context_setter,
                     stream=False,
                     on_chunk=None,
-                    context_setter=(context_setter or (lambda _r, _c: None)),
-                    _fallback_depth=0,
+                    fallback_depth=0,
+                    quota=core._get_current_quota(),
+                    result=None,
                 )
                 outcome = await core.execute(frame)
 
@@ -83,6 +99,10 @@ class PipelineOrchestrator:
                             feedback=outcome.feedback or str(outcome.error),
                         )
                     )
+                elif isinstance(outcome, StepResult):
+                    step_result = outcome
+                    if getattr(step_result, "name", None) in (None, "<unknown>", ""):
+                        step_result.name = core._safe_step_name(step)
                 elif isinstance(outcome, Paused):
                     raise PausedException(outcome.message)
                 else:
@@ -98,13 +118,18 @@ class PipelineOrchestrator:
                 current_data = (
                     step_result.output if step_result.output is not None else current_data
                 )
-                current_context = (
-                    step_result.branch_context
-                    if step_result.branch_context is not None
-                    else current_context
-                )
-                validation_error = core._context_update_manager.apply_updates(
-                    step=step, output=step_result.output, context=current_context
+                branch_ctx = getattr(step_result, "branch_context", None)
+                if isinstance(branch_ctx, DomainBaseModel):
+                    current_context = branch_ctx
+                validation_error_obj: object | None = None
+                update_mgr = getattr(core, "_context_update_manager", None)
+                apply_updates = getattr(update_mgr, "apply_updates", None)
+                if callable(apply_updates):
+                    validation_error_obj = apply_updates(
+                        step=step, output=step_result.output, context=current_context
+                    )
+                validation_error = (
+                    validation_error_obj if isinstance(validation_error_obj, str) else None
                 )
                 if validation_error:
                     step_result.success = False
@@ -176,12 +201,14 @@ class PipelineOrchestrator:
             for sr in history
         )
         try:
-            if history and getattr(history[-1], "branch_context", None) is not None:
-                current_context = history[-1].branch_context
+            if history:
+                last_branch_ctx = getattr(history[-1], "branch_context", None)
+                if isinstance(last_branch_ctx, DomainBaseModel):
+                    current_context = last_branch_ctx
         except Exception:
             pass
 
-        result: PipelineResult[Any] = PipelineResult(
+        result: PipelineResult[DomainBaseModel] = PipelineResult(
             final_output=current_data,
             final_pipeline_context=current_context,
             step_history=history,
@@ -190,8 +217,10 @@ class PipelineOrchestrator:
             total_tokens=total_tokens,
         )
         try:
-            if history and getattr(history[-1], "branch_context", None) is not None:
-                result.final_pipeline_context = history[-1].branch_context
+            if history:
+                last_branch_ctx = getattr(history[-1], "branch_context", None)
+                if isinstance(last_branch_ctx, DomainBaseModel):
+                    result.final_pipeline_context = last_branch_ctx
         except Exception:
             pass
         return result

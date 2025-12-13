@@ -104,19 +104,29 @@ def load_backend_from_config() -> StateBackend:
     """Load a state backend based on configuration, with robust error handling."""
     import typer
 
-    # Get state URI from ConfigManager (handles env vars + TOML with proper precedence)
-    uri = get_state_uri(force_reload=True)
+    # Fast path: when the user explicitly set FLUJO_STATE_URI, don't force a ConfigManager
+    # reload on every CLI invocation (important for stable perf in CI and perf tests).
+    env_uri = os.getenv("FLUJO_STATE_URI", "").strip()
+    if env_uri:
+        uri: str | None = env_uri
+        env_uri_set = True
+    else:
+        # Handles env vars + TOML with proper precedence; force_reload keeps interactive
+        # sessions consistent when the config file changes on disk.
+        uri = get_state_uri(force_reload=True)
+        env_uri_set = False
 
     # In test environments, prefer an isolated temp SQLite DB when no explicit
     # FLUJO_STATE_URI env override is provided — even if flujo.toml specifies
     # a state_uri. This keeps tests hermetic and avoids writing to the repo db.
-    try:
-        settings = get_settings()
-        is_test_env = bool(os.getenv("PYTEST_CURRENT_TEST")) or settings.test_mode
-        env_uri_set = bool(os.getenv("FLUJO_STATE_URI", "").strip())
-    except Exception:
+    if not env_uri_set:
+        try:
+            settings = get_settings()
+            is_test_env = bool(os.getenv("PYTEST_CURRENT_TEST")) or settings.test_mode
+        except Exception:
+            is_test_env = False
+    else:
         is_test_env = False
-        env_uri_set = False
     if is_test_env and not env_uri_set:
         # Respect ephemeral overrides in tests
         try:
@@ -248,7 +258,10 @@ def load_backend_from_config() -> StateBackend:
         )
 
     if parsed.scheme.startswith("sqlite"):
-        db_path = _normalize_sqlite_path(uri, Path.cwd(), config_dir=config_dir)
+        # Env overrides should resolve relative SQLite paths against the current working directory,
+        # not against a config file location that may come from a different project.
+        sqlite_config_dir = None if env_uri_set else config_dir
+        db_path = _normalize_sqlite_path(uri, Path.cwd(), config_dir=sqlite_config_dir)
         # Debug output for test visibility
         if os.getenv("FLUJO_DEBUG") == "1":
             logging.debug(f"[flujo.config] Using SQLite DB path: {db_path}")

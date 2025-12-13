@@ -8,7 +8,7 @@ from flujo.domain.blueprint.loader import load_pipeline_blueprint_from_yaml
 def _make_ctx(steps: dict[str, Any] | None = None) -> Any:
     class Ctx:
         def __init__(self) -> None:
-            self.scratchpad = {"steps": steps or {}}
+            self.step_outputs = steps or {}
 
     return Ctx()
 

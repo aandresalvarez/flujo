@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from typing import Any, Coroutine, TypeVar, cast
+from concurrent.futures import Future
+from typing import Any, Coroutine, TypeVar
 
 T = TypeVar("T")
 
@@ -52,23 +53,19 @@ def run_sync(coro: Coroutine[Any, Any, T]) -> T:
         return asyncio.run(coro)
 
     # Already inside a loop - use thread isolation
-    result: Any = None
-    exc: Exception | None = None
+    future: Future[T] = Future()
 
     def _target() -> None:
-        nonlocal result, exc
         try:
-            result = asyncio.run(coro)
-        except Exception as e:  # pragma: no cover - unexpected coroutine failure
-            exc = e
+            future.set_result(asyncio.run(coro))
+        except BaseException as exc:  # pragma: no cover - propagate via Future
+            future.set_exception(exc)
 
     thread = threading.Thread(target=_target, daemon=True)
     thread.start()
     thread.join()
 
-    if exc:
-        raise exc
-    return cast(T, result)
+    return future.result()
 
 
 __all__ = ["run_sync"]

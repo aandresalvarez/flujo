@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Generic, Optional, TypeVar, Literal
+import inspect
+
+from typing import (
+    AsyncIterator,
+    Awaitable,
+    Generic,
+    Optional,
+    Protocol,
+    TypeVar,
+    Literal,
+    TypeGuard,
+)
 
 from flujo.domain.backends import ExecutionBackend, StepExecutionRequest
 from flujo.domain.dsl.step import Step
@@ -38,6 +49,28 @@ from flujo.application.core.hook_dispatcher import _dispatch_hook
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
 
+class LegacyStepExecutor(Protocol):
+    """Callable adapter for legacy step executors."""
+
+    def __call__(
+        self,
+        step: Step[object, object],
+        data: object,
+        context: BaseModel | None,
+        resources: AppResources | None,
+        *,
+        stream: bool = False,
+    ) -> AsyncIterator[object] | Awaitable[object]: ...
+
+
+def _is_async_iterator(obj: object) -> TypeGuard[AsyncIterator[object]]:
+    return hasattr(obj, "__aiter__")
+
+
+def _is_awaitable(obj: object) -> TypeGuard[Awaitable[object]]:
+    return inspect.isawaitable(obj)
+
+
 class StepCoordinator(Generic[ContextT]):
     """Coordinates individual step execution with telemetry and hooks."""
 
@@ -51,16 +84,16 @@ class StepCoordinator(Generic[ContextT]):
 
     async def execute_step(
         self,
-        step: "Step[Any, Any]",
-        data: Any,
+        step: "Step[object, object]",
+        data: object,
         context: Optional[ContextT],
         backend: Optional[ExecutionBackend] = None,  # ✅ NEW: Receive the backend to call.
         *,
         stream: bool = False,
-        step_executor: Optional[Any] = None,  # Legacy parameter for backward compatibility
+        step_executor: "LegacyStepExecutor | None" = None,  # Legacy parameter
         usage_limits: Optional[UsageLimits] = None,  # ✅ NEW: Usage limits for step execution
         quota: Optional[Quota] = None,
-    ) -> AsyncIterator[Any]:
+    ) -> AsyncIterator[object]:
         """Execute a single step with telemetry and hook management.
 
         Args:
@@ -106,11 +139,11 @@ class StepCoordinator(Generic[ContextT]):
                 if step_executor is not None:
                     # Legacy approach: use step_executor
                     # Handle both async generators and regular async functions
-                    try:
-                        # Try to use as async generator first
-                        async for item in step_executor(
-                            step, data, context, self.resources, stream=stream
-                        ):
+                    legacy_result = step_executor(
+                        step, data, context, self.resources, stream=stream
+                    )
+                    if _is_async_iterator(legacy_result):
+                        async for item in legacy_result:
                             # Preserve legacy behavior for custom executors
                             if isinstance(item, StepOutcome):
                                 if isinstance(item, Success):
@@ -122,11 +155,11 @@ class StepCoordinator(Generic[ContextT]):
                             else:
                                 # Pass through raw chunks/strings unchanged
                                 yield item
-                    except TypeError:
-                        # If that fails, try as regular async function
-                        item = await step_executor(
-                            step, data, context, self.resources, stream=stream
-                        )
+                    else:
+                        if _is_awaitable(legacy_result):
+                            item = await legacy_result
+                        else:
+                            item = legacy_result
                         if isinstance(item, StepOutcome):
                             if isinstance(item, Success):
                                 step_result = item.step_result
@@ -145,10 +178,10 @@ class StepCoordinator(Generic[ContextT]):
                     effective_stream = bool(stream and has_agent_stream)
                     if effective_stream:
                         # For streaming, we need to collect chunks and yield them
-                        chunks: list[Any] = []
-                        _last_chunk: Any = object()
+                        chunks: list[object] = []
+                        _last_chunk: object = object()
 
-                        async def on_chunk(chunk: Any) -> None:
+                        async def on_chunk(chunk: object) -> None:
                             nonlocal _last_chunk
                             # Deduplicate consecutive identical chunks to avoid double-emission
                             if chunk == _last_chunk:
@@ -175,7 +208,7 @@ class StepCoordinator(Generic[ContextT]):
                             if isinstance(step_outcome, Success):
                                 sr = step_outcome.step_result
 
-                                def _is_mock(obj: Any) -> bool:
+                                def _is_mock(obj: object) -> bool:
                                     try:
                                         from unittest.mock import Mock as _M, MagicMock as _MM
 
@@ -363,7 +396,7 @@ class StepCoordinator(Generic[ContextT]):
                                 # Detect direct Mock outputs and raise
                                 try:
 
-                                    def _is_mock(obj: Any) -> bool:
+                                    def _is_mock(obj: object) -> bool:
                                         try:
                                             from unittest.mock import Mock as _M, MagicMock as _MM
 
@@ -402,15 +435,14 @@ class StepCoordinator(Generic[ContextT]):
                                 # Normalize Paused control flow to PipelineAbortSignal and mark context
                                 try:
                                     if isinstance(context, PipelineContext):
-                                        context.scratchpad["status"] = "paused"
+                                        context.status = "paused"
                                         # Use plain message for backward compatibility
                                         msg = getattr(step_outcome, "message", "Paused for HITL")
-                                        context.scratchpad["pause_message"] = (
+                                        context.pause_message = (
                                             msg if isinstance(msg, str) else str(msg)
                                         )
-                                        scratch = context.scratchpad
-                                        if "paused_step_input" not in scratch:
-                                            scratch["paused_step_input"] = data
+                                        if context.paused_step_input is None:
+                                            context.paused_step_input = data
                                 except Exception:
                                     pass
                                 raise PipelineAbortSignal("Paused for HITL")
@@ -461,6 +493,9 @@ class StepCoordinator(Generic[ContextT]):
                                         step_result = out2
                                         yield Success(step_result=step_result)
                                 except Exception as e:
+                                    # Control-flow exceptions must propagate; never coerce into failures.
+                                    if isinstance(e, (PausedException, PipelineAbortSignal)):
+                                        raise
                                     try:
                                         telemetry.logfire.error(
                                             f"Coordinator internal execute failed: {e}"
@@ -484,15 +519,14 @@ class StepCoordinator(Generic[ContextT]):
             except PausedException as e:
                 # Handle pause for human input; mark context and stop executing current step
                 if isinstance(context, PipelineContext):
-                    context.scratchpad["status"] = "paused"
+                    context.status = "paused"
                     # Use plain message for backward compatibility (tests expect plain message)
                     # Only set if not already set (loop policy or recipe may have set it already)
-                    if "pause_message" not in context.scratchpad:
-                        context.scratchpad["pause_message"] = getattr(e, "message", "")
+                    if context.pause_message is None:
+                        context.pause_message = getattr(e, "message", "")
                     # If already set, preserve it (loop policy/recipe already set it correctly)
-                    scratch = context.scratchpad
-                    if "paused_step_input" not in scratch:
-                        scratch["paused_step_input"] = data
+                    if context.paused_step_input is None:
+                        context.paused_step_input = data
                 # Indicate to the ExecutionManager/Runner that execution should stop by raising a sentinel
                 raise PipelineAbortSignal("Paused for HITL")
             except UsageLimitExceededError:
@@ -643,7 +677,7 @@ class StepCoordinator(Generic[ContextT]):
     async def _dispatch_hook(
         self,
         event_name: Literal["pre_run", "post_run", "pre_step", "post_step", "on_step_failure"],
-        **kwargs: Any,
+        **kwargs: object,
     ) -> None:
         """Dispatch a hook to all registered hook functions."""
         await _dispatch_hook(self.hooks, event_name, **kwargs)

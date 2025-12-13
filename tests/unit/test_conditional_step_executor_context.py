@@ -64,12 +64,14 @@ async def test_conditional_executor_isolates_and_merges(monkeypatch: pytest.Monk
 
             return StepResult(name="A", output=data, success=True, branch_context=context)
 
+    from flujo.domain.models import PipelineContext
+
     execu = DefaultConditionalStepExecutor()
     frame = make_execution_frame(
         _Core(),
         cond,
         1,
-        context=type("C", (), {})(),
+        context=PipelineContext(),
         resources=None,
         limits=None,
         context_setter=None,

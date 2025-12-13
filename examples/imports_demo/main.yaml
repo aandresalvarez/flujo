@@ -12,22 +12,22 @@ steps:
     config:
       input_to: initial_prompt
       outputs:
-        - { child: scratchpad.cohort_definition, parent: scratchpad.cohort_definition }
+        - { child: import_artifacts.cohort_definition, parent: import_artifacts.cohort_definition }
 
   - kind: step
     name: concept_discovery
     uses: imports.concept_discovery
     updates_context: true
     config:
-      input_to: scratchpad
+      input_to: import_artifacts
       outputs:
-        - { child: scratchpad.concept_sets, parent: scratchpad.concept_sets }
+        - { child: import_artifacts.concept_sets, parent: import_artifacts.concept_sets }
 
   - kind: step
     name: query_builder
     uses: imports.query_builder
     updates_context: true
     config:
-      input_to: scratchpad
+      input_to: import_artifacts
       outputs:
-        - { child: scratchpad.final_sql, parent: scratchpad.final_sql }
+        - { child: import_artifacts.final_sql, parent: import_artifacts.final_sql }

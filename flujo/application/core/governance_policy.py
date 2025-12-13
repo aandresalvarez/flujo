@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, Sequence
+from typing import Protocol, Sequence
 
 from ...exceptions import ConfigurationError
 from ...infra import telemetry
@@ -17,11 +17,11 @@ class GovernancePolicy(Protocol):
     async def evaluate(
         self,
         *,
-        core: Any,
-        step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
+        core: object,
+        step: object,
+        data: object,
+        context: object | None,
+        resources: object | None,
     ) -> GovernanceDecision: ...
 
 
@@ -31,11 +31,11 @@ class AllowAllGovernancePolicy:
     async def evaluate(
         self,
         *,
-        core: Any,
-        step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
+        core: object,
+        step: object,
+        data: object,
+        context: object | None,
+        resources: object | None,
     ) -> GovernanceDecision:
         return GovernanceDecision(allow=True)
 
@@ -46,11 +46,11 @@ class DenyAllGovernancePolicy:
     async def evaluate(
         self,
         *,
-        core: Any,
-        step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
+        core: object,
+        step: object,
+        data: object,
+        context: object | None,
+        resources: object | None,
     ) -> GovernanceDecision:
         return GovernanceDecision(allow=False, reason="governance_mode=deny_all")
 
@@ -70,11 +70,11 @@ class GovernanceEngine:
     async def enforce(
         self,
         *,
-        core: Any,
-        step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
+        core: object,
+        step: object,
+        data: object,
+        context: object | None,
+        resources: object | None,
     ) -> None:
         for policy in self._policies:
             decision = await policy.evaluate(

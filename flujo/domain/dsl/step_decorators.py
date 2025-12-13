@@ -7,12 +7,10 @@ Step instances from async callables.
 from __future__ import annotations
 
 from typing import (
-    Any,
     Callable,
     Coroutine,
     Optional,
     TYPE_CHECKING,
-    cast,
     overload,
 )
 
@@ -37,20 +35,29 @@ __all__ = ["step", "adapter_step"]
 
 @overload
 def step(
-    func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
+    func: Callable[Concatenate[StepInT, P], Coroutine[object, object, StepOutT]],
     *,
     name: str | None = None,
     updates_context: bool = False,
+    validate_fields: bool = False,
+    sink_to: str | None = None,
+    config: Optional["StepConfig"] = None,
+    execution_mode: "ExecutionMode | None" = None,
+    max_retries: int | None = None,
+    timeout_s: float | None = None,
     processors: Optional["AgentProcessors"] = None,
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
     is_adapter: bool = False,
-    **config_kwargs: Any,
+    adapter_id: str | None = None,
+    adapter_allow: str | None = None,
+    **config_kwargs: object,
 ) -> "Step[StepInT, StepOutT]": ...
 
 
 @overload
 def step(
+    func: None = None,
     *,
     updates_context: bool = False,
     validate_fields: bool = False,
@@ -60,15 +67,21 @@ def step(
     execution_mode: "ExecutionMode | None" = None,
     max_retries: int | None = None,
     timeout_s: float | None = None,
-    **config_kwargs: Any,
+    processors: Optional["AgentProcessors"] = None,
+    persist_feedback_to_context: Optional[str] = None,
+    persist_validation_results_to: Optional[str] = None,
+    is_adapter: bool = False,
+    adapter_id: str | None = None,
+    adapter_allow: str | None = None,
+    **config_kwargs: object,
 ) -> Callable[
-    [Callable[Concatenate[Any, P], Coroutine[Any, Any, Any]]],
+    [Callable[Concatenate[StepInT, P], Coroutine[object, object, StepOutT]]],
     "Step[StepInT, StepOutT]",
 ]: ...
 
 
 def step(
-    func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
+    func: Callable[..., Coroutine[object, object, object]] | None = None,
     *,
     name: str | None = None,
     updates_context: bool = False,
@@ -82,14 +95,16 @@ def step(
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
     is_adapter: bool = False,
-    **config_kwargs: Any,
-) -> Any:
+    adapter_id: str | None = None,
+    adapter_allow: str | None = None,
+    **config_kwargs: object,
+) -> object:
     """Decorator / factory for creating :class:`Step` instances from async callables."""
     # Import here to avoid circular imports
     from .step import Step, StepConfig as _StepConfig
 
     def decorator(
-        fn: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
+        fn: Callable[Concatenate[StepInT, P], Coroutine[object, object, StepOutT]],
     ) -> "Step[StepInT, StepOutT]":
         if config is not None and (
             execution_mode is not None
@@ -106,7 +121,7 @@ def step(
                 stacklevel=2,
             )
 
-        merged_config_kwargs: dict[str, Any] = {}
+        merged_config_kwargs: dict[str, object] = {}
         if config is not None:
             merged_config_kwargs.update(config.model_dump())
         merged_config_kwargs.update(config_kwargs)
@@ -117,7 +132,7 @@ def step(
         if timeout_s is not None:
             merged_config_kwargs["timeout_s"] = timeout_s
 
-        final_config = _StepConfig(**merged_config_kwargs)
+        final_config = _StepConfig.model_validate(merged_config_kwargs)
 
         return Step.from_callable(
             fn,
@@ -129,6 +144,8 @@ def step(
             persist_feedback_to_context=persist_feedback_to_context,
             persist_validation_results_to=persist_validation_results_to,
             is_adapter=is_adapter,
+            adapter_id=adapter_id,
+            adapter_allow=adapter_allow,
             config=final_config,
         )
 
@@ -141,35 +158,71 @@ def step(
 
 @overload
 def adapter_step(
-    func: Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]],
+    func: Callable[Concatenate[StepInT, P], Coroutine[object, object, StepOutT]],
     *,
     name: str | None = None,
     updates_context: bool = False,
+    adapter_id: str,
+    adapter_allow: str,
     processors: Optional["AgentProcessors"] = None,
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
-    **config_kwargs: Any,
+    **config_kwargs: object,
 ) -> "Step[StepInT, StepOutT]": ...
 
 
 @overload
 def adapter_step(
+    func: None = None,
     *,
     name: str | None = None,
     updates_context: bool = False,
+    adapter_id: str,
+    adapter_allow: str,
     processors: Optional["AgentProcessors"] = None,
     persist_feedback_to_context: Optional[str] = None,
     persist_validation_results_to: Optional[str] = None,
-    **config_kwargs: Any,
+    **config_kwargs: object,
 ) -> Callable[
-    [Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]]],
+    [Callable[Concatenate[StepInT, P], Coroutine[object, object, StepOutT]]],
     "Step[StepInT, StepOutT]",
 ]: ...
 
 
 def adapter_step(
-    func: (Callable[Concatenate[StepInT, P], Coroutine[Any, Any, StepOutT]] | None) = None,
-    **kwargs: Any,
-) -> Any:
+    func: Callable[..., Coroutine[object, object, object]] | None = None,
+    *,
+    name: str | None = None,
+    updates_context: bool = False,
+    adapter_id: str,
+    adapter_allow: str,
+    processors: Optional["AgentProcessors"] = None,
+    persist_feedback_to_context: Optional[str] = None,
+    persist_validation_results_to: Optional[str] = None,
+    **config_kwargs: object,
+) -> object:
     """Alias for :func:`step` that marks the created step as an adapter."""
-    return cast(Any, step)(func, is_adapter=True, **kwargs)
+    if func is None:
+        return step(  # type: ignore[call-overload]
+            name=name,
+            updates_context=updates_context,
+            processors=processors,
+            persist_feedback_to_context=persist_feedback_to_context,
+            persist_validation_results_to=persist_validation_results_to,
+            is_adapter=True,
+            adapter_id=adapter_id,
+            adapter_allow=adapter_allow,
+            **config_kwargs,
+        )
+    return step(  # type: ignore[call-overload]
+        func,
+        name=name,
+        updates_context=updates_context,
+        processors=processors,
+        persist_feedback_to_context=persist_feedback_to_context,
+        persist_validation_results_to=persist_validation_results_to,
+        is_adapter=True,
+        adapter_id=adapter_id,
+        adapter_allow=adapter_allow,
+        **config_kwargs,
+    )

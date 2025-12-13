@@ -534,17 +534,7 @@ def create(  # <--- REVERT BACK TO SYNC
                         elif hasattr(ctx, "yaml_text") and getattr(ctx, "yaml_text"):
                             yaml_text = getattr(ctx, "yaml_text")
                         else:
-                            # Fallback: look into context.scratchpad if present
-                            try:
-                                scratch = getattr(ctx, "scratchpad", None)
-                                if isinstance(scratch, dict):
-                                    val = scratch.get("generated_yaml") or scratch.get("yaml_text")
-                                    if isinstance(val, (str, bytes)):
-                                        yaml_text = (
-                                            val.decode() if isinstance(val, bytes) else str(val)
-                                        )
-                            except Exception:
-                                pass
+                            pass
                 # Targeted fallback: look for specific architect steps that carry YAML
                 if yaml_text is None:
                     try:
@@ -600,15 +590,6 @@ def create(  # <--- REVERT BACK TO SYNC
                                 if hasattr(ctx, "yaml_text") and getattr(ctx, "yaml_text"):
                                     yaml_text = getattr(ctx, "yaml_text")
                                     break
-                                scratch = getattr(ctx, "scratchpad", None)
-                                if isinstance(scratch, dict):
-                                    val = scratch.get("generated_yaml") or scratch.get("yaml_text")
-                                    if isinstance(val, (str, bytes)):
-                                        yaml_text = (
-                                            val.decode() if isinstance(val, bytes) else str(val)
-                                        )
-                                        if yaml_text.strip():
-                                            break
                             except Exception:
                                 continue
                     except Exception:
@@ -1134,7 +1115,9 @@ def _run_create_wizard(
             f"        - kind: step\n          name: {map_step}\n          updates_context: false"
         )
         lines.append("      init:")
-        lines.append('        - set: "context.scratchpad.note"\n          value: "mapping"')
+        lines.append(
+            '        - set: "context.import_artifacts.extras.note"\n          value: "mapping"'
+        )
         lines.append("      finalize:")
         lines.append('        output:\n          results_str: "{{ previous_step }}"')
     elif pattern == "parallel":

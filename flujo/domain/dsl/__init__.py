@@ -13,7 +13,7 @@ must be imported from their respective modules:
 This avoids import cycles and ensures robust usage.
 """
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from .step import StepConfig, Step, step, adapter_step
 
 if TYPE_CHECKING:
@@ -49,7 +49,7 @@ __all__ = [
 # Lazy import pattern for all other symbols
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> object:
     if name == "Pipeline":
         from .pipeline import Pipeline
 

@@ -138,7 +138,7 @@ Steps declare a `context` parameter to access or modify this object. See
 
 ## The Pipeline Context: Built-in Memory
 
-Every run automatically receives a `PipelineContext` instance. It includes a `run_id`, the initial prompt, a mutable `scratchpad` dictionary and a record of all human interactions (`hitl_history`). This allows agents to share state without additional setup.
+Every run automatically receives a `PipelineContext` instance. It includes a `run_id`, the initial prompt, `import_artifacts` for transient structured data, `step_outputs` keyed by step name, and a record of all human interactions (`hitl_history`). This allows agents to share state without additional setup using typed fields or `import_artifacts`, rather than an untyped scratchpad.
 
 The built-in [**default pipeline factory**](#the-default-pipeline-factory-simplified) uses this DSL under the hood. When you need different logic, you can use the same tools directly through the `Flujo` engine. The DSL also supports advanced constructs like [**LoopStep**](../user_guide/pipeline_looping.md) for iteration and [**ConditionalStep**](../user_guide/pipeline_branching.md) for branching workflows.
 

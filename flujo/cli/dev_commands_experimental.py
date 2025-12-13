@@ -2,7 +2,7 @@ from __future__ import annotations
 # mypy: ignore-errors
 
 from pathlib import Path
-from typing import Optional, Union, cast
+from typing import Optional, Union
 
 import json
 import os
@@ -177,7 +177,9 @@ def bench(
 
         # Apply CLI defaults from configuration file
         cli_args = apply_cli_defaults("bench", rounds=rounds)
-        rounds = cast(int, cli_args["rounds"])
+        rounds_val = cli_args.get("rounds")
+        if isinstance(rounds_val, int):
+            rounds = rounds_val
 
         # Run benchmark using helper function
         times, scores = bench_fn(prompt, rounds, logfire)

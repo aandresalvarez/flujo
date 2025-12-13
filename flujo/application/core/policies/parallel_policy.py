@@ -2,10 +2,7 @@ from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
 # mypy: ignore-errors
 
-from typing import Type
-
 from ._shared import (  # noqa: F401
-    Any,
     Awaitable,
     Callable,
     BranchFailureStrategy,
@@ -40,22 +37,25 @@ from ._shared import (  # noqa: F401
 )
 from ..policy_registry import StepPolicy
 from ..types import ExecutionFrame
+from flujo.domain.base_model import BaseModel
 
 
 # --- Parallel Step Executor policy ---
 class ParallelStepExecutor(Protocol):
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
+    async def execute(
+        self, core: object, frame: ExecutionFrame[BaseModel]
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
     @property
-    def handles_type(self) -> Type[ParallelStep]:
+    def handles_type(self) -> type[ParallelStep]:
         return ParallelStep
 
     async def execute(
         self,
-        core: Any,
-        frame: ExecutionFrame[Any],
+        core: object,
+        frame: ExecutionFrame[BaseModel],
     ) -> StepOutcome[StepResult]:
         step = frame.step
         data = frame.data
@@ -65,12 +65,37 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         context_setter = getattr(frame, "context_setter", None)
         step_executor = getattr(frame, "step_executor", None)
 
-        parallel_step: ParallelStep[Any] | None = step if isinstance(step, ParallelStep) else None
+        parallel_step: ParallelStep[object] | None = (
+            step if isinstance(step, ParallelStep) else None
+        )
         if not isinstance(step, ParallelStep):
             raise ValueError(f"Expected ParallelStep, got {type(step)}")
         parallel_step = step
         telemetry.logfire.debug(f"=== HANDLING PARALLEL STEP === {parallel_step.name}")
         telemetry.logfire.debug(f"Parallel step branches: {list(parallel_step.branches.keys())}")
+
+        # Block removed merge strategy at execution time (defense in depth)
+        ms = getattr(parallel_step, "merge_strategy", None)
+        if isinstance(ms, str) and ms.lower() == "merge_scratchpad":
+            from flujo.exceptions import ConfigurationError as _CfgErr
+
+            raise _CfgErr(
+                "merge_strategy=MERGE_SCRATCHPAD is removed. Use CONTEXT_UPDATE with "
+                "explicit field_mapping or OVERWRITE/NO_MERGE."
+            )
+        try:
+            from flujo.domain.dsl.step import MergeStrategy as _MS  # local import
+
+            if ms is getattr(_MS, "MERGE_SCRATCHPAD", None):
+                from flujo.exceptions import ConfigurationError as _CfgErr
+
+                raise _CfgErr(
+                    "merge_strategy=MERGE_SCRATCHPAD is removed. Use CONTEXT_UPDATE with "
+                    "explicit field_mapping or OVERWRITE/NO_MERGE."
+                )
+        except Exception:
+            pass
+
         result = StepResult(name=parallel_step.name)
         result.metadata_ = {}
         start_time = time.monotonic()
@@ -84,9 +109,9 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         # FSD-009: Pure quota-only mode
         # Do not use breach_event or any legacy governor; safety via reservations only
         # Deterministic quota splitting per branch
-        branch_items: List[Tuple[str, Any]] = list(parallel_step.branches.items())
+        branch_items: List[Tuple[str, object]] = list(parallel_step.branches.items())
         branch_names: List[str] = [bn for bn, _ in branch_items]
-        branch_pipelines: List[Any] = [bp for _, bp in branch_items]
+        branch_pipelines: List[object] = [bp for _, bp in branch_items]
         branch_quota_map: Dict[str, Optional[Quota]] = {bn: None for bn in branch_names}
         try:
             current_quota = (
@@ -129,7 +154,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
 
             branch_contexts[branch_name] = branch_context
 
-        def _merge_branch_context_into_parent(branch_ctx: Any) -> None:
+        def _merge_branch_context_into_parent(branch_ctx: object | None) -> None:
             nonlocal context
             if context is None or branch_ctx is None:
                 return
@@ -155,8 +180,8 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         # Branch executor
         async def execute_branch(
             branch_name: str,
-            branch_pipeline: Any,
-            branch_context: Any,
+            branch_pipeline: object,
+            branch_context: object | None,
             branch_quota: Optional[Quota],
         ) -> Tuple[str, StepResult]:
             try:
@@ -383,7 +408,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                 except Exception:
                     pass
 
-        async def _handle_branch_result(branch_execution_result: Any, idx: int) -> None:
+        async def _handle_branch_result(branch_execution_result: object, idx: int) -> None:
             nonlocal total_cost, total_tokens, all_successful
             branch_name_local = list(parallel_step.branches.keys())[idx]
             if isinstance(
@@ -485,7 +510,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     limits, "total_tokens_limit", None
                 ) is not None and total_tokens > int(limits.total_tokens_limit)
                 if breached_cost or breached_tokens:
-                    pipeline_result: PipelineResult[Any] = PipelineResult(
+                    pipeline_result: PipelineResult[object] = PipelineResult(
                         step_history=list(branch_results.values()),
                         total_cost_usd=total_cost,
                         total_tokens=total_tokens,
@@ -627,14 +652,14 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     pass
                 # Build a PipelineResult with any branch results we have so far
                 try:
-                    pr: PipelineResult[Any] = PipelineResult(
+                    pr: PipelineResult[object] = PipelineResult(
                         step_history=list(branch_results.values()),
                         total_cost_usd=sum(br.cost_usd for br in branch_results.values()),
                         total_tokens=sum(br.token_counts for br in branch_results.values()),
                         final_pipeline_context=context,
                     )
                 except Exception:
-                    pr = PipelineResult[Any](step_history=[], total_cost_usd=0.0, total_tokens=0)
+                    pr = PipelineResult[object](step_history=[], total_cost_usd=0.0, total_tokens=0)
                 msg = usage_limit_error_msg or "Usage limit exceeded"
                 raise UsageLimitExceededError(msg, pr)
 
@@ -666,7 +691,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                         )
                             except Exception:
                                 pass
-                        pipeline_result: PipelineResult[Any] = PipelineResult(
+                        pipeline_result: PipelineResult[object] = PipelineResult(
                             step_history=list(branch_results.values()),
                             total_cost_usd=total_cost,
                             total_tokens=total_tokens,
@@ -762,7 +787,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                 if parallel_step.merge_strategy == MergeStrategy.CONTEXT_UPDATE:
                     # Helper: detect conflicts between TWO branch contexts (NOT parent vs branch)
                     def _detect_branch_conflicts(
-                        ctx_a: Any, ctx_b: Any, name_a: str, name_b: str
+                        ctx_a: object, ctx_b: object, name_a: str, name_b: str
                     ) -> None:
                         """Detect leaf conflicts between two branch contexts."""
                         from flujo.exceptions import ConfigurationError as _CfgErr
@@ -792,9 +817,9 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                         except Exception:  # noqa: BLE001
                             return  # Can't compare, skip
 
-                        def _walk(val_a: Any, val_b: Any, path: str) -> None:
-                            # Skip scratchpad/branch_results/context_updates which are intentionally merged
-                            if path in {"scratchpad", "branch_results", "context_updates"}:
+                        def _walk(val_a: object, val_b: object, path: str) -> None:
+                            # Skip branch_results/context_updates which are intentionally merged
+                            if path in {"branch_results", "context_updates"}:
                                 return
                             if isinstance(val_a, dict) and isinstance(val_b, dict):
                                 for k in set(val_a.keys()) & set(val_b.keys()):
@@ -854,8 +879,8 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                 if hasattr(bc, f):
                                     setattr(context, f, getattr(bc, f))
                         else:
-                            # Merge scratchpad/branch_results/context_updates explicitly
-                            for attr in ("scratchpad", "branch_results", "context_updates"):
+                            # Merge branch_results/context_updates explicitly
+                            for attr in ("branch_results", "context_updates"):
                                 if hasattr(bc, attr) and hasattr(context, attr):
                                     try:
                                         tgt_attr = getattr(context, attr)
@@ -874,19 +899,13 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                     except Exception:  # noqa: BLE001, S110
                                         pass
                             ContextManager.merge(context, bc)
-                elif parallel_step.merge_strategy == MergeStrategy.MERGE_SCRATCHPAD:
-                    if not hasattr(context, "scratchpad"):
-                        setattr(context, "scratchpad", {})
-                    for n in sorted(branch_ctxs):
-                        bc = branch_ctxs[n]
-                        if hasattr(bc, "scratchpad"):
-                            for k in bc.scratchpad:
-                                if k in context.scratchpad:
-                                    telemetry.logfire.warning(
-                                        f"Scratchpad key collision: '{k}', skipping"
-                                    )
-                                else:
-                                    context.scratchpad[k] = bc.scratchpad[k]
+                elif parallel_step.merge_strategy == "merge_scratchpad":
+                    from flujo.exceptions import ConfigurationError as _CfgErr
+
+                    raise _CfgErr(
+                        "merge_strategy=MERGE_SCRATCHPAD is removed. Use CONTEXT_UPDATE with "
+                        "explicit field_mapping or OVERWRITE/NO_MERGE."
+                    )
                 elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE and branch_ctxs:
                     last = sorted(branch_ctxs)[-1]
                     branch_ctx = branch_ctxs[last]
@@ -895,13 +914,51 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                             if hasattr(branch_ctx, f):
                                 setattr(context, f, getattr(branch_ctx, f))
                     else:
-                        # Default overwrite merges only scratchpad to preserve isolation of scalars.
-                        if hasattr(context, "scratchpad"):
-                            for bn in sorted(branch_ctxs):
-                                bc = branch_ctxs[bn]
-                                if hasattr(bc, "scratchpad"):
-                                    for key, val in bc.scratchpad.items():
-                                        context.scratchpad[key] = val
+                        # Default overwrite: propagate only framework-critical typed fields
+                        # (no scratchpad writes; scratchpad is deprecated).
+                        try:
+
+                            def _copy_attr(name: str, src: object, dst: object) -> None:
+                                if hasattr(src, name) and hasattr(dst, name):
+                                    try:
+                                        setattr(dst, name, getattr(src, name))
+                                    except Exception:
+                                        pass
+
+                            # Choose the last branch deterministically (sorted keys) as the source of truth.
+                            src_ctx = branch_ctx
+                            for attr in (
+                                "status",
+                                "pause_message",
+                                "current_state",
+                                "next_state",
+                                "paused_step_input",
+                                "user_input",
+                                "loop_iteration_index",
+                                "loop_step_index",
+                                "loop_last_output",
+                                "loop_resume_requires_hitl_output",
+                                "loop_paused_step_name",
+                            ):
+                                _copy_attr(attr, src_ctx, context)
+
+                            # Merge step_outputs dict across branches for observability.
+                            if hasattr(context, "step_outputs") and isinstance(
+                                getattr(context, "step_outputs", None), dict
+                            ):
+                                for bn in sorted(branch_ctxs):
+                                    bc = branch_ctxs[bn]
+                                    if bc is None:
+                                        continue
+                                    if hasattr(bc, "step_outputs") and isinstance(
+                                        getattr(bc, "step_outputs", None), dict
+                                    ):
+                                        try:
+                                            context.step_outputs.update(bc.step_outputs)
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            pass
                 elif parallel_step.merge_strategy == MergeStrategy.ERROR_ON_CONFLICT:
                     # Merge each branch strictly erroring on conflicts
                     from flujo.utils.context import safe_merge_context_updates as _merge
@@ -1036,14 +1093,14 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
 class ParallelStepExecutorOutcomes(Protocol):
     async def execute(
         self,
-        core: Any,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
+        core: object,
+        step: object,
+        data: object,
+        context: Optional[object],
+        resources: Optional[object],
         limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        parallel_step: Optional[ParallelStep[Any]] = None,
+        context_setter: Optional[Callable[[PipelineResult[object], Optional[object]], None]],
+        parallel_step: Optional[ParallelStep[object]] = None,
         step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
     ) -> StepOutcome[StepResult]: ...
 

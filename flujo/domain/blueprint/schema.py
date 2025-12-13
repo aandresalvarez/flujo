@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 from pydantic import BaseModel, model_validator, Field
 from flujo.type_definitions.common import JSONObject
@@ -35,7 +35,7 @@ class AgentModel(BaseModel):
     # Validate 'system_prompt' dict form contains only 'from_file'
     @model_validator(mode="before")
     @classmethod
-    def _validate_prompt_format(cls, data: Any) -> Any:
+    def _validate_prompt_format(cls, data: object) -> object:
         if isinstance(data, dict):
             prompt = data.get("system_prompt")
             if isinstance(prompt, dict):

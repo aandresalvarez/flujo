@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol, Any, Optional, Callable, List
+from typing import Protocol, Callable
 
 from flujo.domain.models import UsageEstimate
 from flujo.infra import telemetry
@@ -8,7 +8,7 @@ from flujo.infra.config_manager import get_config_manager
 
 
 class UsageEstimator(Protocol):
-    def estimate(self, step: Any, data: Any, context: Optional[Any]) -> UsageEstimate: ...
+    def estimate(self, step: object, data: object, context: object | None) -> UsageEstimate: ...
 
 
 class HeuristicUsageEstimator:
@@ -20,7 +20,7 @@ class HeuristicUsageEstimator:
     - Otherwise return minimal estimate (0 cost, 0 tokens) and rely on post-usage reconciliation.
     """
 
-    def estimate(self, step: Any, data: Any, context: Optional[Any]) -> UsageEstimate:
+    def estimate(self, step: object, data: object, context: object | None) -> UsageEstimate:
         # 1) Explicit config hints
         try:
             cfg = getattr(step, "config", None)
@@ -79,7 +79,7 @@ class EstimatorRule:
     The first matching rule wins.
     """
 
-    def __init__(self, matcher: Callable[[Any], bool], estimator: UsageEstimator) -> None:
+    def __init__(self, matcher: Callable[[object], bool], estimator: UsageEstimator) -> None:
         self.matcher = matcher
         self.estimator = estimator
 
@@ -91,12 +91,12 @@ class EstimatorRegistry:
     """
 
     def __init__(self) -> None:
-        self._rules: List[EstimatorRule] = []
+        self._rules: list[EstimatorRule] = []
 
-    def register(self, matcher: Callable[[Any], bool], estimator: UsageEstimator) -> None:
+    def register(self, matcher: Callable[[object], bool], estimator: UsageEstimator) -> None:
         self._rules.append(EstimatorRule(matcher, estimator))
 
-    def resolve(self, step: Any) -> Optional[UsageEstimator]:
+    def resolve(self, step: object) -> UsageEstimator | None:
         for rule in self._rules:
             try:
                 if rule.matcher(step):
@@ -111,12 +111,12 @@ class UsageEstimatorFactory:
     """Factory that selects an estimator using a registry with a default fallback."""
 
     def __init__(
-        self, registry: EstimatorRegistry, default_estimator: Optional[UsageEstimator] = None
+        self, registry: EstimatorRegistry, default_estimator: UsageEstimator | None = None
     ) -> None:
         self._registry = registry
         self._default = default_estimator or HeuristicUsageEstimator()
 
-    def select(self, step: Any) -> UsageEstimator:
+    def select(self, step: object) -> UsageEstimator:
         selected = self._registry.resolve(step)
         est = selected or self._default
         # Telemetry hook: record estimator selection
@@ -140,11 +140,11 @@ def build_default_estimator_factory() -> UsageEstimatorFactory:
     registry = EstimatorRegistry()
 
     class _MinimalEstimator:
-        def estimate(self, step: Any, data: Any, context: Optional[Any]) -> UsageEstimate:
+        def estimate(self, step: object, data: object, context: object | None) -> UsageEstimate:
             return UsageEstimate(cost_usd=0.0, tokens=0)
 
     # Rule: adapter/output mapper or validation step → minimal
-    def _is_adapter_or_validation(step: Any) -> bool:
+    def _is_adapter_or_validation(step: object) -> bool:
         try:
             meta = getattr(step, "meta", None)
             if isinstance(meta, dict) and meta.get("is_validation_step", False):
@@ -174,10 +174,10 @@ def build_default_estimator_factory() -> UsageEstimatorFactory:
         Falls back to heuristic when no entry is found.
         """
 
-        def __init__(self, fallback: Optional[UsageEstimator] = None) -> None:
+        def __init__(self, fallback: UsageEstimator | None = None) -> None:
             self._fallback = fallback or HeuristicUsageEstimator()
 
-        def estimate(self, step: Any, data: Any, context: Optional[Any]) -> UsageEstimate:
+        def estimate(self, step: object, data: object, context: object | None) -> UsageEstimate:
             try:
                 cfg = get_config_manager().load_config()
                 cost_cfg = getattr(cfg, "cost", None)
@@ -217,7 +217,7 @@ def build_default_estimator_factory() -> UsageEstimatorFactory:
             if use_learnable:
                 learnable = LearnableUsageEstimator()
 
-                def _has_agent(step: Any) -> bool:
+                def _has_agent(step: object) -> bool:
                     return hasattr(step, "agent") and getattr(step, "agent") is not None
 
                 # Register general rule after minimal-rule so adapters/validation keep minimal

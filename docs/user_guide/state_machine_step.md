@@ -1,6 +1,6 @@
 # StateMachineStep — A First‑Class DSL Primitive
 
-`StateMachineStep` is a high‑level orchestration primitive that drives execution through named states. Each state maps to its own Pipeline. Transitions are controlled via context scratchpad keys.
+`StateMachineStep` is a high‑level orchestration primitive that drives execution through named states. Each state maps to its own Pipeline. Transitions are controlled via typed context fields (`current_state`, `next_state`) and optional declarative `transitions`.
 
 ## When to Use
 
@@ -15,7 +15,7 @@ from flujo.domain.dsl.state_machine import StateMachineStep
 
 async def set_next_state(_: Any, *, context=None) -> str:
     # Signal transition to "refine"
-    context.scratchpad["next_state"] = "refine"
+    context.next_state = "refine"
     return "ok"
 
 analyze = Pipeline.from_step(Step.from_callable(set_next_state, name="Analyze"))
@@ -74,7 +74,7 @@ steps:
           config:
             inherit_context: true
             outputs:
-              - { child: "scratchpad.cohort", parent: "scratchpad.cohort" }
+              - { child: "import_artifacts.cohort", parent: "import_artifacts.cohort" }
         - name: SetNext
           uses: flujo.builtins.stringify  # or any agent
           updates_context: true
@@ -90,15 +90,15 @@ Notes:
 
 ## Execution Semantics
 
-- The policy executor reads `current_state` from `context.scratchpad["current_state"]` when present; otherwise starts with `start_state`
+- The policy executor reads `current_state` from `context.current_state` when present; otherwise starts with `start_state`
 - The selected state’s Pipeline is executed using the core’s policy path
-- On completion, the executor checks `context.scratchpad["next_state"]`; if present, it becomes the next `current_state`
+- On completion, the executor checks `context.next_state`; if present, it becomes the next `current_state`
 - Execution stops when `current_state` is in `end_states`, or after one hop without an explicit `next_state`
 
 ## Context Keys
 
-- `scratchpad.current_state` (optional): force the starting state at runtime
-- `scratchpad.next_state`: set by your state pipelines to transition to the next state
+- `current_state` (optional): force the starting state at runtime
+- `next_state`: set by your state pipelines to transition to the next state
 
 ## Testing Tips
 

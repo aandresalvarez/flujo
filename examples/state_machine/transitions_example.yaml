@@ -24,7 +24,7 @@ steps:
       - from: clarification
         on: success
         to: concept_discovery
-        when: "context.scratchpad.get('cohort_definition')"
+        when: "context.import_artifacts.get('cohort_definition')"
       - from: concept_discovery
         on: success
         to: review

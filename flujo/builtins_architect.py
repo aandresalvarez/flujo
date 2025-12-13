@@ -271,7 +271,11 @@ except Exception:
 
 
 # Top-level utility: decide whether YAML exists in context for branch precheck
-def has_yaml_key(_out: Any = None, ctx: DomainBaseModel | None = None, **_kwargs: Any) -> str:
+def has_yaml_key(
+    _out: JSONObject | str | None = None,
+    ctx: DomainBaseModel | None = None,
+    **_kwargs: Any,
+) -> str:
     try:
         yt = getattr(ctx, "yaml_text", None)
     except Exception:
@@ -290,7 +294,7 @@ class DiscoverSkillsAgent(AsyncAgentProtocol[Any, JSONObject]):
     def __init__(self, directory: Optional[str] = None) -> None:
         self.directory = directory or "."
 
-    async def run(self, data: Any, **kwargs: Any) -> JSONObject:
+    async def run(self, data: JSONObject | str | None, **kwargs: Any) -> JSONObject:
         # Best-effort: load catalog + packaged entry points
         try:
             load_skills_catalog(self.directory)
@@ -321,7 +325,9 @@ class DiscoverSkillsAgent(AsyncAgentProtocol[Any, JSONObject]):
 
 # --- Adapter: extract decomposed steps into a flat context key ---
 async def extract_decomposed_steps(
-    decomposition: Any, *, output_key: str = "prepared_steps_for_mapping"
+    decomposition: PydanticBaseModel | JSONObject,
+    *,
+    output_key: str = "prepared_steps_for_mapping",
 ) -> JSONObject:
     """Adapter to extract a list of step dicts from the decomposer output.
 
@@ -356,7 +362,9 @@ async def extract_decomposed_steps(
 
 
 # --- Adapter: extract YAML text from writer output ---
-async def extract_yaml_text(writer_output: Any) -> dict[str, str]:
+async def extract_yaml_text(
+    writer_output: PydanticBaseModel | JSONObject | str | bytes,
+) -> dict[str, str]:
     """
     Robustly extracts YAML text from various agent output formats,
     stores it in the context, and returns it as a dictionary.
@@ -452,7 +460,9 @@ async def extract_yaml_text(writer_output: Any) -> dict[str, str]:
 
 
 # --- Adapter: capture ValidationReport for later error extraction ---
-async def capture_validation_report(report: Any) -> JSONObject:
+async def capture_validation_report(
+    report: PydanticBaseModel | JSONObject,
+) -> JSONObject:
     """Capture the full ValidationReport in the context for later error extraction."""
     try:
         if hasattr(report, "model_dump"):
@@ -471,7 +481,9 @@ async def capture_validation_report(report: Any) -> JSONObject:
 
 
 # --- Adapter: turn ValidationReport into a boolean flag on context ---
-async def validation_report_to_flag(report: Any) -> JSONObject:
+async def validation_report_to_flag(
+    report: PydanticBaseModel | JSONObject,
+) -> JSONObject:
     """Return a dict with yaml_is_valid based on a ValidationReport-like input."""
     try:
         if isinstance(report, dict):
@@ -484,7 +496,7 @@ async def validation_report_to_flag(report: Any) -> JSONObject:
     return {"yaml_is_valid": val}
 
 
-def exit_when_yaml_valid(_out: Any, context: Any | None) -> bool:
+def exit_when_yaml_valid(_out: JSONObject | str | None, context: DomainBaseModel | None) -> bool:
     """Exit when validation flag is present.
 
     Checks immediate output first (supports body steps returning the flag),
@@ -508,7 +520,9 @@ def exit_when_yaml_valid(_out: Any, context: Any | None) -> bool:
 
 # --- Adapter: extract validation errors for repair loop ---
 async def extract_validation_errors(
-    report: Any, *, context: DomainBaseModel | None = None
+    report: PydanticBaseModel | JSONObject,
+    *,
+    context: DomainBaseModel | None = None,
 ) -> JSONObject:
     """Extract error messages from a ValidationReport-like input for repair loops.
 
@@ -562,7 +576,7 @@ async def extract_validation_errors(
 
 # --- HITL helper: interpret user confirmation into branch key ---
 async def check_user_confirmation(
-    _out: Any = None,
+    _out: str | JSONObject | None = None,
     ctx: DomainBaseModel | None = None,
     *,
     user_input: Optional[str] = None,
@@ -594,7 +608,7 @@ async def check_user_confirmation(
 
 # Synchronous wrapper for conditional branching contexts (YAML 'condition')
 def check_user_confirmation_sync(
-    _out: Any = None,
+    _out: str | JSONObject | None = None,
     ctx: DomainBaseModel | None = None,
     *,
     user_input: Optional[str] = None,
@@ -615,7 +629,7 @@ def check_user_confirmation_sync(
 
 # --- Conditional key selector: 'valid' or 'invalid' based on context ---
 def select_validity_branch(
-    _out: Any = None,
+    _out: JSONObject | str | None = None,
     ctx: DomainBaseModel | None = None,
     **kwargs: Any,
 ) -> str:
@@ -703,7 +717,9 @@ def select_validity_branch(
 
 
 # --- Compute branch key from context validity (top-level importable) ---
-async def compute_validity_key(_x: Any = None, *, context: DomainBaseModel | None = None) -> str:
+async def compute_validity_key(
+    _x: JSONObject | None = None, *, context: DomainBaseModel | None = None
+) -> str:
     try:
         val = bool(getattr(context, "yaml_is_valid", False))
     except Exception:
@@ -718,7 +734,7 @@ async def compute_validity_key(_x: Any = None, *, context: DomainBaseModel | Non
 
 
 def select_by_yaml_shape(
-    _out: Any = None,
+    _out: JSONObject | str | None = None,
     ctx: DomainBaseModel | None = None,
     **kwargs: Any,
 ) -> str:
@@ -873,13 +889,17 @@ async def shape_to_validity_flag(*, context: DomainBaseModel | None = None) -> J
     return _out3
 
 
-def always_valid_key(_out: Any = None, ctx: DomainBaseModel | None = None) -> str:
+def always_valid_key(
+    _out: JSONObject | str | None = None, ctx: DomainBaseModel | None = None
+) -> str:
     """Return 'valid' unconditionally (used after successful repair)."""
     return "valid"
 
 
 # --- In-memory YAML validation skill ---
-async def validate_yaml(yaml_text: str, base_dir: Optional[str] = None) -> Any:
+async def validate_yaml(
+    yaml_text: str, base_dir: Optional[str] = None
+) -> PydanticBaseModel | JSONObject:
     """Validate a YAML blueprint string and return a ValidationReport.
 
     Never raises for invalid YAML; returns a report with an error finding instead.

@@ -325,23 +325,20 @@ class TaskClient:
         context_snapshot: JSONObject,
         metadata: JSONObject,
     ) -> Optional[str]:
-        scratch_candidates: list[JSONObject] = []
         if context is not None:
-            scratch = getattr(context, "scratchpad", None)
-            if isinstance(scratch, dict):
-                scratch_candidates.append(scratch)
-        snapshot_scratch = context_snapshot.get("scratchpad")
-        if isinstance(snapshot_scratch, dict):
-            scratch_candidates.append(snapshot_scratch)
-        meta_scratch = metadata.get("scratchpad")
-        if isinstance(meta_scratch, dict):
-            scratch_candidates.append(meta_scratch)
-
-        for scratch in scratch_candidates:
-            for key in ("pause_message", "hitl_message"):
-                val = scratch.get(key)
+            try:
+                val = getattr(context, "pause_message", None)
                 if isinstance(val, str) and val.strip():
                     return val
+            except Exception:
+                pass
+
+        for candidate in (context_snapshot, metadata):
+            if isinstance(candidate, dict):
+                for key in ("pause_message", "hitl_message"):
+                    val = candidate.get(key)
+                    if isinstance(val, str) and val.strip():
+                        return val
         return None
 
     def _extract_pending_schema(
@@ -351,7 +348,6 @@ class TaskClient:
     ) -> Optional[JSONObject]:
         candidates: Sequence[Any] = (
             context_snapshot,
-            context_snapshot.get("scratchpad", {}),
             metadata,
         )
         for candidate in candidates:

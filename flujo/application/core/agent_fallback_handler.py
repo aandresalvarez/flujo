@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional
+from typing import Awaitable, Callable, Optional
+from pydantic import BaseModel
 
 from ...domain.models import StepOutcome, StepResult, Success, Failure
 from ...infra import telemetry
@@ -35,14 +36,14 @@ class AgentFallbackHandler:
     async def handle_failure(
         self,
         *,
-        core: Any,
-        step: Any,
-        data: Any,
-        attempt_context: Any,
-        attempt_resources: Any,
-        limits: Any,
+        core: object,
+        step: object,
+        data: object,
+        attempt_context: BaseModel | None,
+        attempt_resources: object | None,
+        limits: object | None,
         stream: bool,
-        on_chunk: Optional[Callable[[Any], Awaitable[None]]],
+        on_chunk: Optional[Callable[[object], Awaitable[None]]],
         fallback_depth: int,
         start_ns: int,
         result: StepResult,
@@ -50,11 +51,20 @@ class AgentFallbackHandler:
         attempt_exc: BaseException,
         attempt: int,
         total_attempts: int,
-        pre_attempt_context: Any,
-        context: Any,
+        pre_attempt_context: BaseModel | None,
+        context: BaseModel | None,
         close_resources: Callable[[BaseException | None], Awaitable[None]],
         state: FallbackState,
     ) -> FallbackHandlingResult:
+        def _safe_step_name(step_obj: object) -> str:
+            safe_fn = getattr(core, "_safe_step_name", None)
+            if callable(safe_fn):
+                try:
+                    return str(safe_fn(step_obj))
+                except Exception:
+                    pass
+            return str(getattr(step_obj, "name", "<unnamed>"))
+
         fb_step = getattr(step, "fallback_step", None)
         if hasattr(fb_step, "_mock_name") and not hasattr(fb_step, "agent"):
             fb_step = None
@@ -65,7 +75,7 @@ class AgentFallbackHandler:
                     error=attempt_exc,
                     feedback=primary_feedback,
                     step_result=StepResult(
-                        name=core._safe_step_name(step),
+                        name=_safe_step_name(step),
                         output=None,
                         success=False,
                         attempts=result.attempts,
@@ -96,7 +106,10 @@ class AgentFallbackHandler:
             pass
 
         try:
-            fallback_result_sr = await core.execute(
+            execute_fn = getattr(core, "execute", None)
+            if not callable(execute_fn):
+                raise TypeError("Executor core must provide execute()")
+            fallback_result_sr = await execute_fn(
                 step=fb_step,
                 data=data,
                 context=attempt_context,
@@ -116,7 +129,7 @@ class AgentFallbackHandler:
                         error=fb_exc,
                         feedback=fb_txt,
                         step_result=StepResult(
-                            name=core._safe_step_name(step),
+                            name=_safe_step_name(step),
                             output=None,
                             success=False,
                             attempts=result.attempts,
@@ -136,7 +149,7 @@ class AgentFallbackHandler:
                     error=fb_exc,
                     feedback=f"Fallback execution failed: {fb_exc}",
                     step_result=StepResult(
-                        name=core._safe_step_name(step),
+                        name=_safe_step_name(step),
                         output=None,
                         success=False,
                         attempts=result.attempts,
@@ -167,11 +180,7 @@ class AgentFallbackHandler:
                     {"fallback_triggered": True, "original_error": primary_feedback}
                 )
                 try:
-                    tc = fallback_result_sr.token_counts
-                    if isinstance(tc, dict):
-                        fb_tokens = int(tc.get("total", 0))
-                    else:
-                        fb_tokens = int(tc or 0)
+                    fb_tokens = int(fallback_result_sr.token_counts or 0)
                 except Exception:
                     fb_tokens = 0
                 try:
@@ -202,11 +211,14 @@ class AgentFallbackHandler:
                 except Exception:
                     pass
                 try:
-                    await core._usage_meter.add(
-                        float(fallback_result_sr.cost_usd or 0.0),
-                        int(state.prompt_tokens_latest or 0) + fb_tokens,
-                        0,
-                    )
+                    usage_meter = getattr(core, "_usage_meter", None)
+                    add_fn = getattr(usage_meter, "add", None) if usage_meter is not None else None
+                    if callable(add_fn):
+                        await add_fn(
+                            float(fallback_result_sr.cost_usd or 0.0),
+                            int(state.prompt_tokens_latest or 0) + fb_tokens,
+                            0,
+                        )
                 except Exception:
                     pass
                 try:
@@ -218,7 +230,12 @@ class AgentFallbackHandler:
                     fallback_result_sr.feedback if fallback_result_sr.feedback else None
                 )
                 try:
-                    core._fallback_handler.reset()
+                    fb_handler = getattr(core, "_fallback_handler", None)
+                    reset_fn = (
+                        getattr(fb_handler, "reset", None) if fb_handler is not None else None
+                    )
+                    if callable(reset_fn):
+                        reset_fn()
                 except Exception:
                     pass
                 await close_resources(None)
@@ -234,7 +251,7 @@ class AgentFallbackHandler:
                     error=attempt_exc,
                     feedback=combo_fb,
                     step_result=StepResult(
-                        name=core._safe_step_name(step),
+                        name=_safe_step_name(step),
                         output=None,
                         success=False,
                         attempts=result.attempts,
@@ -278,16 +295,17 @@ class AgentFallbackHandler:
                     outcome=Success(step_result=fallback_result_sr.step_result),
                     resources_closed=False,
                 )
-            sr_fb = core._unwrap_outcome_to_step_result(
-                fallback_result_sr, core._safe_step_name(step)
-            )
+            unwrap_fn = getattr(core, "_unwrap_outcome_to_step_result", None)
+            if not callable(unwrap_fn):
+                raise TypeError("Executor core must provide _unwrap_outcome_to_step_result()")
+            sr_fb = unwrap_fn(fallback_result_sr, _safe_step_name(step))
             failure_fb = state.last_plugin_failure_feedback or primary_feedback
             return FallbackHandlingResult(
                 outcome=Failure(
                     error=attempt_exc,
                     feedback=f"Original error: {failure_fb}; Fallback error: {getattr(fallback_result_sr, 'feedback', 'Unknown')}",
                     step_result=StepResult(
-                        name=core._safe_step_name(step),
+                        name=_safe_step_name(step),
                         output=None,
                         success=False,
                         attempts=result.attempts,
@@ -310,7 +328,7 @@ class AgentFallbackHandler:
                 error=attempt_exc,
                 feedback=primary_feedback,
                 step_result=StepResult(
-                    name=core._safe_step_name(step),
+                    name=_safe_step_name(step),
                     output=None,
                     success=False,
                     attempts=result.attempts,

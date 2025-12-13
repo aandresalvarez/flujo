@@ -1,8 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, Optional, TYPE_CHECKING, Callable
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, TypeVar
 
-from ...domain.models import Failure, Paused, PipelineResult, StepResult, UsageLimits
+from ...domain.dsl.import_step import ImportStep
+
+from ...domain.models import (
+    BaseModel as DomainBaseModel,
+    Failure,
+    Paused,
+    PipelineResult,
+    StepResult,
+    UsageLimits,
+)
 from ...exceptions import PausedException
 from .executor_helpers import make_execution_frame
 
@@ -10,21 +20,27 @@ if TYPE_CHECKING:
     from .executor_core import ExecutorCore
 
 
+ContextT = TypeVar("ContextT", bound=DomainBaseModel)
+ContextSetter = Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
+StepExecutor = Callable[..., object]
+ChunkCallback = Callable[[object], Awaitable[None]]
+
+
 class StepHandler:
     """Delegated step handlers to keep ExecutorCore wiring-only."""
 
-    def __init__(self, core: "ExecutorCore[Any]") -> None:
-        self._core: "ExecutorCore[Any]" = core
+    def __init__(self, core: "ExecutorCore[ContextT]") -> None:
+        self._core = core
 
     async def parallel_step(
         self,
-        step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
-        limits: Any,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        step_executor: Optional[Callable[..., Any]],
+        step: object,
+        data: object,
+        context: ContextT | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: ContextSetter | None,
+        step_executor: StepExecutor | None,
     ) -> StepResult:
         frame = make_execution_frame(
             self._core,
@@ -48,12 +64,12 @@ class StepHandler:
 
     async def conditional_step(
         self,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        step: object,
+        data: object,
+        context: ContextT | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: ContextSetter | None,
         fallback_depth: int = 0,
     ) -> StepResult:
         frame = make_execution_frame(
@@ -80,13 +96,13 @@ class StepHandler:
 
     async def cache_step(
         self,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        step_executor: Optional[Callable[..., Any]],
+        step: object,
+        data: object,
+        context: ContextT | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: ContextSetter | None,
+        step_executor: StepExecutor | None,
     ) -> StepResult:
         frame = make_execution_frame(
             self._core,
@@ -109,12 +125,12 @@ class StepHandler:
 
     async def import_step(
         self,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        step: ImportStep,
+        data: object,
+        context: ContextT | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: ContextSetter | None,
     ) -> StepResult:
         frame = make_execution_frame(
             self._core,
@@ -146,12 +162,12 @@ class StepHandler:
 
     async def dynamic_router_step(
         self,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        step: object,
+        data: object,
+        context: ContextT | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: ContextSetter | None,
     ) -> StepResult:
         frame = make_execution_frame(
             self._core,
@@ -174,15 +190,15 @@ class StepHandler:
 
     async def hitl_step(
         self,
-        step: Any,
-        data: Any,
-        context: Optional[Any],
-        resources: Optional[Any],
-        limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        step: object,
+        data: object,
+        context: ContextT | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: ContextSetter | None,
         stream: bool,
-        on_chunk: Optional[Callable[[Any], Any]],
-        cache_key: Optional[str],
+        on_chunk: ChunkCallback | None,
+        cache_key: str | None,
         fallback_depth: int,
     ) -> StepResult:
         frame = make_execution_frame(
@@ -205,12 +221,12 @@ class StepHandler:
 
     async def loop_step(
         self,
-        loop_step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
-        limits: Any,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
+        loop_step: object,
+        data: object,
+        context: ContextT | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: ContextSetter | None,
         fallback_depth: int = 0,
     ) -> StepResult:
         frame = make_execution_frame(
@@ -249,13 +265,13 @@ class StepHandler:
 
     async def pipeline(
         self,
-        pipeline: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
-        limits: Any,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-    ) -> PipelineResult[Any]:
+        pipeline: object,
+        data: object,
+        context: ContextT | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: ContextSetter | None,
+    ) -> PipelineResult[DomainBaseModel]:
         return await self._core._pipeline_orchestrator.execute(
             core=self._core,
             pipeline=pipeline,
@@ -268,14 +284,14 @@ class StepHandler:
 
     async def dynamic_router_wrapper(
         self,
-        step: Any,
-        data: Any,
-        context: Any,
-        resources: Any,
-        limits: Any,
-        context_setter: Optional[Callable[[PipelineResult[Any], Optional[Any]], None]],
-        router_step: Any,
-        step_executor: Optional[Callable[..., Any]],
+        step: object,
+        data: object,
+        context: ContextT | None,
+        resources: object | None,
+        limits: UsageLimits | None,
+        context_setter: ContextSetter | None,
+        router_step: object,
+        step_executor: StepExecutor | None,
     ) -> StepResult:
         rs = router_step if router_step is not None else step
         frame = make_execution_frame(

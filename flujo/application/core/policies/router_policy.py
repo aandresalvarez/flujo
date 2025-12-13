@@ -1,11 +1,8 @@
 from __future__ import annotations
 # mypy: ignore-errors
 
-from typing import Type
-
 from .parallel_policy import DefaultParallelStepExecutor
 from ._shared import (  # noqa: F401
-    Any,
     Awaitable,
     Callable,
     ContextManager,
@@ -29,22 +26,31 @@ from ._shared import (  # noqa: F401
 from ..policy_registry import StepPolicy
 from ..types import ExecutionFrame
 from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
+from flujo.domain.models import BaseModel as DomainBaseModel
 
 # --- Dynamic Router Step Executor policy ---
 
 
 class DynamicRouterStepExecutor(Protocol):
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]: ...
+    async def execute(
+        self, core: object, frame: ExecutionFrame[DomainBaseModel]
+    ) -> StepOutcome[StepResult]: ...
 
 
 class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
     @property
-    def handles_type(self) -> Type[DynamicParallelRouterStep]:
+    def handles_type(self) -> type[DynamicParallelRouterStep]:
         return DynamicParallelRouterStep
 
-    async def execute(self, core: Any, frame: ExecutionFrame[Any]) -> StepOutcome[StepResult]:
+    async def execute(
+        self, core: object, frame: ExecutionFrame[DomainBaseModel]
+    ) -> StepOutcome[StepResult]:
         """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
         router_step = frame.step
+        if not isinstance(router_step, DynamicParallelRouterStep):
+            raise TypeError(
+                f"DefaultDynamicRouterStepExecutor received non-DynamicParallelRouterStep: {type(router_step).__name__}"
+            )
         data = frame.data
         context = frame.context
         resources = frame.resources
@@ -55,7 +61,7 @@ class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
         telemetry.logfire.debug(f"Dynamic router step name: {router_step.name}")
 
         # Phase 1: Execute the router agent to decide which branches to run
-        router_agent_step: Any = Step(
+        router_agent_step: Step[object, object] = Step(
             name=f"{router_step.name}_router", agent=router_step.router_agent
         )
         quota = None
@@ -149,7 +155,7 @@ class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
             )
 
         # Phase 2: Execute selected branches in parallel via policy
-        temp_parallel_step: Any = ParallelStep(
+        temp_parallel_step: ParallelStep[object] = ParallelStep(
             name=router_step.name,
             branches=selected_branches,
             merge_strategy=router_step.merge_strategy,
@@ -208,7 +214,7 @@ class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
             parallel_result.branch_context = merged_ctx
             if context_setter is not None:
                 try:
-                    pipeline_result: PipelineResult[Any] = PipelineResult(
+                    pipeline_result: PipelineResult[DomainBaseModel] = PipelineResult(
                         step_history=[parallel_result],
                         total_cost_usd=parallel_result.cost_usd,
                         total_tokens=parallel_result.token_counts,

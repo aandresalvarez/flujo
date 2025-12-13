@@ -21,6 +21,7 @@ except ImportError:
 from flujo.application.core.state_serializer import StateSerializer
 from flujo.domain.models import ConversationRole, ConversationTurn, PipelineContext, StepResult
 from tests.test_types.fixtures import create_test_step, create_test_step_result
+from tests.test_types.fakes import FakeAgent
 from tests.test_types.mocks import create_mock_executor_core
 from tests.robustness.baseline_manager import get_baseline_manager
 
@@ -72,7 +73,7 @@ class TestPerformanceRegression:
         executor = create_mock_executor_core()
 
         async def execute_step():
-            step = create_test_step(name="test_step", agent=AsyncMock())
+            step = create_test_step(name="test_step", agent=FakeAgent())
             data = {"input": "test"}
             result = await executor.execute(step, data)
             return result
@@ -105,7 +106,7 @@ class TestPerformanceRegression:
         from flujo.domain.dsl.pipeline import Pipeline
 
         def create_test_pipeline():
-            steps = [create_test_step(name=f"step_{i}", agent=AsyncMock()) for i in range(10)]
+            steps = [create_test_step(name=f"step_{i}", agent=FakeAgent()) for i in range(10)]
             return Pipeline(steps=steps)
 
         # Warm up
@@ -190,7 +191,7 @@ class TestPerformanceRegression:
         context = PipelineContext(
             initial_prompt="performance check",
             conversation_history=conversation,
-            scratchpad={
+            step_outputs={
                 "metrics": [{"index": i, "values": list(range(15))} for i in range(50)],
                 "notes": "n" * 256,
             },
@@ -285,7 +286,7 @@ class TestPerformanceRegression:
             num_runs = 3  # Multiple runs for statistical analysis
 
             async def execute_single():
-                step = create_test_step(name="concurrent_step", agent=AsyncMock())
+                step = create_test_step(name="concurrent_step", agent=FakeAgent())
                 data = {"input": "concurrent_test"}
                 await asyncio.sleep(0.001)  # 1ms simulated work
                 return await executor.execute(step, data)
@@ -411,7 +412,7 @@ class TestPerformanceRegression:
         """Test that caching provides measurable performance improvement."""
         # Use stateful mock: first call miss (None), second call hit (StepResult)
         executor = create_mock_executor_core(cache_hit=False)
-        step = create_test_step(name="cached_step", agent=AsyncMock())
+        step = create_test_step(name="cached_step", agent=FakeAgent())
 
         cached_result = StepResult(
             name="cached_step",
@@ -455,7 +456,7 @@ class TestScalabilityRegression:
 
         # Create a large pipeline
         num_steps = 50
-        steps = [create_test_step(name=f"step_{i}", agent=AsyncMock()) for i in range(num_steps)]
+        steps = [create_test_step(name=f"step_{i}", agent=FakeAgent()) for i in range(num_steps)]
         pipeline = Pipeline(steps=steps)
 
         # Measure pipeline creation time
@@ -489,13 +490,13 @@ class TestScalabilityRegression:
 
             # Warm up executor to avoid one-time initialization costs
             await executor.execute(
-                create_test_step(name="warmup", agent=AsyncMock()), {"input": "warmup"}
+                create_test_step(name="warmup", agent=FakeAgent()), {"input": "warmup"}
             )
 
             num_operations = 20  # Use 20 operations for reliable measurement
 
             steps = [
-                create_test_step(name=f"concurrency_test_{i}", agent=AsyncMock())
+                create_test_step(name=f"concurrency_test_{i}", agent=FakeAgent())
                 for i in range(num_operations)
             ]
 

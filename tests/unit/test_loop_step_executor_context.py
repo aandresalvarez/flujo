@@ -4,58 +4,44 @@ import pytest
 
 from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.executor_core import ExecutorCore
-from flujo.domain.models import StepResult, PipelineResult, PipelineContext
+from flujo.domain.dsl import Pipeline, Step
+from flujo.domain.dsl.loop import LoopStep
+from flujo.domain.models import PipelineContext, StepResult
 
 
-class _BodyPipeline:
-    def __init__(self) -> None:
-        self.steps = [object()]  # Non-empty sentinel
-
-
-class _SimpleLoop:
-    def __init__(self, name: str, iterations: int) -> None:
-        self.name = name
-        self.loop_body_pipeline = _BodyPipeline()
-        self._iterations = iterations
-        self.max_loops = iterations
-
-    def exit_condition_callable(self, _out: Any, _ctx: Any) -> bool:  # type: ignore[no-redef]
-        # Exit after configured iterations
-        # The executor checks this after each iteration; return True only on last
-        self._iterations -= 1
-        return self._iterations <= 0
-
-
-class _Core(ExecutorCore):
-    async def _execute_pipeline(
-        self,
-        _pipeline: Any,
-        _data: Any,
-        _context: Any,
-        _resources: Any,
-        _limits: Any,
-        _context_setter: Any,
-    ) -> PipelineResult[Any]:
-        # Produce a successful single-step result with a final context to merge
-        sr = StepResult(name="body", success=True, output=_data)
-        pr = PipelineResult(
-            step_history=[sr], total_cost_usd=0.0, total_tokens=0, final_pipeline_context=_context
-        )
-        return pr
+class _EchoAgent:
+    async def run(self, data: object, **_: object) -> object:
+        return data
 
 
 @pytest.mark.asyncio
 async def test_loop_executor_calls_isolate_each_iteration(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = {"isolate": 0}
 
-    def fake_isolate(ctx: Any) -> Any:
+    def fake_isolate(
+        ctx: Any, include_keys: list[str] | None = None, *, purpose: str = "unknown"
+    ) -> Any:
+        _ = include_keys
+        _ = purpose
         calls["isolate"] += 1
         return ctx
 
     monkeypatch.setattr(ContextManager, "isolate", staticmethod(fake_isolate))
 
-    core = _Core()
-    loop = _SimpleLoop("L", iterations=3)
+    remaining = {"n": 3}
+
+    def exit_after_n(_out: Any, _ctx: Any) -> bool:
+        remaining["n"] -= 1
+        return remaining["n"] <= 0
+
+    body = Step.model_validate({"name": "body", "agent": _EchoAgent()})
+    loop = LoopStep(
+        name="L",
+        loop_body_pipeline=Pipeline.from_step(body),
+        exit_condition_callable=exit_after_n,
+        max_loops=3,
+    )
+    core = ExecutorCore()
     res = await core._execute_loop(
         loop,
         data=1,
@@ -84,8 +70,20 @@ async def test_loop_executor_merges_iteration_context(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(ContextManager, "merge", staticmethod(fake_merge))
 
-    core = _Core()
-    loop = _SimpleLoop("L", iterations=2)
+    remaining = {"n": 2}
+
+    def exit_after_n(_out: Any, _ctx: Any) -> bool:
+        remaining["n"] -= 1
+        return remaining["n"] <= 0
+
+    body = Step.model_validate({"name": "body", "agent": _EchoAgent()})
+    loop = LoopStep(
+        name="L",
+        loop_body_pipeline=Pipeline.from_step(body),
+        exit_condition_callable=exit_after_n,
+        max_loops=2,
+    )
+    core = ExecutorCore()
     res = await core._execute_loop(
         loop,
         data=1,

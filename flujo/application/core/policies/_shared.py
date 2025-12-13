@@ -3,13 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Tuple
-from typing import Any as _Any
+from typing import Awaitable, Callable, Dict, List, Optional, Protocol, Tuple
 from unittest.mock import AsyncMock, MagicMock, Mock
 
-from pydantic import BaseModel
-
 from flujo.domain.models import (
+    BaseModel,
     Failure,
     Paused,
     PipelineContext,
@@ -62,7 +60,6 @@ from flujo.steps.cache_step import CacheStep, _generate_cache_key
 __all__ = [
     "asyncio",
     "time",
-    "Any",
     "Awaitable",
     "Callable",
     "Dict",
@@ -70,7 +67,6 @@ __all__ = [
     "Optional",
     "Protocol",
     "Tuple",
-    "_Any",
     "AsyncMock",
     "MagicMock",
     "Mock",

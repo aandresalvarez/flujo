@@ -25,7 +25,7 @@ async def emit_minimal_yaml(goal: str) -> dict[str, Any]:
     return {
         "generated_yaml": yaml_text,
         "yaml_text": yaml_text,
-        "scratchpad": {"next_state": "Finalization"},
+        "next_state": "Finalization",
     }
 
 
@@ -79,12 +79,10 @@ async def generate_yaml_from_plan(
         yaml_text = f'version: "0.1"\nname: {name}\nsteps: []\n'
 
     try:
-        if context is not None and hasattr(context, "scratchpad"):
-            scratchpad = getattr(context, "scratchpad")
-            if isinstance(scratchpad, dict):
-                scratchpad["next_state"] = "Validation"
+        if context is not None and hasattr(context, "next_state"):
+            context.next_state = "Validation"
     except Exception as e:
-        telemetry().error(f"[ArchitectSM] Failed to update context scratchpad: {e}")
+        telemetry().error(f"[ArchitectSM] Failed to update context next_state: {e}")
 
     try:
         if context is not None:
@@ -262,10 +260,8 @@ async def generate_yaml_from_tool_selections(
             if isinstance(res, dict) and isinstance(res.get("generated_yaml"), str):
                 yaml_text = res["generated_yaml"]
                 try:
-                    if context is not None and hasattr(context, "scratchpad"):
-                        scratchpad = getattr(context, "scratchpad")
-                        if isinstance(scratchpad, dict):
-                            scratchpad["next_state"] = "Validation"
+                    if context is not None and hasattr(context, "next_state"):
+                        context.next_state = "Validation"
                 except Exception:
                     pass
                 try:
@@ -317,10 +313,8 @@ async def generate_yaml_from_tool_selections(
             yaml_text = f'\nversion: "0.1"\nname: {name}\nsteps:\n{steps_block}\n'
 
             try:
-                if context is not None and hasattr(context, "scratchpad"):
-                    scratchpad = getattr(context, "scratchpad")
-                    if isinstance(scratchpad, dict):
-                        scratchpad["next_state"] = "Validation"
+                if context is not None and hasattr(context, "next_state"):
+                    context.next_state = "Validation"
             except Exception:
                 pass
             try:

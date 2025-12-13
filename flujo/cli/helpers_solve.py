@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import warnings
-from typing import Any, List, Optional, cast
+from typing import Any, List, Optional
 
 from typer import Exit
 
 from flujo.domain.agent_protocol import AsyncAgentProtocol
-from flujo.domain.models import Checklist, Task
+from flujo.domain.models import Candidate, Checklist, Task
 from flujo.type_definitions.common import JSONObject
 
 from .helpers_io import load_weights_file
@@ -33,10 +33,10 @@ def create_agents_for_solve(
         get_reflection_agent,
     )
 
-    review = cast(AsyncAgentProtocol[Any, Checklist], make_review_agent(review_model))
-    solution = cast(AsyncAgentProtocol[Any, str], make_solution_agent(solution_model))
-    validator = cast(AsyncAgentProtocol[Any, Checklist], make_validator_agent(validator_model))
-    reflection_agent = cast(AsyncAgentProtocol[Any, str], get_reflection_agent(reflection_model))
+    review = make_review_agent(review_model)
+    solution = make_solution_agent(solution_model)
+    validator = make_validator_agent(validator_model)
+    reflection_agent = get_reflection_agent(reflection_model)
 
     return solution, review, validator, reflection_agent
 
@@ -51,7 +51,7 @@ def run_solve_pipeline(
     k_variants: int,
     max_iters: int,
     reflection_limit: int,
-) -> Any:
+) -> Candidate | None:
     """Run the solve pipeline with the given configuration."""
     import flujo.cli.main as cli_main
     from flujo.cli.main import run_default_pipeline
@@ -107,7 +107,9 @@ def run_benchmark_pipeline(
             start = time.perf_counter()
             from flujo.cli.main import run_default_pipeline
 
-            result = asyncio.run(run_default_pipeline(pipeline, Task(prompt=prompt)))
+            result: Candidate | None = asyncio.run(
+                run_default_pipeline(pipeline, Task(prompt=prompt))
+            )
             if result is not None:
                 times.append(time.perf_counter() - start)
                 scores.append(result.score)

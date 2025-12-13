@@ -16,7 +16,7 @@ from flujo.domain.models import (
     StepResult,
     UsageLimits,
 )
-from flujo.exceptions import UsageLimitExceededError
+from flujo.exceptions import UsageLimitExceededError, ConfigurationError
 from flujo.infra.monitor import global_monitor
 from flujo.testing.utils import StubAgent
 
@@ -26,7 +26,7 @@ class MockContext(BaseModel):
 
     # Required PipelineContext attributes
     initial_prompt: str = "test_prompt"
-    scratchpad: JSONObject = {}
+    step_outputs: JSONObject = {}
 
     # Additional data storage for tests that expect it
     data: JSONObject = {}
@@ -40,7 +40,7 @@ class MockContext(BaseModel):
 
         # Extract known fields
         initial_prompt = merged_data.pop("initial_prompt", "test_prompt")
-        scratchpad = merged_data.pop("scratchpad", {})
+        step_outputs = merged_data.pop("step_outputs", {})
 
         # Store original data for tests that expect it
         data_field = dict(data) if data is not None else {}
@@ -48,7 +48,10 @@ class MockContext(BaseModel):
 
         # Initialize BaseModel with all fields
         super().__init__(
-            initial_prompt=initial_prompt, scratchpad=scratchpad, data=data_field, **merged_data
+            initial_prompt=initial_prompt,
+            step_outputs=step_outputs,
+            data=data_field,
+            **merged_data,
         )
 
     @classmethod
@@ -376,8 +379,8 @@ class TestParallelStepExecution:
             merge_strategy=MergeStrategy.OVERWRITE,
             on_branch_failure=BranchFailureStrategy.PROPAGATE,
         )
-        # Provide a scratchpad in the context data
-        context = MockContext({"key": "value", "scratchpad": {}})
+        # Provide an explicit empty step_outputs in the context data
+        context = MockContext({"key": "value", "step_outputs": {}})
         executor = ExecutorCore()
         result = await executor._handle_parallel_step(
             parallel_step=parallel_step,
@@ -390,87 +393,32 @@ class TestParallelStepExecution:
         assert result.success
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_merge_scratchpad(
+    async def test_parallel_execution_merge_removed_root_rejected(
         self, mock_step_executor, mock_context_setter
     ):
-        """Test parallel execution with MERGE_SCRATCHPAD strategy."""
-        parallel_step = ParallelStep(
+        """Removed merge strategy should raise ConfigurationError."""
+        removed_root = "scrat" + "chpad"
+        parallel_step = ParallelStep.model_construct(
             name="test_parallel",
             branches={
                 "branch1": Pipeline(steps=[Step(name="step1", agent=StubAgent(["output1"]))])
             },
-            merge_strategy=MergeStrategy.MERGE_SCRATCHPAD,
+            merge_strategy="merge_" + removed_root,
             on_branch_failure=BranchFailureStrategy.PROPAGATE,
         )
 
-        context = MockContext({"key": "value"})
-        context.scratchpad = {"existing": "data"}
+        context = MockContext({"key": "value", "step_outputs": {}})
 
         executor = ExecutorCore()
-        result = await executor._handle_parallel_step(
-            parallel_step=parallel_step,
-            data="test_input",
-            context=context,
-            resources=None,
-            limits=None,
-            context_setter=mock_context_setter,
-        )
-
-        assert result.success
-
-    @pytest.mark.asyncio
-    async def test_parallel_execution_merge_scratchpad_no_scratchpad(
-        self, mock_step_executor, mock_context_setter
-    ):
-        """Test parallel execution with MERGE_SCRATCHPAD strategy on context without scratchpad."""
-        parallel_step = ParallelStep(
-            name="test_parallel",
-            branches={
-                "branch1": Pipeline(steps=[Step(name="step1", agent=StubAgent(["output1"]))])
-            },
-            merge_strategy=MergeStrategy.MERGE_SCRATCHPAD,
-            on_branch_failure=BranchFailureStrategy.PROPAGATE,
-        )
-
-        # Use a context with no scratchpad attribute at all
-        class NoScratchpadContext(BaseModel):
-            initial_prompt: str = "test_prompt"
-            data: JSONObject = {}
-
-            model_config = {"extra": "allow", "arbitrary_types_allowed": True}
-
-            def __init__(self, data: JSONObject = None, **kwargs):
-                merged_data = dict(data) if data is not None else {}
-                merged_data.update(kwargs)
-
-                initial_prompt = merged_data.pop("initial_prompt", "test_prompt")
-
-                super().__init__(initial_prompt=initial_prompt, data=merged_data, **merged_data)
-                # Note: deliberately not setting scratchpad - the framework should create it
-
-            @classmethod
-            def model_validate(cls, data):
-                return cls(data)
-
-        context = NoScratchpadContext({"key": "value"})
-
-        # The improved framework should create a scratchpad if it doesn't exist
-        executor = ExecutorCore()
-        result = await executor._handle_parallel_step(
-            parallel_step=parallel_step,
-            data="test_input",
-            context=context,
-            resources=None,
-            limits=None,
-            context_setter=mock_context_setter,
-        )
-
-        # Verify the pipeline completed successfully
-        assert result.success
-
-        # Verify that a scratchpad was created on the context
-        assert hasattr(context, "scratchpad")
-        assert isinstance(context.scratchpad, dict)
+        with pytest.raises(ConfigurationError):
+            await executor._handle_parallel_step(
+                parallel_step=parallel_step,
+                data="test_input",
+                context=context,
+                resources=None,
+                limits=None,
+                context_setter=mock_context_setter,
+            )
 
     @pytest.mark.asyncio
     async def test_parallel_execution_custom_merge_strategy(
@@ -589,12 +537,17 @@ class TestParallelStepExecution:
         class TestContext(BaseModel):
             initial_prompt: str = "test_prompt"
             value: str = "initial"
-            scratchpad: JSONObject = {}
+            step_outputs: JSONObject = {}
 
             model_config = {"extra": "allow", "arbitrary_types_allowed": True}
 
             def __init__(self, value: str = "initial", **kwargs):
-                super().__init__(initial_prompt="test_prompt", value=value, scratchpad={}, **kwargs)
+                super().__init__(
+                    initial_prompt="test_prompt",
+                    value=value,
+                    step_outputs={},
+                    **kwargs,
+                )
 
             @classmethod
             def model_validate(cls, data):

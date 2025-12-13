@@ -35,8 +35,16 @@ steps:
             agent:
               id: "flujo.builtins.context_merge"
               params:
-                path: "scratchpad"
-                value: { test_key: "params_value", next_state: "complete" }
+                path: "import_artifacts"
+                value: { test_key: "params_value" }
+            updates_context: true
+          - kind: step
+            name: set_next
+            agent:
+              id: "flujo.builtins.context_set"
+              params:
+                path: "next_state"
+                value: "complete"
             updates_context: true
       
       complete:
@@ -52,9 +60,9 @@ steps:
         result = await gather_result(runner, "test")
 
         assert result.success
-        assert result.final_pipeline_context.scratchpad.get("test_key") == "params_value"
+        assert result.final_pipeline_context.import_artifacts.get("test_key") == "params_value"
         # StateMachine reads next_state and transitions, but doesn't update current_state for terminal states
-        assert result.final_pipeline_context.scratchpad.get("next_state") == "complete"
+        assert result.final_pipeline_context.next_state == "complete"
 
     @pytest.mark.serial  # StateMachine tests have race conditions under heavy xdist load
     async def test_context_merge_in_statemachine_with_input(self) -> None:
@@ -77,8 +85,16 @@ steps:
             agent:
               id: "flujo.builtins.context_merge"
             input:
-              path: "scratchpad"
-              value: { test_key: "input_value", next_state: "complete" }
+              path: "import_artifacts"
+              value: { test_key: "input_value" }
+            updates_context: true
+          - kind: step
+            name: set_next
+            agent:
+              id: "flujo.builtins.context_set"
+            input:
+              path: "next_state"
+              value: "complete"
             updates_context: true
       
       complete:
@@ -94,9 +110,9 @@ steps:
         result = await gather_result(runner, "test")
 
         assert result.success
-        assert result.final_pipeline_context.scratchpad.get("test_key") == "input_value"
+        assert result.final_pipeline_context.import_artifacts.get("test_key") == "input_value"
         # StateMachine reads next_state and transitions, but doesn't update current_state for terminal states
-        assert result.final_pipeline_context.scratchpad.get("next_state") == "complete"
+        assert result.final_pipeline_context.next_state == "complete"
 
     @pytest.mark.fast
     async def test_context_merge_in_toplevel_with_params(self) -> None:
@@ -111,7 +127,7 @@ steps:
     agent:
       id: "flujo.builtins.context_merge"
       params:
-        path: "scratchpad"
+        path: "import_artifacts"
         value: { test_key: "toplevel_params" }
     updates_context: true
 """
@@ -123,7 +139,7 @@ steps:
         # Check that context_merge succeeded
         assert result.step_history[0].success
         # Check that context was updated
-        assert result.final_pipeline_context.scratchpad.get("test_key") == "toplevel_params"
+        assert result.final_pipeline_context.import_artifacts.get("test_key") == "toplevel_params"
 
     @pytest.mark.fast
     async def test_context_merge_in_toplevel_with_input(self) -> None:
@@ -138,7 +154,7 @@ steps:
     agent:
       id: "flujo.builtins.context_merge"
     input:
-      path: "scratchpad"
+      path: "import_artifacts"
       value: { test_key: "toplevel_input" }
     updates_context: true
 """
@@ -150,7 +166,7 @@ steps:
         # Check that context_merge succeeded
         assert result.step_history[0].success
         # Check that context was updated
-        assert result.final_pipeline_context.scratchpad.get("test_key") == "toplevel_input"
+        assert result.final_pipeline_context.import_artifacts.get("test_key") == "toplevel_input"
 
     @pytest.mark.fast
     async def test_context_merge_in_conditional_branch(self) -> None:
@@ -170,7 +186,7 @@ steps:
           agent:
             id: "flujo.builtins.context_merge"
             params:
-              path: "scratchpad"
+              path: "import_artifacts"
               value: { branch_key: "yes_branch" }
           updates_context: true
 """
@@ -180,7 +196,7 @@ steps:
 
         assert result.success
         # Check that context was updated in the branch
-        assert result.final_pipeline_context.scratchpad.get("branch_key") == "yes_branch"
+        assert result.final_pipeline_context.import_artifacts.get("branch_key") == "yes_branch"
 
     @pytest.mark.fast
     async def test_context_set_with_params(self) -> None:
@@ -195,7 +211,7 @@ steps:
     agent:
       id: "flujo.builtins.context_set"
       params:
-        path: "scratchpad.counter"
+        path: "import_artifacts.counter"
         value: 42
     updates_context: true
 """
@@ -205,7 +221,7 @@ steps:
 
         assert result.success
         assert result.step_history[0].success
-        assert result.final_pipeline_context.scratchpad.get("counter") == 42
+        assert result.final_pipeline_context.import_artifacts.get("counter") == 42
 
     @pytest.mark.fast
     async def test_context_set_with_input(self) -> None:
@@ -220,7 +236,7 @@ steps:
     agent:
       id: "flujo.builtins.context_set"
     input:
-      path: "scratchpad.counter"
+      path: "import_artifacts.counter"
       value: 99
     updates_context: true
 """
@@ -230,7 +246,7 @@ steps:
 
         assert result.success
         assert result.step_history[0].success
-        assert result.final_pipeline_context.scratchpad.get("counter") == 99
+        assert result.final_pipeline_context.import_artifacts.get("counter") == 99
 
     @pytest.mark.serial  # StateMachine tests have race conditions under heavy xdist load
     async def test_statemachine_dynamic_transitions(self) -> None:
@@ -253,8 +269,16 @@ steps:
             agent:
               id: "flujo.builtins.context_merge"
             input:
-              path: "scratchpad"
-              value: { next_state: "middle", step_count: 1 }
+              path: "import_artifacts"
+              value: { step_count: 1 }
+            updates_context: true
+          - kind: step
+            name: set_next_middle
+            agent:
+              id: "flujo.builtins.context_set"
+              params:
+                path: "next_state"
+                value: "middle"
             updates_context: true
       
       middle:
@@ -264,8 +288,16 @@ steps:
             agent:
               id: "flujo.builtins.context_merge"
               params:
-                path: "scratchpad"
-                value: { next_state: "final" }
+                path: "import_artifacts"
+                value: {}
+            updates_context: true
+          - kind: step
+            name: set_next_final
+            agent:
+              id: "flujo.builtins.context_set"
+              params:
+                path: "next_state"
+                value: "final"
             updates_context: true
       
       final:
@@ -283,6 +315,6 @@ steps:
         assert result.success
         # Verify the state machine transitioned through init -> middle -> final
         # The context should show we set next_state to trigger transitions
-        assert result.final_pipeline_context.scratchpad.get("next_state") == "final"
-        assert result.final_pipeline_context.scratchpad.get("step_count") == 1
+        assert result.final_pipeline_context.next_state == "final"
+        assert result.final_pipeline_context.import_artifacts.get("step_count") == 1
         assert result.step_history[-1].name == "test_sm"

@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import itertools
-from typing import Any, Generic, Optional, Type, TypeVar
+from typing import Generic, Optional, Type, TypeVar
 
 from flujo.domain.models import BaseModel, PipelineContext, StepResult
 from flujo.type_definitions.common import JSONObject
@@ -43,8 +43,8 @@ class StateSerializer(Generic[ContextT]):
             "pipeline_version",
         }
 
-        data_items: list[tuple[str, Any]] = []
-        raw_mapping: Optional[dict[str, Any]] = None
+        data_items: list[tuple[str, object]] = []
+        raw_mapping: dict[str, object] | None = None
 
         # Optimization: Track size estimation during extraction to avoid double iteration
         estimated_size = 0
@@ -90,7 +90,7 @@ class StateSerializer(Generic[ContextT]):
                         is_large = True
                         break
 
-        def _fingerprint_scalar(value: Any) -> str:
+        def _fingerprint_scalar(value: object) -> str:
             type_name = type(value).__name__
 
             if isinstance(value, (list, tuple, dict, set)):
@@ -112,7 +112,7 @@ class StateSerializer(Generic[ContextT]):
             rep = rep[:20] if rep else f"<{type_name}>"
             return f"{type_name}:{rep}"
 
-        def _fingerprint_container(value: Any) -> str:
+        def _fingerprint_container(value: object) -> str:
             if isinstance(value, (str, bytes)):
                 return _fingerprint_scalar(value)
 
@@ -323,7 +323,7 @@ class StateSerializer(Generic[ContextT]):
     # -------------------------- Deserialization ---------------------------
 
     def deserialize_context(
-        self, data: Any, context_model: Optional[Type[ContextT]] = None
+        self, data: object, context_model: Optional[Type[ContextT]] = None
     ) -> Optional[ContextT]:
         if data is None:
             return None

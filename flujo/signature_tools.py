@@ -30,8 +30,9 @@ class SignatureAnalysis(NamedTuple):
     needs_context: bool
     needs_resources: bool
     context_kw: Optional[str]
-    input_type: Any
-    output_type: Any
+    # These are "type hint objects" (e.g., `str`, `list[str]`, `typing.Any`), not runtime values.
+    input_type: object
+    output_type: object
 
 
 _analysis_cache_weak: "weakref.WeakKeyDictionary[Callable[..., Any], SignatureAnalysis]" = (

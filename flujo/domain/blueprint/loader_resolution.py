@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import importlib
 import re
-from typing import Any, List, Optional, Tuple, Union
+from collections.abc import Callable, Coroutine
+from typing import List, Optional, Tuple, TypeAlias, TypeGuard, Union
 
 from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 from ..interfaces import get_config_provider, get_skill_resolver
+from ..plugins import ValidationPlugin
+from ..validation import Validator
 from .loader_models import BlueprintError
 from flujo.type_definitions.common import JSONObject
 
@@ -35,7 +38,7 @@ def _current_skills_base_dir() -> Optional[str]:
         return None
 
 
-def _import_object(path: str) -> Any:
+def _import_object(path: str) -> object:
     """Import an object from 'module:attr' or 'module.attr' path with allow-list enforcement."""
     module_name: str
     attr_name: Optional[str] = None
@@ -101,7 +104,7 @@ def _import_object(path: str) -> Any:
     return getattr(module, attr_name) if attr_name else module
 
 
-def _import_child_skill_module(module_name: str, attr_name: Optional[str]) -> Any:
+def _import_child_skill_module(module_name: str, attr_name: Optional[str]) -> object:
     base_dir = _current_skills_base_dir()
     if not base_dir:
         raise BlueprintError(f"Unable to locate module '{module_name}' under current skills base")
@@ -174,7 +177,10 @@ def _import_child_skill_module(module_name: str, attr_name: Optional[str]) -> An
         raise BlueprintError(f"Failed to import child-local module '{module_name}': {e}") from e
 
 
-def _is_async_callable(obj: Any) -> bool:
+AsyncCallable: TypeAlias = Callable[..., Coroutine[object, object, object]]
+
+
+def _is_async_callable(obj: object) -> TypeGuard[AsyncCallable]:
     try:
         import inspect
 
@@ -184,11 +190,13 @@ def _is_async_callable(obj: Any) -> bool:
 
 
 class _PassthroughAgent:
-    async def run(self, x: Any, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover - trivial
+    async def run(  # pragma: no cover - trivial
+        self, x: object, *args: object, **kwargs: object
+    ) -> object:
         return x
 
 
-def _resolve_agent(agent_spec: str) -> Any:
+def _resolve_agent(agent_spec: str) -> object:
     obj = _import_object(agent_spec)
     try:
         import inspect
@@ -200,7 +208,7 @@ def _resolve_agent(agent_spec: str) -> Any:
         return obj
 
 
-def _resolve_agent_entry(agent: Union[str, JSONObject]) -> Any:
+def _resolve_agent_entry(agent: Union[str, JSONObject]) -> object:
     if isinstance(agent, str):
         return _resolve_agent(agent)
     if isinstance(agent, dict):
@@ -230,29 +238,51 @@ def _resolve_agent_entry(agent: Union[str, JSONObject]) -> Any:
     raise BlueprintError("Invalid agent specification")
 
 
-def _resolve_plugins(specs: List[Union[str, JSONObject]]) -> List[Tuple[Any, int]]:
-    result: List[Tuple[Any, int]] = []
+def _resolve_plugins(specs: List[Union[str, JSONObject]]) -> List[Tuple[ValidationPlugin, int]]:
+    result: List[Tuple[ValidationPlugin, int]] = []
     for item in specs:
         try:
             if isinstance(item, str):
                 obj = _import_object(item)
-                result.append((obj, 0))
+                candidate = obj
+                if not isinstance(candidate, ValidationPlugin) and callable(candidate):
+                    try:
+                        candidate = candidate()
+                    except Exception:
+                        candidate = obj
+                if isinstance(candidate, ValidationPlugin):
+                    result.append((candidate, 0))
             elif isinstance(item, dict):
                 path = item.get("path")
                 prio = int(item.get("priority", 0))
                 if path:
                     obj = _import_object(path)
-                    result.append((obj, prio))
+                    candidate = obj
+                    if not isinstance(candidate, ValidationPlugin) and callable(candidate):
+                        try:
+                            candidate = candidate()
+                        except Exception:
+                            candidate = obj
+                    if isinstance(candidate, ValidationPlugin):
+                        result.append((candidate, prio))
         except Exception:
             continue
     return result
 
 
-def _resolve_validators(specs: List[str]) -> List[Any]:
-    result: List[Any] = []
+def _resolve_validators(specs: List[str]) -> List[Validator]:
+    result: List[Validator] = []
     for path in specs:
         try:
-            result.append(_import_object(path))
+            obj = _import_object(path)
+            candidate = obj
+            if not isinstance(candidate, Validator) and callable(candidate):
+                try:
+                    candidate = candidate()
+                except Exception:
+                    candidate = obj
+            if isinstance(candidate, Validator):
+                result.append(candidate)
         except Exception:
             continue
     return result

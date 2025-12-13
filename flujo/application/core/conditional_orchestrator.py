@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from ...domain.models import BaseModel
 
 from ...infra import telemetry as _telemetry
 from ...domain.models import StepOutcome, StepResult
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .executor_core import ExecutorCore
     from .types import ExecutionFrame
 
 
@@ -18,8 +19,8 @@ class ConditionalOrchestrator:
     async def execute(
         self,
         *,
-        core: "ExecutorCore[Any]",
-        frame: "ExecutionFrame[Any]",
+        core: object,
+        frame: "ExecutionFrame[BaseModel]",
     ) -> StepResult:
         from .types import ExecutionFrame as _ExecutionFrame
 
@@ -28,10 +29,27 @@ class ConditionalOrchestrator:
 
         step = frame.step
         with _telemetry.logfire.span(getattr(step, "name", "<unnamed>")) as _span:
-            outcome: StepOutcome[StepResult] = await core.conditional_step_executor.execute(
-                core, frame
+            executor = getattr(core, "conditional_step_executor", None)
+            execute_fn = getattr(executor, "execute", None)
+            if not callable(execute_fn):
+                raise TypeError("conditional_step_executor missing execute()")
+            outcome_raw = await execute_fn(core, frame)
+            if not isinstance(outcome_raw, (StepOutcome, StepResult)):
+                raise TypeError(
+                    "conditional_step_executor returned unsupported type "
+                    f"{type(outcome_raw).__name__}"
+                )
+            outcome: StepOutcome[StepResult] | StepResult = outcome_raw
+        unwrap_fn = getattr(core, "_unwrap_outcome_to_step_result", None)
+        safe_step_name_fn = getattr(core, "_safe_step_name", None)
+        if not callable(unwrap_fn) or not callable(safe_step_name_fn):
+            raise TypeError("ExecutorCore missing outcome unwrap helpers")
+        sr_raw = unwrap_fn(outcome, safe_step_name_fn(step))
+        if not isinstance(sr_raw, StepResult):
+            raise TypeError(
+                f"ConditionalOrchestrator expected StepResult, got {type(sr_raw).__name__}"
             )
-        sr = core._unwrap_outcome_to_step_result(outcome, core._safe_step_name(step))
+        sr = sr_raw
         try:
             md = getattr(sr, "metadata_", None) or {}
             branch_key = md.get("executed_branch_key")

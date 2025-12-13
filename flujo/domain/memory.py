@@ -4,7 +4,7 @@ import math
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 
 
 @dataclass(slots=True)
@@ -35,6 +35,7 @@ class ScoredMemory:
     score: float
 
 
+@runtime_checkable
 class VectorStoreProtocol(Protocol):
     """Abstract interface for vector-backed long-term memory stores."""
 

@@ -139,11 +139,19 @@ def test_cli_validate_reports_suggestions(tmp_path: Path) -> None:
         tmp_path,
         """
         from flujo.domain.dsl import Step, Pipeline
-        async def a(x: int) -> int: return x
-        async def b(_: object) -> None: return None
+        async def a(x: str) -> str: return x
+        async def b(x: str) -> str: return x
         s1 = Step.from_callable(a, name="a")
-        s2 = Step.from_callable(b, name="b")
-        s2.__step_input_type__ = object
+        s1.__step_output_type__ = str
+        s2 = Step.from_callable(
+            b,
+            name="b",
+            is_adapter=True,
+            adapter_id="generic-adapter",
+            adapter_allow="generic",
+        )
+        s2.meta = {"is_adapter": True, "adapter_id": "generic-adapter", "adapter_allow": "generic"}
+        s2.__step_input_type__ = str
         pipeline = Pipeline.from_step(s1) >> s2
         """,
     )
@@ -244,6 +252,12 @@ def test_cli_compile_yaml_roundtrip(tmp_path: Path) -> None:
     steps:
       - kind: step
         name: s1
+        agent:
+          id: "flujo.builtins.echo"
+        meta:
+          is_adapter: true
+          adapter_id: generic-adapter
+          adapter_allow: generic
       - kind: map
         name: mapper
         map:
@@ -251,15 +265,33 @@ def test_cli_compile_yaml_roundtrip(tmp_path: Path) -> None:
           body:
             - kind: step
               name: inner
+              agent:
+                id: "flujo.builtins.echo"
+              meta:
+                is_adapter: true
+                adapter_id: generic-adapter
+                adapter_allow: generic
       - kind: parallel
         name: p
         branches:
           a:
             - kind: step
               name: a1
+              agent:
+                id: "flujo.builtins.echo"
+              meta:
+                is_adapter: true
+                adapter_id: generic-adapter
+                adapter_allow: generic
           b:
             - kind: step
               name: b1
+              agent:
+                id: "flujo.builtins.echo"
+              meta:
+                is_adapter: true
+                adapter_id: generic-adapter
+                adapter_allow: generic
     """
     src = tmp_path / "pipe.yaml"
     src.write_text(yaml_text)

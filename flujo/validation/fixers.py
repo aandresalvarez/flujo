@@ -232,7 +232,7 @@ def _apply_vc2_text(text: str) -> Tuple[str, int]:
     def _sub_block(m: _re.Match[str]) -> str:
         nonlocal changed
         changed += 1
-        return f"{m.group(1)}{m.group(2)}scratchpad.value{m.group(4)}"
+        return f"{m.group(1)}{m.group(2)}import_artifacts.value{m.group(4)}"
 
     new_text = pat_block.sub(_sub_block, new_text)
 
@@ -242,7 +242,7 @@ def _apply_vc2_text(text: str) -> Tuple[str, int]:
     def _sub_inline(m: _re.Match[str]) -> str:
         nonlocal changed
         changed += 1
-        return f"{m.group(1)}scratchpad.value"
+        return f"{m.group(1)}import_artifacts.value"
 
     new_text = pat_inline.sub(_sub_inline, new_text)
     return new_text, changed
@@ -279,7 +279,12 @@ def _vc2_apply(file_path: str, report: Any, assume_yes: bool) -> FixResult:
 
 
 register_fixer(
-    Fixer("V-C2", _vc2_preview, _vc2_apply, title="Map to scratchpad.<key> instead of root")
+    Fixer(
+        "V-C2",
+        _vc2_preview,
+        _vc2_apply,
+        title="Map to import_artifacts.<key> instead of removed root",
+    )
 )
 
 

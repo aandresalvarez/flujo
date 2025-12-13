@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, ClassVar, Dict, List, Optional, Callable, Literal
+from typing import Callable, ClassVar, Literal
 
 from pydantic import Field, model_validator, PrivateAttr
 
@@ -23,13 +23,13 @@ class TransitionRule(BaseModel):
     from_state: str = Field(alias="from")
     on: Literal["success", "failure", "pause"]
     to: str
-    when: Optional[str] = None
+    when: str | None = None
 
     # Compiled predicate (not serialized)
-    _when_fn: Optional[Callable[[Any, Optional[Any]], Any]] = PrivateAttr(default=None)
+    _when_fn: Callable[[object, object | None], object] | None = PrivateAttr(default=None)
 
 
-class StateMachineStep(Step[Any, Any]):
+class StateMachineStep(Step[object, object]):
     """A high-level DSL primitive for orchestrating pipelines via named states.
 
     The step holds a mapping of state name → Pipeline and metadata about the
@@ -40,21 +40,21 @@ class StateMachineStep(Step[Any, Any]):
     kind: ClassVar[str] = "StateMachine"
 
     # Map of state name → Pipeline to run for that state
-    states: Dict[str, Pipeline[Any, Any]] = Field(default_factory=dict)
+    states: dict[str, Pipeline[object, object]] = Field(default_factory=dict)
     start_state: str
-    end_states: List[str] = Field(default_factory=list)
-    transitions: List[TransitionRule] = Field(default_factory=list)
+    end_states: list[str] = Field(default_factory=list)
+    transitions: list[TransitionRule] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
-    def _coerce_states_to_pipelines(cls, data: Any) -> Any:
+    def _coerce_states_to_pipelines(cls, data: object) -> object:
         try:
             if isinstance(data, dict):
                 states_in = data.get("states")
                 from flujo.domain.blueprint.loader import _build_pipeline_from_branch as _mk
 
                 if isinstance(states_in, dict):
-                    coerced: Dict[str, Pipeline[Any, Any]] = {}
+                    coerced: dict[str, Pipeline[object, object]] = {}
                     for k, v in states_in.items():
                         # Accept a list[step-spec] or a single step-spec dict
                         coerced[str(k)] = _mk(v)
@@ -103,7 +103,7 @@ class StateMachineStep(Step[Any, Any]):
         """Signal to the executor that this is a complex orchestration step."""
         return True
 
-    def build_internal_pipeline(self) -> Pipeline[Any, Any]:
+    def build_internal_pipeline(self) -> Pipeline[object, object]:
         """Build a simple conditional wrapper over the state's pipelines.
 
         This does not implement the iteration semantics; the policy executor
@@ -111,20 +111,17 @@ class StateMachineStep(Step[Any, Any]):
         selects the pipeline for the current state.
         """
 
-        def _select_branch(_out: Any = None, ctx: Any | None = None) -> str:
+        def _select_branch(_out: object | None = None, ctx: object | None = None) -> str:
             try:
-                if ctx is not None and hasattr(ctx, "scratchpad"):
-                    sp = getattr(ctx, "scratchpad", {})
-                    key = sp.get("current_state") if isinstance(sp, dict) else None
+                if ctx is not None:
+                    key = getattr(ctx, "current_state", None)
                     if isinstance(key, str) and key in self.states:
                         return key
             except Exception:
                 pass
             return self.start_state
 
-        from typing import Any as _Any
-
-        cond: ConditionalStep[_Any] = ConditionalStep(
+        cond: ConditionalStep[BaseModel] = ConditionalStep(
             name=f"{getattr(self, 'name', 'StateMachine')}:branch",
             condition_callable=_select_branch,
             branches=self.states,

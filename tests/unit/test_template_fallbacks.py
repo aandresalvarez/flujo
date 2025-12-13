@@ -7,7 +7,6 @@ from pydantic import BaseModel as PydanticModel
 
 class Ctx(PydanticModel):
     initial_prompt: str | None = None
-    scratchpad: dict = {}
 
 
 def test_fallback_literal_is_used_when_primary_missing() -> None:

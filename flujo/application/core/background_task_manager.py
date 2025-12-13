@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional, Set, cast
+from typing import TYPE_CHECKING, Callable, Coroutine
 
 from ...domain.models import BackgroundLaunched, UsageEstimate
 from ...infra import telemetry
@@ -13,6 +13,8 @@ from .context_manager import ContextManager
 from ...exceptions import UsageLimitExceededError, PipelineAbortSignal, PausedException
 
 if TYPE_CHECKING:  # pragma: no cover
+    from ...domain.models import BaseModel
+
     from .executor_core import ExecutorCore
     from .types import ExecutionFrame
     from ...domain.models import StepOutcome, StepResult
@@ -22,9 +24,9 @@ class BackgroundTaskManager:
     """Manages the lifecycle of background tasks."""
 
     def __init__(self) -> None:
-        self._background_tasks: Set[asyncio.Task[Any]] = set()
+        self._background_tasks: set[asyncio.Task[object]] = set()
 
-    def add_task(self, task: asyncio.Task[Any]) -> None:
+    def add_task(self, task: asyncio.Task[object]) -> None:
         """Add a background task to tracking."""
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
@@ -41,9 +43,9 @@ class BackgroundTaskManager:
         self,
         *,
         step_name: str,
-        run_coro: Callable[[], Coroutine[Any, Any, Any]],
-        task_id: Optional[str] = None,
-    ) -> BackgroundLaunched[Any]:
+        run_coro: Callable[[], Coroutine[object, object, object]],
+        task_id: str | None = None,
+    ) -> "BackgroundLaunched[StepResult]":
         """Create, track, and return metadata for a background step execution."""
         task_id = task_id or f"bg_{uuid.uuid4().hex}"
         task = asyncio.create_task(run_coro(), name=f"flujo_bg_{step_name}_{task_id}")
@@ -54,8 +56,8 @@ class BackgroundTaskManager:
     async def maybe_launch_background_step(
         self,
         *,
-        core: "ExecutorCore[Any]",
-        frame: "ExecutionFrame[Any]",
+        core: "ExecutorCore[BaseModel]",
+        frame: "ExecutionFrame[BaseModel]",
     ) -> "StepOutcome[StepResult] | None":
         """Launch the given frame in background mode if requested."""
         step = frame.step
@@ -80,8 +82,8 @@ class BackgroundTaskManager:
     async def _execute_background_step(
         self,
         *,
-        core: "ExecutorCore[Any]",
-        frame: "ExecutionFrame[Any]",
+        core: "ExecutorCore[BaseModel]",
+        frame: "ExecutionFrame[BaseModel]",
         task_id: str,
     ) -> None:
         """Execute a background frame with isolated context and optional persistence."""
@@ -92,10 +94,10 @@ class BackgroundTaskManager:
             enable_state_tracking = bool(getattr(bg_settings, "enable_state_tracking", False))
             enable_resumability = bool(getattr(bg_settings, "enable_resumability", False))
 
-            parent_context: Any = getattr(frame, "context", None)
-            parent_run_id: Optional[str] = None
+            parent_context: BaseModel | None = getattr(frame, "context", None)
+            parent_run_id: str | None = None
             if parent_context is not None:
-                parent_run_id = cast(Optional[str], getattr(parent_context, "run_id", None))
+                parent_run_id = getattr(parent_context, "run_id", None)
             bg_run_id = f"{parent_run_id}_bg_{task_id}" if parent_run_id else task_id
 
             try:
@@ -109,18 +111,22 @@ class BackgroundTaskManager:
                     pass
                 isolated_context = ContextManager.isolate(getattr(frame, "context", None))
             if isolated_context is not None:
-                ctx_any = cast(Any, isolated_context)
                 try:
-                    ctx_any.run_id = bg_run_id
+                    isolated_context.run_id = bg_run_id  # type: ignore[attr-defined]
                 except Exception:
                     pass
                 try:
-                    setattr(ctx_any, "parent_run_id", parent_run_id)
+                    if hasattr(isolated_context, "parent_run_id"):
+                        isolated_context.parent_run_id = parent_run_id
+                    else:
+                        setattr(isolated_context, "parent_run_id", parent_run_id)
                 except Exception:
                     pass
                 try:
-                    if hasattr(ctx_any, "scratchpad"):
-                        ctx_any.scratchpad["is_background_task"] = True
+                    if hasattr(isolated_context, "is_background_task"):
+                        isolated_context.is_background_task = True
+                    if hasattr(isolated_context, "task_id"):
+                        isolated_context.task_id = task_id
                 except Exception:
                     pass
 
@@ -147,7 +153,7 @@ class BackgroundTaskManager:
 
             try:
                 step_copy = getattr(frame, "step")
-                copy_error: Optional[Exception] = None
+                copy_error: Exception | None = None
                 try:
                     step_copy = step_copy.model_copy(deep=True)
                 except Exception as exc:  # best-effort defensive copy
@@ -173,7 +179,7 @@ class BackgroundTaskManager:
                     quota = parent_quota
 
                 # Proactive quota reservation
-                reserved_estimate: Optional[UsageEstimate] = None
+                reserved_estimate: UsageEstimate | None = None
                 if quota is not None and bool(getattr(bg_settings, "enable_quota", False)):
                     try:
                         remaining_cost, remaining_tokens = quota.get_remaining()
@@ -212,17 +218,17 @@ class BackgroundTaskManager:
                         return
                     reserved_estimate = estimate
 
-                final_context = isolated_context
+                final_context: BaseModel | None = isolated_context
 
-                def _context_setter(_res: Any, updated_ctx: Optional[Any]) -> None:
+                def _context_setter(_res: object, updated_ctx: BaseModel | None) -> None:
                     nonlocal final_context
                     if updated_ctx is not None:
                         final_context = updated_ctx
 
-                bg_frame: ExecutionFrame[Any] = ExecutionFrame(
+                bg_frame: ExecutionFrame[BaseModel] = ExecutionFrame(
                     step=step_copy,
                     data=getattr(frame, "data", None),
-                    context=cast(Optional[Any], isolated_context),
+                    context=isolated_context,
                     resources=getattr(frame, "resources", None),
                     limits=getattr(frame, "limits", None),
                     quota=quota,
@@ -326,11 +332,12 @@ class BackgroundTaskManager:
                             return "system"
 
                     metadata["error_category"] = _classify_error(e)
-                    if final_context is not None and hasattr(final_context, "scratchpad"):
+                    if final_context is not None:
                         try:
-                            final_context.scratchpad["background_error_category"] = metadata[
-                                "error_category"
-                            ]
+                            if hasattr(final_context, "background_error_category"):
+                                final_context.background_error_category = str(
+                                    metadata.get("error_category", "system")
+                                )
                         except Exception:
                             pass
 

@@ -510,7 +510,7 @@ assert execution_time < 1.0, "Major regression detected"  # 1s sanity check
 
 ### StateMachine Test Isolation
 
-Tests that check `scratchpad.get("current_state")` are prone to race conditions under xdist.
+Tests that check `context.current_state` are prone to race conditions under xdist.
 
 **Required markers for StateMachine integration tests:**
 ```python
@@ -521,7 +521,7 @@ async def test_state_machine_transitions():
 ```
 
 **Files that typically need these markers:**
-- Tests checking `current_state` in scratchpad
+- Tests checking `current_state` on context
 - HITL tests with pause/resume
 - Tests using SQLite backends
 

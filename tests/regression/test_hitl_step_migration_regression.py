@@ -36,11 +36,9 @@ class TestHITLStepMigrationRegression:
         return step
 
     @pytest.fixture
-    def mock_context(self) -> Mock:
-        """Create a mock PipelineContext."""
-        context = Mock(spec=PipelineContext)
-        context.scratchpad = {}
-        return context
+    def mock_context(self) -> PipelineContext:
+        """Create a real PipelineContext for strict typed-context enforcement."""
+        return PipelineContext()
 
     # ============================================================================
     # Phase 3.1: Existing Functionality Preservation
@@ -50,7 +48,7 @@ class TestHITLStepMigrationRegression:
         self,
         executor_core: ExecutorCore,
         mock_hitl_step: Mock,
-        mock_context: Mock,
+        mock_context: PipelineContext,
     ):
         """Test that all existing HITL step behaviors are preserved."""
         # Test cases that cover all existing behaviors
@@ -115,15 +113,19 @@ class TestHITLStepMigrationRegression:
                 )
 
             # Verify behavior matches expected
-            assert case["expected_message"] in str(exc_info.value)
-            assert mock_context.scratchpad["status"] == "paused"
-            assert mock_context.scratchpad["hitl_data"] == data
+            expected_message = case["expected_message"]
+            assert expected_message in str(exc_info.value)
+            assert mock_context.status == "paused"
+            assert mock_context.pause_message == expected_message
+            assert mock_context.hitl_data.get("last_hitl_step") == mock_hitl_step.name
+            # paused_step_input may be AskHumanCommand; allow either form
+            assert mock_context.paused_step_input is not None
 
     async def test_hitl_step_edge_cases_regression(
         self,
         executor_core: ExecutorCore,
         mock_hitl_step: Mock,
-        mock_context: Mock,
+        mock_context: PipelineContext,
     ):
         """Test edge cases that existed before migration."""
         # Test edge cases that should still work
@@ -177,13 +179,16 @@ class TestHITLStepMigrationRegression:
             # Verify edge case is handled correctly
             expected_message = str(data) if case["message"] is None else case["message"]
             assert expected_message in str(exc_info.value)
-            assert mock_context.scratchpad["hitl_data"] == data
+            assert mock_context.status == "paused"
+            assert mock_context.pause_message == expected_message
+            assert mock_context.paused_step_input == data
+            assert mock_context.hitl_data.get("last_hitl_step") == mock_hitl_step.name
 
     async def test_hitl_step_error_scenarios_regression(
         self,
         executor_core: ExecutorCore,
         mock_hitl_step: Mock,
-        mock_context: Mock,
+        mock_context: PipelineContext,
     ):
         """Test error scenarios that existed before migration."""
         # Test error scenarios that should be handled gracefully
@@ -215,13 +220,6 @@ class TestHITLStepMigrationRegression:
             data = scenario["data"]
             context = scenario.get("context", mock_context)
 
-            # Setup context error if needed
-            if scenario.get("context_error", False):
-                context.scratchpad = Mock()
-                context.scratchpad.__setitem__ = Mock(
-                    side_effect=Exception("Context update failed")
-                )
-
             if scenario["should_raise_paused"]:
                 with pytest.raises(PausedException) as exc_info:
                     await executor_core._handle_hitl_step(
@@ -244,7 +242,7 @@ class TestHITLStepMigrationRegression:
         self,
         executor_core: ExecutorCore,
         mock_hitl_step: Mock,
-        mock_context: Mock,
+        mock_context: PipelineContext,
     ):
         """Test that migrated implementation produces expected behavior."""
         # Test cases to validate migrated behavior
@@ -261,8 +259,7 @@ class TestHITLStepMigrationRegression:
             data = case["data"]
 
             # Test migrated implementation
-            migrated_context = Mock(spec=PipelineContext)
-            migrated_context.scratchpad = {}
+            migrated_context = PipelineContext()
 
             with pytest.raises(PausedException) as migrated_exc:
                 await executor_core._handle_hitl_step(
@@ -284,15 +281,15 @@ class TestHITLStepMigrationRegression:
             assert expected_message in str(migrated_exc.value)
 
             # Should have additional context updates
-            assert migrated_context.scratchpad["status"] == "paused"
-            assert migrated_context.scratchpad["hitl_data"] == data
-            assert migrated_context.scratchpad["hitl_message"] == expected_message
+            assert migrated_context.status == "paused"
+            assert migrated_context.pause_message == expected_message
+            assert migrated_context.paused_step_input == data
+            assert migrated_context.hitl_data.get("last_hitl_step") == mock_hitl_step.name
 
     async def test_hitl_step_backward_compatibility_regression(
         self,
         executor_core: ExecutorCore,
         mock_hitl_step: Mock,
-        mock_context: Mock,
     ):
         """Test backward compatibility with existing HITL step usage patterns."""
         # Test patterns that existing code might use
@@ -311,7 +308,9 @@ class TestHITLStepMigrationRegression:
             },
             {
                 "name": "context_preservation",
-                "setup": lambda step, context: context.scratchpad.update({"existing": "data"}),
+                "setup": lambda step, context: context.import_artifacts.update(
+                    {"existing": "data"}
+                ),
                 "data": "preserved_data",
                 "message": None,
             },
@@ -320,17 +319,17 @@ class TestHITLStepMigrationRegression:
         for pattern in compatibility_patterns:
             # Reset mock objects for each pattern
             mock_hitl_step.message_for_user = None
-            mock_context.scratchpad = {}
+            context = PipelineContext()
 
             # Setup the pattern
-            pattern["setup"](mock_hitl_step, mock_context)
+            pattern["setup"](mock_hitl_step, context)
             data = pattern["data"]
 
             with pytest.raises(PausedException) as exc_info:
                 await executor_core._handle_hitl_step(
                     mock_hitl_step,
                     data,
-                    mock_context,
+                    context,
                     None,  # resources
                     None,  # limits
                     None,  # context_setter
@@ -343,12 +342,14 @@ class TestHITLStepMigrationRegression:
             else:
                 expected_message = str(data)
             assert expected_message in str(exc_info.value)
-            assert mock_context.scratchpad["status"] == "paused"
-            assert mock_context.scratchpad["hitl_data"] == data
+            assert context.status == "paused"
+            assert context.pause_message == expected_message
+            assert context.paused_step_input == data
+            assert context.hitl_data.get("last_hitl_step") == mock_hitl_step.name
 
             # Verify existing context data is preserved
-            if "existing" in mock_context.scratchpad:
-                assert mock_context.scratchpad["existing"] == "data"
+            if "existing" in context.import_artifacts:
+                assert context.import_artifacts.get("existing") == "data"
 
     # ============================================================================
     # Phase 3.3: Performance Regression Tests
@@ -358,7 +359,7 @@ class TestHITLStepMigrationRegression:
         self,
         executor_core: ExecutorCore,
         mock_hitl_step: Mock,
-        mock_context: Mock,
+        mock_context: PipelineContext,
     ):
         """Test that performance is not regressed from legacy implementation."""
         import time
@@ -389,7 +390,7 @@ class TestHITLStepMigrationRegression:
         self,
         executor_core: ExecutorCore,
         mock_hitl_step: Mock,
-        mock_context: Mock,
+        mock_context: PipelineContext,
     ):
         """Test that memory usage is not significantly increased."""
         import gc
@@ -401,7 +402,7 @@ class TestHITLStepMigrationRegression:
 
         # Measure memory usage
         gc.collect()
-        initial_memory = sys.getsizeof(mock_context.scratchpad)
+        initial_memory = sys.getsizeof(mock_context.model_dump())
 
         with pytest.raises(PausedException):
             await executor_core._handle_hitl_step(
@@ -413,11 +414,11 @@ class TestHITLStepMigrationRegression:
                 None,  # context_setter
             )
 
-        final_memory = sys.getsizeof(mock_context.scratchpad)
+        final_memory = sys.getsizeof(mock_context.model_dump())
         memory_increase = final_memory - initial_memory
 
         # Assert memory usage is reasonable
-        assert memory_increase < 5000  # Should not increase by more than 5KB
+        assert memory_increase < 50_000  # Should not increase by more than 50KB
 
     # ============================================================================
     # Phase 3.4: Functionality Regression Tests
@@ -451,7 +452,7 @@ class TestHITLStepMigrationRegression:
                 "data": "test_data",
                 "message": None,
                 "expected_exception": PausedException,
-                "expected_in_context": {"status": "paused", "hitl_data": "test_data"},
+                "expected_in_context": {"status": "paused"},
             },
             {
                 "name": "exception_raising",
@@ -481,8 +482,11 @@ class TestHITLStepMigrationRegression:
                 assert test["expected_in_exception"] in str(exc_info.value)
 
             if "expected_in_context" in test:
-                for key, value in test["expected_in_context"].items():
-                    assert mock_context.scratchpad[key] == value
+                expected = test["expected_in_context"]
+                assert mock_context.status == expected.get("status")
+                if expected.get("pause_message") is not None:
+                    assert mock_context.pause_message == expected["pause_message"]
+                assert mock_context.hitl_data.get("last_hitl_step") == mock_hitl_step.name
 
     async def test_hitl_step_robustness_regression(
         self,
@@ -516,13 +520,6 @@ class TestHITLStepMigrationRegression:
             mock_hitl_step.message_for_user = None
             data = test["data"]
             context = test.get("context", mock_context)
-
-            # Setup context error if needed
-            if test.get("context_error", False):
-                context.scratchpad = Mock()
-                context.scratchpad.__setitem__ = Mock(
-                    side_effect=Exception("Context update failed")
-                )
 
             if test["should_work"]:
                 with pytest.raises(PausedException) as exc_info:

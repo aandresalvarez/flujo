@@ -10,7 +10,7 @@ from flujo.domain import MergeStrategy, PipelineContext
 
 
 class ResearchCtx(PipelineContext):
-    pass
+    research_results: dict[str, str] = {}
 
 
 class ResearchAgent:
@@ -19,7 +19,7 @@ class ResearchAgent:
 
     async def run(self, data: str, *, context: ResearchCtx | None = None) -> str:
         # Imagine an API call here
-        context.scratchpad[self.topic] = f"findings about {self.topic}"
+        context.research_results[self.topic] = f"findings about {self.topic}"
         return f"research_{self.topic}"
 
 
@@ -31,14 +31,14 @@ branches = {
 parallel = Step.parallel(
     name="research",
     branches=branches,
-    merge_strategy=MergeStrategy.MERGE_SCRATCHPAD,
+    merge_strategy=MergeStrategy.CONTEXT_UPDATE,
 )
 
 runner = Flujo(parallel, context_model=ResearchCtx)
 result = runner.run("start", initial_context_data={"initial_prompt": "goal"})
-print(result.final_pipeline_context.scratchpad)
+print(result.final_pipeline_context.research_results)
 ```
 
-Running this pipeline yields a scratchpad dictionary containing the findings
-from both branches. If two branches attempt to write the same scratchpad key,
-a `ValueError` is raised to avoid accidental overwrites.
+Running this pipeline yields a typed `research_results` dictionary containing the findings
+from both branches. If two branches attempt to write the same key, `CONTEXT_UPDATE`
+will detect the conflict; use `field_mapping` to disambiguate destinations when needed.

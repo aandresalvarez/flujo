@@ -10,7 +10,8 @@ async def run_pipeline_async(inputs: Any, *, runner: Flujo[Any, Any, Any]) -> Pi
     """Adapter to run a :class:`Flujo` engine as a pydantic-evals task."""
     result: Optional[PipelineResult[Any]] = None
     async for item in runner.run_async(inputs):
-        result = item
+        if isinstance(item, PipelineResult):
+            result = item
     assert result is not None
     return result
 

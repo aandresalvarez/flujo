@@ -64,7 +64,7 @@ async def test_hitl_in_loop_no_nesting_on_resume():
                 agent={"id": "flujo.builtins.passthrough"},
                 input="",
                 updates_context=True,
-                sink_to="scratchpad",
+                sink_to="import_artifacts",
                 processors={
                     "output_processors": [
                         {
@@ -82,7 +82,7 @@ async def test_hitl_in_loop_no_nesting_on_resume():
                     Step(
                         name="ask_question",
                         agent={"id": "flujo.builtins.passthrough", "model": "openai:gpt-4o-mini"},
-                        input="Current slots: {{ context.scratchpad.slots | tojson }}",
+                        input="Current slots: {{ context.import_artifacts.slots | tojson }}",
                         updates_context=True,
                         output_schema=SlotOutput.model_json_schema(),
                         processors={
@@ -112,7 +112,7 @@ async def test_hitl_in_loop_no_nesting_on_resume():
                         agent={"id": "flujo.builtins.passthrough"},
                         input="{{ previous_step }}",
                         updates_context=True,
-                        sink_to="scratchpad.slots.metric",
+                        sink_to="import_artifacts.slots.metric",
                         processors={
                             "output_processors": [
                                 {
@@ -123,7 +123,7 @@ async def test_hitl_in_loop_no_nesting_on_resume():
                         },
                     ),
                 ],
-                exit_expression="{{ context.scratchpad.slots.metric is defined }}",
+                exit_expression="{{ context.import_artifacts.slots.metric is defined }}",
                 max_loops=5,
             ),
         ]
@@ -140,11 +140,10 @@ async def test_hitl_in_loop_no_nesting_on_resume():
 
     # Verify context state before resume
     ctx1 = result1.final_pipeline_context
-    assert hasattr(ctx1, "scratchpad"), "Context should have scratchpad"
-    assert ctx1.scratchpad.get("status") == "paused", "Status should be paused"
-    assert "loop_iteration" in ctx1.scratchpad, "Should save loop iteration"
-    assert "loop_step_index" in ctx1.scratchpad, "Should save loop step index"
-    assert "loop_last_output" in ctx1.scratchpad, "Should save loop last output"
+    assert ctx1.status == "paused", "Status should be paused"
+    assert ctx1.loop_iteration_index is not None, "Should save loop iteration"
+    assert ctx1.loop_step_index is not None, "Should save loop step index"
+    assert ctx1.loop_last_output is not None, "Should save loop last output"
 
     # Resume with user input
     result2 = await runner.resume_async(result1, "prevalence")
@@ -162,24 +161,21 @@ async def test_hitl_in_loop_no_nesting_on_resume():
 
     # Verify slots were updated (proves step 2 executed after resume)
     ctx2 = result2.final_pipeline_context
-    assert hasattr(ctx2, "scratchpad"), "Context should have scratchpad"
-    assert "slots" in ctx2.scratchpad, "Should have slots"
-    assert (
-        ctx2.scratchpad["slots"].get("metric") == "prevalence"
-    ), f"Slots should be updated with user input. Got: {ctx2.scratchpad.get('slots')}"
+    slots = ctx2.import_artifacts.get("slots")
+    assert isinstance(slots, dict), "Should have slots"
+    assert slots.get("metric") == "prevalence", (
+        f"Slots should be updated with user input. Got: {slots}"
+    )
 
     # Verify loop completed successfully
     loop_result = loop_steps[0]
     assert loop_result.success, f"Loop should succeed. Feedback: {loop_result.feedback}"
 
     # Verify cleanup - loop state should be cleared
-    assert ctx2.scratchpad.get("status") != "paused", "Status should not be paused after completion"
-    assert (
-        "loop_iteration" not in ctx2.scratchpad or ctx2.scratchpad["loop_iteration"] is None
-    ), "Loop iteration should be cleared after completion"
-    assert (
-        "loop_step_index" not in ctx2.scratchpad or ctx2.scratchpad["loop_step_index"] is None
-    ), "Loop step index should be cleared after completion"
+    assert ctx2.status != "paused", "Status should not be paused after completion"
+    assert ctx2.loop_iteration_index is None, "Loop iteration should be cleared after completion"
+    assert ctx2.loop_step_index is None, "Loop step index should be cleared after completion"
+    assert ctx2.loop_last_output is None, "Loop last output should be cleared after completion"
 
 
 @pytest.mark.timeout(120)
@@ -248,9 +244,9 @@ async def test_hitl_in_loop_agent_output_captured():
     assert result1.status == "paused"
 
     # Verify agent_step executed BEFORE pause
-    assert (
-        "agent_step" in executed_steps
-    ), f"Agent step should execute before HITL pause. Executed steps: {executed_steps}"
+    assert "agent_step" in executed_steps, (
+        f"Agent step should execute before HITL pause. Executed steps: {executed_steps}"
+    )
 
     # Verify agent output is in context
     ctx1 = result1.final_pipeline_context
@@ -259,17 +255,17 @@ async def test_hitl_in_loop_agent_output_captured():
     agent_output = ctx1.steps["agent_step"]
     assert agent_output is not None, "Agent output should not be None"
     assert isinstance(agent_output, dict), "Agent output should be captured as dict"
-    assert (
-        agent_output.get("output") == "agent_step_completed"
-    ), f"Agent output should be captured correctly. Got: {agent_output}"
+    assert agent_output.get("output") == "agent_step_completed", (
+        f"Agent output should be captured correctly. Got: {agent_output}"
+    )
 
     # Resume
     _ = await runner.resume_async(result1, "user_response")
 
     # Verify update_step executed after resume
-    assert (
-        "update_step" in executed_steps
-    ), f"Update step should execute after resume. Executed steps: {executed_steps}"
+    assert "update_step" in executed_steps, (
+        f"Update step should execute after resume. Executed steps: {executed_steps}"
+    )
 
     # Verify no duplicate executions (would indicate loop restarted)
     agent_count = executed_steps.count("agent_step")
@@ -352,8 +348,8 @@ async def test_hitl_in_loop_data_flow_integrity():
     assert ctx1.processed_value["value"] == "processed_initial_data"
 
     # Verify loop saved the processed data (not human input)
-    assert "loop_last_output" in ctx1.scratchpad, "Loop should save last output"
-    saved_output = ctx1.scratchpad["loop_last_output"]
+    assert ctx1.loop_last_output is not None, "Loop should save last output"
+    saved_output = ctx1.loop_last_output
     assert saved_output is not None, "Saved output should not be None"
     # The saved output should be the agent's output, not None or human input
 
@@ -363,17 +359,17 @@ async def test_hitl_in_loop_data_flow_integrity():
     # CRITICAL: Verify human input went to verify_input step, not to process step
     ctx2 = result2.final_pipeline_context
     assert hasattr(ctx2, "verified"), "Verified should be in context"
-    assert (
-        ctx2.verified["received"] == "human_response"
-    ), f"Step should receive human input. Got: {ctx2.verified['received']}"
-    assert (
-        ctx2.verified["is_human_input"] is True
-    ), "Step should confirm it received human input, not loop data"
+    assert ctx2.verified["received"] == "human_response", (
+        f"Step should receive human input. Got: {ctx2.verified['received']}"
+    )
+    assert ctx2.verified["is_human_input"] is True, (
+        "Step should confirm it received human input, not loop data"
+    )
 
     # Verify processed_value is still correct (didn't get overwritten by human input)
-    assert (
-        ctx2.processed_value["value"] == "processed_initial_data"
-    ), f"Processed value should be preserved. Got: {ctx2.processed_value}"
+    assert ctx2.processed_value["value"] == "processed_initial_data", (
+        f"Processed value should be preserved. Got: {ctx2.processed_value}"
+    )
 
 
 @pytest.mark.timeout(180)
@@ -479,9 +475,9 @@ async def test_hitl_in_loop_multiple_iterations():
     ], f"Should complete or pause. Got: {result.status}"
 
     # Verify we went through 3 distinct iterations (not nested)
-    assert (
-        len(iteration_data) == 3
-    ), f"Should have 3 iterations. Got {len(iteration_data)}: {iteration_data}"
+    assert len(iteration_data) == 3, (
+        f"Should have 3 iterations. Got {len(iteration_data)}: {iteration_data}"
+    )
 
     # Verify iterations incremented correctly (proves no nesting)
     iterations = [d["iteration"] for d in iteration_data]
@@ -539,23 +535,21 @@ async def test_hitl_in_loop_cleanup_on_completion():
     ctx = result2.final_pipeline_context
 
     # Check that loop resume state is cleared
-    scratchpad = ctx.scratchpad if hasattr(ctx, "scratchpad") else {}
-
-    assert (
-        scratchpad.get("loop_iteration") is None
-    ), f"loop_iteration should be cleared. Got: {scratchpad.get('loop_iteration')}"
-    assert (
-        scratchpad.get("loop_step_index") is None
-    ), f"loop_step_index should be cleared. Got: {scratchpad.get('loop_step_index')}"
-    assert (
-        scratchpad.get("loop_last_output") is None
-    ), f"loop_last_output should be cleared. Got: {scratchpad.get('loop_last_output')}"
+    assert ctx.loop_iteration_index is None, (
+        f"loop_iteration should be cleared. Got: {ctx.loop_iteration_index}"
+    )
+    assert ctx.loop_step_index is None, (
+        f"loop_step_index should be cleared. Got: {ctx.loop_step_index}"
+    )
+    assert ctx.loop_last_output is None, (
+        f"loop_last_output should be cleared. Got: {ctx.loop_last_output}"
+    )
 
     # Status should be completed, not paused
-    if scratchpad.get("status") is not None:
-        assert (
-            scratchpad.get("status") != "paused"
-        ), f"Status should not be paused after completion. Got: {scratchpad.get('status')}"
+    if ctx.status is not None:
+        assert ctx.status != "paused", (
+            f"Status should not be paused after completion. Got: {ctx.status}"
+        )
 
 
 @pytest.mark.timeout(120)
@@ -630,7 +624,7 @@ async def test_hitl_in_loop_resume_at_correct_step():
 
     # Verify saved position
     ctx1 = result1.final_pipeline_context
-    saved_index = ctx1.scratchpad.get("loop_step_index")
+    saved_index = ctx1.loop_step_index
     assert saved_index == 2, f"Should save step index 2 (next after HITL). Got: {saved_index}"
 
     # Resume
@@ -638,9 +632,9 @@ async def test_hitl_in_loop_resume_at_correct_step():
 
     # CRITICAL: Verify step2 executed ONCE (not restarted)
     step2_executions = [s for s in executed_steps if s[1] == "step2"]
-    assert (
-        len(step2_executions) == 1
-    ), f"step2 should execute exactly once. Got {len(step2_executions)} times: {executed_steps}"
+    assert len(step2_executions) == 1, (
+        f"step2 should execute exactly once. Got {len(step2_executions)} times: {executed_steps}"
+    )
 
     # Verify step0 did NOT execute again (would indicate restart)
     step0_executions = [s for s in executed_steps if s[1] == "step0"]

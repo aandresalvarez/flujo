@@ -16,6 +16,7 @@ from typing import Any, Optional
 from unittest.mock import AsyncMock, Mock
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import StepResult, UsageLimits
+from tests.test_types.fakes import FakeCacheBackend
 
 
 # Keep strong references to created executors for tests that expect fixtures
@@ -47,18 +48,15 @@ def create_mock_executor_core(
     mock_processor.apply_prompt = AsyncMock(return_value="processed_prompt")
     mock_processor.apply_output = AsyncMock(return_value=processor_output or agent_output)
 
-    mock_cache_backend = AsyncMock()
+    cache_backend = FakeCacheBackend()
     if cache_hit:
-        # Return a proper StepResult object for cache hits
         cached_result = StepResult(
             name="cached_step",
             output={"cached": "result"},
             success=True,
             metadata_={"cache_hit": True},
         )
-        mock_cache_backend.get = AsyncMock(return_value=cached_result)
-    else:
-        mock_cache_backend.get = AsyncMock(return_value=None)
+        cache_backend.store["cached_step"] = cached_result
 
     class _FastAgentStepExecutor:
         async def execute(
@@ -83,7 +81,7 @@ def create_mock_executor_core(
         validator_runner=AsyncMock(),
         plugin_runner=AsyncMock(),
         usage_meter=AsyncMock(),
-        cache_backend=mock_cache_backend,
+        cache_backend=cache_backend,
         telemetry=Mock(),
         agent_step_executor=_FastAgentStepExecutor(),
         concurrency_limit=overrides.pop("concurrency_limit", 256),
@@ -96,7 +94,6 @@ def create_mock_executor_core(
         try:
             mock_agent_runner.reset_mock()
             mock_processor.reset_mock()
-            mock_cache_backend.reset_mock()
             try:
                 step.agent.reset_mock()  # type: ignore[attr-defined]
             except Exception:

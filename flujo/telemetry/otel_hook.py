@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Awaitable, Callable, Dict, Literal, Optional, cast
+from typing import Callable, Dict, Literal, Optional
 import time
 
 from ..domain.events import (
@@ -82,18 +82,18 @@ class OpenTelemetryHook:
         if getattr(payload, "is_background", False):
             # Skip background runs/steps to reduce telemetry noise; consumers can add a separate hook if needed.
             return
-        handler_map: Dict[str, Callable[[HookPayload], Awaitable[None]]] = {
-            "pre_run": cast(Callable[[HookPayload], Awaitable[None]], self._handle_pre_run),
-            "post_run": cast(Callable[[HookPayload], Awaitable[None]], self._handle_post_run),
-            "pre_step": cast(Callable[[HookPayload], Awaitable[None]], self._handle_pre_step),
-            "post_step": cast(Callable[[HookPayload], Awaitable[None]], self._handle_post_step),
-            "on_step_failure": cast(
-                Callable[[HookPayload], Awaitable[None]], self._handle_step_failure
-            ),
-        }
-        handler = handler_map.get(payload.event_name)
-        if handler is not None:
-            await handler(payload)
+        if payload.event_name == "pre_run":
+            await self._handle_pre_run(payload)
+        elif payload.event_name == "post_run":
+            await self._handle_post_run(payload)
+        elif payload.event_name == "pre_step":
+            await self._handle_pre_step(payload)
+        elif payload.event_name == "post_step":
+            await self._handle_post_step(payload)
+        elif payload.event_name == "on_step_failure":
+            await self._handle_step_failure(payload)
+        else:
+            return
 
     async def _handle_pre_run(self, payload: PreRunPayload) -> None:
         # Root span: canonical name
@@ -110,20 +110,21 @@ class OpenTelemetryHook:
                 span.set_attribute("flujo.yaml.spec_sha256", spec_hash)
         except Exception:
             pass
-        if getattr(payload, "run_id", None) is not None:
-            span.set_attribute("flujo.run_id", cast(str, payload.run_id))
-        if getattr(payload, "pipeline_name", None) is not None:
-            span.set_attribute("flujo.pipeline.name", cast(str, payload.pipeline_name))
-        if getattr(payload, "pipeline_version", None) is not None:
-            span.set_attribute("flujo.pipeline.version", cast(str, payload.pipeline_version))
-        if getattr(payload, "initial_budget_cost_usd", None) is not None:
-            span.set_attribute(
-                "flujo.budget.initial_cost_usd", cast(float, payload.initial_budget_cost_usd)
-            )
-        if getattr(payload, "initial_budget_tokens", None) is not None:
-            span.set_attribute(
-                "flujo.budget.initial_tokens", cast(int, payload.initial_budget_tokens)
-            )
+        run_id = getattr(payload, "run_id", None)
+        if run_id is not None:
+            span.set_attribute("flujo.run_id", run_id)
+        pipeline_name = getattr(payload, "pipeline_name", None)
+        if pipeline_name is not None:
+            span.set_attribute("flujo.pipeline.name", pipeline_name)
+        pipeline_version = getattr(payload, "pipeline_version", None)
+        if pipeline_version is not None:
+            span.set_attribute("flujo.pipeline.version", pipeline_version)
+        initial_budget_cost_usd = getattr(payload, "initial_budget_cost_usd", None)
+        if initial_budget_cost_usd is not None:
+            span.set_attribute("flujo.budget.initial_cost_usd", initial_budget_cost_usd)
+        initial_budget_tokens = getattr(payload, "initial_budget_tokens", None)
+        if initial_budget_tokens is not None:
+            span.set_attribute("flujo.budget.initial_tokens", initial_budget_tokens)
 
     async def _handle_post_run(self, payload: PostRunPayload) -> None:
         span = self._active_spans.pop("pre_run", None)
@@ -185,16 +186,15 @@ class OpenTelemetryHook:
                 span.set_attribute("flujo.step.policy", policy_name)
         except Exception:
             pass
-        if getattr(payload, "attempt_number", None) is not None:
-            span.set_attribute("flujo.attempt_number", cast(int, payload.attempt_number))
-        if getattr(payload, "quota_before_usd", None) is not None:
-            span.set_attribute(
-                "flujo.budget.quota_before_usd", cast(float, payload.quota_before_usd)
-            )
-        if getattr(payload, "quota_before_tokens", None) is not None:
-            span.set_attribute(
-                "flujo.budget.quota_before_tokens", cast(int, payload.quota_before_tokens)
-            )
+        attempt_number = getattr(payload, "attempt_number", None)
+        if attempt_number is not None:
+            span.set_attribute("flujo.attempt_number", attempt_number)
+        quota_before_usd = getattr(payload, "quota_before_usd", None)
+        if quota_before_usd is not None:
+            span.set_attribute("flujo.budget.quota_before_usd", quota_before_usd)
+        quota_before_tokens = getattr(payload, "quota_before_tokens", None)
+        if quota_before_tokens is not None:
+            span.set_attribute("flujo.budget.quota_before_tokens", quota_before_tokens)
         if getattr(payload, "cache_hit", None) is not None:
             span.set_attribute("flujo.cache.hit", bool(payload.cache_hit))
 

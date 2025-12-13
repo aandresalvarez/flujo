@@ -1,7 +1,7 @@
 from __future__ import annotations
 # mypy: disable-error-code=arg-type
 
-from typing import Any, Callable, Coroutine, cast
+from typing import Any
 
 from flujo.type_definitions.common import JSONObject
 
@@ -81,7 +81,7 @@ def build_parameter_collection_state() -> Pipeline[Any, Any]:
     return (
         Pipeline.from_step(
             Step.from_callable(
-                cast(Callable[[Any], Coroutine[Any, Any, JSONObject]], _collect_params),
+                _collect_params,
                 name="CollectParams",
                 updates_context=True,
             )

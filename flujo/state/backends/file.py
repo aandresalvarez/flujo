@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple, cast
+from typing import List, Optional, Tuple
 
 from .base import StateBackend
 from flujo.type_definitions.common import JSONObject
@@ -70,7 +70,13 @@ class FileBackend(StateBackend):
         with open(file_path, "rb") as f:
             data = json.loads(f.read().decode())
         # Apply safe_deserialize to restore custom types
-        return cast(JSONObject, safe_deserialize(data))
+        restored = safe_deserialize(data)
+        if isinstance(restored, dict):
+            return restored
+        raise ValueError(
+            "Invalid state payload in file backend; expected JSON object, "
+            f"got {type(restored).__name__}"
+        )
 
     async def delete_state(self, run_id: str) -> None:
         file_path = self._resolve_path(run_id)

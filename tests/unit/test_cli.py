@@ -163,9 +163,9 @@ def test_cli_solve_with_weights(monkeypatch) -> None:
 
                 print("Exception:", "".join(traceback.format_exception(*result.exc_info)))
 
-        assert (
-            result.exit_code == 0
-        ), f"CLI command failed. Output: {result.stdout}, Error: {result.stderr}"
+        assert result.exit_code == 0, (
+            f"CLI command failed. Output: {result.stdout}, Error: {result.stderr}"
+        )
 
     finally:
         if weights_file and os.path.exists(weights_file):
@@ -221,7 +221,12 @@ def test_cli_solve_context_data_safe_deserialize(tmp_path, monkeypatch) -> None:
     pipeline = tmp_path / "pipe.py"
     pipeline.write_text(
         "from flujo.domain import Step\nfrom flujo.testing.utils import StubAgent\n"
-        "pipeline = Step.model_validate({'name': 'A', 'agent': StubAgent(['x'])}) >> Step.model_validate({'name': 'B', 'agent': StubAgent(['y'])})\n"
+        "s1 = Step.model_validate({'name': 'A', 'agent': StubAgent(['x'])})\n"
+        "s1.__step_output_type__ = str\n"
+        "s2 = Step.model_validate({'name': 'B', 'agent': StubAgent(['y'])})\n"
+        "s2.__step_input_type__ = str\n"
+        "s2.meta = {'is_adapter': True, 'adapter_id': 'generic-adapter', 'adapter_allow': 'generic'}\n"
+        "pipeline = s1 >> s2\n"
     )
 
     monkeypatch.setattr("flujo.cli.main.safe_deserialize", fake_deserialize)
@@ -395,7 +400,12 @@ def test_cli_explain(tmp_path) -> None:
 def test_cli_validate_success(tmp_path) -> None:
     file = tmp_path / "pipe.py"
     file.write_text(
-        "from flujo.domain import Step\nfrom flujo.testing.utils import StubAgent\npipeline = Step.model_validate({'name': 'A', 'agent': StubAgent(['x'])}) >> Step.model_validate({'name': 'B', 'agent': StubAgent(['y'])})\n"
+        "from flujo.domain import Step\nfrom flujo.testing.utils import StubAgent\n"
+        "s1 = Step.model_validate({'name': 'A', 'agent': StubAgent(['x'])})\n"
+        "s1.__step_output_type__ = str\n"
+        "s2 = Step.model_validate({'name': 'B', 'agent': StubAgent(['y']), 'meta': {'is_adapter': True, 'adapter_id': 'generic-adapter', 'adapter_allow': 'generic'}})\n"
+        "s2.__step_input_type__ = str\n"
+        "pipeline = s1 >> s2\n"
     )
     result = runner.invoke(app, ["validate", str(file)])
     assert result.exit_code == 0

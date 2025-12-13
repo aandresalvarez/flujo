@@ -33,7 +33,7 @@ async def simple_step(input_data: str, context: PipelineContext) -> str:
     """A simple step that processes input."""
     print(f"   🔄 Executing simple_step with input: {input_data}")
     result = f"processed_{input_data}"
-    context.scratchpad["last_result"] = result
+    context.import_artifacts["last_result"] = result
     return result
 
 

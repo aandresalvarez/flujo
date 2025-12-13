@@ -16,6 +16,5 @@ steps:
             input: "B"
     config:
       outputs:
-        - { child: "scratchpad.value", parent: "scratchpad.k" }
-        - { child: "scratchpad.value", parent: "scratchpad.k" }
-
+        - { child: "import_artifacts.value", parent: "import_artifacts.k" }
+        - { child: "import_artifacts.value", parent: "import_artifacts.k" }

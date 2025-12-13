@@ -3,7 +3,7 @@
 from __future__ import annotations
 import logging
 from datetime import datetime, timezone
-from typing import Any, Generic, Optional, TypeVar, Tuple, TYPE_CHECKING, cast
+from typing import Generic, Optional, TypeVar, Tuple, TYPE_CHECKING
 
 from flujo.domain.models import StepResult, BaseModel, PipelineResult
 from flujo.infra import telemetry
@@ -159,7 +159,7 @@ class StateManager(Generic[ContextT]):
         context_model: Optional[type[ContextT]] = None,
     ) -> tuple[
         Optional[ContextT],
-        Any,
+        object | None,
         int,
         Optional[datetime],
         Optional[str],
@@ -262,7 +262,7 @@ class StateManager(Generic[ContextT]):
         run_id: str | None,
         context: Optional[ContextT],
         current_step_index: int,
-        last_step_output: Any | None,
+        last_step_output: object | None,
         status: str,
         state_created_at: datetime | None = None,
         step_history: Optional[list[StepResult]] = None,
@@ -327,7 +327,10 @@ class StateManager(Generic[ContextT]):
             "background_error": metadata_dict.get("background_error"),
         }
 
-        normalized_state = cast(dict[str, Any], _serialize_for_json(state_data))
+        normalized_state_obj = _serialize_for_json(state_data)
+        normalized_state: JSONObject = (
+            normalized_state_obj if isinstance(normalized_state_obj, dict) else {}
+        )
         await self.state_backend.save_state(run_id, normalized_state)
 
     async def persist_workflow_state_optimized(
@@ -336,7 +339,7 @@ class StateManager(Generic[ContextT]):
         run_id: str | None,
         context: Optional[ContextT],
         current_step_index: int,
-        last_step_output: Any | None,
+        last_step_output: object | None,
         status: str,
         state_created_at: datetime | None = None,
         step_history: Optional[list[StepResult]] = None,
@@ -416,7 +419,10 @@ class StateManager(Generic[ContextT]):
 
         # OPTIMIZATION: Use async persistence to avoid blocking
         try:
-            normalized_state = cast(dict[str, Any], _serialize_for_json(state_data))
+            normalized_state_obj = _serialize_for_json(state_data)
+            normalized_state: JSONObject = (
+                normalized_state_obj if isinstance(normalized_state_obj, dict) else {}
+            )
             await self.state_backend.save_state(run_id, normalized_state)
         except Exception as e:
             logger.warning(f"Failed to persist state for run {run_id}: {e}")
@@ -553,9 +559,11 @@ class StateManager(Generic[ContextT]):
                     if result.final_pipeline_context
                     else None,
                 }
-                await self.state_backend.save_run_end(
-                    run_id, cast(dict[str, Any], _serialize_for_json(end_payload))
+                end_payload_obj = _serialize_for_json(end_payload)
+                end_payload_json: JSONObject = (
+                    end_payload_obj if isinstance(end_payload_obj, dict) else {}
                 )
+                await self.state_backend.save_run_end(run_id, end_payload_json)
             try:
                 from ...infra.audit import log_audit as _audit
 
@@ -664,7 +672,7 @@ class StateManager(Generic[ContextT]):
                 extra={"error": str(exc)},
             )
 
-    def _convert_trace_to_dict(self, trace_tree: Any) -> JSONObject:
+    def _convert_trace_to_dict(self, trace_tree: object) -> JSONObject:
         """Convert trace tree to dictionary format for JSON serialization."""
         if hasattr(trace_tree, "__dict__"):
             # Handle Span objects

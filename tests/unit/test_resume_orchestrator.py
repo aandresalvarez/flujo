@@ -15,15 +15,19 @@ class _Schema(BaseModel):
     value: int
 
 
+class _Ctx(PipelineContext):
+    answer: _Schema | None = None
+
+
 class _Pipeline:
     def __init__(self, steps: list[Any]) -> None:
         self.steps = steps
 
 
 def test_validate_and_resolve_paused_step_sets_status_and_indices() -> None:
-    ctx = PipelineContext()
-    ctx.scratchpad["status"] = "paused"
-    paused_result: PipelineResult[PipelineContext] = PipelineResult(
+    ctx = _Ctx()
+    ctx.status = "paused"
+    paused_result: PipelineResult[_Ctx] = PipelineResult(
         final_pipeline_context=ctx, step_history=[]
     )
     step = HumanInTheLoopStep(name="hitl", agent=None)
@@ -39,21 +43,19 @@ def test_validate_and_resolve_paused_step_sets_status_and_indices() -> None:
     assert resolved_ctx is ctx
     assert start_idx == 0
     assert resolved_step is step
-    assert ctx.scratchpad["hitl_data"] == "hi"
-    assert ctx.scratchpad["user_input"] == "hi"
+    assert ctx.user_input == "hi"
+    assert ctx.paused_step_input == "hi"
 
 
 def test_coerce_and_context_updates_apply_sink_and_logs() -> None:
-    ctx = PipelineContext()
-    ctx.scratchpad["status"] = "paused"
-    ctx.scratchpad["pause_message"] = "need input"
-    ctx.scratchpad["paused_step_input"] = AskHumanCommand(question="Q?")
-    paused_result: PipelineResult[PipelineContext] = PipelineResult(
+    ctx = _Ctx()
+    ctx.status = "paused"
+    ctx.pause_message = "need input"
+    ctx.paused_step_input = AskHumanCommand(question="Q?")
+    paused_result: PipelineResult[_Ctx] = PipelineResult(
         final_pipeline_context=ctx, step_history=[]
     )
-    step = HumanInTheLoopStep(
-        name="hitl", agent=None, input_schema=_Schema, sink_to="scratchpad.answer"
-    )
+    step = HumanInTheLoopStep(name="hitl", agent=None, input_schema=_Schema, sink_to="answer")
     orch = ResumeOrchestrator(
         _Pipeline([step]),
         trace_manager=None,
@@ -63,26 +65,24 @@ def test_coerce_and_context_updates_apply_sink_and_logs() -> None:
     resolved_ctx = orch.validate_resume(paused_result)
     start_idx, paused_step = orch.resolve_paused_step(paused_result, resolved_ctx, {"value": 3})
     human_input = orch.coerce_human_input(paused_step, {"value": 3})
-    pause_msg = resolved_ctx.scratchpad.get("pause_message")
-    scratch = resolved_ctx.scratchpad
-
-    orch.record_hitl_interaction(resolved_ctx, scratch, human_input, pause_msg)
+    pause_msg = resolved_ctx.pause_message
+    orch.record_hitl_interaction(resolved_ctx, human_input, pause_msg)
     orch.update_conversation_history(resolved_ctx, human_input, pause_msg)
     orch.apply_sink_to(resolved_ctx, paused_step, human_input)
     orch.update_steps_map(resolved_ctx, paused_step, human_input)
     orch.record_pending_command_log(resolved_ctx, paused_step, human_input)
 
     assert start_idx == 0
-    assert resolved_ctx.scratchpad["status"] == "running"
-    assert resolved_ctx.scratchpad["answer"] == human_input
-    assert "hitl" in resolved_ctx.scratchpad.get("steps", {})
+    assert resolved_ctx.status == "running"
+    assert resolved_ctx.answer == human_input
+    assert "hitl" in (resolved_ctx.step_outputs or {})
     assert resolved_ctx.command_log, "Command log should be populated when paused_step_input exists"
     assert resolved_ctx.conversation_history, "Conversation history captures pause/user content"
 
 
 def test_validate_resume_raises_when_not_paused() -> None:
     ctx = PipelineContext()
-    ctx.scratchpad["status"] = "running"
+    ctx.status = "running"
     paused_result: PipelineResult[PipelineContext] = PipelineResult(
         final_pipeline_context=ctx, step_history=[]
     )

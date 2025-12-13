@@ -357,9 +357,9 @@ class DummyRemoteBackend:
                     feedback=outcome.feedback,
                 )
         # Legacy path already returns StepResult
-        from typing import cast as _cast
-
-        return _cast(StepResult, outcome)
+        if isinstance(outcome, StepResult):
+            return outcome
+        raise TypeError(f"Unexpected outcome type: {type(outcome)}")
 
 
 @contextmanager

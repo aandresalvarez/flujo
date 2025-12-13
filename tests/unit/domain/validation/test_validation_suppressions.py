@@ -59,7 +59,7 @@ def test_per_step_suppress_on_import_aggregation(tmp_path) -> None:
             updates_context: true
             config:
               outputs:
-                - { child: "scratchpad.k", parent: "badroot.value" }
+                - { child: "import_artifacts.k", parent: "badroot.value" }
         """
     )
     pipeline = load_pipeline_blueprint_from_yaml(parent_yaml, base_dir=str(tmp_path))

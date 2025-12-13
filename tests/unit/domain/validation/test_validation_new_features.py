@@ -174,7 +174,7 @@ def test_v_i2_import_outputs_mapping_sanity(tmp_path: Path) -> None:
     """Warn on import outputs mapping with unknown parent roots (V-I2)."""
     child_yaml = 'version: "0.1"\nsteps:\n  - name: C\n    agent:\n      id: "flujo.builtins.stringify"\n    input: "x"\n'
     (tmp_path / "child.yaml").write_text(child_yaml)
-    parent_yaml = 'version: "0.1"\nimports:\n  child: "child.yaml"\nsteps:\n  - name: RunChild\n    uses: imports.child\n    updates_context: true\n    config:\n      outputs:\n        - { child: "scratchpad.k", parent: "badroot.value" }\n'
+    parent_yaml = 'version: "0.1"\nimports:\n  child: "child.yaml"\nsteps:\n  - name: RunChild\n    uses: imports.child\n    updates_context: true\n    config:\n      outputs:\n        - { child: "import_artifacts.k", parent: "badroot.value" }\n'
     pipeline = load_pipeline_blueprint_from_yaml(parent_yaml, base_dir=str(tmp_path))
     report = pipeline.validate_graph(include_imports=True)
     assert any(w.rule_id == "V-I2" for w in report.warnings)

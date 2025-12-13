@@ -14,14 +14,14 @@ from flujo.domain.models import PipelineContext
 async def simple_step(input_data: str, context: PipelineContext) -> str:
     """A simple step that processes input."""
     result = f"processed_{input_data}"
-    context.scratchpad["last_result"] = result
+    context.import_artifacts["last_result"] = result
     return result
 
 
 async def another_step(input_data: str, context: PipelineContext) -> str:
     """Another simple step."""
     result = f"enhanced_{input_data}"
-    context.scratchpad["final_result"] = result
+    context.import_artifacts["final_result"] = result
     return result
 
 
@@ -59,7 +59,7 @@ async def main():
         print("No step history available")
 
     if result.final_pipeline_context:
-        print(f"Context scratchpad: {result.final_pipeline_context.scratchpad}")
+        print(f"Context import_artifacts: {result.final_pipeline_context.import_artifacts}")
 
     # Show the trace tree
     if result.trace_tree:

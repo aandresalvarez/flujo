@@ -1,8 +1,8 @@
 import doctest
-from pydantic import BaseModel
 import pytest
 
-from flujo.domain import adapter_step, step
+from flujo.domain import Step, adapter_step, step
+from flujo.domain.models import BaseModel
 from tests.conftest import create_test_flujo
 
 
@@ -11,7 +11,7 @@ class ComplexInput(BaseModel):
     length: int
 
 
-@adapter_step
+@adapter_step(adapter_id="generic-adapter", adapter_allow="generic")
 async def adapt(text: str) -> ComplexInput:
     return ComplexInput(text=text, length=len(text))
 
@@ -36,6 +36,11 @@ def test_is_adapter_meta() -> None:
     assert adapt.meta.get("is_adapter") is True
 
 
+def test_adapter_without_tokens_rejected_on_model_validate() -> None:
+    with pytest.raises(ValueError, match="adapter_id and adapter_allow"):
+        Step.model_validate({"name": "adapt", "meta": {"is_adapter": True}})
+
+
 def example_adapter_step():
     """
     Example of using adapter_step to create a step from a function.
@@ -43,7 +48,7 @@ def example_adapter_step():
     >>> from flujo import Flujo
     >>> from flujo.domain import adapter_step, step
     >>>
-    >>> @adapter_step
+    >>> @adapter_step(adapter_id="generic-adapter", adapter_allow="generic")
     ... async def add_one(x: int) -> int:
     ...     return x + 1
     >>>

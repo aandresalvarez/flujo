@@ -23,7 +23,7 @@ router = Step.dynamic_parallel_branch(
     name="router",
     router_agent=router_agent,
     branches={"billing": billing, "support": support},
-    merge_strategy=MergeStrategy.MERGE_SCRATCHPAD,
+    merge_strategy=MergeStrategy.CONTEXT_UPDATE,
 )
 
 runner = Flujo(router, context_model=Ctx)
