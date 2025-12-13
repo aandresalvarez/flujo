@@ -79,8 +79,6 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
             if "loop_body_pipeline" not in working and "body" in working:
                 body_steps = working.pop("body")
                 if isinstance(body_steps, list):
-                    from .pipeline import Pipeline
-
                     working["loop_body_pipeline"] = Pipeline(steps=body_steps)
         except Exception:
             pass
