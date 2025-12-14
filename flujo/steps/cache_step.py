@@ -152,7 +152,8 @@ def _serialize_for_cache_key(
                             )
                         except Exception:
                             out[k] = f"<{obj.__class__.__name__} circular>"
-                    return out
+                    if out:
+                        return out
                 return f"<{obj.__class__.__name__} circular>"
 
         # Handle dictionaries
