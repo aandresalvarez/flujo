@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import _thread
 import hashlib
-import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -358,7 +357,7 @@ class ThreadSafeMeter:
     total_cost_usd: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    _lock: _thread.LockType = field(init=False, default_factory=threading.Lock)
+    _lock: _thread.LockType = field(init=False, default_factory=_thread.allocate_lock)
 
     async def add(self, cost_usd: float, prompt_tokens: int, completion_tokens: int) -> None:
         with self._lock:
