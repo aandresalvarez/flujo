@@ -9,6 +9,7 @@ from flujo.type_definitions.common import JSONObject
 from typing import (
     Any,
     Callable,
+    cast,
     ClassVar,
     Coroutine,
     Generic,
@@ -1023,17 +1024,15 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     # Convenience helpers
     # ------------------------------------------------------------------
 
-    def use_input(self, key: str) -> "Pipeline[Any, StepOutT]":
+    def use_input(self, key: str) -> "Pipeline[dict[str, object], StepOutT]":
         """Create a small adapter pipeline that selects a key from a dict input.
 
         This is a common pattern when working with :meth:`parallel` branches
         where each branch only needs a portion of the upstream output.
         """
 
-        async def _select(data: Any, *, context: BaseModel | None = None) -> Any:
-            if isinstance(data, dict):
-                return data.get(key)
-            raise TypeError("use_input expects a dict-like input")
+        async def _select(data: dict[str, object], *, context: BaseModel | None = None) -> StepInT:
+            return cast(StepInT, data.get(key))
 
         adapter = Step.from_callable(
             _select,

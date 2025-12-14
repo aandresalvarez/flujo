@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Optional, Any
+from typing import Optional
 from weakref import WeakKeyDictionary
 from ..infra import telemetry
 
 # Cache for model ID extraction to reduce repeated overhead
 _model_id_cache: WeakKeyDictionary[object, Optional[str]] = WeakKeyDictionary()
-_MODEL_ID_CACHE_MISSING = object()
 
 # Cache for warning flags to avoid duplicate warnings
 _warning_cache: dict[str, bool] = {}
@@ -21,7 +20,7 @@ def clear_model_id_cache() -> None:
     _warning_cache.clear()
 
 
-def extract_model_id(agent: Any, step_name: str = "unknown") -> Optional[str]:
+def extract_model_id(agent: object, step_name: str = "unknown") -> Optional[str]:
     """
     Extract model ID from an agent using a comprehensive search strategy.
 
@@ -58,8 +57,8 @@ def extract_model_id(agent: Any, step_name: str = "unknown") -> Optional[str]:
 
     # Use caching to reduce repeated extraction overhead
     try:
-        cached = _model_id_cache.get(agent, _MODEL_ID_CACHE_MISSING)
-        if cached is not _MODEL_ID_CACHE_MISSING:
+        cached = _model_id_cache.get(agent)
+        if cached is not None or agent in _model_id_cache:
             return cached
     except TypeError:
         # Some objects cannot be weak-referenced (and thus cannot be cached safely).

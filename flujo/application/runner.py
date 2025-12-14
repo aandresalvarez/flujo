@@ -12,6 +12,7 @@ from typing import (
     Optional,
     Type,
     TypeVar,
+    cast,
     AsyncIterator,
     Literal,
     TYPE_CHECKING,
@@ -594,7 +595,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 and isinstance(current, LoopStepType)
                 and getattr(current, "body", None)
             ):
-                queue.append(current.body)
+                body = getattr(current, "body", None)
+                if isinstance(body, Step):
+                    queue.append(cast(Step[object, object], body))
 
             branches = getattr(current, "branches", None)
             if branches:
