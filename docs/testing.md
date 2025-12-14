@@ -137,7 +137,7 @@ make test-loop
 # Find unused test fixtures
 make test-deadfixtures
 
-# Profile test performance
+# Profile overall test runtime (writes `test_profile.pstats`)
 make test-profile
 
 # Auto-rerun flaky tests
@@ -612,7 +612,7 @@ make test-perf
 # Monitor test execution times
 make test-analyze-performance
 
-# Track memory usage
+# Profile overall test runtime (writes `test_profile.pstats`)
 make test-profile
 ```
 
