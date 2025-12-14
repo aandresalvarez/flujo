@@ -1023,14 +1023,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     # Convenience helpers
     # ------------------------------------------------------------------
 
-    def use_input(self, key: str) -> "Pipeline[dict[str, StepInT], StepOutT]":
+    def use_input(self, key: str) -> "Pipeline[dict[str, Any], StepOutT]":
         """Create a small adapter pipeline that selects a key from a dict input.
 
         This is a common pattern when working with :meth:`parallel` branches
         where each branch only needs a portion of the upstream output.
         """
 
-        async def _select(data: dict[str, StepInT], *, context: BaseModel | None = None) -> StepInT:
+        async def _select(data: dict[str, Any], *, context: BaseModel | None = None) -> StepInT:
             if key not in data:
                 raise KeyError(f"use_input missing key '{key}'")
             return data[key]
