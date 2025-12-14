@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import _thread
 import hashlib
 import time
 from collections import OrderedDict
@@ -352,22 +351,22 @@ class InMemoryLRUBackend:
 
 @dataclass
 class ThreadSafeMeter:
-    """Thread-safe usage meter with atomic operations."""
+    """Async-safe usage meter with atomic operations."""
 
     total_cost_usd: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    _lock: _thread.LockType = field(init=False, default_factory=_thread.allocate_lock)
+    _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
 
     async def add(self, cost_usd: float, prompt_tokens: int, completion_tokens: int) -> None:
-        with self._lock:
+        async with self._lock:
             self.total_cost_usd += float(cost_usd)
             self.prompt_tokens += int(prompt_tokens)
             self.completion_tokens += int(completion_tokens)
 
     async def guard(self, limits: UsageLimits, _step_history: list[object] | None = None) -> None:
         # Compatibility no-op: quota enforcement is handled by the proactive quota system.
-        with self._lock:
+        async with self._lock:
             # This method is used in a micro-benchmark test that checks timing variance.
             # Keep a tiny deterministic amount of work here so the runtime stays above
             # sub-microsecond measurement noise across platforms/CPython versions.
@@ -386,5 +385,5 @@ class ThreadSafeMeter:
             return None
 
     async def snapshot(self) -> tuple[float, int, int]:
-        with self._lock:
+        async with self._lock:
             return self.total_cost_usd, self.prompt_tokens, self.completion_tokens
