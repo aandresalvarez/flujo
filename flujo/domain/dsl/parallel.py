@@ -71,8 +71,6 @@ class ParallelStep(Step[object, object], Generic[TContext]):
         branches = data.get("branches", {})
         if not isinstance(branches, dict):
             return data
-        if not branches:
-            raise ValueError("'branches' dictionary cannot be empty.")
 
         normalized: dict[str, object] = {}
         for key, branch in branches.items():

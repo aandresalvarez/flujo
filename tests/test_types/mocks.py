@@ -19,11 +19,6 @@ from flujo.domain.models import StepResult, UsageLimits
 from tests.test_types.fakes import FakeCacheBackend
 
 
-# Keep strong references to created executors for tests that expect fixtures
-# to remain alive across garbage collection.
-_EXECUTOR_FIXTURES: list[ExecutorCore[Any]] = []
-
-
 def create_mock_executor_core(
     agent_output: Any = "mock_output",
     processor_output: Any = None,
@@ -103,7 +98,6 @@ def create_mock_executor_core(
         return result
 
     executor.execute = delayed_execute  # type: ignore[assignment]
-    _EXECUTOR_FIXTURES.append(executor)
     return executor
 
 

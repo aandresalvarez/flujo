@@ -55,6 +55,28 @@ async def test_hitl_in_loop_no_nesting_on_resume():
     3. On resume, loop continues from saved position
     4. Agent sees updated context, asks DIFFERENT question
     """
+
+    class AskQuestionAgent:
+        _model_name = "ask-question"
+        _provider = "test"
+
+        async def run(
+            self, _data: object, *, context: object | None = None, **_kw: object
+        ) -> dict[str, object]:
+            slots: object = {}
+            try:
+                import_artifacts = getattr(context, "import_artifacts", None)
+                slots = (
+                    getattr(import_artifacts, "slots", {}) if import_artifacts is not None else {}
+                )
+            except Exception:
+                slots = {}
+
+            metric = slots.get("metric") if isinstance(slots, dict) else None
+            if metric:
+                return {"action": "finish", "question": "Done", "slots": slots}
+            return {"action": "ask", "question": "What metric?", "slots": slots}
+
     # Create a slot-filling pipeline similar to user's clarification pipeline
     pipeline = Pipeline(
         steps=[
@@ -81,26 +103,10 @@ async def test_hitl_in_loop_no_nesting_on_resume():
                     # Step 0: Agent asks clarifying question based on current slots
                     Step(
                         name="ask_question",
-                        agent={"id": "flujo.builtins.passthrough", "model": "openai:gpt-4o-mini"},
+                        agent=AskQuestionAgent(),
                         input="Current slots: {{ context.import_artifacts.slots | tojson }}",
                         updates_context=True,
                         output_schema=SlotOutput.model_json_schema(),
-                        processors={
-                            "output_processors": [
-                                {
-                                    "type": "callable",
-                                    "callable": lambda x: {
-                                        "action": "ask"
-                                        if not x.get("slots", {}).get("metric")
-                                        else "finish",
-                                        "question": "What metric?"
-                                        if not x.get("slots", {}).get("metric")
-                                        else "Done",
-                                        "slots": x.get("slots", {}),
-                                    },
-                                }
-                            ]
-                        },
                     ),
                     # Step 1: HITL asks user (this is where pause happens)
                     HumanInTheLoopStep(
