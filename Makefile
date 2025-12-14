@@ -20,7 +20,7 @@
 .PHONY: install
 install: .uv ## Install dependencies into a virtual environment
 	@echo "🚀 Creating virtual environment and installing dependencies..."
-	@uv venv
+	@uv venv --python 3.13
 	@uv sync --all-extras
 	@echo "\n✅ Done! Activate the environment with 'source .venv/bin/activate'"
 

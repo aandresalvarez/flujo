@@ -642,7 +642,7 @@ def pytest_ignore_collect(collection_path, config):  # type: ignore[override]
 def guard_unraisable_hook() -> None:
     """Prevent RecursionError in sys.unraisablehook during pytest collection.
 
-    On Python 3.12 with xdist we occasionally see the unraisable hook itself
+    On newer Python versions with xdist we occasionally see the unraisable hook
     recurse while formatting an exception, which aborts the run. Delegate to the
     original hook and, if it fails, emit a minimal fallback log instead.
     """

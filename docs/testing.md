@@ -342,7 +342,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.11, 3.12]
+        python-version: [3.13, 3.14]
         test-type: [fast, slow, coverage]
 
     steps:

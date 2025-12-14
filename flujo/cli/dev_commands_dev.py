@@ -120,8 +120,8 @@ def import_openapi(
         str, typer.Option("--output", "-o", help="Output directory for generated models")
     ] = "generated_tools",
     target_python_version: Annotated[
-        str, typer.Option("--python-version", help="Target Python version (e.g., 3.11)")
-    ] = "3.11",
+        str, typer.Option("--python-version", help="Target Python version (e.g., 3.13)")
+    ] = "3.13",
     base_class: Annotated[
         str, typer.Option("--base-class", help="Base class for models (pydantic style)")
     ] = "pydantic.BaseModel",

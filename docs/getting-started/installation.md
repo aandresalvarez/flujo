@@ -4,7 +4,7 @@ This guide will help you install and set up `flujo` for your project.
 
 ## Prerequisites
 
-- Python 3.11 or higher
+- Python 3.13 or higher
 - pip (Python package installer)
 - Virtual environment (recommended)
 
@@ -53,7 +53,7 @@ git clone https://github.com/aandresalvarez/flujo.git
 cd flujo
 
 # Create and activate a virtual environment
-python3.11 -m venv .venv
+python3.13 -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install in editable mode with development extras
@@ -123,7 +123,7 @@ print("✅ Installation successful!")
 ### Common Issues
 
 1. **Python Version Error**
-   - Ensure you're using Python 3.11 or higher
+   - Ensure you're using Python 3.13 or higher
    - Check with: `python --version`
 
 2. **Missing Dependencies**

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from typing import Optional, Any
+from weakref import WeakKeyDictionary
 from ..infra import telemetry
 
 # Cache for model ID extraction to reduce repeated overhead
-_model_id_cache: dict[str, Optional[str]] = {}
+_model_id_cache: WeakKeyDictionary[object, Optional[str]] = WeakKeyDictionary()
 
 # Cache for warning flags to avoid duplicate warnings
 _warning_cache: dict[str, bool] = {}
@@ -55,9 +56,12 @@ def extract_model_id(agent: Any, step_name: str = "unknown") -> Optional[str]:
         return None
 
     # Use caching to reduce repeated extraction overhead
-    agent_key = f"{agent.__class__.__name__}:{id(agent)}"
-    if agent_key in _model_id_cache:
-        return _model_id_cache[agent_key]
+    try:
+        if agent in _model_id_cache:
+            return _model_id_cache[agent]
+    except TypeError:
+        # Some objects cannot be weak-referenced (and thus cannot be cached safely).
+        pass
 
     # Search order: most specific to least specific
     search_attributes = [
@@ -72,8 +76,11 @@ def extract_model_id(agent: Any, step_name: str = "unknown") -> Optional[str]:
         if hasattr(agent, attr_name):
             model_id = getattr(agent, attr_name)
             if model_id is not None:
-                # Cache the result
-                _model_id_cache[agent_key] = str(model_id)
+                # Cache the result (best-effort; skip for non-weakrefable objects)
+                try:
+                    _model_id_cache[agent] = str(model_id)
+                except TypeError:
+                    pass
 
                 # Only log for significant model IDs to reduce noise
                 if str(model_id).strip():
@@ -83,7 +90,10 @@ def extract_model_id(agent: Any, step_name: str = "unknown") -> Optional[str]:
                 return str(model_id)
 
     # Cache None result to avoid repeated searches
-    _model_id_cache[agent_key] = None
+    try:
+        _model_id_cache[agent] = None
+    except TypeError:
+        pass
 
     # If no model ID found, log a detailed warning with suggestions.
     # In test mode, always emit the warning (tests assert on this). In non-test
