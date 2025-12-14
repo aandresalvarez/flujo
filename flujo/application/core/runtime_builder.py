@@ -321,7 +321,7 @@ class FlujoRuntimeBuilder:
         elif sandbox_mode == "docker":
             try:
                 sandbox_obj = DockerSandbox(
-                    image=getattr(sandbox_cfg, "docker_image", "python:3.11-slim"),
+                    image=getattr(sandbox_cfg, "docker_image", "python:3.13-slim"),
                     pull=bool(getattr(sandbox_cfg, "docker_pull", True)),
                     timeout_s=float(
                         getattr(

@@ -122,12 +122,38 @@ def _serialize_for_cache_key(
                 return result_dict
             except (ValueError, RecursionError):
                 if _is_root:
-                    field_names = []
-                    if hasattr(obj, "__annotations__"):
-                        field_names = list(obj.__annotations__.keys())
-                    elif hasattr(obj, "__fields__"):
-                        field_names = list(obj.__fields__.keys())
-                    return {k: f"<{obj.__class__.__name__} circular>" for k in field_names}
+                    field_names: list[str] = []
+                    try:
+                        model_fields = getattr(obj.__class__, "model_fields", None)
+                        if isinstance(model_fields, dict) and model_fields:
+                            field_names = [str(k) for k in model_fields.keys()]
+                    except Exception:
+                        pass
+                    if not field_names:
+                        try:
+                            anns = getattr(obj.__class__, "__annotations__", None)
+                            if isinstance(anns, dict) and anns:
+                                field_names = [str(k) for k in anns.keys()]
+                        except Exception:
+                            pass
+                    if not field_names:
+                        try:
+                            fields = getattr(obj.__class__, "__fields__", None)
+                            if isinstance(fields, dict) and fields:
+                                field_names = [str(k) for k in fields.keys()]
+                        except Exception:
+                            pass
+
+                    out: dict[str, Any] = {}
+                    for k in field_names:
+                        try:
+                            out[k] = _serialize_for_cache_key(
+                                getattr(obj, k), visited, _is_root=False
+                            )
+                        except Exception:
+                            out[k] = f"<{obj.__class__.__name__} circular>"
+                    if out:
+                        return out
                 return f"<{obj.__class__.__name__} circular>"
 
         # Handle dictionaries

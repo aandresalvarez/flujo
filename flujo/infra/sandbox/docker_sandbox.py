@@ -17,7 +17,7 @@ class DockerSandbox(SandboxProtocol):
     def __init__(
         self,
         *,
-        image: str = "python:3.11-slim",
+        image: str = "python:3.13-slim",
         pull: bool = True,
         timeout_s: float = 60.0,
         client: Any | None = None,

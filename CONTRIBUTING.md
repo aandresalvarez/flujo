@@ -19,7 +19,7 @@ We welcome contributions in many forms:
 
 # Contributing & Local Dev Guide
 
-Thanks for helping improve **flujo**! This guide will help you set up a fully-featured development environment for Python 3.11+.
+Thanks for helping improve **flujo**! This guide will help you set up a fully-featured development environment for Python 3.13+.
 
 ---
 
@@ -30,17 +30,17 @@ Thanks for helping improve **flujo**! This guide will help you set up a fully-fe
 git clone https://github.com/aandresalvarez/flujo.git
 cd flujo
 
-# Create and activate a Python 3.11 virtual environment
-python3.11 -m venv .venv
+# Create and activate a Python 3.13 virtual environment
+python3.13 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
-python --version                    # should print 3.11.x
+python --version                    # should print 3.13.x
 ```
 
-> **Note:** If `python3.11` isn't available, install it via:
-> - macOS: `brew install python@3.11`
+> **Note:** If `python3.13` isn't available, install it via:
+> - macOS: `brew install python@3.13`
 > - Linux: Use your distribution's package manager
 > - Windows: Download from python.org
-> - Or use pyenv: `pyenv install 3.11.x`
+> - Or use pyenv: `pyenv install 3.13.x`
 
 ---
 
@@ -408,7 +408,7 @@ The project supports automated releases through GitHub Actions. There are two wo
          - name: Set up Python
            uses: actions/setup-python@v5
            with:
-             python-version: '3.11'
+             python-version: '3.13'
          - name: Install dependencies
            run: make pip-dev
          - name: Run tests
@@ -443,7 +443,7 @@ The project supports automated releases through GitHub Actions. There are two wo
          - name: Set up Python
            uses: actions/setup-python@v5
            with:
-             python-version: '3.11'
+             python-version: '3.13'
          - name: Install dependencies
            run: make pip-dev
          - name: Run tests
@@ -539,7 +539,7 @@ make clean-cache          # All tool caches
 
 | Issue | Solution |
 |-------|----------|
-| `ERROR: Package requires a different Python` | Ensure Python 3.11+ is active (`python --version`) |
+| `ERROR: Package requires a different Python` | Ensure Python 3.13+ is active (`python --version`) |
 | Async test failures | Verify `pytest-asyncio` is installed (included in `[dev]`) |
 | Poetry cache permission errors | `sudo chown -R $USER ~/Library/Caches/pypoetry` |
 | Make not found | Install: `brew install make` (macOS) or `apt install make` (Ubuntu) |

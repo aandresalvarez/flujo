@@ -29,7 +29,7 @@ This is the concise contributor guide for the Flujo repository. For deeper archi
   - `FLUJO_INPUT='goal' uv run flujo run`
 
 ## Coding Style & Naming Conventions
-- **Language**: Python 3.11+, 4-space indent, 100-col lines.
+- **Language**: Python 3.13+, 4-space indent, 100-col lines.
 - **Typing**: Full type hints are mandatory. Must pass `mypy --strict`.
 - **Naming**: Files/modules `snake_case.py`; functions/vars `snake_case`; classes `PascalCase`; constants `UPPER_SNAKE_CASE`.
 - **Formatting**: `ruff format`; lint with `ruff check` (fix or justify).

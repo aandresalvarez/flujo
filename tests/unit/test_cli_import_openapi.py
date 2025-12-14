@@ -26,7 +26,7 @@ def test_import_openapi_invokes_codegen(monkeypatch: Any, capsys: Any) -> None:
     dev_cmd.import_openapi(
         spec="spec.yaml",
         output="out_dir",
-        target_python_version="3.11",
+        target_python_version="3.13",
         base_class="pydantic.BaseModel",
         disable_timestamp=True,
         generate_agents=False,
@@ -52,7 +52,7 @@ def test_import_openapi_missing_dependency(monkeypatch: Any, capsys: Any) -> Non
         dev_cmd.import_openapi(
             spec="spec.yaml",
             output="out_dir",
-            target_python_version="3.11",
+            target_python_version="3.13",
             base_class="pydantic.BaseModel",
             disable_timestamp=True,
             generate_agents=False,

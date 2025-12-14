@@ -90,18 +90,7 @@ def load_skills_entry_points(group: str = "flujo.skills") -> None:
 
     Entry point value should be an import string (e.g., package.module:Factory).
     """
-    try:
-        # Modern API (Py>=3.10): returns EntryPoints with .select
-        eps_iter = importlib_metadata.entry_points().select(group=group)
-        eps_list = list(eps_iter)
-    except Exception:
-        try:
-            # Legacy API: mapping access (dict-like)
-            ep_map = importlib_metadata.entry_points()
-            eps_list = list(ep_map.get(group, [])) if isinstance(ep_map, dict) else []
-        except Exception:
-            # Final fallback
-            eps_list = []
+    eps_list = list(importlib_metadata.entry_points().select(group=group))
 
     reg = get_skill_registry()
     for ep in eps_list:

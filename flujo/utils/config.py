@@ -36,7 +36,7 @@ class Settings:
     sandbox_api_key: str | None = None
     sandbox_timeout_s: float = 60.0
     sandbox_verify_ssl: bool = True
-    sandbox_docker_image: str = "python:3.11-slim"
+    sandbox_docker_image: str = "python:3.13-slim"
     sandbox_docker_pull: bool = True
 
 
@@ -87,7 +87,7 @@ def _load_from_env() -> Settings:
         sandbox_verify_ssl=_flag("FLUJO_SANDBOX_VERIFY_SSL")
         if "FLUJO_SANDBOX_VERIFY_SSL" in os.environ
         else True,
-        sandbox_docker_image=os.getenv("FLUJO_SANDBOX_DOCKER_IMAGE", "python:3.11-slim"),
+        sandbox_docker_image=os.getenv("FLUJO_SANDBOX_DOCKER_IMAGE", "python:3.13-slim"),
         sandbox_docker_pull=_flag("FLUJO_SANDBOX_DOCKER_PULL")
         if "FLUJO_SANDBOX_DOCKER_PULL" in os.environ
         else True,

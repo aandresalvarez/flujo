@@ -15,7 +15,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.13"
 
       - name: Install docs dependencies
         run: |
@@ -29,4 +29,3 @@ jobs:
       - name: Check internal links
         run: |
           python scripts/check_docs_links.py
-

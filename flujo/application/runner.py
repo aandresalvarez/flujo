@@ -577,11 +577,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         except Exception:
             pass
 
-        queue: list[Step[object, object]] = list(getattr(self.pipeline, "steps", []))
+        queue: list[object] = list(getattr(self.pipeline, "steps", []))
         visited: set[int] = set()
 
         while queue:
-            current = queue.pop(0)
+            current_obj = queue.pop(0)
+            if not isinstance(current_obj, Step):
+                continue
+            current: Step[object, object] = current_obj
             if id(current) in visited:
                 continue
             visited.add(id(current))
@@ -594,7 +597,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
                 and isinstance(current, LoopStepType)
                 and getattr(current, "body", None)
             ):
-                queue.append(current.body)
+                body = getattr(current, "body", None)
+                if isinstance(body, Step):
+                    queue.append(body)
 
             branches = getattr(current, "branches", None)
             if branches:

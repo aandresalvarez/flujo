@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
 import warnings
 from datetime import datetime, timezone
 from typing import (
@@ -167,7 +168,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
             root_quota=root_quota,
         )
 
-        async for item in execution_manager.execute_steps(
+        exec_iter = execution_manager.execute_steps(
             start_idx=start_idx,
             data=data,
             context=context,
@@ -175,8 +176,19 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
             stream_last=stream_last,
             run_id=run_id,
             state_created_at=state_created_at,
-        ):
-            yield item
+        )
+        try:
+            async for item in exec_iter:
+                yield item
+        finally:
+            try:
+                aclose = getattr(exec_iter, "aclose", None)
+                if callable(aclose):
+                    res = aclose()
+                    if inspect.isawaitable(res):
+                        await res
+            except Exception:
+                pass
 
     async def run_async(
         self,
@@ -451,7 +463,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                     )
                     return pipeline_result_obj
 
-                async for chunk in self.execute_steps(
+                step_iter = self.execute_steps(
                     start_idx,
                     data,
                     self._as_context_t(current_context_instance),
@@ -460,97 +472,108 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                     run_id=run_id_for_state,
                     state_backend=self.state_backend,
                     state_created_at=state_created_at,
-                ):
-                    if isinstance(chunk, PipelineResult):
-                        expected_steps = len(pipeline.steps)
-                        have = len(chunk.step_history)
-                        is_paused = False
-                        try:
-                            ctx = chunk.final_pipeline_context
-                            if ctx and getattr(ctx, "status", None) == "paused":
-                                is_paused = True
-                        except Exception:
-                            pass
+                )
+                try:
+                    async for chunk in step_iter:
+                        if isinstance(chunk, PipelineResult):
+                            expected_steps = len(pipeline.steps)
+                            have = len(chunk.step_history)
+                            is_paused = False
+                            try:
+                                ctx = chunk.final_pipeline_context
+                                if ctx and getattr(ctx, "status", None) == "paused":
+                                    is_paused = True
+                            except Exception:
+                                pass
 
-                        if (
-                            not is_paused
-                            and expected_steps > 0
-                            and have < expected_steps
-                            and start_idx == 0
-                        ):
-                            missing_outcome_detected = any(
-                                _has_missing_terminal_outcome(sr) for sr in chunk.step_history
-                            ) or all(getattr(sr, "success", True) for sr in chunk.step_history)
-                            if missing_outcome_detected:
-                                from flujo.domain.models import StepResult as _SR
-
-                                for j in range(have, expected_steps):
-                                    try:
-                                        missing_name = getattr(
-                                            pipeline.steps[j], "name", f"step_{j}"
-                                        )
-                                    except Exception:
-                                        missing_name = f"step_{j}"
-                                    if any(
-                                        getattr(sr, "name", None) == str(missing_name)
-                                        for sr in chunk.step_history
-                                    ):
-                                        continue
-                                    synthesized = _SR(
-                                        name=str(missing_name),
-                                        success=False,
-                                        output=None,
-                                        attempts=0,
-                                        latency_s=0.0,
-                                        token_counts=0,
-                                        cost_usd=0.0,
-                                        feedback="Agent produced no terminal outcome",
-                                        branch_context=None,
-                                        metadata_={},
-                                        step_history=[],
-                                    )
-                                    StepCoordinator().update_pipeline_result(chunk, synthesized)
-                        try:
-                            ctx = chunk.final_pipeline_context
                             if (
-                                isinstance(ctx, PipelineContext)
-                                and getattr(ctx, "status", None) == "paused"
+                                not is_paused
+                                and expected_steps > 0
+                                and have < expected_steps
+                                and start_idx == 0
                             ):
-                                paused = True
-                                pipeline_result_obj = chunk
-                                _yielded_pipeline_result = True
-                                try:
-                                    chunk.success = False
-                                except Exception:
-                                    pass
-                                yield chunk
-                                return
-                            if isinstance(ctx, PipelineContext) and (
-                                getattr(ctx, "loop_iteration_index", None) is not None
-                                or getattr(ctx, "loop_step_index", None) is not None
-                            ):
-                                try:
-                                    ctx.status = "paused"
-                                    pipeline_result_obj = chunk
+                                missing_outcome_detected = any(
+                                    _has_missing_terminal_outcome(sr) for sr in chunk.step_history
+                                ) or all(getattr(sr, "success", True) for sr in chunk.step_history)
+                                if missing_outcome_detected:
+                                    from flujo.domain.models import StepResult as _SR
+
+                                    for j in range(have, expected_steps):
+                                        try:
+                                            missing_name = getattr(
+                                                pipeline.steps[j], "name", f"step_{j}"
+                                            )
+                                        except Exception:
+                                            missing_name = f"step_{j}"
+                                        if any(
+                                            getattr(sr, "name", None) == str(missing_name)
+                                            for sr in chunk.step_history
+                                        ):
+                                            continue
+                                        synthesized = _SR(
+                                            name=str(missing_name),
+                                            success=False,
+                                            output=None,
+                                            attempts=0,
+                                            latency_s=0.0,
+                                            token_counts=0,
+                                            cost_usd=0.0,
+                                            feedback="Agent produced no terminal outcome",
+                                            branch_context=None,
+                                            metadata_={},
+                                            step_history=[],
+                                        )
+                                        StepCoordinator().update_pipeline_result(chunk, synthesized)
+                            try:
+                                ctx = chunk.final_pipeline_context
+                                if (
+                                    isinstance(ctx, PipelineContext)
+                                    and getattr(ctx, "status", None) == "paused"
+                                ):
                                     paused = True
+                                    pipeline_result_obj = chunk
                                     _yielded_pipeline_result = True
-                                    chunk.success = False
+                                    try:
+                                        chunk.success = False
+                                    except Exception:
+                                        pass
                                     yield chunk
                                     return
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-                        pipeline_result_obj = chunk
-                        try:
-                            if chunk.final_pipeline_context is not None:
-                                current_context_instance = self._as_context_t(
-                                    chunk.final_pipeline_context
-                                )
-                        except Exception:
-                            pass
-                        _yielded_pipeline_result = True
-                    yield chunk
+                                if isinstance(ctx, PipelineContext) and (
+                                    getattr(ctx, "loop_iteration_index", None) is not None
+                                    or getattr(ctx, "loop_step_index", None) is not None
+                                ):
+                                    try:
+                                        ctx.status = "paused"
+                                        pipeline_result_obj = chunk
+                                        paused = True
+                                        _yielded_pipeline_result = True
+                                        chunk.success = False
+                                        yield chunk
+                                        return
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                            pipeline_result_obj = chunk
+                            try:
+                                if chunk.final_pipeline_context is not None:
+                                    current_context_instance = self._as_context_t(
+                                        chunk.final_pipeline_context
+                                    )
+                            except Exception:
+                                pass
+                            _yielded_pipeline_result = True
+                        yield chunk
+                finally:
+                    try:
+                        aclose = getattr(step_iter, "aclose", None)
+                        if callable(aclose):
+                            res = aclose()
+                            if inspect.isawaitable(res):
+                                await res
+                    except Exception:
+                        pass
                 if not _yielded_pipeline_result:
                     _yielded_pipeline_result = True
                     yield _prepare_pipeline_result_for_emit()

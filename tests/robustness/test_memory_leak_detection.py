@@ -5,24 +5,26 @@ in long-running Flujo applications.
 """
 # ruff: noqa
 
+from __future__ import annotations
+
 import asyncio
+import gc
+import weakref
+from typing import Any
+
 import pytest
+
+from flujo.domain.models import PipelineContext, StepResult
+from flujo.domain.dsl.step import Step
+from tests.test_types.fakes import FakeAgent
+from tests.test_types.mocks import create_mock_executor_core
+
 
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.memory,
     pytest.mark.stress,
 ]
-import gc
-import weakref
-from typing import List, Dict, Any, Optional
-import pytest
-from unittest.mock import AsyncMock
-
-from flujo.application.core.executor_core import ExecutorCore
-from flujo.domain.models import PipelineContext, StepResult
-from flujo.domain.dsl.step import Step
-from tests.test_types.mocks import create_mock_executor_core
 
 
 class TestMemoryLeakDetection:
@@ -34,7 +36,7 @@ class TestMemoryLeakDetection:
 
         def create_objects():
             """Create objects that should be garbage collected."""
-            step = Step(name="memory_test", agent=AsyncMock())
+            step = Step(name="memory_test", agent=FakeAgent("ok"))
             data = {"input": f"test_data_{id(step)}"}  # Unique data
             context = PipelineContext()
             return step, data, context
@@ -48,39 +50,45 @@ class TestMemoryLeakDetection:
         asyncio.run(_warmup())
         gc.collect()
 
-        # Track memory usage over many iterations
-        initial_objects = len(gc.get_objects())
+        async def _run_iterations() -> None:
+            # Track StepResult retention across many iterations.
+            # Counting *all* GC-tracked objects is too noisy across Python versions and event-loop
+            # implementations (it includes asyncio internals, caches, etc.). This focuses on the
+            # concrete regression we care about: unbounded retention of execution results.
+            def _count_step_results() -> int:
+                # Avoid `isinstance(..., StepResult)` because Pydantic's metaclass `__instancecheck__`
+                # can trigger attribute access on arbitrary objects returned by `gc.get_objects()`.
+                return sum(1 for obj in gc.get_objects() if type(obj) is StepResult)
 
-        for i in range(100):
-            step, data, context = create_objects()
+            initial_step_results = _count_step_results()
 
-            # Execute synchronously for memory testing
-            async def execute_once():
-                return await executor.execute(step, data)
+            for i in range(100):
+                step, data, _ = create_objects()
+                result = await executor.execute(step, data)
+                assert isinstance(result, StepResult)
 
-            result = asyncio.run(execute_once())
-            assert isinstance(result, StepResult)
+                # Force garbage collection periodically
+                if i % 20 == 0:
+                    gc.collect()
+                    current_step_results = _count_step_results()
 
-            # Force garbage collection periodically
-            if i % 20 == 0:
-                gc.collect()
+                    # Use the first checkpoint after warmup to reset the baseline,
+                    # then measure growth incrementally.
+                    if i == 0:
+                        initial_step_results = current_step_results
+                        continue
 
-                current_objects = len(gc.get_objects())
-                # Use the first checkpoint after warmup to reset the baseline,
-                # then measure growth incrementally.
-                if i == 0:
-                    initial_objects = current_objects
-                    continue
+                    step_result_growth = current_step_results - initial_step_results
+                    initial_step_results = current_step_results
 
-                object_growth = current_objects - initial_objects
-                initial_objects = current_objects
+                    # Allow some growth but not unbounded (max 10% growth per 20 iterations)
+                    max_growth = int(100 * 0.1)  # 10% of 100 = 10 objects
+                    assert step_result_growth <= max_growth, (
+                        f"Memory leak detected: {step_result_growth} retained StepResults after {i + 1} iterations "
+                        f"(initial: {initial_step_results}, current: {current_step_results})"
+                    )
 
-                # Allow some growth but not unbounded (max 10% growth per 20 iterations)
-                max_growth = int(100 * 0.1)  # 10% of 100 = 10 objects
-                assert object_growth <= max_growth, (
-                    f"Memory leak detected: {object_growth} new objects after {i + 1} iterations "
-                    f"(initial: {initial_objects}, current: {current_objects})"
-                )
+        asyncio.run(_run_iterations())
 
     def test_context_cleanup_after_execution(self):
         """Test that PipelineContext objects are properly cleaned up."""
@@ -122,7 +130,7 @@ class TestMemoryLeakDetection:
         executor = create_mock_executor_core()
 
         # Create a step that holds references
-        step = Step(name="circular_test", agent=AsyncMock())
+        step = Step(name="circular_test", agent=FakeAgent("ok"))
 
         # Create context that references the step
         context = PipelineContext()
@@ -160,7 +168,7 @@ class TestMemoryLeakDetection:
         # All objects should be cleaned up
         assert step_ref() is None, "Step with circular reference not cleaned up"
         assert context_ref() is None, "Context with circular reference not cleaned up"
-        assert executor_ref() is not None, "Executor should still exist (it's a fixture)"
+        assert executor_ref() is None, "Executor with circular reference not cleaned up"
 
     def test_large_data_processing_memory_efficiency(self):
         """Test that processing large data doesn't cause memory bloat."""
@@ -182,7 +190,7 @@ class TestMemoryLeakDetection:
         async def process_large_data():
             results = []
             for i, data in enumerate(large_data_sets):
-                step = Step(name=f"large_step_{i}", agent=AsyncMock())
+                step = Step(name=f"large_step_{i}", agent=FakeAgent("ok"))
                 result = await executor.execute(step, data)
                 results.append(result)
 

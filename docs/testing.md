@@ -137,7 +137,7 @@ make test-loop
 # Find unused test fixtures
 make test-deadfixtures
 
-# Profile test performance
+# Profile overall test runtime (writes `test_profile.pstats`)
 make test-profile
 
 # Auto-rerun flaky tests
@@ -342,7 +342,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.11, 3.12]
+        python-version: [3.13, 3.14]
         test-type: [fast, slow, coverage]
 
     steps:
@@ -612,7 +612,7 @@ make test-perf
 # Monitor test execution times
 make test-analyze-performance
 
-# Track memory usage
+# Profile overall test runtime (writes `test_profile.pstats`)
 make test-profile
 ```
 

@@ -11,7 +11,7 @@ version = "0.6.2"  # Security: fix CVEs in mcp, starlette, remove pytest-forked
 description = "A modern, type-safe framework for building AI-powered applications with structured outputs and robust error handling."
 readme = "README.md"
 license = {text = "AGPL-3.0"}
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 keywords = ["ai", "llm", "pipeline", "workflow", "agent", "async", "type-safe"]
 authors = [
     {name = "Alvaro Andres Alvarez", email = "aandresalvarez@gmail.com"}
@@ -22,8 +22,8 @@ classifiers = [
     "License :: OSI Approved :: GNU Affero General Public License v3",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Typing :: Typed",
@@ -66,7 +66,6 @@ dev = [
   "pytest-picked==0.4.6",  # Alternative to testmon
   "pytest-split==0.10.0",  # Deterministic sharding for CI
   "pytest-deadfixtures==2.2.1",  # Find unused fixtures
-  "pytest-profiling==1.7.0",  # Profile hot spots
   "hypothesis==6.112.0",
   "vcrpy==6.0.1",
   "build==1.2.2.post1",     # Added for package building
@@ -132,7 +131,7 @@ Changelog = "https://github.com/aandresalvarez/flujo/blob/main/CHANGELOG.md"
 # Tool-specific configuration
 # --------------------------------------------------------------------------- #
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 strict         = true
 plugins = ["pydantic.mypy"]
 

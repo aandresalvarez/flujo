@@ -53,7 +53,7 @@ class _FakeClient:
 async def test_docker_sandbox_runs_python() -> None:
     container = _FakeContainer(status=0, logs=b"hello")
     client = _FakeClient(container=container)
-    sandbox = DockerSandbox(client=client, image="python:3.11-slim", pull=False)
+    sandbox = DockerSandbox(client=client, image="python:3.13-slim", pull=False)
 
     result = await sandbox.exec_code(SandboxExecution(code="print('hi')", language="python"))
 
@@ -62,7 +62,7 @@ async def test_docker_sandbox_runs_python() -> None:
     assert result.exit_code == 0
     assert container.removed is True
     # With pull disabled in the test client, pulled list may be empty
-    assert client.images.pulled in ([], ["python:3.11-slim"])
+    assert client.images.pulled in ([], ["python:3.13-slim"])
 
 
 @pytest.mark.asyncio
@@ -73,7 +73,7 @@ async def test_docker_sandbox_timeout() -> None:
 
     container = SlowContainer()
     client = _FakeClient(container=container)
-    sandbox = DockerSandbox(client=client, image="python:3.11-slim", pull=False, timeout_s=0.01)
+    sandbox = DockerSandbox(client=client, image="python:3.13-slim", pull=False, timeout_s=0.01)
 
     result = await sandbox.exec_code(SandboxExecution(code="print('hi')", language="python"))
 
@@ -86,7 +86,7 @@ async def test_docker_sandbox_timeout() -> None:
 async def test_docker_sandbox_rejects_non_python() -> None:
     container = _FakeContainer()
     client = _FakeClient(container=container)
-    sandbox = DockerSandbox(client=client, image="python:3.11-slim", pull=False)
+    sandbox = DockerSandbox(client=client, image="python:3.13-slim", pull=False)
 
     result = await sandbox.exec_code(SandboxExecution(code="echo hi", language="bash"))
 
@@ -107,7 +107,7 @@ async def test_docker_sandbox_cleanup_on_cancellation() -> None:
 
     container = BlockingContainer()
     client = _FakeClient(container=container)
-    sandbox = DockerSandbox(client=client, image="python:3.11-slim", pull=False, timeout_s=5)
+    sandbox = DockerSandbox(client=client, image="python:3.13-slim", pull=False, timeout_s=5)
 
     task = asyncio.create_task(
         sandbox.exec_code(SandboxExecution(code="print('hi')", language="python"))

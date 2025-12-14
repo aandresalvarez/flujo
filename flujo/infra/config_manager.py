@@ -7,12 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Union
 import os
 import os as _os
-
-try:
-    import tomllib
-except ImportError:
-    # Fallback for Python versions < 3.11
-    import tomli as tomllib  # type: ignore
+import tomllib
 from pydantic import BaseModel, Field
 from ..domain.models import UsageLimits
 

@@ -502,6 +502,8 @@ def _inject_context_with_deep_merge(
                 try:
                     # Guard against non-type annotations that make isinstance unreliable
                     if isinstance(field_type, type):
+                        if value is None:
+                            continue
                         if not isinstance(value, field_type):
                             simple_update = False
                             break
@@ -605,8 +607,11 @@ def _inject_context_with_deep_merge(
             # TYPE VALIDATION: Ensure the value matches the declared field type
             if field_type is not None:
                 try:
+                    if value is None:
+                        # Let Pydantic handle Optional/required semantics in the final validation pass.
+                        pass
                     # For list fields, ensure we're not trying to assign a dict to a list[int]
-                    if hasattr(field_type, "__origin__") and field_type.__origin__ is list:
+                    elif hasattr(field_type, "__origin__") and field_type.__origin__ is list:
                         if not isinstance(value, list):
                             return f"Field '{key}' expects list but got {type(value).__name__}: {value}"
 

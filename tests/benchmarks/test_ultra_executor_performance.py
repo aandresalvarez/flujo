@@ -10,11 +10,20 @@ from contextlib import contextmanager
 
 from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor
 from flujo.domain.dsl.step import Step
+from flujo.domain.models import BaseModel as DomainBaseModel
 from flujo.domain.models import StepResult
 
 # Constants for better maintainability
 FLOAT_TOLERANCE = 1e-10
 CI_TRUE_VALUES = ("true", "1", "yes")
+
+
+class _BenchmarkContext(DomainBaseModel):
+    context: str = "data"
+
+
+class _BenchmarkResources(DomainBaseModel):
+    resources: str = "data"
 
 
 @contextmanager
@@ -229,10 +238,8 @@ class TestUltraExecutorPerformance:
             "nested": {"value": 123},
             "complex": {"list": [1, 2, 3], "dict": {"a": 1}},
         }
-        context = Mock()
-        context.model_dump.return_value = {"context": "data"}
-        resources = Mock()
-        resources.model_dump.return_value = {"resources": "data"}
+        context = _BenchmarkContext()
+        resources = _BenchmarkResources()
 
         # Warm up both executors
         for _ in range(5):
@@ -308,10 +315,8 @@ class TestUltraExecutorPerformance:
     async def test_ultra_executor_feature_value(self, ultra_executor, mock_step):
         """Test the value of ultra executor features."""
         data = {"feature": "test", "value": 123}
-        context = Mock()
-        context.model_dump.return_value = {"context": "data"}
-        resources = Mock()
-        resources.model_dump.return_value = {"resources": "data"}
+        context = _BenchmarkContext()
+        resources = _BenchmarkResources()
 
         # Test 1: Basic execution
         result = await ultra_executor.execute_step(mock_step, data, context, resources)
@@ -390,9 +395,9 @@ class TestUltraExecutorPerformance:
         # Validate correctness under concurrency
         assert all(r.success for r in results), "All concurrent tasks should succeed"
         # Sanity check: should complete (not hang)
-        assert (
-            concurrent_time < 30.0
-        ), f"Concurrent execution took too long: {concurrent_time:.3f}s (max 30s sanity check)"
+        assert concurrent_time < 30.0, (
+            f"Concurrent execution took too long: {concurrent_time:.3f}s (max 30s sanity check)"
+        )
 
         # Test 4: Usage tracking
         usage_agent = AsyncMock()
@@ -443,10 +448,8 @@ class TestUltraExecutorPerformance:
             "value": 456,
             "complex": {"nested": {"data": "structure"}},
         }
-        context = Mock()
-        context.model_dump.return_value = {"context": "data"}
-        resources = Mock()
-        resources.model_dump.return_value = {"resources": "data"}
+        context = _BenchmarkContext()
+        resources = _BenchmarkResources()
 
         # First execution (cache miss)
         start_time = time.perf_counter()
@@ -479,9 +482,9 @@ class TestUltraExecutorPerformance:
         print(f"Cached execution: {cached_execution_time:.6f}s")
         print(f"Cache speedup: {cache_speedup:.2f}x")
 
-        assert (
-            cache_speedup >= 1.8
-        ), f"Cache should provide significant speedup, got {cache_speedup:.2f}x"
+        assert cache_speedup >= 1.8, (
+            f"Cache should provide significant speedup, got {cache_speedup:.2f}x"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -489,10 +492,8 @@ class TestUltraExecutorPerformance:
         """Test performance under concurrent execution."""
         num_concurrent = 20
         data = {"concurrent": "test", "complex": {"data": "structure"}}
-        context = Mock()
-        context.model_dump.return_value = {"context": "data"}
-        resources = Mock()
-        resources.model_dump.return_value = {"resources": "data"}
+        context = _BenchmarkContext()
+        resources = _BenchmarkResources()
 
         # Execute many steps concurrently
         start_time = time.perf_counter()
@@ -521,9 +522,9 @@ class TestUltraExecutorPerformance:
         # Concurrent execution should be faster than sequential would be.
         # With 50 concurrent operations, we expect significant parallelism benefit.
         # Sanity check: should complete within reasonable time (not hang)
-        assert (
-            total_time < 30.0
-        ), f"Concurrent execution took too long: {total_time:.3f}s (max 30s sanity check)"
+        assert total_time < 30.0, (
+            f"Concurrent execution took too long: {total_time:.3f}s (max 30s sanity check)"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -531,10 +532,8 @@ class TestUltraExecutorPerformance:
         """Test memory efficiency by running many executions."""
         iterations = 500  # Reduced for faster execution
         data = {"memory": "test", "large": "payload" * 50}
-        context = Mock()
-        context.model_dump.return_value = {"context": "data"}
-        resources = Mock()
-        resources.model_dump.return_value = {"resources": "data"}
+        context = _BenchmarkContext()
+        resources = _BenchmarkResources()
 
         # Run many executions and measure memory usage
         try:
@@ -566,9 +565,9 @@ class TestUltraExecutorPerformance:
         print(f"Memory per execution: {memory_increase / iterations / 1024:.2f} KB")
 
         # Memory increase should be reasonable
-        assert (
-            memory_increase < 50 * 1024 * 1024
-        ), f"Memory increase too high: {memory_increase / 1024 / 1024:.2f} MB"
+        assert memory_increase < 50 * 1024 * 1024, (
+            f"Memory increase too high: {memory_increase / 1024 / 1024:.2f} MB"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.benchmark
@@ -644,9 +643,9 @@ class TestUltraExecutorPerformance:
         print(f"Keys per second: {iterations / total_time:.0f}")
 
         # Sanity check: cache key generation should complete (not hang)
-        assert (
-            total_time < 30.0
-        ), f"Cache key generation took too long: {total_time:.3f}s (max 30s sanity check)"
+        assert total_time < 30.0, (
+            f"Cache key generation took too long: {total_time:.3f}s (max 30s sanity check)"
+        )
 
         # Verify key uniqueness
         unique_keys = set(keys)
@@ -671,9 +670,9 @@ class TestUltraExecutorPerformance:
             print(f"Additions per second: {iterations / total_time:.0f}")
 
             # Sanity check: usage tracking should complete (not hang)
-            assert (
-                total_time < 30.0
-            ), f"Usage tracking took too long: {total_time:.3f}s (max 30s sanity check)"
+            assert total_time < 30.0, (
+                f"Usage tracking took too long: {total_time:.3f}s (max 30s sanity check)"
+            )
 
             # Verify final values
             assert ultra_executor._usage.total_cost > 0

@@ -68,17 +68,20 @@ class AgentExecutionRunner:
             f"[AgentExecutionRunner] Orchestrate simple agent step: {getattr(step, 'name', '<unnamed>')} depth={fallback_depth}"
         )
 
-        # Support explicit step.input templating (common in YAML blueprints)
+        # Support explicit step.input templating (common in YAML blueprints).
+        # IMPORTANT: `previous_step` must refer to the inbound `data` value, not the template itself.
         try:
-            if hasattr(step, "input") and step.input is not None:
-                data = getattr(step, "input")
-                if isinstance(data, str) and ("{{" in data and "}}" in data):
+            step_input = getattr(step, "input", None)
+            if step_input is not None:
+                previous_step_value = data
+                data = step_input
+                if isinstance(step_input, str) and ("{{" in step_input and "}}" in step_input):
                     try:
                         from flujo.utils.prompting import AdvancedPromptFormatter
                         from flujo.utils.template_vars import (
-                            get_steps_map_from_context,
-                            TemplateContextProxy,
                             StepValueProxy,
+                            TemplateContextProxy,
+                            get_steps_map_from_context,
                         )
 
                         steps_map = get_steps_map_from_context(context)
@@ -88,29 +91,15 @@ class AgentExecutionRunner:
                         }
                         fmt_context = {
                             "context": TemplateContextProxy(context, steps=steps_wrapped),
-                            "previous_step": data,
+                            "previous_step": previous_step_value,
                             "steps": steps_wrapped,
                         }
-                        rendered = AdvancedPromptFormatter(data).format(**fmt_context)
-                        if rendered is None or rendered == "":
-                            try:
-                                import re
-
-                                m = re.search(r"'([^']+)'", str(data))
-                                if m:
-                                    data = m.group(1)
-                                else:
-                                    prev_val = fmt_context.get("previous_step", "")
-                                    data = str(data).replace(
-                                        "{{ steps.test_fallback }}", str(prev_val)
-                                    )
-                            except Exception:
-                                data = str(fmt_context.get("previous_step", ""))
-                        else:
+                        rendered = AdvancedPromptFormatter(step_input).format(**fmt_context)
+                        if rendered is not None and rendered != "":
                             data = rendered
                     except Exception:
                         # fall back to literal
-                        pass
+                        data = step_input
         except Exception:
             pass
 

@@ -6,18 +6,7 @@ Step instances from async callables.
 
 from __future__ import annotations
 
-from typing import (
-    Callable,
-    Coroutine,
-    Optional,
-    TYPE_CHECKING,
-    overload,
-)
-
-try:
-    from typing import ParamSpec, Concatenate
-except ImportError:
-    from typing_extensions import ParamSpec, Concatenate  # type: ignore[assignment]
+from typing import Callable, Concatenate, Coroutine, Optional, TYPE_CHECKING, ParamSpec, overload
 
 if TYPE_CHECKING:
     from .step import Step, StepConfig, ExecutionMode
