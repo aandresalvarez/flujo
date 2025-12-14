@@ -30,7 +30,7 @@ def _get_type_hints_best_effort(func: Callable[..., Any]) -> dict[str, object]:
     """
     try:
         return dict(get_type_hints(func))
-    except Exception as exc:
+    except Exception as first_exc:
         try:
             from flujo.type_definitions.common import JSONObject, JSONArray
 
@@ -45,8 +45,11 @@ def _get_type_hints_best_effort(func: Callable[..., Any]) -> dict[str, object]:
             globalns.setdefault("JSONArray", JSONArray)
             globalns.setdefault("Any", Any)
             return dict(get_type_hints(func, globalns=globalns, localns=globalns))
-        except Exception:
-            logfire.debug(f"Could not resolve type hints for {func!r}: {exc}")
+        except Exception as second_exc:
+            logfire.debug(
+                f"Could not resolve type hints for {func!r}: {first_exc}; "
+                f"fallback also failed: {second_exc}"
+            )
             return {}
 
 
