@@ -8,6 +8,7 @@ from ..infra import telemetry
 
 # Cache for model ID extraction to reduce repeated overhead
 _model_id_cache: WeakKeyDictionary[object, Optional[str]] = WeakKeyDictionary()
+_MODEL_ID_CACHE_MISSING = object()
 
 # Cache for warning flags to avoid duplicate warnings
 _warning_cache: dict[str, bool] = {}
@@ -57,8 +58,9 @@ def extract_model_id(agent: Any, step_name: str = "unknown") -> Optional[str]:
 
     # Use caching to reduce repeated extraction overhead
     try:
-        if agent in _model_id_cache:
-            return _model_id_cache[agent]
+        cached = _model_id_cache.get(agent, _MODEL_ID_CACHE_MISSING)
+        if cached is not _MODEL_ID_CACHE_MISSING:
+            return cached
     except TypeError:
         # Some objects cannot be weak-referenced (and thus cannot be cached safely).
         pass
