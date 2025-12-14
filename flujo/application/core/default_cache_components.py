@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import _thread
 import hashlib
+import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -356,26 +358,19 @@ class ThreadSafeMeter:
     total_cost_usd: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    _lock: asyncio.Lock | None = field(init=False, default=None)
-
-    def _get_lock(self) -> asyncio.Lock:
-        """Lazily create the asyncio lock on first access."""
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-        return self._lock
+    _lock: _thread.LockType = field(init=False, default_factory=threading.Lock)
 
     async def add(self, cost_usd: float, prompt_tokens: int, completion_tokens: int) -> None:
-        async with self._get_lock():
+        with self._lock:
             self.total_cost_usd += float(cost_usd)
             self.prompt_tokens += int(prompt_tokens)
             self.completion_tokens += int(completion_tokens)
 
     async def guard(self, limits: UsageLimits, step_history: list[object] | None = None) -> None:
         # Compatibility no-op: quota enforcement is handled by the proactive quota system.
-        # Still take the lock so concurrent calls remain serialized and timing is stable.
-        async with self._get_lock():
+        with self._lock:
             return None
 
     async def snapshot(self) -> tuple[float, int, int]:
-        async with self._get_lock():
+        with self._lock:
             return self.total_cost_usd, self.prompt_tokens, self.completion_tokens
