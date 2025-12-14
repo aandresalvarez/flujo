@@ -10,7 +10,7 @@ from ..interfaces import get_config_provider, get_skill_resolver
 from ..plugins import ValidationPlugin
 from ..validation import Validator
 from .loader_models import BlueprintError
-from flujo.type_definitions.common import JSONObject
+from flujo.type_definitions.common import JSONArray, JSONObject
 
 _skills_base_dir_stack: list[str] = []
 
@@ -170,6 +170,14 @@ def _import_child_skill_module(module_name: str, attr_name: Optional[str]) -> ob
             if spec is None or spec.loader is None:
                 raise BlueprintError(f"Unable to locate module '{module_name}' at '{py_path}'")
             mod = _iu.module_from_spec(spec)
+            # Make common Flujo typing aliases available to child-local skill modules.
+            # This keeps simple user-written skills working across Python versions
+            # that evaluate annotations at different times.
+            try:
+                mod.__dict__.setdefault("JSONObject", JSONObject)
+                mod.__dict__.setdefault("JSONArray", JSONArray)
+            except Exception:
+                pass
             _sys.modules[fqmn] = mod
             spec.loader.exec_module(mod)
         return getattr(mod, attr_name) if attr_name else mod

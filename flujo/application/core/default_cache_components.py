@@ -365,12 +365,17 @@ class ThreadSafeMeter:
         return self._lock
 
     async def add(self, cost_usd: float, prompt_tokens: int, completion_tokens: int) -> None:
-        self.total_cost_usd += cost_usd
-        self.prompt_tokens += prompt_tokens
-        self.completion_tokens += completion_tokens
+        async with self._get_lock():
+            self.total_cost_usd += float(cost_usd)
+            self.prompt_tokens += int(prompt_tokens)
+            self.completion_tokens += int(completion_tokens)
 
     async def guard(self, limits: UsageLimits, step_history: list[object] | None = None) -> None:
-        return None
+        # Compatibility no-op: quota enforcement is handled by the proactive quota system.
+        # Still take the lock so concurrent calls remain serialized and timing is stable.
+        async with self._get_lock():
+            return None
 
     async def snapshot(self) -> tuple[float, int, int]:
-        return self.total_cost_usd, self.prompt_tokens, self.completion_tokens
+        async with self._get_lock():
+            return self.total_cost_usd, self.prompt_tokens, self.completion_tokens
