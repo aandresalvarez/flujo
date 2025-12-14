@@ -31,7 +31,7 @@ def extract_model_id(agent: object, step_name: str = "unknown") -> Optional[str]
 
     Parameters
     ----------
-    agent : Any
+    agent : object
         The agent object to extract the model ID from
     step_name : str
         Name of the step for logging purposes (default: "unknown")
