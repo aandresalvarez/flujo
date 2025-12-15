@@ -200,11 +200,16 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             pass
 
         if quota is not None:
+            remaining_before: tuple[float, int] | None = None
+            try:
+                remaining_before = quota.get_remaining()
+            except Exception:
+                remaining_before = None
             if not quota.reserve(estimate):
                 try:
                     from flujo.application.core.usage_messages import format_reservation_denial
 
-                    denial = format_reservation_denial(estimate, limits)
+                    denial = format_reservation_denial(estimate, limits, remaining=remaining_before)
                     raise UsageLimitExceededError(denial.human)
                 except ImportError:
                     raise UsageLimitExceededError("Insufficient quota for granular turn")

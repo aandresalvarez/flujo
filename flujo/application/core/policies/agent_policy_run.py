@@ -183,7 +183,7 @@ async def run_agent_execution(
             except Exception:
                 estimate = None
         if estimate is None:
-            estimate = executor._estimate_usage(step, data, context)
+            estimate = executor._estimate_usage(step, data, context, core=core)
             strategy_name = "heuristic"
         try:
             telemetry.logfire.debug(
@@ -198,7 +198,7 @@ async def run_agent_execution(
         except Exception:
             pass
     except Exception:
-        estimate = executor._estimate_usage(step, data, context)
+        estimate = executor._estimate_usage(step, data, context, core=core)
 
     def _get_quota() -> Optional[Quota]:
         try:
@@ -237,7 +237,7 @@ async def run_agent_execution(
                 from ..usage_messages import format_reservation_denial
             except Exception:
                 from flujo.application.core.usage_messages import format_reservation_denial
-            denial = format_reservation_denial(estimate, limits)
+            denial = format_reservation_denial(estimate, limits, remaining=(rem_cost, rem_tokens))
             failure_msg = denial.human
             try:
                 telemetry.logfire.warning(

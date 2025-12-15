@@ -394,8 +394,12 @@ class AgentExecutionRunner:
                     is_validation_step = False
                 processed_output = processed_data
 
+                reserved_estimate: object | None = None
+
                 # Quota reservation (estimate + reserve) prior to agent invocation
                 try:
+                    from ...domain.models import PipelineResult as _PipelineResult
+                    from ...domain.models import StepResult as _StepResult
                     from ...domain.models import UsageEstimate as _UsageEstimate
 
                     est_cost = 0.0
@@ -449,14 +453,66 @@ class AgentExecutionRunner:
                                 est_tokens = 0
 
                     _estimate = _UsageEstimate(cost_usd=est_cost, tokens=est_tokens)
+                    reserved_estimate = _estimate
                     current_quota = core._quota_manager.get_current_quota()
+                    remaining_before: tuple[float, int] | None = None
+                    if current_quota is not None:
+                        try:
+                            remaining_before = current_quota.get_remaining()
+                        except Exception:
+                            remaining_before = None
                     if current_quota is not None and not current_quota.reserve(_estimate):
                         from .usage_messages import format_reservation_denial as _fmt_denial
 
-                        denial = _fmt_denial(
-                            _estimate, limits if isinstance(limits, UsageLimits) else None
+                        limits_obj = limits if isinstance(limits, UsageLimits) else None
+                        denial = _fmt_denial(_estimate, limits_obj, remaining=remaining_before)
+
+                        try:
+                            step_name = getattr(step, "name", "<unnamed>")
+                        except Exception:
+                            step_name = "<unnamed>"
+
+                        branch_context = (
+                            attempt_context if "attempt_context" in locals() else context
                         )
-                        raise UsageLimitExceededError(denial.human)
+                        reported_cost = float(est_cost)
+                        reported_tokens = int(est_tokens)
+                        if limits_obj is not None and remaining_before is not None:
+                            rem_cost, rem_tokens = remaining_before
+                            if limits_obj.total_cost_usd_limit is not None:
+                                try:
+                                    limit_cost = float(limits_obj.total_cost_usd_limit)
+                                    spent_cost = max(0.0, limit_cost - float(rem_cost))
+                                    reported_cost = spent_cost + float(est_cost)
+                                except Exception:
+                                    pass
+                            if limits_obj.total_tokens_limit is not None:
+                                try:
+                                    limit_tokens = int(limits_obj.total_tokens_limit)
+                                    spent_tokens = max(0, limit_tokens - int(rem_tokens))
+                                    reported_tokens = spent_tokens + int(est_tokens)
+                                except Exception:
+                                    pass
+                        sr = _StepResult(
+                            name=step_name,
+                            success=False,
+                            output=None,
+                            attempts=0,
+                            latency_s=0.0,
+                            token_counts=int(est_tokens),
+                            cost_usd=float(est_cost),
+                            feedback=denial.human,
+                            branch_context=branch_context,
+                            metadata_={"exit_reason": "quota_reservation_denied"},
+                            step_history=[],
+                        )
+                        pr: _PipelineResult[BaseModel] = _PipelineResult(
+                            step_history=[sr],
+                            total_cost_usd=float(reported_cost),
+                            total_tokens=int(reported_tokens),
+                            final_pipeline_context=branch_context,
+                        )
+                        raise UsageLimitExceededError(denial.human, pr)
                 except UsageLimitExceededError:
                     raise
                 except Exception:
@@ -561,6 +617,7 @@ class AgentExecutionRunner:
                 # Measure usage immediately after agent run so plugin failures still record usage
                 try:
                     from . import step_policies as _step_policies
+                    from ...domain.models import UsageEstimate as _UsageEstimate
 
                     ptokens, ctokens, cost = _step_policies.extract_usage_metrics(
                         raw_output=processed_output,
@@ -571,6 +628,42 @@ class AgentExecutionRunner:
                     completion_tokens_latest = ctokens
                     result.token_counts = ptokens + ctokens
                     result.cost_usd = cost
+
+                    # Reconcile reserved estimate vs actual usage for quota enforcement.
+                    try:
+                        quota_mgr = getattr(core, "_quota_manager", None)
+                        reconcile_fn = getattr(quota_mgr, "reconcile", None)
+                        if callable(reconcile_fn) and reserved_estimate is not None:
+                            reconcile_fn(
+                                reserved_estimate,
+                                _UsageEstimate(
+                                    cost_usd=float(cost or 0.0),
+                                    tokens=int(result.token_counts or 0),
+                                ),
+                                limits=limits if isinstance(limits, UsageLimits) else None,
+                            )
+                    except UsageLimitExceededError as e:
+                        from ...domain.models import PipelineResult as _PipelineResult
+
+                        # Quota was exceeded during reconciliation, but the agent call itself completed
+                        # and produced usage metrics. Preserve the step as a successful execution for
+                        # step-history assertions (the pipeline fails due to governance, not a step error).
+                        try:
+                            result.success = True
+                        except Exception:
+                            pass
+
+                        branch_context = attempt_context if attempt_context is not None else context
+                        breach_pr: _PipelineResult[BaseModel] = _PipelineResult(
+                            step_history=[result],
+                            total_cost_usd=float(result.cost_usd or 0.0),
+                            total_tokens=int(result.token_counts or 0),
+                            final_pipeline_context=branch_context,
+                        )
+                        raise UsageLimitExceededError(str(e), breach_pr)
+                    except Exception:
+                        pass
+
                     primary_tokens_known = True
                     try:
                         tkn_total = int(result.token_counts or 0)

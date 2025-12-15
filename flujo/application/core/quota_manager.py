@@ -5,7 +5,8 @@ from __future__ import annotations
 import contextvars
 from typing import Optional, Tuple
 
-from ...domain.models import Quota, UsageEstimate, UsageLimits
+from ...domain.models import Quota, QuotaExceededError, UsageEstimate, UsageLimits
+from ...exceptions import UsageLimitExceededError
 
 
 def build_root_quota(limits: Optional[UsageLimits]) -> Optional[Quota]:
@@ -60,11 +61,33 @@ class QuotaManager:
             return True  # No quota = unlimited
         return quota.reserve(estimate)
 
-    def reconcile(self, estimate: UsageEstimate, actual: UsageEstimate) -> None:
+    def reconcile(
+        self,
+        estimate: UsageEstimate,
+        actual: UsageEstimate,
+        *,
+        limits: Optional[UsageLimits] = None,
+    ) -> None:
         """Reconcile estimated vs actual usage after execution."""
         quota = self.get_current_quota()
         if quota is not None:
-            quota.reclaim(estimate, actual)
+            try:
+                quota.reclaim(estimate, actual)
+            except QuotaExceededError as e:
+                try:
+                    from .usage_messages import format_reservation_denial
+
+                    effective_limits = limits if limits is not None else self._limits
+                    denial = format_reservation_denial(
+                        UsageEstimate(cost_usd=e.extra_cost_usd, tokens=e.extra_tokens),
+                        effective_limits,
+                        remaining=(e.remaining_cost_usd, e.remaining_tokens),
+                    )
+                    raise UsageLimitExceededError(denial.human) from None
+                except UsageLimitExceededError:
+                    raise
+                except Exception:
+                    raise UsageLimitExceededError("Insufficient quota") from None
 
     def split_for_parallel(self, n: int) -> list[Quota]:
         """Split current quota for parallel branches."""

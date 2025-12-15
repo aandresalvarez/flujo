@@ -113,20 +113,55 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         branch_names: List[str] = [bn for bn, _ in branch_items]
         branch_pipelines: List[object] = [bp for _, bp in branch_items]
         branch_quota_map: Dict[str, Optional[Quota]] = {bn: None for bn in branch_names}
+        current_quota: Optional[Quota] = None
         try:
-            current_quota = (
-                core._get_current_quota() if hasattr(core, "_get_current_quota") else None
-            )
+            if hasattr(core, "_get_current_quota"):
+                current_quota = core._get_current_quota()
         except Exception:
             current_quota = None
+        if current_quota is None:
+            try:
+                current_quota = getattr(frame, "quota", None)
+            except Exception:
+                current_quota = None
+        if current_quota is None and limits is not None:
+            try:
+                from ..quota_manager import build_root_quota
+
+                current_quota = build_root_quota(limits)
+            except Exception:
+                current_quota = None
+        split_parent_quota: Optional[Quota] = None
+        split_children: List[Quota] = []
         if current_quota is not None and len(branch_items) > 0:
             try:
                 sub_quotas = current_quota.split(len(branch_items))
                 for idx, bn in enumerate(branch_names):
                     branch_quota_map[bn] = sub_quotas[idx]
+                split_parent_quota = current_quota
+                split_children = list(sub_quotas)
             except Exception:
                 # Fallback: no split if quota not available
                 pass
+
+        def _refund_split_quota() -> None:
+            nonlocal split_parent_quota, split_children
+            if split_parent_quota is None or not split_children:
+                return
+            try:
+                from flujo.domain.models import UsageEstimate as _UsageEstimate
+
+                for q in list(split_children):
+                    try:
+                        rem_cost, rem_tokens = q.get_remaining()
+                        split_parent_quota.refund(
+                            _UsageEstimate(cost_usd=float(rem_cost), tokens=int(rem_tokens))
+                        )
+                    except Exception:
+                        continue
+            finally:
+                split_children = []
+
         # Tracking variables
         branch_results: Dict[str, StepResult] = {}
         branch_contexts: JSONObject = {}
@@ -207,7 +242,6 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                         ):
                             steps = list(getattr(branch_pipeline, "steps") or [])
                             if steps:
-                                # Expose the first step's agent for executors that expect it
                                 first_step = steps[0]
                                 if getattr(first_step, "agent", None) is not None:
                                     try:
@@ -216,6 +250,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                         pass
                     except Exception:
                         target = branch_pipeline
+
                     try:
                         branch_result = await step_executor(
                             target,
@@ -224,8 +259,6 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                             resources,
                         )
                     except AttributeError as exc:
-                        # Some custom executors expect a Step with an `agent` attribute;
-                        # retry with the first step from the pipeline when available.
                         if (
                             isinstance(target, Pipeline)
                             and getattr(target, "steps", None)
@@ -239,8 +272,31 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                     branch_context,
                                     resources,
                                 )
+                            else:
+                                raise
                         else:
                             raise
+
+                    # Quota reconciliation for custom executors: they may bypass normal agent
+                    # policies, so reconcile against the branch quota using observed usage.
+                    try:
+                        from flujo.domain.models import UsageEstimate as _UsageEstimate
+
+                        quota_mgr = getattr(core, "_quota_manager", None)
+                        reconcile_fn = getattr(quota_mgr, "reconcile", None)
+                        if callable(reconcile_fn):
+                            reconcile_fn(
+                                _UsageEstimate(cost_usd=0.0, tokens=0),
+                                _UsageEstimate(
+                                    cost_usd=float(getattr(branch_result, "cost_usd", 0.0) or 0.0),
+                                    tokens=int(getattr(branch_result, "token_counts", 0) or 0),
+                                ),
+                                limits=limits if isinstance(limits, UsageLimits) else None,
+                            )
+                    except UsageLimitExceededError:
+                        raise
+                    except Exception:
+                        pass
                 else:
                     # Delegate depending on type: Pipeline vs Step
                     if isinstance(branch_pipeline, Pipeline):
@@ -485,46 +541,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     f"branch '{branch_name_local}' failed: {branch_result.feedback}"
                 )
 
-        # Optional guard: run the first branch eagerly when limits are present to detect
-        # over-budget scenarios before spinning up all branches (reduces wall time when one
-        # branch obviously breaches limits, e.g., in proactive cancellation tests).
         start_index = 0
-        if limits is not None and branch_names:
-            guard_branch = branch_names[0]
-            guard_result = await execute_branch(
-                guard_branch,
-                branch_pipelines[0],
-                branch_contexts[guard_branch],
-                branch_quota_map.get(guard_branch),
-            )
-            await _handle_branch_result(guard_result, start_index)
-            start_index = 1
-            # Check limits immediately after the guard branch without launching others
-            try:
-                from flujo.utils.formatting import format_cost as _fmt
-
-                breached_cost = getattr(
-                    limits, "total_cost_usd_limit", None
-                ) is not None and total_cost > float(limits.total_cost_usd_limit)
-                breached_tokens = getattr(
-                    limits, "total_tokens_limit", None
-                ) is not None and total_tokens > int(limits.total_tokens_limit)
-                if breached_cost or breached_tokens:
-                    pipeline_result: PipelineResult[object] = PipelineResult(
-                        step_history=list(branch_results.values()),
-                        total_cost_usd=total_cost,
-                        total_tokens=total_tokens,
-                        final_pipeline_context=context,
-                    )
-                    if breached_cost:
-                        msg = f"Cost limit of ${_fmt(float(limits.total_cost_usd_limit))} exceeded"
-                    else:
-                        msg = f"Token limit of {int(limits.total_tokens_limit)} exceeded"
-                    raise UsageLimitExceededError(msg, pipeline_result)
-            except UsageLimitExceededError:
-                raise
-            except Exception:
-                pass
 
         # Execute remaining branches concurrently using the shared quota, and proactively cancel on breach
         pending: set[asyncio.Task] = set()
@@ -566,6 +583,29 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                         usage_limit_error_msg = str(ex)
                     except Exception:
                         usage_limit_error_msg = None
+                    # Capture the failing branch's StepResult for aggregation when available.
+                    try:
+                        existing = getattr(ex, "result", None)
+                        sr = None
+                        if (
+                            existing is not None
+                            and hasattr(existing, "step_history")
+                            and existing.step_history
+                        ):
+                            sr = existing.step_history[-1]
+                        if isinstance(sr, StepResult):
+                            branch_key = branch_hint or getattr(sr, "name", "unknown")
+                            branch_results[str(branch_key)] = sr
+                            if sr.success:
+                                total_cost += float(getattr(sr, "cost_usd", 0.0) or 0.0)
+                                total_tokens += int(getattr(sr, "token_counts", 0) or 0)
+                            else:
+                                all_successful = False
+                                failure_messages.append(
+                                    f"branch '{branch_key}' failed: {sr.feedback}"
+                                )
+                    except Exception:
+                        pass
                     continue
                 except Exception:
                     # On ANY other exception from a branch, cancel all remaining branches immediately
@@ -584,6 +624,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                     )
                     except Exception:
                         pass
+                    _refund_split_quota()
                     raise
                 await _handle_branch_result(res, completed_count)
                 completed_count += 1
@@ -595,6 +636,30 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     if pending:
                         results = await asyncio.gather(*pending, return_exceptions=True)
                         for r in results:
+                            if isinstance(r, UsageLimitExceededError):
+                                try:
+                                    existing = getattr(r, "result", None)
+                                    sr = None
+                                    if (
+                                        existing is not None
+                                        and hasattr(existing, "step_history")
+                                        and existing.step_history
+                                    ):
+                                        sr = existing.step_history[-1]
+                                    if isinstance(sr, StepResult):
+                                        branch_key = getattr(sr, "name", "unknown")
+                                        branch_results[str(branch_key)] = sr
+                                        if sr.success:
+                                            total_cost += float(getattr(sr, "cost_usd", 0.0) or 0.0)
+                                            total_tokens += int(getattr(sr, "token_counts", 0) or 0)
+                                        else:
+                                            all_successful = False
+                                            failure_messages.append(
+                                                f"branch '{branch_key}' failed: {sr.feedback}"
+                                            )
+                                except Exception:
+                                    pass
+                                continue
                             if isinstance(r, Exception) and not isinstance(
                                 r, asyncio.CancelledError
                             ):
@@ -608,6 +673,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     telemetry.logfire.info(
                         f"Parallel branch '{pause_branch}' paused: {pause_message}"
                     )
+                _refund_split_quota()
                 return Paused(message=pause_message or "Paused")
 
             if abort_signal is not None:
@@ -630,11 +696,57 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     telemetry.logfire.info(
                         f"Parallel branch '{abort_branch}' triggered abort: {abort_signal}"
                     )
+                _refund_split_quota()
                 raise abort_signal
 
             # If a usage limit breach occurred in any completed branch, cancel the rest and
             # raise an error that includes the aggregated step history so far.
             if usage_limit_error is not None:
+                # Give near-complete sibling tasks a brief grace window to finish so we can
+                # aggregate their StepResults (improves determinism in CI and avoids missing
+                # already-produced usage).
+                try:
+                    if pending:
+                        more_done, pending = await asyncio.wait(pending, timeout=0.05)
+                        for d in more_done:
+                            branch_hint = task_to_branch.get(d)
+                            try:
+                                res = d.result()
+                                await _handle_branch_result(res, completed_count)
+                                completed_count += 1
+                            except UsageLimitExceededError as ex:
+                                usage_limit_error = usage_limit_error or ex
+                                try:
+                                    usage_limit_error_msg = usage_limit_error_msg or str(ex)
+                                except Exception:
+                                    pass
+                                try:
+                                    existing = getattr(ex, "result", None)
+                                    sr = None
+                                    if (
+                                        existing is not None
+                                        and hasattr(existing, "step_history")
+                                        and existing.step_history
+                                    ):
+                                        sr = existing.step_history[-1]
+                                    if isinstance(sr, StepResult):
+                                        branch_key = branch_hint or getattr(sr, "name", "unknown")
+                                        branch_results[str(branch_key)] = sr
+                                        if sr.success:
+                                            total_cost += float(getattr(sr, "cost_usd", 0.0) or 0.0)
+                                            total_tokens += int(getattr(sr, "token_counts", 0) or 0)
+                                        else:
+                                            all_successful = False
+                                            failure_messages.append(
+                                                f"branch '{branch_key}' failed: {sr.feedback}"
+                                            )
+                                except Exception:
+                                    pass
+                            except Exception:
+                                # Ignore other branch errors here; cancellation will handle them.
+                                continue
+                except Exception:
+                    pass
                 for p in pending:
                     p.cancel()
                 try:
@@ -650,7 +762,8 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                 )
                 except Exception:
                     pass
-                # Build a PipelineResult with any branch results we have so far
+
+                msg = usage_limit_error_msg or "Usage limit exceeded"
                 try:
                     pr: PipelineResult[object] = PipelineResult(
                         step_history=list(branch_results.values()),
@@ -660,88 +773,8 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     )
                 except Exception:
                     pr = PipelineResult[object](step_history=[], total_cost_usd=0.0, total_tokens=0)
-                msg = usage_limit_error_msg or "Usage limit exceeded"
+                _refund_split_quota()
                 raise UsageLimitExceededError(msg, pr)
-
-            # Proactive limit check after each branch completes (dedented: always evaluated)
-            if limits is not None:
-                try:
-                    from flujo.utils.formatting import format_cost as _fmt
-
-                    breached_cost = getattr(
-                        limits, "total_cost_usd_limit", None
-                    ) is not None and total_cost > float(limits.total_cost_usd_limit)
-                    breached_tokens = getattr(
-                        limits, "total_tokens_limit", None
-                    ) is not None and total_tokens > int(limits.total_tokens_limit)
-                    if breached_cost or breached_tokens:
-                        # Cancel remaining tasks promptly
-                        for p in pending:
-                            p.cancel()
-                        if pending:
-                            try:
-                                results = await asyncio.gather(*pending, return_exceptions=True)
-                                for r in results:
-                                    if isinstance(r, Exception) and not isinstance(
-                                        r, asyncio.CancelledError
-                                    ):
-                                        telemetry.logfire.error(
-                                            "Parallel branch task error during cancellation",
-                                            extra={"error": str(r)},
-                                        )
-                            except Exception:
-                                pass
-                        pipeline_result: PipelineResult[object] = PipelineResult(
-                            step_history=list(branch_results.values()),
-                            total_cost_usd=total_cost,
-                            total_tokens=total_tokens,
-                            final_pipeline_context=context,
-                        )
-                        if breached_cost:
-                            msg = f"Cost limit of ${_fmt(float(limits.total_cost_usd_limit))} exceeded"
-                        else:
-                            msg = f"Token limit of {int(limits.total_tokens_limit)} exceeded"
-                        raise UsageLimitExceededError(msg, pipeline_result)
-                except UsageLimitExceededError:
-                    raise
-                except Exception:
-                    # Do not disrupt normal execution on unexpected check errors
-                    pass
-        # FSD-009: Enforce limits deterministically at aggregation time (pure quota mode)
-        if limits is not None:
-            try:
-                from flujo.utils.formatting import format_cost as _fmt
-
-                if getattr(limits, "total_cost_usd_limit", None) is not None and total_cost > float(
-                    limits.total_cost_usd_limit
-                ):
-                    pipeline_result = PipelineResult(
-                        step_history=list(branch_results.values()),
-                        total_cost_usd=total_cost,
-                        total_tokens=total_tokens,
-                        final_pipeline_context=context,
-                    )
-                    raise UsageLimitExceededError(
-                        f"Cost limit of ${_fmt(float(limits.total_cost_usd_limit))} exceeded",
-                        pipeline_result,
-                    )
-                if getattr(limits, "total_tokens_limit", None) is not None and total_tokens > int(
-                    limits.total_tokens_limit
-                ):
-                    pipeline_result = PipelineResult(
-                        step_history=list(branch_results.values()),
-                        total_cost_usd=total_cost,
-                        total_tokens=total_tokens,
-                        final_pipeline_context=context,
-                    )
-                    raise UsageLimitExceededError(
-                        f"Token limit of {int(limits.total_tokens_limit)} exceeded",
-                        pipeline_result,
-                    )
-            except UsageLimitExceededError:
-                raise
-            except Exception:
-                pass
         # Overall success
         if parallel_step.on_branch_failure == BranchFailureStrategy.PROPAGATE:
             result.success = all_successful
@@ -1087,6 +1120,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                         summary += f" ({successful_branches_count} succeeded)"
                     detailed_feedback = "; ".join(failure_messages)
                     result.feedback = f"{summary}. Failures: {detailed_feedback}"
+        _refund_split_quota()
         return to_outcome(result)
 
 

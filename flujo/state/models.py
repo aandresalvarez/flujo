@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, List, Literal
 
 from flujo.type_definitions.common import JSONObject
@@ -21,8 +21,8 @@ class WorkflowState(BaseModel):
     last_step_output: Any | None = None
     step_history: List[JSONObject] = Field(default_factory=list)  # Serialized StepResult objects
     status: Literal["running", "paused", "completed", "failed", "cancelled"]
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     error_message: str | None = None
     metadata: JSONObject = Field(default_factory=dict)
     is_background_task: bool = False

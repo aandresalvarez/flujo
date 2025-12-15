@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import asyncio
-import gc
 import importlib.metadata as importlib_metadata
 import json
 import os
-import sys
 from typing import Any, List, Literal, Optional, Type, overload, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -20,6 +17,7 @@ from typer import Exit
 
 from flujo.domain.models import PipelineContext
 from flujo.infra import telemetry as _telemetry
+from flujo.utils.async_bridge import run_sync
 from pydantic import BaseModel as _BM
 import dataclasses as _dc
 
@@ -178,7 +176,6 @@ def execute_pipeline_with_output_handling(
     json_output: bool,
 ) -> "PipelineResult[PipelineContext] | str":
     """Execute the pipeline and handle output formatting."""
-    import asyncio as _asyncio
     import io as _io
     import sys as _sys
 
@@ -221,118 +218,10 @@ def execute_pipeline_with_output_handling(
         return runner.run(input_data)
 
     if _disable_span:
-        try:
-            result = _run_pipeline()
-            return result
-        finally:
-            try:
-                gc.collect()
-            except Exception:
-                pass
+        return _run_pipeline()
     else:
         with _telemetry.logfire.span("pipeline_run"):
-            try:
-                result = _run_pipeline()
-                return result
-            finally:
-                try:
-                    gc.collect()
-                except Exception:
-                    pass
-
-                try:
-                    import ctypes
-
-                    if sys.platform.startswith("linux"):
-                        try:
-                            libc = ctypes.CDLL("libc.so.6")
-                            libc.malloc_trim(0)
-                        except Exception:
-                            pass
-                    elif sys.platform == "darwin":
-                        try:
-                            libsys = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
-                            libsys.malloc_default_zone.restype = ctypes.c_void_p
-                            zone = libsys.malloc_default_zone()
-                            libsys.malloc_zone_pressure_relief.argtypes = [
-                                ctypes.c_void_p,
-                                ctypes.c_size_t,
-                            ]
-                            libsys.malloc_zone_pressure_relief.restype = ctypes.c_size_t
-                            libsys.malloc_zone_pressure_relief(
-                                ctypes.c_void_p(zone), ctypes.c_size_t(0)
-                            )
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-
-                try:
-                    loop = _asyncio.get_running_loop()
-                    for task in _asyncio.all_tasks(loop):
-                        if not task.done():
-                            task.cancel()
-                except RuntimeError:
-                    pass
-
-                try:
-                    import httpx
-
-                    if hasattr(httpx, "_default_limits"):
-                        httpx._default_limits = None
-                except Exception:
-                    pass
-
-                try:
-                    pass
-                except Exception:
-                    pass
-
-                try:
-                    sb = getattr(runner, "state_backend", None)
-                    if sb is not None and hasattr(sb, "shutdown"):
-
-                        async def _do_shutdown() -> None:
-                            try:
-                                await sb.shutdown()
-                            except Exception:
-                                pass
-
-                        try:
-                            _asyncio.run(_do_shutdown())
-                        except RuntimeError:
-                            try:
-                                loop = _asyncio.get_running_loop()
-                                t = loop.create_task(_do_shutdown())
-                                loop.run_until_complete(t)
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-
-                try:
-                    from flujo.infra.skill_registry import get_skill_registry_provider
-
-                    reg = get_skill_registry_provider().get_registry()
-                    entries = getattr(reg, "_entries", None)
-                    if isinstance(entries, dict):
-                        preserved: dict[str, Any] = {
-                            k: v
-                            for k, v in list(entries.items())
-                            if isinstance(k, str)
-                            and (
-                                k.startswith("flujo.builtins.") or k.startswith("flujo.architect.")
-                            )
-                        }
-                        entries.clear()
-                        entries.update(preserved)
-                except Exception:
-                    pass
-
-                try:
-                    gc.collect()
-                except Exception:
-                    pass
+            return _run_pipeline()
 
 
 def display_pipeline_results(
@@ -734,7 +623,7 @@ def execute_improve(
             agent = _Dummy()
         with open("output/trace_improve.txt", "a") as f:
             f.write("stage:run_eval\n")
-        report = asyncio.run(
+        report = run_sync(
             evaluate_and_improve(task_fn, dataset, agent, pipeline_definition=pipeline)
         )
 

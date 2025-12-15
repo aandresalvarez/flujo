@@ -306,6 +306,28 @@ class UsageEstimate(BaseModel):
     tokens: int = 0
 
 
+class QuotaExceededError(Exception):
+    """Raised when quota reconciliation cannot cover actual usage.
+
+    This is an internal signal used by the quota system. Application code should translate
+    it to a user-facing `UsageLimitExceededError` with a stable legacy message.
+    """
+
+    def __init__(
+        self,
+        *,
+        remaining_cost_usd: float,
+        remaining_tokens: int,
+        extra_cost_usd: float,
+        extra_tokens: int,
+    ) -> None:
+        self.remaining_cost_usd = float(remaining_cost_usd)
+        self.remaining_tokens = int(remaining_tokens)
+        self.extra_cost_usd = float(extra_cost_usd)
+        self.extra_tokens = int(extra_tokens)
+        super().__init__("Insufficient quota")
+
+
 class Quota:
     """Thread-safe, mutable quota that enforces pre-execution reservations.
 
@@ -326,6 +348,15 @@ class Quota:
     def get_remaining(self) -> Tuple[float, int]:
         with self._lock:
             return self._remaining_cost_usd, self._remaining_tokens
+
+    def refund(self, amount: UsageEstimate) -> None:
+        """Refund capacity back into this quota."""
+        add_cost = max(0.0, float(getattr(amount, "cost_usd", 0.0) or 0.0))
+        add_tokens = max(0, int(getattr(amount, "tokens", 0) or 0))
+        with self._lock:
+            if self._remaining_cost_usd != float("inf"):
+                self._remaining_cost_usd += add_cost
+            self._remaining_tokens += add_tokens
 
     def has_sufficient_quota(self, estimate: UsageEstimate) -> bool:
         with self._lock:
@@ -359,15 +390,19 @@ class Quota:
 
         - If actual < estimate, refund the difference.
         - If actual > estimate, attempt to deduct the overage if available. If
-          not available, no exception is raised here; the safety guarantee comes
-          from reserving conservatively up-front. Future improvements may surface
-          this discrepancy for telemetry.
+          not available, raise UsageLimitExceededError. This keeps enforcement
+          within the quota system for callers that only know actual usage after
+          execution (e.g., custom step executors in tests).
         """
         est_cost = max(0.0, float(estimate.cost_usd))
         act_cost = max(0.0, float(actual.cost_usd))
         est_tok = max(0, int(estimate.tokens))
         act_tok = max(0, int(actual.tokens))
+        remaining_before: tuple[float, int]
+        extra_cost_usd = 0.0
+        extra_tokens = 0
         with self._lock:
+            remaining_before = (self._remaining_cost_usd, self._remaining_tokens)
             # Refund cost difference
             if self._remaining_cost_usd != float("inf"):
                 delta_cost = est_cost - act_cost
@@ -380,6 +415,7 @@ class Quota:
                     else:
                         # Exhaust remaining; overage not fully covered
                         self._remaining_cost_usd = 0.0
+                        extra_cost_usd = float(extra_needed)
             # Adjust tokens
             delta_tok = est_tok - act_tok
             if delta_tok > 0:
@@ -390,38 +426,45 @@ class Quota:
                     self._remaining_tokens -= extra_tok
                 else:
                     self._remaining_tokens = 0
+                    extra_tokens = int(extra_tok)
+
+        if extra_cost_usd > 0.0 or extra_tokens > 0:
+            raise QuotaExceededError(
+                remaining_cost_usd=float(remaining_before[0]),
+                remaining_tokens=int(remaining_before[1]),
+                extra_cost_usd=float(extra_cost_usd),
+                extra_tokens=int(extra_tokens),
+            )
 
     def split(self, n: int) -> List["Quota"]:
-        """Deterministically split this quota into n sub-quotas and zero this one.
+        """Split this quota into n deterministic child quotas.
 
-        The split uses even division with remainder distributed to lower-indexed
-        quotas for tokens and proportionally for cost to ensure the sum matches
-        the original within floating point tolerance.
+        The parent quota is zeroed out and its remaining capacity is partitioned into
+        child quotas. This is used by parallel execution to avoid race conditions
+        where one branch can consume budget intended for others.
         """
         if n <= 0:
             raise ValueError("split requires n > 0")
         with self._lock:
-            total_cost = self._remaining_cost_usd
-            total_tokens = self._remaining_tokens
-            # Prepare even splits
-            base_tokens = total_tokens // n
-            token_remainder = total_tokens % n
-            # For cost, allow infinity to propagate: if inf, each child gets inf
-            if total_cost == float("inf"):
-                cost_shares = [float("inf")] * n
-            else:
-                base_cost = total_cost / float(n)
-                cost_shares = [base_cost for _ in range(n)]
-            # Build sub-quotas
-            sub_quotas: List[Quota] = []
-            for i in range(n):
-                share_tokens = base_tokens + (1 if i < token_remainder else 0)
-                share_cost = cost_shares[i]
-                sub_quotas.append(Quota(share_cost, share_tokens))
-            # Zero out parent
-            self._remaining_cost_usd = 0.0 if total_cost != float("inf") else 0.0
+            parent_cost = float(self._remaining_cost_usd)
+            parent_tokens = int(self._remaining_tokens)
+            # Zero parent tokens (always finite)
             self._remaining_tokens = 0
-            return sub_quotas
+
+            # Split tokens evenly, distributing remainder to lower indices.
+            base_tokens = parent_tokens // n
+            remainder_tokens = parent_tokens % n
+            token_parts = [base_tokens + (1 if i < remainder_tokens else 0) for i in range(n)]
+
+            # Split cost evenly when finite; preserve infinity when unlimited.
+            if parent_cost == float("inf"):
+                cost_parts = [float("inf") for _ in range(n)]
+            else:
+                self._remaining_cost_usd = 0.0
+                per_cost = parent_cost / float(n)
+                cost_parts = [per_cost for _ in range(n)]
+
+        return [Quota(cost_parts[i], token_parts[i]) for i in range(n)]
 
 
 class SuggestionType(str, Enum):

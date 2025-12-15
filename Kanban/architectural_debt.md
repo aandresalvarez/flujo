@@ -31,6 +31,12 @@ These were historically painful; they are now implemented and should be preserve
 - **Async generator lifecycle leaks under xdist**: fast suite no longer emits
   `RuntimeWarning: coroutine method 'aclose' ... was never awaited` by ensuring runner/session/manager
   iterators are deterministically closed and by auto-closing iterators on terminal yields.
+- **Quota is the only usage enforcement surface**: removed reactive post-exec limit checks in core
+  execution + step policies; quota reservation denials now surface a stable legacy message
+  (e.g. `Cost limit of $0.1 exceeded`) and include a `PipelineResult` for assertions/inspection.
+- **CLI resource ownership**: `flujo run` closes the runner + state backend explicitly and no longer
+  relies on broad GC/task/thread cleanup; skill registry is reset between in-process CLI runs for
+  test isolation.
 - **Nested HITL hard gate** via `_check_hitl_nesting_safety` raising `ConfigurationError`
   (`flujo/application/core/policy_primitives.py`).
 - **Strict pricing exception propagation** (`PricingNotConfiguredError`) explicitly re-raised through
@@ -39,68 +45,23 @@ These were historically painful; they are now implemented and should be preserve
   (`flujo/application/core/executor_core.py`).
 - **Scratchpad is removed**: `PipelineContext` rejects legacy `scratchpad` inputs and has typed fields
   (`flujo/domain/models.py`).
-- **SQLite sync bridge** uses `anyio` `BlockingPortal` (no ad-hoc loop/thread spawning)
-  (`flujo/state/backends/sqlite_core.py`).
+- **Unified async↔sync contract**: sync entrypoints bridge via `flujo/utils/async_bridge.py`
+  (`run_sync` uses `asyncio.run()` only when no loop is running and otherwise raises with guidance).
 - **Pydantic serializer warnings during context updates**: context injection now coerces dict payloads
   into model-typed fields (including PEP604 unions) so `model_dump()` is warning-free.
 
 ## P0 — Correctness & Stability
 
-### P0.2 Unclear async↔sync contract (multiple bridges, inconsistent semantics)
+### P0.2 Unclear async↔sync contract (multiple bridges, inconsistent semantics) — Solved
 
-**Symptoms**
-- Different sync entrypoints behave differently depending on whether an event loop exists.
-- Some code forbids sync calls inside a running loop, while other parts spawn threads/portals.
-
-**Why it matters**
-- This is a classic cause of deadlocks, blocked event loops, and shutdown weirdness in real apps.
-
-**What exists today (inconsistent)**
-- `Flujo.run()` rejects being called inside a running loop and uses `asyncio.run()`
-  (`flujo/application/runner_methods.py`).
-- SQLite backend runs coroutines from sync via a shared `anyio` portal
-  (`flujo/state/backends/sqlite_core.py`).
-- A generic helper runs coroutines by spawning a daemon thread
-  (`flujo/utils/async_bridge.py`).
-- CLI flows sometimes “escape hatch” with `asyncio.to_thread()` plus broad teardown
-  (`flujo/cli/architect_command.py`).
-
-**Action plan**
-1. Decide one supported contract and enforce it:
-   - Option A (recommended for simplicity): “Sync entrypoints are only valid when no loop is running.”
-     Remove thread-bridge helpers and ensure callers use async APIs in async environments.
-   - Option B: “Sync entrypoints are safe inside a running loop.”
-     Standardize on `anyio` portal and remove ad-hoc thread spawning.
-2. Consolidate to *one* bridge module; delete the others.
-3. Add regression tests:
-   - calling sync APIs inside a loop behaves as documented,
-   - no threads/portals are leaked after runs.
-
-**Done when**
-- There is exactly one supported sync↔async strategy, documented, and tested.
+Moved to “Previously debt, now solved” above. Keep sync→async bridging centralized (avoid direct
+`asyncio.run()` in library/CLI surfaces).
 
 ## P1 — Architecture & Maintainability
 
-### P1.1 Dual usage enforcement surfaces (legacy meters vs quota)
+### P1.1 Dual usage enforcement surfaces (legacy meters vs quota) — Solved
 
-**Symptoms**
-- Some “usage limit” checks are compatibility no-ops while quota enforcement happens elsewhere.
-- Tests or policies can accidentally time/validate the wrong surface (micro-timing flake patterns).
-
-**Why it matters**
-- Developers can reintroduce reactive checks or think limits are enforced when they aren’t.
-
-**Action plan**
-1. Treat quota as the only enforcement mechanism in core execution.
-2. Make `UsageLimits` → quota conversion occur in one boundary layer and document it.
-3. Add architecture tests that fail on:
-   - new reactive limit checks,
-   - new “governor/breach” style plumbing.
-
-**Done when**
-- Enforcement is unambiguous: quota is required, legacy surfaces are clearly compatibility-only.
-
----
+Moved to “Previously debt, now solved” above. Do not reintroduce reactive checks.
 
 ### P1.2 Serialization is fragmented (persistence vs helpers)
 
@@ -110,44 +71,27 @@ These were historically painful; they are now implemented and should be preserve
 
 ---
 
-### P1.3 CLI “global cleanup” is compensating for unclear ownership
+### P1.3 CLI “global cleanup” is compensating for unclear ownership — Solved
 
-**Symptoms**
-- CLI code uses broad cleanup (GC, task cancellation, thread joins) to avoid hangs.
-
-**Why it matters**
-- It masks real leaks and makes behavior timing-dependent.
-
-**Where to look**
-- `flujo/cli/architect_command.py` teardown sections.
-
-**Action plan**
-1. Identify owned resources (runner/state backend/http clients/portals) and close them explicitly.
-2. Remove global cleanup once explicit closure exists.
-3. Add a CLI regression test that asserts clean shutdown without broad cleanup.
-
-**Done when**
-- CLI commands exit cleanly without enumerating threads/canceling “all tasks” as a safety net.
+Moved to “Previously debt, now solved” above. Do not reintroduce broad “global cleanup” in CLI flows.
 
 ## P2 — Hygiene & DX
 
-### P2.1 Python 3.13 timezone hygiene (`datetime.utcnow()` deprecations)
+### P2.1 Python 3.13 timezone hygiene (`datetime.utcnow()` deprecations) — Solved
 
 **Symptoms**
 - Deprecation warnings from `datetime.utcnow()` in tests and fixtures.
 
-**Action plan**
-- Migrate to `datetime.now(datetime.UTC)` and keep timestamps timezone-aware end-to-end.
+**Current status**
+- No `utcnow()` usage remains; timestamps use `datetime.now(datetime.UTC)` and are timezone-aware.
 
 ---
 
-### P2.2 CI micro-timing brittleness (flake detector failures)
+### P2.2 CI micro-timing brittleness (flake detector failures) — Solved
 
 **Symptoms**
 - Ratio assertions on sub-millisecond operations fail intermittently under xdist / noisy schedulers.
 
-**Action plan**
-- Prefer batched measurements and per-op timing; keep assertions regression-oriented.
-
-**Done when**
-- Timing tests are robust under xdist and different random seeds.
+**Current status**
+- The core micro-timing test uses batched measurements and P95/median ratios (not max/avg), reducing
+  scheduler-outlier flakiness under xdist/randomized order.

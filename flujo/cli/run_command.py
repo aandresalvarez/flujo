@@ -12,7 +12,7 @@ from pathlib import Path
 from flujo.exceptions import UsageLimitExceededError
 from flujo.infra import telemetry
 import flujo.builtins as _flujo_builtins  # noqa: F401 - register builtins
-from flujo.type_definitions.common import JSONObject
+from flujo.utils.async_bridge import run_sync
 from .helpers import (
     setup_run_command_environment,
     load_pipeline_from_yaml_file,
@@ -148,6 +148,7 @@ def run(
     """
     # Ensure we always have a symbol in scope for cleanup
     runner: Any | None = None
+    state_backend: Any | None = None
     try:
         # Apply CLI defaults from configuration file
         cli_args = apply_cli_defaults(
@@ -298,13 +299,12 @@ state_uri = "sqlite:///flujo_ops.db"
         # Load the project-aware state backend from configuration so `flujo run`
         # honors flujo.toml/FLUJO_STATE_URI (e.g., default memory:// from `flujo init`).
         # Falls back to None on errors which lets Runner choose safe defaults.
-        _state_backend = None
         try:
             from .config import load_backend_from_config as _load_backend_from_config
 
-            _state_backend = _load_backend_from_config()
+            state_backend = _load_backend_from_config()
         except Exception:
-            _state_backend = None
+            state_backend = None
 
         # Zero-config UX: if no flujo.toml was found, warn clearly and optionally offer init.
         try:
@@ -356,8 +356,7 @@ state_uri = "sqlite:///flujo_ops.db"
                         not _uri
                         or str(_uri).strip().lower()
                         in {"memory", "memory://", "mem://", "inmemory://"}
-                        or getattr(_state_backend, "__class__", object).__name__
-                        == "InMemoryBackend"
+                        or getattr(state_backend, "__class__", object).__name__ == "InMemoryBackend"
                     )
                     if has_hitl and _ephemeral:
                         _secho(
@@ -454,7 +453,7 @@ state_uri = "sqlite:///flujo_ops.db"
             pipeline=pipeline_obj,
             context_model_class=context_model_class,
             initial_context_data=initial_context_data,
-            state_backend=_state_backend,
+            state_backend=state_backend,
             debug=debug,
             live=live,
         )
@@ -585,7 +584,6 @@ state_uri = "sqlite:///flujo_ops.db"
         if not json_output:
             try:
                 import sys as _sys
-                import asyncio as _asyncio
 
                 def _is_paused(_res: Any) -> tuple[bool, str | None]:
                     try:
@@ -601,7 +599,7 @@ state_uri = "sqlite:///flujo_ops.db"
                     prompt_msg = msg or "Provide input to resume:"
                     human = typer.prompt(prompt_msg)
                     # Resume via runner
-                    result = _asyncio.run(runner.resume_async(result, human))
+                    result = run_sync(runner.resume_async(result, human))
                     paused, msg = _is_paused(result)
             except Exception:
                 # If resume fails, fall through to normal display (will show paused message)
@@ -741,12 +739,12 @@ state_uri = "sqlite:///flujo_ops.db"
         if (debug_export or debug) and not debug_export_path:
             try:
                 from pathlib import Path as _Path
-                from datetime import datetime as _dt
+                from datetime import datetime as _dt, UTC as _UTC
 
                 root = find_project_root()
                 base_dir = _Path(root) if root else _Path.cwd()
                 debug_dir = base_dir / "debug"
-                ts = _dt.utcnow().strftime("%Y%m%d_%H%M%S")
+                ts = _dt.now(_UTC).strftime("%Y%m%d_%H%M%S")
                 rid = run_id or "run"
                 safe_rid = "".join(ch if ch.isalnum() else "-" for ch in str(rid))[:24]
                 export_path = str((debug_dir / f"{ts}_{safe_rid}.json").resolve())
@@ -759,7 +757,7 @@ state_uri = "sqlite:///flujo_ops.db"
         if export_path:
             try:
                 from pathlib import Path as _Path
-                from datetime import datetime as _dt
+                from datetime import datetime as _dt, UTC as _UTC
                 import os as _os
                 from pydantic import BaseModel as _BM
                 import dataclasses as _dc
@@ -860,8 +858,9 @@ state_uri = "sqlite:///flujo_ops.db"
                     return base if isinstance(base, dict) else {"context": base}
 
                 # Final payload
+                exported_at = _dt.now(_UTC).isoformat().replace("+00:00", "Z")
                 payload = {
-                    "exported_at": _dt.utcnow().isoformat() + "Z",
+                    "exported_at": exported_at,
                     "pipeline_name": pipeline_name,
                     "run_id": run_id,
                     "env": {
@@ -1010,109 +1009,31 @@ state_uri = "sqlite:///flujo_ops.db"
 
         raise typer.Exit(EX_RUNTIME_ERROR)
     finally:
-        # Best-effort cleanup to prevent post-run hangs
         try:
-            import asyncio as _asyncio
-            import gc as _gc
-            import threading as _threading
-
-            # Force GC to clear orphaned async objects
-            try:
-                _gc.collect()
-            except Exception:
-                pass
-
-            # Cancel any remaining asyncio tasks (if a loop exists in this context)
-            try:
-                loop = _asyncio.get_running_loop()
-                for task in list(_asyncio.all_tasks(loop)):
-                    if not task.done():
-                        task.cancel()
-            except RuntimeError:
-                # No running loop in this context
-                pass
-            except Exception:
-                pass
-
-            # Join any lingering non-main threads briefly
-            try:
-                for t in [
-                    th
-                    for th in _threading.enumerate()
-                    if th is not _threading.main_thread() and th.is_alive()
-                ]:
-                    try:
-                        t.join(timeout=0.2)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            # Try to gracefully shutdown the state backend if exposed on the runner
-            try:
-                sb = getattr(runner, "state_backend", None)
-                if sb is not None and hasattr(sb, "shutdown"):
-
-                    async def _do_shutdown() -> None:
-                        try:
-                            await sb.shutdown()
-                        except Exception:
-                            pass
-
-                    try:
-                        _asyncio.run(_do_shutdown())
-                    except RuntimeError:
-                        # Running loop: schedule and wait best-effort
-                        try:
-                            loop = _asyncio.get_running_loop()
-                            loop.create_task(_do_shutdown())
-                            # Best-effort - do not block indefinitely
-                            # If we cannot await, ignore silently
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-
-            # Additional library-specific cleanups (idempotent)
-            try:
-                import httpx as _httpx
-
-                if hasattr(_httpx, "_default_limits"):
-                    _httpx._default_limits = None
-            except Exception:
-                pass
-
-            # Ensure any pooled SQLite connections are closed (extra safety)
-            try:
-                from flujo.state.backends.sqlite import SQLiteBackend as _SQLiteBackend
-
-                _SQLiteBackend.shutdown_all()
-            except Exception:
-                pass
-
-            # Clear dynamic skill registry entries (preserve built-ins)
-            try:
-                from flujo.infra.skill_registry import get_skill_registry as _get_reg
-
-                reg = _get_reg()
-                entries = getattr(reg, "_entries", None)
-                if isinstance(entries, dict):
-                    preserved: JSONObject = {
-                        k: v
-                        for k, v in list(entries.items())
-                        if isinstance(k, str)
-                        and (k.startswith("flujo.builtins.") or k.startswith("flujo.architect."))
-                    }
-                    entries.clear()
-                    entries.update(preserved)
-            except Exception:
-                pass
-
-            # Final GC sweep
-            try:
-                _gc.collect()
-            except Exception:
-                pass
+            if runner is not None:
+                close_fn = getattr(runner, "close", None)
+                if callable(close_fn):
+                    close_fn()
         except Exception:
-            # Never fail the command on cleanup
+            pass
+
+        try:
+            if state_backend is not None:
+                close_sync_fn = getattr(state_backend, "close_sync", None)
+                if callable(close_sync_fn):
+                    close_sync_fn()
+                else:
+                    close_async_fn = getattr(state_backend, "close", None)
+                    if callable(close_async_fn):
+                        run_sync(close_async_fn())
+        except Exception:
+            pass
+
+        # Tests may invoke multiple CLI commands in the same process; reset the global skill registry
+        # provider between runs to prevent cross-test pollution from dynamically loaded workflows.
+        try:
+            from flujo.infra.skill_registry import reset_skill_registry_provider
+
+            reset_skill_registry_provider()
+        except Exception:
             pass

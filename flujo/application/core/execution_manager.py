@@ -412,6 +412,10 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                             else:
                                 # Unknown outcome: ignore
                                 pass
+                        elif isinstance(item, StepResult):
+                            # Legacy/custom executors yield StepResult directly; capture for
+                            # history/persistence even if an exception is raised later.
+                            step_result = item
                     await aclose_if_possible(step_iter)
                     if last_item is not None and not isinstance(last_item, StepOutcome):
                         if isinstance(last_item, StepResult):
@@ -466,34 +470,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                     pass
                         except Exception:
                             pass
-                        # FSD-009: Enforce usage limits deterministically when no proactive reservation occurred
-                        if self.usage_limits is not None:
-                            try:
-                                from flujo.utils.formatting import format_cost as _fmt
-
-                                over_cost = (
-                                    self.usage_limits.total_cost_usd_limit is not None
-                                    and result.total_cost_usd
-                                    > float(self.usage_limits.total_cost_usd_limit)
-                                )
-                                over_tokens = (
-                                    self.usage_limits.total_tokens_limit is not None
-                                    and result.total_tokens
-                                    > int(self.usage_limits.total_tokens_limit)
-                                )
-                                if over_cost or over_tokens:
-                                    if over_cost:
-                                        msg = f"Cost limit of ${_fmt(float(self.usage_limits.total_cost_usd_limit))} exceeded"
-                                    else:
-                                        msg = f"Token limit of {int(self.usage_limits.total_tokens_limit)} exceeded"
-                                    raise UsageLimitExceededError(msg, result)
-                            except UsageLimitExceededError:
-                                raise
-                            except Exception:
-                                # Do not mask execution for unexpected edge cases
-                                pass
-
-                    # FSD-009: No reactive post-step checks; quotas enforce safety
+                    # No reactive post-step checks; quota reservation enforces limits.
 
                     # First, if coordinator reported Success with a None StepResult, try an internal
                     # direct execution that bypasses the backend (resiliency for tests patching backend).
@@ -904,9 +881,20 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                 except NonRetryableError:
                     raise
 
-                except UsageLimitExceededError:
+                except UsageLimitExceededError as e:
                     # ✅ TASK 7.3: FIX STEP HISTORY POPULATION
                     # Ensure the step result is added to history before re-raising the exception
+                    if step_result is None:
+                        try:
+                            exc_result = getattr(e, "result", None)
+                            if (
+                                exc_result is not None
+                                and hasattr(exc_result, "step_history")
+                                and exc_result.step_history
+                            ):
+                                step_result = exc_result.step_history[-1]
+                        except Exception:
+                            pass
                     if step_result is not None and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
                         try:
@@ -918,6 +906,20 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         except Exception:
                             pass
                     usage_limit_exceeded = True
+                    try:
+                        existing = getattr(e, "result", None)
+                        existing_len = None
+                        try:
+                            if existing is not None and hasattr(existing, "step_history"):
+                                existing_len = len(existing.step_history)
+                        except Exception:
+                            existing_len = None
+                        # Only overwrite when the exception doesn't already carry a useful
+                        # aggregated result (e.g., ParallelStep may attach multiple branch results).
+                        if existing is None or existing_len in (None, 0, 1):
+                            e.result = result
+                    except Exception:
+                        pass
                     raise  # Re-raise the correctly populated exception.
                 except PipelineAbortSignal:
                     # Early abort (pause or hook): do not append the in-flight step_result.

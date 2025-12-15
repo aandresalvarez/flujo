@@ -988,15 +988,8 @@ class _UsageTracker:
             self.prompt_tokens += int(tokens)
 
     async def guard(self, limits: UsageLimits) -> None:
-        async with self._get_lock():
-            if (
-                limits.total_cost_usd_limit is not None
-                and self.total_cost_usd > limits.total_cost_usd_limit
-            ):
-                raise UsageLimitExceededError("Cost limit exceeded")
-            total_tokens = self.prompt_tokens + self.completion_tokens
-            if limits.total_tokens_limit is not None and total_tokens > limits.total_tokens_limit:
-                raise UsageLimitExceededError("Token limit exceeded")
+        # Backward-compatibility stub: quota reservation is the only enforcement surface.
+        return None
 
     async def snapshot(self) -> tuple[float, int, int]:
         async with self._get_lock():

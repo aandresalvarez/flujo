@@ -217,7 +217,7 @@ class TestParallelStepRobustness:
     async def test_parallel_step_handles_empty_branches(self, mock_step_executor, usage_limits):
         """Test that parallel step handles empty branches gracefully."""
         # Create a parallel step with no branches
-        empty_parallel_step = ParallelStep(name="empty_parallel", branches={})
+        empty_parallel_step = ParallelStep.model_construct(name="empty_parallel", branches={})
 
         def context_setter(result, context):
             pass
@@ -341,13 +341,13 @@ class TestParallelStepRobustness:
     ):
         """Test that parallel step maintains context isolation between branches."""
 
-        # Create a test context
-        class TestContext:
-            def __init__(self, value):
-                self.value = value
-                self.data_store = {}
+        from flujo.domain.models import BaseModel
 
-        initial_context = TestContext("initial")
+        class TestContext(BaseModel):
+            value: str
+            data_store: dict[str, str] = {}
+
+        initial_context = TestContext(value="initial")
 
         # Create a step executor that modifies context
         context_modifications = []

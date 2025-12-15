@@ -153,6 +153,66 @@ class TestQuotaGuardrails:
             )
 
 
+class TestUsageLimitGuardrails:
+    """Ensure quota remains the only enforcement surface."""
+
+    @pytest.fixture
+    def flujo_root(self) -> Path:
+        """Get the root directory of the Flujo project."""
+        return Path(__file__).parent.parent.parent
+
+    def test_no_reactive_usage_limit_checks_in_core(self, flujo_root: Path) -> None:
+        """Prevent reintroduction of reactive post-exec usage limit checks.
+
+        Quota enforcement must remain proactive via Reserve→Execute→Reconcile. Core runtime code
+        should not compare accumulated usage to `UsageLimits.*_limit` using <, <=, >, >=.
+        """
+        core_dir = flujo_root / "flujo/application/core"
+        if not core_dir.exists():
+            pytest.skip("core directory not found")
+
+        allowed_files = {
+            "flujo/application/core/quota_manager.py",
+            "flujo/application/core/usage_messages.py",
+        }
+
+        violations: list[str] = []
+        for py_file in core_dir.rglob("*.py"):
+            rel_path = str(py_file.relative_to(flujo_root))
+            if rel_path in allowed_files:
+                continue
+            try:
+                content = py_file.read_text()
+                tree = ast.parse(content, filename=str(py_file))
+            except (SyntaxError, UnicodeDecodeError, OSError):
+                continue
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Compare):
+                    continue
+                if not any(isinstance(op, (ast.Gt, ast.GtE, ast.Lt, ast.LtE)) for op in node.ops):
+                    continue
+
+                referenced_attrs: set[str] = set()
+                for sub in ast.walk(node):
+                    if isinstance(sub, ast.Attribute) and sub.attr in {
+                        "total_cost_usd_limit",
+                        "total_tokens_limit",
+                    }:
+                        referenced_attrs.add(sub.attr)
+                if referenced_attrs:
+                    line = content.split("\n")[node.lineno - 1].strip()
+                    violations.append(f"{rel_path}:{node.lineno}: {line}")
+
+        if violations:
+            pytest.fail(
+                "Found reactive usage limit checks in core runtime modules:\n"
+                + "\n".join(violations[:20])
+                + ("\n..." if len(violations) > 20 else "")
+                + "\n\nUse quota reservation (Reserve→Execute→Reconcile) instead."
+            )
+
+
 class TestDSLCoreDecoupling:
     """Ensure DSL modules do not import from application.core at module level."""
 

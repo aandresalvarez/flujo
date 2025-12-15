@@ -17,7 +17,7 @@ from flujo.domain.models import (
     Success,
 )
 from flujo.domain.outcomes import to_outcome
-from flujo.exceptions import PausedException
+from flujo.exceptions import PausedException, UsageLimitExceededError
 from flujo.infra import telemetry
 from ..policy_registry import StepPolicy
 from ..types import ExecutionFrame
@@ -570,6 +570,9 @@ class DefaultConditionalStepExecutor(StepPolicy[ConditionalStep[PipelineContext]
                     return to_outcome(result)
             except (_Abort, _PausedExc):
                 # Bubble up pauses so the runner marks pipeline paused
+                raise
+            except UsageLimitExceededError:
+                # Quota enforcement is orchestration-level; never convert it to a step failure.
                 raise
             except Exception as e:
                 # Log error for visibility in tests - include the original error message
