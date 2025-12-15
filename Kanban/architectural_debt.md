@@ -1,98 +1,54 @@
-# Architectural Debt (Flujo) — Current State
+# Architectural Debt (Flujo) — Pending Backlog
 
-This document is a *practical* backlog of architectural debt that is **actually present today** in
-the repo. It is written for maintainers: each item includes symptoms, likely root causes, where to
-look, and what “done” means.
-
-Non-goals:
-- This is not a roadmap for new features.
-- This is not a record of past refactors (only current debt + guardrails).
-
-## How to use this doc
-
-- **P0** items are correctness/stability risks and should block broad refactors.
-- **P1** items reduce ongoing maintenance cost and prevent regressions.
-- **P2** items are hygiene/ergonomics (do when touching adjacent code).
+This file lists **only** unresolved architectural debt. When an item is finished, remove it from
+this backlog (do not keep “done” history here).
 
 ## Guardrails (must remain true)
 
 - **Policy-driven execution**: no step-specific branching in `ExecutorCore`.
-- **Control-flow exception safety**: do not swallow `PausedException`, `PipelineAbortSignal`,
+- **Control-flow exception safety**: never swallow `PausedException`, `PipelineAbortSignal`,
   `InfiniteRedirectError`-class exceptions.
-- **Context idempotency**: loops/parallel must isolate via `ContextManager.isolate()`.
-- **Quota-only enforcement**: keep proactive `Reserve → Execute → Reconcile`; do not reintroduce reactive
-  governor/breach patterns.
+- **Context idempotency**: loop/parallel must isolate via `ContextManager.isolate()`.
+- **Quota-only enforcement**: keep proactive `Reserve → Execute → Reconcile`; do not reintroduce
+  reactive governor/breach patterns.
 - **Centralized config**: use `infra.config_manager` helpers; no direct env/toml reads in domain logic.
-
-## “Previously debt, now solved” (do not re-open)
-
-These were historically painful; they are now implemented and should be preserved:
-
-- **Async generator lifecycle leaks under xdist**: fast suite no longer emits
-  `RuntimeWarning: coroutine method 'aclose' ... was never awaited` by ensuring runner/session/manager
-  iterators are deterministically closed and by auto-closing iterators on terminal yields.
-- **Quota is the only usage enforcement surface**: removed reactive post-exec limit checks in core
-  execution + step policies; quota reservation denials now surface a stable legacy message
-  (e.g. `Cost limit of $0.1 exceeded`) and include a `PipelineResult` for assertions/inspection.
-- **CLI resource ownership**: `flujo run` closes the runner + state backend explicitly and no longer
-  relies on broad GC/task/thread cleanup; skill registry is reset between in-process CLI runs for
-  test isolation.
-- **Nested HITL hard gate** via `_check_hitl_nesting_safety` raising `ConfigurationError`
-  (`flujo/application/core/policy_primitives.py`).
-- **Strict pricing exception propagation** (`PricingNotConfiguredError`) explicitly re-raised through
-  core execution (`flujo/application/core/agent_execution_runner.py` + core stack).
-- **Executor DI**: `ExecutorCore` wired via `FlujoRuntimeBuilder` and accepts injected deps
-  (`flujo/application/core/executor_core.py`).
-- **Scratchpad is removed**: `PipelineContext` rejects legacy `scratchpad` inputs and has typed fields
-  (`flujo/domain/models.py`).
-- **Unified async↔sync contract**: sync entrypoints bridge via `flujo/utils/async_bridge.py`
-  (`run_sync` uses `asyncio.run()` only when no loop is running and otherwise raises with guidance).
-- **Pydantic serializer warnings during context updates**: context injection now coerces dict payloads
-  into model-typed fields (including PEP604 unions) so `model_dump()` is warning-free.
-- **Persistence serialization unified**: state persistence normalizes via `flujo.utils.serialization`
-  (single engine); `flujo.state.backends.base._serialize_for_json` is a thin wrapper preserving
-  strict persistence semantics and typed circular placeholders for domain models.
 
 ## P0 — Correctness & Stability
 
-### P0.2 Unclear async↔sync contract (multiple bridges, inconsistent semantics) — Solved
-
-Moved to “Previously debt, now solved” above. Keep sync→async bridging centralized (avoid direct
-`asyncio.run()` in library/CLI surfaces).
+- None currently tracked.
 
 ## P1 — Architecture & Maintainability
 
-### P1.1 Dual usage enforcement surfaces (legacy meters vs quota) — Solved
-
-Moved to “Previously debt, now solved” above. Do not reintroduce reactive checks.
-
-### P1.2 Serialization is fragmented (persistence vs helpers) — Solved
-
-Moved to “Previously debt, now solved” above. Keep persistence serialization centralized.
-
----
-
-### P1.3 CLI “global cleanup” is compensating for unclear ownership — Solved
-
-Moved to “Previously debt, now solved” above. Do not reintroduce broad “global cleanup” in CLI flows.
+- None currently tracked.
 
 ## P2 — Hygiene & DX
 
-### P2.1 Python 3.13 timezone hygiene (`datetime.utcnow()` deprecations) — Solved
+### P2.1 Docs/examples timezone hygiene (`datetime.utcnow()` deprecations)
 
 #### Symptoms
-- Deprecation warnings from `datetime.utcnow()` in tests and fixtures.
+- Docs/examples still use `datetime.utcnow()` (deprecated) and can encourage naive datetimes.
 
-#### Current Status
-- No `utcnow()` usage remains; timestamps use `datetime.now(datetime.UTC)` and are timezone-aware.
+#### Where to look
+- `docs/guides/sqlite_backend_guide.md`
+- `docs/advanced/sqlite_backend_comprehensive_guide.md`
+- `docs/advanced/state_backend_optimization.md`
+- `examples/admin_queries_demo.py`
+
+#### Done when
+- No `datetime.utcnow()` remains in `docs/` or `examples/`; examples use timezone-aware datetimes
+  (`datetime.now(timezone.utc)` or explicit `timezone.utc` conversions) and serialize via ISO8601.
 
 ---
 
-### P2.2 CI micro-timing brittleness (flake detector failures) — Solved
+### P2.2 Kanban/docs drift (scratchpad removal status)
 
 #### Symptoms
-- Ratio assertions on sub-millisecond operations fail intermittently under xdist / noisy schedulers.
+- Kanban docs claim `PipelineContext.scratchpad` still exists even though the runtime rejects it.
 
-#### Current Status
-- The core micro-timing test uses batched measurements and P95/median ratios (not max/avg), reducing
-  scheduler-outlier flakiness under xdist/randomized order.
+#### Where to look
+- `Kanban/close_gaps.md` (contains “Remaining: scratchpad field still exists…”)
+- `Kanban/index.md` (scratchpad migration status text)
+
+#### Done when
+- Kanban docs reflect the current reality: scratchpad is removed and any remaining work is scoped
+  to validation/migration guidance (not runtime removal).
