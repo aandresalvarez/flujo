@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import copy
 import inspect
 from collections.abc import AsyncIterator, Callable, Iterator
@@ -8,6 +7,7 @@ from typing import TYPE_CHECKING, Optional, TypeVar, Generic
 
 from pydantic import TypeAdapter, ValidationError
 
+from ..utils.async_bridge import run_sync as _run_sync
 from ..exceptions import (
     ContextInheritanceError,
     PipelineAbortSignal,
@@ -305,23 +305,18 @@ def run_sync(
     run_id: str | None = None,
     initial_context_data: Optional[JSONObject] = None,
 ) -> PipelineResult[ContextT]:
-    try:
-        asyncio.get_running_loop()
-        raise TypeError(
-            "Flujo.run() cannot be called from a running event loop. "
-            "If you are in an async environment (like Jupyter, FastAPI, or an "
-            "`async def` function), you must use the `run_async()` method."
-        )
-    except RuntimeError:
-        pass
-
-    return asyncio.run(
+    return _run_sync(
         _consume_run_async_to_result(
             self,
             initial_input,
             run_id=run_id,
             initial_context_data=initial_context_data,
-        )
+        ),
+        running_loop_error=(
+            "Flujo.run() cannot be called from a running event loop. "
+            "If you are in an async environment (like Jupyter, FastAPI, or an "
+            "`async def` function), you must use the `run_async()` method."
+        ),
     )
 
 
@@ -486,15 +481,12 @@ def close_runner(self: Flujo[RunnerInT, RunnerOutT, ContextT]) -> None:
     In async contexts (when an event loop is running in the current thread), callers must
     use `await runner.aclose()` or `async with Flujo(...)` instead of `runner.close()`.
     """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        asyncio.run(self.aclose())
-        return
-
-    raise TypeError(
-        "Flujo.close() cannot be called from a running event loop. "
-        "Use `await runner.aclose()` or `async with Flujo(...)` instead."
+    _run_sync(
+        self.aclose(),
+        running_loop_error=(
+            "Flujo.close() cannot be called from a running event loop. "
+            "Use `await runner.aclose()` or `async with Flujo(...)` instead."
+        ),
     )
 
 

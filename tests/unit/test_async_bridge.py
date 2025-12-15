@@ -65,6 +65,16 @@ class TestRunSync:
             run_sync(inner_async())
 
     @pytest.mark.asyncio
+    async def test_run_sync_custom_running_loop_error(self) -> None:
+        """Custom error messages should be preserved for callers with better guidance."""
+
+        async def inner_async() -> str:
+            return "never returned"
+
+        with pytest.raises(TypeError, match="use async APIs here"):
+            run_sync(inner_async(), running_loop_error="use async APIs here")
+
+    @pytest.mark.asyncio
     async def test_run_sync_double_invoke(self) -> None:
         """Test multiple consecutive calls from async context."""
 

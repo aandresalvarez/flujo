@@ -12,7 +12,7 @@ from typing import Coroutine, TypeVar
 T = TypeVar("T")
 
 
-def run_sync(coro: Coroutine[object, object, T]) -> T:
+def run_sync(coro: Coroutine[object, object, T], *, running_loop_error: str | None = None) -> T:
     """Run an async coroutine from synchronous code.
 
     Raises:
@@ -28,8 +28,8 @@ def run_sync(coro: Coroutine[object, object, T]) -> T:
     coro.close()
 
     raise TypeError(
-        "run_sync() cannot be called from a running event loop thread. "
-        "Use async APIs (await) instead."
+        running_loop_error
+        or "run_sync() cannot be called from a running event loop thread. Use async APIs (await) instead."
     )
 
 
