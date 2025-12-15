@@ -1068,6 +1068,33 @@ def isolated_telemetry(monkeypatch):
     return capture
 
 
+_NO_LEAKS_TRACKED_LOOPS: list[object] = []
+_NO_LEAKS_ORIG_NEW_EVENT_LOOP: object | None = None
+
+
+def pytest_configure(config):  # type: ignore[override]
+    """Test-only hooks used to support strict leak checks."""
+    if _os.environ.get("FLUJO_NO_LEAKS") != "1":
+        return
+
+    import asyncio
+
+    global _NO_LEAKS_ORIG_NEW_EVENT_LOOP
+    if _NO_LEAKS_ORIG_NEW_EVENT_LOOP is not None:
+        return
+
+    policy = asyncio.get_event_loop_policy()
+    orig_new_event_loop = policy.new_event_loop
+    _NO_LEAKS_ORIG_NEW_EVENT_LOOP = orig_new_event_loop
+
+    def _tracking_new_event_loop():  # type: ignore[no-untyped-def]
+        loop = orig_new_event_loop()
+        _NO_LEAKS_TRACKED_LOOPS.append(loop)
+        return loop
+
+    policy.new_event_loop = _tracking_new_event_loop  # type: ignore[method-assign]
+
+
 def pytest_sessionfinish(session, exitstatus):  # type: ignore
     """Best-effort cleanup for background services to avoid process hang."""
     # Attempt to stop any prometheus servers started during tests
@@ -1088,6 +1115,31 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore
         from flujo.state.backends.sqlite import SQLiteBackend
 
         SQLiteBackend.shutdown_all()
+    except Exception:
+        pass
+    # In no-leaks mode, keep references to loops created by pytest-asyncio and close them explicitly.
+    try:
+        if _os.environ.get("FLUJO_NO_LEAKS") == "1":
+            import asyncio
+
+            for loop in list(_NO_LEAKS_TRACKED_LOOPS):
+                try:
+                    is_closed = getattr(loop, "is_closed", None)
+                    close = getattr(loop, "close", None)
+                    if callable(is_closed) and callable(close) and not bool(is_closed()):
+                        close()
+                except Exception:
+                    pass
+            _NO_LEAKS_TRACKED_LOOPS.clear()
+
+            global _NO_LEAKS_ORIG_NEW_EVENT_LOOP
+            if _NO_LEAKS_ORIG_NEW_EVENT_LOOP is not None:
+                try:
+                    policy = asyncio.get_event_loop_policy()
+                    policy.new_event_loop = _NO_LEAKS_ORIG_NEW_EVENT_LOOP  # type: ignore[method-assign]
+                except Exception:
+                    pass
+                _NO_LEAKS_ORIG_NEW_EVENT_LOOP = None
     except Exception:
         pass
     # As a last-resort, force-exit the interpreter in CI/test runs to avoid hangs

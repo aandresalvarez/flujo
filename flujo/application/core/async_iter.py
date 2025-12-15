@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any
 
 
-async def aclose_if_possible(obj: Any) -> None:
+async def aclose_if_possible(obj: object) -> None:
     """Best-effort `aclose()` for async generators/iterators that support it."""
     try:
         aclose = getattr(obj, "aclose", None)

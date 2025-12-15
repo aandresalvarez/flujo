@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import atexit
 import json
 import logging
 import re
@@ -16,7 +15,6 @@ from typing import (
     Any,
     Awaitable,
     Callable,
-    Coroutine,
     Dict,
     List,
     Optional,
@@ -24,17 +22,14 @@ from typing import (
     TYPE_CHECKING,
 )
 
-from contextlib import AbstractContextManager
-
 import aiosqlite
-import anyio
 import os
-from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from flujo.exceptions import InfiniteRedirectError, PausedException, PipelineAbortSignal
 from .base import StateBackend, _serialize_for_json as _serialize_for_json_base
 from flujo.infra import telemetry
 from flujo.type_definitions.common import JSONObject
+from flujo.utils.async_bridge import run_sync
 
 logger = logging.getLogger(__name__)
 
@@ -112,43 +107,6 @@ COLUMN_DEF_PATTERN = re.compile(
     )*$""",
     re.IGNORECASE | re.VERBOSE,
 )
-
-
-_PORTAL_LOCK = threading.Lock()
-_PORTAL_MANAGER: AbstractContextManager[BlockingPortal] | None = None
-_PORTAL: BlockingPortal | None = None
-
-
-def _get_blocking_portal() -> BlockingPortal:
-    """Return a shared BlockingPortal to run coroutines from sync code safely."""
-    global _PORTAL, _PORTAL_MANAGER
-    with _PORTAL_LOCK:
-        if _PORTAL is None:
-            _PORTAL_MANAGER = start_blocking_portal()
-            _PORTAL = _PORTAL_MANAGER.__enter__()
-            atexit.register(_shutdown_blocking_portal)
-        return _PORTAL
-
-
-def _shutdown_blocking_portal() -> None:
-    """Cleanly stop the shared BlockingPortal at interpreter shutdown."""
-    global _PORTAL, _PORTAL_MANAGER
-    with _PORTAL_LOCK:
-        portal = _PORTAL
-        manager = _PORTAL_MANAGER
-        _PORTAL = None
-        _PORTAL_MANAGER = None
-    if manager is not None:
-        try:
-            manager.__exit__(None, None, None)
-        except Exception as exc:
-            logger.debug(f"Non-fatal error stopping BlockingPortal manager: {exc}")
-        return
-    if portal is not None:
-        try:
-            anyio.run(portal.stop)
-        except Exception as exc:
-            logger.debug(f"Non-fatal error stopping BlockingPortal: {exc}")
 
 
 def _validate_sql_identifier(identifier: str) -> bool:
@@ -324,27 +282,6 @@ def validate_column_definition_or_raise(column_def: str) -> None:
         raise ValueError(f"Invalid column definition: {column_def}")
 
 
-async def _await_coro(coro: "Coroutine[Any, Any, T]") -> T:
-    """Helper to await a coroutine inside the blocking portal."""
-    return await coro
-
-
-def _run_coro_sync(coro: "Coroutine[Any, Any, T]") -> T:
-    """Run an async coroutine from sync context, even if a loop exists.
-
-    Uses a shared anyio BlockingPortal to avoid ad-hoc event loops/threads and
-    prevent "Event loop is closed" shutdown flakiness.
-    """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-
-    portal = _get_blocking_portal()
-    result: T = portal.call(_await_coro, coro)
-    return result
-
-
 class SQLiteBackendBase(StateBackend):
     """SQLite-backed persistent storage for workflow state with optimized schema."""
 
@@ -493,7 +430,7 @@ class SQLiteBackendBase(StateBackend):
             instances = []
         for inst in instances:
             try:
-                _run_coro_sync(inst.shutdown())
+                run_sync(inst.shutdown())
             except Exception:
                 # Best-effort cleanup; ignore shutdown errors
                 pass
@@ -1168,11 +1105,11 @@ class SQLiteBackendBase(StateBackend):
 
         This method properly handles event loop contexts and prevents pytest teardown
         hangs when closing backends from synchronous test code. It uses the
-        _run_coro_sync helper to run the async close() in the correct context.
+        shared async bridge to run the async close() in the correct context.
 
         Use this method instead of asyncio.run(backend.close()) in sync tests.
         """
-        _run_coro_sync(self.close())
+        run_sync(self.close())
 
     async def __aenter__(self) -> "SQLiteBackendBase":
         """Async context manager entry with eager lock/init."""

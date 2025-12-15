@@ -243,3 +243,32 @@ class TestAsyncBridgeUnification:
         assert "def run_coroutine(" not in content, (
             "prometheus.py should not define its own run_coroutine; use run_sync"
         )
+
+    def test_no_ad_hoc_blocking_portal(self, flujo_root: Path) -> None:
+        """Prevent duplicate `BlockingPortal` usage outside the shared bridge.
+
+        The shared bridge is `flujo/utils/async_bridge.py`. All sync→async execution should use it.
+        """
+        bridge_file = flujo_root / "flujo/utils/async_bridge.py"
+        if not bridge_file.exists():
+            pytest.skip("async_bridge.py not found")
+
+        violations: List[str] = []
+        for py_file in (flujo_root / "flujo").rglob("*.py"):
+            if py_file == bridge_file:
+                continue
+
+            try:
+                content = py_file.read_text()
+            except (UnicodeDecodeError, OSError):
+                continue
+
+            if "start_blocking_portal" in content or "BlockingPortal" in content:
+                rel_path = py_file.relative_to(flujo_root)
+                violations.append(str(rel_path))
+
+        if violations:
+            pytest.fail(
+                "Found ad-hoc BlockingPortal usage outside flujo/utils/async_bridge.py:\n"
+                + "\n".join(sorted(violations))
+            )
