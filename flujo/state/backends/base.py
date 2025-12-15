@@ -28,6 +28,8 @@ def _serialize_for_json(
             obj,
             circular_ref_placeholder=circular_ref_placeholder,
             strict=strict,
+            bytes_mode="utf8",
+            allow_object_dict=not strict,
             _seen=_seen,
         )
     except Exception as exc:  # noqa: BLE001 - best-effort non-strict path
@@ -35,7 +37,12 @@ def _serialize_for_json(
             raise
         if strict:
             raise
-        return _robust_serialize_internal(obj, circular_ref_placeholder=circular_ref_placeholder)
+        return _robust_serialize_internal(
+            obj,
+            circular_ref_placeholder=circular_ref_placeholder,
+            bytes_mode="utf8",
+            allow_object_dict=True,
+        )
 
 
 def _to_jsonable(obj: object) -> object:
