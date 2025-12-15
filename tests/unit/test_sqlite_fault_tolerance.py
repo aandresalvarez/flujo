@@ -2,7 +2,7 @@
 
 import asyncio
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 import pytest
@@ -57,8 +57,8 @@ async def test_sqlite_backend_handles_corrupted_database(tmp_path: Path) -> None
             "pipeline_context": {"test": "data"},
             "last_step_output": None,
             "status": "running",
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
 
     # Should not raise an exception
@@ -84,8 +84,8 @@ async def test_sqlite_backend_handles_partial_writes(tmp_path: Path) -> None:
         "pipeline_context": {"test": "data"},
         "last_step_output": None,
         "status": "running",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
     }
 
     # Simulate a partial write by mocking the commit method to raise an exception
@@ -183,8 +183,8 @@ async def test_sqlite_backend_concurrent_migration_safety(tmp_path: Path) -> Non
         "pipeline_context": {"test": "data"},
         "last_step_output": None,
         "status": "running",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
     }
 
     await working_backend.save_state("test_run", state)
@@ -205,8 +205,8 @@ async def test_sqlite_backend_disk_space_exhaustion(tmp_path: Path) -> None:
         "pipeline_context": large_data,
         "last_step_output": None,
         "status": "running",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
     }
     # Mock only the save operation to fail, not the entire connection
     with patch.object(backend, "_with_retries") as mock_retries:
@@ -227,8 +227,8 @@ async def test_sqlite_backend_connection_failure_recovery(tmp_path: Path) -> Non
         "pipeline_context": {"test": "data"},
         "last_step_output": None,
         "status": "running",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
     }
     await backend.save_state("test_run", state)
 
@@ -264,8 +264,8 @@ async def test_sqlite_backend_transaction_rollback_on_error(tmp_path: Path) -> N
         "pipeline_context": {"test": "data"},
         "last_step_output": None,
         "status": "running",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
     }
 
     # Mock the database commit to fail during save
@@ -294,7 +294,7 @@ async def test_sqlite_backend_schema_validation_recovery(tmp_path: Path) -> None
     backend = SQLiteBackend(db_path)
 
     # The migration should add missing columns and make the database usable
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     state = {
         "pipeline_id": "test_pipeline",
         "pipeline_name": "Test Pipeline",

@@ -4,7 +4,7 @@ import pytest
 import asyncio
 import sqlite3
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 import time
@@ -93,7 +93,7 @@ class TestSQLiteBackendFuzzing:
 
         for i, edge_data in enumerate(edge_case_data):
             try:
-                now = datetime.utcnow().replace(microsecond=0)
+                now = datetime.now(timezone.utc).replace(microsecond=0)
                 state = {
                     "run_id": f"fuzz_test_{i}",
                     "pipeline_id": "test_pipeline",
@@ -141,7 +141,7 @@ class TestSQLiteBackendFuzzing:
             operation = random.choice(["save", "load", "delete", "list"])
 
             if operation == "save":
-                now = datetime.utcnow().replace(microsecond=0)
+                now = datetime.now(timezone.utc).replace(microsecond=0)
                 state = {
                     "run_id": f"fuzz_run_{operation_id}",
                     "pipeline_id": "test_pipeline",
@@ -232,7 +232,7 @@ class TestSQLiteBackendFuzzing:
         backend = SQLiteBackend(tmp_path / "fuzz_schema.db")
 
         # Create a database with some data
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         state = {
             "run_id": "fuzz_schema_test",
             "pipeline_id": "test_pipeline",
@@ -291,7 +291,7 @@ class TestSQLiteBackendFuzzing:
 
         # Create many workflows
         num_workflows = 1000
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
 
         for i in range(num_workflows):
             state = {

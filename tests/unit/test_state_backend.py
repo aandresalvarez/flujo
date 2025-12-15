@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel
 
 from flujo.state.backends.memory import InMemoryBackend
@@ -22,7 +22,7 @@ class Model(BaseModel):
 @pytest.mark.asyncio
 async def test_inmemory_backend_handles_special_types() -> None:
     backend = InMemoryBackend()
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     state = {
         "run_id": "run1",
         "pipeline_id": "p",

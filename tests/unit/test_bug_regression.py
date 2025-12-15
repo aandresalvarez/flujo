@@ -12,7 +12,7 @@ and prevent regressions in future development. It covers:
 
 import pytest
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Any
 
@@ -188,7 +188,7 @@ class TestLambdaSerializationNullHandling:
         # Use async with for proper SQLite connection cleanup
         async with SQLiteBackend(db_path) as backend:
             # Test data with None values - use current schema fields
-            from datetime import datetime
+            from datetime import datetime, timezone
 
             step_data = {
                 "run_id": "test_run",
@@ -199,7 +199,7 @@ class TestLambdaSerializationNullHandling:
                 "cost_usd": None,
                 "token_counts": None,
                 "execution_time_ms": None,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
 
             # Save step result
@@ -325,7 +325,7 @@ class TestPerformanceRegression:
                 "pipeline_name": "test_pipeline",
                 "pipeline_version": "1.0",
                 "status": "running",
-                "start_time": datetime.utcnow(),
+                "start_time": datetime.now(timezone.utc),
             }
 
             # Measure save time

@@ -1,7 +1,7 @@
 """Tests for SQL injection security in state backends."""
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flujo.state.backends.sqlite import SQLiteBackend
@@ -53,7 +53,7 @@ class TestSQLInjectionSecurity:
     @pytest.fixture
     async def sample_workflows(self, backend: SQLiteBackend) -> None:
         """Create sample workflows for testing."""
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         past = now - timedelta(days=1)
 
         # Create workflows with different statuses and times
@@ -151,7 +151,7 @@ class TestSQLInjectionSecurity:
         """Test that cleanup_old_workflows is resistant to SQL injection."""
 
         # Create sample workflows for testing
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         past = now - timedelta(days=1)
 
         workflows = [
@@ -252,7 +252,7 @@ class TestSQLInjectionSecurity:
         """Test that save_state is resistant to SQL injection in run_id."""
 
         # Test with normal input
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         normal_state = {
             "run_id": "normal_run",
             "pipeline_id": "pipeline1",
@@ -291,7 +291,7 @@ class TestSQLInjectionSecurity:
         """Test that load_state is resistant to SQL injection in run_id."""
 
         # First save a normal state
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         normal_state = {
             "run_id": "normal_run",
             "pipeline_id": "pipeline1",
@@ -328,7 +328,7 @@ class TestSQLInjectionSecurity:
         """Test that delete_state is resistant to SQL injection in run_id."""
 
         # First save a normal state
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         normal_state = {
             "run_id": "normal_run",
             "pipeline_id": "pipeline1",
@@ -366,7 +366,7 @@ class TestSQLInjectionSecurity:
     async def test_parameterized_queries_work_correctly(self, backend: SQLiteBackend) -> None:
         """Test that parameterized queries work correctly with various input types."""
 
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         state = {
             "run_id": "test_run",
             "pipeline_id": "pipeline1",

@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -94,7 +94,7 @@ async def test_background_hooks_flag(tmp_path: Path) -> None:
 async def test_cleanup_stale_background_tasks(tmp_path: Path) -> None:
     """Stale running tasks should be marked failed by cleanup."""
     backend = SQLiteBackend(tmp_path / "bg_cleanup.db")
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     stale_time = now - timedelta(hours=48)
     state = {
         "run_id": "run_stale_bg",
@@ -203,8 +203,8 @@ async def test_prometheus_background_counts(tmp_path: Path) -> None:
             "last_step_output": None,
             "step_history": [],
             "status": "failed",
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
             "is_background_task": 1,
             "metadata": {"is_background_task": True},
         },
@@ -312,7 +312,7 @@ async def test_resume_from_persisted_background_state(tmp_path: Path) -> None:
     task_id = "persisted_task"
     run_id = "bg_persisted_run"
     parent_run_id = "parent_run"
-    created_at = datetime.utcnow()
+    created_at = datetime.now(timezone.utc)
     state = {
         "run_id": run_id,
         "pipeline_id": "pipe",
@@ -387,7 +387,7 @@ async def test_background_error_category_persisted(tmp_path: Path) -> None:
 async def test_failed_tasks_hours_back_filter(tmp_path: Path) -> None:
     """get_failed_background_tasks respects hours_back filtering."""
     backend = SQLiteBackend(tmp_path / "bg_hours.db")
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     recent_state = {
         "run_id": "bg_recent",
         "pipeline_id": "pipe",

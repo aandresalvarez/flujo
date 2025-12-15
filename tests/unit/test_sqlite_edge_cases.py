@@ -4,7 +4,7 @@ import pytest
 import asyncio
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 from unittest.mock import patch
@@ -25,7 +25,7 @@ class TestSQLiteBackendDeleteState:
     ) -> None:
         """Test that delete_state actually removes the workflow from the database."""
         backend = sqlite_backend_factory("delete_test.db")
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
 
         # Create a workflow
         state = {
@@ -81,7 +81,7 @@ class TestSQLiteBackendDeleteState:
     async def test_delete_state_multiple_workflows(self, sqlite_backend_factory) -> None:
         """Test deleting multiple workflows and verify others remain."""
         backend = sqlite_backend_factory("delete_multiple.db")
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
 
         # Create multiple workflows
         workflows = []
@@ -231,7 +231,7 @@ class TestSQLiteBackendPerformanceThresholds:
     async def test_performance_threshold_environment_variable(self, sqlite_backend_factory) -> None:
         """Test that performance thresholds are enforced via environment variable."""
         backend = sqlite_backend_factory("perf_env.db")
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
 
         # Create a large amount of test data
         num_workflows = 100
@@ -278,7 +278,7 @@ class TestSQLiteBackendPerformanceThresholds:
     async def test_performance_threshold_default_behavior(self, sqlite_backend_factory) -> None:
         """Test that performance thresholds work with default values."""
         backend = sqlite_backend_factory("perf_default.db")
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
 
         # Create a small amount of test data
         num_workflows = 10
@@ -383,7 +383,7 @@ class TestSQLiteBackendTypeSafety:
     async def test_serialization_type_safety(self, sqlite_backend_factory) -> None:
         """Test that serialization maintains type safety."""
         backend = sqlite_backend_factory("serialization_test.db")
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
 
         # Test with complex data types
         complex_state = {
@@ -431,7 +431,7 @@ class TestSQLiteBackendConcurrencyEdgeCases:
     async def test_concurrent_delete_and_save(self, sqlite_backend_factory) -> None:
         """Test concurrent delete and save operations."""
         backend = sqlite_backend_factory("concurrent_test.db")
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
 
         # Create initial state
         state = {

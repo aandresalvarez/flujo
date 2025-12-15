@@ -2,7 +2,7 @@ import subprocess
 import sys
 from pathlib import Path
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -181,7 +181,7 @@ async def test_file_backend_concurrent(tmp_path: Path, sqlite_backend_factory) -
 async def test_sqlite_backend_admin_queries_integration(sqlite_backend_factory) -> None:
     """Integration test for admin queries on SQLiteBackend."""
     backend = sqlite_backend_factory("state.db")
-    now = datetime.utcnow().replace(microsecond=0)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
     past = now - timedelta(days=1)
     # Insert workflows with different statuses and times
     for i, status in enumerate(["running", "completed", "failed", "paused", "failed"]):
@@ -229,7 +229,7 @@ async def test_sqlite_backend_concurrent_integration(sqlite_backend_factory) -> 
     import asyncio
 
     async def worker(backend, run_id):
-        now = datetime.utcnow().replace(microsecond=0)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
         state = {
             "run_id": run_id,
             "pipeline_id": "p",

@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flujo.domain import Step
 from flujo.domain.models import PipelineContext
@@ -47,8 +47,8 @@ async def test_resume_uses_original_pipeline_version() -> None:
         pipeline_context=ctx_after_first.model_dump(),
         last_step_output="mid",
         status="running",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )
     await backend.save_state(run_id, state.model_dump())
 

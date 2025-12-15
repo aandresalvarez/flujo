@@ -3,7 +3,7 @@
 import asyncio
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
@@ -13,7 +13,7 @@ pytestmark = pytest.mark.veryslow
 
 # Helper to create a run before saving a trace
 def create_run(backend: SQLiteBackend, run_id: str) -> dict:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     run_data = {
         "run_id": run_id,
         "pipeline_id": f"pid_{run_id}",

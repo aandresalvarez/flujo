@@ -5,7 +5,7 @@ import os
 import time
 import uuid
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -164,9 +164,9 @@ class TestPersistencePerformanceOverhead:
                 # Treat as acceptable jitter
                 assert True
             else:
-                assert (
-                    overhead_percentage <= overhead_limit
-                ), f"Default persistence overhead ({overhead_percentage:.2f}%) exceeds {overhead_limit}% limit"
+                assert overhead_percentage <= overhead_limit, (
+                    f"Default persistence overhead ({overhead_percentage:.2f}%) exceeds {overhead_limit}% limit"
+                )
 
         finally:
             # Clean up database files to prevent resource contention
@@ -273,9 +273,9 @@ class TestPersistencePerformanceOverhead:
             if delta_s < min_abs_delta_s:
                 assert True
             else:
-                assert (
-                    overhead_percentage <= overhead_limit
-                ), f"Persistence overhead with large context ({overhead_percentage:.2f}%) exceeds {overhead_limit}%"
+                assert overhead_percentage <= overhead_limit, (
+                    f"Persistence overhead with large context ({overhead_percentage:.2f}%) exceeds {overhead_limit}%"
+                )
 
             # Additional assertion to ensure the optimization is actually working
             if overhead_percentage > 20.0:
@@ -735,9 +735,9 @@ class TestPersistencePerformanceOverhead:
                 if "|" in key:
                     parts = key.rsplit("|", 1)
                     assert len(parts) == 2, f"Invalid cache key format: {key}"
-                    assert (
-                        len(parts[1]) == 32
-                    ), f"Context hash should be 32 chars: {parts[1]}"  # MD5 hash length
+                    assert len(parts[1]) == 32, (
+                        f"Context hash should be 32 chars: {parts[1]}"
+                    )  # MD5 hash length
 
         finally:
             # Clean up
@@ -777,7 +777,7 @@ class TestCLIPerformance:
         completed_runs = int(db_size * 0.95)  # 95% of runs are completed
 
         # Create runs with concurrent operations for better performance
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         async def create_database() -> None:
             # Prepare all run start operations
@@ -1037,9 +1037,9 @@ class TestCLIPerformance:
         unfiltered_time = time.perf_counter() - start_time
 
         # Verify correctness (not performance)
-        assert (
-            result_unfiltered.exit_code == 0
-        ), f"CLI unfiltered list failed: {result_unfiltered.stdout}"
+        assert result_unfiltered.exit_code == 0, (
+            f"CLI unfiltered list failed: {result_unfiltered.stdout}"
+        )
 
         # --- Test: Filtered list ---
         start_time = time.perf_counter()

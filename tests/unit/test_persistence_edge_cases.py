@@ -5,7 +5,7 @@ import time
 import asyncio
 from typing import Any, List
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flujo.domain.models import PipelineContext, StepResult, PipelineResult
 from flujo.application.core.execution_manager import ExecutionManager
@@ -40,7 +40,7 @@ class TestPersistenceOptimizationEdgeCases:
         execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
 
         # Register the run in the backend
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         await state_manager.record_run_start(
             "test_run", str(uuid.uuid4()), "test_pipeline", "1.0", created_at=now, updated_at=now
         )
@@ -119,7 +119,7 @@ class TestPersistenceOptimizationEdgeCases:
         execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
 
         # Register the run in the backend
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         await state_manager.record_run_start(
             "test_failure_run",
             str(uuid.uuid4()),
@@ -183,7 +183,7 @@ class TestPersistenceOptimizationEdgeCases:
         execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
 
         # Register the run in the backend
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         await state_manager.record_run_start(
             "test_large_context_run",
             str(uuid.uuid4()),
@@ -255,7 +255,7 @@ class TestPersistenceOptimizationEdgeCases:
         execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
 
         # Register the run in the backend
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         await state_manager.record_run_start(
             "test_serialization_error_run",
             str(uuid.uuid4()),
@@ -318,7 +318,7 @@ class TestPersistenceOptimizationEdgeCases:
         from flujo.domain.dsl.pipeline import Pipeline
 
         # Register the run in the backend
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         await state_manager.record_run_start(
             "concurrent_run_0",
             str(uuid.uuid4()),
@@ -386,7 +386,7 @@ class TestPersistenceOptimizationEdgeCases:
         execution_manager = ExecutionManager(pipeline=pipeline, state_manager=state_manager)
 
         # Register the run in the backend
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         await state_manager.record_run_start(
             "test_none_context_run",
             str(uuid.uuid4()),
@@ -453,7 +453,7 @@ class TestPersistenceOptimizationEdgeCases:
         # step = Step.model_validate({"name": "complex_object_step", "agent": agent})
 
         # Register the run in the backend
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         await state_manager.record_run_start(
             "test_complex_object_run",
             str(uuid.uuid4()),
@@ -518,7 +518,7 @@ class TestPersistenceOptimizationEdgeCases:
         # Create a simple agent
 
         # Register the run in the backend
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         await state_manager.record_run_start(
             "load_test_run_0",
             str(uuid.uuid4()),
@@ -602,7 +602,7 @@ class TestPersistenceOptimizationEdgeCases:
         pipeline = Pipeline(steps=[step])
 
         # Register the run in the backend
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         await state_manager.record_run_start(
             "test_circular_ref_run",
             str(uuid.uuid4()),
