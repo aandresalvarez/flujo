@@ -12,7 +12,7 @@ This guide helps you resolve common issues when using `flujo`.
 - Missing system dependencies
 
 **Solutions:**
-1. Ensure Python 3.11+ is installed:
+1. Ensure Python 3.13+ is installed:
    ```bash
    python --version
    ```

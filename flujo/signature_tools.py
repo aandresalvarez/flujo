@@ -20,6 +20,39 @@ from .domain.resources import AppResources
 from .exceptions import ConfigurationError
 
 
+def _get_type_hints_best_effort(func: Callable[..., Any]) -> dict[str, object]:
+    """Resolve type hints for ``func`` with Flujo-friendly fallbacks.
+
+    Python 3.14+ may evaluate annotations in different phases (or lazily),
+    which can surface NameError for common Flujo aliases like ``JSONObject`` in
+    user-provided skill modules. Retry with a patched globalns that includes
+    those aliases.
+    """
+    try:
+        return dict(get_type_hints(func))
+    except Exception as first_exc:
+        try:
+            from flujo.type_definitions.common import JSONObject, JSONArray
+
+            globalns: dict[str, object] = {}
+            try:
+                func_globals = getattr(func, "__globals__", None)
+                if isinstance(func_globals, dict):
+                    globalns.update(func_globals)
+            except Exception:
+                pass
+            globalns.setdefault("JSONObject", JSONObject)
+            globalns.setdefault("JSONArray", JSONArray)
+            globalns.setdefault("Any", Any)
+            return dict(get_type_hints(func, globalns=globalns, localns=globalns))
+        except Exception as second_exc:
+            logfire.debug(
+                f"Could not resolve type hints for {func!r}: {first_exc}; "
+                f"fallback also failed: {second_exc}"
+            )
+            return {}
+
+
 class InjectionSpec(NamedTuple):
     needs_context: bool
     needs_resources: bool
@@ -91,8 +124,8 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
     needs_context = False
     needs_resources = False
     context_kw: Optional[str] = None
-    input_type = Any
-    output_type = Any
+    input_type: object = Any
+    output_type: object = Any
     try:
         sig = inspect.signature(func)
     except Exception as e:  # pragma: no cover - defensive
@@ -102,9 +135,8 @@ def analyze_signature(func: Callable[..., Any]) -> SignatureAnalysis:
         return result
 
     try:
-        hints = get_type_hints(func)
-    except Exception as e:  # pragma: no cover - defensive
-        logfire.debug(f"Could not resolve type hints for {func!r}: {e}")
+        hints = _get_type_hints_best_effort(func)
+    except Exception:  # pragma: no cover - defensive
         hints = {}
 
     # Extract input_type (first parameter)

@@ -17,10 +17,12 @@
 # Project Setup & Dependency Management
 # ------------------------------------------------------------------------------
 
+PYTHON_VERSION ?= 3.13
+
 .PHONY: install
 install: .uv ## Install dependencies into a virtual environment
 	@echo "🚀 Creating virtual environment and installing dependencies..."
-	@uv venv
+	@uv venv --python $(PYTHON_VERSION)
 	@uv sync --all-extras
 	@echo "\n✅ Done! Activate the environment with 'source .venv/bin/activate'"
 
@@ -343,9 +345,9 @@ test-deadfixtures: .uv ## Find unused/overlapping fixtures that slow collection/
 		-p pytest_deadfixtures
 
 .PHONY: test-profile
-test-profile: .uv ## Profile test execution to find hot spots
+test-profile: .uv ## Profile test execution to find hot spots (cProfile)
 	@echo "📊 Profiling test execution..."
-	CI=1 uv run pytest tests/ --profile -q
+	CI=1 uv run python -m cProfile -o test_profile.pstats -m pytest tests/ -q
 
 .PHONY: test-random-order
 test-random-order: .uv ## Run tests in random order to reveal order dependencies

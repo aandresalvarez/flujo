@@ -83,7 +83,7 @@ def test_resources_annotation_validation() -> None:
 
 
 def test_context_union_with_basemodel_component_is_accepted() -> None:
-    # Python 3.11 union syntax
+    # PEP 604 union syntax
     async def f(x: str, *, context: Ctx | int) -> str:
         return x
 

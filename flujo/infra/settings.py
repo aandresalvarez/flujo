@@ -91,7 +91,7 @@ class SandboxSettings(BaseModel):
         description="Whether to verify TLS certificates for remote sandbox.",
     )
     docker_image: str = Field(
-        default="python:3.11-slim",
+        default="python:3.13-slim",
         validation_alias=AliasChoices("FLUJO_SANDBOX_DOCKER_IMAGE", "flujo_sandbox_docker_image"),
         description="Docker image to use for docker sandbox executions.",
     )

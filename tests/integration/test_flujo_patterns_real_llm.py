@@ -22,12 +22,21 @@ from flujo.domain.dsl import Step, Pipeline
 from flujo.domain.models import PipelineContext
 
 
-# Skip if no API key
+def _should_run_real_llm_tests() -> bool:
+    if os.environ.get("FLUJO_RUN_REAL_LLM_TESTS", "").lower() not in {"1", "true", "yes"}:
+        return False
+    key = os.environ.get("OPENAI_API_KEY", "")
+    if not key:
+        return False
+    return not key.lower().startswith("dummy")
+
+
+# Skip unless explicitly enabled with a real API key.
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(
-        not os.environ.get("OPENAI_API_KEY"),
-        reason="OPENAI_API_KEY not set - skipping real LLM tests",
+        not _should_run_real_llm_tests(),
+        reason="Real LLM tests require FLUJO_RUN_REAL_LLM_TESTS=1 and a non-dummy OPENAI_API_KEY",
     ),
 ]
 

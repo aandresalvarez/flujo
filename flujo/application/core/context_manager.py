@@ -526,8 +526,16 @@ def _apply_validation_metadata(
 
 def _accepts_param(func: Callable[..., object], param: str) -> bool | None:
     """Return True if callable's signature includes ``param`` or ``**kwargs``."""
+    cache_key: Callable[..., object] = func
     try:
-        cache = _accepts_param_cache_weak.setdefault(func, {})
+        if isinstance(func, types.MethodType):
+            # Cache on the underlying function to avoid per-access bound-method objects
+            # causing unbounded cache growth.
+            cache_key = func.__func__
+    except Exception:
+        cache_key = func
+    try:
+        cache = _accepts_param_cache_weak.setdefault(cache_key, {})
     except TypeError:
         # Unhashable / non-weakref-able callables (e.g., bound methods) are not cached to
         # avoid id()-based collisions when memory addresses are reused.

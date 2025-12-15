@@ -10,11 +10,20 @@ from contextlib import contextmanager
 
 from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor
 from flujo.domain.dsl.step import Step
+from flujo.domain.models import BaseModel as DomainBaseModel
 from flujo.domain.models import StepResult
 
 # Constants for better maintainability
 FLOAT_TOLERANCE = 1e-10
 CI_TRUE_VALUES = ("true", "1", "yes")
+
+
+class _BenchmarkContext(DomainBaseModel):
+    context: str = "data"
+
+
+class _BenchmarkResources(DomainBaseModel):
+    resources: str = "data"
 
 
 @contextmanager
@@ -229,10 +238,8 @@ class TestUltraExecutorPerformance:
             "nested": {"value": 123},
             "complex": {"list": [1, 2, 3], "dict": {"a": 1}},
         }
-        context = Mock()
-        context.model_dump.return_value = {"context": "data"}
-        resources = Mock()
-        resources.model_dump.return_value = {"resources": "data"}
+        context = _BenchmarkContext()
+        resources = _BenchmarkResources()
 
         # Warm up both executors
         for _ in range(5):
@@ -308,10 +315,8 @@ class TestUltraExecutorPerformance:
     async def test_ultra_executor_feature_value(self, ultra_executor, mock_step):
         """Test the value of ultra executor features."""
         data = {"feature": "test", "value": 123}
-        context = Mock()
-        context.model_dump.return_value = {"context": "data"}
-        resources = Mock()
-        resources.model_dump.return_value = {"resources": "data"}
+        context = _BenchmarkContext()
+        resources = _BenchmarkResources()
 
         # Test 1: Basic execution
         result = await ultra_executor.execute_step(mock_step, data, context, resources)
@@ -443,10 +448,8 @@ class TestUltraExecutorPerformance:
             "value": 456,
             "complex": {"nested": {"data": "structure"}},
         }
-        context = Mock()
-        context.model_dump.return_value = {"context": "data"}
-        resources = Mock()
-        resources.model_dump.return_value = {"resources": "data"}
+        context = _BenchmarkContext()
+        resources = _BenchmarkResources()
 
         # First execution (cache miss)
         start_time = time.perf_counter()
@@ -489,10 +492,8 @@ class TestUltraExecutorPerformance:
         """Test performance under concurrent execution."""
         num_concurrent = 20
         data = {"concurrent": "test", "complex": {"data": "structure"}}
-        context = Mock()
-        context.model_dump.return_value = {"context": "data"}
-        resources = Mock()
-        resources.model_dump.return_value = {"resources": "data"}
+        context = _BenchmarkContext()
+        resources = _BenchmarkResources()
 
         # Execute many steps concurrently
         start_time = time.perf_counter()
@@ -531,10 +532,8 @@ class TestUltraExecutorPerformance:
         """Test memory efficiency by running many executions."""
         iterations = 500  # Reduced for faster execution
         data = {"memory": "test", "large": "payload" * 50}
-        context = Mock()
-        context.model_dump.return_value = {"context": "data"}
-        resources = Mock()
-        resources.model_dump.return_value = {"resources": "data"}
+        context = _BenchmarkContext()
+        resources = _BenchmarkResources()
 
         # Run many executions and measure memory usage
         try:

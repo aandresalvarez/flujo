@@ -1,16 +1,18 @@
 """Integration tests for LoopStep and ConditionalStep migration to ExecutorCore."""
 
-import pytest
-import time
-from unittest.mock import Mock, AsyncMock
-from typing import Any, List
-from pydantic import BaseModel
+from __future__ import annotations
 
-from flujo.domain.dsl.loop import LoopStep
-from flujo.domain.dsl.conditional import ConditionalStep
-from flujo.domain.dsl import Pipeline, Step
-from flujo.domain.models import StepResult, UsageLimits
+import time
+from typing import Any
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
 from flujo.application.core.executor_core import ExecutorCore
+from flujo.domain.dsl import Pipeline, Step
+from flujo.domain.dsl.conditional import ConditionalStep
+from flujo.domain.dsl.loop import LoopStep
+from flujo.domain.models import BaseModel, StepResult, UsageLimits
 from flujo.testing.utils import StubAgent
 
 # Mark this module as slow due to complex integration testing
@@ -21,7 +23,7 @@ class IntegrationTestContext(BaseModel):
     """Test context for integration tests."""
 
     counter: int = 0
-    values: List[str] = []
+    values: list[str] = []
     branch_executed: str = ""
     loop_iterations: int = 0
 

@@ -9,9 +9,11 @@ from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step
+from flujo.domain.models import BaseModel
 from flujo.domain.models import StepResult, UsageLimits
 from flujo.exceptions import UsageLimitExceededError
 from flujo.testing.utils import StubAgent
+from pydantic import Field
 
 # Run this module serially in CI to avoid xdist workerfinished assertion flake with skipped tests
 pytestmark = pytest.mark.serial
@@ -341,11 +343,10 @@ class TestParallelStepRobustness:
     ):
         """Test that parallel step maintains context isolation between branches."""
 
-        from flujo.domain.models import BaseModel
-
+        # Create a test context
         class TestContext(BaseModel):
             value: str
-            data_store: dict[str, str] = {}
+            data_store: dict[str, str] = Field(default_factory=dict)
 
         initial_context = TestContext(value="initial")
 
