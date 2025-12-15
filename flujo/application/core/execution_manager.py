@@ -356,13 +356,10 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                 except Exception:
                                     pass
 
-                                if step_result not in result.step_history:
-                                    self.step_coordinator.update_pipeline_result(
-                                        result, step_result
-                                    )
-                                self.set_final_context(result, context)
-                                yield result
-                                # Do not return early; allow remaining steps to execute.
+                                # Yield the failure outcome and allow the step iterator to
+                                # finish so StepCoordinator post-step logic (including
+                                # `failure_handlers`) can run deterministically.
+                                yield item
                                 continue
                             elif isinstance(item, Paused):
                                 # Update context with pause state using typed fields
@@ -1037,6 +1034,13 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     raise
 
             finally:
+                # Always close the per-step async iterator to avoid teardown-time
+                # warnings when execution exits early under xdist (async generators
+                # otherwise get GC'd after the loop is gone).
+                try:
+                    await aclose_if_possible(step_iter)
+                except Exception:
+                    pass
                 # Persist final state if we have a run_id and this is the last step
                 if (
                     run_id is not None

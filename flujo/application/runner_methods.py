@@ -30,6 +30,7 @@ from ..domain.processors import AgentProcessors
 from ..domain.resources import AppResources
 from ..type_definitions.common import JSONObject
 from .core.context_manager import _extract_missing_fields
+from .core.async_iter import aclose_if_possible
 from .runner_execution import resume_async_inner
 from .run_session import RunSession
 
@@ -51,7 +52,7 @@ class _RunAsyncHandle(Generic[ContextT]):
         self._factory = factory
 
     def __aiter__(self) -> AsyncIterator[object]:
-        return self._factory()
+        return _AutoClosingAsyncIterator(self._factory())
 
     def __await__(self) -> Iterator[object]:
         async def _consume() -> PipelineResult[ContextT]:
@@ -80,6 +81,36 @@ class _RunAsyncHandle(Generic[ContextT]):
         return _consume().__await__()
 
 
+class _AutoClosingAsyncIterator(AsyncIterator[object]):
+    """Wrap an async iterator and eagerly close it after yielding a terminal PipelineResult.
+
+    This avoids teardown-time warnings when callers only consume the first PipelineResult
+    (common in pause/resume tests and CLI usage).
+    """
+
+    def __init__(self, agen: AsyncIterator[object]) -> None:
+        self._agen = agen
+        self._closed = False
+
+    def __aiter__(self) -> "_AutoClosingAsyncIterator":
+        return self
+
+    async def __anext__(self) -> object:
+        if self._closed:
+            raise StopAsyncIteration
+        item = await self._agen.__anext__()
+        if isinstance(item, PipelineResult):
+            self._closed = True
+            await aclose_if_possible(self._agen)
+        return item
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        await aclose_if_possible(self._agen)
+
+
 async def run_outcomes_async(
     self: Flujo[RunnerInT, RunnerOutT, ContextT],
     initial_input: RunnerInT,
@@ -90,10 +121,11 @@ async def run_outcomes_async(
     """Run the pipeline and yield typed StepOutcome events."""
     pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
     last_step_result: StepResult | None = None
+    agen = self.run_async(
+        initial_input, run_id=run_id, initial_context_data=initial_context_data
+    ).__aiter__()
     try:
-        async for item in self.run_async(
-            initial_input, run_id=run_id, initial_context_data=initial_context_data
-        ):
+        async for item in agen:
             if isinstance(item, StepOutcome):
                 if isinstance(item, Success):
                     last_step_result = item.step_result
@@ -130,6 +162,8 @@ async def run_outcomes_async(
             msg = None
         yield Paused(message=msg or "Paused for HITL")
         return
+    finally:
+        await aclose_if_possible(agen)
 
     try:
         if isinstance(pipeline_result_obj, PipelineResult):

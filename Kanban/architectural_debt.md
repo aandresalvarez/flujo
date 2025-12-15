@@ -28,6 +28,9 @@ Non-goals:
 
 These were historically painful; they are now implemented and should be preserved:
 
+- **Async generator lifecycle leaks under xdist**: fast suite no longer emits
+  `RuntimeWarning: coroutine method 'aclose' ... was never awaited` by ensuring runner/session/manager
+  iterators are deterministically closed and by auto-closing iterators on terminal yields.
 - **Nested HITL hard gate** via `_check_hitl_nesting_safety` raising `ConfigurationError`
   (`flujo/application/core/policy_primitives.py`).
 - **Strict pricing exception propagation** (`PricingNotConfiguredError`) explicitly re-raised through
@@ -38,41 +41,10 @@ These were historically painful; they are now implemented and should be preserve
   (`flujo/domain/models.py`).
 - **SQLite sync bridge** uses `anyio` `BlockingPortal` (no ad-hoc loop/thread spawning)
   (`flujo/state/backends/sqlite_core.py`).
+- **Pydantic serializer warnings during context updates**: context injection now coerces dict payloads
+  into model-typed fields (including PEP604 unions) so `model_dump()` is warning-free.
 
 ## P0 — Correctness & Stability
-
-### P0.1 Async lifecycle leaks (warnings indicate real leaks)
-
-**Symptoms**
-- `RuntimeWarning: coroutine ... was never awaited`
-- `ResourceWarning: unclosed event loop`
-- Intermittent teardown-time warnings and occasional hangs/flakes.
-
-**Why it matters**
-- This often means real leaked resources (DB connections, HTTP clients, tasks, generators).
-- It makes “green CI” non-deterministic and hides correctness bugs in pause/abort paths.
-
-**Likely root causes**
-- Async generators / streams not deterministically closed on early termination.
-- Cleanup implemented via “best-effort” GC / thread joining instead of explicit `aclose()`/context managers.
-
-**Where to look**
-- Streaming/outcome paths: `Flujo.run_outcomes_async`, `run_session`, coordinator/dispatcher.
-- “Global cleanup” code blocks in CLI flows (they’re usually compensating for missing resource ownership).
-
-**Action plan**
-1. Add a “no leaks” test mode (or CI job) that runs a tight subset with warnings treated as errors:
-   `-W error::ResourceWarning -W error::RuntimeWarning` (xdist disabled).
-2. Ensure early-exit paths (`PausedException`, `PipelineAbortSignal`, hard failures) close streams/generators
-   in `finally` and call `aclose()` where applicable.
-3. Make resource ownership explicit:
-   - runners/backends/clients provide `aclose()` (or context manager),
-   - runners call `aclose()` exactly once.
-
-**Done when**
-- The “no leaks” job passes and stays stable (no warning noise) without relying on GC or thread enumeration.
-
----
 
 ### P0.2 Unclear async↔sync contract (multiple bridges, inconsistent semantics)
 
@@ -130,23 +102,11 @@ These were historically painful; they are now implemented and should be preserve
 
 ---
 
-### P1.2 Serialization is fragmented (persistence vs helpers vs Pydantic warnings)
+### P1.2 Serialization is fragmented (persistence vs helpers)
 
-**Symptoms**
-- Multiple serialization helpers exist (`flujo/utils/serialization.py`, `_serialize_for_json` in state backends).
-- Pydantic serializer warnings appear in tests (usually union/type mismatch issues).
-
-**Why it matters**
-- Persistence/resume/trace replay depend on deterministic serialization. Warnings often mean “silent shape drift”.
-
-**Action plan**
-1. Define a single “persistence serialization” contract and implementation (prefer `state/backends/base.py`).
-2. Restrict `flujo/utils/serialization.py` to non-persistence usage (or remove it if redundant).
-3. Fix model shapes that produce serializer warnings (prefer discriminated unions / stable schemas for logs).
-4. Add round-trip tests for persisted workflow state and trace replay payloads.
-
-**Done when**
-- Persistence payloads round-trip deterministically and serializer warnings are eliminated (or explicitly justified).
+**Current status**
+- Serializer-warning noise from context updates is resolved; remaining debt here is consolidation of the
+  persistence serialization surface (`state/backends/*` vs `flujo/utils/serialization.py`).
 
 ---
 
@@ -191,4 +151,3 @@ These were historically painful; they are now implemented and should be preserve
 
 **Done when**
 - Timing tests are robust under xdist and different random seeds.
-

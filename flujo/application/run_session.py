@@ -715,8 +715,10 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
 
             return
 
+        gen = _run_generator()
         try:
-            async for item in _run_generator():
+            async for item in gen:
                 yield item
         finally:
+            await aclose_if_possible(gen)
             await self._shutdown_state_backend()
