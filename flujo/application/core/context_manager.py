@@ -6,6 +6,7 @@ import weakref
 import types
 import logging
 from ...domain.models import BaseModel
+from ...infra import telemetry
 from ...utils.context import safe_merge_context_updates
 from ...exceptions import ContextMutationError
 from .context_strategies import (
@@ -370,7 +371,8 @@ class ContextManager:
                 and isinstance(main_context, BaseModel)
                 and (branch_context is None or isinstance(branch_context, BaseModel))
             ):
-                for field_name, field_value in merged:
+                for field_name in type(merged).model_fields:
+                    field_value = getattr(merged, field_name, None)
                     if not isinstance(field_value, ContextReference):
                         continue
                     src = None
@@ -384,8 +386,10 @@ class ContextManager:
                             src = cand
                     if src is not None:
                         field_value.set(src._value)
-        except Exception:
-            pass
+        except (AttributeError, TypeError) as exc:
+            telemetry.logfire.debug(
+                f"[ContextManager] Failed to preserve ContextReference values: {type(exc).__name__}: {exc}"
+            )
         return merged
 
     @staticmethod

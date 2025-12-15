@@ -65,7 +65,7 @@ Moved to “Previously debt, now solved” above. Do not reintroduce reactive ch
 
 ### P1.2 Serialization is fragmented (persistence vs helpers)
 
-**Current status**
+#### Current Status
 - Serializer-warning noise from context updates is resolved; remaining debt here is consolidation of the
   persistence serialization surface (`state/backends/*` vs `flujo/utils/serialization.py`).
 
@@ -79,19 +79,19 @@ Moved to “Previously debt, now solved” above. Do not reintroduce broad “gl
 
 ### P2.1 Python 3.13 timezone hygiene (`datetime.utcnow()` deprecations) — Solved
 
-**Symptoms**
+#### Symptoms
 - Deprecation warnings from `datetime.utcnow()` in tests and fixtures.
 
-**Current status**
+#### Current Status
 - No `utcnow()` usage remains; timestamps use `datetime.now(datetime.UTC)` and are timezone-aware.
 
 ---
 
 ### P2.2 CI micro-timing brittleness (flake detector failures) — Solved
 
-**Symptoms**
+#### Symptoms
 - Ratio assertions on sub-millisecond operations fail intermittently under xdist / noisy schedulers.
 
-**Current status**
+#### Current Status
 - The core micro-timing test uses batched measurements and P95/median ratios (not max/avg), reducing
   scheduler-outlier flakiness under xdist/randomized order.

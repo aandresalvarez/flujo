@@ -113,6 +113,11 @@ flujo.close()
 # Context manager usage guarantees cleanup even if an exception is raised.
 with Flujo(pipeline) as runner:
     runner.run("SELECT FROM")
+
+# Note: the sync context manager (`with Flujo(...)`) must not be used inside `async def` functions.
+# In async contexts, use `async with` or call `await runner.aclose()` explicitly.
+async with Flujo(pipeline) as runner:
+    await runner.run_result_async("SELECT FROM")
 ```
 
 ## Environment Variables

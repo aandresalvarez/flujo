@@ -39,3 +39,5 @@ def test_register_step_type_and_policy() -> None:
     finally:
         if prior_policy is not None:
             registry.register_policy(StateMachineStep, prior_policy)
+        else:
+            registry.unregister_policy(StateMachineStep)

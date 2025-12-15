@@ -479,12 +479,9 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         try:
             async for item in run_iter:
                 if isinstance(item, PipelineResult) and getattr(item, "step_history", None):
-                    try:
-                        last_ctx = getattr(item.step_history[-1], "branch_context", None)
-                        if last_ctx is not None:
-                            item.final_pipeline_context = last_ctx
-                    except Exception:
-                        pass
+                    last_ctx = getattr(item.step_history[-1], "branch_context", None)
+                    if last_ctx is not None:
+                        item.final_pipeline_context = last_ctx
                 yield item
         finally:
             await aclose_if_possible(run_iter)

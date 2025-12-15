@@ -83,3 +83,11 @@ async def test_runner_close_raises_inside_running_loop() -> None:
     runner = _make_runner(state_backend=_RecordingBackend())
     with pytest.raises(TypeError, match="cannot be called from a running event loop"):
         runner.close()
+
+
+@pytest.mark.asyncio
+async def test_runner_sync_context_manager_raises_inside_running_loop() -> None:
+    runner = _make_runner(state_backend=_RecordingBackend())
+    with pytest.raises(TypeError, match="cannot be called from a running event loop"):
+        with runner:
+            pass

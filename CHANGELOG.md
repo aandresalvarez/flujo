@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Runner now exposes `close()/aclose()` plus context manager helpers so callers can explicitly release resources when reusing the same instance.
 
+### Changed
+- Sync cleanup now fails fast inside running event loops: `runner.close()` and `with Flujo(...)` raise `TypeError` when called inside `async def`; use `await runner.aclose()` / `async with Flujo(...)` instead.
+
 ### Docs
 - Documented the new runner cleanup pattern in the user guide.
 

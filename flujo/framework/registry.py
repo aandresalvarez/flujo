@@ -41,6 +41,13 @@ def register_policy(step_class: Type[Step[_Any, _Any]], policy_instance: Any) ->
     _policy_registry[step_class] = policy_instance
 
 
+def unregister_policy(step_class: Type[Step[_Any, _Any]]) -> None:
+    """Unregister an execution policy instance for a Step subclass (best-effort)."""
+    if not isinstance(step_class, type) or not issubclass(step_class, Step):
+        raise ConfigurationError("unregister_policy: step_class must be a subclass of Step")
+    _policy_registry.pop(step_class, None)
+
+
 def get_step_class(kind: str) -> Optional[Type[Step[_Any, _Any]]]:
     """Return the registered Step class for a kind string, if any."""
     return _step_type_registry.get(kind)
