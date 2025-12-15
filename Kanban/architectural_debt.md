@@ -49,6 +49,9 @@ These were historically painful; they are now implemented and should be preserve
   (`run_sync` uses `asyncio.run()` only when no loop is running and otherwise raises with guidance).
 - **Pydantic serializer warnings during context updates**: context injection now coerces dict payloads
   into model-typed fields (including PEP604 unions) so `model_dump()` is warning-free.
+- **Persistence serialization unified**: state persistence normalizes via `flujo.utils.serialization`
+  (single engine); `flujo.state.backends.base._serialize_for_json` is a thin wrapper preserving
+  strict persistence semantics and typed circular placeholders for domain models.
 
 ## P0 — Correctness & Stability
 
@@ -63,11 +66,9 @@ Moved to “Previously debt, now solved” above. Keep sync→async bridging cen
 
 Moved to “Previously debt, now solved” above. Do not reintroduce reactive checks.
 
-### P1.2 Serialization is fragmented (persistence vs helpers)
+### P1.2 Serialization is fragmented (persistence vs helpers) — Solved
 
-#### Current Status
-- Serializer-warning noise from context updates is resolved; remaining debt here is consolidation of the
-  persistence serialization surface (`state/backends/*` vs `flujo/utils/serialization.py`).
+Moved to “Previously debt, now solved” above. Keep persistence serialization centralized.
 
 ---
 

@@ -245,6 +245,7 @@ def _json_serialize_impl(
     mode: str = "json",
     default_serializer: Optional[Callable[[Any], Any]] = None,
     circular_ref_placeholder: str | None = "<circular-ref>",
+    strict: bool = False,
     _seen: Optional[Set[int]] = None,
     _depth: int = 0,
 ) -> JsonValue:
@@ -264,22 +265,50 @@ def _json_serialize_impl(
     if _depth > 64:
         return f"<max-depth-exceeded:{type(obj).__name__}>"
 
+    def _select_circular_placeholder(value: Any) -> str:
+        try:
+            from flujo.domain.base_model import BaseModel as DomainBaseModel
+
+            if isinstance(value, DomainBaseModel):
+                return f"<{type(value).__name__} circular>"
+        except Exception:
+            pass
+
+        if HAS_PYDANTIC and isinstance(value, PydanticBaseModel):
+            return "<circular>"
+
+        return (
+            circular_ref_placeholder if circular_ref_placeholder is not None else "<circular-ref>"
+        )
+
     custom = lookup_custom_serializer(obj)
     if custom:
+        obj_id = id(obj)
+        if obj_id in _seen:
+            if mode == "cache":
+                return f"<{type(obj).__name__} circular>"
+            if circular_ref_placeholder is None:
+                return None
+            return _select_circular_placeholder(obj)
         try:
             custom_result = custom(obj)
         except Exception:
             custom_result = None
         else:
             if custom_result is not obj:
-                return _json_serialize_impl(
-                    custom_result,
-                    mode=mode,
-                    default_serializer=default_serializer,
-                    circular_ref_placeholder=circular_ref_placeholder,
-                    _seen=_seen,
-                    _depth=_depth + 1,
-                )
+                _seen.add(obj_id)
+                try:
+                    return _json_serialize_impl(
+                        custom_result,
+                        mode=mode,
+                        default_serializer=default_serializer,
+                        circular_ref_placeholder=circular_ref_placeholder,
+                        strict=strict,
+                        _seen=_seen,
+                        _depth=_depth + 1,
+                    )
+                finally:
+                    _seen.discard(obj_id)
 
     if isinstance(obj, (str, bool)) or obj is None:
         return obj
@@ -292,7 +321,9 @@ def _json_serialize_impl(
     if obj_id in _seen:
         if mode == "cache":
             return f"<{type(obj).__name__} circular>"
-        return circular_ref_placeholder
+        if circular_ref_placeholder is None:
+            return None
+        return _select_circular_placeholder(obj)
 
     _seen.add(obj_id)
     try:
@@ -302,6 +333,7 @@ def _json_serialize_impl(
                 mode=mode,
                 default_serializer=default_serializer,
                 circular_ref_placeholder=circular_ref_placeholder,
+                strict=strict,
                 _seen=_seen,
                 _depth=_depth + 1,
             )
@@ -334,16 +366,18 @@ def _json_serialize_impl(
             try:
                 dumped = obj.model_dump(mode="json" if mode != "python" else "python")
                 for ref in self_refs:
-                    dumped[ref] = (
-                        f"<{type(obj).__name__} circular>"
-                        if mode == "cache"
-                        else circular_ref_placeholder
-                    )
+                    if mode == "cache":
+                        dumped[ref] = f"<{type(obj).__name__} circular>"
+                    elif circular_ref_placeholder is None:
+                        dumped[ref] = None
+                    else:
+                        dumped[ref] = _select_circular_placeholder(obj)
                 return _json_serialize_impl(
                     dumped,
                     mode=mode,
                     default_serializer=default_serializer,
                     circular_ref_placeholder=circular_ref_placeholder,
+                    strict=strict,
                     _seen=_seen,
                     _depth=_depth + 1,
                 )
@@ -356,6 +390,7 @@ def _json_serialize_impl(
                     mode=mode,
                     default_serializer=default_serializer,
                     circular_ref_placeholder=circular_ref_placeholder,
+                    strict=strict,
                     _seen=_seen,
                     _depth=_depth + 1,
                 )
@@ -370,6 +405,7 @@ def _json_serialize_impl(
                 mode=mode,
                 default_serializer=default_serializer,
                 circular_ref_placeholder=circular_ref_placeholder,
+                strict=strict,
                 _seen=_seen,
                 _depth=_depth + 1,
             )
@@ -383,6 +419,7 @@ def _json_serialize_impl(
                         mode=mode,
                         default_serializer=default_serializer,
                         circular_ref_placeholder=circular_ref_placeholder,
+                        strict=strict,
                         _seen=_seen,
                         _depth=_depth + 1,
                     )
@@ -392,6 +429,7 @@ def _json_serialize_impl(
                     mode=mode,
                     default_serializer=default_serializer,
                     circular_ref_placeholder=circular_ref_placeholder,
+                    strict=strict,
                     _seen=_seen,
                     _depth=_depth + 1,
                 )
@@ -404,6 +442,7 @@ def _json_serialize_impl(
                     mode=mode,
                     default_serializer=default_serializer,
                     circular_ref_placeholder=circular_ref_placeholder,
+                    strict=strict,
                     _seen=_seen,
                     _depth=_depth + 1,
                 )
@@ -417,6 +456,7 @@ def _json_serialize_impl(
                     mode=mode,
                     default_serializer=default_serializer,
                     circular_ref_placeholder=circular_ref_placeholder,
+                    strict=strict,
                     _seen=_seen,
                     _depth=_depth + 1,
                 )
@@ -437,6 +477,7 @@ def _json_serialize_impl(
                     mode=mode,
                     default_serializer=default_serializer,
                     circular_ref_placeholder=circular_ref_placeholder,
+                    strict=strict,
                     _seen=_seen,
                     _depth=_depth + 1,
                 )
@@ -450,6 +491,8 @@ def _json_serialize_impl(
                     dumped,
                     mode=mode,
                     default_serializer=default_serializer,
+                    circular_ref_placeholder=circular_ref_placeholder,
+                    strict=strict,
                     _seen=_seen,
                     _depth=_depth + 1,
                 )
@@ -457,6 +500,11 @@ def _json_serialize_impl(
                 pass
 
         if hasattr(obj, "__dict__"):
+            if strict:
+                raise TypeError(
+                    f"{type(obj).__name__} is not serializable; "
+                    "register_custom_serializer or provide default_serializer"
+                )
             data = {
                 k: v for k, v in vars(obj).items() if not (k.startswith("__") and k.endswith("__"))
             }
@@ -467,6 +515,7 @@ def _json_serialize_impl(
                         mode=mode,
                         default_serializer=default_serializer,
                         circular_ref_placeholder=circular_ref_placeholder,
+                        strict=strict,
                         _seen=_seen,
                         _depth=_depth + 1,
                     )
@@ -484,6 +533,11 @@ def _json_serialize_impl(
             return f"<unserializable: {type(obj).__name__}>"
 
         if _depth > 0:
+            if strict:
+                raise TypeError(
+                    f"{type(obj).__name__} is not serializable; "
+                    "register_custom_serializer or provide default_serializer"
+                )
             return f"<unserializable: {type(obj).__name__}>"
         raise TypeError(
             f"{type(obj).__name__} is not serializable; "
@@ -505,6 +559,7 @@ def _serialize_for_json(
     mode: str = "json",
     default_serializer: Optional[Callable[[Any], Any]] = None,
     circular_ref_placeholder: str | None = "<circular-ref>",
+    strict: bool = False,
     _seen: Optional[Set[int]] = None,
 ) -> JsonValue:
     """Internal serialization for flujo modules.
@@ -516,6 +571,7 @@ def _serialize_for_json(
         mode=mode,
         default_serializer=default_serializer,
         circular_ref_placeholder=circular_ref_placeholder,
+        strict=strict,
         _seen=_seen,
     )
 
