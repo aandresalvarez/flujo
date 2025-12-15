@@ -103,9 +103,9 @@ async def test_architect_fallback_functionality(monkeypatch: pytest.MonkeyPatch)
         assert "steps:" in yaml_text, "YAML should contain steps"
 
         # Since our goal doesn't contain "http" or "search", it should fall back to stringify
-        assert (
-            "flujo.builtins.stringify" in yaml_text
-        ), "Should fall back to stringify for generic goals"
+        assert "flujo.builtins.stringify" in yaml_text, (
+            "Should fall back to stringify for generic goals"
+        )
         assert "Echo Input" in yaml_text, "Should use 'Echo Input' as step name"
 
         print(f"DEBUG: Generated YAML: {yaml_text}")
@@ -216,9 +216,9 @@ async def test_architect_http_goal_fallback(monkeypatch: pytest.MonkeyPatch) -> 
 
         # The fallback should still use stringify since the skills are mocked to return empty
         # Even with an HTTP goal, if the skills aren't available, it falls back to stringify
-        assert (
-            "flujo.builtins.stringify" in yaml_text
-        ), "Should fall back to stringify when skills unavailable"
+        assert "flujo.builtins.stringify" in yaml_text, (
+            "Should fall back to stringify when skills unavailable"
+        )
         assert "Echo Input" in yaml_text, "Should use 'Echo Input' as step name"
 
         print(f"DEBUG: HTTP goal generated YAML: {yaml_text}")

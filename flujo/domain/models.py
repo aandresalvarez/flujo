@@ -741,7 +741,10 @@ class PipelineContext(BaseModel):
         description="Evaluation checklist (Self-Correction pattern).",
     )
 
-    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
+    model_config: ClassVar[ConfigDict] = {
+        "arbitrary_types_allowed": True,
+        "validate_assignment": True,
+    }
 
     def get(self, key: str, default: Any = None) -> Any:  # pragma: no cover - small helper
         try:

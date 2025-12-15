@@ -166,9 +166,9 @@ async def test_performance_with_context_updates_large_context():
 
     print(f"Large context test: {execution_time:.2f}s")
     # Sanity check: large context operation should complete within 30s (major regression detection)
-    assert (
-        execution_time < 30.0
-    ), f"Large context test too slow: {execution_time:.2f}s (major regression)"
+    assert execution_time < 30.0, (
+        f"Large context test too slow: {execution_time:.2f}s (major regression)"
+    )
 
 
 @pytest.mark.asyncio
@@ -233,9 +233,9 @@ async def test_performance_with_context_updates_memory_intensive():
 
     print(f"Memory intensive test: {execution_time:.2f}s")
     # Sanity check: memory intensive operation should complete within 30s (major regression detection)
-    assert (
-        execution_time < 30.0
-    ), f"Memory intensive test too slow: {execution_time:.2f}s (major regression)"
+    assert execution_time < 30.0, (
+        f"Memory intensive test too slow: {execution_time:.2f}s (major regression)"
+    )
 
 
 @pytest.mark.asyncio
@@ -273,9 +273,9 @@ async def test_performance_with_context_updates_parallel():
 
     print(f"Parallel performance test: {execution_time:.2f}s")
     # Sanity check: parallel test should complete within 30s (major regression detection)
-    assert (
-        execution_time < 30.0
-    ), f"Parallel performance test too slow: {execution_time:.2f}s (major regression)"
+    assert execution_time < 30.0, (
+        f"Parallel performance test too slow: {execution_time:.2f}s (major regression)"
+    )
 
 
 @pytest.mark.asyncio
@@ -318,9 +318,9 @@ async def test_performance_with_context_updates_complex_pipeline():
 
     print(f"Complex pipeline test: {execution_time:.2f}s")
     # Sanity check: complex pipeline should complete within 60s (major regression detection)
-    assert (
-        execution_time < 60.0
-    ), f"Complex pipeline test too slow: {execution_time:.2f}s (major regression)"
+    assert execution_time < 60.0, (
+        f"Complex pipeline test too slow: {execution_time:.2f}s (major regression)"
+    )
 
 
 @pytest.mark.asyncio

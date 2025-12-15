@@ -370,7 +370,10 @@ def _deserialize_value(value: object, field_type: object, context_model: type[Ba
             if (
                 hasattr(resolved_element_type, "model_validate")
                 and callable(getattr(resolved_element_type, "model_validate", None))
-                and issubclass(resolved_element_type, BaseModel)
+                and (
+                    issubclass(resolved_element_type, BaseModel)
+                    or issubclass(resolved_element_type, PydanticBaseModel)
+                )
             ):
                 deserialized: list[object] = []
                 for item in value:
@@ -403,7 +406,10 @@ def _deserialize_value(value: object, field_type: object, context_model: type[Ba
             if (
                 hasattr(resolved_type, "model_validate")
                 and callable(getattr(resolved_type, "model_validate", None))
-                and issubclass(resolved_type, BaseModel)
+                and (
+                    issubclass(resolved_type, BaseModel)
+                    or issubclass(resolved_type, PydanticBaseModel)
+                )
             ):
                 try:
                     return resolved_type.model_validate(value)
@@ -644,7 +650,18 @@ def _inject_context_with_deep_merge(
                             if ft_str.startswith("typing."):
                                 # Skip strict callable validation for typing.* constructs
                                 pass
-                            elif hasattr(field_type, "model_validate"):
+                            elif (
+                                isinstance(field_type, type)
+                                and hasattr(field_type, "model_validate")
+                                and callable(getattr(field_type, "model_validate", None))
+                                and isinstance(value, dict)
+                            ):
+                                value = field_type.model_validate(value)
+                            elif (
+                                isinstance(field_type, type)
+                                and hasattr(field_type, "model_validate")
+                                and callable(getattr(field_type, "model_validate", None))
+                            ):
                                 field_type.model_validate(value)
                         except Exception as validation_error:
                             return f"Field '{key}' validation failed: {validation_error}"

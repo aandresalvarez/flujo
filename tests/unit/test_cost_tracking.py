@@ -835,9 +835,9 @@ class TestCostCalculator:
 
         for model_name, expected_provider in test_cases:
             inferred_provider = calculator._infer_provider_from_model(model_name)
-            assert (
-                inferred_provider == expected_provider
-            ), f"Failed for {model_name}: expected {expected_provider}, got {inferred_provider}"
+            assert inferred_provider == expected_provider, (
+                f"Failed for {model_name}: expected {expected_provider}, got {inferred_provider}"
+            )
 
         # Test unknown models
         unknown_models = ["unknown-model", "custom-model", "test-model"]
@@ -2499,9 +2499,7 @@ class TestEdgeCasesAndRobustness:
             assert prompt_tokens == 300
             assert completion_tokens == 150
             # Cost should be calculated for models with pricing
-            assert (
-                cost_usd > 0.0
-            ), (
+            assert cost_usd > 0.0, (
                 f"Cost should be > 0.0 for model_id='{model_id}'"
             )  # Should have pricing for all configured models
 

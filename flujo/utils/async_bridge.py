@@ -23,6 +23,10 @@ def run_sync(coro: Coroutine[object, object, T]) -> T:
     except RuntimeError:
         return asyncio.run(coro)
 
+    # We were handed a coroutine object that will never be awaited in this thread.
+    # Close it to avoid "coroutine was never awaited" warnings.
+    coro.close()
+
     raise TypeError(
         "run_sync() cannot be called from a running event loop thread. "
         "Use async APIs (await) instead."

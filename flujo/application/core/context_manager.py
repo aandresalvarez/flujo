@@ -359,7 +359,34 @@ class ContextManager:
     def merge(main_context: BaseModel | None, branch_context: BaseModel | None) -> BaseModel | None:
         """Merge updates from branch_context into main_context using configured strategy."""
         strategy = ContextManager._resolve_strategy()
-        return strategy.merge(main_context, branch_context)
+        merged = strategy.merge(main_context, branch_context)
+        # ContextReference values are held in private attrs and can be dropped by merge
+        # implementations that rebuild models (e.g., strict merge fallbacks).
+        try:
+            from ...domain.models import ContextReference
+
+            if (
+                isinstance(merged, BaseModel)
+                and isinstance(main_context, BaseModel)
+                and (branch_context is None or isinstance(branch_context, BaseModel))
+            ):
+                for field_name, field_value in merged:
+                    if not isinstance(field_value, ContextReference):
+                        continue
+                    src = None
+                    if branch_context is not None and hasattr(branch_context, field_name):
+                        cand = getattr(branch_context, field_name, None)
+                        if isinstance(cand, ContextReference) and cand._value is not None:
+                            src = cand
+                    if src is None and hasattr(main_context, field_name):
+                        cand = getattr(main_context, field_name, None)
+                        if isinstance(cand, ContextReference) and cand._value is not None:
+                            src = cand
+                    if src is not None:
+                        field_value.set(src._value)
+        except Exception:
+            pass
+        return merged
 
     @staticmethod
     def merge_strict(
@@ -597,7 +624,7 @@ def _clone_context(obj: BaseModel | None) -> BaseModel | None:
         # Field-wise deepcopy with skip-on-failure to avoid shared mutable resources
         try:
             data: dict[str, object] = {}
-            for name in getattr(obj, "model_fields", {}):
+            for name in type(obj).model_fields:
                 val = getattr(obj, name, None)
                 try:
                     data[name] = copy.deepcopy(val)
