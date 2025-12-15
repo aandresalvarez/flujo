@@ -70,6 +70,66 @@ class TestSerializationGuardrails:
             )
 
 
+class TestQuotaGuardrails:
+    """Ensure UsageLimits→Quota translation stays centralized."""
+
+    @pytest.fixture
+    def flujo_root(self) -> Path:
+        """Get the root directory of the Flujo project."""
+        return Path(__file__).parent.parent.parent
+
+    def test_limits_to_quota_boundary_is_centralized(self, flujo_root: Path) -> None:
+        """UsageLimits must not be translated into Quota outside quota_manager.
+
+        The quota system is the single enforcement surface; translation from legacy limits is a
+        one-way boundary and should remain centralized to avoid divergence.
+        """
+        app_dir = flujo_root / "flujo/application"
+        if not app_dir.exists():
+            pytest.skip("Application directory not found")
+
+        allowlist = {flujo_root / "flujo/application/core/quota_manager.py"}
+        limit_attrs = {"total_cost_usd_limit", "total_tokens_limit"}
+
+        violations: List[str] = []
+        for py_file in app_dir.rglob("*.py"):
+            if py_file in allowlist:
+                continue
+
+            try:
+                content = py_file.read_text()
+                tree = ast.parse(content, filename=str(py_file))
+            except (SyntaxError, UnicodeDecodeError, OSError):
+                continue
+
+            has_limit_attr = any(
+                isinstance(node, ast.Attribute) and node.attr in limit_attrs
+                for node in ast.walk(tree)
+            )
+            if not has_limit_attr:
+                continue
+
+            has_quota_call = any(
+                isinstance(node, ast.Call)
+                and (
+                    (isinstance(node.func, ast.Name) and node.func.id == "Quota")
+                    or (isinstance(node.func, ast.Attribute) and node.func.attr == "Quota")
+                )
+                for node in ast.walk(tree)
+            )
+            if not has_quota_call:
+                continue
+
+            rel_path = py_file.relative_to(flujo_root)
+            violations.append(str(rel_path))
+
+        if violations:
+            pytest.fail(
+                "Found ad-hoc UsageLimits→Quota translation outside "
+                "flujo/application/core/quota_manager.py:\n" + "\n".join(sorted(violations))
+            )
+
+
 class TestDSLCoreDecoupling:
     """Ensure DSL modules do not import from application.core at module level."""
 

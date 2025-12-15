@@ -22,7 +22,6 @@ from ..domain.dsl.pipeline import Pipeline
 from ..domain.models import (
     PipelineContext,
     PipelineResult,
-    Quota,
     UsageLimits,
 )
 from ..domain.resources import AppResources
@@ -39,6 +38,7 @@ from ..type_definitions.common import JSONObject
 from ..utils.config import get_settings
 from .core.execution_manager import ExecutionManager
 from .core.async_iter import aclose_if_possible
+from .core.quota_manager import build_root_quota
 from .core.state_manager import StateManager
 from .core.step_coordinator import StepCoordinator
 
@@ -149,15 +149,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
         step_coordinator: StepCoordinator[ContextT] = StepCoordinator[ContextT](
             self.hooks, self.resources
         )
-        root_quota = None
-        if self.usage_limits is not None:
-            total_cost_limit = (
-                float(self.usage_limits.total_cost_usd_limit)
-                if self.usage_limits.total_cost_usd_limit is not None
-                else float("inf")
-            )
-            total_tokens_limit = int(self.usage_limits.total_tokens_limit or 0)
-            root_quota = Quota(total_cost_limit, total_tokens_limit)
+        root_quota = build_root_quota(self.usage_limits)
 
         execution_manager = ExecutionManager(
             self.pipeline,

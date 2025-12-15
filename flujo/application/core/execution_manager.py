@@ -20,10 +20,6 @@ from flujo.domain.models import (
     BackgroundLaunched,
 )
 
-try:
-    from flujo.domain.models import Quota as _Quota
-except Exception:
-    _Quota = None
 from flujo.exceptions import (
     ContextInheritanceError,
     PipelineAbortSignal,
@@ -37,6 +33,7 @@ from flujo.application.core.context_adapter import _build_context_update
 
 from .context_manager import ContextManager
 from .async_iter import aclose_if_possible
+from .quota_manager import build_root_quota
 from .step_coordinator import LegacyStepExecutor, StepCoordinator
 from .state_manager import StateManager
 from .type_validator import TypeValidator
@@ -110,25 +107,9 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
         self.type_validator = type_validator or TypeValidator()
         self.inside_loop_step = inside_loop_step  # Track if we're inside a loop step
         # Quota for proactive reservations
-        if root_quota is not None:
-            self.root_quota = root_quota
-        else:
-            # Build a root quota from usage limits when present
-            try:
-                if self.usage_limits is not None:
-                    max_cost = (
-                        float(self.usage_limits.total_cost_usd_limit)
-                        if self.usage_limits.total_cost_usd_limit is not None
-                        else float("inf")
-                    )
-                    max_tokens = int(self.usage_limits.total_tokens_limit or 0)
-                    from flujo.domain.models import Quota as _Quota2
-
-                    self.root_quota = _Quota2(max_cost, max_tokens)
-                else:
-                    self.root_quota = None
-            except Exception:
-                self.root_quota = root_quota
+        self.root_quota = (
+            root_quota if root_quota is not None else build_root_quota(self.usage_limits)
+        )
 
     async def execute_steps(
         self,

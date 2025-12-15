@@ -8,6 +8,25 @@ from typing import Optional, Tuple
 from ...domain.models import Quota, UsageEstimate, UsageLimits
 
 
+def build_root_quota(limits: Optional[UsageLimits]) -> Optional[Quota]:
+    """Build the root quota from usage limits.
+
+    This is the single boundary where legacy `UsageLimits` translate into the quota system.
+    When no limits are provided, return `None` to indicate "unlimited" for callers that use
+    `None` as the sentinel.
+    """
+    if limits is None:
+        return None
+    cost = (
+        float(limits.total_cost_usd_limit)
+        if limits.total_cost_usd_limit is not None
+        else float("inf")
+    )
+    # Use a large sentinel for "unlimited" tokens when not provided.
+    tokens = int(limits.total_tokens_limit) if limits.total_tokens_limit is not None else 2**31 - 1
+    return Quota(cost, tokens)
+
+
 class QuotaManager:
     """Manages quota lifecycle: creation, reservation, reconciliation."""
 
@@ -20,17 +39,11 @@ class QuotaManager:
 
     def create_root_quota(self) -> Quota:
         """Create the root quota from usage limits."""
-        cost = float("inf")
-        tokens = 2**31 - 1  # Max int for "unlimited"
-
-        if self._limits:
-            if self._limits.total_cost_usd_limit is not None:
-                cost = self._limits.total_cost_usd_limit
-            if self._limits.total_tokens_limit is not None:
-                tokens = self._limits.total_tokens_limit
-
-        self._root_quota = Quota(cost, tokens)
-        return self._root_quota
+        root = build_root_quota(self._limits)
+        if root is None:
+            root = Quota(float("inf"), 2**31 - 1)
+        self._root_quota = root
+        return root
 
     def get_current_quota(self) -> Optional[Quota]:
         """Get the quota from the current async context."""
