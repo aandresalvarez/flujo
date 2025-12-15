@@ -1,5 +1,6 @@
 """Unit tests for the new execution management components."""
 
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, Mock
 from datetime import datetime
@@ -17,9 +18,10 @@ from flujo.domain.models import (
     StepResult,
     UsageLimits,
     PipelineContext,
+    Failure,
 )
 
-from flujo.exceptions import TypeMismatchError
+from flujo.exceptions import PipelineAbortSignal, TypeMismatchError
 
 
 class TestStateManager:
@@ -342,6 +344,58 @@ class TestExecutionManager:
 
         assert len(results) == 0  # No streaming output
         assert len(result.step_history) == 2  # Both steps in the pipeline were executed
+
+    @pytest.mark.asyncio
+    async def test_abort_from_on_step_failure_closes_step_iterator(self) -> None:
+        """Abort paths must close the in-flight step iterator to avoid asyncgen leaks."""
+
+        closed = False
+        gate = asyncio.Event()
+
+        class AbortCoordinator:
+            resources = None
+
+            async def execute_step(self, *_a: object, **_k: object):
+                nonlocal closed
+                try:
+                    yield Failure(
+                        error=Exception("fail"),
+                        feedback="fail",
+                        step_result=StepResult(name="s1", success=False, feedback="fail"),
+                    )
+                    await gate.wait()
+                finally:
+                    closed = True
+
+            async def _dispatch_hook(self, *_a: object, **_k: object) -> None:
+                raise PipelineAbortSignal("Aborted from hook")
+
+            def update_pipeline_result(
+                self, result: PipelineResult, step_result: StepResult
+            ) -> None:
+                result.step_history.append(step_result)
+
+        step = Mock(spec=Step)
+        step.name = "s1"
+        step.__step_input_type__ = str
+        step.__step_output_type__ = str
+        pipeline = Mock(spec=Pipeline)
+        pipeline.steps = [step]
+
+        manager = ExecutionManager(pipeline, step_coordinator=AbortCoordinator())
+        result = PipelineResult()
+        outputs: list[object] = []
+        async for item in manager.execute_steps(
+            start_idx=0,
+            data="x",
+            context=None,
+            result=result,
+            stream_last=False,
+        ):
+            outputs.append(item)
+
+        assert outputs, "Expected a PipelineResult yield on abort"
+        assert closed is True
 
     def test_set_final_context(self, execution_manager):
         """Test setting final context."""

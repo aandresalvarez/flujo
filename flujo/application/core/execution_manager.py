@@ -36,6 +36,7 @@ from flujo.infra import telemetry
 from flujo.application.core.context_adapter import _build_context_update
 
 from .context_manager import ContextManager
+from .async_iter import aclose_if_possible
 from .step_coordinator import LegacyStepExecutor, StepCoordinator
 from .state_manager import StateManager
 from .type_validator import TypeValidator
@@ -183,6 +184,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
             step_result_recorded: bool = False
             usage_limit_exceeded = False  # Track if a usage limit exception was raised
             paused_execution = False  # Track if execution was paused
+            step_iter: AsyncIterator[object] | None = None
 
             # ✅ CRITICAL FIX: Persist state AFTER step execution for crash recovery
             # This ensures state reflects the completed step for proper resumption
@@ -214,7 +216,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     chosen_step_executor = step_executor
 
                     last_item: object | None = None
-                    async for item in self.step_coordinator.execute_step(
+                    step_iter = self.step_coordinator.execute_step(
                         step=step,
                         data=data,
                         context=context,
@@ -223,7 +225,9 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         step_executor=chosen_step_executor,
                         usage_limits=self.usage_limits,
                         quota=self.root_quota,
-                    ):
+                    )
+                    assert step_iter is not None
+                    async for item in step_iter:
                         last_item = item
                         # Accept both StepOutcome and legacy values
                         if isinstance(item, StepOutcome):
@@ -415,6 +419,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                 # Otherwise, treat as immediate graceful termination
                                 self.set_final_context(result, context)
                                 yield result
+                                await aclose_if_possible(step_iter)
                                 return
                             elif isinstance(item, BackgroundLaunched):
                                 # Surface lifecycle event to callers before synthesizing the step result
@@ -429,6 +434,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                             else:
                                 # Unknown outcome: ignore
                                 pass
+                    await aclose_if_possible(step_iter)
                     if last_item is not None and not isinstance(last_item, StepOutcome):
                         if isinstance(last_item, StepResult):
                             # Legacy path: just capture for later bookkeeping; do not forward paused records
@@ -613,6 +619,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                         pass
                                 self.set_final_context(result, context)
                                 yield result
+                                await aclose_if_possible(step_iter)
                                 return
                             elif isinstance(_out, _Paused):
                                 # Normalize to pause signal
@@ -667,10 +674,12 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                             else:
                                 self.set_final_context(result, context or context_before_step)
                                 yield result
+                                await aclose_if_possible(step_iter)
                                 return
                         except Exception:
                             self.set_final_context(result, context or context_before_step)
                             yield result
+                            await aclose_if_possible(step_iter)
                             return
 
                     # Pass output to next step
@@ -880,6 +889,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                             if isinstance(step, _LoopStep) and hasattr(step, "iterable_input"):
                                 # Let the loop handler control success/failure; do not halt here.
                                 yield result
+                                await aclose_if_possible(step_iter)
                                 return
                         except Exception:
                             pass
@@ -910,6 +920,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
 
                         self.set_final_context(result, context)
                         yield result
+                        await aclose_if_possible(step_iter)
                         return
 
                 except NonRetryableError:
@@ -933,6 +944,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                 except PipelineAbortSignal:
                     # Early abort (pause or hook): do not append the in-flight step_result.
                     # Tests expect that only previously completed steps are present.
+                    await aclose_if_possible(step_iter)
                     # Ensure paused state is reflected in context for HITL scenarios
                     try:
                         if context is not None:
@@ -973,6 +985,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     paused_execution = True
                     self.set_final_context(result, context)
                     yield result
+                    await aclose_if_possible(step_iter)
                     return
 
                 except PausedException as e:

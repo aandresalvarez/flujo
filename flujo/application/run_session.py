@@ -38,6 +38,7 @@ from ..state import StateBackend
 from ..type_definitions.common import JSONObject
 from ..utils.config import get_settings
 from .core.execution_manager import ExecutionManager
+from .core.async_iter import aclose_if_possible
 from .core.state_manager import StateManager
 from .core.step_coordinator import StepCoordinator
 
@@ -167,7 +168,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
             root_quota=root_quota,
         )
 
-        async for item in execution_manager.execute_steps(
+        inner_iter = execution_manager.execute_steps(
             start_idx=start_idx,
             data=data,
             context=context,
@@ -175,8 +176,12 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
             stream_last=stream_last,
             run_id=run_id,
             state_created_at=state_created_at,
-        ):
-            yield item
+        )
+        try:
+            async for item in inner_iter:
+                yield item
+        finally:
+            await aclose_if_possible(inner_iter)
 
     async def run_async(
         self,
@@ -451,7 +456,8 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                     )
                     return pipeline_result_obj
 
-                async for chunk in self.execute_steps(
+                steps_iter: AsyncIterator[object] | None = None
+                steps_iter = self.execute_steps(
                     start_idx,
                     data,
                     self._as_context_t(current_context_instance),
@@ -460,7 +466,9 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                     run_id=run_id_for_state,
                     state_backend=self.state_backend,
                     state_created_at=state_created_at,
-                ):
+                )
+                assert steps_iter is not None
+                async for chunk in steps_iter:
                     if isinstance(chunk, PipelineResult):
                         expected_steps = len(pipeline.steps)
                         have = len(chunk.step_history)
@@ -524,7 +532,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                 except Exception:
                                     pass
                                 yield chunk
-                                return
+                                break
                             if isinstance(ctx, PipelineContext) and (
                                 getattr(ctx, "loop_iteration_index", None) is not None
                                 or getattr(ctx, "loop_step_index", None) is not None
@@ -536,7 +544,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                     _yielded_pipeline_result = True
                                     chunk.success = False
                                     yield chunk
-                                    return
+                                    break
                                 except Exception:
                                     pass
                         except Exception:
@@ -600,6 +608,10 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                                 e.result.step_history = pipeline_result_obj.step_history
                 raise
             finally:
+                try:
+                    await aclose_if_possible(steps_iter)
+                except Exception:
+                    pass
                 if (
                     self._trace_manager is not None
                     and getattr(self._trace_manager, "_root_span", None) is not None

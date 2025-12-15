@@ -447,36 +447,21 @@ def create_default_backend(self: Flujo[RunnerInT, RunnerOutT, ContextT]) -> "Exe
 
 
 def close_runner(self: Flujo[RunnerInT, RunnerOutT, ContextT]) -> None:
-    """Synchronously release runner-owned resources (best-effort in async contexts)."""
+    """Synchronously release runner-owned resources.
+
+    In async contexts (when an event loop is running in the current thread), callers must
+    use `await runner.aclose()` or `async with Flujo(...)` instead of `runner.close()`.
+    """
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         asyncio.run(self.aclose())
         return
 
-    task = loop.create_task(self.aclose())
-    self._pending_close_tasks.append(task)
-
-    def _on_done(t: asyncio.Task[object]) -> None:
-        try:
-            self._pending_close_tasks.remove(t)
-        except ValueError:
-            pass
-        try:
-            exc = t.exception()
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            return
-        if exc is not None:
-            try:
-                from ..infra import telemetry as _telemetry
-
-                _telemetry.logfire.warning(f"Runner close task raised: {exc}")
-            except Exception:
-                pass
-
-    task.add_done_callback(_on_done)
+    raise TypeError(
+        "Flujo.close() cannot be called from a running event loop. "
+        "Use `await runner.aclose()` or `async with Flujo(...)` instead."
+    )
 
 
 def make_session(
