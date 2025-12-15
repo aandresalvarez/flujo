@@ -234,6 +234,8 @@ def create(  # <--- REVERT BACK TO SYNC
                 globals()[_nm] = getattr(_helpers_mod, _nm)
     except Exception:
         pass
+    runner: Any | None = None
+    state_backend: Any | None = None
     try:
         # Wizard shortcut: generate natural YAML without running the Architect
         if wizard:
@@ -424,15 +426,15 @@ def create(  # <--- REVERT BACK TO SYNC
             try:
                 from .config import load_backend_from_config as _load_backend_from_config
 
-                _state_backend = _load_backend_from_config()
+                state_backend = _load_backend_from_config()
             except Exception:
-                _state_backend = None
+                state_backend = None
 
             runner = create_flujo_runner(
                 pipeline=pipeline_obj,
                 context_model_class=_ArchitectContext,
                 initial_context_data=initial_context_data,
-                state_backend=_state_backend,
+                state_backend=state_backend,
             )
 
             # For now, require goal as input too (can be refined by architect design)
@@ -870,66 +872,25 @@ def create(  # <--- REVERT BACK TO SYNC
                 _warnings.resetwarnings()
             except Exception:
                 pass
-
-            # Comprehensive cleanup to prevent process hang
             try:
-                import asyncio
-                import gc
-                import threading
-
-                # Force garbage collection
-                gc.collect()
-
-                # Cancel any remaining asyncio tasks
-                try:
-                    loop = asyncio.get_running_loop()
-                    # If we're in a running loop, cancel all tasks
-                    tasks = asyncio.all_tasks(loop)
-                    if tasks:
-                        for task in tasks:
-                            if not task.done():
-                                task.cancel()
-                except RuntimeError:
-                    # No running loop, which is expected
-                    pass
-
-                # Clean up any remaining threads that might be hanging
-                threads = [
-                    t
-                    for t in threading.enumerate()
-                    if t != threading.main_thread() and t.is_alive()
-                ]
-                if threads:
-                    for thread in threads:
-                        try:
-                            # Try to join with a timeout to avoid hanging
-                            thread.join(timeout=0.1)
-                        except Exception:
-                            pass
-
-                # Additional cleanup for common async libraries
-                try:
-                    # Clean up httpx connection pools
-                    import httpx
-
-                    if hasattr(httpx, "_default_limits"):
-                        httpx._default_limits = None
-                except Exception:
-                    pass
-
-                try:
-                    # Clean up any SQLite async locks
-                    # Note: sqlite3.connect._instance doesn't exist in standard Python
-                    # This cleanup was attempting to access a non-existent attribute
-                    pass
-                except Exception:
-                    pass
-
-                # Force final garbage collection
-                gc.collect()
-
+                if runner is not None:
+                    close_fn = getattr(runner, "close", None)
+                    if callable(close_fn):
+                        close_fn()
             except Exception:
-                # Don't fail the command on cleanup errors
+                pass
+            try:
+                if state_backend is not None:
+                    close_sync_fn = getattr(state_backend, "close_sync", None)
+                    if callable(close_sync_fn):
+                        close_sync_fn()
+                    else:
+                        close_async_fn = getattr(state_backend, "close", None)
+                        if callable(close_async_fn):
+                            from flujo.utils.async_bridge import run_sync
+
+                            run_sync(close_async_fn())
+            except Exception:
                 pass
     except typer.Exit:
         # Preserve explicit exit codes for wizard/architect flows without wrapping

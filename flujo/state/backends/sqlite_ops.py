@@ -13,7 +13,6 @@ import atexit
 from flujo.infra import telemetry
 from flujo.type_definitions.common import JSONObject
 from flujo.utils.serialization import (
-    _robust_serialize_internal as robust_serialize,
     safe_deserialize,
 )
 from .sqlite_core import SQLiteBackendBase, _fast_json_dumps
@@ -58,14 +57,13 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                         return str(ts)
 
                     # OPTIMIZATION: Use more efficient serialization for performance-critical scenarios
-                    # Skip expensive robust_serialize for simple data types
+                    # Skip expensive conversions for simple data types
                     pipeline_context = state["pipeline_context"]
                     if isinstance(pipeline_context, dict):
                         # For simple dicts, use direct JSON serialization
                         pipeline_context_json = _fast_json_dumps(pipeline_context)
                     else:
-                        # For complex objects, use robust serialization
-                        pipeline_context_json = _fast_json_dumps(robust_serialize(pipeline_context))
+                        pipeline_context_json = _fast_json_dumps(pipeline_context)
 
                     last_step_output = state.get("last_step_output")
                     if last_step_output is not None:
@@ -73,19 +71,13 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                             # For simple types, use direct JSON serialization
                             last_step_output_json = _fast_json_dumps(last_step_output)
                         else:
-                            # For complex objects, use robust serialization
-                            last_step_output_json = _fast_json_dumps(
-                                robust_serialize(last_step_output)
-                            )
+                            last_step_output_json = _fast_json_dumps(last_step_output)
                     else:
                         last_step_output_json = None
 
                     step_history = state.get("step_history")
                     if step_history is not None:
-                        try:
-                            step_history_json = _fast_json_dumps(robust_serialize(step_history))
-                        except Exception:
-                            step_history_json = _fast_json_dumps(step_history)
+                        step_history_json = _fast_json_dumps(step_history)
                     else:
                         step_history_json = None
 
@@ -94,10 +86,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
                     metadata_json = None
                     metadata = state.get("metadata")
                     if metadata is not None:
-                        if isinstance(metadata, dict):
-                            metadata_json = _fast_json_dumps(metadata)
-                        else:
-                            metadata_json = _fast_json_dumps(robust_serialize(metadata))
+                        metadata_json = _fast_json_dumps(metadata)
 
                     await db.execute(
                         """
@@ -1014,7 +1003,7 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
             async def _save() -> None:
                 conn = await self._create_connection()
                 try:
-                    payload = _fast_json_dumps(robust_serialize(value))
+                    payload = _fast_json_dumps(value)
                     now = datetime.now(timezone.utc).isoformat()
                     await conn.execute(
                         """

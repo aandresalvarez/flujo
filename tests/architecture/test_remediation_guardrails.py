@@ -69,6 +69,29 @@ class TestSerializationGuardrails:
                 + "\n\nUse model_dump(mode='json') or _serialize_for_json instead."
             )
 
+    def test_no_robust_serializer_in_state_backends(self, flujo_root: Path) -> None:
+        """Persistence backends should use the shared persistence serializer, not robust serializers."""
+        backends_dir = flujo_root / "flujo/state/backends"
+        if not backends_dir.exists():
+            pytest.skip("state backends directory not found")
+
+        violations: List[str] = []
+        for py_file in backends_dir.rglob("*.py"):
+            try:
+                content = py_file.read_text()
+            except (UnicodeDecodeError, OSError):
+                continue
+            if "_robust_serialize_internal" in content:
+                rel_path = py_file.relative_to(flujo_root)
+                violations.append(str(rel_path))
+
+        if violations:
+            pytest.fail(
+                "Found robust serializer usage inside persistence backends:\n"
+                + "\n".join(sorted(violations))
+                + "\n\nUse flujo.state.backends.base._serialize_for_json (via _fast_json_dumps) instead."
+            )
+
 
 class TestQuotaGuardrails:
     """Ensure UsageLimits→Quota translation stays centralized."""
