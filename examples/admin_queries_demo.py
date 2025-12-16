@@ -8,7 +8,7 @@ and managing workflow states in production environments.
 
 import asyncio
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flujo.state import SQLiteBackend
@@ -38,7 +38,7 @@ async def create_sample_workflows(backend: SQLiteBackend, count: int = 50) -> No
 
     for i in range(count):
         # Create realistic timestamps
-        created_at = datetime.utcnow() - timedelta(
+        created_at = datetime.now(timezone.utc) - timedelta(
             hours=random.randint(0, 168),  # Up to 1 week ago
             minutes=random.randint(0, 60),
         )

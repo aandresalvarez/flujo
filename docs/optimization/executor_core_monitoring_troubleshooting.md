@@ -564,7 +564,7 @@ Run this script periodically to collect and export performance metrics.
 import json
 import time
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 from scripts.performance_validation import run_performance_validation
 
 def collect_metrics(config_file=None):
@@ -581,7 +581,7 @@ def collect_metrics(config_file=None):
     )
 
     # Add timestamp and system info
-    results['timestamp'] = datetime.now().isoformat()
+    results['timestamp'] = datetime.now(timezone.utc).isoformat()
     results['system_info'] = get_system_info()
 
     return results

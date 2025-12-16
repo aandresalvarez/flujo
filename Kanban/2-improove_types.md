@@ -17,8 +17,8 @@ Purpose: deliver compile-time confidence without breaking core architectural rul
 - Tests: regression coverage for strict paths plus the narrow adapter paths; ensure adapters cannot reintroduce silent `Any` flows. Validate policy-driven dispatch/control-flow exceptions remain unchanged.
 - Docs: remove legacy loose-mode guidance; all examples use strict typing, typed contexts, and explicit adapters only where justified.
 
-### Rollout & Migration (strict defaults + scratchpad ban)
-1) Warn stage (timeboxed): emit deprecation warnings in CI/local for loose DSL, scratchpad writes, and untyped contexts; publish migration guide.
+### Rollout & Migration (strict defaults + scratchpad removal)
+1) Warn stage (timeboxed): emit deprecation warnings in CI/local for loose DSL, legacy scratchpad writes (now rejected), and untyped contexts; publish migration guide.
 2) Soft-fail stage: CI fails new code paths; legacy paths log warnings. Provide codemods to rewrite `scratchpad[...]` to typed fields and `safe_merge_context_updates`.
 3) Hard-fail default: strict on by default; temporary override flag allowed only for legacy suites with expiration date.
 4) Cleanup: remove override; strict-only remains. Deprecation calendar published with dates for each stage.
@@ -43,7 +43,7 @@ Purpose: deliver compile-time confidence without breaking core architectural rul
 - If a regression is detected, fix root cause; do not mask by relaxing thresholds.
 
 ### Observability & Instrumentation
-- Metrics: counts of `cast` in core, `Any` occurrences, adapter invocations, mock usage in tests, scratchpad writes.
+- Metrics: counts of `cast` in core, `Any` occurrences, adapter invocations, mock usage in tests, scratchpad payload rejections.
 - Dashboards: track migration progress and fail CI on regression to baseline.
 
 ### Phase 0 — Baseline Hardening (Non-breaking; preparatory)
@@ -61,7 +61,7 @@ Purpose: deliver compile-time confidence without breaking core architectural rul
 
 ### Phase 1 — Context Evolution (Breaking: no legacy scratchpad semantics)
 - Actions:
-  - Provide typed context mixins (Pydantic BaseModel-bound) for common capabilities; forbid user data in `scratchpad` (reserved for framework metadata only).
+  - Provide typed context mixins (Pydantic BaseModel-bound) for common capabilities; `scratchpad` is removed (legacy payloads rejected).
   - Add `typed_context` factory and docs; require contexts to declare needed fields instead of stringly `scratchpad`; ship codemod + lint autofix to rewrite scratchpad access.
   - Enforce `input_keys` / `output_keys` linting between steps and context models; violations fail validation.
   - Remove legacy fallback behaviors that permit untyped context access.
@@ -87,7 +87,7 @@ Purpose: deliver compile-time confidence without breaking core architectural rul
 ### Phase 3 — Enforcement & Cleanup (Breaking; remove legacy/unused code)
 - Actions:
   - Require explicit type params on Steps in public DSL (`Step[str, JSONObject]`); default-`Any` is illegal (lint + runtime error).
-  - Ban user data in `scratchpad`; require typed context fields or validated `input_keys`/`output_keys`.
+  - `scratchpad` is removed; require typed context fields or validated `input_keys`/`output_keys`.
   - Remove `_detect_mock_objects` after tests fully migrate to typed fakes.
   - Gate releases on `make typecheck` + tightened lints; add regression suites for typed chaining, context typing, TypeGuards, and adapter allowlist.
   - Remove all legacy/unused code paths that support untyped chaining, loose DSL imports, and permissive context access.
@@ -123,4 +123,4 @@ Purpose: deliver compile-time confidence without breaking core architectural rul
 - `Any` in DSL/core: substantial reduction; default-`Any` disallowed in strict mode.
 - Mock usage in core paths: 0; tests use typed fakes.
 - Context contract violations and adapter misuse: caught at lint/typecheck time; perf canary stays within budget.
-- Observability shows declining scratchpad writes and untyped chains to near-zero before hard-fail.
+- Observability shows declining legacy scratchpad payload rejections and untyped chains to near-zero before hard-fail.

@@ -137,13 +137,13 @@ async def health_check():
 ### Regular Cleanup
 ```python
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 async def maintenance_cleanup():
     while True:
         try:
             deleted = await backend.cleanup_old_workflows(days_old=30)
-            print(f"{datetime.now()}: Cleaned up {deleted} old workflows")
+            print(f"{datetime.now(timezone.utc).isoformat()}: Cleaned up {deleted} old workflows")
         except Exception as e:
             print(f"Cleanup error: {e}")
 

@@ -203,7 +203,7 @@ async def basic_monitor(executor):
 ```python
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -226,7 +226,7 @@ class PerformanceMonitor:
             try:
                 # Collect metrics
                 stats = self.executor.get_optimization_stats()
-                timestamp = datetime.now().isoformat()
+                timestamp = datetime.now(timezone.utc).isoformat()
 
                 # Store metrics
                 metrics = {
@@ -367,7 +367,7 @@ class LiveDashboard:
 
 ```python
 import csv
-from datetime import datetime
+from datetime import datetime, timezone
 
 class PerformanceTracker:
     def __init__(self, filename="performance_metrics.csv"):
@@ -385,7 +385,7 @@ class PerformanceTracker:
     def record_metrics(self, stats):
         """Record metrics to CSV file."""
         metrics = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'memory_usage_mb': stats.get('memory', {}).get('usage_mb', 0),
             'execution_time_ms': stats.get('execution', {}).get('avg_time_ms', 0),
             'cache_hit_rate': stats.get('cache', {}).get('hit_rate', 0),

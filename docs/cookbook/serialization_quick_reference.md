@@ -212,7 +212,7 @@ class CustomContext(PipelineContext):
 ```python
 from flujo.utils import register_custom_serializer
 from flujo.models import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Register custom serializers
 register_custom_serializer(datetime, lambda dt: dt.strftime("%Y-%m-%d"))
@@ -226,7 +226,7 @@ class MyModel(BaseModel):
 
 # Create and serialize
 model = MyModel(
-    timestamp=datetime.now(),
+    timestamp=datetime.now(timezone.utc),
     result=3.14 + 2.71j,
     custom_data={"key": "value"}
 )

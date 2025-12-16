@@ -19,7 +19,7 @@ import json
 import logging
 from typing import Any, List
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
 
@@ -99,7 +99,7 @@ class OptimizationDemo:
                 "id": data.id,
                 "processed_content": data.content.upper(),
                 "metadata": data.metadata,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
         # Test baseline performance
@@ -171,7 +171,7 @@ class OptimizationDemo:
             context_copy = context.copy()
             context_copy[f"processed_{data.id}"] = {
                 "content": data.content,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             return context_copy
 
@@ -419,7 +419,7 @@ class OptimizationDemo:
                 "processed": True,
                 "data_id": data.id,
                 "content_length": len(data.content),
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
         # Test monitoring

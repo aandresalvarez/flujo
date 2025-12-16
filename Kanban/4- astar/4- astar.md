@@ -65,7 +65,7 @@ We introduce a specialized step that encapsulates the complexity of the A* algor
 *   **Internal State (The Frontier):**
     *   Maintains a Priority Queue (Open Set) of `SearchNodes`.
     *   Maintains a Closed Set of visited logical states.
-    *   State is serialized to `context.scratchpad.search_state` for crash recovery, but intermediate nodes are *not* persisted as full database rows until the search concludes.
+    *   State is serialized to a typed context field (e.g., `context.tree_search_state`) for crash recovery (no scratchpad), but intermediate nodes are *not* persisted as full database rows until the search concludes.
 
 ### 3.2 The Algorithm: Beam-A*
 We implement a hybrid to balance optimality with token costs.

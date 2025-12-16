@@ -21,7 +21,7 @@ Most custom types will work automatically without any configuration:
 
 ```python
 from flujo.models import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 class Status(Enum):
@@ -35,7 +35,7 @@ class MyContext(BaseModel):
 
 # This works automatically
 context = MyContext(
-    timestamp=datetime.now(),
+    timestamp=datetime.now(timezone.utc),
     status=Status.PENDING,
     custom_data={"complex": "data"}
 )

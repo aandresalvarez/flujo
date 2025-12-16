@@ -55,6 +55,7 @@ Existing databases are automatically migrated to the new schema without data los
 
 ```python
 from flujo.state import SQLiteBackend
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Initialize backend
@@ -70,8 +71,8 @@ state = {
     "pipeline_context": {"input_data": "sample.csv"},
     "last_step_output": {"processed_rows": 1000},
     "status": "running",
-    "created_at": datetime.utcnow(),
-    "updated_at": datetime.utcnow(),
+    "created_at": datetime.now(timezone.utc),
+    "updated_at": datetime.now(timezone.utc),
     "total_steps": 5,
     "error_message": None,
     "execution_time_ms": 1500,

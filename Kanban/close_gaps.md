@@ -26,8 +26,7 @@
    - ✅ Phase 2: All 20 `scratchpad["status"]` patterns migrated to `context.status`
    - ✅ Phase 3: Additional typed field writes added (current_state, next_state, pause_message, user_input, paused_step_input)
    - ✅ Phase 4: All 8 `scratchpad.get("status")` reads migrated to `getattr(context, "status", None)`
-   - ⚠️ **Remaining**: `scratchpad` field still exists on `PipelineContext` (domain/models.py:636-642)
-   - 🔜 **Next**: Remove redundant dual-writes, migrate remaining readers, then remove field
+   - ✅ `PipelineContext.scratchpad` removed; any payload containing `scratchpad` is rejected (domain/models.py)
 
 4) Adapter governance hardening
    - ✅ Explicit tokens required: `from_callable(is_adapter=True)` raises ValueError without adapter_id/adapter_allow (step.py:613-617)
@@ -73,72 +72,6 @@
 - Dict contexts rejected in strict mode; scratchpad writes/reads are blocked.
 - Tests added/updated for each guardrail (validation, adapter tokens, context enforcement, scratchpad ban).
 
-++++++
-remaining work
-Here’s a focused migration plan to fully remove `scratchpad` and finish type safety:
-
-Scope
-- Remove `scratchpad` entirely from runtime: no field on `PipelineContext`, no `_allow_scratchpad` backdoors, no legacy migration in `context_adapter`, no scratchpad-based tests/fixtures.
-- Preserve backwards compatibility only at the edges by clear, early failures (or documented explicit adapters), not by silently accepting scratchpad.
-
-Plan (ordered)
-
-0) Baseline & guardrails
-- Run `make test-fast` once to capture the current failure set after scratchpad removal.
-- Keep `make lint`/`make typecheck` as final gates.
-
-1) Core model/runtime hardening (already started)
-- `PipelineContext`: no `scratchpad`, validator rejects any payload containing it.
-- `context_adapter`: remove `_allow_scratchpad`; reject `scratchpad` updates with clear error; no legacy merge.
-- `steps` property: use `step_outputs` only.
-
-2) Test suite migration (bulk of the work)
-Triage by area; for each, replace scratchpad usage with typed fields or import_artifacts/step_outputs.
-
-- HITL & pause/resume:
-  - Files: `tests/integration/test_hitl_integration.py`, `test_hitl_pipeline.py`, `test_stateful_hitl.py`, `test_hitl_loop_resume_fix.py`, `test_hitl_branch_schemas.py`, HITL migration suites.
-  - Actions: use `status`, `pause_message`, `paused_step_input`, `hitl_data`, `hitl_history`, `step_outputs`.
-  - Remove scratchpad assertions/fixtures.
-
-- Loop/parallel/state-machine:
-  - Files: `tests/integration/test_parallel_step.py`, `test_state_machine_transitions_integration.py`, loop recipe/agentic loop tests.
-  - Actions: use `loop_iteration_index`, `loop_step_index`, `loop_last_output`, `step_outputs`/typed fields; update any sink_to scratchpad processors to step_outputs/import_artifacts.
-
-- Import/input routing:
-  - Files: `tests/unit/test_import_input_precedence.py`, `test_import_hitl_and_input_routing.py`, import pipeline tests.
-  - Actions: map legacy scratchpad outputs to `import_artifacts` or `step_outputs`; adjust assertions.
-
-- Context mixins / enforcement:
-  - Files: `tests/domain/test_context_mixins.py`, `tests/application/core/test_typed_context_enforcement.py`, any lenient fixtures.
-  - Actions: remove scratchpad fixtures; assert typed fields; ensure validators fail on scratchpad.
-
-- Tracing/console/task replay:
-  - Files: `tests/unit/infra/test_console_tracer_paused.py`, `tests/unit/tracing/test_trace_manager_post_run_state.py`, `tests/unit/test_replay_executor.py`, task client lifecycle tests.
-  - Actions: set `pause_message`/`status` on context; snapshots use typed fields only.
-
-- Misc policies/utilities:
-  - Files: `tests/unit/test_granular_step_policy.py`, `tests/integration/test_parallel_step.py` sink_to, any custom context subclasses with scratchpad fields.
-  - Actions: replace scratchpad fields with typed equivalents or `import_artifacts.extras`.
-
-3) Runtime utilities & processors
-- Search for `sink_to="scratchpad``, `context.scratchpad[...]`, `scratchpad.` templates.
-- For built-ins/processors, write to `step_outputs` or `import_artifacts`; for loop/HITL metadata, use typed loop/HITL fields.
-
-4) Docs and samples
-- Update docs/examples to remove scratchpad references; point to typed fields and `step_outputs`/`import_artifacts`.
-
-5) Validation sweep
-- `rg scratchpad flujo/ tests/` should return only comments/docs.
-- Ensure no `_allow_scratchpad` or legacy flags remain.
-
-6) Full verification
-- Run `make test-fast`.
-- Run `make lint` and `make typecheck`.
-- If time permits, `make all`.
-
-Working approach
-- Iterate in slices: migrate a cluster of tests/files, run a targeted pytest subset, then continue.
-- Keep changes mechanical and typed-field aligned (status/pause_message/paused_step_input/hitl_data/step_outputs/import_artifacts/loop_*).
-- Avoid reintroducing compatibility shims; fail fast on any scratchpad payload.
-
-If you want, I’ll start with the highest-churn suites (HITL/pause/resume and loop/parallel) and proceed in the order above.
+### Scratchpad Status (Complete)
+- `scratchpad` has been removed from `PipelineContext`; any incoming payload containing it fails validation early.
+- Migration guidance: `docs/guides/scratchpad_migration.md` (typed fields, `step_outputs`, `import_artifacts`).

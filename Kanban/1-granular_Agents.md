@@ -24,7 +24,7 @@ Atomic agent execution loses work and can double-run non-idempotent tools after 
 ## 3. Solution Overview
 - **Compiler Pattern:** `Step.granular(...)` → `Pipeline(LoopStep(GranularStep))`.
 - **Policy:** `GranularAgentStepExecutor` executes exactly one turn; registered in policy registry (no `ExecutorCore` branching).
-- **State:** `granular_state` persisted in scratchpad with CAS guard + durable blobs.
+- **State:** `granular_state` persisted in `context.granular_state` with CAS guard + durable blobs.
 - **First principles:** Prevent double-execution by construction (CAS + idempotency), never mis-account usage (single reconcile with truthful usage), never resume on divergent prompts/tools (mandatory fingerprint), never lose context needed for replay (blob offload + deterministic truncation).
 
 ---
