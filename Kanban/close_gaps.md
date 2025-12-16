@@ -11,7 +11,7 @@
    - ✅ Strict validation: `_compatible` rejects Any/object fallthrough (pipeline.py:219-248)
    - ✅ Generics tracking: `_input_type`/`_output_type` captured via PrivateAttr (pipeline.py:43-44, 63-72)
    - ⚠️ **Note**: Container still typed `Sequence[Step[Any, Any]]` (pipeline.py:38); TypeVar propagation not enforced at runtime
-   - 🔄 Cast burn-down: progressing; remaining in policies/cache/result handlers
+   - ✅ Cast burn-down: no `cast(...)` usages remain in tracked core/runtime/DSL/blueprint scopes
 
 2) Enforce typed contexts (no dict coercion)
    - ✅ Strict-only: `enforce_typed_context()` raises TypeError for non-BaseModel (executor_helpers.py:136-148)
@@ -31,10 +31,10 @@
 4) Adapter governance hardening
    - ✅ Explicit tokens required: `from_callable(is_adapter=True)` raises ValueError without adapter_id/adapter_allow (step.py:613-617)
    - ✅ AST-based lint implemented
-   - ⚠️ **Note**: Testing may use mocks that bypass validation; verify in integration
+   - ✅ Integration verification: `validate_graph()` rejects adapter steps missing allowlist metadata even if constructed unsafely (e.g., `model_construct`)
 
 5) Baseline reversal (drive `Any`/`cast` down)
-   - ✅ Updated baselines: core.cast=1, core.Any=1148, dsl.cast=0, dsl.Any=443
+   - ✅ Updated baselines (`scripts/type_safety_baseline.json`): core.cast=0/core.Any=0, runtime.cast=0/runtime.Any=0, dsl.cast=0/dsl.Any=167, blueprint.cast=0/blueprint.Any=0
    - ✅ Architecture thresholds lowered: max_allowed_any 600→500, cast threshold 50→10
    - ✅ Lint shows delta report; `--update-baseline` flag added
 
@@ -66,11 +66,11 @@
 - Use `Pipeline[str, Result]` in type hints for public APIs
 - Rely on `validate_graph()` to catch type mismatches at validation time
 
-### Acceptance Criteria
-- `make lint` passes with lowered baseline (no upward drift), adapter lint enforced via AST, and strict validation enabled by default.
-- Pipelines with type mismatches or generic targets fail validation without adapters.
-- Dict contexts rejected in strict mode; scratchpad writes/reads are blocked.
-- Tests added/updated for each guardrail (validation, adapter tokens, context enforcement, scratchpad ban).
+### Acceptance Criteria (Confirmed)
+- ✅ `make lint` passes (no baseline drift; adapter allowlist lint enforced).
+- ✅ Type mismatches fail validation unless explicitly bridged via allowlisted adapters.
+- ✅ Dict contexts rejected; scratchpad is blocked/removed (typed fields only).
+- ✅ Guardrail suite passes (`make test-architecture` includes mypy/ruff/unit gates).
 
 ### Scratchpad Status (Complete)
 - `scratchpad` has been removed from `PipelineContext`; any incoming payload containing it fails validation early.

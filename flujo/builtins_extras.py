@@ -48,10 +48,10 @@ except Exception:
 _DDGSAsync: Any = None
 _DDGS_CLASS: Any = None
 try:  # pragma: no cover - optional dependency
-    from duckduckgo_search import AsyncDDGS as _DDGSAsync  # type: ignore
+    from duckduckgo_search import AsyncDDGS as _DDGSAsync  # type: ignore[no-redef]
 except Exception:
     try:
-        from duckduckgo_search import DDGS as _DDGS_CLASS  # type: ignore
+        from duckduckgo_search import DDGS as _DDGS_CLASS  # type: ignore[no-redef]
     except Exception:
         _DDGSAsync = None
         _DDGS_CLASS = None

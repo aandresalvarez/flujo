@@ -84,15 +84,15 @@ def run_step_validations(
     try:
         from .conditional import ConditionalStep as _ConditionalStep
     except Exception:
-        _ConditionalStep = None  # type: ignore
+        _ConditionalStep = None  # type: ignore[misc,assignment]
     try:
         from .parallel import ParallelStep as _ParallelStep
     except Exception:
-        _ParallelStep = None  # type: ignore
+        _ParallelStep = None  # type: ignore[misc,assignment]
     try:
         from .import_step import ImportStep as _ImportStep
     except Exception:
-        _ImportStep = None  # type: ignore
+        _ImportStep = None  # type: ignore[misc,assignment]
 
     try:
         from ...infra.settings import get_settings as _get_settings
@@ -115,6 +115,26 @@ def run_step_validations(
             _yloc = meta.get("_yaml_loc") if isinstance(meta, dict) else None
             templated_input = meta.get("templated_input") if isinstance(meta, dict) else None
             is_adapter_step = bool(meta.get("is_adapter")) if isinstance(meta, dict) else False
+            if is_adapter_step:
+                adapter_id = meta.get("adapter_id") if isinstance(meta, dict) else None
+                adapter_allow = meta.get("adapter_allow") if isinstance(meta, dict) else None
+                adapter_id_str = str(adapter_id).strip() if isinstance(adapter_id, str) else ""
+                adapter_allow_str = (
+                    str(adapter_allow).strip() if isinstance(adapter_allow, str) else ""
+                )
+                # Only check for missing metadata here; allowlist validation happens later
+                if not adapter_id_str or not adapter_allow_str:
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id="V-ADAPT-META",
+                            severity="error",
+                            message=(
+                                f"Adapter step '{getattr(step, 'name', '')}' must declare adapter_id and "
+                                "adapter_allow (allowlist token)."
+                            ),
+                            step_name=getattr(step, "name", None),
+                        )
+                    )
             if id(step) in seen_steps:
                 report.warnings.append(
                     ValidationFinding(
@@ -203,7 +223,7 @@ def run_step_validations(
                 try:
                     from .step import MergeStrategy as _MergeStrategy  # local import
                 except Exception:
-                    _MergeStrategy = None  # type: ignore
+                    _MergeStrategy = None  # type: ignore[misc,assignment]
 
                 merge_strategy = getattr(step, "merge_strategy", None)
                 # Block deprecated scratchpad merge strategy outright
@@ -638,34 +658,6 @@ def run_step_validations(
                                 step_name=getattr(step, "name", None),
                             )
                         )
-                    else:
-                        adapter_id = meta.get("adapter_id") if isinstance(meta, dict) else None
-                        adapter_token = (
-                            meta.get("adapter_allow") if isinstance(meta, dict) else None
-                        )
-                        if not adapter_id or adapter_id not in adapter_allowlist:
-                            report.errors.append(
-                                ValidationFinding(
-                                    rule_id="V-ADAPT-ALLOW",
-                                    severity="error",
-                                    message=(
-                                        f"Adapter step '{getattr(step, 'name', '')}' lacks an allowlisted adapter_id."
-                                    ),
-                                    step_name=getattr(step, "name", None),
-                                )
-                            )
-                        elif adapter_allowlist.get(adapter_id) != adapter_token:
-                            report.errors.append(
-                                ValidationFinding(
-                                    rule_id="V-ADAPT-ALLOW",
-                                    severity="error",
-                                    message=(
-                                        f"Adapter step '{getattr(step, 'name', '')}' missing correct adapter token "
-                                        f"(expected '{adapter_allowlist.get(adapter_id)}')."
-                                    ),
-                                    step_name=getattr(step, "name", None),
-                                )
-                            )
 
                 # Fail on concrete type mismatches in strict mode (non-generic, non-adapter).
                 if (

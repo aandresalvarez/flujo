@@ -81,7 +81,7 @@ def aggregate_import_validation(
     try:
         from .import_step import ImportStep as _ImportStep
     except Exception:
-        _ImportStep = None  # type: ignore
+        _ImportStep = None  # type: ignore[misc,assignment]
 
     if _ImportStep is None:
         return
@@ -674,7 +674,7 @@ def run_state_machine_lints(
     try:
         from .state_machine import StateMachineStep as _SM
     except Exception:
-        _SM = None  # type: ignore
+        _SM = None  # type: ignore[misc,assignment]
     if _SM is None:
         return
 

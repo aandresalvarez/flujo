@@ -238,8 +238,9 @@ class PausedException(ControlFlowError):
 class ImproperStepInvocationError(ExecutionError):
     """DEPRECATED: Raised when a ``Step`` object is invoked directly.
 
-    .. deprecated:: 2.0
+    .. deprecated:: 0.4.0
         Use :class:`StepInvocationError` instead.
+        Will be removed in v1.0.0.
     """
 
     pass

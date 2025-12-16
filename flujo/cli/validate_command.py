@@ -58,7 +58,7 @@ def _validate_impl(
                     try:
                         import tomllib as _tomllib
                     except Exception:  # pragma: no cover
-                        import tomli as _tomllib  # type: ignore
+                        import tomli as _tomllib  # type: ignore[no-redef]
                     with open(rules_path, "rb") as f:
                         data = _tomllib.load(f)
                     if isinstance(data, dict):
@@ -107,7 +107,7 @@ def _validate_impl(
                     try:
                         import tomllib as _tomllib
                     except Exception:  # pragma: no cover
-                        import tomli as _tomllib  # type: ignore
+                        import tomli as _tomllib  # type: ignore[no-redef]
                     with open(rules_path, "rb") as fb:
                         data = _tomllib.load(fb)
                     if isinstance(data, dict):

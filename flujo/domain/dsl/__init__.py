@@ -46,73 +46,47 @@ __all__ = [
     "ResumeError",
 ]
 
-# Lazy import pattern for all other symbols
+# Lazy import registry: maps symbol name to (module, attribute_name)
+# This pattern allows convenient top-level imports while deferring module loading
+# to avoid circular import issues.
+_LAZY_IMPORTS: dict[str, tuple[str, str]] = {
+    # Pipeline
+    "Pipeline": (".pipeline", "Pipeline"),
+    # Loop constructs
+    "LoopStep": (".loop", "LoopStep"),
+    "MapStep": (".loop", "MapStep"),
+    # Control flow
+    "ConditionalStep": (".conditional", "ConditionalStep"),
+    "ParallelStep": (".parallel", "ParallelStep"),
+    "StateMachineStep": (".state_machine", "StateMachineStep"),
+    "DynamicParallelRouterStep": (".dynamic_router", "DynamicParallelRouterStep"),
+    # Step utilities (re-exported from step.py for convenience)
+    "MergeStrategy": (".step", "MergeStrategy"),
+    "BranchFailureStrategy": (".step", "BranchFailureStrategy"),
+    "BranchKey": (".step", "BranchKey"),
+    "HumanInTheLoopStep": (".step", "HumanInTheLoopStep"),
+    # Granular execution
+    "GranularStep": (".granular", "GranularStep"),
+    "ResumeError": (".granular", "ResumeError"),
+}
 
 
 def __getattr__(name: str) -> object:
-    if name == "Pipeline":
-        from .pipeline import Pipeline
+    """Lazy import handler for DSL symbols.
 
-        globals()[name] = Pipeline
-        return Pipeline
-    if name == "LoopStep":
-        from .loop import LoopStep
+    This pattern enables `from flujo.domain.dsl import Pipeline, Step, ...`
+    while deferring module loading to avoid circular import issues.
 
-        globals()[name] = LoopStep
-        return LoopStep
-    if name == "MapStep":
-        from .loop import MapStep
+    The lookup table above documents all available symbols and their sources.
+    """
+    if name in _LAZY_IMPORTS:
+        module_path, attr_name = _LAZY_IMPORTS[name]
+        # Dynamic import using importlib for cleaner resolution
+        import importlib
 
-        globals()[name] = MapStep
-        return MapStep
-    if name == "ConditionalStep":
-        from .conditional import ConditionalStep
-
-        globals()[name] = ConditionalStep
-        return ConditionalStep
-    if name == "ParallelStep":
-        from .parallel import ParallelStep
-
-        globals()[name] = ParallelStep
-        return ParallelStep
-    if name == "StateMachineStep":
-        from .state_machine import StateMachineStep
-
-        globals()[name] = StateMachineStep
-        return StateMachineStep
-    if name == "MergeStrategy":
-        from .step import MergeStrategy
-
-        globals()[name] = MergeStrategy
-        return MergeStrategy
-    if name == "BranchFailureStrategy":
-        from .step import BranchFailureStrategy
-
-        globals()[name] = BranchFailureStrategy
-        return BranchFailureStrategy
-    if name == "BranchKey":
-        from .step import BranchKey
-
-        globals()[name] = BranchKey
-        return BranchKey
-    if name == "HumanInTheLoopStep":
-        from .step import HumanInTheLoopStep
-
-        globals()[name] = HumanInTheLoopStep
-        return HumanInTheLoopStep
-    if name == "DynamicParallelRouterStep":
-        from .dynamic_router import DynamicParallelRouterStep
-
-        globals()[name] = DynamicParallelRouterStep
-        return DynamicParallelRouterStep
-    if name == "GranularStep":
-        from .granular import GranularStep
-
-        globals()[name] = GranularStep
-        return GranularStep
-    if name == "ResumeError":
-        from .granular import ResumeError
-
-        globals()[name] = ResumeError
-        return ResumeError
+        module = importlib.import_module(module_path, package=__name__)
+        value = getattr(module, attr_name)
+        # Cache in globals for subsequent access
+        globals()[name] = value
+        return value
     raise AttributeError(f"module 'flujo.domain.dsl' has no attribute '{name}'")

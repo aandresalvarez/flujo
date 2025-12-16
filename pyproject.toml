@@ -199,13 +199,12 @@ disable_error_code = ["no-any-return"]
 
 [[tool.mypy.overrides]]
 module = [
-    "flujo.cli.helpers_core",
-    "flujo.cli.helpers_runtime",
-    "flujo.cli.helpers_extensions",
-    "flujo.cli.helpers_project",
+    # Validation/linting modules with complex dynamic logic
     "flujo.validation.linters_orchestration",
     "flujo.validation.linters_extended",
+    # Execution finalization with async patterns
     "flujo.application.core.execution_manager_finalization",
+    # Mermaid generation with complex string handling
     "flujo.domain.dsl.pipeline_mermaid",
 ]
 ignore_errors = true
@@ -317,12 +316,6 @@ disable_error_code = [
   "no-untyped-call",
   "no-any-return",
 ]
-
-[[tool.mypy.overrides]]
-module = [
-  "flujo.cli.main",
-]
-ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = [

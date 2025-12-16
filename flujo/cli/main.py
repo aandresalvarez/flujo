@@ -9,8 +9,8 @@ from typing import Any, Optional, Union, TYPE_CHECKING
 if TYPE_CHECKING:
     from flujo.domain.dsl.pipeline import Pipeline
     from flujo.domain.models import Candidate, Checklist, Task
-    from flujo.agents.wrappers import AsyncAgentWrapper
-    from flujo.infra.settings import FlujoSettings
+    from flujo.agents.wrapper import AsyncAgentWrapper
+    from flujo.infra.settings import Settings as FlujoSettings
 
 import typer
 from typing_extensions import Annotated
@@ -122,7 +122,7 @@ version_cmd = _version_cmd
 show_config_cmd = _show_config_cmd
 add_eval_case_cmd = _add_eval_case_cmd
 improve = _improve_cmd
-compile = _compile_cmd  # type: ignore[assignment]
+compile = _compile_cmd
 pipeline_mermaid_cmd = _pipeline_mermaid_cmd
 budgets_show = _budgets_show
 
@@ -287,7 +287,7 @@ def make_validator_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, Ch
     return _make_validator_agent(model)
 
 
-def get_reflection_agent(model: str | None = None) -> "AsyncAgentWrapper[Any, str]":
+def get_reflection_agent(model: str | None = None) -> Any:
     """Compatibility function for testing - re-exports from agents.recipes."""
     return _get_reflection_agent(model)
 
