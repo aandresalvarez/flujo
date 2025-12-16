@@ -129,3 +129,42 @@ def test_pipeline_context_rejects_removed_root_on_construction() -> None:
     removed_root = "scrat" + "chpad"
     with pytest.raises(ValidationError):
         PipelineContext.model_validate({removed_root: {"user_note": "forbidden"}})
+
+
+def test_enforce_typed_context_accepts_plain_pydantic_basemodel(monkeypatch):
+    """Verify that contexts inheriting from plain pydantic.BaseModel work.
+
+    This tests the fix for contexts that don't inherit from flujo.domain.models.BaseModel
+    but still inherit from pydantic.BaseModel. These should be accepted by the strict
+    mode enforcement.
+    """
+    from pydantic import BaseModel as PydanticBaseModel
+
+    monkeypatch.setenv("FLUJO_ENFORCE_TYPED_CONTEXT", "1")
+
+    # Define a context that inherits from plain pydantic.BaseModel, NOT flujo's BaseModel
+    class PlainPydanticContext(PydanticBaseModel):
+        field_1: str = "value_1"
+        field_2: str = "value_2"
+
+    core = _DummyCore()
+    step = _DummyStep()
+    ctx = PlainPydanticContext()
+
+    # This should NOT raise - plain pydantic BaseModel should be accepted
+    frame = make_execution_frame(
+        core=core,
+        step=step,
+        data="in",
+        context=ctx,
+        resources=None,
+        limits=UsageLimits(),
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        quota=None,
+        result=None,
+    )
+
+    assert frame.context is ctx

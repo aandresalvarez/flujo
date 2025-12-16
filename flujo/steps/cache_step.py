@@ -307,7 +307,11 @@ def _get_stable_repr(obj: Any, visited: Optional[Set[int]] = None) -> str:
         # For BaseModel objects, use a deterministic representation
         if hasattr(obj, "model_dump"):
             try:
-                d = obj.model_dump(mode="cache")
+                # Try cache mode first (flujo BaseModel), fall back to json (std pydantic)
+                try:
+                    d = obj.model_dump(mode="cache")
+                except (ValueError, TypeError):
+                    d = obj.model_dump(mode="json")
                 # Remove run_id for consistency with other serialization functions
                 if "run_id" in d:
                     d.pop("run_id", None)
@@ -380,7 +384,11 @@ def _serialize_list_for_key(obj_list: list[Any], visited: Optional[Set[int]] = N
 
             if hasattr(v, "model_dump"):
                 try:
-                    d = v.model_dump(mode="cache")
+                    # Try cache mode first (flujo BaseModel), fall back to json (std pydantic)
+                    try:
+                        d = v.model_dump(mode="cache")
+                    except (ValueError, TypeError):
+                        d = v.model_dump(mode="json")
                     if "run_id" in d:
                         d.pop("run_id", None)
                     result_list.append(
