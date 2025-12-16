@@ -350,7 +350,7 @@ class HitlNestedContextLinter(BaseLinter):
             import logging
 
             logging.getLogger(__name__).debug(f"Failed to import HumanInTheLoopStep: {e}")
-            _HITLStep = None  # type: ignore
+            _HITLStep = None  # type: ignore[misc,assignment]
 
         if _HITLStep is None:
             return out

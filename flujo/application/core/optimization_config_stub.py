@@ -24,7 +24,7 @@ class OptimizationConfig:
 
     .. deprecated:: 0.4.39
         The optimization layer has been removed. This class will be removed
-        in a future version. Remove OptimizationConfig usage from your code.
+        in v1.0.0. Remove OptimizationConfig usage from your code.
 
     Examples:
         >>> from flujo.application.core.executor_core import ExecutorCore, OptimizationConfig
@@ -52,6 +52,17 @@ class OptimizationConfig:
         All parameters are ignored. This method exists only for backward
         compatibility and emits a deprecation warning.
         """
+        # Emit telemetry for tracking deprecated usage
+        try:
+            from flujo.infra.telemetry import logfire
+
+            logfire.warning(
+                "OptimizationConfig instantiated (deprecated)",
+                extra={"deprecated": True, "removal_version": "v1.0.0"},
+            )
+        except Exception:
+            pass  # Telemetry must never break deprecated code paths
+
         warnings.warn(
             "OptimizationConfig is deprecated. The optimization layer has been "
             "removed from Flujo. This configuration has no effect and will be "

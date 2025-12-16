@@ -84,15 +84,15 @@ def run_step_validations(
     try:
         from .conditional import ConditionalStep as _ConditionalStep
     except Exception:
-        _ConditionalStep = None  # type: ignore
+        _ConditionalStep = None  # type: ignore[misc,assignment]
     try:
         from .parallel import ParallelStep as _ParallelStep
     except Exception:
-        _ParallelStep = None  # type: ignore
+        _ParallelStep = None  # type: ignore[misc,assignment]
     try:
         from .import_step import ImportStep as _ImportStep
     except Exception:
-        _ImportStep = None  # type: ignore
+        _ImportStep = None  # type: ignore[misc,assignment]
 
     try:
         from ...infra.settings import get_settings as _get_settings
@@ -248,7 +248,7 @@ def run_step_validations(
                 try:
                     from .step import MergeStrategy as _MergeStrategy  # local import
                 except Exception:
-                    _MergeStrategy = None  # type: ignore
+                    _MergeStrategy = None  # type: ignore[misc,assignment]
 
                 merge_strategy = getattr(step, "merge_strategy", None)
                 # Block deprecated scratchpad merge strategy outright

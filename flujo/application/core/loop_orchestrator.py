@@ -33,7 +33,7 @@ class LoopOrchestrator:
         try:
             from ...domain.dsl.loop import LoopStep as _DSLLoop
         except Exception:
-            _DSLLoop = None  # type: ignore
+            _DSLLoop = None  # type: ignore[misc,assignment]
 
         if _DSLLoop is not None and isinstance(loop_step, _DSLLoop):
             frame = make_execution_frame(

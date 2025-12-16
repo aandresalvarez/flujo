@@ -240,6 +240,7 @@ class ImproperStepInvocationError(ExecutionError):
 
     .. deprecated:: 2.0
         Use :class:`StepInvocationError` instead.
+        Will be removed in v1.0.0.
     """
 
     pass

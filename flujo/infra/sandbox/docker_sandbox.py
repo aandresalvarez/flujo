@@ -36,7 +36,7 @@ class DockerSandbox(SandboxProtocol):
 
     def _get_client(self) -> object:
         try:
-            import docker  # type: ignore
+            import docker  # type: ignore[import-not-found]
         except Exception as exc:  # pragma: no cover - import-time path
             raise RuntimeError(f"Docker client unavailable: {exc}") from exc  # noqa: TRY003
         try:
