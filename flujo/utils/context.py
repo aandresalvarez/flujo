@@ -5,7 +5,7 @@ This module provides utilities for working with Pydantic-based context objects,
 including safe merging operations that respect Pydantic validation.
 """
 
-from typing import Any, Optional, Type, TypeVar
+from typing import Any, Literal, Optional, Type, TypeVar
 import logging
 import os
 
@@ -269,7 +269,10 @@ def safe_merge_context_updates(
                         obj: Any,
                         *,
                         circular_ref_placeholder: str | None = "<circular-ref>",
-                    ) -> str | int | float | bool | dict[str, Any] | list[Any] | None:
+                        bytes_mode: Literal["base64", "utf8"] = "base64",
+                        allow_object_dict: bool = False,
+                    ) -> str | int | float | bool | dict[str, Any] | list[Any] | None | str:
+                        _ = (circular_ref_placeholder, bytes_mode, allow_object_dict)
                         return (
                             obj
                             if isinstance(obj, (str, int, float, bool, dict, list))

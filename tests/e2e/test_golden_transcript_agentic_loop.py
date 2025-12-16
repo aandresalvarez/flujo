@@ -8,7 +8,9 @@ make_agentic_loop_pipeline, and its complex internal logic.
 import pytest
 from typing import Any, List
 
-from flujo.domain.models import PipelineContext
+from pydantic import Field
+
+from flujo.domain.models import PipelineContext, ExecutedCommandLog
 from flujo.domain.commands import (
     AgentCommand,
     RunAgentCommand,
@@ -22,7 +24,8 @@ from tests.conftest import create_test_flujo
 class AgenticLoopContext(PipelineContext):
     """Context for agentic loop testing."""
 
-    command_log: List[AgentCommand] = []
+    # Use the real runtime type to avoid serializer warnings and keep behavior realistic.
+    command_log: List[ExecutedCommandLog] = Field(default_factory=list)
     final_state: str = ""
 
 

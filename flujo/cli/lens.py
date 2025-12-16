@@ -1,5 +1,4 @@
 import typer
-import asyncio
 from typing import Optional, Union, Any
 import os as _os
 import runpy
@@ -10,6 +9,7 @@ from .config import load_backend_from_config
 from .helpers import find_project_root, load_pipeline_from_yaml_file
 from .lens_show import show_run
 from .lens_trace import trace_command, trace_from_file
+from flujo.utils.async_bridge import run_sync
 
 lens_app = typer.Typer(
     rich_markup_mode="markdown",
@@ -87,11 +87,11 @@ def list_runs(
         try:
             # Use the new structured API if available, fallback to legacy
             if hasattr(backend, "list_runs"):
-                runs = asyncio.run(
+                runs = run_sync(
                     backend.list_runs(status=status, pipeline_name=pipeline, limit=limit)
                 )
             else:
-                runs = asyncio.run(
+                runs = run_sync(
                     backend.list_workflows(status=status, pipeline_id=pipeline, limit=limit)
                 )
         except NotImplementedError:
@@ -181,7 +181,7 @@ def get_by_partial_id(
 
     # Run async search first, then handle results synchronously
     try:
-        runs = asyncio.run(_search_runs())
+        runs = run_sync(_search_runs())
     except Exception as e:
         typer.echo(f"Error searching for runs: {e}", err=True)
         raise typer.Exit(1)
@@ -398,7 +398,7 @@ def replay_command(
                 )
             except Exception:
                 # Fallback: infer from run metadata and optional local registry
-                details = asyncio.run(backend.get_run_details(run_id))
+                details = run_sync(backend.get_run_details(run_id))
                 if not details:
                     from .helpers import print_rich_or_typer
 
@@ -458,7 +458,7 @@ def replay_command(
         async def _run() -> Any:
             return await runner.replay_from_trace(run_id)
 
-        result = asyncio.run(_run())
+        result = run_sync(_run())
 
         if json_output:
             from flujo.utils.serialization import _robust_serialize_internal
@@ -496,7 +496,7 @@ def list_spans(
     """List individual spans for a run with optional filtering."""
     backend = load_backend_from_config()
     try:
-        spans = asyncio.run(backend.get_spans(run_id, status=status, name=name))
+        spans = run_sync(backend.get_spans(run_id, status=status, name=name))
     except NotImplementedError:
         typer.echo("Backend does not support span-level querying", err=True)
         return
@@ -549,9 +549,7 @@ def show_statistics(
         start_time = end_time - (hours * 3600)
         time_range = (start_time, end_time)
 
-        stats = asyncio.run(
-            backend.get_span_statistics(pipeline_name=pipeline, time_range=time_range)
-        )
+        stats = run_sync(backend.get_span_statistics(pipeline_name=pipeline, time_range=time_range))
     except NotImplementedError:
         typer.echo("Backend does not support span statistics", err=True)
         return
@@ -599,7 +597,7 @@ def list_evaluations(
     """List shadow evaluation scores."""
     backend = load_backend_from_config()
     try:
-        evals = asyncio.run(backend.list_evaluations(limit=limit, run_id=run_id))
+        evals = run_sync(backend.list_evaluations(limit=limit, run_id=run_id))
     except NotImplementedError:
         typer.echo("Backend does not support listing evaluations", err=True)
         return

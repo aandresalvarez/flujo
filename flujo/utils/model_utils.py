@@ -6,7 +6,7 @@ from typing import Optional
 from weakref import WeakKeyDictionary
 from ..infra import telemetry
 
-# Cache for model ID extraction to reduce repeated overhead
+# Cache for model ID extraction to reduce repeated overhead.
 _model_id_cache: WeakKeyDictionary[object, Optional[str]] = WeakKeyDictionary()
 
 # Cache for warning flags to avoid duplicate warnings

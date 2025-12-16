@@ -299,6 +299,18 @@ test-loop: .uv ## Loop on first failure (tight local debug loop)
 	@echo "🔁 Loop on first failure (xdist -f)..."
 	CI=1 uv run pytest tests/ -f -x -q
 
+.PHONY: test-no-leaks
+test-no-leaks: .uv ## Run a subset with RuntimeWarning/ResourceWarning as errors (xdist disabled)
+	@echo "🧹 Running no-leaks check (warnings as errors, serial)..."
+	CI=1 FLUJO_NO_LEAKS=1 uv run pytest \
+		tests/integration/test_pipeline_hooks.py::test_pipeline_aborts_gracefully_from_hook \
+		tests/cli/test_create_sanitizer.py::test_create_moves_content_input_into_params_for_fs_write \
+		tests/state/test_sqlite_async_bridge.py \
+		tests/unit/application/test_runner_shutdown.py \
+		tests/integration/test_async_runner_detection.py \
+		-n 0 -q \
+		-W error::RuntimeWarning -W error::ResourceWarning
+
 
 .PHONY: test-changed
 test-changed: .uv ## Run only tests impacted by recent changes (testmon)

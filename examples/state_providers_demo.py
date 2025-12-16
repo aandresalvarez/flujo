@@ -17,7 +17,7 @@ Run: uv run python examples/state_providers_demo.py
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, List
 from uuid import uuid4
 
@@ -40,7 +40,7 @@ class ResearchNode(BaseModel):
     topic: str
     assertion: str
     confidence: float = 0.5
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # =============================================================================
@@ -186,7 +186,9 @@ async def log_interaction(data: str, *, context: ResearchContext) -> str:
     history = context.conversation.get()
 
     # Add this interaction
-    history.append({"role": "user", "content": data, "timestamp": datetime.now().isoformat()})
+    history.append(
+        {"role": "user", "content": data, "timestamp": datetime.now(timezone.utc).isoformat()}
+    )
 
     # Update reference
     context.conversation.set(history)

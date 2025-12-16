@@ -25,4 +25,3 @@ class DenyIfContainsSecret(GovernancePolicy):
                 reason=f"Input contained forbidden keyword '{self.keyword}'",
             )
         return GovernanceDecision(allow=True, reason="OK")
-

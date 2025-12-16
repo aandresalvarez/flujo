@@ -1,7 +1,7 @@
 """Unit tests for schema migration robustness and error handling."""
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
@@ -101,8 +101,8 @@ class TestSchemaMigrationRobustness:
             "pipeline_name": "test_pipeline",
             "pipeline_version": "1.0",
             "status": "running",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         await backend1.save_run_start(run_data)
@@ -386,7 +386,7 @@ class TestSchemaMigrationRobustness:
             "step_name": "test_step",
             "step_index": 0,
             "status": "completed",
-            "start_time": datetime.utcnow().isoformat(),
+            "start_time": datetime.now(timezone.utc).isoformat(),
         }
 
         await backend.save_step_result(step_data)

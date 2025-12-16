@@ -106,7 +106,6 @@ async def run_loop_iterations(
         # When resuming to feed HITL, prefer the resume payload (human input) as the current data.
         if resume_requires_hitl_output and resume_payload is not None:
             current_data = resume_payload
-    prev_current_context = current_context
     prev_cumulative_cost = 0.0
     prev_cumulative_tokens = 0
     cumulative_cost = 0.0
@@ -114,7 +113,6 @@ async def run_loop_iterations(
     iteration_results: list[StepResult] = []
     iteration_results_all: list[StepResult] = []
     while iteration_count <= max_loops:
-        prev_current_context = current_context
         prev_cumulative_cost = cumulative_cost
         prev_cumulative_tokens = cumulative_tokens
         iteration_results: list[StepResult] = []
@@ -289,9 +287,57 @@ async def run_loop_iterations(
                     paused_step_name=paused_step_name,
                 )
                 raise
-            except UsageLimitExceededError:
-                # Propagate quota breaches to caller
-                raise
+            except UsageLimitExceededError as e:
+                # Wrap quota breaches so the top-level history contains the LoopStep itself.
+                # This preserves the invariant that complex steps appear as a single StepResult
+                # (with attempts/iteration metadata) even when the body is denied pre-execution.
+                completed_iterations = iteration_count - 1
+                try:
+                    if iteration_results:
+                        completed_iterations = iteration_count
+                except Exception:
+                    completed_iterations = iteration_count - 1
+                try:
+                    loop_sr = build_pooled_step_result(
+                        name=loop_step.name,
+                        success=False,
+                        output=None,
+                        attempts=max(0, int(completed_iterations)),
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=int(prev_cumulative_tokens),
+                        cost_usd=float(prev_cumulative_cost),
+                        feedback=str(e),
+                        branch_context=iteration_context,
+                        metadata={
+                            "iterations": max(0, int(completed_iterations)),
+                            "exit_reason": "quota_limit_exceeded",
+                        },
+                        step_history=iteration_results_all + iteration_results,
+                    )
+                except Exception:
+                    loop_sr = StepResult(
+                        name=loop_step.name,
+                        success=False,
+                        output=None,
+                        attempts=max(0, int(completed_iterations)),
+                        latency_s=time.monotonic() - start_time,
+                        token_counts=int(prev_cumulative_tokens),
+                        cost_usd=float(prev_cumulative_cost),
+                        feedback=str(e),
+                        branch_context=iteration_context,
+                        metadata_={
+                            "iterations": max(0, int(completed_iterations)),
+                            "exit_reason": "quota_limit_exceeded",
+                        },
+                        step_history=iteration_results_all + iteration_results,
+                    )
+                pr = PipelineResult[object](
+                    step_history=[loop_sr],
+                    total_cost_usd=float(prev_cumulative_cost),
+                    total_tokens=int(prev_cumulative_tokens),
+                    final_pipeline_context=current_context,
+                )
+                raise UsageLimitExceededError(str(e), pr)
             except Exception as e:
                 telemetry.logfire.error(
                     f"LoopStep '{loop_step.name}' pipeline execution error: {e}"
@@ -708,50 +754,7 @@ async def run_loop_iterations(
         iteration_results_all.extend(iteration_results)
         cumulative_cost += pipeline_result.total_cost_usd
         cumulative_tokens += pipeline_result.total_tokens
-        if limits:
-
-            def _raise_limit_breach(feedback_msg: str) -> None:
-                from flujo.domain.models import StepResult as _SR, PipelineResult as _PR
-
-                loop_step_result = _SR(
-                    name=loop_step.name,
-                    success=False,
-                    output=None,
-                    attempts=iteration_count - 1,
-                    latency_s=time.monotonic() - start_time,
-                    token_counts=prev_cumulative_tokens,
-                    cost_usd=prev_cumulative_cost,
-                    feedback=feedback_msg,
-                    branch_context=prev_current_context,
-                    metadata_={
-                        "iterations": iteration_count - 1,
-                        "exit_reason": "limit",
-                    },
-                    step_history=[],
-                )
-                raise UsageLimitExceededError(
-                    feedback_msg,
-                    _PR(
-                        step_history=[loop_step_result],
-                        total_cost_usd=prev_cumulative_cost,
-                        total_tokens=prev_cumulative_tokens,
-                        final_pipeline_context=prev_current_context,
-                    ),
-                )
-
-            if (
-                limits.total_cost_usd_limit is not None
-                and cumulative_cost > limits.total_cost_usd_limit
-            ):
-                from flujo.utils.formatting import format_cost
-
-                formatted_limit = format_cost(limits.total_cost_usd_limit)
-                _raise_limit_breach(f"Cost limit of ${formatted_limit} exceeded")
-            if (
-                limits.total_tokens_limit is not None
-                and cumulative_tokens > limits.total_tokens_limit
-            ):
-                _raise_limit_breach(f"Token limit of {limits.total_tokens_limit} exceeded")
+        # No reactive post-iteration limit checks; quota reservation enforces limits.
         cond = (
             loop_step.get_exit_condition_callable()
             if hasattr(loop_step, "get_exit_condition_callable")

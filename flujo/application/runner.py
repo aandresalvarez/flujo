@@ -28,7 +28,16 @@ from ..exceptions import (
 )
 from ..domain.dsl.step import Step, StepConfig
 from ..domain.dsl.pipeline import Pipeline
-from ..domain.models import PipelineResult, StepResult, UsageLimits, PipelineContext, StepOutcome
+from ..domain.models import (
+    Failure,
+    Paused,
+    PipelineContext,
+    PipelineResult,
+    StepOutcome,
+    StepResult,
+    Success,
+    UsageLimits,
+)
 from ..domain.commands import AgentCommand
 from pydantic import TypeAdapter
 from ..domain.resources import AppResources
@@ -43,6 +52,7 @@ from .core.context_manager import (
     _accepts_param,
     _extract_missing_fields,
 )
+from .core.async_iter import aclose_if_possible
 from .core.state_manager import StateManager
 from .core.hook_dispatcher import _dispatch_hook as _dispatch_hook_impl
 from .core.factories import BackendFactory, ExecutorFactory
@@ -93,6 +103,37 @@ class BackgroundTaskInfo:
     error: Optional[str]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
+
+
+class _AutoClosingOutcomeIterator(AsyncIterator[StepOutcome[StepResult]]):
+    """Auto-close outcome iterators once a terminal outcome is produced.
+
+    Callers often break after the first ``Paused``/``Failure``/``Success`` outcome
+    (e.g., pause/resume flows). Async generators do not get implicitly closed on
+    early loop exit, which triggers teardown-time RuntimeWarnings under xdist.
+    """
+
+    def __init__(self, agen: AsyncIterator[StepOutcome[StepResult]]) -> None:
+        self._agen = agen
+        self._closed = False
+
+    def __aiter__(self) -> "_AutoClosingOutcomeIterator":
+        return self
+
+    async def __anext__(self) -> StepOutcome[StepResult]:
+        if self._closed:
+            raise StopAsyncIteration
+        item = await self._agen.__anext__()
+        if isinstance(item, (Success, Failure, Paused)):
+            self._closed = True
+            await aclose_if_possible(self._agen)
+        return item
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        await aclose_if_possible(self._agen)
 
 
 class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
@@ -407,7 +448,7 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     ) -> AsyncIterator[object]:
         """Delegate step execution to a composed RunSession."""
         session = self._make_session()
-        async for item in session.execute_steps(
+        steps_iter = session.execute_steps(
             start_idx=start_idx,
             data=data,
             context=context,
@@ -416,8 +457,12 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             run_id=run_id,
             state_backend=state_backend,
             state_created_at=state_created_at,
-        ):
-            yield item
+        )
+        try:
+            async for item in steps_iter:
+                yield item
+        finally:
+            await aclose_if_possible(steps_iter)
 
     async def _run_async_impl(
         self,
@@ -428,17 +473,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     ) -> AsyncIterator[object]:
         """Delegate run orchestration to the composed RunSession."""
         session = self._make_session()
-        async for item in session.run_async(
+        run_iter = session.run_async(
             initial_input, run_id=run_id, initial_context_data=initial_context_data
-        ):
-            if isinstance(item, PipelineResult) and getattr(item, "step_history", None):
-                try:
+        )
+        try:
+            async for item in run_iter:
+                if isinstance(item, PipelineResult) and getattr(item, "step_history", None):
                     last_ctx = getattr(item.step_history[-1], "branch_context", None)
                     if last_ctx is not None:
                         item.final_pipeline_context = last_ctx
-                except Exception:
-                    pass
-            yield item
+                yield item
+        finally:
+            await aclose_if_possible(run_iter)
 
     def run_async(
         self,
@@ -474,20 +520,20 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             initial_context_data=initial_context_data,
         )
 
-    async def run_outcomes_async(
+    def run_outcomes_async(
         self,
         initial_input: RunnerInT,
         *,
         run_id: str | None = None,
         initial_context_data: Optional[JSONObject] = None,
     ) -> AsyncIterator[StepOutcome[StepResult]]:
-        async for outcome in _run_outcomes_async(
+        agen = _run_outcomes_async(
             self,
             initial_input,
             run_id=run_id,
             initial_context_data=initial_context_data,
-        ):
-            yield outcome
+        )
+        return _AutoClosingOutcomeIterator(agen)
 
     async def run_stream(
         self,

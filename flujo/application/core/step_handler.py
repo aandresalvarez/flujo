@@ -15,6 +15,7 @@ from ...domain.models import (
 )
 from ...exceptions import PausedException
 from .executor_helpers import make_execution_frame
+from .quota_manager import build_root_quota
 
 if TYPE_CHECKING:
     from .executor_core import ExecutorCore
@@ -229,6 +230,14 @@ class StepHandler:
         context_setter: ContextSetter | None,
         fallback_depth: int = 0,
     ) -> StepResult:
+        current_quota = None
+        try:
+            if hasattr(self._core, "_get_current_quota"):
+                current_quota = self._core._get_current_quota()
+        except Exception:
+            current_quota = None
+        if current_quota is None:
+            current_quota = build_root_quota(limits)
         frame = make_execution_frame(
             self._core,
             loop_step,
@@ -241,23 +250,35 @@ class StepHandler:
             on_chunk=None,
             fallback_depth=fallback_depth,
             result=None,
-            quota=(
-                self._core._get_current_quota()
-                if hasattr(self._core, "_get_current_quota")
-                else None
-            ),
+            quota=current_quota,
         )
         original_context_setter = getattr(self._core, "_context_setter", None)
+        quota_token = None
         try:
             try:
                 setattr(self._core, "_context_setter", context_setter)
             except Exception:
                 pass
+            try:
+                quota_mgr = getattr(self._core, "_quota_manager", None)
+                set_fn = getattr(quota_mgr, "set_current_quota", None)
+                if callable(set_fn):
+                    quota_token = set_fn(current_quota)
+            except Exception:
+                quota_token = None
             outcome = await self._core.loop_step_executor.execute(self._core, frame)
             return self._core._unwrap_outcome_to_step_result(
                 outcome, self._core._safe_step_name(loop_step)
             )
         finally:
+            try:
+                if quota_token is not None and hasattr(quota_token, "old_value"):
+                    quota_mgr = getattr(self._core, "_quota_manager", None)
+                    set_fn = getattr(quota_mgr, "set_current_quota", None)
+                    if callable(set_fn):
+                        set_fn(quota_token.old_value)
+            except Exception:
+                pass
             try:
                 setattr(self._core, "_context_setter", original_context_setter)
             except Exception:

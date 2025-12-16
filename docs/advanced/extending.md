@@ -200,13 +200,15 @@ runner = Flujo(
 ### Accessing Data in Steps
 
 ```python
+from datetime import datetime, timezone
+
 @step
 async def search_graph(query: str, *, context: MyContext) -> str:
     # Automatically hydrated from provider
     graph_data = context.knowledge.get()
     
     # Modify and set back (persisted after step completes)
-    graph_data.append({"query": query, "timestamp": datetime.now()})
+    graph_data.append({"query": query, "timestamp": datetime.now(timezone.utc).isoformat()})
     context.knowledge.set(graph_data)
     
     return f"Processed with {len(graph_data)} nodes"

@@ -9,6 +9,7 @@ import json
 from .config import load_backend_from_config
 import os as __os
 from typing import Optional, Any
+from flujo.utils.async_bridge import run_sync
 
 
 def _find_run_by_partial_id(backend: Any, partial_id: str, timeout: float = 5.0) -> Optional[str]:
@@ -60,7 +61,7 @@ def _find_run_by_partial_id(backend: Any, partial_id: str, timeout: float = 5.0)
                 raise ValueError(f"Ambiguous run_id '{partial_id}'. Matches: {matches[:5]}")
             return None
 
-        result: Optional[str] = asyncio.run(asyncio.wait_for(_search(), timeout=timeout))
+        result: Optional[str] = run_sync(asyncio.wait_for(_search(), timeout=timeout))
         return result
     except asyncio.TimeoutError:
         return None
@@ -201,7 +202,7 @@ def show_run(
                 s_task = asyncio.create_task(backend.list_run_steps(run_id))
                 return await d_task, await s_task
 
-            details, steps = asyncio.run(asyncio.wait_for(_fetch(), timeout=timeout))
+            details, steps = run_sync(asyncio.wait_for(_fetch(), timeout=timeout))
         except asyncio.TimeoutError:
             typer.echo(
                 f"Timeout ({timeout}s) while fetching run details\n"

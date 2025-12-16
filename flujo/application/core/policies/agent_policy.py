@@ -83,18 +83,49 @@ class DefaultAgentStepExecutor(StepPolicy[Step[object, object]]):
             _fallback_depth=_fallback_depth,
         )
 
-    def _estimate_usage(self, step: object, data: object, context: object | None) -> UsageEstimate:
+    def _estimate_usage(
+        self,
+        step: object,
+        data: object,
+        context: object | None,
+        *,
+        core: object | None = None,
+    ) -> UsageEstimate:
+        # Prefer centralized estimator selection when available (keeps estimation logic out of policies).
+        if core is not None:
+            try:
+                factory = getattr(core, "_estimator_factory", None)
+                select_fn = getattr(factory, "select", None)
+                if callable(select_fn):
+                    est = select_fn(step)
+                    est_fn = getattr(est, "estimate", None)
+                    if callable(est_fn):
+                        return est_fn(step, data, context)
+            except Exception:
+                pass
+            try:
+                est = getattr(core, "_usage_estimator", None)
+                est_fn = getattr(est, "estimate", None)
+                if callable(est_fn):
+                    return est_fn(step, data, context)
+            except Exception:
+                pass
+
+        # Fallback: explicit config hints
         try:
             cfg = getattr(step, "config", None)
             if cfg is not None:
                 c = getattr(cfg, "expected_cost_usd", None)
                 t = getattr(cfg, "expected_tokens", None)
-                cost = float(c) if c is not None else 0.0
-                tokens = int(t) if t is not None else 0
-                return UsageEstimate(cost_usd=cost, tokens=tokens)
+                if c is not None or t is not None:
+                    return UsageEstimate(
+                        cost_usd=float(c) if c is not None else 0.0,
+                        tokens=int(t) if t is not None else 0,
+                    )
         except Exception:
             pass
-        # Default to minimal estimate to allow execution; precise enforcement happens post-step
+
+        # Default to minimal estimate to allow execution; precise enforcement happens post-step.
         return UsageEstimate(cost_usd=0.0, tokens=0)
 
 

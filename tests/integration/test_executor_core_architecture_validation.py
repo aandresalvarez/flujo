@@ -9,6 +9,7 @@ scalability improvements.
 import asyncio
 import gc
 import pytest
+import statistics
 import time
 from typing import Any, List, Optional
 from unittest.mock import Mock, AsyncMock
@@ -147,9 +148,9 @@ class TestComponentIntegration:
         # First Principles: Verify successful execution and optimized component usage
         assert result.success
         # Enhanced: Optimized system may use efficient paths that bypass serializer when not needed
-        assert (
-            serializer.serialize_calls >= 0
-        ), "Serializer may be optimized away in enhanced system"
+        assert serializer.serialize_calls >= 0, (
+            "Serializer may be optimized away in enhanced system"
+        )
         assert hasher.digest_calls >= 0, "Hasher may be optimized in enhanced system"
         assert cache_backend.get_calls >= 0, "Cache backend usage optimized for performance"
         assert cache_backend.put_calls >= 0, "Cache backend usage optimized for performance"
@@ -291,22 +292,25 @@ class TestComponentIntegration:
             assert "Test error" in result.feedback
 
         avg_error_time = sum(error_times) / len(error_times)
-        max_error_time = max(error_times)
+        median_error_time = statistics.median(error_times)
+        sorted_error_times = sorted(error_times)
+        p95_error_time = sorted_error_times[int(0.95 * (len(sorted_error_times) - 1))]
+        max_error_time = sorted_error_times[-1]
 
         print("Error Handling Performance:")
         print(f"Average error handling time: {avg_error_time:.6f}s")
+        print(f"Median error handling time: {median_error_time:.6f}s")
+        print(f"P95 error handling time: {p95_error_time:.6f}s")
         print(f"Maximum error handling time: {max_error_time:.6f}s")
 
-        # Error handling should be fast and consistent
-        # Based on measurements: actual avg ~0.4ms, max ~1.3ms, variance ~3x
-        # Threshold: 100ms average (250x headroom for CI variance)
-        # Variance: 5x (reasonable for async operations with occasional GC)
-        if avg_error_time > 0:
-            variance_ratio = max_error_time / avg_error_time
-            assert variance_ratio < 10.0, (
-                f"Error handling variance too high: max {max_error_time:.6f}s is {variance_ratio:.2f}x "
-                f"the average {avg_error_time:.6f}s. This indicates instability in error paths - "
-                f"investigate root cause (e.g., GC, logging, exception handling overhead)."
+        # Error handling should be fast and reasonably consistent.
+        # Use median/P95 rather than max/avg to avoid CI scheduler outliers dominating micro timings.
+        if median_error_time > 0:
+            p95_ratio = p95_error_time / median_error_time
+            assert p95_ratio < 10.0, (
+                f"Error handling variance too high: p95 {p95_error_time:.6f}s is {p95_ratio:.2f}x "
+                f"the median {median_error_time:.6f}s. Investigate instability in error paths "
+                f"(e.g., GC, logging, exception handling overhead)."
             )
         # Error handling should be fast - 1s sanity check for CI variance
         assert avg_error_time < 1.0, (
@@ -339,17 +343,17 @@ class TestScalabilityValidation:
             execution_time = time.perf_counter() - start_time
 
             # All should succeed
-            assert all(
-                r.success for r in results
-            ), f"Some tasks failed at level {level}: {[r.feedback for r in results if not r.success]}"
+            assert all(r.success for r in results), (
+                f"Some tasks failed at level {level}: {[r.feedback for r in results if not r.success]}"
+            )
 
             print(f"Concurrent Execution (level={level}): {execution_time:.6f}s")
 
             # Should complete within reasonable time
             max_time = 2.0  # 2 seconds max
-            assert (
-                execution_time < max_time
-            ), f"Concurrent execution level {level} too slow: {execution_time:.6f}s"
+            assert execution_time < max_time, (
+                f"Concurrent execution level {level} too slow: {execution_time:.6f}s"
+            )
 
     @pytest.mark.asyncio
     async def test_resource_management_optimization(self):
@@ -373,9 +377,9 @@ class TestScalabilityValidation:
         total_time = time.perf_counter() - start_time
 
         # All should succeed despite resource limits
-        assert all(
-            r.success for r in results
-        ), f"Some tasks failed: {[r.feedback for r in results if not r.success]}"
+        assert all(r.success for r in results), (
+            f"Some tasks failed: {[r.feedback for r in results if not r.success]}"
+        )
         assert len(results) == num_tasks
 
         print("Resource Management Test:")
@@ -395,42 +399,58 @@ class TestScalabilityValidation:
         # executor = ExecutorCore(usage_meter=usage_meter, enable_cache=True)  # Unused variable
 
         # step = create_test_step("usage_test")  # Unused variable
-        limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=1000)
+        # Keep limits high so we can measure steady-state checks without early aborts.
+        limits = UsageLimits(total_cost_usd_limit=100.0, total_tokens_limit=1_000_000)
 
         # Test usage limit checking performance
-        check_times = []
+        # This is a micro-operation (in quota-only mode `ThreadSafeMeter.guard` is a no-op),
+        # so single-iteration timings are dominated by OS scheduling noise in CI. Measure
+        # per-check time in small batches to stabilize variance without loosening thresholds.
+        batch_size = 200
+        batches = 20
 
-        for i in range(50):
-            start_time = time.perf_counter()
-
-            # Add some usage
+        # Warm up to avoid first-call allocation noise.
+        for _ in range(100):
             await usage_meter.add(0.01, 10, 5)
+            await usage_meter.guard(limits)
 
-            # Check limits
-            try:
+        gc.collect()
+
+        batch_avg_check_times: list[float] = []
+        for _ in range(batches):
+            start_ns = time.perf_counter_ns()
+            for _ in range(batch_size):
+                await usage_meter.add(0.01, 10, 5)
                 await usage_meter.guard(limits)
-                limit_check_time = time.perf_counter() - start_time
-                check_times.append(limit_check_time)
-            except Exception:
-                # Expected when limits are exceeded
-                break
+            elapsed_ns = time.perf_counter_ns() - start_ns
+            batch_avg_check_times.append((elapsed_ns / batch_size) / 1_000_000_000)
 
-        if check_times:
-            avg_check_time = sum(check_times) / len(check_times)
-            max_check_time = max(check_times)
+        if batch_avg_check_times:
+            avg_check_time = sum(batch_avg_check_times) / len(batch_avg_check_times)
+            median_check_time = statistics.median(batch_avg_check_times)
+            sorted_check_times = sorted(batch_avg_check_times)
+            p95_check_time = sorted_check_times[int(0.95 * (len(sorted_check_times) - 1))]
+            max_check_time = sorted_check_times[-1]
 
             print("Usage Limit Enforcement Performance:")
             print(f"Average check time: {avg_check_time:.6f}s")
+            print(f"Median check time: {median_check_time:.6f}s")
+            print(f"P95 check time: {p95_check_time:.6f}s")
             print(f"Maximum check time: {max_check_time:.6f}s")
-            print(f"Checks performed: {len(check_times)}")
+            print(f"Checks performed: {batch_size * batches}")
 
-            # Usage limit checking should be consistent (max not dramatically higher than avg)
-            # Allow 20x variance for micro-operations (more lenient due to sub-ms timing noise)
-            if avg_check_time > 0:
-                variance_ratio = max_check_time / avg_check_time
-                assert variance_ratio < 20.0, (
-                    f"Usage check variance too high: max {max_check_time:.6f}s is {variance_ratio:.2f}x "
-                    f"the average {avg_check_time:.6f}s (indicates instability)"
+            # In quota-only mode, `ThreadSafeMeter.guard` is a no-op and should remain extremely fast.
+            # Use median/P95 rather than max/avg to avoid CI scheduler outliers dominating micro timings.
+            # CI stability: avoid sub-second hard thresholds; keep a loose guardrail here and
+            # rely on variance checks + benchmarks for tighter regression detection.
+            assert median_check_time < 1.0, (
+                f"Median usage check too slow: {median_check_time:.6f}s (expected <1s)."
+            )
+            if median_check_time > 0:
+                p95_ratio = p95_check_time / median_check_time
+                assert p95_ratio < 10.0, (
+                    f"Usage check variance too high: p95 {p95_check_time:.6f}s is {p95_ratio:.2f}x "
+                    f"the median {median_check_time:.6f}s (indicates instability)"
                 )
             # Sanity check: usage checks shouldn't take more than 1s on average
             assert avg_check_time < 1.0, f"Average usage check too slow: {avg_check_time:.6f}s"
@@ -659,8 +679,11 @@ class TestPerformanceRegression:
             assert result.success
 
         avg_time = sum(execution_times) / len(execution_times)
-        max_time = max(execution_times)
-        min_time = min(execution_times)
+        median_time = statistics.median(execution_times)
+        sorted_times = sorted(execution_times)
+        p95_time = sorted_times[int(0.95 * (len(sorted_times) - 1))]
+        min_time = sorted_times[0]
+        max_time = sorted_times[-1]
 
         # Split into first and second half for regression detection
         first_half = execution_times[:10]
@@ -670,16 +693,17 @@ class TestPerformanceRegression:
 
         print("Performance Regression Test:")
         print(f"  Average: {avg_time:.6f}s")
+        print(f"  Median: {median_time:.6f}s, P95: {p95_time:.6f}s")
         print(f"  Min: {min_time:.6f}s, Max: {max_time:.6f}s")
         print(f"  First half avg: {avg_first:.6f}s, Second half avg: {avg_second:.6f}s")
 
-        # 1. Consistency check: max should not be >10x average
-        # Based on measurements: actual variance ~5x, allow 10x for CI noise
-        if avg_time > 0:
-            variance_ratio = max_time / avg_time
-            assert variance_ratio < 10.0, (
-                f"Execution variance too high: max {max_time:.6f}s is {variance_ratio:.2f}x "
-                f"the average {avg_time:.6f}s. Investigate root cause of timing spikes."
+        # 1. Consistency check: P95 should not be dramatically higher than median
+        # Use median/P95 rather than max/avg to avoid CI scheduler outliers dominating.
+        if median_time > 0:
+            p95_ratio = p95_time / median_time
+            assert p95_ratio < 10.0, (
+                f"Execution variance too high: p95 {p95_time:.6f}s is {p95_ratio:.2f}x "
+                f"the median {median_time:.6f}s. Investigate root cause of timing spikes."
             )
 
         # 2. Performance check: average should be fast - 1s sanity check for CI variance

@@ -93,7 +93,7 @@ sqlite:///<path>
 ```python
 from flujo.state.backends.sqlite import SQLiteBackend
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Initialize
 backend = SQLiteBackend(Path("workflow_state.db"))
@@ -107,8 +107,8 @@ state = {
     "current_step_index": 2,
     "pipeline_context": {"input_data": "sample.csv"},
     "status": "running",
-    "created_at": datetime.now(),
-    "updated_at": datetime.now(),
+    "created_at": datetime.now(timezone.utc),
+    "updated_at": datetime.now(timezone.utc),
     "total_steps": 5,
 }
 await backend.save_state("run_123", state)
@@ -320,7 +320,7 @@ backend = PostgresBackend(
 
 ```python
 from flujo.state.backends.postgres import PostgresBackend
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Initialize
 backend = PostgresBackend(
@@ -337,10 +337,10 @@ state = {
     "current_step_index": 2,
     "pipeline_context": {"input_data": "sample.csv"},
     "status": "running",
-    "created_at": datetime.now(),
-    "updated_at": datetime.now(),
+    "created_at": datetime.now(timezone.utc),
+    "updated_at": datetime.now(timezone.utc),
     "total_steps": 5,
-    "metadata": {"batch_id": "batch-001", "priority": "high"}
+    "metadata": {"batch_id": "batch-001", "priority": "high"},
 }
 await backend.save_state("run_123", state)
 
@@ -743,4 +743,3 @@ Both SQLite and PostgreSQL are production-ready backends for Flujo:
 - **PostgreSQL**: Ideal for high-volume production, multi-server architectures, and advanced querying
 
 Choose based on your deployment requirements, concurrency needs, and scalability goals. Both backends support automatic migrations, provide excellent performance, and offer comprehensive observability features.
-

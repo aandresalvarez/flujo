@@ -331,6 +331,21 @@ def _resolve_actual_type(field_type: object) -> type[object] | None:
             return resolved
 
     # Handle Union types (compatible with Python 3.9+)
+    # - typing.Union[...] uses __origin__ == typing.Union
+    # - PEP604 unions (A | B) are instances of types.UnionType
+    if isinstance(field_type, types.UnionType):
+        non_none_types = [t for t in get_args(field_type) if t is not type(None)]
+        if non_none_types:
+            first = non_none_types[0]
+            if isinstance(first, str):
+                if first == "ExecutedCommandLog":
+                    return ExecutedCommandLog
+                resolved = _resolve_type_from_string(first)
+                if resolved is not None:
+                    return resolved
+            return first if isinstance(first, type) else None
+        return None
+
     if hasattr(field_type, "__origin__") and field_type.__origin__ is Union:
         non_none_types = _extract_union_types(field_type)
         if non_none_types:
@@ -348,6 +363,13 @@ def _resolve_actual_type(field_type: object) -> type[object] | None:
         return None
 
     return field_type if isinstance(field_type, type) else None
+
+
+def _annotation_allows_none(field_type: object) -> bool:
+    try:
+        return type(None) in get_args(field_type)
+    except Exception:
+        return False
 
 
 def _deserialize_value(value: object, field_type: object, context_model: type[BaseModel]) -> object:
@@ -370,7 +392,10 @@ def _deserialize_value(value: object, field_type: object, context_model: type[Ba
             if (
                 hasattr(resolved_element_type, "model_validate")
                 and callable(getattr(resolved_element_type, "model_validate", None))
-                and issubclass(resolved_element_type, BaseModel)
+                and (
+                    issubclass(resolved_element_type, BaseModel)
+                    or issubclass(resolved_element_type, PydanticBaseModel)
+                )
             ):
                 deserialized: list[object] = []
                 for item in value:
@@ -403,7 +428,10 @@ def _deserialize_value(value: object, field_type: object, context_model: type[Ba
             if (
                 hasattr(resolved_type, "model_validate")
                 and callable(getattr(resolved_type, "model_validate", None))
-                and issubclass(resolved_type, BaseModel)
+                and (
+                    issubclass(resolved_type, BaseModel)
+                    or issubclass(resolved_type, PydanticBaseModel)
+                )
             ):
                 try:
                     return resolved_type.model_validate(value)
@@ -586,8 +614,12 @@ def _inject_context_with_deep_merge(
     for key, value in update_data.items():
         if key in context_model.model_fields:
             field_info = context_model.model_fields[key]
-            field_type = field_info.annotation
+            raw_field_type = field_info.annotation
+            field_type = raw_field_type
             # Resolve Union and other composite annotations to a concrete type when possible
+            if value is None and _annotation_allows_none(raw_field_type):
+                setattr(context, key, None)
+                continue
             try:
                 resolved = _resolve_actual_type(field_type)
                 if resolved is not None:
@@ -649,7 +681,18 @@ def _inject_context_with_deep_merge(
                             if ft_str.startswith("typing."):
                                 # Skip strict callable validation for typing.* constructs
                                 pass
-                            elif hasattr(field_type, "model_validate"):
+                            elif (
+                                isinstance(field_type, type)
+                                and hasattr(field_type, "model_validate")
+                                and callable(getattr(field_type, "model_validate", None))
+                                and isinstance(value, dict)
+                            ):
+                                value = field_type.model_validate(value)
+                            elif (
+                                isinstance(field_type, type)
+                                and hasattr(field_type, "model_validate")
+                                and callable(getattr(field_type, "model_validate", None))
+                            ):
                                 field_type.model_validate(value)
                         except Exception as validation_error:
                             return f"Field '{key}' validation failed: {validation_error}"
@@ -755,10 +798,28 @@ def _inject_context(
     for key, value in update_data.items():
         if key in context_model.model_fields:
             field_info = context_model.model_fields[key]
-            field_type = field_info.annotation
+            raw_field_type = field_info.annotation
+            field_type = raw_field_type
+            if value is None and _annotation_allows_none(raw_field_type):
+                setattr(context, key, None)
+                continue
+            try:
+                resolved = _resolve_actual_type(field_type)
+                if resolved is not None:
+                    field_type = resolved
+            except Exception:
+                pass
 
             if key == "scratchpad":
                 return "scratchpad field has been removed; migrate data to typed fields"
+
+            # Deserialize dict/list payloads into declared model types before assignment.
+            # This prevents transient "model field contains dict" states during `model_dump()`,
+            # which can trigger Pydantic serializer warnings for model-typed fields.
+            try:
+                value = _deserialize_value(value, field_info.annotation, context_model)
+            except Exception:
+                pass
 
             # TYPE VALIDATION: Ensure the value matches the declared field type
             if field_type is not None:
@@ -787,8 +848,15 @@ def _inject_context(
                     else:
                         # Try to validate the value against the field type
                         try:
-                            if hasattr(field_type, "model_validate"):
-                                field_type.model_validate(value)
+                            if (
+                                isinstance(field_type, type)
+                                and hasattr(field_type, "model_validate")
+                                and callable(getattr(field_type, "model_validate", None))
+                            ):
+                                if isinstance(value, dict):
+                                    value = field_type.model_validate(value)
+                                elif not isinstance(value, field_type):
+                                    field_type.model_validate(value)
                         except Exception as validation_error:
                             return f"Field '{key}' validation failed: {validation_error}"
 

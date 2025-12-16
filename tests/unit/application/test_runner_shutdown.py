@@ -71,3 +71,23 @@ async def test_runner_does_not_shutdown_injected_backend() -> None:
     # Users remain responsible for their lifetime management.
     await runner.aclose()
     assert backend.shutdown_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_runner_close_raises_inside_running_loop() -> None:
+    """Calling `runner.close()` from async contexts should fail fast.
+
+    This prevents silent, best-effort background cleanup that can leak resources and
+    cause teardown-time warnings/flakes.
+    """
+    runner = _make_runner(state_backend=_RecordingBackend())
+    with pytest.raises(TypeError, match="cannot be called from a running event loop"):
+        runner.close()
+
+
+@pytest.mark.asyncio
+async def test_runner_sync_context_manager_raises_inside_running_loop() -> None:
+    runner = _make_runner(state_backend=_RecordingBackend())
+    with pytest.raises(TypeError, match="cannot be called from a running event loop"):
+        with runner:
+            pass

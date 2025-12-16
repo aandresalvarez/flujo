@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -51,8 +51,8 @@ def create_run_with_steps(backend, run_id, steps=None, status="completed", final
                 "pipeline_name": f"pipeline_{run_id}",
                 "pipeline_version": "1.0",
                 "status": "running",
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
         )
     )
@@ -63,7 +63,7 @@ def create_run_with_steps(backend, run_id, steps=None, status="completed", final
             run_id,
             {
                 "status": status,
-                "end_time": datetime.utcnow(),
+                "end_time": datetime.now(timezone.utc),
                 "total_cost": 0.01,
                 "final_context": final_context,
             },
@@ -85,8 +85,8 @@ def test_lens_commands(tmp_path: Path, monkeypatch) -> None:
                 "pipeline_name": "p",
                 "pipeline_version": "v",
                 "status": "running",
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
         )
     )
@@ -95,7 +95,7 @@ def test_lens_commands(tmp_path: Path, monkeypatch) -> None:
             "r1",
             {
                 "status": "completed",
-                "end_time": datetime.utcnow(),
+                "end_time": datetime.now(timezone.utc),
                 "total_cost": 0.0,
                 "final_context": {},
             },
@@ -132,8 +132,8 @@ def test_lens_commands_with_filters(tmp_path: Path) -> None:
                     "pipeline_name": f"pipeline_{i}",
                     "pipeline_version": "1.0",
                     "status": "running",
-                    "created_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat(),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
         )
@@ -142,7 +142,7 @@ def test_lens_commands_with_filters(tmp_path: Path) -> None:
                 run_id,
                 {
                     "status": status,
-                    "end_time": datetime.utcnow(),
+                    "end_time": datetime.now(timezone.utc),
                     "total_cost": 0.1,
                     "final_context": {"result": f"output_{i}"},
                 },
@@ -179,8 +179,8 @@ def test_lens_show_detailed_run(tmp_path: Path) -> None:
                 "pipeline_name": "test_pipeline",
                 "pipeline_version": "1.0",
                 "status": "running",
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
         )
     )
@@ -195,8 +195,8 @@ def test_lens_show_detailed_run(tmp_path: Path) -> None:
                     "step_name": f"step_{step_idx}",
                     "step_index": step_idx,
                     "status": "completed",
-                    "start_time": datetime.utcnow(),
-                    "end_time": datetime.utcnow(),
+                    "start_time": datetime.now(timezone.utc),
+                    "end_time": datetime.now(timezone.utc),
                     "duration_ms": 1000,
                     "cost": 0.01,
                     "tokens": 50,
@@ -213,7 +213,7 @@ def test_lens_show_detailed_run(tmp_path: Path) -> None:
             run_id,
             {
                 "status": "completed",
-                "end_time": datetime.utcnow(),
+                "end_time": datetime.now(timezone.utc),
                 "total_cost": 0.03,
                 "final_context": {"final_result": "success"},
             },
@@ -275,8 +275,8 @@ def test_lens_commands_with_failed_run(tmp_path: Path) -> None:
                 "pipeline_name": "failing_pipeline",
                 "pipeline_version": "1.0",
                 "status": "running",
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
         )
     )
@@ -290,8 +290,8 @@ def test_lens_commands_with_failed_run(tmp_path: Path) -> None:
                 "step_name": "failing_step",
                 "step_index": 0,
                 "status": "failed",
-                "start_time": datetime.utcnow(),
-                "end_time": datetime.utcnow(),
+                "start_time": datetime.now(timezone.utc),
+                "end_time": datetime.now(timezone.utc),
                 "duration_ms": 500,
                 "cost": 0.01,
                 "tokens": 25,
@@ -308,7 +308,7 @@ def test_lens_commands_with_failed_run(tmp_path: Path) -> None:
             run_id,
             {
                 "status": "failed",
-                "end_time": datetime.utcnow(),
+                "end_time": datetime.now(timezone.utc),
                 "total_cost": 0.01,
                 "final_context": {"error": "Pipeline failed"},
             },
@@ -346,7 +346,7 @@ def test_lens_commands_with_environment_configuration(tmp_path: Path) -> None:
                 "pipeline_name": "env_test",
                 "pipeline_version": "1.0",
                 "status": "running",
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
     )
@@ -404,7 +404,7 @@ def test_lens_show_with_verbose_options(tmp_path: Path) -> None:
         "cost_usd": 0.01,
         "token_counts": 50,
         "execution_time_ms": 1000,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     create_run_with_steps(backend, run_id, steps=[step])
     os.environ["FLUJO_STATE_URI"] = f"sqlite:////{db_path}"
@@ -434,8 +434,8 @@ def test_lens_trace_command(tmp_path: Path) -> None:
                 "pipeline_name": "trace_pipeline",
                 "pipeline_version": "1.0",
                 "status": "running",
-                "created_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
         )
     )
@@ -445,14 +445,14 @@ def test_lens_trace_command(tmp_path: Path) -> None:
         "run_id": run_id,
         "name": "trace_pipeline",
         "status": "completed",
-        "start_time": datetime.utcnow().timestamp(),
-        "end_time": datetime.utcnow().timestamp(),
+        "start_time": datetime.now(timezone.utc).timestamp(),
+        "end_time": datetime.now(timezone.utc).timestamp(),
         "children": [
             {
                 "name": "step1",
                 "status": "completed",
-                "start_time": datetime.utcnow().timestamp(),
-                "end_time": datetime.utcnow().timestamp(),
+                "start_time": datetime.now(timezone.utc).timestamp(),
+                "end_time": datetime.now(timezone.utc).timestamp(),
                 "attributes": {"iteration": 1},
             }
         ],
@@ -471,7 +471,7 @@ def test_lens_trace_command(tmp_path: Path) -> None:
             run_id,
             {
                 "status": "completed",
-                "end_time": datetime.utcnow(),
+                "end_time": datetime.now(timezone.utc),
                 "total_cost": 0.0,
                 "final_context": {},
             },
@@ -503,8 +503,8 @@ def test_lens_trace_command_regression_timestamps(tmp_path: Path) -> None:
                     "pipeline_name": pipeline_name,
                     "pipeline_version": "1.0",
                     "status": "running",
-                    "created_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat(),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
         )
@@ -517,9 +517,9 @@ def test_lens_trace_command_regression_timestamps(tmp_path: Path) -> None:
         result = runner.invoke(app, ["lens", "trace", run_id])
         assert result.exit_code in [0, 1]
         for expected in expected_in_output:
-            assert (
-                expected in result.stdout
-            ), f"Expected '{expected}' in output. Got: {result.stdout}"
+            assert expected in result.stdout, (
+                f"Expected '{expected}' in output. Got: {result.stdout}"
+            )
 
     # 1. Normal float timestamps
     run_id1 = "trace_regression_1"

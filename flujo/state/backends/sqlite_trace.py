@@ -122,8 +122,6 @@ class SQLiteTraceMixin:
             ):
                 return
 
-            from flujo.utils.serialization import _robust_serialize_internal as robust_serialize
-
             try:
                 start_time = float(span_data.get("start_time", 0.0))
             except (ValueError, TypeError):
@@ -149,7 +147,7 @@ class SQLiteTraceMixin:
                 start_time,
                 end_time,
                 str(span_data.get("status", "running")),
-                _fast_json_dumps(robust_serialize(span_data.get("attributes", {}))),
+                _fast_json_dumps(span_data.get("attributes", {})),
             )
             spans.append(span_tuple)
 

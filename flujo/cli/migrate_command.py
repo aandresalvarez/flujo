@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import importlib.util
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -9,6 +8,7 @@ from urllib.parse import urlparse
 import typer
 
 from flujo.infra.config_manager import get_state_uri
+from flujo.utils.async_bridge import run_sync
 
 
 def migrate(dry_run: bool = False, target_version: Optional[int] = None) -> None:
@@ -33,7 +33,7 @@ def migrate(dry_run: bool = False, target_version: Optional[int] = None) -> None
         )
         raise typer.Exit(1)
 
-    asyncio.run(_run_migrations(uri, dry_run=dry_run, target_version=target_version))
+    run_sync(_run_migrations(uri, dry_run=dry_run, target_version=target_version))
 
 
 async def _run_migrations(uri: str, dry_run: bool, target_version: Optional[int]) -> None:

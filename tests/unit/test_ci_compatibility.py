@@ -157,9 +157,9 @@ class TestCIResourceConstraints:
             thread.join()
 
         # Check results
-        assert (
-            errors.empty()
-        ), f"Errors in concurrent test: {[errors.get() for _ in range(errors.qsize())]}"
+        assert errors.empty(), (
+            f"Errors in concurrent test: {[errors.get() for _ in range(errors.qsize())]}"
+        )
         assert results.qsize() == 3, f"Expected 3 results, got {results.qsize()}"
 
 

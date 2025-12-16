@@ -219,7 +219,7 @@ class TestParallelStepRobustness:
     async def test_parallel_step_handles_empty_branches(self, mock_step_executor, usage_limits):
         """Test that parallel step handles empty branches gracefully."""
         # Create a parallel step with no branches
-        empty_parallel_step = ParallelStep(name="empty_parallel", branches={})
+        empty_parallel_step = ParallelStep.model_construct(name="empty_parallel", branches={})
 
         def context_setter(result, context):
             pass

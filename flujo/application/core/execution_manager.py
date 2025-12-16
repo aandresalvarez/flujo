@@ -20,10 +20,6 @@ from flujo.domain.models import (
     BackgroundLaunched,
 )
 
-try:
-    from flujo.domain.models import Quota as _Quota
-except Exception:
-    _Quota = None
 from flujo.exceptions import (
     ContextInheritanceError,
     PipelineAbortSignal,
@@ -36,6 +32,8 @@ from flujo.infra import telemetry
 from flujo.application.core.context_adapter import _build_context_update
 
 from .context_manager import ContextManager
+from .async_iter import aclose_if_possible
+from .quota_manager import build_root_quota
 from .step_coordinator import LegacyStepExecutor, StepCoordinator
 from .state_manager import StateManager
 from .type_validator import TypeValidator
@@ -109,25 +107,9 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
         self.type_validator = type_validator or TypeValidator()
         self.inside_loop_step = inside_loop_step  # Track if we're inside a loop step
         # Quota for proactive reservations
-        if root_quota is not None:
-            self.root_quota = root_quota
-        else:
-            # Build a root quota from usage limits when present
-            try:
-                if self.usage_limits is not None:
-                    max_cost = (
-                        float(self.usage_limits.total_cost_usd_limit)
-                        if self.usage_limits.total_cost_usd_limit is not None
-                        else float("inf")
-                    )
-                    max_tokens = int(self.usage_limits.total_tokens_limit or 0)
-                    from flujo.domain.models import Quota as _Quota2
-
-                    self.root_quota = _Quota2(max_cost, max_tokens)
-                else:
-                    self.root_quota = None
-            except Exception:
-                self.root_quota = root_quota
+        self.root_quota = (
+            root_quota if root_quota is not None else build_root_quota(self.usage_limits)
+        )
 
     async def execute_steps(
         self,
@@ -183,6 +165,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
             step_result_recorded: bool = False
             usage_limit_exceeded = False  # Track if a usage limit exception was raised
             paused_execution = False  # Track if execution was paused
+            step_iter: AsyncIterator[object] | None = None
 
             # ✅ CRITICAL FIX: Persist state AFTER step execution for crash recovery
             # This ensures state reflects the completed step for proper resumption
@@ -214,7 +197,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     chosen_step_executor = step_executor
 
                     last_item: object | None = None
-                    async for item in self.step_coordinator.execute_step(
+                    step_iter = self.step_coordinator.execute_step(
                         step=step,
                         data=data,
                         context=context,
@@ -223,7 +206,9 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         step_executor=chosen_step_executor,
                         usage_limits=self.usage_limits,
                         quota=self.root_quota,
-                    ):
+                    )
+                    assert step_iter is not None
+                    async for item in step_iter:
                         last_item = item
                         # Accept both StepOutcome and legacy values
                         if isinstance(item, StepOutcome):
@@ -371,13 +356,10 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                 except Exception:
                                     pass
 
-                                if step_result not in result.step_history:
-                                    self.step_coordinator.update_pipeline_result(
-                                        result, step_result
-                                    )
-                                self.set_final_context(result, context)
-                                yield result
-                                # Do not return early; allow remaining steps to execute.
+                                # Yield the failure outcome and allow the step iterator to
+                                # finish so StepCoordinator post-step logic (including
+                                # `failure_handlers`) can run deterministically.
+                                yield item
                                 continue
                             elif isinstance(item, Paused):
                                 # Update context with pause state using typed fields
@@ -415,6 +397,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                 # Otherwise, treat as immediate graceful termination
                                 self.set_final_context(result, context)
                                 yield result
+                                await aclose_if_possible(step_iter)
                                 return
                             elif isinstance(item, BackgroundLaunched):
                                 # Surface lifecycle event to callers before synthesizing the step result
@@ -429,6 +412,11 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                             else:
                                 # Unknown outcome: ignore
                                 pass
+                        elif isinstance(item, StepResult):
+                            # Legacy/custom executors yield StepResult directly; capture for
+                            # history/persistence even if an exception is raised later.
+                            step_result = item
+                    await aclose_if_possible(step_iter)
                     if last_item is not None and not isinstance(last_item, StepOutcome):
                         if isinstance(last_item, StepResult):
                             # Legacy path: just capture for later bookkeeping; do not forward paused records
@@ -482,34 +470,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                     pass
                         except Exception:
                             pass
-                        # FSD-009: Enforce usage limits deterministically when no proactive reservation occurred
-                        if self.usage_limits is not None:
-                            try:
-                                from flujo.utils.formatting import format_cost as _fmt
-
-                                over_cost = (
-                                    self.usage_limits.total_cost_usd_limit is not None
-                                    and result.total_cost_usd
-                                    > float(self.usage_limits.total_cost_usd_limit)
-                                )
-                                over_tokens = (
-                                    self.usage_limits.total_tokens_limit is not None
-                                    and result.total_tokens
-                                    > int(self.usage_limits.total_tokens_limit)
-                                )
-                                if over_cost or over_tokens:
-                                    if over_cost:
-                                        msg = f"Cost limit of ${_fmt(float(self.usage_limits.total_cost_usd_limit))} exceeded"
-                                    else:
-                                        msg = f"Token limit of {int(self.usage_limits.total_tokens_limit)} exceeded"
-                                    raise UsageLimitExceededError(msg, result)
-                            except UsageLimitExceededError:
-                                raise
-                            except Exception:
-                                # Do not mask execution for unexpected edge cases
-                                pass
-
-                    # FSD-009: No reactive post-step checks; quotas enforce safety
+                    # No reactive post-step checks; quota reservation enforces limits.
 
                     # First, if coordinator reported Success with a None StepResult, try an internal
                     # direct execution that bypasses the backend (resiliency for tests patching backend).
@@ -613,6 +574,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                         pass
                                 self.set_final_context(result, context)
                                 yield result
+                                await aclose_if_possible(step_iter)
                                 return
                             elif isinstance(_out, _Paused):
                                 # Normalize to pause signal
@@ -667,10 +629,12 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                             else:
                                 self.set_final_context(result, context or context_before_step)
                                 yield result
+                                await aclose_if_possible(step_iter)
                                 return
                         except Exception:
                             self.set_final_context(result, context or context_before_step)
                             yield result
+                            await aclose_if_possible(step_iter)
                             return
 
                     # Pass output to next step
@@ -880,6 +844,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                             if isinstance(step, _LoopStep) and hasattr(step, "iterable_input"):
                                 # Let the loop handler control success/failure; do not halt here.
                                 yield result
+                                await aclose_if_possible(step_iter)
                                 return
                         except Exception:
                             pass
@@ -910,14 +875,26 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
 
                         self.set_final_context(result, context)
                         yield result
+                        await aclose_if_possible(step_iter)
                         return
 
                 except NonRetryableError:
                     raise
 
-                except UsageLimitExceededError:
+                except UsageLimitExceededError as e:
                     # ✅ TASK 7.3: FIX STEP HISTORY POPULATION
                     # Ensure the step result is added to history before re-raising the exception
+                    if step_result is None:
+                        try:
+                            exc_result = getattr(e, "result", None)
+                            if (
+                                exc_result is not None
+                                and hasattr(exc_result, "step_history")
+                                and exc_result.step_history
+                            ):
+                                step_result = exc_result.step_history[-1]
+                        except Exception:
+                            pass
                     if step_result is not None and step_result not in result.step_history:
                         self.step_coordinator.update_pipeline_result(result, step_result)
                         try:
@@ -929,10 +906,25 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         except Exception:
                             pass
                     usage_limit_exceeded = True
+                    try:
+                        existing = getattr(e, "result", None)
+                        existing_len = None
+                        try:
+                            if existing is not None and hasattr(existing, "step_history"):
+                                existing_len = len(existing.step_history)
+                        except Exception:
+                            existing_len = None
+                        # Only overwrite when the exception doesn't already carry a useful
+                        # aggregated result (e.g., ParallelStep may attach multiple branch results).
+                        if existing is None or existing_len in (None, 0, 1):
+                            e.result = result
+                    except Exception:
+                        pass
                     raise  # Re-raise the correctly populated exception.
                 except PipelineAbortSignal:
                     # Early abort (pause or hook): do not append the in-flight step_result.
                     # Tests expect that only previously completed steps are present.
+                    await aclose_if_possible(step_iter)
                     # Ensure paused state is reflected in context for HITL scenarios
                     try:
                         if context is not None:
@@ -973,6 +965,7 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     paused_execution = True
                     self.set_final_context(result, context)
                     yield result
+                    await aclose_if_possible(step_iter)
                     return
 
                 except PausedException as e:
@@ -1043,6 +1036,13 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     raise
 
             finally:
+                # Always close the per-step async iterator to avoid teardown-time
+                # warnings when execution exits early under xdist (async generators
+                # otherwise get GC'd after the loop is gone).
+                try:
+                    await aclose_if_possible(step_iter)
+                except Exception:
+                    pass
                 # Persist final state if we have a run_id and this is the last step
                 if (
                     run_id is not None

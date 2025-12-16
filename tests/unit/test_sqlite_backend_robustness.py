@@ -1,7 +1,7 @@
 """Unit tests for SQLite backend robustness and error handling."""
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flujo.state.backends.sqlite import SQLiteBackend
 
@@ -33,7 +33,7 @@ class TestSQLiteBackendRobustness:
             "pipeline_name": "test_pipeline",
             "pipeline_version": "1.0",
             "status": "running",
-            "start_time": datetime.utcnow().isoformat(),
+            "start_time": datetime.now(timezone.utc).isoformat(),
         }
 
         # This should not raise a KeyError anymore
@@ -81,8 +81,8 @@ class TestSQLiteBackendRobustness:
             "pipeline_name": "test_pipeline",
             "pipeline_version": "1.0",
             "status": "running",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         await backend2.save_run_start(run_data)

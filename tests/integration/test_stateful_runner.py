@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import asyncio
 import pytest
@@ -58,8 +58,8 @@ async def test_resume_from_saved_state() -> None:
         pipeline_context=ctx_after_first.model_dump(),
         last_step_output="mid",
         status="running",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )
     await backend.save_state(run_id, state.model_dump())
 
@@ -111,8 +111,8 @@ async def test_invalid_step_index_raises() -> None:
         pipeline_context=ctx.model_dump(),
         last_step_output=None,
         status="running",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
     )
     await backend.save_state(run_id, state.model_dump())
 

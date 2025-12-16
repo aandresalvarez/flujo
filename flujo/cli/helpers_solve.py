@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import warnings
 from typing import Any, List, Optional
 
@@ -9,6 +8,7 @@ from typer import Exit
 from flujo.domain.agent_protocol import AsyncAgentProtocol
 from flujo.domain.models import Candidate, Checklist, Task
 from flujo.type_definitions.common import JSONObject
+from flujo.utils.async_bridge import run_sync
 
 from .helpers_io import load_weights_file
 from .helpers_project import apply_cli_defaults
@@ -66,7 +66,7 @@ def run_solve_pipeline(
         reflection_limit=reflection_limit,
     )
 
-    return asyncio.run(run_default_pipeline(pipeline, Task(prompt=prompt, metadata=metadata)))
+    return run_sync(run_default_pipeline(pipeline, Task(prompt=prompt, metadata=metadata)))
 
 
 def run_benchmark_pipeline(
@@ -107,9 +107,7 @@ def run_benchmark_pipeline(
             start = time.perf_counter()
             from flujo.cli.main import run_default_pipeline
 
-            result: Candidate | None = asyncio.run(
-                run_default_pipeline(pipeline, Task(prompt=prompt))
-            )
+            result: Candidate | None = run_sync(run_default_pipeline(pipeline, Task(prompt=prompt)))
             if result is not None:
                 times.append(time.perf_counter() - start)
                 scores.append(result.score)

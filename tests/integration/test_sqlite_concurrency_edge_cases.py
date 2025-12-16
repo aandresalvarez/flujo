@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -37,8 +37,8 @@ class TestSQLiteConcurrencyEdgeCases:
                     "last_step_output": f"out-{idx}",
                     "step_history": [],
                     "status": "running",
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow(),
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
                     "total_steps": 1,
                     "error_message": None,
                     "execution_time_ms": 0,
@@ -128,8 +128,8 @@ class TestSQLiteConcurrencyEdgeCases:
                 "pipeline_context": {"index": i},
                 "last_step_output": f"output_{i}",
                 "status": "running",
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "total_steps": 5,
                 "error_message": None,
                 "execution_time_ms": 1000,
@@ -162,8 +162,8 @@ class TestSQLiteConcurrencyEdgeCases:
                 "pipeline_context": {"index": i},
                 "last_step_output": f"output_{i}",
                 "status": "completed",
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "total_steps": 5,
                 "error_message": None,
                 "execution_time_ms": 1000,
@@ -200,8 +200,8 @@ class TestSQLiteConcurrencyEdgeCases:
                 "pipeline_context": {"index": i},
                 "last_step_output": f"output_{i}",
                 "status": "completed",
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "total_steps": 5,
                 "error_message": None,
                 "execution_time_ms": 1000,
@@ -237,8 +237,8 @@ class TestSQLiteConcurrencyEdgeCases:
                 "pipeline_context": {"index": i},
                 "last_step_output": f"output_{i}",
                 "status": "running",
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "total_steps": 5,
                 "error_message": None,
                 "execution_time_ms": 1000,
@@ -328,8 +328,8 @@ class TestSQLiteConcurrencyEdgeCases:
                 "pipeline_context": {"index": i},
                 "last_step_output": f"output_{i}",
                 "status": "running",
-                "created_at": datetime.utcnow(),
-                "updated_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
                 "total_steps": 5,
                 "error_message": None,
                 "execution_time_ms": 1000,

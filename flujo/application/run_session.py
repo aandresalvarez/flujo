@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import inspect
 import warnings
 from datetime import datetime, timezone
 from typing import (
@@ -23,7 +22,6 @@ from ..domain.dsl.pipeline import Pipeline
 from ..domain.models import (
     PipelineContext,
     PipelineResult,
-    Quota,
     UsageLimits,
 )
 from ..domain.resources import AppResources
@@ -39,6 +37,8 @@ from ..state import StateBackend
 from ..type_definitions.common import JSONObject
 from ..utils.config import get_settings
 from .core.execution_manager import ExecutionManager
+from .core.async_iter import aclose_if_possible
+from .core.quota_manager import build_root_quota
 from .core.state_manager import StateManager
 from .core.step_coordinator import StepCoordinator
 
@@ -149,15 +149,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
         step_coordinator: StepCoordinator[ContextT] = StepCoordinator[ContextT](
             self.hooks, self.resources
         )
-        root_quota = None
-        if self.usage_limits is not None:
-            total_cost_limit = (
-                float(self.usage_limits.total_cost_usd_limit)
-                if self.usage_limits.total_cost_usd_limit is not None
-                else float("inf")
-            )
-            total_tokens_limit = int(self.usage_limits.total_tokens_limit or 0)
-            root_quota = Quota(total_cost_limit, total_tokens_limit)
+        root_quota = build_root_quota(self.usage_limits)
 
         execution_manager = ExecutionManager(
             self.pipeline,
@@ -181,14 +173,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
             async for item in exec_iter:
                 yield item
         finally:
-            try:
-                aclose = getattr(exec_iter, "aclose", None)
-                if callable(aclose):
-                    res = aclose()
-                    if inspect.isawaitable(res):
-                        await res
-            except Exception:
-                pass
+            await aclose_if_possible(exec_iter)
 
     async def run_async(
         self,
@@ -566,14 +551,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                             _yielded_pipeline_result = True
                         yield chunk
                 finally:
-                    try:
-                        aclose = getattr(step_iter, "aclose", None)
-                        if callable(aclose):
-                            res = aclose()
-                            if inspect.isawaitable(res):
-                                await res
-                    except Exception:
-                        pass
+                    await aclose_if_possible(step_iter)
                 if not _yielded_pipeline_result:
                     _yielded_pipeline_result = True
                     yield _prepare_pipeline_result_for_emit()
@@ -734,8 +712,10 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
 
             return
 
+        gen = _run_generator()
         try:
-            async for item in _run_generator():
+            async for item in gen:
                 yield item
         finally:
+            await aclose_if_possible(gen)
             await self._shutdown_state_backend()

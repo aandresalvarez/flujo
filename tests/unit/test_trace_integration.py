@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from flujo.application.core.state_manager import StateManager
@@ -67,8 +67,8 @@ async def test_trace_saving_integration(sqlite_backend_factory) -> None:
             "pipeline_name": "test_pipeline",
             "pipeline_version": "1.0",
             "status": "running",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
     )
 
@@ -137,8 +137,8 @@ async def test_trace_saving_without_trace_tree(sqlite_backend_factory) -> None:
             "pipeline_name": "test_pipeline",
             "pipeline_version": "1.0",
             "status": "running",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
     )
 
@@ -186,8 +186,8 @@ async def test_trace_saving_error_handling(sqlite_backend_factory) -> None:
             "pipeline_name": "test_pipeline",
             "pipeline_version": "1.0",
             "status": "running",
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
     )
 

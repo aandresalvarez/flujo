@@ -3,7 +3,7 @@
 import pytest
 import asyncio
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flujo.type_definitions.common import JSONObject
 
@@ -24,7 +24,7 @@ async def sqlite_backend(tmp_path):
 
 
 def create_run_data(run_id: str) -> dict:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     return {
         "run_id": run_id,
         "pipeline_id": str(uuid4()),
@@ -131,7 +131,7 @@ class TestNormalizedTraceStorage:
                 "cost_usd": 0.0,
                 "token_counts": 1,
                 "execution_time_ms": 10,
-                "created_at": datetime.utcnow().isoformat(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
         )
 

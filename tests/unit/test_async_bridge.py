@@ -61,9 +61,18 @@ class TestRunSync:
             await asyncio.sleep(0.01)
             return "from nested"
 
-        # Call run_sync from inside an async function (existing loop scenario)
-        result = run_sync(inner_async())
-        assert result == "from nested"
+        with pytest.raises(TypeError, match=r"cannot be called from a running event loop thread"):
+            run_sync(inner_async())
+
+    @pytest.mark.asyncio
+    async def test_run_sync_custom_running_loop_error(self) -> None:
+        """Custom error messages should be preserved for callers with better guidance."""
+
+        async def inner_async() -> str:
+            return "never returned"
+
+        with pytest.raises(TypeError, match="use async APIs here"):
+            run_sync(inner_async(), running_loop_error="use async APIs here")
 
     @pytest.mark.asyncio
     async def test_run_sync_double_invoke(self) -> None:
@@ -73,14 +82,12 @@ class TestRunSync:
             await asyncio.sleep(0.001)
             return n * 2
 
-        # Multiple invocations should all work correctly
-        r1 = run_sync(get_value(1))
-        r2 = run_sync(get_value(2))
-        r3 = run_sync(get_value(3))
-
-        assert r1 == 2
-        assert r2 == 4
-        assert r3 == 6
+        with pytest.raises(TypeError, match=r"cannot be called from a running event loop thread"):
+            run_sync(get_value(1))
+        with pytest.raises(TypeError, match=r"cannot be called from a running event loop thread"):
+            run_sync(get_value(2))
+        with pytest.raises(TypeError, match=r"cannot be called from a running event loop thread"):
+            run_sync(get_value(3))
 
     def test_run_sync_no_running_loop(self) -> None:
         """Test run_sync when there's no running loop (uses asyncio.run directly)."""
@@ -100,7 +107,7 @@ class TestRunSync:
             await asyncio.sleep(0.001)
             raise RuntimeError("nested failure")
 
-        with pytest.raises(RuntimeError, match="nested failure"):
+        with pytest.raises(TypeError, match=r"cannot be called from a running event loop thread"):
             run_sync(failing_func())
 
     def test_run_sync_with_coroutine_return_none(self) -> None:

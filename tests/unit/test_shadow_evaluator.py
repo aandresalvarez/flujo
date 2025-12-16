@@ -22,8 +22,12 @@ class DummyBg:
 async def test_shadow_eval_schedules_when_enabled(monkeypatch: Any) -> None:
     created: list[Any] = []
 
-    async def fake_create_task(coro: Any, name: str | None = None) -> Any:
+    def fake_create_task(coro: Any, name: str | None = None) -> Any:
         created.append(coro)
+        try:
+            coro.close()
+        except Exception:
+            pass
 
         class DummyTask:
             def add_done_callback(self, _: Any) -> None:
@@ -59,8 +63,12 @@ async def test_shadow_eval_schedules_when_enabled(monkeypatch: Any) -> None:
 def test_shadow_eval_disabled(monkeypatch: Any) -> None:
     created: list[Any] = []
 
-    async def fake_create_task(coro: Any, name: str | None = None) -> Any:
+    def fake_create_task(coro: Any, name: str | None = None) -> Any:
         created.append(coro)
+        try:
+            coro.close()
+        except Exception:
+            pass
 
     monkeypatch.setattr(asyncio, "create_task", fake_create_task)
 

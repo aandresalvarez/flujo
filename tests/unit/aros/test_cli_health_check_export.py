@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -10,7 +10,7 @@ from flujo.cli.main import dev_health_check as _dev_health_check
 
 class _FakeBackend:
     def __init__(self) -> None:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         self.runs = [
             {
                 "run_id": "r1",

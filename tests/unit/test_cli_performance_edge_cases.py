@@ -4,7 +4,7 @@ import pytest
 import time
 import asyncio
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import platform
 import subprocess
@@ -36,7 +36,7 @@ class TestCLIPerformanceEdgeCases:
             # Create runs with different characteristics
             import os as _os
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             # Reduced default from 200 to 50 for faster tests
             # CI can override with FLUJO_CI_DB_SIZE if needed
             try:
@@ -202,9 +202,9 @@ class TestCLIPerformanceEdgeCases:
             # Relative check: Should be comparable to baseline
             # Allow 2x variance
             if baseline > 0:
-                assert (
-                    execution_time < baseline * 3.0
-                ), f"Show {run_id} took {execution_time:.3f}s, baseline {baseline:.3f}s"
+                assert execution_time < baseline * 3.0, (
+                    f"Show {run_id} took {execution_time:.3f}s, baseline {baseline:.3f}s"
+                )
             else:
                 assert execution_time < 0.5, f"Show {run_id} took {execution_time:.3f}s"
 
@@ -245,9 +245,9 @@ class TestCLIPerformanceEdgeCases:
         # Allow overhead factor
         if baseline > 0:
             # 5 commands. Allow 10x baseline total.
-            assert (
-                total_time < baseline * 15.0
-            ), f"Concurrent access took {total_time:.3f}s, baseline {baseline:.3f}s"
+            assert total_time < baseline * 15.0, (
+                f"Concurrent access took {total_time:.3f}s, baseline {baseline:.3f}s"
+            )
         else:
             assert total_time < 3.0, f"Concurrent access took {total_time:.3f}s"
 
@@ -309,7 +309,7 @@ class TestCLIPerformanceEdgeCases:
 
         try:
             # Create a moderate amount of data
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             for i in range(100):
                 await backend.save_run_start(
                     {
@@ -378,15 +378,15 @@ class TestCLIPerformanceEdgeCases:
                     "pipeline_name": f"pipeline_{run_id}",
                     "pipeline_version": "1.0",
                     "status": "running",
-                    "created_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat(),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
             await backend.save_run_end(
                 run_id,
                 {
                     "status": "completed",
-                    "end_time": datetime.utcnow(),
+                    "end_time": datetime.now(timezone.utc),
                     "total_cost": 0.1,
                     "final_context": {"result": f"output_{run_id}"},
                 },
@@ -401,9 +401,9 @@ class TestCLIPerformanceEdgeCases:
         print(f"Concurrent write performance: {total_time:.3f}s")
         # Sanity check: 50 concurrent writes should complete within reasonable time
         # This is a major regression detector, not a tight performance gate
-        assert (
-            total_time < 30.0
-        ), f"Concurrent writes took {total_time:.3f}s - major regression detected"
+        assert total_time < 30.0, (
+            f"Concurrent writes took {total_time:.3f}s - major regression detected"
+        )
 
         # Verify all writes succeeded
         for i in range(50):
@@ -418,7 +418,7 @@ class TestCLIPerformanceEdgeCases:
 
         try:
             # Create a large number of runs with substantial data
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             large_context = {"data": "x" * 1000}  # 1KB per context
 
             for i in range(100):
@@ -487,8 +487,8 @@ class TestCLIPerformanceEdgeCases:
                     "pipeline_name": "test_pipeline",
                     "pipeline_version": "1.0",
                     "status": "running",
-                    "created_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat(),
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
 
@@ -511,8 +511,8 @@ class TestCLIPerformanceEdgeCases:
                         "pipeline_name": "recovery_pipeline",
                         "pipeline_version": "1.0",
                         "status": "running",
-                        "created_at": datetime.utcnow().isoformat(),
-                        "updated_at": datetime.utcnow().isoformat(),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
                 )
             except Exception as e:

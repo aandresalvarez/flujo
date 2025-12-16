@@ -30,10 +30,10 @@ backend = SQLiteBackend(Path("workflow_state.db"))
 ### Core Operations
 
 ```python
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Save workflow state
-now = datetime.utcnow().replace(microsecond=0)
+now = datetime.now(timezone.utc).replace(microsecond=0)
 state = {
     "run_id": "run_123",
     "pipeline_id": "data_processing",
@@ -368,7 +368,6 @@ await backend.save_state("run_123", state)
 ```python
 # Regular cleanup to prevent database bloat
 import asyncio
-from datetime import datetime
 
 async def maintenance_routine():
     backend = SQLiteBackend(Path("workflow_state.db"))
@@ -389,6 +388,8 @@ async def maintenance_routine():
 
 ```python
 # Set up monitoring for your workflows
+from datetime import datetime, timezone
+
 async def monitor_workflows():
     backend = SQLiteBackend(Path("workflow_state.db"))
 
@@ -409,7 +410,7 @@ async def monitor_workflows():
     for wf in running:
         # Check if workflow has been running too long
         created = datetime.fromisoformat(wf['created_at'])
-        if (datetime.utcnow() - created).total_seconds() > 3600:  # 1 hour
+        if (datetime.now(timezone.utc) - created).total_seconds() > 3600:  # 1 hour
             print(f"Alert: Workflow {wf['run_id']} has been running for over 1 hour")
 ```
 
@@ -417,12 +418,15 @@ async def monitor_workflows():
 
 ```python
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 def backup_database():
     """Create a backup of the workflow database."""
     db_path = Path("workflow_state.db")
-    backup_path = Path(f"workflow_state_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+    backup_path = Path(
+        f"workflow_state_backup_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.db"
+    )
 
     if db_path.exists():
         shutil.copy2(db_path, backup_path)

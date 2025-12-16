@@ -45,8 +45,7 @@ async def test_parallel_quota_split_with_infinite_cost_propagates_inf_to_childre
 
     outcome = await DefaultParallelStepExecutor().execute(core=core, frame=frame)
     assert isinstance(outcome, Success)
-    # Parent tokens should be zeroed after split
     rem_cost, rem_tokens = parent_quota.get_remaining()
-    assert rem_tokens == 0
-    # Cost should be zero after split, even if initial was inf (we zero parent after split)
-    assert rem_cost == 0.0
+    # Parent quota is shared across branches; no forced zeroing.
+    assert rem_tokens == 10
+    assert rem_cost == float("inf")

@@ -166,6 +166,29 @@ def get_skill_registry_provider() -> SkillRegistryProvider:
     return _GLOBAL_PROVIDER
 
 
+def reset_skill_registry_provider() -> None:
+    """Reset the global registry provider (CLI/test hygiene).
+
+    The CLI can be invoked multiple times within a single Python process during tests
+    (e.g., via Typer's CliRunner). Pipelines/plugins may register skills dynamically,
+    so resetting the provider prevents cross-test contamination without relying on
+    broad process-wide cleanup.
+    """
+    global _GLOBAL_PROVIDER
+    _GLOBAL_PROVIDER = SkillRegistryProvider()
+    try:
+        if set_default_skill_registry_provider_fn is not None:  # pragma: no cover - wiring
+            set_default_skill_registry_provider_fn(_GLOBAL_PROVIDER)
+    except Exception:
+        pass
+    try:
+        from flujo.builtins import _register_builtins as _reg
+
+        _reg()
+    except Exception:
+        pass
+
+
 # Register default provider/resolver for domain consumers while keeping dependency direction infra->domain
 if set_default_skill_registry_provider_fn is not None:  # pragma: no cover - simple wiring
     try:
@@ -185,4 +208,5 @@ __all__ = [
     "SkillRegistryProvider",
     "get_skill_registry",
     "get_skill_registry_provider",
+    "reset_skill_registry_provider",
 ]

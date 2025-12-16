@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from flujo.cli.main import dev_health_check as _dev_health_check
 
 
 class _FakeBackendTrend:
     def __init__(self) -> None:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         # Two runs mapped into different buckets by time
         self.runs = [
             {"run_id": "old", "start_time": (now - timedelta(hours=20)).isoformat()},

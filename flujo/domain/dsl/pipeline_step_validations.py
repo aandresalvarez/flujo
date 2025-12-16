@@ -69,6 +69,18 @@ def run_step_validations(
         except Exception:
             return key
 
+    _BASE_INITIAL_ROOTS: frozenset[str] = frozenset(
+        {
+            "initial_prompt",
+            "run_id",
+            "hitl_history",
+            "command_log",
+            "conversation_history",
+            "steps",
+            "call_count",
+        }
+    )
+
     try:
         from .conditional import ConditionalStep as _ConditionalStep
     except Exception:
@@ -153,15 +165,16 @@ def run_step_validations(
                         )
 
             if _ConditionalStep is not None and isinstance(step, _ConditionalStep):
-                branch_outputs: set[str] = set()
+                branch_paths_sets: list[set[str]] = []
                 branches = getattr(step, "branches", {}) or {}
                 for branch in branches.values():
                     try:
                         child_paths = _validate_pipeline(
                             branch, set(available_roots), set(produced_paths), None, None
                         )
-                        branch_outputs.update(child_paths)
+                        branch_paths_sets.append(set(child_paths))
                     except Exception:
+                        branch_paths_sets.append(set())
                         continue
                 default_branch = getattr(step, "default_branch_pipeline", None)
                 if default_branch is not None:
@@ -169,11 +182,19 @@ def run_step_validations(
                         child_paths = _validate_pipeline(
                             default_branch, set(available_roots), set(produced_paths), None, None
                         )
-                        branch_outputs.update(child_paths)
+                        branch_paths_sets.append(set(child_paths))
                     except Exception:
-                        pass
-                produced_paths.update(branch_outputs)
-                available_roots.update(_root_key(p) for p in branch_outputs)
+                        branch_paths_sets.append(set())
+
+                if not branch_paths_sets:
+                    guaranteed_paths: set[str] = set()
+                elif len(branch_paths_sets) == 1:
+                    guaranteed_paths = branch_paths_sets[0]
+                else:
+                    guaranteed_paths = set.intersection(*branch_paths_sets)
+
+                produced_paths.update(guaranteed_paths)
+                available_roots.update(_root_key(p) for p in guaranteed_paths)
                 prev_step = step
                 prev_out_type = getattr(step, "__step_output_type__", object)
                 continue
@@ -269,18 +290,102 @@ def run_step_validations(
                                 )
                             )
 
-                parallel_outputs: set[str] = set()
+                context_include = getattr(step, "context_include_keys", None) or []
+                include_roots: set[str] = {
+                    _root_key(str(k))
+                    for k in context_include
+                    if isinstance(k, str) and str(k).strip()
+                }
+                if include_roots:
+                    branch_available_roots = set(_BASE_INITIAL_ROOTS) | include_roots
+                    branch_produced_paths = {
+                        p for p in produced_paths if _root_key(p) in include_roots
+                    }
+                else:
+                    branch_available_roots = set(available_roots)
+                    branch_produced_paths = set(produced_paths)
+
+                branch_outputs_by_name: dict[str, set[str]] = {}
                 branches = getattr(step, "branches", {}) or {}
-                for branch in branches.values():
+                for branch_name, branch in branches.items():
+                    branch_key = str(branch_name)
                     try:
                         child_paths = _validate_pipeline(
-                            branch, set(available_roots), set(produced_paths), None, None
+                            branch,
+                            set(branch_available_roots),
+                            set(branch_produced_paths),
+                            None,
+                            None,
                         )
-                        parallel_outputs.update(child_paths)
+                        branch_outputs_by_name[branch_key] = set(child_paths)
                     except Exception:
+                        branch_outputs_by_name[branch_key] = set()
                         continue
-                produced_paths.update(parallel_outputs)
-                available_roots.update(_root_key(p) for p in parallel_outputs)
+
+                normalized_ms: str | None = None
+                if _MergeStrategy is not None and isinstance(merge_strategy, _MergeStrategy):
+                    normalized_ms = str(getattr(merge_strategy, "value", "")).strip().lower()
+                elif isinstance(merge_strategy, str):
+                    normalized_ms = merge_strategy.strip().lower()
+
+                merged_paths: set[str] = set()
+                if normalized_ms == "no_merge":
+                    merged_paths = set()
+                elif normalized_ms == "context_update":
+                    fm = getattr(step, "field_mapping", None)
+                    if isinstance(fm, dict) and fm:
+                        for bn, bpaths in branch_outputs_by_name.items():
+                            if bn in fm:
+                                dests = fm.get(bn)
+                                if isinstance(dests, (list, tuple)):
+                                    for d in dests:
+                                        key = str(d).strip()
+                                        if key:
+                                            merged_paths.add(key)
+                                else:
+                                    # Unknown schema: fall back to pessimistic behavior for this branch.
+                                    pass
+                            else:
+                                merged_paths.update(bpaths)
+                    else:
+                        for bpaths in branch_outputs_by_name.values():
+                            merged_paths.update(bpaths)
+                elif normalized_ms == "overwrite":
+                    # Conservative: only propagate keys we can prove are copied back.
+                    # With context_include_keys this is the included subset; otherwise treat as opaque.
+                    if include_roots and branch_outputs_by_name:
+                        try:
+                            last = sorted(branch_outputs_by_name.keys())[-1]
+                        except Exception:
+                            last = None
+                        if last is not None:
+                            merged_paths.update(
+                                p
+                                for p in branch_outputs_by_name.get(last, set())
+                                if _root_key(p) in include_roots
+                            )
+                elif callable(merge_strategy):
+                    report.warnings.append(
+                        ValidationFinding(
+                            rule_id="V-P-MERGE",
+                            severity="warning",
+                            message=(
+                                f"Parallel step '{step.name}' uses a callable merge_strategy; "
+                                "static context key propagation cannot be validated reliably."
+                            ),
+                            step_name=getattr(step, "name", None),
+                            suggestion=(
+                                "Prefer MergeStrategy.CONTEXT_UPDATE with field_mapping to make merges explicit."
+                            ),
+                        )
+                    )
+                else:
+                    # Default: assume a merge-like strategy that can propagate branch-produced keys.
+                    for bpaths in branch_outputs_by_name.values():
+                        merged_paths.update(bpaths)
+
+                produced_paths.update(merged_paths)
+                available_roots.update(_root_key(p) for p in merged_paths)
                 prev_step = step
                 prev_out_type = getattr(step, "__step_output_type__", object)
                 continue
@@ -289,11 +394,48 @@ def run_step_validations(
                 child = getattr(step, "pipeline", None)
                 if child is not None:
                     try:
-                        child_paths = _validate_pipeline(
-                            child, set(available_roots), set(produced_paths), None, None
+                        inherit = bool(getattr(step, "inherit_context", False))
+                        child_available_roots = (
+                            set(available_roots)
+                            if inherit
+                            else (set(_BASE_INITIAL_ROOTS) | {"import_artifacts"})
                         )
-                        produced_paths.update(child_paths)
-                        available_roots.update(_root_key(p) for p in child_paths)
+                        child_produced_paths = set(produced_paths) if inherit else set()
+
+                        child_paths = _validate_pipeline(
+                            child, child_available_roots, child_produced_paths, None, None
+                        )
+
+                        if bool(getattr(step, "updates_context", False)):
+                            outs = getattr(step, "outputs", None)
+                            if outs is None:
+                                produced_paths.update(child_paths)
+                                available_roots.update(_root_key(p) for p in child_paths)
+                            elif isinstance(outs, list):
+                                if outs:
+                                    for om in outs:
+                                        try:
+                                            parent_path = str(getattr(om, "parent", "")).strip()
+                                            child_path = str(getattr(om, "child", "")).strip()
+                                        except Exception:
+                                            parent_path = ""
+                                            child_path = ""
+                                        for path in (parent_path, child_path):
+                                            if path.startswith("scratchpad"):
+                                                report.errors.append(
+                                                    ValidationFinding(
+                                                        rule_id="CTX-SCRATCHPAD",
+                                                        severity="error",
+                                                        message=(
+                                                            f"Import step '{step.name}' output mapping references scratchpad: '{path}'. "
+                                                            "Move data to typed context fields."
+                                                        ),
+                                                        step_name=getattr(step, "name", None),
+                                                    )
+                                                )
+                                        if parent_path:
+                                            produced_paths.add(parent_path)
+                                            available_roots.add(_root_key(parent_path))
                     except Exception:
                         pass
 
@@ -618,6 +760,16 @@ def run_step_validations(
                 )
 
             if getattr(step, "updates_context", False) and not produced_keys:
+                if (
+                    _ImportStep is not None
+                    and isinstance(step, _ImportStep)
+                    and bool(getattr(step, "updates_context", False))
+                ):
+                    outs = getattr(step, "outputs", None)
+                    if outs is None or (isinstance(outs, list) and bool(outs)):
+                        prev_step = step
+                        prev_out_type = getattr(step, "__step_output_type__", object)
+                        continue
                 report.errors.append(
                     ValidationFinding(
                         rule_id="CTX-OUTPUT-KEYS",
@@ -640,13 +792,4 @@ def run_step_validations(
             prev_out_type = getattr(step, "__step_output_type__", object)
         return produced_paths
 
-    initial_roots: set[str] = {
-        "initial_prompt",
-        "run_id",
-        "hitl_history",
-        "command_log",
-        "conversation_history",
-        "steps",
-        "call_count",
-    }
-    _validate_pipeline(pipeline, initial_roots, set(), None, None)
+    _validate_pipeline(pipeline, set(_BASE_INITIAL_ROOTS), set(), None, None)

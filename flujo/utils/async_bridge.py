@@ -1,71 +1,36 @@
 """Unified async/sync bridge utilities.
 
-This module provides a canonical way to run async coroutines from synchronous
-contexts, handling the common case where code may already be running inside
-an event loop.
-
-The primary utility is `run_sync`, which safely executes async code by:
-- Using `asyncio.run()` directly when no loop is running
-- Spawning a daemon thread with a new loop when inside an existing loop
-
-This prevents "Event loop is closed" errors and shutdown leaks that occur
-with ad-hoc thread-based solutions.
+Flujo's sync entrypoints are intentionally *not* callable from a thread that already has a
+running event loop. In those environments (e.g., Jupyter, FastAPI), prefer the async APIs.
 """
 
 from __future__ import annotations
 
 import asyncio
-import threading
-from concurrent.futures import Future
-from typing import Any, Coroutine, TypeVar
+from typing import Coroutine, TypeVar
 
 T = TypeVar("T")
 
 
-def run_sync(coro: Coroutine[Any, Any, T]) -> T:
-    """Run async coroutine from sync context safely.
-
-    Uses thread-based isolation when already inside an event loop,
-    preventing "Event loop is closed" errors and shutdown leaks.
-
-    This is the canonical way to run async code from sync in Flujo.
-
-    Args:
-        coro: The coroutine to execute.
-
-    Returns:
-        The result of the coroutine.
+def run_sync(coro: Coroutine[object, object, T], *, running_loop_error: str | None = None) -> T:
+    """Run an async coroutine from synchronous code.
 
     Raises:
-        Any exception raised by the coroutine.
-
-    Example:
-        >>> async def fetch_data():
-        ...     return {"key": "value"}
-        >>> result = run_sync(fetch_data())
-        >>> print(result)
-        {'key': 'value'}
+        TypeError: If called from a running event loop thread.
     """
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        # No running loop - safe to use asyncio.run directly
         return asyncio.run(coro)
 
-    # Already inside a loop - use thread isolation
-    future: Future[T] = Future()
+    # We were handed a coroutine object that will never be awaited in this thread.
+    # Close it to avoid "coroutine was never awaited" warnings.
+    coro.close()
 
-    def _target() -> None:
-        try:
-            future.set_result(asyncio.run(coro))
-        except BaseException as exc:  # pragma: no cover - propagate via Future
-            future.set_exception(exc)
-
-    thread = threading.Thread(target=_target, daemon=True)
-    thread.start()
-    thread.join()
-
-    return future.result()
+    raise TypeError(
+        running_loop_error
+        or "run_sync() cannot be called from a running event loop thread. Use async APIs (await) instead."
+    )
 
 
 __all__ = ["run_sync"]

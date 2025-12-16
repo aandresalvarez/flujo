@@ -295,6 +295,22 @@ async def _execute_agent_step(
                     from flujo.application.core.context_manager import ContextManager
 
                     ContextManager.merge(context, attempt_context)
+                    # ContextReference values are held in private attrs; merge() operates on
+                    # model fields only, so explicitly propagate hydrated/modified values.
+                    try:
+                        from flujo.domain.models import ContextReference
+
+                        for field_name in type(context).model_fields:
+                            field_value = getattr(context, field_name, None)
+                            if not isinstance(field_value, ContextReference):
+                                continue
+                            other = getattr(attempt_context, field_name, None)
+                            if isinstance(other, ContextReference) and other._value is not None:
+                                field_value.set(other._value)
+                    except (AttributeError, TypeError) as exc:
+                        telemetry.logfire.debug(
+                            f"[StepExecutor] Failed to propagate ContextReference values: {type(exc).__name__}: {exc}"
+                        )
                     telemetry.logfire.info(
                         f"[StepExecutor] Merged successful attempt {attempt} context back to main context"
                     )

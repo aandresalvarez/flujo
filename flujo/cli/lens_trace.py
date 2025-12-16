@@ -1,11 +1,11 @@
 from __future__ import annotations
 import typer
-import asyncio
 from typing import Any, Optional
 import datetime
 import json as _json
 from .config import load_backend_from_config
 from flujo.type_definitions.common import JSONObject
+from flujo.utils.async_bridge import run_sync
 
 
 def _format_node_label(node: JSONObject) -> str:
@@ -78,11 +78,11 @@ def trace_command(run_id: str, *, prompt_preview_len: int = 200) -> None:
     """Show the hierarchical execution trace for a run as a tree, with a summary."""
     backend = load_backend_from_config()
     try:
-        trace = asyncio.run(backend.get_trace(run_id))
+        trace = run_sync(backend.get_trace(run_id))
         run_details = None
         if hasattr(backend, "get_run_details"):
             try:
-                run_details = asyncio.run(backend.get_run_details(run_id))
+                run_details = run_sync(backend.get_run_details(run_id))
             except Exception:
                 run_details = None
     except NotImplementedError:

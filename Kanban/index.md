@@ -171,11 +171,10 @@ Here is the **Flujo Engineering Kanban Board**, organized by the priorities esta
 
 ### [TASK-012] Formalize Context Typing
 **Priority:** 🔵 Low | **Effort:** Medium | **Tags:** `Type-Safety`
-*   **Description:** Move away from `scratchpad: Dict[str, Any]`.
-*   **Implementation:** Force users to define Pydantic models for Context and validate Step I/O against them.
+*   **Description:** Remove legacy `scratchpad` and enforce typed contexts end-to-end.
+*   **Implementation:** Require Pydantic `BaseModel` contexts, validate Step I/O keys against the context model, and reject any payload containing `scratchpad` with clear migration guidance.
 *   **Plan (current):**
-    1. Introduce typed context enforcement flag (`FLUJO_ENFORCE_TYPED_CONTEXT`) and helper to require Pydantic BaseModel contexts.
-    2. Default is advisory (warning + pass-through); strict mode raises on plain dict contexts.
-    3. Tests: enforcement-on rejects dict, accepts BaseModel; enforcement-off allows dict.
-    4. Next slices: add step input/output key validation and migrate scratchpad usage toward typed fields.
-*   **Status:** In progress. Typed context enforcement toggle + tests shipped. Step I/O key validation added with missing-key errors (V-CTX1) and root-only warnings (V-CTX2). Pending: deeper scratchpad-to-typed mappings and branch/parallel/import-aware validation.
+    1. Enforce typed contexts at runtime (no dict coercion).
+    2. Validate step input/output keys (with actionable errors).
+    3. Remove `PipelineContext.scratchpad` and fail fast on any legacy payloads; document migration paths (`status`, `step_outputs`, `import_artifacts`, etc.).
+*   **Status:** Complete. Typed context enforcement + step I/O validation shipped; `PipelineContext.scratchpad` removed and legacy payloads are rejected with guided errors.

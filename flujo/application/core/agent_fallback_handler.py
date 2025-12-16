@@ -70,6 +70,27 @@ class AgentFallbackHandler:
             fb_step = None
         if fb_step is None:
             await close_resources(attempt_exc)
+            branch_context: BaseModel | None = None
+            if getattr(step, "updates_context", False):
+                branch_context = attempt_context
+                # Preserve attempt mutations, but roll back HITL-specific fields that should not
+                # commit when a run fails (mirrors AgentExecutionRunner safeguards).
+                if branch_context is not None and pre_attempt_context is not None:
+                    for attr in (
+                        "total_interactions",
+                        "interaction_history",
+                        "hitl_data",
+                        "hitl_history",
+                        "current_interaction",
+                        "human_interactions",
+                        "approval_count",
+                        "rejection_count",
+                    ):
+                        if hasattr(pre_attempt_context, attr):
+                            try:
+                                setattr(branch_context, attr, getattr(pre_attempt_context, attr))
+                            except Exception:
+                                pass
             return FallbackHandlingResult(
                 outcome=Failure(
                     error=attempt_exc,
@@ -83,14 +104,7 @@ class AgentFallbackHandler:
                         token_counts=state.best_primary_tokens or result.token_counts,
                         cost_usd=state.best_primary_cost_usd or result.cost_usd,
                         feedback=primary_feedback,
-                        branch_context=(
-                            pre_attempt_context
-                            if getattr(step, "updates_context", False)
-                            and hasattr(pre_attempt_context, "hitl_data")
-                            else (
-                                attempt_context if getattr(step, "updates_context", False) else None
-                            )
-                        ),
+                        branch_context=branch_context,
                         metadata_={},
                         step_history=[],
                     ),

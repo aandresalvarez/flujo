@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import copy
 import inspect
 from collections.abc import AsyncIterator, Callable, Iterator
@@ -8,6 +7,7 @@ from typing import TYPE_CHECKING, Optional, TypeVar, Generic
 
 from pydantic import TypeAdapter, ValidationError
 
+from ..utils.async_bridge import run_sync as _run_sync
 from ..exceptions import (
     ContextInheritanceError,
     PipelineAbortSignal,
@@ -30,6 +30,7 @@ from ..domain.processors import AgentProcessors
 from ..domain.resources import AppResources
 from ..type_definitions.common import JSONObject
 from .core.context_manager import _extract_missing_fields
+from .core.async_iter import aclose_if_possible
 from .runner_execution import resume_async_inner
 from .run_session import RunSession
 
@@ -51,7 +52,7 @@ class _RunAsyncHandle(Generic[ContextT]):
         self._factory = factory
 
     def __aiter__(self) -> AsyncIterator[object]:
-        return self._factory()
+        return _AutoClosingAsyncIterator(self._factory())
 
     def __await__(self) -> Iterator[object]:
         async def _consume() -> PipelineResult[ContextT]:
@@ -80,6 +81,36 @@ class _RunAsyncHandle(Generic[ContextT]):
         return _consume().__await__()
 
 
+class _AutoClosingAsyncIterator(AsyncIterator[object]):
+    """Wrap an async iterator and eagerly close it after yielding a terminal PipelineResult.
+
+    This avoids teardown-time warnings when callers only consume the first PipelineResult
+    (common in pause/resume tests and CLI usage).
+    """
+
+    def __init__(self, agen: AsyncIterator[object]) -> None:
+        self._agen = agen
+        self._closed = False
+
+    def __aiter__(self) -> "_AutoClosingAsyncIterator":
+        return self
+
+    async def __anext__(self) -> object:
+        if self._closed:
+            raise StopAsyncIteration
+        item = await self._agen.__anext__()
+        if isinstance(item, PipelineResult):
+            self._closed = True
+            await aclose_if_possible(self._agen)
+        return item
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        await aclose_if_possible(self._agen)
+
+
 async def run_outcomes_async(
     self: Flujo[RunnerInT, RunnerOutT, ContextT],
     initial_input: RunnerInT,
@@ -90,10 +121,11 @@ async def run_outcomes_async(
     """Run the pipeline and yield typed StepOutcome events."""
     pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
     last_step_result: StepResult | None = None
+    agen = self.run_async(
+        initial_input, run_id=run_id, initial_context_data=initial_context_data
+    ).__aiter__()
     try:
-        async for item in self.run_async(
-            initial_input, run_id=run_id, initial_context_data=initial_context_data
-        ):
+        async for item in agen:
             if isinstance(item, StepOutcome):
                 if isinstance(item, Success):
                     last_step_result = item.step_result
@@ -130,6 +162,8 @@ async def run_outcomes_async(
             msg = None
         yield Paused(message=msg or "Paused for HITL")
         return
+    finally:
+        await aclose_if_possible(agen)
 
     try:
         if isinstance(pipeline_result_obj, PipelineResult):
@@ -271,23 +305,18 @@ def run_sync(
     run_id: str | None = None,
     initial_context_data: Optional[JSONObject] = None,
 ) -> PipelineResult[ContextT]:
-    try:
-        asyncio.get_running_loop()
-        raise TypeError(
-            "Flujo.run() cannot be called from a running event loop. "
-            "If you are in an async environment (like Jupyter, FastAPI, or an "
-            "`async def` function), you must use the `run_async()` method."
-        )
-    except RuntimeError:
-        pass
-
-    return asyncio.run(
+    return _run_sync(
         _consume_run_async_to_result(
             self,
             initial_input,
             run_id=run_id,
             initial_context_data=initial_context_data,
-        )
+        ),
+        running_loop_error=(
+            "Flujo.run() cannot be called from a running event loop. "
+            "If you are in an async environment (like Jupyter, FastAPI, or an "
+            "`async def` function), you must use the `run_async()` method."
+        ),
     )
 
 
@@ -447,36 +476,18 @@ def create_default_backend(self: Flujo[RunnerInT, RunnerOutT, ContextT]) -> "Exe
 
 
 def close_runner(self: Flujo[RunnerInT, RunnerOutT, ContextT]) -> None:
-    """Synchronously release runner-owned resources (best-effort in async contexts)."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        asyncio.run(self.aclose())
-        return
+    """Synchronously release runner-owned resources.
 
-    task = loop.create_task(self.aclose())
-    self._pending_close_tasks.append(task)
-
-    def _on_done(t: asyncio.Task[object]) -> None:
-        try:
-            self._pending_close_tasks.remove(t)
-        except ValueError:
-            pass
-        try:
-            exc = t.exception()
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            return
-        if exc is not None:
-            try:
-                from ..infra import telemetry as _telemetry
-
-                _telemetry.logfire.warning(f"Runner close task raised: {exc}")
-            except Exception:
-                pass
-
-    task.add_done_callback(_on_done)
+    In async contexts (when an event loop is running in the current thread), callers must
+    use `await runner.aclose()` or `async with Flujo(...)` instead of `runner.close()`.
+    """
+    _run_sync(
+        self.aclose(),
+        running_loop_error=(
+            "Flujo.close() cannot be called from a running event loop. "
+            "Use `await runner.aclose()` or `async with Flujo(...)` instead."
+        ),
+    )
 
 
 def make_session(

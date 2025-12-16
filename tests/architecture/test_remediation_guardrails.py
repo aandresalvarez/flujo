@@ -69,6 +69,149 @@ class TestSerializationGuardrails:
                 + "\n\nUse model_dump(mode='json') or _serialize_for_json instead."
             )
 
+    def test_no_robust_serializer_in_state_backends(self, flujo_root: Path) -> None:
+        """Persistence backends should use the shared persistence serializer, not robust serializers."""
+        backends_dir = flujo_root / "flujo/state/backends"
+        if not backends_dir.exists():
+            pytest.skip("state backends directory not found")
+
+        violations: List[str] = []
+        for py_file in backends_dir.rglob("*.py"):
+            try:
+                content = py_file.read_text()
+            except (UnicodeDecodeError, OSError):
+                continue
+            if "_robust_serialize_internal" in content:
+                rel_path = py_file.relative_to(flujo_root)
+                violations.append(str(rel_path))
+
+        if violations:
+            pytest.fail(
+                "Found robust serializer usage inside persistence backends:\n"
+                + "\n".join(sorted(violations))
+                + "\n\nUse flujo.state.backends.base._serialize_for_json (via _fast_json_dumps) instead."
+            )
+
+
+class TestQuotaGuardrails:
+    """Ensure UsageLimits→Quota translation stays centralized."""
+
+    @pytest.fixture
+    def flujo_root(self) -> Path:
+        """Get the root directory of the Flujo project."""
+        return Path(__file__).parent.parent.parent
+
+    def test_limits_to_quota_boundary_is_centralized(self, flujo_root: Path) -> None:
+        """UsageLimits must not be translated into Quota outside quota_manager.
+
+        The quota system is the single enforcement surface; translation from legacy limits is a
+        one-way boundary and should remain centralized to avoid divergence.
+        """
+        app_dir = flujo_root / "flujo/application"
+        if not app_dir.exists():
+            pytest.skip("Application directory not found")
+
+        allowlist = {flujo_root / "flujo/application/core/quota_manager.py"}
+        limit_attrs = {"total_cost_usd_limit", "total_tokens_limit"}
+
+        violations: List[str] = []
+        for py_file in app_dir.rglob("*.py"):
+            if py_file in allowlist:
+                continue
+
+            try:
+                content = py_file.read_text()
+                tree = ast.parse(content, filename=str(py_file))
+            except (SyntaxError, UnicodeDecodeError, OSError):
+                continue
+
+            has_limit_attr = any(
+                isinstance(node, ast.Attribute) and node.attr in limit_attrs
+                for node in ast.walk(tree)
+            )
+            if not has_limit_attr:
+                continue
+
+            has_quota_call = any(
+                isinstance(node, ast.Call)
+                and (
+                    (isinstance(node.func, ast.Name) and node.func.id == "Quota")
+                    or (isinstance(node.func, ast.Attribute) and node.func.attr == "Quota")
+                )
+                for node in ast.walk(tree)
+            )
+            if not has_quota_call:
+                continue
+
+            rel_path = py_file.relative_to(flujo_root)
+            violations.append(str(rel_path))
+
+        if violations:
+            pytest.fail(
+                "Found ad-hoc UsageLimits→Quota translation outside "
+                "flujo/application/core/quota_manager.py:\n" + "\n".join(sorted(violations))
+            )
+
+
+class TestUsageLimitGuardrails:
+    """Ensure quota remains the only enforcement surface."""
+
+    @pytest.fixture
+    def flujo_root(self) -> Path:
+        """Get the root directory of the Flujo project."""
+        return Path(__file__).parent.parent.parent
+
+    def test_no_reactive_usage_limit_checks_in_core(self, flujo_root: Path) -> None:
+        """Prevent reintroduction of reactive post-exec usage limit checks.
+
+        Quota enforcement must remain proactive via Reserve→Execute→Reconcile. Core runtime code
+        should not compare accumulated usage to `UsageLimits.*_limit` using <, <=, >, >=.
+        """
+        core_dir = flujo_root / "flujo/application/core"
+        if not core_dir.exists():
+            pytest.skip("core directory not found")
+
+        allowed_files = {
+            "flujo/application/core/quota_manager.py",
+            "flujo/application/core/usage_messages.py",
+        }
+
+        violations: list[str] = []
+        for py_file in core_dir.rglob("*.py"):
+            rel_path = str(py_file.relative_to(flujo_root))
+            if rel_path in allowed_files:
+                continue
+            try:
+                content = py_file.read_text()
+                tree = ast.parse(content, filename=str(py_file))
+            except (SyntaxError, UnicodeDecodeError, OSError):
+                continue
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Compare):
+                    continue
+                if not any(isinstance(op, (ast.Gt, ast.GtE, ast.Lt, ast.LtE)) for op in node.ops):
+                    continue
+
+                referenced_attrs: set[str] = set()
+                for sub in ast.walk(node):
+                    if isinstance(sub, ast.Attribute) and sub.attr in {
+                        "total_cost_usd_limit",
+                        "total_tokens_limit",
+                    }:
+                        referenced_attrs.add(sub.attr)
+                if referenced_attrs:
+                    line = content.split("\n")[node.lineno - 1].strip()
+                    violations.append(f"{rel_path}:{node.lineno}: {line}")
+
+        if violations:
+            pytest.fail(
+                "Found reactive usage limit checks in core runtime modules:\n"
+                + "\n".join(violations[:20])
+                + ("\n..." if len(violations) > 20 else "")
+                + "\n\nUse quota reservation (Reserve→Execute→Reconcile) instead."
+            )
+
 
 class TestDSLCoreDecoupling:
     """Ensure DSL modules do not import from application.core at module level."""
@@ -183,3 +326,32 @@ class TestAsyncBridgeUnification:
         assert "def run_coroutine(" not in content, (
             "prometheus.py should not define its own run_coroutine; use run_sync"
         )
+
+    def test_no_ad_hoc_blocking_portal(self, flujo_root: Path) -> None:
+        """Prevent duplicate `BlockingPortal` usage outside the shared bridge.
+
+        The shared bridge is `flujo/utils/async_bridge.py`. All sync→async execution should use it.
+        """
+        bridge_file = flujo_root / "flujo/utils/async_bridge.py"
+        if not bridge_file.exists():
+            pytest.skip("async_bridge.py not found")
+
+        violations: List[str] = []
+        for py_file in (flujo_root / "flujo").rglob("*.py"):
+            if py_file == bridge_file:
+                continue
+
+            try:
+                content = py_file.read_text()
+            except (UnicodeDecodeError, OSError):
+                continue
+
+            if "start_blocking_portal" in content or "BlockingPortal" in content:
+                rel_path = py_file.relative_to(flujo_root)
+                violations.append(str(rel_path))
+
+        if violations:
+            pytest.fail(
+                "Found ad-hoc BlockingPortal usage outside flujo/utils/async_bridge.py:\n"
+                + "\n".join(sorted(violations))
+            )

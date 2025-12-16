@@ -24,9 +24,9 @@ def test_v_s2_response_format_vs_stringification(tmp_path: Path) -> None:
     from flujo.cli.helpers import validate_pipeline_file
 
     report = validate_pipeline_file(str(p), include_imports=False)
-    assert any(
-        w.rule_id == "V-S2" and w.step_name == "s2" for w in report.warnings
-    ), report.model_dump()
+    assert any(w.rule_id == "V-S2" and w.step_name == "s2" for w in report.warnings), (
+        report.model_dump()
+    )
 
 
 def test_v_s3_type_string_awareness(tmp_path: Path) -> None:
@@ -47,6 +47,6 @@ def test_v_s3_type_string_awareness(tmp_path: Path) -> None:
     from flujo.cli.helpers import validate_pipeline_file
 
     report = validate_pipeline_file(str(p), include_imports=False)
-    assert any(
-        w.rule_id == "V-S3" and w.step_name == "s1" for w in report.warnings
-    ), report.model_dump()
+    assert any(w.rule_id == "V-S3" and w.step_name == "s1" for w in report.warnings), (
+        report.model_dump()
+    )

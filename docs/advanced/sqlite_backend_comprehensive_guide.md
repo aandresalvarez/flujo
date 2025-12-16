@@ -30,10 +30,10 @@ backend = SQLiteBackend(Path("workflow_state.db"))
 ### Core Operations
 
 ```python
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Save workflow state
-now = datetime.utcnow().replace(microsecond=0)
+now = datetime.now(timezone.utc).replace(microsecond=0)
 state = {
     "run_id": "run_123",
     "pipeline_id": "data_processing",
@@ -195,7 +195,7 @@ deleted_empty = await backend.cleanup_old_workflows(days_old=1)
 assert deleted_empty == 0
 
 # Recent workflows are not deleted
-now = datetime.utcnow().replace(microsecond=0)
+now = datetime.now(timezone.utc).replace(microsecond=0)
 recent_state = {
     "run_id": "recent_run",
     "pipeline_id": "test_pipeline",
@@ -254,8 +254,8 @@ state = {
     "pipeline_context": {"custom": CustomData(value="test", metadata={"key": "value"})},
     "last_step_output": CustomData(value="output", metadata={"status": "success"}),
     "status": "completed",
-    "created_at": datetime.utcnow(),
-    "updated_at": datetime.utcnow(),
+    "created_at": datetime.now(timezone.utc),
+    "updated_at": datetime.now(timezone.utc),
     "total_steps": 5,
     "error_message": None,
     "execution_time_ms": 1000,
@@ -286,8 +286,8 @@ async def concurrent_worker(backend: SQLiteBackend, worker_id: int):
             "pipeline_context": {"worker": worker_id, "iteration": i},
             "last_step_output": f"output_{i}",
             "status": "completed",
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
             "total_steps": 10,
             "error_message": None,
             "execution_time_ms": 1000 * i,
@@ -325,8 +325,8 @@ for i in range(num_workflows):
         "pipeline_context": {"index": i},
         "last_step_output": f"output_{i}",
         "status": "completed" if i % 2 == 0 else "failed",
-        "created_at": datetime.utcnow() - timedelta(minutes=i),
-        "updated_at": datetime.utcnow() - timedelta(minutes=i),
+        "created_at": datetime.now(timezone.utc) - timedelta(minutes=i),
+        "updated_at": datetime.now(timezone.utc) - timedelta(minutes=i),
         "total_steps": 5,
         "error_message": None,
         "execution_time_ms": 1000 * (i % 10),
@@ -440,8 +440,8 @@ new_state = {
     "pipeline_context": {"new": "data"},
     "last_step_output": "new_output",
     "status": "running",
-    "created_at": datetime.utcnow(),
-    "updated_at": datetime.utcnow(),
+    "created_at": datetime.now(timezone.utc),
+    "updated_at": datetime.now(timezone.utc),
     "total_steps": 5,
     "error_message": None,
     "execution_time_ms": 1000,
@@ -542,11 +542,11 @@ async def performance_monitor():
 
 ```python
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 
 async def backup_database():
     """Create a backup of the database."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     backup_path = f"workflow_state_backup_{timestamp}.db"
 
     # Simple file copy backup

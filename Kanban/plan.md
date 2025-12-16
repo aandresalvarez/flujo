@@ -7,7 +7,7 @@ sequenced, low-risk rollout. Optimizes for correctness first, then DX/maintainab
 - Serialization: ✅ **COMPLETE**. Runtime, tests, and docs migrated to `model_dump(mode="json")` / `_serialize_for_json`. Function deleted; `rg serialize_jsonable flujo/ tests/ docs/` returns zero.
 - Async/Sync Bridge: Prometheus path migrated to shared bridge; further verification ongoing.
 - Circular Imports: DSL now uses interfaces; continue tightening architecture checks.
-- Typed Context: Scratchpad enforcement in place; mapping helpers in progress.
+- Typed Context: Scratchpad removed (legacy payloads rejected); mapping helpers in progress.
 
 ### Prioritized Tracks
 
@@ -38,8 +38,7 @@ sequenced, low-risk rollout. Optimizes for correctness first, then DX/maintainab
   - Validate with `make all` + smoke CLI/runner creation.
 
 4) Typed Context & Scratchpad Maturity (Medium Impact/Med Effort)
-- Goal: deepen validation for step I/O keys and enforce typed mappings while keeping
-  scratchpad reserved for framework metadata.
+- Goal: deepen validation for step I/O keys and enforce typed mappings; scratchpad has been removed (legacy payloads rejected).
 - Approach:
   - Extend step input/output key validation to branches/parallel/import routers.
   - Add mapping helpers to translate prior scratchpad usages to typed fields; emit guided
@@ -60,7 +59,7 @@ sequenced, low-risk rollout. Optimizes for correctness first, then DX/maintainab
 - Serialization: `rg serialize_jsonable flujo/ tests/` returns zero; function deleted; tests/docs updated to new pattern.
 - Async bridge: no thread-spawned asyncio runs remain; portal utility shared; tests cover running-loop and shutdown paths.
 - Circular imports: DSL imports are interface-only; architecture test passes; no lazy imports needed for core separation.
-- Typed context: branch/parallel/import validation active; scratchpad reserved keys enforced; new guidance documented.
+- Typed context: branch/parallel/import validation active; legacy scratchpad payloads rejected; new guidance documented.
 
 ### Executable Tickets (owners, scope, status)
 
@@ -76,6 +75,5 @@ sequenced, low-risk rollout. Optimizes for correctness first, then DX/maintainab
 
 3) Typed-Context Validation Depth (Owner: @core-validation)
 - Scope: Extend input/output key contract validation to branch/parallel/import routers; add mappings/guided errors for legacy scratchpad keys; expand tests.
-- Status: In progress (scratchpad enforcement added; mapping helpers ongoing).
-- AC: Branch/parallel/import validation enforced; scratchpad conflicts yield explicit errors; new tests cover positive/negative paths; docs updated.
-
+- Status: In progress (scratchpad removed; mapping helpers ongoing).
+- AC: Branch/parallel/import validation enforced; legacy scratchpad payloads yield explicit errors; new tests cover positive/negative paths; docs updated.

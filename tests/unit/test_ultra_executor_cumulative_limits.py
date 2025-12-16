@@ -3,7 +3,6 @@
 import pytest
 from flujo.application.core.executor_core import ExecutorCore as UltraStepExecutor, _UsageTracker
 from flujo.domain.models import UsageLimits
-from flujo.exceptions import UsageLimitExceededError
 
 
 class TestUltraExecutorCumulativeLimits:
@@ -89,24 +88,6 @@ class TestUltraExecutorCumulativeLimits:
         assert final_tokens == 100
 
     @pytest.mark.asyncio
-    async def test_legacy_guard_method_compatibility(self, usage_tracker):
-        """Test that the legacy guard method exists for backward compatibility."""
-
-        # Add some usage
-        await usage_tracker.add(0.1, 50)
-
-        # Test that guard method exists and raises when limits are exceeded
-        limits = UsageLimits(total_cost_usd_limit=0.05)
-
-        # The guard method should raise since current usage (0.1) exceeds limit (0.05)
-        with pytest.raises(UsageLimitExceededError):
-            await usage_tracker.guard(limits)
-
-        # Verify that usage tracking still works
-        cost, tokens = await usage_tracker.get_current_totals()
-        assert cost == 0.1
-        assert tokens == 50
-
     @pytest.mark.asyncio
     async def test_usage_tracker_multiple_limit_checks(self, usage_tracker):
         """Test that multiple usage additions work correctly."""
@@ -137,7 +118,7 @@ class TestUltraExecutorCumulativeLimits:
 
     @pytest.mark.asyncio
     async def test_usage_tracker_zero_limits(self, usage_tracker):
-        """Test behavior with zero and None limits."""
+        """Test behavior with zero and None limits (guard is a no-op)."""
 
         await usage_tracker.add(0.1, 50)
 
@@ -145,10 +126,9 @@ class TestUltraExecutorCumulativeLimits:
         limits_none = UsageLimits(total_cost_usd_limit=None, total_tokens_limit=None)
         await usage_tracker.guard(limits_none)  # Should not raise
 
-        # Test with zero limits (should raise since any usage exceeds zero limit)
+        # Test with zero limits (guard is a no-op; enforcement happens via quota reservation)
         limits_zero = UsageLimits(total_cost_usd_limit=0.0, total_tokens_limit=0)
-        with pytest.raises(UsageLimitExceededError):
-            await usage_tracker.guard(limits_zero)  # Should raise
+        await usage_tracker.guard(limits_zero)  # Should not raise
 
         # Verify that usage tracking still works
         cost, tokens = await usage_tracker.get_current_totals()
@@ -169,10 +149,9 @@ class TestUltraExecutorCumulativeLimits:
         assert abs(total_cost - 0.0003) < 1e-10
         assert total_tokens == 3
 
-        # Test that guard method works with small amounts (should raise since 0.0003 > 0.0002)
+        # Guard is a no-op; this should not raise.
         limits = UsageLimits(total_cost_usd_limit=0.0002, total_tokens_limit=2)
-        with pytest.raises(UsageLimitExceededError):
-            await usage_tracker.guard(limits)  # Should raise
+        await usage_tracker.guard(limits)
 
         # Verify that precision is maintained
         total_cost, total_tokens = await usage_tracker.get_current_totals()
