@@ -31,7 +31,7 @@
 4) Adapter governance hardening
    - ✅ Explicit tokens required: `from_callable(is_adapter=True)` raises ValueError without adapter_id/adapter_allow (step.py:613-617)
    - ✅ AST-based lint implemented
-   - ⚠️ **Note**: Testing may use mocks that bypass validation; verify in integration
+   - ✅ Integration verification: `validate_graph()` rejects adapter steps missing allowlist metadata even if constructed unsafely (e.g., `model_construct`)
 
 5) Baseline reversal (drive `Any`/`cast` down)
    - ✅ Updated baselines (`scripts/type_safety_baseline.json`): core.cast=0/core.Any=0, runtime.cast=0/runtime.Any=0, dsl.cast=0/dsl.Any=167, blueprint.cast=0/blueprint.Any=0
