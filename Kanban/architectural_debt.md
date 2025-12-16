@@ -19,7 +19,35 @@ this backlog (do not keep “done” history here).
 
 ## P1 — Architecture & Maintainability
 
-- None currently tracked.
+### P1.1 Finish DSL ↔ core decoupling (remove remaining core-type import)
+
+#### Symptoms
+- DSL still depends on core-only types under `TYPE_CHECKING`, keeping a residual import edge from
+  `flujo.domain.dsl` → `flujo.application.core`.
+
+#### Where to look
+- `flujo/domain/dsl/parallel.py` (imports `flujo.application.core.types.TContext_w_Scratch` under `TYPE_CHECKING`)
+
+#### Done when
+- No `flujo/domain/dsl/*` module imports from `flujo.application.core` (even under `TYPE_CHECKING`).
+- Any needed type aliases live in `flujo.domain` (e.g., `flujo.domain.interfaces`) and DSL depends only on domain-layer surfaces.
+
+---
+
+### P1.2 Typed-context validation depth (branch/parallel/import routers + mappings)
+
+#### Symptoms
+- Step I/O contract validation is not yet consistently enforced across branch/parallel/import routers.
+- Legacy scratchpad-era patterns still need guided mappings to typed fields (`status`, `step_outputs`, `import_artifacts`, etc.).
+
+#### Where to look
+- `flujo/domain/dsl/pipeline_step_validations.py`
+- `flujo/domain/dsl/pipeline_validation_helpers.py`
+- `flujo/domain/dsl/import_step.py`
+
+#### Done when
+- Branch/parallel/import validation is enforced with explicit, actionable errors.
+- Mapping helpers (and tests) cover the remaining legacy patterns without reintroducing scratchpad acceptance.
 
 ## P2 — Hygiene & DX
 
