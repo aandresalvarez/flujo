@@ -66,11 +66,11 @@
 - Use `Pipeline[str, Result]` in type hints for public APIs
 - Rely on `validate_graph()` to catch type mismatches at validation time
 
-### Acceptance Criteria
-- `make lint` passes with lowered baseline (no upward drift), adapter lint enforced via AST, and strict validation enabled by default.
-- Pipelines with type mismatches or generic targets fail validation without adapters.
-- Dict contexts rejected in strict mode; scratchpad writes/reads are blocked.
-- Tests added/updated for each guardrail (validation, adapter tokens, context enforcement, scratchpad ban).
+### Acceptance Criteria (Confirmed)
+- ✅ `make lint` passes (no baseline drift; adapter allowlist lint enforced).
+- ✅ Type mismatches fail validation unless explicitly bridged via allowlisted adapters.
+- ✅ Dict contexts rejected; scratchpad is blocked/removed (typed fields only).
+- ✅ Guardrail suite passes (`make test-architecture` includes mypy/ruff/unit gates).
 
 ### Scratchpad Status (Complete)
 - `scratchpad` has been removed from `PipelineContext`; any incoming payload containing it fails validation early.
