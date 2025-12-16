@@ -11,7 +11,7 @@
    - ✅ Strict validation: `_compatible` rejects Any/object fallthrough (pipeline.py:219-248)
    - ✅ Generics tracking: `_input_type`/`_output_type` captured via PrivateAttr (pipeline.py:43-44, 63-72)
    - ⚠️ **Note**: Container still typed `Sequence[Step[Any, Any]]` (pipeline.py:38); TypeVar propagation not enforced at runtime
-   - 🔄 Cast burn-down: progressing; remaining in policies/cache/result handlers
+   - ✅ Cast burn-down: no `cast(...)` usages remain in tracked core/runtime/DSL/blueprint scopes
 
 2) Enforce typed contexts (no dict coercion)
    - ✅ Strict-only: `enforce_typed_context()` raises TypeError for non-BaseModel (executor_helpers.py:136-148)
@@ -34,7 +34,7 @@
    - ⚠️ **Note**: Testing may use mocks that bypass validation; verify in integration
 
 5) Baseline reversal (drive `Any`/`cast` down)
-   - ✅ Updated baselines: core.cast=1, core.Any=1148, dsl.cast=0, dsl.Any=443
+   - ✅ Updated baselines (`scripts/type_safety_baseline.json`): core.cast=0/core.Any=0, runtime.cast=0/runtime.Any=0, dsl.cast=0/dsl.Any=167, blueprint.cast=0/blueprint.Any=0
    - ✅ Architecture thresholds lowered: max_allowed_any 600→500, cast threshold 50→10
    - ✅ Lint shows delta report; `--update-baseline` flag added
 
