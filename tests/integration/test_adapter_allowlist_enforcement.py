@@ -46,7 +46,7 @@ def test_adapter_with_allow_token_validates() -> None:
 
 
 def test_validate_graph_rejects_adapter_missing_metadata_even_if_constructed_unsafely() -> None:
-    async def produce(x: int) -> int:  # type: ignore[override]
+    async def produce(x: int) -> int:
         return x
 
     s1 = Step.from_callable(produce, name="a")

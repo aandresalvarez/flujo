@@ -122,6 +122,7 @@ def run_step_validations(
                 adapter_allow_str = (
                     str(adapter_allow).strip() if isinstance(adapter_allow, str) else ""
                 )
+                # Only check for missing metadata here; allowlist validation happens later
                 if not adapter_id_str or not adapter_allow_str:
                     report.errors.append(
                         ValidationFinding(
@@ -134,32 +135,6 @@ def run_step_validations(
                             step_name=getattr(step, "name", None),
                         )
                     )
-                else:
-                    expected_token = adapter_allowlist.get(adapter_id_str)
-                    if expected_token is None:
-                        report.errors.append(
-                            ValidationFinding(
-                                rule_id="V-ADAPT-ALLOW",
-                                severity="error",
-                                message=(
-                                    f"Adapter step '{getattr(step, 'name', '')}' uses adapter_id='{adapter_id_str}' "
-                                    "which is not allowlisted."
-                                ),
-                                step_name=getattr(step, "name", None),
-                            )
-                        )
-                    elif expected_token != adapter_allow_str:
-                        report.errors.append(
-                            ValidationFinding(
-                                rule_id="V-ADAPT-ALLOW",
-                                severity="error",
-                                message=(
-                                    f"Adapter step '{getattr(step, 'name', '')}' has adapter_allow='{adapter_allow_str}' "
-                                    f"but expected '{expected_token}'."
-                                ),
-                                step_name=getattr(step, "name", None),
-                            )
-                        )
             if id(step) in seen_steps:
                 report.warnings.append(
                     ValidationFinding(

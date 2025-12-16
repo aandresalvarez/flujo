@@ -44,7 +44,7 @@ def _find_run_by_partial_id(backend: Any, partial_id: str, timeout: float = 5.0)
             import sqlite3 as _sqlite3
 
             if isinstance(backend, _SQLiteBackend) and hasattr(backend, "db_path"):
-                db_path = getattr(backend, "db_path")
+                db_path = backend.db_path
                 with _sqlite3.connect(str(db_path), timeout=timeout) as _conn:
                     _conn.row_factory = _sqlite3.Row
 
@@ -67,14 +67,14 @@ def _find_run_by_partial_id(backend: Any, partial_id: str, timeout: float = 5.0)
                     cur.close()
                     matches = [str(r["run_id"]) for r in rows]
                     if len(matches) == 1:
-                        return str(matches[0])
+                        return matches[0]
                     if len(matches) > 1:
                         raise ValueError(f"Ambiguous run_id '{partial_id}'. Matches: {matches[:5]}")
                     return None
         except ValueError:
             raise
         except Exception:
-            pass
+            pass  # Intentional: fall back to async path on any DB error
 
         async def _search() -> Optional[str]:
             try:
@@ -187,8 +187,8 @@ def show_run(
             import sqlite3 as _sqlite3
 
             if isinstance(backend, _SB) and hasattr(backend, "db_path"):
-                db_path = getattr(backend, "db_path")
-                with _sqlite3.connect(db_path) as _conn:
+                db_path = backend.db_path
+                with _sqlite3.connect(str(db_path)) as _conn:
                     _conn.row_factory = _sqlite3.Row
                     cur = _conn.execute(
                         (

@@ -17,7 +17,7 @@ This guide documents deprecated patterns in Flujo and their recommended replacem
 
 ### `ImproperStepInvocationError` → `StepInvocationError`
 
-**Deprecated in:** v2.0  
+**Deprecated in:** v0.4.0  
 **Will be removed in:** v1.0.0
 
 **Before:**
