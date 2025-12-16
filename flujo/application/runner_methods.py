@@ -258,6 +258,17 @@ async def _consume_run_async_to_result(
     except Exception:
         pass
 
+    try:
+        backend = getattr(self, "backend", None)
+        executor = getattr(backend, "_executor", None) if backend is not None else None
+        shadow_eval = getattr(executor, "_shadow_evaluator", None) if executor is not None else None
+        if shadow_eval is not None:
+            maybe = getattr(shadow_eval, "maybe_schedule_run", None)
+            if callable(maybe):
+                maybe(core=executor, result=result, run_id=run_id)
+    except Exception:
+        pass
+
     return result
 
 

@@ -433,11 +433,24 @@ state_uri = "postgresql://user:pass@db-host:5432/flujo_db"
 
 [settings]
 test_mode = false
-# Optional: select sandbox and governance policy
-sandbox_mode = "docker"  # or "remote"/"null"
+# Optional: enable Memory (RAG) indexing
+memory_indexing_enabled = true
+memory_embedding_model = "openai:text-embedding-3-small"
+
+# Optional: governance policy (module path: pkg.mod:Class)
 governance_policy_module = "my_project.policies:MyPolicy"
-# Enable shadow eval DB sink if desired
-shadow_eval_sink = "telemetry"  # or "database"
+
+# Optional: sandboxed code execution provider
+[settings.sandbox]
+mode = "docker"  # "null" | "remote" | "docker"
+docker_image = "python:3.13-slim"
+docker_pull = true
+
+# Optional: shadow evaluations (LLM-as-judge)
+# Note: shadow eval is experimental and currently defaults to disabled unless enabled programmatically.
+
+# Docker sandbox dependency:
+# pip install "flujo[docker]"
 
 # Example governance policy
 # examples/governance_policy.py

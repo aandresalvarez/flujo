@@ -51,6 +51,8 @@ from .governance_policy import (
     DenyAllGovernancePolicy,
     GovernanceEngine,
     GovernancePolicy,
+    PIIScrubbingPolicy,
+    ToolAllowlistPolicy,
 )
 from .execution_dispatcher import ExecutionDispatcher
 from .hitl_orchestrator import HitlOrchestrator
@@ -266,6 +268,7 @@ class FlujoRuntimeBuilder:
         shadow_eval_timeout_s: float | None = None,
         shadow_eval_judge_model: str | None = None,
         shadow_eval_sink: str | None = None,
+        shadow_eval_evaluate_on_failure: bool | None = None,
     ) -> ExecutorCoreDeps[TContext_w_Scratch]:
         serializer_obj: ISerializer = serializer or OrjsonSerializer()
         hasher_obj: IHasher = hasher or Blake3Hasher()
@@ -439,15 +442,28 @@ class FlujoRuntimeBuilder:
         if policies is None:
             mode = getattr(settings, "governance_mode", "allow_all")
             custom_module = getattr(settings, "governance_policy_module", None)
+            pii_scrub = bool(getattr(settings, "governance_pii_scrub", False))
+            pii_strong = bool(getattr(settings, "governance_pii_strong", False))
+            tool_allowlist_raw = getattr(settings, "governance_tool_allowlist", ())
+            tool_allowlist = (
+                tuple(tool_allowlist_raw) if isinstance(tool_allowlist_raw, (list, tuple)) else ()
+            )
+            extras: list[GovernancePolicy] = []
+            if pii_scrub:
+                extras.append(PIIScrubbingPolicy(strong=pii_strong))
+            if tool_allowlist:
+                extras.append(
+                    ToolAllowlistPolicy(allowed=frozenset(str(x) for x in tool_allowlist))
+                )
             if custom_module:
                 loaded = self._load_governance_policy(custom_module)
                 if loaded is not None:
-                    policies = (loaded,)
+                    policies = tuple(extras) + (loaded,)
             if policies is None:
                 if mode == "deny_all":
                     policies = (DenyAllGovernancePolicy(),)
                 else:
-                    policies = (AllowAllGovernancePolicy(),)
+                    policies = tuple(extras) + (AllowAllGovernancePolicy(),)
         governance_engine_obj = GovernanceEngine(policies=policies)
         shadow_eval_config = ShadowEvalConfig(
             enabled=bool(
@@ -475,6 +491,12 @@ class FlujoRuntimeBuilder:
                 if shadow_eval_sink is not None
                 else getattr(settings, "shadow_eval_sink", "telemetry")
             ),
+            evaluate_on_failure=bool(
+                shadow_eval_evaluate_on_failure
+                if shadow_eval_evaluate_on_failure is not None
+                else getattr(settings, "shadow_eval_evaluate_on_failure", False)
+            ),
+            run_level_enabled=bool(getattr(settings, "shadow_eval_run_level", False)),
         )
         shadow_evaluator_obj = ShadowEvaluator(
             config=shadow_eval_config,

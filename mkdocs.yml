@@ -50,6 +50,9 @@ nav:
     - 'Durable Workflows': 'guides/durable_workflows.md'
     - 'Choosing Your Loop': 'guides/choosing_your_loop.md'
     - 'Custom State Backend': 'guides/custom_state_backend.md'
+    - 'Governance Policies': 'guides/governance_policies.md'
+    - 'Sandboxed Execution': 'guides/sandboxed_execution.md'
+    - 'Shadow Evaluations': 'guides/shadow_evaluations.md'
     - 'GPT‑5 Architect': 'guides/gpt5_architect.md'
     - 'YAML: Human-in-the-Loop': 'hitl.md'
     - 'YAML: Cache': 'cache.md'
@@ -69,6 +72,8 @@ nav:
     - 'Development Guide': 'development/dev.md'
   - 'Reference':
     - 'CLI': 'reference/cli.md'
+    - 'OpenAPI Import': 'cli/import_openapi.md'
+    - 'Remote Sandbox Contract': 'reference/remote_sandbox_contract.md'
     - 'Trace Contract': 'reference/trace_contract.md'
     - 'Validation Rules': 'reference/validation_rules.md'
   # API Reference - automatically generated from source code

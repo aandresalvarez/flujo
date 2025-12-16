@@ -26,11 +26,16 @@ class Settings:
     memory_embedding_model: str | None = None
     governance_mode: GovernanceMode = "allow_all"
     governance_policy_module: str | None = None
+    governance_pii_scrub: bool = False
+    governance_pii_strong: bool = False
+    governance_tool_allowlist: tuple[str, ...] = ()
     shadow_eval_enabled: bool = False
     shadow_eval_sample_rate: float = 0.0
     shadow_eval_timeout_s: float = 30.0
     shadow_eval_judge_model: str = "openai:gpt-4o-mini"
     shadow_eval_sink: str = "telemetry"
+    shadow_eval_evaluate_on_failure: bool = False
+    shadow_eval_run_level: bool = False
     sandbox_mode: SandboxMode = "null"
     sandbox_api_url: str | None = None
     sandbox_api_key: str | None = None
@@ -57,6 +62,11 @@ def _load_from_env() -> Settings:
             return "deny_all"
         return default
 
+    def _csv(name: str) -> tuple[str, ...]:
+        raw = os.getenv(name, "") or ""
+        items = [p.strip() for p in raw.split(",") if p.strip()]
+        return tuple(items)
+
     raw_sandbox_mode = os.getenv("FLUJO_SANDBOX_MODE", "null").lower().strip() or "null"
     sandbox_mode_map: dict[str, SandboxMode] = {
         "null": "null",
@@ -75,11 +85,16 @@ def _load_from_env() -> Settings:
         memory_embedding_model=os.getenv("FLUJO_MEMORY_EMBEDDING_MODEL"),
         governance_mode=_mode("FLUJO_GOVERNANCE_MODE", "allow_all"),
         governance_policy_module=os.getenv("FLUJO_GOVERNANCE_POLICY_MODULE"),
+        governance_pii_scrub=_flag("FLUJO_GOVERNANCE_PII_SCRUB"),
+        governance_pii_strong=_flag("FLUJO_GOVERNANCE_PII_STRONG"),
+        governance_tool_allowlist=_csv("FLUJO_GOVERNANCE_TOOL_ALLOWLIST"),
         shadow_eval_enabled=_flag("FLUJO_SHADOW_EVAL_ENABLED"),
         shadow_eval_sample_rate=float(os.getenv("FLUJO_SHADOW_EVAL_SAMPLE_RATE", "0") or "0"),
         shadow_eval_timeout_s=float(os.getenv("FLUJO_SHADOW_EVAL_TIMEOUT_S", "30") or "30"),
         shadow_eval_judge_model=os.getenv("FLUJO_SHADOW_EVAL_JUDGE_MODEL", "openai:gpt-4o-mini"),
         shadow_eval_sink=os.getenv("FLUJO_SHADOW_EVAL_SINK", "telemetry"),
+        shadow_eval_evaluate_on_failure=_flag("FLUJO_SHADOW_EVAL_EVALUATE_ON_FAILURE"),
+        shadow_eval_run_level=_flag("FLUJO_SHADOW_EVAL_RUN_LEVEL"),
         sandbox_mode=sandbox_mode,
         sandbox_api_url=os.getenv("FLUJO_SANDBOX_API_URL"),
         sandbox_api_key=os.getenv("FLUJO_SANDBOX_API_KEY"),

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import tempfile
 from pathlib import Path
@@ -36,7 +37,7 @@ class DockerSandbox(SandboxProtocol):
 
     def _get_client(self) -> object:
         try:
-            import docker  # type: ignore[import-not-found]
+            docker: Any = importlib.import_module("docker")
         except Exception as exc:  # pragma: no cover - import-time path
             raise RuntimeError(f"Docker client unavailable: {exc}") from exc  # noqa: TRY003
         try:

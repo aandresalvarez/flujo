@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from typing import Any, Callable, List, Optional, TYPE_CHECKING
+import inspect
+import functools
+import os
 
 from flujo.type_definitions.common import JSONObject
+from flujo.exceptions import ConfigurationError
 
 # Domain interface adapter to avoid leaking infra into domain logic
 if TYPE_CHECKING:
@@ -36,6 +40,82 @@ class SkillRegistry(SkillRegistryProtocol):
     def __init__(self) -> None:
         self._entries: dict[str, dict[str, JSONObject]] = {}
 
+    @staticmethod
+    def _wrap_callable_for_governance(skill_id: str, obj: object) -> object:
+        """Attach skill metadata and enforce tool allowlist at call time.
+
+        Notes:
+        - This wrapper preserves the original signature via __signature__ to avoid
+          breaking tool schema generation in pydantic-ai.
+        - Enforcement is configured via `FLUJO_GOVERNANCE_TOOL_ALLOWLIST` (comma-separated).
+        """
+        if not callable(obj):
+            return obj
+        try:
+            setattr(obj, "__flujo_skill_id__", skill_id)
+        except Exception:
+            pass
+
+        allowlist_raw = (os.getenv("FLUJO_GOVERNANCE_TOOL_ALLOWLIST", "") or "").strip()
+        if allowlist_raw == "":
+            return obj
+        allowed = {p.strip() for p in allowlist_raw.split(",") if p.strip()}
+        if not allowed:
+            return obj
+
+        try:
+            sig = inspect.signature(obj)
+        except Exception:
+            sig = None
+
+        if inspect.iscoroutinefunction(obj):
+
+            @functools.wraps(obj)
+            async def _wrapped(*args: object, **kwargs: object) -> object:
+                if skill_id not in allowed:
+                    raise ConfigurationError(f"tool_not_allowed:{skill_id}")
+                return await obj(*args, **kwargs)
+
+        else:
+
+            @functools.wraps(obj)
+            def _wrapped(*args: object, **kwargs: object) -> object:
+                if skill_id not in allowed:
+                    raise ConfigurationError(f"tool_not_allowed:{skill_id}")
+                return obj(*args, **kwargs)
+
+        try:
+            setattr(_wrapped, "__flujo_skill_id__", skill_id)
+        except Exception:
+            pass
+        if sig is not None:
+            try:
+                setattr(_wrapped, "__signature__", sig)
+            except Exception:
+                pass
+        return _wrapped
+
+    @classmethod
+    def _wrap_factory_for_governance(cls, skill_id: str, factory: object) -> object:
+        if not callable(factory):
+            return factory
+        try:
+            sig = inspect.signature(factory)
+        except Exception:
+            sig = None
+
+        @functools.wraps(factory)
+        def _wrapped_factory(*args: object, **kwargs: object) -> object:
+            produced = factory(*args, **kwargs)
+            return cls._wrap_callable_for_governance(skill_id, produced)
+
+        if sig is not None:
+            try:
+                setattr(_wrapped_factory, "__signature__", sig)
+            except Exception:
+                pass
+        return _wrapped_factory
+
     def register(
         self,
         id: str,
@@ -58,13 +138,14 @@ class SkillRegistry(SkillRegistryProtocol):
         effective_input_schema: Optional[dict[str, Any]] = (
             input_schema if input_schema is not None else arg_schema
         )
+        wrapped_factory = self._wrap_factory_for_governance(id, factory)
         scope_key = scope or "default"
         versions = self._entries.setdefault(scope_key, {})
         version_key = version or "latest"
         scoped = versions.setdefault(id, {})
 
         scoped[version_key] = {
-            "factory": factory,
+            "factory": wrapped_factory,
             "description": description,
             "input_schema": effective_input_schema,
             "output_schema": output_schema,

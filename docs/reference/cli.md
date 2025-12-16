@@ -124,6 +124,14 @@ Examples:
 - `flujo lens from-file <path>`: Render a saved debug JSON (created by `--debug-export`) as a rich trace tree.
   - Options: `--prompt-preview-len N` to control preview length.
   - Useful for offline analysis or sharing a single file that contains trace + step history + final context.
+- `flujo lens evals`: List persisted shadow evaluation scores (when enabled and using a DB-capable state backend).
+  - Options: `--run-id <run_id>` to filter, `--limit/-n` to cap results.
+
+## Dev Commands
+
+- `flujo dev import-openapi <spec>`: Generate Pydantic models from an OpenAPI/Swagger spec and (optionally) agent wrappers.
+  - `spec` can be a local file path; wrapper generation currently expects a local file (URL support is best-effort).
+  - Requires `datamodel-code-generator` to be installed.
 
 ## Error Messages and Troubleshooting
 

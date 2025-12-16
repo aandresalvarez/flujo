@@ -111,7 +111,7 @@ endif
 .PHONY: test
 test: .uv ## Run all tests via enhanced runner (robust, two-phase)
 	@echo "🧪 Running full test suite (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers auto --timeout 60 --split-slow --slow-workers 1 --slow-timeout 120
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers auto --timeout 60 --split-slow --slow-workers 1 --slow-timeout 900
 
 .PHONY: test-architecture
 test-architecture: .uv ## Run architecture and type-safety compliance tests

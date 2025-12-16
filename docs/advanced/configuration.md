@@ -101,6 +101,83 @@ These settings control the behavior and performance of the `flujo` orchestrator.
 *   `agent_timeout`: `int = 60`
     *   **Description**: Timeout in seconds for individual agent calls.
 
+### Safety, Sandboxing, and Memory
+
+These settings control governance (pre-execution allow/deny), sandboxed code execution, and optional vector memory indexing.
+
+#### Governance (allow/deny gating)
+
+- `governance_policy_module`: `Optional[str]`
+  - **Environment Variables**: `FLUJO_GOVERNANCE_POLICY_MODULE`, `flujo_governance_policy_module`
+  - **Description**: Module path in the form `pkg.mod:Class` to load a custom governance policy.
+  - **Behavior**: Policies run before agent execution. The default policy is allow-all.
+
+Example:
+```toml
+[settings]
+governance_policy_module = "my_project.policies:MyPolicy"
+```
+
+Built-in environment toggles:
+
+- `FLUJO_GOVERNANCE_MODE=allow_all|deny_all`
+- `FLUJO_GOVERNANCE_PII_SCRUB=1`
+- `FLUJO_GOVERNANCE_PII_STRONG=1` (requires `pip install "flujo[pii]"`, falls back safely if not installed)
+- `FLUJO_GOVERNANCE_TOOL_ALLOWLIST=tool_a,tool_b` (enforced at tool-call-time; also used for pre-execution checks)
+
+#### Sandbox (built-in `flujo.builtins.code_interpreter`)
+
+- `sandbox.mode`: `"null" | "remote" | "docker"`
+  - **Environment Variables**: `FLUJO_SANDBOX_MODE`
+- `sandbox.api_url`: `Optional[str]` (remote mode)
+  - **Environment Variables**: `FLUJO_SANDBOX_API_URL`
+- `sandbox.api_key`: `Optional[str]`
+  - **Environment Variables**: `FLUJO_SANDBOX_API_KEY`
+- `sandbox.timeout_seconds`: `int`
+  - **Environment Variables**: `FLUJO_SANDBOX_TIMEOUT_S`
+
+Example:
+```toml
+[settings.sandbox]
+mode = "remote"
+api_url = "https://your-sandbox.example"
+timeout_seconds = 60
+```
+
+Notes:
+- Docker mode is intended for local development and currently focuses on `language="python"`.
+- The built-in tool is registered as `flujo.builtins.code_interpreter` and returns structured `stdout`/`stderr`/`exit_code`.
+
+#### Memory (RAG indexing + retrieval)
+
+- `memory_indexing_enabled`: `bool`
+  - **Environment Variables**: `FLUJO_MEMORY_INDEXING_ENABLED`, `flujo_memory_indexing_enabled`
+- `memory_embedding_model`: `Optional[str]` (e.g., `openai:text-embedding-3-small`)
+  - **Environment Variables**: `FLUJO_MEMORY_EMBEDDING_MODEL`, `flujo_memory_embedding_model`
+
+Example:
+```toml
+[settings]
+memory_indexing_enabled = true
+memory_embedding_model = "openai:text-embedding-3-small"
+```
+
+When enabled, successful step outputs are indexed asynchronously into a vector store chosen from your configured `state_uri`:
+- SQLite state → SQLite-backed vector store (cosine search)
+- Postgres state → pgvector-backed store
+
+#### Shadow Evaluations (experimental)
+
+Shadow evaluations (LLM-as-judge scoring) are implemented in the codebase (including DB persistence and `flujo lens evals`) and default to disabled. They can be enabled via environment variables:
+
+- `FLUJO_SHADOW_EVAL_ENABLED=1`
+- `FLUJO_SHADOW_EVAL_SAMPLE_RATE=0.1` (fraction of runs to sample; cached per `run_id`)
+- `FLUJO_SHADOW_EVAL_TIMEOUT_S=30`
+- `FLUJO_SHADOW_EVAL_JUDGE_MODEL=openai:gpt-4o-mini`
+- `FLUJO_SHADOW_EVAL_SINK=telemetry|database`
+- `FLUJO_SHADOW_EVAL_EVALUATE_ON_FAILURE=1` (optional; only score failed steps)
+- `FLUJO_SHADOW_EVAL_RUN_LEVEL=1` (optional; also score the overall run as pseudo-step `__run__`)
+
 ### Python Configuration
 
 You can also configure the orchestrator programmatically by importing the `settings` object and modifying its attributes directly. This is useful for dynamic configuration or testing scenarios.
