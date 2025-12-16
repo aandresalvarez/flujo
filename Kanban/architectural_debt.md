@@ -19,21 +19,6 @@ this backlog (do not keep “done” history here).
 
 ## P1 — Architecture & Maintainability
 
-### P1.1 Finish DSL ↔ core decoupling (remove remaining core-type import)
-
-#### Symptoms
-- DSL still depends on core-only types under `TYPE_CHECKING`, keeping a residual import edge from
-  `flujo.domain.dsl` → `flujo.application.core`.
-
-#### Where to look
-- `flujo/domain/dsl/parallel.py` (imports `flujo.application.core.types.TContext_w_Scratch` under `TYPE_CHECKING`)
-
-#### Done when
-- No `flujo/domain/dsl/*` module imports from `flujo.application.core` (even under `TYPE_CHECKING`).
-- Any needed type aliases live in `flujo.domain` (e.g., `flujo.domain.interfaces`) and DSL depends only on domain-layer surfaces.
-
----
-
 ### P1.2 Typed-context validation depth (branch/parallel/import routers + mappings)
 
 #### Symptoms

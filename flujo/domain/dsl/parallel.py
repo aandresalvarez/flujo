@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Generic, TypeVar
+from typing import Callable, Generic, TypeVar
 
 try:
     from typing import Self
@@ -13,11 +13,6 @@ from ..models import BaseModel
 from .step import Step, MergeStrategy, BranchFailureStrategy
 from .pipeline import Pipeline  # Import for runtime use in normalization
 from flujo.type_definitions.common import JSONObject
-
-if TYPE_CHECKING:
-    from ...application.core.types import TContext_w_Scratch
-else:
-    TContext_w_Scratch = BaseModel
 
 TContext = TypeVar("TContext", bound=BaseModel)
 
@@ -41,7 +36,7 @@ class ParallelStep(Step[object, object], Generic[TContext]):
         description="If provided, only these top-level context fields will be copied to each branch. "
         "If None, the entire context is deep-copied (default behavior).",
     )
-    merge_strategy: MergeStrategy | Callable[[TContext_w_Scratch, JSONObject], None] = Field(
+    merge_strategy: MergeStrategy | Callable[[TContext, JSONObject], None] = Field(
         default=MergeStrategy.CONTEXT_UPDATE,
         description="Strategy for merging successful branch contexts back into the main context.",
     )
