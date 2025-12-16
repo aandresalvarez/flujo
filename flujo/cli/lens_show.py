@@ -38,6 +38,43 @@ def _find_run_by_partial_id(backend: Any, partial_id: str, timeout: float = 5.0)
         >>> # Returns "abc123def456..." if unique match found
     """
     try:
+        # Fast path for SQLite: avoid async bridge + event loop overhead during lookups.
+        try:
+            from flujo.state.backends.sqlite import SQLiteBackend as _SQLiteBackend
+            import sqlite3 as _sqlite3
+
+            if isinstance(backend, _SQLiteBackend) and hasattr(backend, "db_path"):
+                db_path = getattr(backend, "db_path")
+                with _sqlite3.connect(str(db_path), timeout=timeout) as _conn:
+                    _conn.row_factory = _sqlite3.Row
+
+                    # Try exact match first (indexed by PRIMARY KEY).
+                    cur = _conn.execute(
+                        "SELECT run_id FROM runs WHERE run_id = ? LIMIT 1", (partial_id,)
+                    )
+                    row = cur.fetchone()
+                    cur.close()
+                    if row is not None:
+                        return str(row["run_id"])
+
+                    # Prefix match via range scan: [prefix, prefix + U+FFFF)
+                    upper_bound = f"{partial_id}\uffff"
+                    cur = _conn.execute(
+                        "SELECT run_id FROM runs WHERE run_id >= ? AND run_id < ? LIMIT 6",
+                        (partial_id, upper_bound),
+                    )
+                    rows = cur.fetchall()
+                    cur.close()
+                    matches = [str(r["run_id"]) for r in rows]
+                    if len(matches) == 1:
+                        return str(matches[0])
+                    if len(matches) > 1:
+                        raise ValueError(f"Ambiguous run_id '{partial_id}'. Matches: {matches[:5]}")
+                    return None
+        except ValueError:
+            raise
+        except Exception:
+            pass
 
         async def _search() -> Optional[str]:
             try:
@@ -63,6 +100,8 @@ def _find_run_by_partial_id(backend: Any, partial_id: str, timeout: float = 5.0)
 
         result: Optional[str] = run_sync(asyncio.wait_for(_search(), timeout=timeout))
         return result
+    except ValueError:
+        raise
     except asyncio.TimeoutError:
         return None
     except Exception:
