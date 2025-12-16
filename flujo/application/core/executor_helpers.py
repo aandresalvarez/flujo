@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Optional, Callable, Awaitable, TypeVar, Union
 
+from pydantic import BaseModel as PydanticBaseModel
 from ...domain.models import BaseModel
 
 from ...exceptions import UsageLimitExceededError
@@ -137,11 +138,15 @@ def enforce_typed_context(context: object | None) -> BaseModel | None:
 
     Strict mode rejects legacy dict contexts instead of attempting coercion, to
     avoid silent shape drift and to keep context contracts explicit.
+
+    Note: Accepts any pydantic.BaseModel subclass, not just flujo.domain.models.BaseModel,
+    to support user-defined context models that don't inherit from flujo's base classes.
     """
     if context is None:
         return None
-    if isinstance(context, BaseModel):
-        return context
+    # Accept any pydantic BaseModel subclass (including flujo's BaseModel)
+    if isinstance(context, PydanticBaseModel):
+        return context  # type: ignore[return-value]
 
     # Strict-only posture: no opt-out for non-Pydantic contexts.
     raise TypeError("Context must be a Pydantic BaseModel (strict mode enforced).")
@@ -151,7 +156,8 @@ def _coerce_context_model(context: Optional[TCtx]) -> Optional[TCtx]:
     """Validate and narrow incoming contexts to typed Pydantic models."""
     if context is None:
         return None
-    if not isinstance(context, BaseModel):
+    # Accept any pydantic BaseModel subclass (including flujo's BaseModel)
+    if not isinstance(context, PydanticBaseModel):
         raise TypeError("Context must be a Pydantic BaseModel (strict mode enforced).")
     return context
 
