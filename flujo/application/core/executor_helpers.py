@@ -133,7 +133,7 @@ def normalize_frame_context(frame: object) -> None:
     _ = getattr(frame, "on_chunk", None)
 
 
-def enforce_typed_context(context: object | None) -> PydanticBaseModel | None:
+def enforce_typed_context(context: object | None) -> BaseModel | None:
     """Enforce that context is a Pydantic BaseModel when strict mode is enabled.
 
     Strict mode rejects legacy dict contexts instead of attempting coercion, to
@@ -141,12 +141,15 @@ def enforce_typed_context(context: object | None) -> PydanticBaseModel | None:
 
     Note: Accepts any pydantic.BaseModel subclass, not just flujo.domain.models.BaseModel,
     to support user-defined context models that don't inherit from flujo's base classes.
+    At runtime, plain pydantic.BaseModel instances are accepted; the return type uses
+    flujo's BaseModel for internal type system compatibility.
     """
     if context is None:
         return None
     # Accept any pydantic BaseModel subclass (including flujo's BaseModel)
     if isinstance(context, PydanticBaseModel):
-        return context
+        # Cast to flujo's BaseModel for type system compatibility with ExecutionFrame
+        return context  # type: ignore[return-value]
 
     # Strict-only posture: no opt-out for non-Pydantic contexts.
     raise TypeError("Context must be a Pydantic BaseModel (strict mode enforced).")
