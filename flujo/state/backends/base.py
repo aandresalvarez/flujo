@@ -6,10 +6,7 @@ from typing import Any, List, Optional, Set, Tuple
 
 from flujo.exceptions import ControlFlowError
 from flujo.type_definitions.common import JSONObject
-from flujo.utils.serialization import (
-    _robust_serialize_internal,
-    _serialize_for_json as _serialize_for_json_utils,
-)
+from flujo.utils.serialization import _serialize_for_json as _serialize_for_json_utils
 
 
 def _serialize_for_json(
@@ -37,12 +34,27 @@ def _serialize_for_json(
             raise
         if strict:
             raise
-        return _robust_serialize_internal(
-            obj,
-            circular_ref_placeholder=circular_ref_placeholder,
-            bytes_mode="utf8",
-            allow_object_dict=True,
-        )
+        # Non-strict persistence must not raise, but persistence backends must not
+        # depend on the global robust serializer helper (guardrail). Fall back to a
+        # minimal JSON-safe representation.
+        try:
+            if hasattr(obj, "__dict__"):
+                seen = set(_seen) if _seen is not None else set()
+                seen.add(id(obj))
+                return _serialize_for_json_utils(
+                    vars(obj),
+                    circular_ref_placeholder=circular_ref_placeholder,
+                    strict=False,
+                    bytes_mode="utf8",
+                    allow_object_dict=True,
+                    _seen=seen,
+                )
+        except Exception:
+            pass
+        try:
+            return str(obj)
+        except Exception:
+            return f"<unserializable: {type(obj).__name__}>"
 
 
 def _to_jsonable(obj: object) -> object:
