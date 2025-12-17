@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import socket
 import threading
 import time
@@ -60,7 +61,26 @@ class PrometheusCollector(Collector):
         self.backend = backend
 
     def collect(self) -> Iterable[GaugeMetricFamily]:
-        stats: dict[str, Any] = run_coroutine(self.backend.get_workflow_stats())
+        stats: dict[str, Any] = {}
+        in_running_loop = False
+        try:
+            asyncio.get_running_loop()
+            in_running_loop = True
+        except RuntimeError:
+            in_running_loop = False
+
+        if in_running_loop:
+            get_sync = getattr(self.backend, "get_workflow_stats_sync", None)
+            if callable(get_sync):
+                try:
+                    stats = get_sync()
+                except Exception:
+                    stats = {}
+        else:
+            try:
+                stats = run_coroutine(self.backend.get_workflow_stats())
+            except Exception:
+                stats = {}
         total = GaugeMetricFamily("flujo_runs_total", "Total pipeline runs")
         total.add_metric([], stats.get("total_workflows", 0))
         yield total

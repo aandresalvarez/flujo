@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from typing import TYPE_CHECKING, Callable, Coroutine
 
-from ...domain.models import BackgroundLaunched, UsageEstimate
+from ...domain.models import BackgroundLaunched
 from ...infra import telemetry
 from ...infra.settings import get_settings
 from .context_manager import ContextManager
@@ -178,8 +178,9 @@ class BackgroundTaskManager:
                 except Exception:
                     quota = parent_quota
 
-                # Proactive quota reservation
-                reserved_estimate: UsageEstimate | None = None
+                # Best-effort preflight check: avoid launching when quota is already exhausted.
+                # Quota enforcement itself happens inside the normal execution flow via
+                # Reserve -> Execute -> Reconcile on the frame quota (do not double-count here).
                 if quota is not None and bool(getattr(bg_settings, "enable_quota", False)):
                     try:
                         remaining_cost, remaining_tokens = quota.get_remaining()
@@ -200,23 +201,6 @@ class BackgroundTaskManager:
                                 metadata=metadata,
                             )
                         return
-
-                    estimate = UsageEstimate(cost_usd=0.0, tokens=0)
-                    if not quota.reserve(estimate):
-                        metadata["background_error"] = "Background quota exhausted"
-                        if (
-                            enable_state_tracking
-                            and state_manager is not None
-                            and enable_resumability
-                        ):
-                            await core._mark_background_task_failed(
-                                task_id=task_id,
-                                context=isolated_context,
-                                error=UsageLimitExceededError("Background quota exhausted"),
-                                metadata=metadata,
-                            )
-                        return
-                    reserved_estimate = estimate
 
                 final_context: BaseModel | None = isolated_context
 
@@ -247,13 +231,6 @@ class BackgroundTaskManager:
                         getattr(step_result, "feedback", None) or "Background task failed"
                     )
 
-                if reserved_estimate is not None and quota is not None:
-                    actual_usage = UsageEstimate(
-                        cost_usd=float(getattr(step_result, "cost_usd", 0.0) or 0.0),
-                        tokens=int(getattr(step_result, "token_counts", 0) or 0),
-                    )
-                    quota.reclaim(reserved_estimate, actual_usage)
-
                 if enable_state_tracking and state_manager is not None and enable_resumability:
                     await core._mark_background_task_completed(
                         task_id=task_id,
@@ -261,8 +238,6 @@ class BackgroundTaskManager:
                         metadata=metadata,
                     )
             except PausedException as control_flow_err:
-                if reserved_estimate is not None and quota is not None:
-                    quota.reclaim(reserved_estimate, UsageEstimate(cost_usd=0.0, tokens=0))
                 if enable_state_tracking and state_manager is not None and enable_resumability:
                     metadata["background_error"] = str(control_flow_err)
                     metadata["error_category"] = "control_flow"
@@ -276,8 +251,6 @@ class BackgroundTaskManager:
                     f"Background task '{getattr(frame.step, 'name', 'unknown')}' paused: {control_flow_err}"
                 )
             except PipelineAbortSignal as control_flow_err:
-                if reserved_estimate is not None and quota is not None:
-                    quota.reclaim(reserved_estimate, UsageEstimate(cost_usd=0.0, tokens=0))
                 if enable_state_tracking and state_manager is not None and enable_resumability:
                     metadata["background_error"] = str(control_flow_err)
                     metadata["error_category"] = "control_flow"
@@ -291,8 +264,6 @@ class BackgroundTaskManager:
                     f"Background task '{getattr(frame.step, 'name', 'unknown')}' aborted: {control_flow_err}"
                 )
             except Exception as e:
-                if reserved_estimate is not None and quota is not None:
-                    quota.reclaim(reserved_estimate, UsageEstimate(cost_usd=0.0, tokens=0))
                 if enable_state_tracking and state_manager is not None and enable_resumability:
                     metadata["background_error"] = str(e)
 
