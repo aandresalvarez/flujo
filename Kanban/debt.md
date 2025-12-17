@@ -5,7 +5,38 @@ and keeps a paper trail of what was resolved vs intentionally re-scoped.
 
 ## Current backlog (ordered by ROI: impact ÷ effort)
 
-- None (verified)
+1) Test-mode state backend override in CLI
+   - Impact: reduce risk of accidental writes to temp DBs when `FLUJO_TEST_MODE=1` is set outside tests.
+   - Evidence: `flujo/cli/config.py` `load_backend_from_config()` can ignore `flujo.toml` `state_uri` when
+     `settings.test_mode` is enabled and `FLUJO_STATE_URI` is not set.
+   - Fix: keep tests hermetic without surprising production by requiring an explicit test-only override
+     (e.g., `FLUJO_TEST_STATE_DIR` / `FLUJO_EPHEMERAL_STATE`) before ignoring TOML `state_uri`.
+
+2) DSL decorator import cycle (runtime import in decorator path)
+   - Impact: clearer dependency graph; better static analysis/IDE support.
+   - Evidence: `flujo/domain/dsl/step_decorators.py` imports `Step`/`StepConfig` inside `step()` to avoid a
+     cycle with `flujo/domain/dsl/step.py` re-exporting the decorators.
+   - Fix: break the cycle so decorators can import symbols normally (e.g., lazy export in `step.py` or a
+     small `step_core.py` module for `Step`/`StepConfig`).
+
+3) Blueprint loader mixes registry dispatch, legacy class loading, and config parsing
+   - Impact: simpler loader; fewer edge cases; easier to extend.
+   - Evidence: `flujo/domain/blueprint/loader_steps.py` `_make_step_from_blueprint()` parses `processing`
+     and then falls back to `flujo.framework.registry` when no builder is registered.
+   - Fix: move `processing` normalization into builders; define an explicit deprecation/flag path for the
+     legacy fallback rather than silently mixing concerns.
+
+4) Executor compatibility shims still exercised internally
+   - Impact: reduce surface area for behavioral drift between execution paths.
+   - Evidence: `flujo/application/core/executor_helpers.py` (`execute_simple_step`, `execute_step_compat`)
+     and callers in loop orchestration.
+   - Fix: route callers through `ExecutionFrame` + policy dispatch; keep shims as thin wrappers until a
+     deprecation window closes.
+
+5) Deprecated global agents module hook
+   - Impact: low; mostly cosmetic.
+   - Evidence: `flujo/agents/recipes.py` module `__getattr__`.
+   - Fix: keep unless profiling proves it matters; remove in a major version cleanup.
 
 ## Resolved / Re-scoped (keep this section honest)
 
@@ -49,3 +80,7 @@ and keeps a paper trail of what was resolved vs intentionally re-scoped.
 9) CLI validation helpers bypassed strict typing
    - Resolved: removed module-level `# mypy: ignore-errors` and made helpers pass `mypy --strict`.
    - Key file: `flujo/cli/helpers_validation.py`.
+
+10) Mermaid visualization runtime imports
+   - Resolved: `pipeline_mermaid.py` no longer performs redundant runtime imports of core DSL step types.
+   - Key file: `flujo/domain/dsl/pipeline_mermaid.py`.
