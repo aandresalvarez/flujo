@@ -177,7 +177,11 @@ def load_backend_from_config() -> StateBackend:
             )
             uri = "sqlite:///flujo_ops.db"
 
-    parsed = urlparse(uri)
+    if uri is None:
+        uri = "sqlite:///flujo_ops.db"
+    uri_str = uri
+
+    parsed = urlparse(uri_str)
     config_path = None
     try:
         cfg_mgr = get_config_manager(force_reload=False)
@@ -202,7 +206,7 @@ def load_backend_from_config() -> StateBackend:
         pool_max = getattr(settings_model, "postgres_pool_max", 10)
         auto_migrate = os.getenv("FLUJO_AUTO_MIGRATE", "true").lower() != "false"
         return PostgresBackend(
-            uri,
+            uri_str,
             auto_migrate=auto_migrate,
             pool_min_size=pool_min,
             pool_max_size=pool_max,
@@ -212,7 +216,7 @@ def load_backend_from_config() -> StateBackend:
         # Env overrides should resolve relative SQLite paths against the current working directory,
         # not against a config file location that may come from a different project.
         sqlite_config_dir = None if env_uri_set else config_dir
-        db_path = _normalize_sqlite_path(uri, Path.cwd(), config_dir=sqlite_config_dir)
+        db_path = _normalize_sqlite_path(uri_str, Path.cwd(), config_dir=sqlite_config_dir)
         # Debug output for test visibility
         if os.getenv("FLUJO_DEBUG") == "1":
             logging.debug(f"[flujo.config] Using SQLite DB path: {db_path}")
