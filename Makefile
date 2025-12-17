@@ -128,6 +128,11 @@ test-fast: .uv ## Run fast tests in parallel with hang guards (excludes slow, ve
 	@echo "⚡ Running fast tests (enhanced runner)..."
 	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers auto --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
 
+.PHONY: test-fast-ci
+test-fast-ci: .uv ## Run fast tests via pytest-xdist (CI-friendly)
+	@echo "⚡ Running fast tests (CI-friendly pytest)..."
+	CI=1 uv run pytest tests/ -n auto -p no:randomly -m "not slow and not veryslow and not serial and not benchmark" -k "$(FAST_KEXPR)"
+
 .PHONY: test-fast-verbose
 test-fast-verbose: .uv ## Run fast tests with verbose output for debugging
 	@echo "🔍 Running fast tests with verbose output (enhanced runner)..."
@@ -444,7 +449,7 @@ docs-ci: docs-build docs-check ## Build docs and run link checks
 # ------------------------------------------------------------------------------
 
 ifdef FAST_ALL
-TEST_GATE_TARGET := test-fast
+TEST_GATE_TARGET := test-fast-ci
 TYPECHECK_TARGET := typecheck-fast
 else
 TEST_GATE_TARGET := test
