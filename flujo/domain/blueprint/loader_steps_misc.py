@@ -510,17 +510,19 @@ def _build_callable_step(
 
 
 def _attach_processing_meta(st: AnyStep, model: BlueprintStepModel) -> None:
-    try:
-        if isinstance(model.processing, dict) and model.processing:
-            try:
-                pc = ProcessingConfigModel.model_validate(model.processing)
-                proc_dict = pc.model_dump(exclude_none=True, by_alias=True)
-            except Exception as e:
-                raise BlueprintError(f"Invalid processing configuration: {e}") from e
-            st.meta.setdefault("processing", {})
-            st.meta["processing"].update(proc_dict)
-    except Exception:
-        pass
+    processing = getattr(model, "processing", None)
+    if processing is None:
+        return
+
+    if isinstance(processing, dict):
+        pc = ProcessingConfigModel.model_validate(processing)
+    else:
+        pc = processing
+
+    proc_dict = pc.model_dump(exclude_none=True, by_alias=True)
+    if proc_dict:
+        st.meta.setdefault("processing", {})
+        st.meta["processing"].update(proc_dict)
 
 
 def build_state_machine_step(

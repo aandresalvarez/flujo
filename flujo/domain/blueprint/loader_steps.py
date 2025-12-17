@@ -7,7 +7,6 @@ from .loader_models import (
     BlueprintError,
     BlueprintPipelineModel,
     BlueprintStepModel,
-    ProcessingConfigModel,
 )
 from .loader_steps_branching import (
     build_conditional_step,
@@ -64,20 +63,6 @@ def _make_step_from_blueprint(
         if not isinstance(model, BlueprintStepModel):
             if isinstance(model, dict):
                 model = BlueprintStepModel.model_validate(model)
-                try:
-                    proc_raw = getattr(model, "processing", None)
-                    if isinstance(proc_raw, dict) and proc_raw:
-                        pc = ProcessingConfigModel.model_validate(proc_raw)
-                        try:
-                            setattr(
-                                model,
-                                "processing",
-                                pc.model_dump(exclude_none=True, by_alias=True),
-                            )
-                        except Exception:
-                            pass
-                except Exception as e:
-                    raise BlueprintError(f"Invalid processing configuration: {e}") from e
                 try:
                     if _raw_use_history is not None:
                         setattr(model, "_use_history_extra", _raw_use_history)
