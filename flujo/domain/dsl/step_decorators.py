@@ -9,8 +9,12 @@ from __future__ import annotations
 from typing import Callable, Concatenate, Coroutine, Optional, TYPE_CHECKING, ParamSpec, overload
 
 if TYPE_CHECKING:
-    from .step import Step, StepConfig, ExecutionMode
+    from .step import ExecutionMode
     from ..processors import AgentProcessors
+
+# Import at module scope to avoid per-call runtime imports; safe because step.py
+# imports this module only after defining Step/StepConfig.
+from .step import Step, StepConfig
 
 # Type variables matching step.py
 from typing import TypeVar
@@ -89,8 +93,6 @@ def step(
     **config_kwargs: object,
 ) -> object:
     """Decorator / factory for creating :class:`Step` instances from async callables."""
-    # Import here to avoid circular imports
-    from .step import Step, StepConfig as _StepConfig
 
     def decorator(
         fn: Callable[Concatenate[StepInT, P], Coroutine[object, object, StepOutT]],
@@ -121,7 +123,7 @@ def step(
         if timeout_s is not None:
             merged_config_kwargs["timeout_s"] = timeout_s
 
-        final_config = _StepConfig.model_validate(merged_config_kwargs)
+        final_config = StepConfig.model_validate(merged_config_kwargs)
 
         return Step.from_callable(
             fn,
