@@ -53,14 +53,6 @@ def _determine_optimal_detail_level(pipeline: "Pipeline[PipeInT, PipeOutT]") -> 
 
 
 def _calculate_complexity_score(pipeline: "Pipeline[PipeInT, PipeOutT]") -> int:
-    from .loop import LoopStep  # Runtime import to avoid circular dependency
-    from .conditional import (
-        ConditionalStep,
-    )  # Runtime import to avoid circular dependency
-    from .parallel import (
-        ParallelStep,
-    )  # Runtime import to avoid circular dependency
-
     score = 0
     for step in pipeline.steps:
         score += 1  # base
@@ -98,14 +90,6 @@ def _generate_high_detail_mermaid(  # noqa: C901 – complexity inherited
         return step_nodes[step_id]
 
     def add_node(step: Step[object, object], node_id: str) -> None:
-        from .loop import LoopStep  # Runtime import to avoid circular dependency
-        from .conditional import (
-            ConditionalStep,
-        )  # Runtime import to avoid circular dependency
-        from .parallel import (
-            ParallelStep,
-        )  # Runtime import to avoid circular dependency
-
         if isinstance(step, HumanInTheLoopStep):
             shape = f"[/Human: {step.name}/]"
         elif isinstance(step, LoopStep):
@@ -140,14 +124,6 @@ def _generate_high_detail_mermaid(  # noqa: C901 – complexity inherited
         prev_node: str | None = None,
         subgraph_name: str | None = None,
     ) -> str | None:
-        from .loop import LoopStep  # Runtime import to avoid circular dependency
-        from .conditional import (
-            ConditionalStep,
-        )  # Runtime import to avoid circular dependency
-        from .parallel import (
-            ParallelStep,
-        )  # Runtime import to avoid circular dependency
-
         if subgraph_name:
             lines.append(f'    subgraph "{subgraph_name}"')
 
@@ -251,14 +227,6 @@ def _generate_high_detail_mermaid(  # noqa: C901 – complexity inherited
 
 def _generate_medium_detail_mermaid(pipeline: "Pipeline[PipeInT, PipeOutT]") -> str:
     # Medium detail: nodes with emoji for step types, validation annotation, no subgraphs
-    from .loop import LoopStep  # Runtime import to avoid circular dependency
-    from .conditional import (
-        ConditionalStep,
-    )  # Runtime import to avoid circular dependency
-    from .parallel import (
-        ParallelStep,
-    )  # Runtime import to avoid circular dependency
-
     lines = ["graph TD"]
     node_counter = 0
     for step in pipeline.steps:
@@ -283,14 +251,6 @@ def _generate_medium_detail_mermaid(pipeline: "Pipeline[PipeInT, PipeOutT]") -> 
 
 def _generate_low_detail_mermaid(pipeline: "Pipeline[PipeInT, PipeOutT]") -> str:
     # Low detail: group consecutive simple steps as 'Processing:', show special steps with emoji
-    from .loop import LoopStep  # Runtime import to avoid circular dependency
-    from .conditional import (
-        ConditionalStep,
-    )  # Runtime import to avoid circular dependency
-    from .parallel import (
-        ParallelStep,
-    )  # Runtime import to avoid circular dependency
-
     lines = ["graph TD"]
     node_counter = 0
     simple_group: list[Step[object, object]] = []
