@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import importlib.util
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from urllib.parse import urlparse
 import logging
 
@@ -26,78 +26,54 @@ def _normalize_sqlite_path(uri: str, cwd: Path, *, config_dir: Path | None = Non
     """
     Normalize a SQLite URI path to an absolute or relative Path.
 
-    - If the path is absolute (e.g., sqlite:////abs/path.db or sqlite://{abs_path}), return as is.
-    - If the path is relative (e.g., sqlite:///foo.db or sqlite:///./foo.db), resolve relative to cwd.
-    - Handles all RFC 3986-compliant forms and SQLite URI variants, including non-standard sqlite://{db_path}.
+    - If the path is absolute (e.g., sqlite:////abs/path.db), return as is.
+    - If the path is relative (e.g., sqlite:///foo.db), resolve relative to cwd (or config_dir).
+    - Handles Windows paths and non-standard URIs gracefully.
     """
-
     parsed = urlparse(uri)
     base_dir = config_dir if config_dir is not None else cwd
-    # Case 1: Non-standard sqlite://{db_path} (netloc present, path empty)
-    if parsed.netloc and not parsed.path:
-        logging.warning(
-            f"Non-standard SQLite URI: '{uri}'. Use 'sqlite:///foo.db' or 'sqlite:////abs/path.db' for portability."
-        )
-        path_str = parsed.netloc
-        # Handle Windows drive letter like C:/path or C:\path
+
+    # Case 1: Non-standard sqlite://path (netloc present) or Windows drive in netloc
+    if parsed.netloc:
+        path_str = parsed.netloc + parsed.path
+        # Windows drive logic (C:/... or C:\...)
         try:
-            if ":" in path_str or path_str.startswith("\\"):
-                win = PureWindowsPath(path_str)
-                if win.is_absolute():
-                    return Path(str(win))
+            if ":" in path_str and Path(path_str).is_absolute():
+                return Path(path_str).resolve()
         except Exception:
             pass
-        if path_str.startswith("/"):
-            return Path(path_str).resolve()
+
+        # If it looks like an absolute path, treat as such
+        p = Path(path_str)
+        if p.is_absolute():
+            return p.resolve()
+
         return (base_dir / path_str).resolve()
-    # Case 2: Standard sqlite:///foo.db (netloc empty, path present)
-    elif not parsed.netloc and parsed.path:
-        path_str = parsed.path
-        # If path_str starts with '//', treat as absolute (sqlite:////abs/path.db)
-        if path_str.startswith("//"):
-            return Path(path_str[1:]).resolve()  # Remove one slash to get /abs/path.db
-        # Windows absolute path like /C:/path or C:/path
-        try:
-            normalized = path_str[1:] if path_str.startswith("/") else path_str
-            win = PureWindowsPath(normalized)
-            if win.is_absolute():
-                return Path(str(win))
-        except Exception:
-            pass
-        # Otherwise treat as relative to cwd
-        rel_path = path_str[1:] if path_str.startswith("/") else path_str
-        return (base_dir / rel_path).resolve()
-    # Case 3: netloc and path both present (rare, but possible)
-    elif parsed.netloc:
-        path_str = (
-            f"/{parsed.netloc}{parsed.path}"
-            if not parsed.path.startswith("/")
-            else f"{parsed.netloc}{parsed.path}"
+
+    # Case 2: Standard URI path
+    path_str = parsed.path
+    if not path_str or not path_str.strip():
+        raise ValueError(
+            "Malformed SQLite URI: empty path. Use 'sqlite:///file.db' or 'sqlite:////abs/path.db'."
         )
-        # If path_str starts with '//', treat as absolute
-        if path_str.startswith("//"):
-            return Path(path_str[1:]).resolve()
-        # Windows absolute path
-        try:
-            normalized = path_str[1:] if path_str.startswith("/") else path_str
-            win = PureWindowsPath(normalized)
-            if win.is_absolute():
-                return Path(str(win))
-        except Exception:
-            pass
-        # Otherwise, treat as relative
-        rel_path = path_str[1:] if path_str.startswith("/") else path_str
-        return (base_dir / rel_path).resolve()
-    else:
-        # Fallback: treat as relative, but guard against empty path (e.g., sqlite://)
-        path_str = parsed.path
-        if not parsed.netloc and (path_str is None or path_str.strip() == ""):
-            raise ValueError(
-                "Malformed SQLite URI: empty path. Use 'sqlite:///file.db' or 'sqlite:////abs/path.db'."
-            )
-        rel_path = path_str[1:] if path_str.startswith("/") else path_str
-        resolved = (base_dir / rel_path).resolve()
-        return resolved
+
+    # Check for // implying absolute path (sqlite:////abs...)
+    if path_str.startswith("//"):
+        return Path(path_str[1:]).resolve()
+
+    # Strip standard leading slash for processing
+    clean_path_str = path_str[1:] if path_str.startswith("/") else path_str
+
+    # Check if the remaining part is absolute (e.g. Windows /C:/...)
+    try:
+        p = Path(clean_path_str)
+        if p.is_absolute():
+            return p.resolve()
+    except Exception:
+        pass
+
+    # Default to specific behavior: sqlite:///foo.db is relative
+    return (base_dir / clean_path_str).resolve()
 
 
 def load_backend_from_config() -> StateBackend:
@@ -122,7 +98,8 @@ def load_backend_from_config() -> StateBackend:
     if not env_uri_set:
         try:
             settings = get_settings()
-            is_test_env = bool(os.getenv("PYTEST_CURRENT_TEST")) or settings.test_mode
+            # Strict Context Hygiene: Relies solely on settings.test_mode (driven by FLUJO_TEST_MODE)
+            is_test_env = settings.test_mode
         except Exception:
             is_test_env = False
     else:
@@ -148,6 +125,7 @@ def load_backend_from_config() -> StateBackend:
             temp_dir.mkdir(parents=True, exist_ok=True)
             return SQLiteBackend(temp_dir / "flujo_ops.db")
         else:
+            # Fallback to system temp for isolated test DBs
             base_dir = Path(os.getenv("PYTEST_TMPDIR", tempfile.gettempdir())) / "flujo-test-db"
             try:
                 worker_id = os.getenv("PYTEST_XDIST_WORKER", "")
@@ -186,8 +164,8 @@ def load_backend_from_config() -> StateBackend:
     # Default fallback with test/CI isolation
     if uri is None:
         settings = get_settings()
-        # Detect pytest or explicit test mode to avoid reusing a possibly corrupted repo DB
-        is_test_env = bool(os.getenv("PYTEST_CURRENT_TEST")) or settings.test_mode
+        # Detect explicit test mode to avoid reusing a possibly corrupted repo DB
+        is_test_env = settings.test_mode
         if is_test_env:
             # Allow override for test DB directory
             override_dir = os.getenv("FLUJO_TEST_STATE_DIR")
@@ -271,11 +249,7 @@ def load_backend_from_config() -> StateBackend:
             from ..utils.config import get_settings as _get_settings
 
             _settings = _get_settings()
-            _is_test_env = (
-                bool(os.getenv("PYTEST_CURRENT_TEST"))
-                or _settings.test_mode
-                or (os.getenv("CI", "").lower() in ("true", "1"))
-            )
+            _is_test_env = _settings.test_mode
         except Exception:
             _is_test_env = False
 

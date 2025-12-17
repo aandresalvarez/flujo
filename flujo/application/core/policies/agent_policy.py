@@ -1,5 +1,4 @@
 from __future__ import annotations
-# mypy: ignore-errors
 
 from ._shared import (  # noqa: F401
     Awaitable,
@@ -100,14 +99,18 @@ class DefaultAgentStepExecutor(StepPolicy[Step[object, object]]):
                     est = select_fn(step)
                     est_fn = getattr(est, "estimate", None)
                     if callable(est_fn):
-                        return est_fn(step, data, context)
+                        res = est_fn(step, data, context)
+                        if isinstance(res, UsageEstimate):
+                            return res
             except Exception:
                 pass
             try:
                 est = getattr(core, "_usage_estimator", None)
                 est_fn = getattr(est, "estimate", None)
                 if callable(est_fn):
-                    return est_fn(step, data, context)
+                    res = est_fn(step, data, context)
+                    if isinstance(res, UsageEstimate):
+                        return res
             except Exception:
                 pass
 

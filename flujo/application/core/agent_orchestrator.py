@@ -45,8 +45,9 @@ class AgentOrchestrator:
             f"[AgentOrchestrator] Orchestrate simple agent step: {getattr(step, 'name', '<unnamed>')} depth={fallback_depth}"
         )
         governance = getattr(core, "_governance_engine", None)
+        effective_data = data
         if governance is not None:
-            await governance.enforce(
+            effective_data = await governance.enforce(
                 core=core, step=step, data=data, context=context, resources=resources
             )
         self.reset_fallback_chain(core, fallback_depth)
@@ -54,7 +55,7 @@ class AgentOrchestrator:
         return await self._execution_runner.execute(
             core=core,
             step=step,
-            data=data,
+            data=effective_data,
             context=context,
             resources=resources,
             limits=limits,

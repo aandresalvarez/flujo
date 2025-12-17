@@ -11,6 +11,7 @@ import importlib
 from .agent_handler import AgentHandler
 from .agent_orchestrator import AgentOrchestrator
 from .background_task_manager import BackgroundTaskManager
+from .background_task_handler import BackgroundTaskHandler
 from .cache_manager import CacheManager
 from .conditional_orchestrator import ConditionalOrchestrator
 from .context_update_manager import ContextUpdateManager
@@ -51,6 +52,8 @@ from .governance_policy import (
     DenyAllGovernancePolicy,
     GovernanceEngine,
     GovernancePolicy,
+    PIIScrubbingPolicy,
+    ToolAllowlistPolicy,
 )
 from .execution_dispatcher import ExecutionDispatcher
 from .hitl_orchestrator import HitlOrchestrator
@@ -134,6 +137,7 @@ class ExecutorCoreDeps(Generic[TContext_w_Scratch]):
     sandbox: SandboxProtocol
     memory_manager: MemoryManager
     background_task_manager: BackgroundTaskManager
+    bg_task_handler: BackgroundTaskHandler
     context_update_manager: ContextUpdateManager
     step_history_tracker: StepHistoryTracker
     estimator_factory: UsageEstimatorFactory
@@ -266,6 +270,7 @@ class FlujoRuntimeBuilder:
         shadow_eval_timeout_s: float | None = None,
         shadow_eval_judge_model: str | None = None,
         shadow_eval_sink: str | None = None,
+        shadow_eval_evaluate_on_failure: bool | None = None,
     ) -> ExecutorCoreDeps[TContext_w_Scratch]:
         serializer_obj: ISerializer = serializer or OrjsonSerializer()
         hasher_obj: IHasher = hasher or Blake3Hasher()
@@ -278,6 +283,11 @@ class FlujoRuntimeBuilder:
         )
         memory_store_obj: VectorStoreProtocol = memory_store or NullVectorStore()
         background_task_manager_obj = background_task_manager or BackgroundTaskManager()
+        from .background_task_handler import BackgroundTaskHandler as _BackgroundTaskHandler
+
+        bg_task_handler_obj = _BackgroundTaskHandler(
+            None
+        )  # Temporary init, updated later if needed
         # Memory manager wiring (optional, disabled by default)
         try:
             from ...embeddings import get_embedding_client
@@ -439,15 +449,35 @@ class FlujoRuntimeBuilder:
         if policies is None:
             mode = getattr(settings, "governance_mode", "allow_all")
             custom_module = getattr(settings, "governance_policy_module", None)
+            pii_scrub = bool(getattr(settings, "governance_pii_scrub", False))
+            pii_strong = bool(getattr(settings, "governance_pii_strong", False))
+            tool_allowlist_raw = getattr(settings, "governance_tool_allowlist", ())
+            if isinstance(tool_allowlist_raw, str):
+                tool_allowlist = tuple(
+                    part.strip() for part in tool_allowlist_raw.split(",") if part.strip()
+                )
+            elif isinstance(tool_allowlist_raw, (list, tuple)):
+                tool_allowlist = tuple(
+                    str(item).strip() for item in tool_allowlist_raw if str(item).strip()
+                )
+            else:
+                tool_allowlist = ()
+            extras: list[GovernancePolicy] = []
+            if pii_scrub:
+                extras.append(PIIScrubbingPolicy(strong=pii_strong))
+            if tool_allowlist:
+                extras.append(
+                    ToolAllowlistPolicy(allowed=frozenset(str(x) for x in tool_allowlist))
+                )
             if custom_module:
                 loaded = self._load_governance_policy(custom_module)
                 if loaded is not None:
-                    policies = (loaded,)
+                    policies = tuple(extras) + (loaded,)
             if policies is None:
                 if mode == "deny_all":
                     policies = (DenyAllGovernancePolicy(),)
                 else:
-                    policies = (AllowAllGovernancePolicy(),)
+                    policies = tuple(extras) + (AllowAllGovernancePolicy(),)
         governance_engine_obj = GovernanceEngine(policies=policies)
         shadow_eval_config = ShadowEvalConfig(
             enabled=bool(
@@ -475,6 +505,12 @@ class FlujoRuntimeBuilder:
                 if shadow_eval_sink is not None
                 else getattr(settings, "shadow_eval_sink", "telemetry")
             ),
+            evaluate_on_failure=bool(
+                shadow_eval_evaluate_on_failure
+                if shadow_eval_evaluate_on_failure is not None
+                else getattr(settings, "shadow_eval_evaluate_on_failure", False)
+            ),
+            run_level_enabled=bool(getattr(settings, "shadow_eval_run_level", False)),
         )
         shadow_evaluator_obj = ShadowEvaluator(
             config=shadow_eval_config,
@@ -499,6 +535,7 @@ class FlujoRuntimeBuilder:
             fallback_handler=fallback_handler or FallbackHandler(),
             hydration_manager=hydration_manager or HydrationManager(state_providers),
             background_task_manager=background_task_manager_obj,
+            bg_task_handler=bg_task_handler_obj,
             context_update_manager=context_update_manager or ContextUpdateManager(),
             step_history_tracker=step_history_tracker or StepHistoryTracker(),
             estimator_factory=estimator_factory or build_default_estimator_factory(),

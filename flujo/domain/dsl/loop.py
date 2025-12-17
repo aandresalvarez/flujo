@@ -65,7 +65,7 @@ class LoopStep(Step[Any, Any], Generic[TContext]):
         description=("Callable to map the final successful output to the LoopStep's output."),
     )
 
-    model_config = {"arbitrary_types_allowed": True, "populate_by_name": True}
+    model_config = {"populate_by_name": True}
 
     @model_validator(mode="before")
     @classmethod

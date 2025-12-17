@@ -526,26 +526,6 @@ class DefaultImportStepExecutor(StepPolicy[ImportStep]):
             # Build a minimal context update dict using outputs mapping
             update_data: JSONObject = {}
 
-            # Fail fast on legacy scratchpad paths.
-            try:
-                for mapping in step.outputs:
-                    child_path = str(getattr(mapping, "child", "") or "").strip()
-                    parent_path = str(getattr(mapping, "parent", "") or "").strip()
-                    if child_path.startswith("scratchpad") or parent_path.startswith("scratchpad"):
-                        parent_sr.success = False
-                        parent_sr.feedback = (
-                            "scratchpad has been removed; update ImportStep outputs mapping "
-                            "to import_artifacts or typed context fields."
-                        )
-                        return Failure(
-                            error=ValueError(parent_sr.feedback),
-                            feedback=parent_sr.feedback,
-                            step_result=parent_sr,
-                        )
-            except Exception:
-                # Let mapping evaluation continue if preflight fails unexpectedly.
-                pass
-
             # Sentinel to distinguish "path not found" from "path found with None value"
             _NOT_FOUND: object = object()
 

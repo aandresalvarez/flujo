@@ -327,7 +327,7 @@ class StateManager(Generic[ContextT]):
             "background_error": metadata_dict.get("background_error"),
         }
 
-        normalized_state_obj = _serialize_for_json(state_data)
+        normalized_state_obj = _serialize_for_json(state_data, strict=False)
         normalized_state: JSONObject = (
             normalized_state_obj if isinstance(normalized_state_obj, dict) else {}
         )
@@ -419,7 +419,7 @@ class StateManager(Generic[ContextT]):
 
         # OPTIMIZATION: Use async persistence to avoid blocking
         try:
-            normalized_state_obj = _serialize_for_json(state_data)
+            normalized_state_obj = _serialize_for_json(state_data, strict=False)
             normalized_state: JSONObject = (
                 normalized_state_obj if isinstance(normalized_state_obj, dict) else {}
             )

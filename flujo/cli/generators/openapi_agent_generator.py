@@ -4,6 +4,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
 try:
     import yaml
@@ -11,18 +12,50 @@ except Exception:  # pragma: no cover - optional dependency
     yaml = None
 
 
-def load_openapi_spec(spec_path: str) -> dict[str, Any]:
-    """Load an OpenAPI spec from JSON or YAML."""
-    path = Path(spec_path)
-    data = path.read_text(encoding="utf-8")
-    if path.suffix.lower() in {".json"}:
-        return dict(json.loads(data))
+def _parse_openapi_text(*, text: str, suffix_hint: str | None) -> dict[str, Any]:
+    hint = (suffix_hint or "").lower()
+    if hint in {".json"}:
+        return dict(json.loads(text))
+
+    # Best-effort: try JSON first, then YAML.
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return dict(parsed)
+    except Exception:
+        pass
+
     if yaml is None:
         raise RuntimeError("PyYAML is required to load non-JSON OpenAPI specs")
-    loaded = yaml.safe_load(data)
+    loaded = yaml.safe_load(text)
     if not isinstance(loaded, dict):
         raise ValueError("OpenAPI spec did not load to a mapping")
     return dict(loaded)
+
+
+def _read_spec_text(spec: str) -> tuple[str, str | None]:
+    """Return (text, suffix_hint) for a local file path or http(s) URL."""
+    parsed = urlparse(spec)
+    if parsed.scheme in {"http", "https"}:
+        try:
+            import httpx
+        except Exception as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError(f"httpx is required to load OpenAPI specs from URL: {exc}") from exc
+        try:
+            resp = httpx.get(spec, timeout=30.0)
+            resp.raise_for_status()
+            return resp.text, Path(parsed.path).suffix or None
+        except Exception as exc:
+            raise RuntimeError(f"Failed to fetch OpenAPI spec from URL: {exc}") from exc
+
+    path = Path(spec)
+    return path.read_text(encoding="utf-8"), path.suffix or None
+
+
+def load_openapi_spec(spec: str) -> dict[str, Any]:
+    """Load an OpenAPI spec from a local file path or URL (JSON or YAML)."""
+    text, suffix_hint = _read_spec_text(spec)
+    return _parse_openapi_text(text=text, suffix_hint=suffix_hint)
 
 
 def _safe_name(name: str) -> str:
@@ -51,6 +84,7 @@ def generate_openapi_agents(
     models_package: str,
     output_dir: Path,
     agents_filename: str = "openapi_agents.py",
+    models_module: str = "generated_models",
 ) -> Path:
     """Generate agent factory code for OpenAPI operations."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -88,6 +122,23 @@ def generate_openapi_agents(
                     break
                 type_hint = schema.get("type")
                 if type_hint == "array":
+                    items = schema.get("items")
+                    if isinstance(items, dict):
+                        item_ref = items.get("$ref")
+                        if isinstance(item_ref, str):
+                            resp_model = f"list[{item_ref.split('/')[-1]}]"
+                            break
+                        item_type = items.get("type")
+                        if item_type in {"string", "integer", "number", "boolean", "object"}:
+                            scalar_map = {
+                                "string": "str",
+                                "integer": "int",
+                                "number": "float",
+                                "boolean": "bool",
+                                "object": "dict",
+                            }
+                            resp_model = f"list[{scalar_map[item_type]}]"
+                            break
                     resp_model = "list"
                     break
                 if type_hint == "object":
@@ -126,13 +177,8 @@ async def {fname}(
 
     func_list = ", ".join(_safe_name(op.get("operationId") or f"{m}_{p}") for p, m, op in ops)
 
-    def _resp_model_literal(model: str) -> str:
-        if model in {"dict", "list"}:
-            return model
-        return f'"{model}"'
-
     resp_map_lines = "\n".join(
-        f'    "{name}": {_resp_model_literal(model)},' for name, model in response_models.items()
+        f'    "{name}": "{model}",' for name, model in response_models.items()
     )
     op_func_lines = "\n".join(f'    "{name}": {name},' for name in response_models.keys())
     content = f'''"""
@@ -147,12 +193,38 @@ from typing import Any
 import httpx
 
 from flujo.agents.wrapper import make_agent_async, AsyncAgentWrapper
-from .generated_models import *  # noqa: F401,F403
+from .{models_module} import *  # noqa: F401,F403
 
-# Response models per operation (if schema was detected)
-RESPONSE_MODELS = {{
+# Response model names per operation (if schema was detected)
+RESPONSE_MODEL_NAMES: dict[str, str] = {{
 {resp_map_lines}
 }}
+
+def _resolve_output_type(name: str | None) -> type[Any]:
+    if name is None:
+        return dict
+    if name == "dict":
+        return dict
+    if name == "list":
+        return list
+    if name.startswith("list[") and name.endswith("]"):
+        inner = name[5:-1].strip()
+        if inner == "dict":
+            return list[dict]
+        if inner == "str":
+            return list[str]
+        if inner == "int":
+            return list[int]
+        if inner == "float":
+            return list[float]
+        if inner == "bool":
+            return list[bool]
+        obj_inner = globals().get(inner)
+        if isinstance(obj_inner, type):
+            return list[obj_inner]
+        return list
+    obj = globals().get(name)
+    return obj if isinstance(obj, type) else dict
 
 
 async def _http_request(
@@ -195,7 +267,6 @@ def make_openapi_agent(
         system_prompt=prompt,
         tools=tools,
         output_type=dict,
-        metadata={{"openapi_models_package": "{models_package}"}},
     )
 
 
@@ -211,13 +282,12 @@ def make_openapi_operation_agent(
         raise ValueError(f"Unknown operation: {{operation}}")
     tool = OPERATION_FUNCS[operation]
     prompt = system_prompt or "You are an API caller for this OpenAPI operation."
-    output_type = RESPONSE_MODELS.get(operation, dict)
+    output_type = _resolve_output_type(RESPONSE_MODEL_NAMES.get(operation))
     return make_agent_async(
         model=model,
         system_prompt=prompt,
         tools=[tool],
         output_type=output_type,
-        metadata={{"openapi_models_package": "{models_package}", "operation": operation}},
     )
 '''
     agents_path.write_text(content, encoding="utf-8")

@@ -6,6 +6,7 @@ running event loop. In those environments (e.g., Jupyter, FastAPI), prefer the a
 
 from __future__ import annotations
 
+import anyio
 import asyncio
 from typing import Coroutine, TypeVar
 
@@ -13,7 +14,7 @@ T = TypeVar("T")
 
 
 def run_sync(coro: Coroutine[object, object, T], *, running_loop_error: str | None = None) -> T:
-    """Run an async coroutine from synchronous code.
+    """Run an async coroutine from synchronous code using anyio.
 
     Raises:
         TypeError: If called from a running event loop thread.
@@ -21,7 +22,8 @@ def run_sync(coro: Coroutine[object, object, T], *, running_loop_error: str | No
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coro)
+        # No running loop, safe to run
+        return anyio.run(lambda: coro)
 
     # We were handed a coroutine object that will never be awaited in this thread.
     # Close it to avoid "coroutine was never awaited" warnings.

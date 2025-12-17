@@ -19,6 +19,7 @@ from flujo.domain.models import (
     UsageLimits,
     PipelineContext,
     Failure,
+    Success,
 )
 
 from flujo.exceptions import PipelineAbortSignal, TypeMismatchError
@@ -238,48 +239,49 @@ class TestStepCoordinator:
         step.__step_output_type__ = str
         return step
 
-    @pytest.fixture
-    def mock_step_executor(self):
-        return AsyncMock()
-
     @pytest.mark.asyncio
-    async def test_execute_step_success(self, step_coordinator, mock_step, mock_step_executor):
+    async def test_execute_step_success(self, step_coordinator, mock_step):
         """Test successful step execution."""
         step_result = StepResult(name="test_step", output="success", success=True)
 
-        # Create a proper async generator mock
-        async def mock_executor(*args, **kwargs):
-            yield step_result
-
-        # Replace the mock with the actual function
-        step_coordinator._run_step = mock_executor
-
         results = []
+
+        class _Backend:
+            agent_registry = {}
+
+            async def execute_step(self, _request):
+                return Success(step_result=step_result)
+
         async for item in step_coordinator.execute_step(
-            mock_step, "input", None, step_executor=mock_executor
+            mock_step, "input", None, backend=_Backend()
         ):
             results.append(item)
 
         assert len(results) == 1
-        assert results[0] == step_result
+        assert isinstance(results[0], Success)
+        assert results[0].step_result == step_result
 
     @pytest.mark.asyncio
-    async def test_execute_step_failure(self, step_coordinator, mock_step, mock_step_executor):
+    async def test_execute_step_failure(self, step_coordinator, mock_step):
         """Test failed step execution."""
         step_result = StepResult(name="test_step", output=None, success=False, feedback="error")
 
-        # Create a proper async generator mock
-        async def mock_executor(*args, **kwargs):
-            yield step_result
-
         results = []
+
+        class _Backend:
+            agent_registry = {}
+
+            async def execute_step(self, _request):
+                return Failure(error=Exception("error"), feedback="error", step_result=step_result)
+
         async for item in step_coordinator.execute_step(
-            mock_step, "input", None, step_executor=mock_executor
+            mock_step, "input", None, backend=_Backend()
         ):
             results.append(item)
 
         assert len(results) == 1
-        assert results[0] == step_result
+        assert isinstance(results[0], Failure)
+        assert results[0].step_result == step_result
 
     def test_update_pipeline_result(self, step_coordinator):
         """Test updating pipeline result with step result."""
@@ -314,23 +316,23 @@ class TestExecutionManager:
     def execution_manager(self, mock_pipeline):
         return ExecutionManager(mock_pipeline)
 
-    @pytest.fixture
-    def mock_step_executor(self):
-        return AsyncMock()
-
     @pytest.mark.asyncio
-    async def test_execute_steps_basic(self, execution_manager, mock_step_executor):
+    async def test_execute_steps_basic(self, mock_pipeline):
         """Test basic step execution."""
         step1_result = StepResult(name="step1", output="output1", success=True)
         step2_result = StepResult(name="step2", output="output2", success=True)
 
-        # Create a proper async generator mock that handles both steps
-        async def mock_executor(step, data, context, resources, stream=False):
-            if step.name == "step1":
-                yield step1_result
-            elif step.name == "step2":
-                yield step2_result
+        class _Backend:
+            agent_registry = {}
 
+            async def execute_step(self, request):
+                if request.step.name == "step1":
+                    return Success(step_result=step1_result)
+                if request.step.name == "step2":
+                    return Success(step_result=step2_result)
+                raise AssertionError(f"Unexpected step {request.step.name}")
+
+        execution_manager = ExecutionManager(mock_pipeline, backend=_Backend())
         result = PipelineResult()
         results = []
         async for item in execution_manager.execute_steps(
@@ -338,7 +340,6 @@ class TestExecutionManager:
             data="input",
             context=None,
             result=result,
-            step_executor=mock_executor,
         ):
             results.append(item)
 

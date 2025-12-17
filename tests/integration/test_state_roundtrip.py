@@ -1,30 +1,16 @@
 from datetime import datetime
-from typing import Any, AsyncIterator, Optional
+from typing import Any
 
 import pytest
 
 from flujo.application.core.execution_manager import ExecutionManager
 from flujo.application.core.state_manager import StateManager
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.models import PipelineContext, PipelineResult, StepResult
+from flujo.infra.backends import LocalBackend
 from flujo.state.backends.memory import InMemoryBackend
-
-
-async def simple_step_executor(
-    step: Step[Any, Any],
-    data: Any,
-    context: Optional[PipelineContext],
-    resources: Any,
-    *,
-    stream: bool = False,
-) -> AsyncIterator[StepResult]:
-    # Deterministic transform based on step name
-    if step.name == "s1":
-        output = str(data).upper()
-    else:
-        output = f"{data}|{step.name}"
-    yield StepResult(name=step.name, output=output, success=True, attempts=1)
 
 
 @pytest.mark.fast
@@ -40,7 +26,32 @@ async def test_persistence_roundtrip_via_execution_manager() -> None:
     exec_manager = ExecutionManager[PipelineContext](
         pipeline,
         state_manager=state_manager,
+        backend=LocalBackend(ExecutorCore()),
     )
+
+    class _TransformExecutor:
+        async def execute(
+            self,
+            _core: object,
+            step: object,
+            data: object,
+            _context: object,
+            _resources: object,
+            _limits: object,
+            _stream: bool,
+            _on_chunk: object,
+            _cache_key: object,
+            _fallback_depth: int,
+        ) -> StepResult:
+            if getattr(step, "name", "") == "s1":
+                output = str(data).upper()
+            else:
+                output = f"{data}|{getattr(step, 'name', '')}"
+            return StepResult(
+                name=getattr(step, "name", "<unnamed>"), output=output, success=True, attempts=1
+            )
+
+    exec_manager.backend._executor.agent_step_executor = _TransformExecutor()  # type: ignore[attr-defined]
 
     run_id = "roundtrip-run-1"
     ctx = PipelineContext(initial_prompt="hello")
@@ -58,7 +69,6 @@ async def test_persistence_roundtrip_via_execution_manager() -> None:
         stream_last=False,
         run_id=run_id,
         state_created_at=None,
-        step_executor=simple_step_executor,
     ):
         pass
 

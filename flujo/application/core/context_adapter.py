@@ -21,6 +21,7 @@ from pydantic import BaseModel as PydanticBaseModel
 from ...infra import telemetry
 from ...domain.models import BaseModel, ExecutedCommandLog, ImportArtifacts
 from ...utils.serialization import register_custom_serializer, register_custom_deserializer
+from ...utils.scratchpad import SCRATCHPAD_REMOVED_MESSAGE, update_contains_scratchpad
 
 __all__ = [
     "_build_context_update",
@@ -493,8 +494,8 @@ def _inject_context_with_deep_merge(
 
     Returns an error message if validation fails, otherwise ``None``.
     """
-    if "scratchpad" in update_data:
-        return "scratchpad field has been removed; migrate data to typed fields"
+    if update_contains_scratchpad(update_data):
+        return SCRATCHPAD_REMOVED_MESSAGE
     # Micro-optimization fast path for hot paths:
     # If the update only contains a few scalar fields that exist on the model and
     # types match exactly, assign them directly without performing a full
@@ -790,8 +791,8 @@ def _inject_context(
 
     Returns an error message if validation fails, otherwise ``None``.
     """
-    if "scratchpad" in update_data:
-        return "scratchpad field has been removed; migrate data to typed fields"
+    if update_contains_scratchpad(update_data):
+        return SCRATCHPAD_REMOVED_MESSAGE
     original = context.model_dump()
 
     # Process update data with proper field mapping
@@ -809,9 +810,6 @@ def _inject_context(
                     field_type = resolved
             except Exception:
                 pass
-
-            if key == "scratchpad":
-                return "scratchpad field has been removed; migrate data to typed fields"
 
             # Deserialize dict/list payloads into declared model types before assignment.
             # This prevents transient "model field contains dict" states during `model_dump()`,

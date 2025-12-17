@@ -118,11 +118,6 @@ class TestRemainingFunctionPreservation:
         mock_cache_step.cache_backend = Mock()
         mock_cache_step.cache_backend.get = AsyncMock(return_value=None)  # Cache miss
 
-        mock_step_executor = AsyncMock()
-        mock_step_executor.return_value = StepResult(
-            name="test", success=True, output="cached_result"
-        )
-
         # Test cache miss scenario using ExecutorCore
         executor = ExecutorCore()
         result = await executor._handle_cache_step(
@@ -132,7 +127,6 @@ class TestRemainingFunctionPreservation:
             resources=None,
             limits=None,
             context_setter=None,
-            step_executor=mock_step_executor,
         )
 
         assert isinstance(result, StepResult)
@@ -141,7 +135,7 @@ class TestRemainingFunctionPreservation:
 
         # Verify cache backend was called
         mock_cache_step.cache_backend.get.assert_called_once()
-        # mock_step_executor is not used in the new architecture, so we do not assert its call
+        # Wrapped step execution is handled by the backend/executor; no legacy step executor exists.
 
     async def test_cache_step_logic_cache_hit(self):
         """Test that _handle_cache_step works with cache hits."""
@@ -177,9 +171,6 @@ class TestRemainingFunctionPreservation:
         cached_result = StepResult(name="test", success=True, output="cached_output")
         mock_cache_step.cache_backend.get = AsyncMock(return_value=cached_result)
 
-        mock_step_executor = AsyncMock()
-        mock_step_executor.return_value = StepResult(name="test", success=True)
-
         # Test cache hit scenario using ExecutorCore
         executor = ExecutorCore()
         result = await executor._handle_cache_step(
@@ -189,7 +180,6 @@ class TestRemainingFunctionPreservation:
             resources=None,
             limits=None,
             context_setter=None,
-            step_executor=mock_step_executor,
         )
 
         assert isinstance(result, StepResult)
@@ -198,8 +188,8 @@ class TestRemainingFunctionPreservation:
 
         # Verify cache backend was called
         mock_cache_step.cache_backend.get.assert_called_once()
-        # Verify step executor was NOT called (cache hit)
-        mock_step_executor.assert_not_called()
+        # Verify wrapped step was NOT called (cache hit)
+        mock_cache_step.wrapped_step.agent.run.assert_not_called()
 
     async def test_hitl_step_logic_preservation(self):
         """Test that _handle_hitl_step continues to work."""
@@ -411,7 +401,6 @@ class TestLegacyCleanupSafety:
                 resources=None,
                 limits=None,
                 context_setter=None,
-                step_executor=None,
             )
         except Exception as e:
             # Expected to fail, but should be a known/handled error type (not an unexpected crash).

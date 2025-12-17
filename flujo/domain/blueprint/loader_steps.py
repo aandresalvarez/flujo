@@ -21,6 +21,7 @@ from .loader_steps_misc import (
     build_basic_step,
     build_cache_step,
     build_hitl_step,
+    build_state_machine_step,
 )
 
 AnyStep: TypeAlias = Step[object, object]
@@ -36,213 +37,103 @@ def _make_step_from_blueprint(
     compiled_agents: CompiledAgents | None = None,
     compiled_imports: CompiledImports | None = None,
 ) -> AnyStep:
+    kind_val = "step"
+    _raw_use_history: bool | None = None
     if isinstance(model, dict):
-        _raw_use_history = None
         try:
             if "use_history" in model:
                 _raw_use_history = bool(model.get("use_history"))
         except Exception:
             _raw_use_history = None
         kind_val = str(model.get("kind", "step"))
-        if kind_val == "conditional":
-            try:
-                branches_raw = model.get("branches")
-                if isinstance(branches_raw, dict):
-                    coerced: dict[str, object] = {}
-                    for _k, _v in branches_raw.items():
-                        if isinstance(_k, bool):
-                            coerced[str(_k).lower()] = _v
-                        else:
-                            coerced[str(_k)] = _v if _k not in coerced else _v
-                    model = dict(model)
-                    model["branches"] = coerced
-            except Exception:
-                pass
-        if kind_val == "StateMachine":
-            from ..dsl.state_machine import StateMachineStep as _StateMachineStep
+    else:
+        # It's an object (likely BlueprintStepModel)
+        try:
+            kind_val = getattr(model, "kind", "step")
+        except Exception:
+            kind_val = "step"
 
-            name = str(model.get("name", "StateMachine"))
-            start_state = str(model.get("start_state"))
-            end_states_val = model.get("end_states") or []
-            if not isinstance(end_states_val, list):
-                end_states_val = [end_states_val]
-            end_states = [str(x) for x in end_states_val]
-            states_raw = model.get("states") or {}
-            if not isinstance(states_raw, dict):
-                raise BlueprintError("StateMachine.states must be a mapping of state → steps")
-            coerced_states: dict[str, AnyPipeline] = {}
-            for _state_name, _branch_spec in states_raw.items():
-                coerced_states[str(_state_name)] = _build_pipeline_from_branch(
-                    _branch_spec,
-                    base_path=f"{yaml_path}.states.{_state_name}" if yaml_path else None,
-                    compiled_agents=compiled_agents,
-                    compiled_imports=compiled_imports,
-                )
-            transitions_raw = model.get("transitions")
-            if transitions_raw is not None and not isinstance(transitions_raw, list):
-                raise BlueprintError("StateMachine.transitions must be a list of rules")
-            coerced_transitions = []
-            if isinstance(transitions_raw, list):
-                for _idx, _rule in enumerate(transitions_raw):
-                    if isinstance(_rule, dict):
-                        _coerced: dict[str, object] = {}
-                        for _k, _v in _rule.items():
-                            if _k is True:
-                                _coerced["on"] = _v
-                            elif _k is False:
-                                _coerced["off"] = _v
-                            else:
-                                _coerced[str(_k)] = _v
-                        coerced_transitions.append(_coerced)
-                    else:
-                        coerced_transitions.append(_rule)
-            sm = _StateMachineStep(
-                name=name,
-                states=coerced_states,
-                start_state=start_state,
-                end_states=end_states,
-                transitions=coerced_transitions or [],
-            )
-            if yaml_path:
+    # --- REGISTRY DISPATCH ---
+    from .builder_registry import get_builder
+
+    # 1. Try to get a registered builder
+    builder = get_builder(kind_val)
+    if builder:
+        # Common prep for registered builders (validation + config)
+        # Note: We validate to BlueprintStepModel for all built-in kinds, including StateMachine.
+        if not isinstance(model, BlueprintStepModel):
+            if isinstance(model, dict):
+                model = BlueprintStepModel.model_validate(model)
                 try:
-                    sm.meta["yaml_path"] = yaml_path
+                    proc_raw = getattr(model, "processing", None)
+                    if isinstance(proc_raw, dict) and proc_raw:
+                        pc = ProcessingConfigModel.model_validate(proc_raw)
+                        try:
+                            setattr(
+                                model,
+                                "processing",
+                                pc.model_dump(exclude_none=True, by_alias=True),
+                            )
+                        except Exception:
+                            pass
+                except Exception as e:
+                    raise BlueprintError(f"Invalid processing configuration: {e}") from e
+                try:
+                    if _raw_use_history is not None:
+                        setattr(model, "_use_history_extra", _raw_use_history)
                 except Exception:
                     pass
-            return sm
+            else:
+                raise BlueprintError(
+                    f"Invalid step model: expected dict or BlueprintStepModel, got {type(model).__name__}"
+                )
 
-        if kind_val in {
-            "step",
-            "parallel",
-            "conditional",
-            "loop",
-            "map",
-            "dynamic_router",
-            "hitl",
-            "cache",
-            "agentic_loop",
-        }:
-            model = BlueprintStepModel.model_validate(model)
+        # Extract config
+        step_config = StepConfig()
+        if hasattr(model, "config") and model.config:
+            cfg_dict = dict(model.config)
+            if "timeout" in cfg_dict and "timeout_s" not in cfg_dict:
+                try:
+                    cfg_dict["timeout_s"] = float(cfg_dict.pop("timeout"))
+                except Exception:
+                    cfg_dict.pop("timeout", None)
+            step_config = StepConfig(**cfg_dict)
+
+        return builder(
+            model,
+            step_config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            # We pass these common kwargs that adapters can use
+            # Adapters will filter what they need or we must standardize
+        )
+
+    # 2. Fallback: Custom Class Loading (Legacy/Plugin)
+    try:
+        from ...framework import registry as _fwreg
+
+        step_cls = _fwreg.get_step_class(kind_val)
+    except Exception:
+        step_cls = None
+
+    if step_cls is not None:
+        try:
+            # Ensure model is verified if passing to custom step?
+            # Or just pass raw dict if custom step handles it?
+            # Original code used validation if kind was in the set, else custom loading.
+            # If it wasn't in the set, it didn't do BlueprintStepModel validation.
+            step_obj = step_cls.model_validate(model)
+        except Exception as e:
+            raise BlueprintError(f"Failed to instantiate custom step for kind '{kind_val}': {e}")
+        if yaml_path:
             try:
-                proc_raw = getattr(model, "processing", None)
-                if isinstance(proc_raw, dict) and proc_raw:
-                    pc = ProcessingConfigModel.model_validate(proc_raw)
-                    try:
-                        setattr(
-                            model, "processing", pc.model_dump(exclude_none=True, by_alias=True)
-                        )
-                    except Exception:
-                        pass
-            except Exception as e:
-                raise BlueprintError(f"Invalid processing configuration: {e}") from e
-            try:
-                if _raw_use_history is not None:
-                    setattr(model, "_use_history_extra", _raw_use_history)
+                step_obj.meta["yaml_path"] = yaml_path
             except Exception:
                 pass
-        else:
-            try:
-                from ...framework import registry as _fwreg
+        return step_obj
 
-                step_cls = _fwreg.get_step_class(kind_val)
-            except Exception:
-                step_cls = None
-            if step_cls is not None:
-                try:
-                    step_obj = step_cls.model_validate(model)
-                except Exception as e:
-                    raise BlueprintError(
-                        f"Failed to instantiate custom step for kind '{kind_val}': {e}"
-                    )
-                if yaml_path:
-                    try:
-                        step_obj.meta["yaml_path"] = yaml_path
-                    except Exception:
-                        pass
-                return step_obj
-            raise BlueprintError(f"Unknown step kind: {kind_val}")
-
-    if not isinstance(model, BlueprintStepModel):
-        raise BlueprintError(
-            f"Invalid step model: expected dict or BlueprintStepModel, got {type(model).__name__}"
-        )
-
-    if hasattr(model, "config") and model.config:
-        cfg_dict = dict(model.config)
-        if "timeout" in cfg_dict and "timeout_s" not in cfg_dict:
-            try:
-                cfg_dict["timeout_s"] = float(cfg_dict.pop("timeout"))
-            except Exception:
-                cfg_dict.pop("timeout", None)
-        step_config = StepConfig(**cfg_dict)
-    else:
-        step_config = StepConfig()
-
-    if getattr(model, "kind", None) == "parallel":
-        return build_parallel_step(
-            model,
-            step_config,
-            yaml_path=yaml_path,
-            compiled_agents=compiled_agents,
-            compiled_imports=compiled_imports,
-            build_branch=_build_pipeline_from_branch,
-        )
-    if getattr(model, "kind", None) == "conditional":
-        return build_conditional_step(
-            model,
-            step_config,
-            yaml_path=yaml_path,
-            compiled_agents=compiled_agents,
-            compiled_imports=compiled_imports,
-            build_branch=_build_pipeline_from_branch,
-        )
-    if getattr(model, "kind", None) == "loop":
-        return build_loop_step(
-            model,
-            step_config,
-            yaml_path=yaml_path,
-            compiled_agents=compiled_agents,
-            compiled_imports=compiled_imports,
-            build_branch=_build_pipeline_from_branch,
-        )
-    if getattr(model, "kind", None) == "map":
-        return build_map_step(
-            model,
-            step_config,
-            yaml_path=yaml_path,
-            compiled_agents=compiled_agents,
-            compiled_imports=compiled_imports,
-            build_branch=_build_pipeline_from_branch,
-        )
-    if getattr(model, "kind", None) == "dynamic_router":
-        return build_dynamic_router_step(
-            model,
-            step_config,
-            yaml_path=yaml_path,
-            compiled_agents=compiled_agents,
-            compiled_imports=compiled_imports,
-            build_branch=_build_pipeline_from_branch,
-        )
-    if getattr(model, "kind", None) == "hitl":
-        return build_hitl_step(model, step_config)
-    if getattr(model, "kind", None) == "cache":
-        return build_cache_step(
-            model,
-            yaml_path=yaml_path,
-            compiled_agents=compiled_agents,
-            compiled_imports=compiled_imports,
-            make_step_fn=_make_step_from_blueprint,
-        )
-    if getattr(model, "kind", None) == "agentic_loop":
-        return build_agentic_loop_step(model, step_config)
-
-    return build_basic_step(
-        model,
-        step_config,
-        yaml_path=yaml_path,
-        compiled_agents=compiled_agents,
-        compiled_imports=compiled_imports,
-        make_step_fn=_make_step_from_blueprint,
-    )
+    raise BlueprintError(f"Unknown step kind: {kind_val}")
 
 
 def _build_pipeline_from_branch(
@@ -303,6 +194,187 @@ def _build_pipeline_from_branch(
             )
         )
     raise BlueprintError("Invalid branch specification; expected dict or list of dicts")
+
+
+# --- REGISTRY POPULATION ---
+
+
+def _register_defaults() -> None:
+    from .builder_registry import register_builder
+
+    # Adapters
+    def _adapt_parallel(
+        model: BlueprintStepModel,
+        config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        return build_parallel_step(
+            model,
+            config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            build_branch=_build_pipeline_from_branch,
+        )
+
+    def _adapt_conditional(
+        model: BlueprintStepModel,
+        config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        return build_conditional_step(
+            model,
+            config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            build_branch=_build_pipeline_from_branch,
+        )
+
+    def _adapt_loop(
+        model: BlueprintStepModel,
+        config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        return build_loop_step(
+            model,
+            config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            build_branch=_build_pipeline_from_branch,
+        )
+
+    def _adapt_map(
+        model: BlueprintStepModel,
+        config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        return build_map_step(
+            model,
+            config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            build_branch=_build_pipeline_from_branch,
+        )
+
+    def _adapt_router(
+        model: BlueprintStepModel,
+        config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        return build_dynamic_router_step(
+            model,
+            config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            build_branch=_build_pipeline_from_branch,
+        )
+
+    def _adapt_cache(
+        model: BlueprintStepModel,
+        _config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        # cache step signature is specific
+        return build_cache_step(
+            model,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            make_step_fn=_make_step_from_blueprint,
+        )
+
+    def _adapt_basic(
+        model: BlueprintStepModel,
+        config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        return build_basic_step(
+            model,
+            config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            make_step_fn=_make_step_from_blueprint,
+        )
+
+    def _adapt_hitl(
+        model: BlueprintStepModel,
+        config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        _ = (yaml_path, compiled_agents, compiled_imports)
+        return build_hitl_step(model, config)
+
+    def _adapt_agentic_loop(
+        model: BlueprintStepModel,
+        config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        _ = (yaml_path, compiled_agents, compiled_imports)
+        return build_agentic_loop_step(model, config)
+
+    def _adapt_state_machine(
+        model: BlueprintStepModel,
+        config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        return build_state_machine_step(
+            model,
+            config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+            build_branch=_build_pipeline_from_branch,
+        )
+
+    register_builder("parallel", _adapt_parallel)
+    register_builder("conditional", _adapt_conditional)
+    register_builder("loop", _adapt_loop)
+    register_builder("map", _adapt_map)
+    register_builder("dynamic_router", _adapt_router)
+    register_builder("cache", _adapt_cache)
+    register_builder("hitl", _adapt_hitl)
+    register_builder("agentic_loop", _adapt_agentic_loop)
+    register_builder("StateMachine", _adapt_state_machine)
+    register_builder("step", _adapt_basic)
+
+
+# Register on import
+_register_defaults()
 
 
 def build_pipeline_from_blueprint(

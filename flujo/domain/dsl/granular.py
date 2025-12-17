@@ -11,9 +11,9 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from typing import ClassVar, TypedDict
+from typing import TypedDict
 
-from pydantic import ConfigDict, Field
+from pydantic import Field
 
 from .step import Step
 
@@ -64,7 +64,7 @@ class GranularStep(Step[object, object]):
         enforce_idempotency: Require idempotency keys on tool calls
     """
 
-    model_config: ClassVar[ConfigDict] = ConfigDict(arbitrary_types_allowed=True)
+    # model_config inherited from BaseModel
 
     @staticmethod
     def _default_meta() -> dict[str, object]:

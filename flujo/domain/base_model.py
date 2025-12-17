@@ -9,11 +9,14 @@ class BaseModel(PydanticBaseModel):
 
     This model delegates all serialization logic to flujo.utils.serialization
     to maintain a single source of truth for serialization behavior.
+
+    Note: Flujo domain models intentionally carry runtime objects (agents, hooks,
+    validators, resources) that are not Pydantic models. Keeping
+    `arbitrary_types_allowed=True` at this boundary enables ergonomic composition
+    while serialization remains centrally controlled via `model_dump()`.
     """
 
-    model_config: ClassVar[ConfigDict] = {
-        "arbitrary_types_allowed": True,
-    }
+    model_config: ClassVar[ConfigDict] = ConfigDict(arbitrary_types_allowed=True)
 
     def model_dump(self, *, mode: str = "default", **kwargs: Any) -> Any:
         """

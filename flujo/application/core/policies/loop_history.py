@@ -1,25 +1,31 @@
 from __future__ import annotations
-# mypy: ignore-errors
 
+from collections.abc import Sequence
 from typing import Optional, Protocol
 
 
 class _PipelineResultLike(Protocol):
-    step_history: list[object]
-    final_pipeline_context: object | None
+    @property
+    def step_history(self) -> Sequence[object]: ...
+
+    @property
+    def final_pipeline_context(self) -> object | None: ...
 
 
 def seed_conversation_history(iteration_context: object, current_data: object) -> None:
     """Initialize conversation history for the current iteration."""
     from flujo.domain.models import ConversationRole, ConversationTurn
 
-    hist = getattr(iteration_context, "conversation_history", None)
-    if not isinstance(hist, list):
+    hist_obj = getattr(iteration_context, "conversation_history", None)
+    hist: list[object]
+    if isinstance(hist_obj, list):
+        hist = hist_obj
+    else:
+        hist = []
         try:
-            setattr(iteration_context, "conversation_history", [])
+            setattr(iteration_context, "conversation_history", hist)
         except Exception:
             pass
-        hist = getattr(iteration_context, "conversation_history", None)
 
     if isinstance(hist, list) and not hist:
         initial_text = str(current_data) if current_data is not None else ""
@@ -123,20 +129,20 @@ def sync_conversation_history(
         if not isinstance(hist, list):
             return
 
-        def _flatten(results: list[object]) -> list[object]:
+        def _flatten(results: Sequence[object]) -> list[object]:
             flat: list[object] = []
 
-            def _rec(items: list[object]) -> None:
-                for _sr in items or []:
+            def _rec(items: Sequence[object]) -> None:
+                for _sr in items:
                     flat.append(_sr)
                     try:
-                        children = getattr(_sr, "step_history", None) or []
+                        children = getattr(_sr, "step_history", None)
                     except Exception:
-                        children = []
-                    if children:
+                        children = None
+                    if isinstance(children, Sequence) and not isinstance(children, (str, bytes)):
                         _rec(children)
 
-            _rec(results or [])
+            _rec(results)
             return flat
 
         all_srs = _flatten(pipeline_result.step_history)
@@ -243,7 +249,7 @@ def sync_conversation_history(
             elif src == "named_steps":
                 for sr in all_srs:
                     n = getattr(sr, "name", "")
-                    if not sr.success:
+                    if not getattr(sr, "success", False):
                         continue
                     if n in named_steps_set:
                         qtxt, action = _extract_assistant_question(getattr(sr, "output", None))

@@ -4,14 +4,12 @@ from typing import Protocol, runtime_checkable, Any
 
 from flujo.domain.models import BaseModel
 from .types import ContextT
-from pydantic import ConfigDict
-from typing import ClassVar
 
 
 class PluginOutcome(BaseModel):
     """Result returned by a validation plugin."""
 
-    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
+    # model_config inherited from BaseModel
 
     success: bool
     feedback: str | None = None

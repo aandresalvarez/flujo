@@ -156,6 +156,7 @@ class SettingsOverrides(BaseModel):
     # Governance and shadow eval overrides
     governance_mode: Optional[str] = None
     governance_policy_module: Optional[str] = None
+    governance_tool_allowlist: Optional[list[str]] = None
     shadow_eval_sink: Optional[str] = None
 
 
@@ -307,10 +308,12 @@ class ConfigManager:
             return tokens or None
 
         env_allowed = _parse_allowed_imports_env(os.environ.get("FLUJO_BLUEPRINT_ALLOWED_IMPORTS"))
-        test_mode_enabled = (
-            str(os.environ.get("FLUJO_TEST_MODE", "")).strip().lower() in {"1", "true", "yes", "on"}
-            or os.environ.get("PYTEST_CURRENT_TEST") is not None
-        )
+        test_mode_enabled = str(os.environ.get("FLUJO_TEST_MODE", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
         if self.config_path is None:
             current_env_sig = self._compute_env_signature()
@@ -544,6 +547,10 @@ class ConfigManager:
                     if field_info and self._is_field_set_by_env(field_name, field_info):
                         # Environment variable takes precedence, skip TOML override
                         continue
+
+                    # Normalize list-based TOML overrides to match Settings types.
+                    if field_name == "governance_tool_allowlist" and isinstance(toml_value, list):
+                        toml_value = ",".join(str(v).strip() for v in toml_value if str(v).strip())
 
                     # Apply TOML value since no environment variable was found
                     setattr(settings, field_name, toml_value)

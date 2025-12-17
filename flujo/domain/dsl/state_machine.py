@@ -51,13 +51,16 @@ class StateMachineStep(Step[object, object]):
         try:
             if isinstance(data, dict):
                 states_in = data.get("states")
-                from flujo.domain.blueprint.loader import _build_pipeline_from_branch as _mk
-
                 if isinstance(states_in, dict):
-                    coerced: dict[str, Pipeline[object, object]] = {}
+                    coerced: dict[str, object] = {}
                     for k, v in states_in.items():
-                        # Accept a list[step-spec] or a single step-spec dict
-                        coerced[str(k)] = _mk(v)
+                        if isinstance(v, Pipeline):
+                            coerced[str(k)] = v
+                        elif isinstance(v, Step):
+                            coerced[str(k)] = Pipeline.from_step(v)
+                        else:
+                            # Best-effort; blueprint parsing happens in the blueprint loader.
+                            coerced[str(k)] = v
                     data["states"] = coerced
         except Exception:
             # Best-effort; let Pydantic raise if still invalid

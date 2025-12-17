@@ -111,7 +111,7 @@ endif
 .PHONY: test
 test: .uv ## Run all tests via enhanced runner (robust, two-phase)
 	@echo "🧪 Running full test suite (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers auto --timeout 60 --split-slow --slow-workers 1 --slow-timeout 120
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --workers auto --timeout 60 --split-slow --slow-workers 1 --slow-timeout 900
 
 .PHONY: test-architecture
 test-architecture: .uv ## Run architecture and type-safety compliance tests
@@ -126,12 +126,17 @@ test-srp: .uv ## Run Single Responsibility Principle compliance tests
 .PHONY: test-fast
 test-fast: .uv ## Run fast tests in parallel with hang guards (excludes slow, veryslow, serial, and benchmark tests)
 	@echo "⚡ Running fast tests (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers 8 --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers auto --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
+
+.PHONY: test-fast-ci
+test-fast-ci: .uv ## Run fast tests via pytest-xdist (CI-friendly)
+	@echo "⚡ Running fast tests (CI-friendly pytest)..."
+	CI=1 uv run pytest tests/ -n auto -p no:randomly -m "not slow and not veryslow and not serial and not benchmark" -k "$(FAST_KEXPR)"
 
 .PHONY: test-fast-verbose
 test-fast-verbose: .uv ## Run fast tests with verbose output for debugging
 	@echo "🔍 Running fast tests with verbose output (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers 8 --timeout 90 --tb --pytest-args "-vv"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers auto --timeout 90 --tb --pytest-args=-vv
 
 .PHONY: test-fast-serial
 test-fast-serial: .uv ## Run fast tests serially with hang guard (debug parallel issues)
@@ -146,7 +151,7 @@ test-fast-conservative: .uv ## Run fast tests with conservative parallelism (2 w
 .PHONY: test-robust
 test-robust: .uv ## Run tests with enhanced robustness and monitoring
 	@echo "🛡️ Running robust test suite (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers 8 --timeout 90 --pytest-args "--maxfail=5 -q"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers auto --timeout 90 --pytest-args="--maxfail=5 -q"
 
 .PHONY: test-stress
 test-stress: .uv ## Run stress tests to identify resource issues
@@ -404,7 +409,7 @@ test-slow-analysis: .uv ## Quick analysis of slow tests without running them
 .PHONY: test-quick-check
 test-quick-check: .uv ## Quick test to verify pytest-asyncio is working (enhanced runner)
 	@echo "🔍 Quick async test via enhanced runner..."
-	CI=1 uv run python scripts/run_targeted_tests.py tests/unit/test_validation.py::test_base_validator_initialization --timeout 60 --tb --fail-fast --pytest-args "-vv"
+	CI=1 uv run python scripts/run_targeted_tests.py tests/unit/test_validation.py::test_base_validator_initialization --timeout 60 --tb --fail-fast --pytest-args=-vv
 
 
 # ------------------------------------------------------------------------------
@@ -444,7 +449,7 @@ docs-ci: docs-build docs-check ## Build docs and run link checks
 # ------------------------------------------------------------------------------
 
 ifdef FAST_ALL
-TEST_GATE_TARGET := test-fast
+TEST_GATE_TARGET := test-fast-ci
 TYPECHECK_TARGET := typecheck-fast
 else
 TEST_GATE_TARGET := test

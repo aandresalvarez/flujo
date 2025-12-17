@@ -666,8 +666,10 @@ class SQLiteBackendBase(StateBackend):
 
                 await db.execute("COMMIT")
 
-                # Run migration to ensure schema is up to date
-                await self._migrate_existing_schema(db)
+                # Apply versioned migrations (PRAGMA user_version)
+                from .sqlite_migrations import apply_sqlite_migrations
+
+                await apply_sqlite_migrations(db)
 
                 # Create indexes after migration to ensure columns exist
                 await self._create_indexes(db)
@@ -814,217 +816,33 @@ class SQLiteBackendBase(StateBackend):
                         "Database corruption recovery failed"
                     ) from remove_error
 
-    async def _migrate_existing_schema(self, db: aiosqlite.Connection) -> None:
-        """Migrate existing database schema to the new optimized structure."""
-        try:
-            cursor = await db.execute("PRAGMA table_info(workflow_state)")
-            existing_columns = {row[1] for row in await cursor.fetchall()}
-            await cursor.close()
-        except sqlite3.OperationalError:
-            # Table doesn't exist yet, which is fine - it will be created with the new schema
-            existing_columns = set()
-
-        # First, ensure all required core columns exist
-        core_columns = [
-            ("pipeline_name", "TEXT NOT NULL DEFAULT ''"),
-            ("pipeline_version", "TEXT NOT NULL DEFAULT '1.0'"),
-            ("current_step_index", "INTEGER NOT NULL DEFAULT 0"),
-            ("pipeline_context", "TEXT"),
-            ("last_step_output", "TEXT"),
-            ("status", "TEXT NOT NULL DEFAULT 'running'"),
-            ("created_at", "TEXT NOT NULL DEFAULT ''"),
-            ("updated_at", "TEXT NOT NULL DEFAULT ''"),
-        ]
-
-        for column_name, column_def in core_columns:
-            if column_name not in existing_columns:
-                # Use proper SQLite quoting to prevent SQL injection
-                escaped_name = column_name.replace('"', '""')
-                quoted_column_name = f'"{escaped_name}"'
-                await db.execute(
-                    f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {column_def}"
-                )
-
-        # Add new optional columns if they don't exist
-        new_columns = [
-            ("total_steps", "INTEGER DEFAULT 0"),
-            ("error_message", "TEXT"),
-            ("execution_time_ms", "INTEGER"),
-            ("memory_usage_mb", "REAL"),
-            ("step_history", "TEXT"),
-            ("metadata", "TEXT"),
-            ("is_background_task", "INTEGER DEFAULT 0"),
-            ("parent_run_id", "TEXT"),
-            ("task_id", "TEXT"),
-            ("background_error", "TEXT"),
-        ]
-
-        for column_name, column_def in new_columns:
-            if column_name not in existing_columns:
-                # Validate column name and definition against the whitelist
-                col_def = f"{column_name} {column_def}"
-                if col_def not in ALLOWED_COLUMN_DEFS:
-                    telemetry.logfire.error(f"Invalid column definition: {col_def}")
-                    raise ValueError(
-                        f"Schema migration failed due to invalid column definition: {col_def}"
-                    )
-                validate_column_definition_or_raise(column_def)
-
-                # Use proper SQLite quoting to prevent SQL injection
-                escaped_name = column_name.replace('"', '""')
-                quoted_column_name = f'"{escaped_name}"'
-                await db.execute(
-                    f"ALTER TABLE workflow_state ADD COLUMN {quoted_column_name} {column_def}"
-                )
-
-        # Update any NULL values in required columns
-        await db.execute(
-            "UPDATE workflow_state SET current_step_index = 0 WHERE current_step_index IS NULL"
-        )
-        # Ensure steps table has raw_response column (FSD-013)
-        try:
-            cursor = await db.execute("PRAGMA table_info(steps)")
-            steps_columns = {row[1] for row in await cursor.fetchall()}
-            await cursor.close()
-        except sqlite3.OperationalError:
-            steps_columns = set()
-
-        if steps_columns:
-            if "raw_response" not in steps_columns:
-                try:
-                    await db.execute("ALTER TABLE steps ADD COLUMN raw_response TEXT")
-                except sqlite3.OperationalError:
-                    # Ignore if cannot alter; will rely on write-path retry/migration
-                    pass
-
-        await db.execute(
-            "UPDATE workflow_state SET pipeline_context = '{}' WHERE pipeline_context IS NULL"
-        )
-        await db.execute("UPDATE workflow_state SET status = 'running' WHERE status IS NULL")
-        await db.execute(
-            "UPDATE workflow_state SET pipeline_name = pipeline_id WHERE pipeline_name = ''"
-        )
-        await db.execute(
-            "UPDATE workflow_state SET pipeline_version = '1.0' WHERE pipeline_version = ''"
-        )
-        await db.execute(
-            "UPDATE workflow_state SET created_at = datetime('now') WHERE created_at = ''"
-        )
-        await db.execute(
-            "UPDATE workflow_state SET updated_at = datetime('now') WHERE updated_at = ''"
-        )
-
-        # Ensure evaluations table exists
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS evaluations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                run_id TEXT NOT NULL,
-                step_name TEXT,
-                score REAL NOT NULL,
-                feedback TEXT,
-                metadata TEXT,
-                created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
-                FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
-            )
-            """
-        )
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_evaluations_run_id ON evaluations(run_id)")
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_evaluations_created_at ON evaluations(created_at)"
-        )
-
     async def _create_indexes(self, db: aiosqlite.Connection) -> None:
-        """Create indexes for better query performance, only if columns exist."""
+        """Create indexes for better query performance."""
         try:
-            # Check which columns exist in the workflow_state table
-            cursor = await db.execute("PRAGMA table_info(workflow_state)")
-            existing_columns = {row[1] for row in await cursor.fetchall()}
-            await cursor.close()
-
-            # Create indexes only for columns that exist
-            if "status" in existing_columns:
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_workflow_state_status ON workflow_state(status)"
-                )
-            if "pipeline_id" in existing_columns:
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_workflow_state_pipeline_id ON workflow_state(pipeline_id)"
-                )
-            if "parent_run_id" in existing_columns:
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_workflow_state_parent_run_id ON workflow_state(parent_run_id)"
-                )
-            if "created_at" in existing_columns:
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_workflow_state_created_at ON workflow_state(created_at)"
-                )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_state_status ON workflow_state(status)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_state_pipeline_id ON workflow_state(pipeline_id)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_state_parent_run_id "
+                "ON workflow_state(parent_run_id)"
+            )
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflow_state_created_at ON workflow_state(created_at)"
+            )
         except sqlite3.OperationalError:
-            # If there's an error checking table info, skip index creation
+            # If the table doesn't exist yet, skip index creation.
             pass
 
-        # Migrate runs table schema if it exists
         try:
-            cursor = await db.execute("PRAGMA table_info(runs)")
-            runs_columns = {row[1] for row in await cursor.fetchall()}
-            await cursor.close()
-
-            # Add missing columns to runs table (including legacy fields used by tests)
-            runs_new_columns = [
-                ("pipeline_id", "TEXT NOT NULL DEFAULT 'unknown'"),
-                ("created_at", "TEXT NOT NULL DEFAULT ''"),
-                ("updated_at", "TEXT NOT NULL DEFAULT ''"),
-                ("end_time", "TEXT"),
-                ("total_cost", "REAL"),
-                ("final_context_blob", "TEXT"),
-                # Legacy/compatibility columns asserted by tests
-                ("execution_time_ms", "INTEGER"),
-                ("memory_usage_mb", "REAL"),
-                ("total_steps", "INTEGER DEFAULT 0"),
-                ("error_message", "TEXT"),
-            ]
-
-            new_column_added = False
-            for column_name, column_def in runs_new_columns:
-                if column_name not in runs_columns:
-                    escaped_name = column_name.replace('"', '""')
-                    quoted_column_name = f'"{escaped_name}"'
-                    await db.execute(
-                        f"ALTER TABLE runs ADD COLUMN {quoted_column_name} {column_def}"
-                    )
-                    new_column_added = True
-
-            if new_column_added:
-                cursor = await db.execute("PRAGMA table_info(runs)")
-                runs_columns = {row[1] for row in await cursor.fetchall()}
-                await cursor.close()
-
-            # Update existing records with default values for NOT NULL columns
-            if "pipeline_id" in runs_columns:
-                await db.execute(
-                    "UPDATE runs SET pipeline_id = 'unknown' WHERE pipeline_id IS NULL"
-                )
-            if "created_at" in runs_columns:
-                await db.execute("UPDATE runs SET created_at = '' WHERE created_at IS NULL")
-            if "updated_at" in runs_columns:
-                await db.execute("UPDATE runs SET updated_at = '' WHERE updated_at IS NULL")
-
-            # Create indexes only when backing columns exist
-            if "status" in runs_columns:
-                await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
-            if "pipeline_id" in runs_columns:
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_id ON runs(pipeline_id)"
-                )
-            if "created_at" in runs_columns:
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at)"
-                )
-            if "pipeline_name" in runs_columns:
-                await db.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_name ON runs(pipeline_name)"
-                )
-
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_pipeline_id ON runs(pipeline_id)")
+            await db.execute("CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at)")
+            await db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_runs_pipeline_name ON runs(pipeline_name)"
+            )
         except sqlite3.OperationalError:
             # Table doesn't exist yet, which is fine - it will be created with the new schema
             pass

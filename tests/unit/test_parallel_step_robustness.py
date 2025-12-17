@@ -24,32 +24,46 @@ class TestParallelStepRobustness:
 
     @pytest.fixture
     def mock_step_executor(self):
-        """Create a mock step executor that tracks calls."""
+        """Create an agent executor override that tracks calls."""
         call_history = []
 
-        async def executor(step, data, context, resources):
-            call_history.append(
-                {
-                    "step": step,
-                    "data": data,
-                    "context": context,
-                    "resources": resources,
-                }
-            )
+        class _TrackingAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                step: object,
+                data: object,
+                context: object,
+                resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepResult:
+                call_history.append(
+                    {
+                        "step": step,
+                        "data": data,
+                        "context": context,
+                        "resources": resources,
+                    }
+                )
 
-            # Simulate successful step execution
-            return StepResult(
-                name=step.name,
-                output=data,
-                success=True,
-                attempts=1,
-                latency_s=0.1,
-                token_counts=10,
-                cost_usd=0.01,
-            )
+                # Simulate successful step execution
+                return StepResult(
+                    name=step.name,
+                    output=data,
+                    success=True,
+                    attempts=1,
+                    latency_s=0.1,
+                    token_counts=10,
+                    cost_usd=0.01,
+                )
 
-        executor.call_history = call_history
-        return executor
+        execu = _TrackingAgentExecutor()
+        execu.call_history = call_history
+        return execu
 
     @pytest.fixture
     def usage_limits(self):
@@ -91,27 +105,40 @@ class TestParallelStepRobustness:
         # Create a step executor that simulates early cancellation
         cancellation_calls = []
 
-        async def cancelling_executor(step, data, context, resources):
-            cancellation_calls.append(
-                {
-                    "step": step,
-                    "data": data,
-                }
-            )
+        class _CancellingAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                step: object,
+                data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepResult:
+                cancellation_calls.append(
+                    {
+                        "step": step,
+                        "data": data,
+                    }
+                )
 
-            # Simulate a step that completes quickly (quota-only mode)
-            await asyncio.sleep(0.01)
+                # Simulate a step that completes quickly (quota-only mode)
+                await asyncio.sleep(0.01)
 
-            # Normal execution
-            return StepResult(
-                name=step.name,
-                output=data,
-                success=True,
-                attempts=1,
-                latency_s=0.1,
-                token_counts=10,
-                cost_usd=0.01,
-            )
+                # Normal execution
+                return StepResult(
+                    name=step.name,
+                    output=data,
+                    success=True,
+                    attempts=1,
+                    latency_s=0.1,
+                    token_counts=10,
+                    cost_usd=0.01,
+                )
 
         # Create a context setter that tracks what's set
         context_setter_calls = []
@@ -121,6 +148,7 @@ class TestParallelStepRobustness:
 
         # Execute the parallel step
         executor = ExecutorCore()
+        executor.agent_step_executor = _CancellingAgentExecutor()
         await executor._handle_parallel_step(
             parallel_step=parallel_step,
             data="test_input",
@@ -128,7 +156,6 @@ class TestParallelStepRobustness:
             resources=None,
             limits=usage_limits,
             context_setter=context_setter,
-            step_executor=cancelling_executor,
         )
 
         # Verify that all branches were called
@@ -206,6 +233,7 @@ class TestParallelStepRobustness:
             pass
 
         executor = ExecutorCore()
+        executor.agent_step_executor = mock_step_executor
         await executor._handle_parallel_step(
             parallel_step=parallel_step,
             data="test_input",
@@ -213,7 +241,6 @@ class TestParallelStepRobustness:
             resources=None,
             limits=usage_limits,
             context_setter=context_setter,
-            step_executor=mock_step_executor,
         )
 
     async def test_parallel_step_handles_empty_branches(self, mock_step_executor, usage_limits):
@@ -226,6 +253,7 @@ class TestParallelStepRobustness:
 
         # Execute the parallel step with no branches
         executor = ExecutorCore()
+        executor.agent_step_executor = mock_step_executor
         result = await executor._handle_parallel_step(
             parallel_step=empty_parallel_step,
             data="test_input",
@@ -249,25 +277,38 @@ class TestParallelStepRobustness:
         # Create a step executor that simulates failures
         failure_calls = []
 
-        async def failing_executor(step, data, context, resources):
-            failure_calls.append(
-                {
-                    "step": step,
-                    "data": data,
-                }
-            )
+        class _FailingAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                step: object,
+                data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepResult:
+                failure_calls.append(
+                    {
+                        "step": step,
+                        "data": data,
+                    }
+                )
 
-            # Simulate a failing step
-            return StepResult(
-                name=step.name,
-                output=None,
-                success=False,
-                attempts=1,
-                latency_s=0.1,
-                token_counts=10,
-                cost_usd=0.01,
-                feedback="Simulated failure",
-            )
+                # Simulate a failing step
+                return StepResult(
+                    name=step.name,
+                    output=None,
+                    success=False,
+                    attempts=1,
+                    latency_s=0.1,
+                    token_counts=10,
+                    cost_usd=0.01,
+                    feedback="Simulated failure",
+                )
 
         # Create a context setter that tracks what's set
         context_setter_calls = []
@@ -277,6 +318,7 @@ class TestParallelStepRobustness:
 
         # Execute the parallel step
         executor = ExecutorCore()
+        executor.agent_step_executor = _FailingAgentExecutor()
         result = await executor._handle_parallel_step(
             parallel_step=parallel_step,
             data="test_input",
@@ -284,7 +326,6 @@ class TestParallelStepRobustness:
             resources=None,
             limits=usage_limits,
             context_setter=context_setter,
-            step_executor=failing_executor,
         )
 
         # Verify that all branches were called
@@ -301,21 +342,34 @@ class TestParallelStepRobustness:
         # Create a step executor that tracks execution timing
         execution_times = []
 
-        async def tracking_executor(step, data, context, resources):
-            start_time = time.time()
-            # Simulate some work
-            await asyncio.sleep(0.01)
-            execution_times.append(time.time() - start_time)
+        class _TrackingAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                step: object,
+                data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepResult:
+                start_time = time.time()
+                # Simulate some work
+                await asyncio.sleep(0.01)
+                execution_times.append(time.time() - start_time)
 
-            return StepResult(
-                name=step.name,
-                output=data,
-                success=True,
-                attempts=1,
-                latency_s=0.01,
-                token_counts=10,
-                cost_usd=0.01,
-            )
+                return StepResult(
+                    name=step.name,
+                    output=data,
+                    success=True,
+                    attempts=1,
+                    latency_s=0.01,
+                    token_counts=10,
+                    cost_usd=0.01,
+                )
 
         # Create a context setter that tracks what's set
         context_setter_calls = []
@@ -325,6 +379,7 @@ class TestParallelStepRobustness:
 
         # Execute the parallel step
         executor = ExecutorCore()
+        executor.agent_step_executor = _TrackingAgentExecutor()
         await executor._handle_parallel_step(
             parallel_step=parallel_step,
             data="test_input",
@@ -332,7 +387,6 @@ class TestParallelStepRobustness:
             resources=None,
             limits=usage_limits,
             context_setter=context_setter,
-            step_executor=tracking_executor,
         )
 
         # Verify that all branches were executed
@@ -353,29 +407,42 @@ class TestParallelStepRobustness:
         # Create a step executor that modifies context
         context_modifications = []
 
-        async def context_modifying_executor(step, data, context, resources):
-            context_modifications.append(
-                {
-                    "step": step,
-                    "data": data,
-                    "context_value": getattr(context, "value", None) if context else None,
-                }
-            )
+        class _ContextModifyingAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                step: object,
+                data: object,
+                context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepResult:
+                context_modifications.append(
+                    {
+                        "step": step,
+                        "data": data,
+                        "context_value": getattr(context, "value", None) if context else None,
+                    }
+                )
 
-            # Modify the context
-            if context:
-                context.value = f"modified_by_{step.name}"
-                context.data_store[f"step_{step.name}"] = "executed"
+                # Modify the context
+                if context:
+                    context.value = f"modified_by_{step.name}"
+                    context.data_store[f"step_{step.name}"] = "executed"
 
-            return StepResult(
-                name=step.name,
-                output=data,
-                success=True,
-                attempts=1,
-                latency_s=0.1,
-                token_counts=10,
-                cost_usd=0.01,
-            )
+                return StepResult(
+                    name=step.name,
+                    output=data,
+                    success=True,
+                    attempts=1,
+                    latency_s=0.1,
+                    token_counts=10,
+                    cost_usd=0.01,
+                )
 
         # Create a context setter that tracks what's set
         context_setter_calls = []
@@ -385,6 +452,7 @@ class TestParallelStepRobustness:
 
         # Execute the parallel step
         executor = ExecutorCore()
+        executor.agent_step_executor = _ContextModifyingAgentExecutor()
         await executor._handle_parallel_step(
             parallel_step=parallel_step,
             data="test_input",
@@ -392,7 +460,6 @@ class TestParallelStepRobustness:
             resources=None,
             limits=usage_limits,
             context_setter=context_setter,
-            step_executor=context_modifying_executor,
         )
 
         # Verify that all branches were called

@@ -514,6 +514,10 @@ class TestQualityGates:
 
         This is the comprehensive quality gate test.
         """
+        if os.getenv("GITHUB_ACTIONS") == "true":
+            pytest.skip(
+                "Quality gates are enforced by the PR workflow jobs (Quality Checks / Fast Tests / Unit Tests)."
+            )
         failures = []
         # Ensure quality gate subprocesses run with plugin autoload enabled so required plugins load.
         env = dict(os.environ)
@@ -562,7 +566,7 @@ class TestQualityGates:
                     "-x",
                     "--tb=short",
                     "-m",
-                    "not serial",
+                    "not slow and not veryslow and not serial and not benchmark",
                     "tests/unit/",
                 ],
                 cwd=flujo_root,

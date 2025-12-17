@@ -210,7 +210,7 @@ class ContextManager:
         """Isolate context strictly: raise if deep isolation cannot be guaranteed.
 
         - Returns original object only for unittest.mock instances (perf tests).
-        - For Pydantic, uses model_copy(deep=True) and deep-copies scratchpad when present.
+        - For Pydantic, uses model_copy(deep=True).
         - Else, attempts deepcopy. If both fail, raises ContextIsolationError.
         """
         return ContextManager._isolate_strict_impl(context, include_keys)
@@ -470,19 +470,37 @@ class ContextManager:
 
         def _public_attrs(obj: object) -> list[str]:
             try:
+                data = vars(obj)
+                if isinstance(data, dict):
+                    return [k for k in data.keys() if not k.startswith("_")]
+                return []
+            except Exception:
+                pass
+            try:
                 return [a for a in dir(obj) if not a.startswith("_")]
             except Exception:
                 return []
 
+        def _try_set(target: object, name: str, value: object) -> None:
+            try:
+                object.__setattr__(target, name, value)
+                return
+            except Exception:
+                pass
+            try:
+                setattr(target, name, value)
+            except Exception:
+                return
+
         try:
             for name in _public_attrs(main_context):
                 try:
-                    setattr(new_context, name, getattr(main_context, name))
+                    _try_set(new_context, name, getattr(main_context, name))
                 except Exception:
                     pass
             for name in _public_attrs(branch_context):
                 try:
-                    setattr(new_context, name, getattr(branch_context, name))
+                    _try_set(new_context, name, getattr(branch_context, name))
                 except Exception:
                     pass
             return new_context

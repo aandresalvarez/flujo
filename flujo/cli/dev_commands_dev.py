@@ -1,4 +1,6 @@
 from __future__ import annotations
+# NOTE: This module contains experimental/dev-only CLI commands and is not yet
+# fully typed under mypy --strict.
 # mypy: ignore-errors
 
 from pathlib import Path
@@ -6,6 +8,7 @@ from typing import Any, Optional
 
 import json
 import os
+import keyword
 import typer
 import click
 from typing_extensions import Annotated
@@ -117,7 +120,15 @@ def gen_context(
 def import_openapi(
     spec: Annotated[str, typer.Argument(help="Path or URL to OpenAPI/Swagger spec")],
     output: Annotated[
-        str, typer.Option("--output", "-o", help="Output directory for generated models")
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help=(
+                "Output directory for generated models (a Python package). "
+                "Models are written to <output>/generated_models.py."
+            ),
+        ),
     ] = "generated_tools",
     target_python_version: Annotated[
         str, typer.Option("--python-version", help="Target Python version (e.g., 3.13)")
@@ -149,6 +160,17 @@ def import_openapi(
     Requires `datamodel-code-generator` to be installed (pip/uv). Emits a friendly
     error if the dependency is missing.
     """
+    output_dir = Path(output)
+    if not output_dir.name.isidentifier() or keyword.iskeyword(output_dir.name):
+        print_rich_or_typer(
+            (
+                "[red]Output directory name must be a valid importable Python package name.[/red]\n"
+                f"Got: {output_dir.name!r}. Choose something like `generated_tools`."
+            ),
+            stderr=True,
+        )
+        raise typer.Exit(1)
+
     try:
         from datamodel_code_generator import main as dcg_main  # type: ignore
     except Exception:  # pragma: no cover - dependency not installed
@@ -160,13 +182,16 @@ def import_openapi(
         )
         raise typer.Exit(1)
 
+    output_dir.mkdir(parents=True, exist_ok=True)
+    models_file = output_dir / "generated_models.py"
+
     args = [
         "--input",
         spec,
         "--input-file-type",
         "openapi",
         "--output",
-        output,
+        str(models_file),
         "--target-python-version",
         target_python_version,
     ]
@@ -193,12 +218,13 @@ def import_openapi(
     if generate_agents:
         try:
             spec_dict = load_openapi_spec(spec)
-            models_package = Path(output).name.replace("-", "_")
+            models_package = output_dir.name.replace("-", "_")
             agents_path = generate_openapi_agents(
                 spec=spec_dict,
                 models_package=models_package,
-                output_dir=Path(output),
+                output_dir=output_dir,
                 agents_filename=agents_filename,
+                models_module=models_file.stem,
             )
             logfire.info(
                 "[OpenAPI] Generated agent wrappers",
@@ -209,6 +235,27 @@ def import_openapi(
                 f"[red]Failed to generate OpenAPI agent wrappers: {exc}", stderr=True
             )
             raise typer.Exit(1) from exc
+
+    init_path = output_dir / "__init__.py"
+    init_lines: list[str] = [
+        '"""Auto-generated package from `flujo dev import-openapi`."""',
+        "from __future__ import annotations",
+        "",
+        "from .generated_models import *  # noqa: F401,F403",
+    ]
+    if generate_agents:
+        init_lines.extend(
+            [
+                "",
+                f"from .{Path(agents_filename).stem} import (",
+                "    OPERATION_FUNCS,",
+                "    RESPONSE_MODEL_NAMES,",
+                "    make_openapi_agent,",
+                "    make_openapi_operation_agent,",
+                ")",
+            ]
+        )
+    init_path.write_text("\n".join(init_lines) + "\n", encoding="utf-8")
 
 
 logfire = telemetry.logfire

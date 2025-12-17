@@ -317,14 +317,12 @@ def _get_enabled_filters() -> set[str]:
     global _CACHED_FILTERS
     # In test/CI contexts, avoid cross-test stale cache that may hide unknown-filter warnings
     try:
-        import os as _os
+        from ..infra.settings import get_settings
 
-        if _os.getenv("PYTEST_CURRENT_TEST"):
-            _cached_ok = False
-        else:
-            _cached_ok = _CACHED_FILTERS is not None
+        test_mode = bool(get_settings().test_mode)
     except Exception:
-        _cached_ok = _CACHED_FILTERS is not None
+        test_mode = False
+    _cached_ok = _CACHED_FILTERS is not None and not test_mode
     if _cached_ok:
         return _CACHED_FILTERS  # type: ignore[return-value]
 

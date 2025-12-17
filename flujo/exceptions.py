@@ -294,6 +294,12 @@ class ReplayError(ExecutionError):
     pass
 
 
+class PluginError(ExecutionError):
+    """Raised when a plugin execution fails."""
+
+    pass
+
+
 class ContextFieldError(ContextError):
     """Raised when trying to set a field that doesn't exist in the context."""
 

@@ -58,7 +58,6 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
     _output_type: Any = PrivateAttr(default=Any)
 
     model_config: ClassVar[ConfigDict] = {
-        "arbitrary_types_allowed": True,
         "revalidate_instances": "never",
     }
 
@@ -340,28 +339,6 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
 
         # Template lints moved to TemplateLinter (V-T1..V-T6)
 
-        # Advanced Check 3.2.1: Context Merge Conflict Detection for ParallelStep (V-P1)
-        # Use runtime imports with fallbacks while keeping mypy satisfied by typing as Any
-        from typing import Any as _Any
-
-        ParallelStep: _Any
-        MergeStrategy: _Any
-        try:
-            from .parallel import ParallelStep as _ParallelStep  # local import to avoid circular
-            from .step import MergeStrategy as _MergeStrategy  # enum
-
-            ParallelStep = _ParallelStep
-            MergeStrategy = _MergeStrategy
-        except Exception:  # pragma: no cover - defensive import failure
-            ParallelStep = None
-            MergeStrategy = None
-
-        if ParallelStep is not None and MergeStrategy is not None:
-            for st in self.steps:
-                if isinstance(st, ParallelStep):
-                    # Parallel merge conflict checks moved to OrchestrationLinter (V-P1/V-P1-W)
-                    pass
-
         if raise_on_error and report.errors:
             raise ConfigurationError(
                 "Pipeline validation failed: " + report.model_dump_json(indent=2)
@@ -468,11 +445,20 @@ class Pipeline(BaseModel, Generic[PipeInT, PipeOutT]):
         self, name: str, *, inherit_context: bool = True, **kwargs: Any
     ) -> "Step[PipeInT, PipelineResult[Any]]":
         """Wrap this pipeline as a composable Step, delegating to Flujo runner's as_step."""
-        from flujo.application.runner import Flujo
-        from flujo.domain.models import PipelineContext
+        # Use deferred factory to avoid circular import of Flujo runner
+        from ..interfaces import RunnerLike, get_runner_factory
 
-        runner: Flujo[PipeInT, PipeOutT, PipelineContext] = Flujo(self)
-        return runner.as_step(name, inherit_context=inherit_context, **kwargs)
+        factory = get_runner_factory()
+        runner: RunnerLike
+        if factory is None:
+            # Fallback for direct low-level usage without full package init
+            from flujo.application.runner import Flujo
+
+            runner = Flujo(self)
+        else:
+            runner = factory(self)
+
+        return runner.as_step(name, inherit_context=inherit_context, **kwargs)  # type: ignore[no-any-return]
 
 
 # Resolve forward references for hook payloads

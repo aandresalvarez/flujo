@@ -6,6 +6,7 @@ from typing import Any
 
 from flujo.application.core.execution_manager import ExecutionManager
 from flujo.application.core.step_coordinator import StepCoordinator
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import (
@@ -15,6 +16,7 @@ from flujo.domain.models import (
     BaseModel,
 )
 from flujo.exceptions import UsageLimitExceededError
+from flujo.infra.backends import LocalBackend
 
 # Avoid xdist worker crashes observed in CI by running tests in this module serially
 pytestmark = pytest.mark.serial
@@ -37,25 +39,31 @@ class MockStep(Step):
         self._test_tokens = tokens
 
 
-class MockStepExecutor:
-    """Mock step executor that returns predictable results."""
+class SequencedAgentExecutor:
+    """Agent executor override that returns a predefined StepResult sequence."""
 
-    def __init__(self, step_results: list[StepResult]):
-        self.step_results = step_results
-        self.call_count = 0
+    def __init__(self, step_results: list[StepResult]) -> None:
+        self._step_results = step_results
+        self._idx = 0
 
-    async def __call__(self, step: Any, data: Any, context: Any, resources: Any, **kwargs: Any):
-        """Async generator that yields StepResult objects."""
-        print(f"DEBUG: MockStepExecutor called for step {step.name}, call_count={self.call_count}")
-        if self.call_count < len(self.step_results):
-            result = self.step_results[self.call_count]
-            self.call_count += 1
-            print(f"DEBUG: Yielding result for {result.name}")
-            yield result
-        else:
-            # No more results to yield
-            print("DEBUG: No more results to yield")
-            pass
+    async def execute(
+        self,
+        _core: object,
+        _step: Any,
+        _data: Any,
+        _context: Any,
+        _resources: Any,
+        _limits: Any,
+        _stream: bool,
+        _on_chunk: Any,
+        _cache_key: Any,
+        _fallback_depth: int,
+    ) -> StepResult:
+        if self._idx >= len(self._step_results):
+            raise AssertionError("SequencedAgentExecutor exhausted")
+        sr = self._step_results[self._idx]
+        self._idx += 1
+        return sr
 
 
 @pytest.fixture
@@ -109,15 +117,15 @@ async def test_execution_manager_updates_state_before_usage_check():
         ),
     ]
 
-    # Create mock step executor
-    mock_executor = MockStepExecutor(step_results)
-
     # Create usage limits that will be exceeded
     usage_limits = UsageLimits(total_cost_usd_limit=0.4, total_tokens_limit=40)
 
     # Create execution manager using quota-based limits
+    core = ExecutorCore()
+    core.agent_step_executor = SequencedAgentExecutor(step_results)
     execution_manager = ExecutionManager(
         pipeline=pipeline,
+        backend=LocalBackend(core),
         usage_limits=usage_limits,
     )
 
@@ -134,7 +142,6 @@ async def test_execution_manager_updates_state_before_usage_check():
             data="test_input",
             context=None,
             result=result,
-            step_executor=mock_executor,
         ):
             pass
 
@@ -194,15 +201,15 @@ async def test_execution_manager_handles_multiple_steps_before_breach():
         ),
     ]
 
-    # Create mock step executor
-    mock_executor = MockStepExecutor(step_results)
-
     # Create usage limits that will be exceeded by step2
     usage_limits = UsageLimits(total_cost_usd_limit=1.0, total_tokens_limit=20)
 
     # Create execution manager using quota-based limits
+    core = ExecutorCore()
+    core.agent_step_executor = SequencedAgentExecutor(step_results)
     execution_manager = ExecutionManager(
         pipeline=pipeline,
+        backend=LocalBackend(core),
         usage_limits=usage_limits,
     )
 
@@ -219,7 +226,6 @@ async def test_execution_manager_handles_multiple_steps_before_breach():
             data="test_input",
             context=None,
             result=result,
-            step_executor=mock_executor,
         ):
             pass
 
@@ -262,11 +268,10 @@ async def test_execution_manager_no_usage_limits():
         ),
     ]
 
-    # Create mock step executor
-    mock_executor = MockStepExecutor(step_results)
-
     # Create execution manager without usage limits
-    execution_manager = ExecutionManager(pipeline=pipeline)
+    core = ExecutorCore()
+    core.agent_step_executor = SequencedAgentExecutor(step_results)
+    execution_manager = ExecutionManager(pipeline=pipeline, backend=LocalBackend(core))
 
     # Create initial pipeline result
     result = PipelineResult(
@@ -281,7 +286,6 @@ async def test_execution_manager_no_usage_limits():
         data="test_input",
         context=None,
         result=result,
-        step_executor=mock_executor,
     ):
         step_count += 1
 
@@ -312,11 +316,10 @@ async def test_execution_manager_failed_step_handling():
         ),
     ]
 
-    # Create mock step executor
-    mock_executor = MockStepExecutor(step_results)
-
     # Create execution manager
-    execution_manager = ExecutionManager(pipeline=pipeline)
+    core = ExecutorCore()
+    core.agent_step_executor = SequencedAgentExecutor(step_results)
+    execution_manager = ExecutionManager(pipeline=pipeline, backend=LocalBackend(core))
 
     # Create initial pipeline result
     result = PipelineResult(
@@ -331,7 +334,6 @@ async def test_execution_manager_failed_step_handling():
         data="test_input",
         context=None,
         result=result,
-        step_executor=mock_executor,
     ):
         step_count += 1
 
@@ -370,14 +372,14 @@ async def test_execution_manager_step_coordinator_integration():
         ),
     ]
 
-    # Create mock step executor
-    mock_executor = MockStepExecutor(step_results)
-
     # Create execution manager with custom step coordinator
     step_coordinator = StepCoordinator()
+    core = ExecutorCore()
+    core.agent_step_executor = SequencedAgentExecutor(step_results)
     execution_manager = ExecutionManager(
         pipeline=pipeline,
         step_coordinator=step_coordinator,
+        backend=LocalBackend(core),
     )
 
     # Create initial pipeline result
@@ -392,7 +394,6 @@ async def test_execution_manager_step_coordinator_integration():
         data="test_input",
         context=None,
         result=result,
-        step_executor=mock_executor,
     ):
         pass
 

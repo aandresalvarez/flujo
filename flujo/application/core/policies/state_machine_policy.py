@@ -11,6 +11,7 @@ from flujo.exceptions import PausedException
 from flujo.infra import telemetry
 
 from ..types import ExecutionFrame
+from flujo.domain.dsl.state_machine import StateMachineStep  # noqa: F401
 
 # --- StateMachine policy executor (FSD-025) ---
 
@@ -30,11 +31,6 @@ class StateMachinePolicyExecutor:
         context = frame.context
         resources = frame.resources
         limits = frame.limits
-
-        try:
-            from flujo.domain.dsl.state_machine import StateMachineStep  # noqa: F401
-        except Exception:
-            pass
 
         current_state: Optional[str] = (
             getattr(context, "current_state", None) if context is not None else None

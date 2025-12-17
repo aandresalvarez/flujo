@@ -82,7 +82,7 @@ def test_global_custom_serializer_registry():
     class MyModel(BaseModel):
         foo: Custom
         bar: complex
-        model_config = {"arbitrary_types_allowed": True}
+        # model_config inherited from BaseModel
 
     def custom_serializer(obj):
         if isinstance(obj, Custom):

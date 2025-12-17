@@ -34,7 +34,7 @@ from flujo.application.core.context_adapter import _build_context_update
 from .context_manager import ContextManager
 from .async_iter import aclose_if_possible
 from .quota_manager import build_root_quota
-from .step_coordinator import LegacyStepExecutor, StepCoordinator
+from .step_coordinator import StepCoordinator
 from .state_manager import StateManager
 from .type_validator import TypeValidator
 from .execution_manager_finalization import ExecutionFinalizationMixin
@@ -121,8 +121,6 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
         stream_last: bool = False,
         run_id: str | None = None,
         state_created_at: datetime | None = None,
-        step_executor: LegacyStepExecutor
-        | None = None,  # Legacy parameter for backward compatibility
     ) -> AsyncIterator[object]:
         """Execute pipeline steps with simplified, coordinated logic.
 
@@ -175,7 +173,6 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                 run_id is not None
                 and not self.inside_loop_step
                 and self.state_manager.state_backend is not None
-                and len(self.pipeline.steps) > 1
             )
 
             try:
@@ -185,16 +182,10 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                 except Exception:
                     context_before_step = context
                 try:
-                    # Respect caller-provided step_executor when given; otherwise
-                    # delegate to the configured backend. Streaming for the last
-                    # step is controlled by `use_stream` below.
                     use_stream = stream_last and idx == len(self.pipeline.steps) - 1
 
                     # Track if coordinator reported Success with a None step_result
                     need_internal_direct_exec = False
-
-                    # Execute steps via the configured backend (default path).
-                    chosen_step_executor = step_executor
 
                     last_item: object | None = None
                     step_iter = self.step_coordinator.execute_step(
@@ -203,7 +194,6 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                         context=context,
                         backend=self.backend,
                         stream=use_stream,
-                        step_executor=chosen_step_executor,
                         usage_limits=self.usage_limits,
                         quota=self.root_quota,
                     )
@@ -320,7 +310,6 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                 except _PNC:
                                     # Let runner handle persistence and re-raise
                                     raise
-                                    pass
                                 # Attempt recovery when failure is due to missing terminal outcome
                                 try:
                                     fbtxt = (step_result.feedback or "").lower()

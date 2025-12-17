@@ -1,5 +1,5 @@
 import logging
-import sys
+
 import os
 import atexit
 from typing import TYPE_CHECKING, Any, Callable, Optional, List
@@ -21,9 +21,10 @@ _initialized = False
 
 _fallback_logger = logging.getLogger("flujo")
 # Reduce log verbosity in CI/tests to improve performance determinism
-_in_ci_or_tests = bool(
-    os.getenv("CI") == "true" or os.getenv("FLUJO_TEST_MODE") or os.getenv("PYTEST_CURRENT_TEST")
-)
+# NOTE: We intentionally use os.getenv() at import time here to avoid bootstrap/circular
+# imports with config_manager/get_settings during early initialization.
+_test_mode_raw = str(os.getenv("FLUJO_TEST_MODE", "") or "").strip().lower()
+_in_ci_or_tests = bool(os.getenv("CI") == "true" or _test_mode_raw in {"1", "true", "yes", "on"})
 _fallback_logger.setLevel(logging.WARNING if _in_ci_or_tests else logging.INFO)
 # Always propagate so external handlers (caplog, app) can capture logs
 _fallback_logger.propagate = True
@@ -354,15 +355,11 @@ def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
 
 
 # Auto-initialize telemetry with default settings when module is imported
-# This ensures telemetry is always available, even in tests
-# Only auto-initialize if not already initialized and if we're not in a test environment
+# This ensures telemetry is always available.
+# We no longer check for test environments implicitly; tests must explicitly mock or configure telemetry if needed.
 if not _initialized:
     try:
-        # Check if we're in a test environment by looking for pytest markers
-        import sys
-
-        if "pytest" not in sys.modules and "test" not in sys.modules:
-            init_telemetry()
+        init_telemetry()
     except Exception:
         # If auto-initialization fails, we still have the mock logfire available
         pass
