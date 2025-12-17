@@ -1,6 +1,5 @@
 import logging
 
-import os
 import atexit
 from typing import TYPE_CHECKING, Any, Callable, Optional, List
 from typing import Any as _TypeAny  # local alias to avoid name clash
@@ -20,12 +19,8 @@ if TYPE_CHECKING:
 _initialized = False
 
 _fallback_logger = logging.getLogger("flujo")
-# Reduce log verbosity in CI/tests to improve performance determinism
-# NOTE: We intentionally use os.getenv() at import time here to avoid bootstrap/circular
-# imports with config_manager/get_settings during early initialization.
-_test_mode_raw = str(os.getenv("FLUJO_TEST_MODE", "") or "").strip().lower()
-_in_ci_or_tests = bool(os.getenv("CI") == "true" or _test_mode_raw in {"1", "true", "yes", "on"})
-_fallback_logger.setLevel(logging.WARNING if _in_ci_or_tests else logging.INFO)
+# Default to INFO; init_telemetry() may tighten this for CI/test-mode.
+_fallback_logger.setLevel(logging.INFO)
 # Always propagate so external handlers (caplog, app) can capture logs
 _fallback_logger.propagate = True
 
@@ -280,6 +275,19 @@ def init_telemetry(settings_obj: Optional["TelemetrySettings"] = None) -> None:
     from .settings import settings as default_settings_obj
 
     settings_to_use = settings_obj if settings_obj is not None else default_settings_obj
+    # Reduce log verbosity in CI/tests to improve performance determinism.
+    # This must happen after settings are available; avoid reading env vars at module import time.
+    try:
+        import os
+
+        in_ci = os.getenv("CI") == "true"
+    except Exception:
+        in_ci = False
+    _fallback_logger.setLevel(
+        logging.WARNING
+        if (in_ci or bool(getattr(settings_to_use, "test_mode", False)))
+        else logging.INFO
+    )
 
     if settings_to_use.telemetry_export_enabled:
         try:
