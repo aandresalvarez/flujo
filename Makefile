@@ -136,7 +136,7 @@ test-fast-ci: .uv ## Run fast tests via pytest-xdist (CI-friendly)
 .PHONY: test-fast-verbose
 test-fast-verbose: .uv ## Run fast tests with verbose output for debugging
 	@echo "🔍 Running fast tests with verbose output (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers auto --timeout 90 --tb --pytest-args "-vv"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers auto --timeout 90 --tb --pytest-args=-vv
 
 .PHONY: test-fast-serial
 test-fast-serial: .uv ## Run fast tests serially with hang guard (debug parallel issues)
@@ -151,7 +151,7 @@ test-fast-conservative: .uv ## Run fast tests with conservative parallelism (2 w
 .PHONY: test-robust
 test-robust: .uv ## Run tests with enhanced robustness and monitoring
 	@echo "🛡️ Running robust test suite (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers auto --timeout 90 --pytest-args "--maxfail=5 -q"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers auto --timeout 90 --pytest-args="--maxfail=5 -q"
 
 .PHONY: test-stress
 test-stress: .uv ## Run stress tests to identify resource issues
@@ -409,7 +409,7 @@ test-slow-analysis: .uv ## Quick analysis of slow tests without running them
 .PHONY: test-quick-check
 test-quick-check: .uv ## Quick test to verify pytest-asyncio is working (enhanced runner)
 	@echo "🔍 Quick async test via enhanced runner..."
-	CI=1 uv run python scripts/run_targeted_tests.py tests/unit/test_validation.py::test_base_validator_initialization --timeout 60 --tb --fail-fast --pytest-args "-vv"
+	CI=1 uv run python scripts/run_targeted_tests.py tests/unit/test_validation.py::test_base_validator_initialization --timeout 60 --tb --fail-fast --pytest-args=-vv
 
 
 # ------------------------------------------------------------------------------

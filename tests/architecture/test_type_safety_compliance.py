@@ -513,9 +513,14 @@ class TestCodeQualityGates:
             env = os.environ.copy()
             env["SKIP_ARCHITECTURE_TESTS"] = "1"
             env["FAST_ALL"] = "1"
+            make_cmd = ["make", "all"]
+            if os.getenv("GITHUB_ACTIONS") == "true":
+                # Avoid re-running the full fast suite inside the Architecture Tests job.
+                # The PR workflow already runs Fast Tests + Unit Tests as separate jobs.
+                make_cmd.append("TEST_GATE_TARGET=test-quick-check")
             summaries_before = set((flujo_root / "output").glob(FAILURE_SUMMARY_GLOB))
             result = subprocess.run(
-                ["make", "all"],
+                make_cmd,
                 cwd=flujo_root,
                 capture_output=True,
                 text=True,
