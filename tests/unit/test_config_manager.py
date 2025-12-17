@@ -172,6 +172,24 @@ class TestConfigManager:
         finally:
             os.unlink(config_path)
 
+    def test_governance_tool_allowlist_toml_list_is_joined(self, tmp_path, monkeypatch):
+        """TOML list overrides should be normalized to Settings string type."""
+        monkeypatch.delenv("FLUJO_GOVERNANCE_TOOL_ALLOWLIST", raising=False)
+        monkeypatch.delenv("flujo_governance_tool_allowlist", raising=False)
+
+        config_path = tmp_path / "flujo.toml"
+        config_path.write_text(
+            """
+            [settings]
+            governance_tool_allowlist = ["tool_a", " tool_b ", ""]
+            """
+        )
+
+        config_manager = ConfigManager(config_path)
+        settings = config_manager.get_settings()
+
+        assert settings.governance_tool_allowlist == "tool_a,tool_b"
+
     def test_config_file_discovery(self):
         """Test automatic configuration file discovery."""
         config_content = """

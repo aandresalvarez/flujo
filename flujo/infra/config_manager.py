@@ -548,6 +548,10 @@ class ConfigManager:
                         # Environment variable takes precedence, skip TOML override
                         continue
 
+                    # Normalize list-based TOML overrides to match Settings types.
+                    if field_name == "governance_tool_allowlist" and isinstance(toml_value, list):
+                        toml_value = ",".join(str(v).strip() for v in toml_value if str(v).strip())
+
                     # Apply TOML value since no environment variable was found
                     setattr(settings, field_name, toml_value)
 

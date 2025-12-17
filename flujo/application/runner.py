@@ -312,10 +312,18 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
 
                 self._backend_factory = copy.copy(backend_factory)
             except Exception:
+                logger.debug(
+                    "Failed to shallow-copy backend_factory; using provided instance.",
+                    exc_info=True,
+                )
                 self._backend_factory = backend_factory
             try:
                 self._backend_factory._executor_factory = self._executor_factory
             except Exception:
+                logger.debug(
+                    "Failed to assign executor_factory on backend_factory.",
+                    exc_info=True,
+                )
                 pass
 
         combined_hooks: list[HookCallable] = []
