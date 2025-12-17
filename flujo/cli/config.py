@@ -18,7 +18,6 @@ from ..state.backends.memory import InMemoryBackend
 from ..state.backends.base import StateBackend
 from ..infra.config_manager import get_config_manager, get_state_uri
 from ..utils.config import get_settings
-import tempfile
 from .helpers import print_rich_or_typer
 
 
@@ -92,9 +91,9 @@ def load_backend_from_config() -> StateBackend:
         uri = get_state_uri(force_reload=True)
         env_uri_set = False
 
-    # In test environments, prefer an isolated temp SQLite DB when no explicit
-    # FLUJO_STATE_URI env override is provided — even if flujo.toml specifies
-    # a state_uri. This keeps tests hermetic and avoids writing to the repo db.
+    # In test environments, allow opting into an isolated state backend when no explicit
+    # FLUJO_STATE_URI env override is provided. This keeps tests hermetic without
+    # surprising production runs that may set FLUJO_TEST_MODE for debugging.
     if not env_uri_set:
         try:
             settings = get_settings()
@@ -105,7 +104,10 @@ def load_backend_from_config() -> StateBackend:
     else:
         is_test_env = False
     if is_test_env and not env_uri_set:
-        # Respect ephemeral overrides in tests
+        # Only override configured state backends when the caller explicitly opts in.
+        override_dir = os.getenv("FLUJO_TEST_STATE_DIR", "").strip()
+
+        # Respect explicit ephemeral overrides in tests
         try:
             mode = os.getenv("FLUJO_STATE_MODE", "").strip().lower()
             ephemeral = os.getenv("FLUJO_EPHEMERAL_STATE", "").strip().lower() in {
@@ -119,26 +121,11 @@ def load_backend_from_config() -> StateBackend:
         if mode in {"memory", "ephemeral"} or ephemeral:
             return InMemoryBackend()
 
-        override_dir = os.getenv("FLUJO_TEST_STATE_DIR")
-        if override_dir and override_dir.strip():
-            temp_dir = Path(override_dir.strip()).resolve()
+        if override_dir:
+            temp_dir = Path(override_dir).resolve()
             temp_dir.mkdir(parents=True, exist_ok=True)
             return SQLiteBackend(temp_dir / "flujo_ops.db")
-        else:
-            # Fallback to system temp for isolated test DBs
-            base_dir = Path(os.getenv("PYTEST_TMPDIR", tempfile.gettempdir())) / "flujo-test-db"
-            try:
-                worker_id = os.getenv("PYTEST_XDIST_WORKER", "")
-            except Exception:
-                worker_id = ""
-            try:
-                pid = os.getpid()
-            except Exception:
-                pid = 0
-            subdir = f"worker-{worker_id or 'single'}-pid-{pid}"
-            temp_dir = base_dir / subdir
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            return SQLiteBackend(temp_dir / "flujo_ops.db")
+        # Fall through to honoring the configured URI.
 
     # Ephemeral override: allow config/env to force an in-memory backend
     # Accepted forms:
@@ -161,44 +148,30 @@ def load_backend_from_config() -> StateBackend:
         # Fall through to normal resolution
         pass
 
-    # Default fallback with test/CI isolation
+    # Default fallback with optional test isolation
     if uri is None:
         settings = get_settings()
         # Detect explicit test mode to avoid reusing a possibly corrupted repo DB
         is_test_env = settings.test_mode
-        if is_test_env:
-            # Allow override for test DB directory
-            override_dir = os.getenv("FLUJO_TEST_STATE_DIR")
-            if override_dir and override_dir.strip():
-                # Respect explicit test dir exactly (no per-worker subdir)
-                temp_dir = Path(override_dir.strip())
-                temp_dir.mkdir(parents=True, exist_ok=True)
-                uri = f"sqlite:///{(temp_dir / 'flujo_ops.db').as_posix()}"
-                logging.warning(
-                    f"[flujo.config] FLUJO_STATE_URI not set; using isolated test DB '{uri}'"
-                )
-                # Return early since we've constructed the final URI
-                return SQLiteBackend(temp_dir / "flujo_ops.db")
-            else:
-                # Base directory under system temp
-                base_dir = Path(os.getenv("PYTEST_TMPDIR", tempfile.gettempdir())) / "flujo-test-db"
-            # Create a per-worker/per-process subdirectory to avoid cross-test collisions
-            try:
-                worker_id = os.getenv("PYTEST_XDIST_WORKER", "")
-            except Exception:
-                worker_id = ""
-            try:
-                pid = os.getpid()
-            except Exception:
-                pid = 0
-            subdir = f"worker-{worker_id or 'single'}-pid-{pid}"
-            temp_dir = base_dir / subdir
+        override_dir = os.getenv("FLUJO_TEST_STATE_DIR", "").strip() if is_test_env else ""
+        if is_test_env and override_dir:
+            # Respect explicit test dir exactly (no per-worker subdir)
+            temp_dir = Path(override_dir)
             temp_dir.mkdir(parents=True, exist_ok=True)
             uri = f"sqlite:///{(temp_dir / 'flujo_ops.db').as_posix()}"
             logging.warning(
                 f"[flujo.config] FLUJO_STATE_URI not set; using isolated test DB '{uri}'"
             )
-        else:
+            return SQLiteBackend(temp_dir / "flujo_ops.db")
+
+        if is_test_env and not override_dir:
+            logging.warning(
+                "[flujo.config] FLUJO_TEST_MODE is enabled but FLUJO_TEST_STATE_DIR is not set; "
+                "honoring configured/default state backend."
+            )
+            uri = "sqlite:///flujo_ops.db"
+
+        if not is_test_env:
             logging.warning(
                 "[flujo.config] FLUJO_STATE_URI not set, using default 'sqlite:///flujo_ops.db'"
             )
