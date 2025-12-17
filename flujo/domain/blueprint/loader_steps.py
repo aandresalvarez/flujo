@@ -62,7 +62,12 @@ def _make_step_from_blueprint(
         # Note: We validate to BlueprintStepModel for all built-in kinds, including StateMachine.
         if not isinstance(model, BlueprintStepModel):
             if isinstance(model, dict):
-                model = BlueprintStepModel.model_validate(model)
+                try:
+                    model = BlueprintStepModel.model_validate(model)
+                except Exception as e:
+                    raise BlueprintError(
+                        f"Invalid step configuration for kind '{kind_val}': {e}"
+                    ) from e
                 try:
                     if _raw_use_history is not None:
                         setattr(model, "_use_history_extra", _raw_use_history)
