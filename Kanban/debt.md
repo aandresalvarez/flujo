@@ -48,37 +48,31 @@ Rules for updates:
      returns empty.
    - Tracking: PR `#562` — https://github.com/aandresalvarez/flujo/pull/562
 
-### Backlog (not started)
-
-5) Blueprint loader legacy fallback (builder registry vs plugin class loading) (Impact: Medium, Effort: M)
-   - Problem: `_make_step_from_blueprint()` falls back to `flujo.framework.registry.get_step_class`,
-     mixing plugin loading with builder dispatch.
-   - Evidence: `rg -n "get_step_class" flujo/domain/blueprint/loader_steps.py`.
-   - Fix: either deprecate and gate behind an explicit flag, or move plugin resolution behind a dedicated
-     extension hook so the loader has a single responsibility.
-   - Exit: blueprint step construction uses one explicit path; legacy fallback is opt-in/deprecated.
+5) Blueprint loader legacy fallback (builder registry vs framework step class loading) (Impact: Medium, Effort: M)
+   - Problem: `_make_step_from_blueprint()` mixes builder dispatch with a separate fallback path to
+     `flujo.framework.registry.get_step_class`.
+   - Fix: resolve custom `kind` handling via a single builder lookup so the loader doesn’t embed plugin logic.
+   - Exit: `loader_steps.py` no longer imports/uses framework registry; custom kinds still load via
+     `registry.register_step_type(...)`.
+   - Tracking: PR `#566` — https://github.com/aandresalvarez/flujo/pull/566
 
 6) ExecutorCore compatibility shims still exercised internally (Impact: Medium/High, Effort: L)
-   - Problem: internal code paths still call compatibility shims (`execute_simple_step`,
-     `execute_step_compat` / `_execute_simple_step`), increasing the chance of behavioral drift.
-   - Evidence: `rg -n "execute_simple_step|execute_step_compat|_execute_simple_step" flujo/application/core`.
-   - Fix: route all internal execution through `ExecutionFrame` + `ExecutorCore.execute()`; keep wrappers
-     only for external compatibility, then remove in a major release.
-   - Exit: no internal call sites use the shims; shims are deprecated and tested.
+   - Problem: loop execution paths call `_execute_simple_step` internally, bypassing the standard `execute_flow`
+     dispatch/caching/persistence behavior.
+   - Fix: route loop body execution through `ExecutionFrame` + `ExecutorCore.execute()` for both complex and
+     simple body steps.
+   - Exit: `rg -n "execute_simple_step|_execute_simple_step" flujo/application/core` shows only shim definitions.
+   - Tracking: PR `#567` — https://github.com/aandresalvarez/flujo/pull/567
 
-7) Telemetry/test helpers read env vars directly at import time (Impact: Low, Effort: M)
-   - Problem: `flujo/infra/telemetry.py` reads `CI`/`FLUJO_TEST_MODE` at import time; `flujo/cli/test_setup.py`
-     guards on `PYTEST_CURRENT_TEST`/`CI`.
-   - Evidence: `rg -n "os\\.getenv\\(\\\"CI\\\"\\)|PYTEST_CURRENT_TEST" flujo/infra/telemetry.py flujo/cli/test_setup.py`.
-   - Fix: evaluate whether this can be deferred until after settings are available without introducing
-     import cycles; otherwise document as a bootstrap exception.
-   - Exit: either moved to settings-based init, or explicitly documented as intentional.
+7) Telemetry reads env vars at import time (Impact: Low, Effort: M)
+   - Problem: `flujo/infra/telemetry.py` reads `CI` at module import time to set fallback log level.
+   - Fix: set CI/test-mode fallback log level inside `init_telemetry()` after settings are available.
+   - Exit: `rg -n "os\\.getenv\\(\\\"CI\\\"\\)" flujo/infra/telemetry.py` shows no module-scope env reads.
+   - Tracking: PR `#568` — https://github.com/aandresalvarez/flujo/pull/568
 
-8) Deprecated global agents module hook (Impact: Low, Effort: S)
-   - Problem: `flujo/agents/recipes.py` uses module `__getattr__` to raise helpful errors for removed globals.
-   - Evidence: `rg -n "def __getattr__" flujo/agents/recipes.py`.
-   - Fix: keep until the next major release; then remove along with other deprecated surfaces.
-   - Exit: removed in a major cleanup with release notes.
+### Backlog (not started)
+
+- None (pending merge of in-progress PRs)
 
 ## Resolved / Re-scoped (keep this section honest)
 
@@ -111,3 +105,8 @@ Rules for updates:
 
 9) CI architecture gates no longer re-run full suites inside the architecture job
    - Evidence: `rg -n "GITHUB_ACTIONS" tests/architecture` shows CI-only skips/overrides.
+
+10) Deprecated global agents module hook (intentionally retained until next major release)
+   - Rationale: We keep module `__getattr__` in `flujo/agents/recipes.py` to raise clear upgrade errors for
+     removed globals. This is a deprecation UX shim and not a runtime hot path (only triggers on missing attrs).
+   - Evidence: `rg -n "def __getattr__" flujo/agents/recipes.py` shows the intentional deprecation hook.
