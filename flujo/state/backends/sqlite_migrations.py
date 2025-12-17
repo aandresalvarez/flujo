@@ -173,6 +173,73 @@ async def _migrate_0_to_1(db: aiosqlite.Connection) -> None:
         pass
 
 
+async def _schema_needs_repair_v1(db: aiosqlite.Connection) -> bool:
+    """Return True when a v1 database is missing required columns.
+
+    Some tests (and real-world corruption cases) can drop individual columns while
+    leaving `PRAGMA user_version` untouched. Since `CREATE TABLE IF NOT EXISTS`
+    does not retrofit missing columns, we need a lightweight "repair" check even
+    when the schema version is already current.
+    """
+
+    required_by_table: dict[str, set[str]] = {
+        "runs": {
+            "run_id",
+            "pipeline_id",
+            "pipeline_name",
+            "pipeline_version",
+            "status",
+            "created_at",
+            "updated_at",
+            "execution_time_ms",
+            "memory_usage_mb",
+            "total_steps",
+            "error_message",
+        },
+        "workflow_state": {
+            "run_id",
+            "pipeline_id",
+            "pipeline_name",
+            "pipeline_version",
+            "current_step_index",
+            "pipeline_context",
+            "last_step_output",
+            "step_history",
+            "status",
+            "created_at",
+            "updated_at",
+            "total_steps",
+            "error_message",
+            "execution_time_ms",
+            "memory_usage_mb",
+            "metadata",
+            "is_background_task",
+            "parent_run_id",
+            "task_id",
+            "background_error",
+        },
+        "steps": {
+            "id",
+            "run_id",
+            "step_name",
+            "step_index",
+            "status",
+            "output",
+            "raw_response",
+            "cost_usd",
+            "token_counts",
+            "execution_time_ms",
+            "created_at",
+        },
+    }
+
+    for table, required in required_by_table.items():
+        cols = await _get_table_columns(db, table)
+        if cols and not required.issubset(cols):
+            return True
+    return False
+
+
 async def apply_sqlite_migrations(db: aiosqlite.Connection) -> None:
     """Apply versioned SQLite schema migrations using PRAGMA user_version."""
     current = await _get_user_version(db)
@@ -180,6 +247,9 @@ async def apply_sqlite_migrations(db: aiosqlite.Connection) -> None:
         await _migrate_0_to_1(db)
         await _set_user_version(db, 1)
         current = 1
+    elif current == 1 and await _schema_needs_repair_v1(db):
+        # Self-heal missing columns even when user_version is already current.
+        await _migrate_0_to_1(db)
     if current != LATEST_SCHEMA_VERSION:
         # Forward compatibility: do not silently continue on unknown future schema.
         raise RuntimeError(

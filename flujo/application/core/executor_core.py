@@ -60,6 +60,7 @@ from .step_policies import (
     ConditionalStepExecutor,
     DynamicRouterStepExecutor,
     HitlStepExecutor,
+    ImportStepExecutor,
     LoopStepExecutor,
     ParallelStepExecutor,
     PluginRedirector,
@@ -126,6 +127,14 @@ from .executor_helpers import _CACHE_OVERRIDE
 
 if TYPE_CHECKING:
     from .state_manager import StateManager
+    from .agent_orchestrator import AgentOrchestrator
+    from .conditional_orchestrator import ConditionalOrchestrator
+    from .hitl_orchestrator import HitlOrchestrator
+    from .import_orchestrator import ImportOrchestrator
+    from .loop_orchestrator import LoopOrchestrator
+    from .pipeline_orchestrator import PipelineOrchestrator
+    from .validation_orchestrator import ValidationOrchestrator
+    from .policy_registry import PolicyCallable
     from ...type_definitions.common import JSONObject
 
 
@@ -141,6 +150,33 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     - Proper isolation/merging of context across branches and retries
     - Centralized telemetry and usage metering
     """
+
+    timeout_runner: TimeoutRunner
+    unpacker: AgentResultUnpacker
+    plugin_redirector: PluginRedirector
+    validator_invoker: ValidatorInvoker
+
+    simple_step_executor: SimpleStepExecutor
+    agent_step_executor: AgentStepExecutor
+    loop_step_executor: LoopStepExecutor
+    parallel_step_executor: ParallelStepExecutor
+    conditional_step_executor: ConditionalStepExecutor
+    dynamic_router_step_executor: DynamicRouterStepExecutor
+    hitl_step_executor: HitlStepExecutor
+    cache_step_executor: CacheStepExecutor
+    import_step_executor: ImportStepExecutor
+
+    policy_registry: PolicyRegistry
+    _dispatcher: ExecutionDispatcher
+    _policy_default_step: "PolicyCallable"
+
+    _agent_orchestrator: "AgentOrchestrator"
+    _conditional_orchestrator: "ConditionalOrchestrator"
+    _hitl_orchestrator: "HitlOrchestrator"
+    _loop_orchestrator: "LoopOrchestrator"
+    _pipeline_orchestrator: "PipelineOrchestrator"
+    _import_orchestrator: "ImportOrchestrator"
+    _validation_orchestrator: "ValidationOrchestrator"
 
     # Context variables moved to respective manager classes
 
@@ -282,8 +318,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._hydration_manager.set_telemetry(self._telemetry)
         self._background_task_manager = deps_obj.background_task_manager
         self._bg_task_handler = deps_obj.bg_task_handler
-        if state_manager is not None:
-            self._bg_task_handler.state_manager = state_manager
         self.state_manager = state_manager
         self._context_update_manager = deps_obj.context_update_manager
         self._agent_orchestrator = deps_obj.agent_orchestrator
@@ -375,6 +409,20 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._shadow_evaluator: ShadowEvaluator | None = getattr(deps_obj, "shadow_evaluator", None)
 
         # Initialize orchestrators that depend on executors registered above
+
+    @property
+    def state_manager(self) -> "StateManager[DomainBaseModel] | None":
+        return getattr(self, "_state_manager", None)
+
+    @state_manager.setter
+    def state_manager(self, value: "StateManager[DomainBaseModel] | None") -> None:
+        object.__setattr__(self, "_state_manager", value)
+        try:
+            bg_handler = getattr(self, "_bg_task_handler", None)
+            if bg_handler is not None:
+                bg_handler.state_manager = value
+        except Exception:
+            pass
 
     def _get_cache_locks_lock(self) -> asyncio.Lock:
         """Lazily create the cache locks lock on first access."""
