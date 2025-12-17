@@ -181,6 +181,17 @@ class Settings(BaseSettings):
         ),
         description="Optional module path (pkg.mod:Class) to load a GovernancePolicy implementation.",
     )
+    governance_tool_allowlist: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "FLUJO_GOVERNANCE_TOOL_ALLOWLIST",
+            "flujo_governance_tool_allowlist",
+        ),
+        description=(
+            "Comma-separated allowlist of tool/skill IDs allowed under governance; "
+            "empty means allow all."
+        ),
+    )
     sandbox: SandboxSettings = SandboxSettings()
     memory_indexing_enabled: bool = Field(
         default=False,

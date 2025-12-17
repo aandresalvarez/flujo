@@ -1,4 +1,6 @@
 from __future__ import annotations
+# NOTE: This module contains experimental/dev-only CLI commands and is not yet
+# fully typed under mypy --strict.
 # mypy: ignore-errors
 
 from pathlib import Path

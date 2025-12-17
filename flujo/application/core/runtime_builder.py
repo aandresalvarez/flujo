@@ -452,9 +452,16 @@ class FlujoRuntimeBuilder:
             pii_scrub = bool(getattr(settings, "governance_pii_scrub", False))
             pii_strong = bool(getattr(settings, "governance_pii_strong", False))
             tool_allowlist_raw = getattr(settings, "governance_tool_allowlist", ())
-            tool_allowlist = (
-                tuple(tool_allowlist_raw) if isinstance(tool_allowlist_raw, (list, tuple)) else ()
-            )
+            if isinstance(tool_allowlist_raw, str):
+                tool_allowlist = tuple(
+                    part.strip() for part in tool_allowlist_raw.split(",") if part.strip()
+                )
+            elif isinstance(tool_allowlist_raw, (list, tuple)):
+                tool_allowlist = tuple(
+                    str(item).strip() for item in tool_allowlist_raw if str(item).strip()
+                )
+            else:
+                tool_allowlist = ()
             extras: list[GovernancePolicy] = []
             if pii_scrub:
                 extras.append(PIIScrubbingPolicy(strong=pii_strong))

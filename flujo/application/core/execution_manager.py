@@ -310,7 +310,6 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                                 except _PNC:
                                     # Let runner handle persistence and re-raise
                                     raise
-                                    pass
                                 # Attempt recovery when failure is due to missing terminal outcome
                                 try:
                                     fbtxt = (step_result.feedback or "").lower()

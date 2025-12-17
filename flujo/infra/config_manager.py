@@ -156,6 +156,7 @@ class SettingsOverrides(BaseModel):
     # Governance and shadow eval overrides
     governance_mode: Optional[str] = None
     governance_policy_module: Optional[str] = None
+    governance_tool_allowlist: Optional[list[str]] = None
     shadow_eval_sink: Optional[str] = None
 
 

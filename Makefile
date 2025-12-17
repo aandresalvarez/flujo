@@ -126,12 +126,12 @@ test-srp: .uv ## Run Single Responsibility Principle compliance tests
 .PHONY: test-fast
 test-fast: .uv ## Run fast tests in parallel with hang guards (excludes slow, veryslow, serial, and benchmark tests)
 	@echo "⚡ Running fast tests (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers 8 --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers auto --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
 
 .PHONY: test-fast-verbose
 test-fast-verbose: .uv ## Run fast tests with verbose output for debugging
 	@echo "🔍 Running fast tests with verbose output (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers 8 --timeout 90 --tb --pytest-args "-vv"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers auto --timeout 90 --tb --pytest-args "-vv"
 
 .PHONY: test-fast-serial
 test-fast-serial: .uv ## Run fast tests serially with hang guard (debug parallel issues)
@@ -146,7 +146,7 @@ test-fast-conservative: .uv ## Run fast tests with conservative parallelism (2 w
 .PHONY: test-robust
 test-robust: .uv ## Run tests with enhanced robustness and monitoring
 	@echo "🛡️ Running robust test suite (enhanced runner)..."
-	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers 8 --timeout 90 --pytest-args "--maxfail=5 -q"
+	CI=1 uv run python scripts/run_targeted_tests.py --full-suite --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "$(FAST_KEXPR)" --workers auto --timeout 90 --pytest-args "--maxfail=5 -q"
 
 .PHONY: test-stress
 test-stress: .uv ## Run stress tests to identify resource issues

@@ -427,9 +427,9 @@ def run_step_validations(
                                             parent_path = ""
                                             child_path = ""
                                         for path in (parent_path, child_path):
-                                            if parent_path:
-                                                produced_paths.add(parent_path)
-                                                available_roots.add(_root_key(parent_path))
+                                            if path:
+                                                produced_paths.add(path)
+                                                available_roots.add(_root_key(path))
                     except Exception:
                         pass
 

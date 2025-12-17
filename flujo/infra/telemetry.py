@@ -21,7 +21,10 @@ _initialized = False
 
 _fallback_logger = logging.getLogger("flujo")
 # Reduce log verbosity in CI/tests to improve performance determinism
-_in_ci_or_tests = bool(os.getenv("CI") == "true" or os.getenv("FLUJO_TEST_MODE"))
+# NOTE: We intentionally use os.getenv() at import time here to avoid bootstrap/circular
+# imports with config_manager/get_settings during early initialization.
+_test_mode_raw = str(os.getenv("FLUJO_TEST_MODE", "") or "").strip().lower()
+_in_ci_or_tests = bool(os.getenv("CI") == "true" or _test_mode_raw in {"1", "true", "yes", "on"})
 _fallback_logger.setLevel(logging.WARNING if _in_ci_or_tests else logging.INFO)
 # Always propagate so external handlers (caplog, app) can capture logs
 _fallback_logger.propagate = True

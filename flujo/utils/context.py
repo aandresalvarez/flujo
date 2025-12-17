@@ -9,9 +9,15 @@ from typing import Any, Literal, Optional, Type, TypeVar
 import logging
 import os
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError as PydanticValidationError
 from flujo.domain.dsl.step import MergeStrategy
-from flujo.exceptions import ConfigurationError
+from flujo.exceptions import (
+    ConfigurationError,
+    InfiniteRedirectError,
+    PausedException,
+    PipelineAbortSignal,
+    ValidationError as FlujoValidationError,
+)
 
 logger = logging.getLogger(__name__)
 _VERBOSE_DEBUG: bool = bool(os.getenv("FLUJO_VERBOSE_CONTEXT_DEBUG"))
@@ -539,7 +545,8 @@ def safe_merge_context_updates(
                         TypeError,
                         ValueError,
                         AttributeError,
-                        ValidationError,
+                        PydanticValidationError,
+                        FlujoValidationError,
                     ) as e:
                         # Enhanced error handling for loop context updates
                         error_msg: str = f"Failed to update field '{field_name}': {e}"
@@ -547,7 +554,13 @@ def safe_merge_context_updates(
                         validation_errors.append(error_msg)
                         continue
 
-            except (AttributeError, TypeError, ValidationError, ValueError) as e:
+            except (
+                AttributeError,
+                TypeError,
+                PydanticValidationError,
+                FlujoValidationError,
+                ValueError,
+            ) as e:
                 # Skip fields that can't be accessed or set
                 skip_error_msg: str = f"Skipping field '{field_name}' due to access/set error: {e}"
                 if _VERBOSE_DEBUG:
@@ -568,6 +581,12 @@ def safe_merge_context_updates(
         else:
             return True
 
+    except (
+        PausedException,
+        PipelineAbortSignal,
+        InfiniteRedirectError,
+    ):
+        raise
     except ConfigurationError as e:
         # Bubble up to policy enforcement to fail parallel step with clear message
         logger.error(f"ConfigurationError encountered during context merge: {e}")
@@ -621,7 +640,13 @@ def safe_context_field_update(context: Any, field_name: str, new_value: Any) -> 
             logger.debug(f"Field '{field_name}' unchanged, skipping update")
             return True
 
-    except (AttributeError, TypeError, ValidationError, ValueError) as e:
+    except (
+        AttributeError,
+        TypeError,
+        PydanticValidationError,
+        FlujoValidationError,
+        ValueError,
+    ) as e:
         logger.error("Failed to update field '" + field_name + "': " + str(e))
         return False
 

@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any, Callable, List, Optional, TYPE_CHECKING
 import inspect
 import functools
-import os
 
 from flujo.type_definitions.common import JSONObject
 from flujo.exceptions import ConfigurationError
+from flujo.infra.settings import get_settings
 
 # Domain interface adapter to avoid leaking infra into domain logic
 if TYPE_CHECKING:
@@ -47,7 +47,7 @@ class SkillRegistry(SkillRegistryProtocol):
         Notes:
         - This wrapper preserves the original signature via __signature__ to avoid
           breaking tool schema generation in pydantic-ai.
-        - Enforcement is configured via `FLUJO_GOVERNANCE_TOOL_ALLOWLIST` (comma-separated).
+        - Enforcement is configured via `Settings.governance_tool_allowlist` (TOML/env).
         """
         if not callable(obj):
             return obj
@@ -56,10 +56,13 @@ class SkillRegistry(SkillRegistryProtocol):
         except Exception:
             pass
 
-        allowlist_raw = (os.getenv("FLUJO_GOVERNANCE_TOOL_ALLOWLIST", "") or "").strip()
-        if allowlist_raw == "":
+        allowlist_raw = getattr(get_settings(), "governance_tool_allowlist", ())
+        if not allowlist_raw:
             return obj
-        allowed = {p.strip() for p in allowlist_raw.split(",") if p.strip()}
+        if isinstance(allowlist_raw, str):
+            allowed = {p.strip() for p in allowlist_raw.split(",") if p.strip()}
+        else:
+            allowed = {str(p).strip() for p in allowlist_raw if str(p).strip()}
         if not allowed:
             return obj
 

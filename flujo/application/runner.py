@@ -303,8 +303,20 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
         self._backend_factory = backend_factory or BackendFactory(self._executor_factory)
         # If a custom backend_factory is supplied, align its executor factory so that any
         # internally created executors also receive the configured state_providers.
+        #
+        # Avoid mutating a caller-provided BackendFactory instance in-place so the same
+        # factory can be safely reused across multiple Flujo runners.
         if backend_factory is not None and hasattr(self._backend_factory, "_executor_factory"):
-            self._backend_factory._executor_factory = self._executor_factory
+            try:
+                import copy
+
+                self._backend_factory = copy.copy(backend_factory)
+            except Exception:
+                self._backend_factory = backend_factory
+            try:
+                self._backend_factory._executor_factory = self._executor_factory
+            except Exception:
+                pass
 
         combined_hooks: list[HookCallable] = []
         combined_hooks.extend(pipeline_hooks)

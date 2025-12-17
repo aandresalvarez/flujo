@@ -562,7 +562,7 @@ class TestQualityGates:
                     "-x",
                     "--tb=short",
                     "-m",
-                    "not serial",
+                    "not slow and not veryslow and not serial and not benchmark",
                     "tests/unit/",
                 ],
                 cwd=flujo_root,
