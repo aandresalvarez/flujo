@@ -14,7 +14,7 @@ class SelfRefModel(BaseModel):
     value: int
     next: "SelfRefModel | None" = None
 
-    model_config = {"arbitrary_types_allowed": True}
+    # model_config inherited from BaseModel
 
 
 SelfRefModel.model_rebuild()

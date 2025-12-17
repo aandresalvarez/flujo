@@ -8,9 +8,6 @@ from typing import Any, Callable, Optional, Protocol, TypeAlias, TypeVar, runtim
 
 from flujo.type_definitions.common import JSONObject
 
-StepInT = TypeVar("StepInT")
-StepOutT = TypeVar("StepOutT")
-
 
 @runtime_checkable
 class PipelineContextLike(Protocol):
@@ -19,11 +16,45 @@ class PipelineContextLike(Protocol):
     def model_dump(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
+@runtime_checkable
+class RunnerLike(Protocol):
+    """Abstract interface for a runner (Flujo)."""
+
+    def as_step(
+        self,
+        name: str,
+        *,
+        inherit_context: bool = True,
+        **kwargs: Any,
+    ) -> Any: ...
+
+
+RunnerFactory: TypeAlias = Callable[[Any], RunnerLike]
+_default_runner_factory: RunnerFactory | None = None
+
+
+def set_default_runner_factory(factory: RunnerFactory) -> None:
+    global _default_runner_factory
+    _default_runner_factory = factory
+
+
+def get_runner_factory() -> RunnerFactory | None:
+    return _default_runner_factory
+
+
 StepLike: TypeAlias = Any
 PipelineLike: TypeAlias = Any
 
 
-__all__ = ["PipelineContextLike", "StepLike", "PipelineLike"]
+__all__ = [
+    "PipelineContextLike",
+    "RunnerLike",
+    "RunnerFactory",
+    "set_default_runner_factory",
+    "get_runner_factory",
+    "StepLike",
+    "PipelineLike",
+]
 
 # ---- Providers / infra-light contracts ----
 

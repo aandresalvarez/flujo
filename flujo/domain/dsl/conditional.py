@@ -69,7 +69,7 @@ class ConditionalStep(Step[object, object], Generic[TContext]):
         description="Maps branch output to ConditionalStep output.",
     )
 
-    model_config = {"arbitrary_types_allowed": True}
+    # model_config inherited from BaseModel
 
     @model_validator(mode="before")
     @classmethod

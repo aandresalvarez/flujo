@@ -2,18 +2,7 @@
 
 from __future__ import annotations
 
-import inspect
-
-from typing import (
-    AsyncIterator,
-    Awaitable,
-    Generic,
-    Optional,
-    Protocol,
-    TypeVar,
-    Literal,
-    TypeGuard,
-)
+from typing import AsyncIterator, Generic, Literal, Optional, TypeVar
 
 from flujo.domain.backends import ExecutionBackend, StepExecutionRequest
 from flujo.domain.dsl.step import Step
@@ -31,7 +20,6 @@ from flujo.domain.models import (
 )
 from flujo.domain.models import Paused as _Paused
 from flujo.domain.models import Quota
-from flujo.domain.models import UsageEstimate, QuotaExceededError
 from flujo.domain.resources import AppResources
 from flujo.exceptions import (
     ContextInheritanceError,
@@ -48,28 +36,6 @@ from flujo.domain.types import HookCallable
 from flujo.application.core.hook_dispatcher import _dispatch_hook
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
-
-
-class LegacyStepExecutor(Protocol):
-    """Callable adapter for legacy step executors."""
-
-    def __call__(
-        self,
-        step: Step[object, object],
-        data: object,
-        context: BaseModel | None,
-        resources: AppResources | None,
-        *,
-        stream: bool = False,
-    ) -> AsyncIterator[object] | Awaitable[object]: ...
-
-
-def _is_async_iterator(obj: object) -> TypeGuard[AsyncIterator[object]]:
-    return hasattr(obj, "__aiter__")
-
-
-def _is_awaitable(obj: object) -> TypeGuard[Awaitable[object]]:
-    return inspect.isawaitable(obj)
 
 
 class StepCoordinator(Generic[ContextT]):
@@ -91,7 +57,6 @@ class StepCoordinator(Generic[ContextT]):
         backend: Optional[ExecutionBackend] = None,  # ✅ NEW: Receive the backend to call.
         *,
         stream: bool = False,
-        step_executor: "LegacyStepExecutor | None" = None,  # Legacy parameter
         usage_limits: Optional[UsageLimits] = None,  # ✅ NEW: Usage limits for step execution
         quota: Optional[Quota] = None,
     ) -> AsyncIterator[object]:
@@ -133,86 +98,10 @@ class StepCoordinator(Generic[ContextT]):
 
         # Execute step with telemetry
         step_result = None
-        legacy_usage = UsageEstimate(cost_usd=0.0, tokens=0)
-
-        def _accumulate_legacy_usage(sr: StepResult) -> None:
-            try:
-                legacy_usage.cost_usd += float(getattr(sr, "cost_usd", 0.0) or 0.0)
-            except Exception:
-                pass
-            try:
-                legacy_usage.tokens += int(getattr(sr, "token_counts", 0) or 0)
-            except Exception:
-                pass
-
-        def _enforce_legacy_quota_if_needed() -> None:
-            if quota is None:
-                return
-            if legacy_usage.cost_usd <= 0.0 and legacy_usage.tokens <= 0:
-                return
-            try:
-                quota.reclaim(UsageEstimate(cost_usd=0.0, tokens=0), legacy_usage)
-            except QuotaExceededError as e:
-                try:
-                    from flujo.application.core.usage_messages import format_reservation_denial
-
-                    denial = format_reservation_denial(
-                        UsageEstimate(cost_usd=e.extra_cost_usd, tokens=e.extra_tokens),
-                        usage_limits,
-                        remaining=(e.remaining_cost_usd, e.remaining_tokens),
-                    )
-                    raise UsageLimitExceededError(denial.human) from None
-                except UsageLimitExceededError:
-                    raise
-                except Exception:
-                    raise UsageLimitExceededError("Insufficient quota") from None
 
         with telemetry.logfire.span(step.name) as span:
             try:
-                # ✅ UPDATE: Support both new backend approach and legacy step_executor
-                # Prioritize step_executor for backward compatibility with tests
-                if step_executor is not None:
-                    # Legacy approach: use step_executor
-                    # Handle both async generators and regular async functions
-                    legacy_result = step_executor(
-                        step, data, context, self.resources, stream=stream
-                    )
-                    if _is_async_iterator(legacy_result):
-                        async for item in legacy_result:
-                            # Preserve legacy behavior for custom executors
-                            if isinstance(item, StepOutcome):
-                                if isinstance(item, Success):
-                                    step_result = item.step_result
-                                    if isinstance(step_result, StepResult):
-                                        _accumulate_legacy_usage(step_result)
-                                yield item
-                            elif isinstance(item, StepResult):
-                                step_result = item
-                                _accumulate_legacy_usage(step_result)
-                                yield item
-                            else:
-                                # Pass through raw chunks/strings unchanged
-                                yield item
-                        _enforce_legacy_quota_if_needed()
-                    else:
-                        if _is_awaitable(legacy_result):
-                            item = await legacy_result
-                        else:
-                            item = legacy_result
-                        if isinstance(item, StepOutcome):
-                            if isinstance(item, Success):
-                                step_result = item.step_result
-                                if isinstance(step_result, StepResult):
-                                    _accumulate_legacy_usage(step_result)
-                            yield item
-                        elif isinstance(item, StepResult):
-                            step_result = item
-                            _accumulate_legacy_usage(step_result)
-                            yield item
-                        else:
-                            yield item
-                        _enforce_legacy_quota_if_needed()
-                elif backend is not None:
+                if backend is not None:
                     # New approach: call backend directly
                     # Only enable streaming when the agent actually supports it
                     has_agent_stream = hasattr(step, "agent") and hasattr(
@@ -557,7 +446,7 @@ class StepCoordinator(Generic[ContextT]):
                                         step_result=synthesized,
                                     )
                 else:
-                    raise ValueError("Either backend or step_executor must be provided")
+                    raise ValueError("backend must be provided")
 
             except PausedException as e:
                 # Handle pause for human input; mark context and stop executing current step

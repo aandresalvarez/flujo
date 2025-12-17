@@ -7,12 +7,13 @@ from ..base_model import BaseModel as FlujoBaseModel
 from ..dsl import Step
 from ..dsl.step import BranchFailureStrategy, MergeStrategy
 from .loader_models import BlueprintError
+from ...utils.scratchpad import is_merge_scratchpad
 
 
 def _normalize_merge_strategy(value: Optional[str]) -> MergeStrategy:
     if value is None:
         return MergeStrategy.CONTEXT_UPDATE
-    if str(value).lower() == "merge_scratchpad":
+    if is_merge_scratchpad(value):
         raise BlueprintError(
             "Merge strategy 'merge_scratchpad' is not allowed (scratchpad banned)."
         )

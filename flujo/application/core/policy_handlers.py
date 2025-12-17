@@ -9,9 +9,11 @@ from ...domain.dsl.import_step import ImportStep
 from ...domain.dsl.loop import LoopStep
 from ...domain.dsl.parallel import ParallelStep
 from ...domain.dsl.step import HumanInTheLoopStep, Step
-from ...domain.models import BaseModel, Failure, StepOutcome, StepResult, Success
+from ...domain.models import BaseModel, Failure, PipelineResult, StepOutcome, StepResult, Success
+from ...exceptions import UsageLimitExceededError
 from ...infra import telemetry as _telemetry
 from ...steps.cache_step import CacheStep
+from .quota_manager import build_root_quota
 from .policy_registry import PolicyCallable, PolicyRegistry, StepPolicy
 from .types import ExecutionFrame, TContext_w_Scratch
 from .type_guards import normalize_outcome
@@ -144,18 +146,50 @@ class PolicyHandlers(Generic[TContext_w_Scratch]):
         from .policies.agent_policy import DefaultAgentStepExecutor as _DefaultASE
 
         if override_executor is not None and not isinstance(override_executor, _DefaultASE):
-            res_any = await override_executor.execute(
-                self._core,
-                step,
-                frame.data,
-                frame.context,
-                frame.resources,
-                frame.limits,
-                frame.stream,
-                frame.on_chunk,
-                cache_key,
-                fb_depth_norm,
+            quota_token: object | None = None
+            estimate = _DefaultASE()._estimate_usage(
+                step, frame.data, frame.context, core=self._core
             )
+            try:
+                current_quota = None
+                try:
+                    current_quota = self._core._get_current_quota()
+                except Exception:
+                    current_quota = None
+                if current_quota is None and frame.limits is not None:
+                    current_quota = build_root_quota(frame.limits)
+                    quota_token = self._core._set_current_quota(current_quota)
+
+                if current_quota is not None and not current_quota.reserve(estimate):
+                    try:
+                        from .usage_messages import format_reservation_denial
+                    except Exception:  # pragma: no cover
+                        from flujo.application.core.usage_messages import format_reservation_denial
+
+                    rem_cost, rem_tokens = current_quota.get_remaining()
+                    denial = format_reservation_denial(
+                        estimate, frame.limits, remaining=(rem_cost, rem_tokens)
+                    )
+                    raise UsageLimitExceededError(denial.human)
+
+                res_any = await override_executor.execute(
+                    self._core,
+                    step,
+                    frame.data,
+                    frame.context,
+                    frame.resources,
+                    frame.limits,
+                    frame.stream,
+                    frame.on_chunk,
+                    cache_key,
+                    fb_depth_norm,
+                )
+            finally:
+                if quota_token is not None:
+                    try:
+                        self._core._reset_current_quota(quota_token)
+                    except Exception:
+                        pass
         else:
             # Route via AgentOrchestrator to run retries/validation/plugins/fallback.
             orchestrator = getattr(self._core, "_agent_orchestrator", None)
@@ -175,6 +209,38 @@ class PolicyHandlers(Generic[TContext_w_Scratch]):
                 fallback_depth=fb_depth_norm,
             )
         res_outcome = normalize_outcome(res_any, step_name=getattr(step, "name", "<unnamed>"))
+        if override_executor is not None and not isinstance(override_executor, _DefaultASE):
+            # Ensure usage limits are enforced even when the agent execution is overridden in tests/hooks.
+            sr = None
+            if isinstance(res_outcome, Success):
+                sr = res_outcome.step_result
+            elif isinstance(res_outcome, Failure):
+                sr = res_outcome.step_result
+            if sr is None:
+                return res_outcome
+            cost_usd = float(getattr(sr, "cost_usd", 0.0) or 0.0)
+            tokens = int(getattr(sr, "token_counts", 0) or 0)
+            quota_mgr = getattr(self._core, "_quota_manager", None)
+            reconcile_fn = getattr(quota_mgr, "reconcile", None)
+            if callable(reconcile_fn):
+                from ...domain.models import UsageEstimate
+
+                try:
+                    reconcile_fn(
+                        estimate,
+                        UsageEstimate(cost_usd=cost_usd, tokens=tokens),
+                        limits=frame.limits,
+                    )
+                except UsageLimitExceededError as e:
+                    # Attach the breaching StepResult so ExecutionManager can include it in history
+                    # before surfacing the exception to callers/tests.
+                    if getattr(e, "result", None) is None:
+                        e.result = PipelineResult(
+                            step_history=[sr],
+                            total_cost_usd=cost_usd,
+                            total_tokens=tokens,
+                        )
+                    raise
         await self._core._agent_orchestrator.cache_success_if_applicable(
             core=self._core,
             step=step,

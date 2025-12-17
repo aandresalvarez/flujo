@@ -18,7 +18,7 @@ from typing import (
 )
 from flujo.type_definitions.common import JSONObject
 from threading import RLock
-from pydantic import Field, ConfigDict, field_validator, PrivateAttr, model_validator
+from pydantic import Field, ConfigDict, field_validator, model_validator, PrivateAttr
 from datetime import datetime, timezone
 import uuid
 from enum import Enum
@@ -252,7 +252,7 @@ class PipelineResult(BaseModel, Generic[ContextT]):
     # Legacy top-level success indicator expected by some tests and integrations
     success: bool = True
 
-    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True, "extra": "allow"}
+    model_config: ClassVar[ConfigDict] = {"extra": "allow"}
 
     @property
     def status(self) -> str:
@@ -550,7 +550,7 @@ class ExecutedCommandLog(BaseModel):
     generated_command: Any
     execution_result: Any
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
+    # model_config inherited from BaseModel
 
 
 class ImportArtifacts(BaseModel, MutableMapping[str, Any]):
@@ -571,7 +571,6 @@ class ImportArtifacts(BaseModel, MutableMapping[str, Any]):
     extras: dict[str, Any] = Field(default_factory=dict)
 
     model_config: ClassVar[ConfigDict] = {
-        "arbitrary_types_allowed": True,
         "extra": "allow",
     }
 
@@ -673,6 +672,18 @@ class PipelineContext(BaseModel):
     while retaining the built in ones.
     """
 
+    model_config: ClassVar[ConfigDict] = ConfigDict(
+        extra="allow",
+        validate_assignment=True,
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_removed_root_keys(cls, data: object) -> object:
+        if isinstance(data, dict) and "scratchpad" in data:
+            raise ValueError("'scratchpad' has been removed; use typed context fields instead.")
+        return data
+
     run_id: str = Field(default_factory=lambda: f"run_{uuid.uuid4().hex}")
     initial_prompt: Optional[str] = None
     # Structured slot for import-related artifacts to avoid scratchpad usage.
@@ -691,7 +702,8 @@ class PipelineContext(BaseModel):
     )
     # Utility counter used by test hooks; kept in base context for simplicity
     call_count: int = 0
-    memory_store: "VectorStoreProtocol | None" = Field(default=None, exclude=True)
+    # Runtime-only handle; excluded from serialization/validation.
+    memory_store: VectorStoreProtocol | None = Field(default=None, exclude=True)
     _sandbox: SandboxProtocol | None = PrivateAttr(default=None)
 
     # -------------------------------------------------------------------------
@@ -784,26 +796,11 @@ class PipelineContext(BaseModel):
         description="Evaluation checklist (Self-Correction pattern).",
     )
 
-    model_config: ClassVar[ConfigDict] = {
-        "arbitrary_types_allowed": True,
-        "validate_assignment": True,
-    }
-
     def get(self, key: str, default: Any = None) -> Any:  # pragma: no cover - small helper
         try:
             return getattr(self, key)
         except Exception:
             return default
-
-    @model_validator(mode="before")
-    @classmethod
-    def _reject_scratchpad(cls, data: Any) -> Any:
-        """Reject legacy scratchpad payloads; field has been removed."""
-        if isinstance(data, dict) and "scratchpad" in data:
-            raise ValueError(
-                "scratchpad has been removed; migrate to typed fields (status, step_outputs, import_artifacts, etc.)."
-            )
-        return data
 
     @property
     def steps(self) -> JSONObject:

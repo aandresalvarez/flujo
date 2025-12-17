@@ -1,6 +1,5 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
-# mypy: ignore-errors
 
 from ._shared import (  # noqa: F401
     Awaitable,
@@ -57,10 +56,13 @@ async def prepare_agent_execution(
     limits = frame.limits
     stream = frame.stream
     on_chunk = frame.on_chunk
-    cache_key = None
+    cache_key: str | None = None
     try:
         if getattr(core, "_enable_cache", False):
-            cache_key = core._cache_key(frame)
+            cache_key_fn = getattr(core, "_cache_key", None)
+            if callable(cache_key_fn):
+                maybe_key = cache_key_fn(frame)
+                cache_key = maybe_key if isinstance(maybe_key, str) else None
     except Exception:
         cache_key = None
     try:

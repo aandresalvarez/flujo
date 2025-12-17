@@ -35,15 +35,16 @@ def test_init_telemetry(monkeypatch, otlp_enabled, otlp_endpoint) -> None:
     monkeypatch.setattr(fake_logfire, "configure", logfire_configure)
     if otlp_enabled:
         with (
-            patch("opentelemetry.exporter.otlp.proto.http.trace_exporter.OTLPSpanExporter") as _,
             patch("opentelemetry.sdk.trace.export.BatchSpanProcessor") as _,
         ):
+            telemetry._initialized = False
             telemetry.init_telemetry(settings_mock)
             assert logfire_configure.called
             logfire_configure.reset_mock()
             telemetry.init_telemetry(settings_mock)
             logfire_configure.assert_not_called()
         return
+    telemetry._initialized = False
     telemetry.init_telemetry(settings_mock)
     assert logfire_configure.called
     logfire_configure.reset_mock()
@@ -64,6 +65,7 @@ def test_init_telemetry_telemetry_disabled(monkeypatch) -> None:
     telemetry = reload_telemetry()
     logfire_configure = MagicMock()
     monkeypatch.setattr(fake_logfire, "configure", logfire_configure)
+    telemetry._initialized = False
     telemetry.init_telemetry(settings_mock)
     # When telemetry is disabled, configure should not be called
     logfire_configure.assert_not_called()
@@ -95,6 +97,7 @@ def test_init_telemetry_otlp_with_endpoint(monkeypatch) -> None:
             return_value=batch_processor_mock,
         ),
     ):
+        telemetry._initialized = False
         telemetry.init_telemetry(settings_mock)
         logfire_configure.assert_called_once()
 
@@ -125,6 +128,7 @@ def test_init_telemetry_otlp_no_endpoint(monkeypatch) -> None:
             return_value=batch_processor_mock,
         ),
     ):
+        telemetry._initialized = False
         telemetry.init_telemetry(settings_mock)
         # We cannot assert the mock was called due to import mechanics, but the code path is exercised.
         logfire_configure.assert_called_once()

@@ -103,6 +103,8 @@ def run_step_validations(
 
     adapter_allowlist = _get_adapter_allowlist()
 
+    from ...utils.scratchpad import is_merge_scratchpad, is_scratchpad_path
+
     def _validate_pipeline(
         current: "Pipeline[_PipeInT, _PipeOutT]",
         available_roots: set[str],
@@ -226,35 +228,19 @@ def run_step_validations(
                     _MergeStrategy = None  # type: ignore[misc,assignment]
 
                 merge_strategy = getattr(step, "merge_strategy", None)
-                # Block deprecated scratchpad merge strategy outright
-                if isinstance(merge_strategy, str) and merge_strategy.lower() == "merge_scratchpad":
+
+                if is_merge_scratchpad(merge_strategy):
                     report.errors.append(
                         ValidationFinding(
                             rule_id="V-P-SCRATCHPAD",
                             severity="error",
                             message=(
-                                f"Parallel step '{step.name}' uses merge_strategy=MERGE_SCRATCHPAD, "
-                                "which is removed. Use CONTEXT_UPDATE with explicit field_mapping or "
-                                "OVERWRITE/NO_MERGE instead."
+                                f"Parallel step '{step.name}' uses forbidden merge strategy targeting 'scratchpad'."
                             ),
                             step_name=getattr(step, "name", None),
                         )
                     )
-                if _MergeStrategy is not None and merge_strategy == getattr(
-                    _MergeStrategy, "MERGE_SCRATCHPAD", None
-                ):
-                    report.errors.append(
-                        ValidationFinding(
-                            rule_id="V-P-SCRATCHPAD",
-                            severity="error",
-                            message=(
-                                f"Parallel step '{step.name}' uses merge_strategy=MERGE_SCRATCHPAD, "
-                                "which is removed. Use CONTEXT_UPDATE with explicit field_mapping or "
-                                "OVERWRITE/NO_MERGE instead."
-                            ),
-                            step_name=getattr(step, "name", None),
-                        )
-                    )
+
                 if (
                     _MergeStrategy is not None
                     and (
@@ -441,21 +427,9 @@ def run_step_validations(
                                             parent_path = ""
                                             child_path = ""
                                         for path in (parent_path, child_path):
-                                            if path.startswith("scratchpad"):
-                                                report.errors.append(
-                                                    ValidationFinding(
-                                                        rule_id="CTX-SCRATCHPAD",
-                                                        severity="error",
-                                                        message=(
-                                                            f"Import step '{step.name}' output mapping references scratchpad: '{path}'. "
-                                                            "Move data to typed context fields."
-                                                        ),
-                                                        step_name=getattr(step, "name", None),
-                                                    )
-                                                )
-                                        if parent_path:
-                                            produced_paths.add(parent_path)
-                                            available_roots.add(_root_key(parent_path))
+                                            if parent_path:
+                                                produced_paths.add(parent_path)
+                                                available_roots.add(_root_key(parent_path))
                     except Exception:
                         pass
 
@@ -711,45 +685,19 @@ def run_step_validations(
                 produced_keys.append(sink_target)
             for pk in produced_keys:
                 produced_paths.add(pk)
-                available_roots.add(_root_key(pk))
-
-            if isinstance(sink_target, str) and sink_target.startswith("scratchpad"):
-                report.errors.append(
-                    ValidationFinding(
-                        rule_id="CTX-SCRATCHPAD",
-                        severity="error",
-                        message=(
-                            f"Step '{step.name}' writes to scratchpad via sink_to='{sink_target}'. "
-                            "User data must be stored in typed context fields instead."
-                        ),
-                        step_name=getattr(step, "name", None),
-                        location_path=_yloc.get("path")
-                        if isinstance(_yloc, dict)
-                        else f"steps[{idx_step}]",
-                        file=_yloc.get("file") if isinstance(_yloc, dict) else None,
-                        line=_yloc.get("line") if isinstance(_yloc, dict) else None,
-                        column=_yloc.get("column") if isinstance(_yloc, dict) else None,
+                root = _root_key(pk)
+                if is_scratchpad_path(pk):
+                    report.errors.append(
+                        ValidationFinding(
+                            rule_id=f"CTX-{root.upper()}",
+                            severity="error",
+                            message=(
+                                f"Step '{step.name}' attempts to write to '{pk}' but 'scratchpad' is removed."
+                            ),
+                            step_name=getattr(step, "name", None),
+                        )
                     )
-                )
-
-            if isinstance(templated_input, str) and "scratchpad" in templated_input:
-                report.errors.append(
-                    ValidationFinding(
-                        rule_id="CTX-SCRATCHPAD",
-                        severity="error",
-                        message=(
-                            f"Step '{step.name}' templated_input references scratchpad. "
-                            "Move data to typed context fields."
-                        ),
-                        step_name=getattr(step, "name", None),
-                        location_path=_yloc.get("path")
-                        if isinstance(_yloc, dict)
-                        else f"steps[{idx_step}]",
-                        file=_yloc.get("file") if isinstance(_yloc, dict) else None,
-                        line=_yloc.get("line") if isinstance(_yloc, dict) else None,
-                        column=_yloc.get("column") if isinstance(_yloc, dict) else None,
-                    )
-                )
+                available_roots.add(root)
 
             if getattr(step, "updates_context", False) and not produced_keys:
                 if (

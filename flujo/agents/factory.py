@@ -35,6 +35,23 @@ def _unwrap_type_adapter(output_type: Any) -> Any:
     return output_type
 
 
+class _LocalMockAgent:
+    def __init__(self, model: str, output_type: Any) -> None:
+        self.model: object = model
+        self.output_type: object = output_type
+        self.target_output_type: object = output_type
+
+    async def run(self, *args: Any, **kwargs: Any) -> object:
+        if args:
+            return args[0]
+        if "data" in kwargs:
+            return kwargs["data"]
+        return None
+
+    async def run_async(self, *args: Any, **kwargs: Any) -> object:
+        return await self.run(*args, **kwargs)
+
+
 def make_agent(
     model: str,
     system_prompt: str,
@@ -97,24 +114,7 @@ def make_agent(
     # preserving type hints via output_type to satisfy validation paths without
     # requiring a real provider or network access.
     if provider_name == "local" and base_model == "mock":
-
-        class _LocalMockAgent:
-            def __init__(self) -> None:
-                self.model: object = model
-                self.output_type: object = actual_type
-                self.target_output_type: object = actual_type
-
-            async def run(self, *args: Any, **kwargs: Any) -> object:
-                if args:
-                    return args[0]
-                if "data" in kwargs:
-                    return kwargs["data"]
-                return None
-
-            async def run_async(self, *args: Any, **kwargs: Any) -> object:
-                return await self.run(*args, **kwargs)
-
-        return _LocalMockAgent(), final_processors
+        return _LocalMockAgent(model, actual_type), final_processors
 
     try:
         # Specialized handling for OpenAI GPT-5 and other reasoning models using Responses API

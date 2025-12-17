@@ -263,7 +263,7 @@ class CustomType:
 
 class CustomCtx(PipelineContext):
     custom: CustomType
-    model_config = {"arbitrary_types_allowed": True}
+    # model_config inherited from BaseModel
 
 
 @pytest.mark.asyncio

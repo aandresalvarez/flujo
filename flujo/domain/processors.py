@@ -13,7 +13,7 @@ if TYPE_CHECKING:  # pragma: no cover
 class AgentProcessors(BaseModel):
     """Collections of prompt and output processors."""
 
-    model_config = {"arbitrary_types_allowed": True}
+    # model_config inherited from BaseModel
 
     prompt_processors: List[Any] = Field(default_factory=list)
     output_processors: List[Any] = Field(default_factory=list)

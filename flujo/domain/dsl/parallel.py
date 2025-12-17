@@ -54,7 +54,7 @@ class ParallelStep(Step[object, object], Generic[TContext]):
         description="When True, branch names are not treated as context fields during merging.",
     )
 
-    model_config = {"arbitrary_types_allowed": True}
+    # model_config inherited from BaseModel
 
     @model_validator(mode="before")
     @classmethod

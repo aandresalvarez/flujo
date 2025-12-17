@@ -1,6 +1,6 @@
 from __future__ import annotations
 import asyncio
-import warnings
+
 from collections.abc import Awaitable, Callable
 from typing import Generic, TYPE_CHECKING, TypeVar
 
@@ -12,7 +12,6 @@ from ...domain.models import PipelineResult, Quota, StepOutcome, StepResult, Usa
 from ...exceptions import (
     MissingAgentError,
 )
-from ...infra.settings import get_settings
 from ...utils.async_bridge import run_sync
 from .quota_manager import QuotaManager
 from .execution_dispatcher import ExecutionDispatcher
@@ -24,7 +23,7 @@ from .telemetry_handler import TelemetryHandler
 from .step_handler import StepHandler
 from .agent_handler import AgentHandler
 from .shadow_evaluator import ShadowEvaluator
-from .optimization_config_stub import OptimizationConfig
+
 from .runtime_builder import ExecutorCoreDeps, FlujoRuntimeBuilder
 from .executor_helpers import (
     _UsageTracker,
@@ -165,7 +164,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         cache_ttl: int = 3600,
         concurrency_limit: int = 10,
         # Additional compatibility parameters
-        optimization_config: object | None = None,
         # Injected policies
         timeout_runner: TimeoutRunner | None = None,
         unpacker: AgentResultUnpacker | None = None,
@@ -201,13 +199,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
         # Hardcode flag to False (standard handling)
         self.enable_optimized_error_handling = False
-
-        if optimization_config is not None:
-            warnings.warn(
-                "optimization_config is deprecated and has no effect.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
 
         builder_obj = builder or FlujoRuntimeBuilder()
         deps_obj = deps or builder_obj.build(
@@ -290,6 +281,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self._hydration_manager = deps_obj.hydration_manager
         self._hydration_manager.set_telemetry(self._telemetry)
         self._background_task_manager = deps_obj.background_task_manager
+        self._bg_task_handler = deps_obj.bg_task_handler
+        if state_manager is not None:
+            self._bg_task_handler.state_manager = state_manager
         self.state_manager = state_manager
         self._context_update_manager = deps_obj.context_update_manager
         self._agent_orchestrator = deps_obj.agent_orchestrator
@@ -498,33 +492,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         reset_current_quota(self._quota_manager, token)
 
     def _get_background_quota(self, parent_quota: Quota | None = None) -> Quota | None:
-        """Compute quota for background tasks with parent-first split."""
-        settings = get_settings()
-        bg_settings = getattr(settings, "background_tasks", None)
-        if bg_settings is None or not bool(getattr(bg_settings, "enable_quota", False)):
-            return parent_quota
-
-        if parent_quota is not None:
-            try:
-                return parent_quota.split(1)[0]
-            except Exception:
-                try:
-                    from ...infra import telemetry as _telemetry
-
-                    _telemetry.logfire.warning(
-                        "Cannot split parent quota for background task; quota disabled for task"
-                    )
-                except Exception:
-                    pass
-                return None
-
-        try:
-            return Quota(
-                float(getattr(bg_settings, "max_cost_per_task", 0.0)),
-                int(getattr(bg_settings, "max_tokens_per_task", 0)),
-            )
-        except Exception:
-            return None
+        return self._bg_task_handler.get_background_quota(parent_quota)
 
     async def _register_background_task(
         self,
@@ -537,26 +505,14 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context: TContext_w_Scratch | None,
         metadata: JSONObject | None = None,
     ) -> None:
-        """Persist initial state for a background task."""
-        if self.state_manager is None:
-            return
-        if context is not None and not isinstance(context, DomainBaseModel):
-            return
-
-        meta = dict(metadata or {})
-        meta.setdefault("is_background_task", True)
-        meta.setdefault("task_id", task_id)
-        meta.setdefault("parent_run_id", parent_run_id)
-        meta.setdefault("step_name", step_name)
-        meta.setdefault("input_data", data)
-
-        await self.state_manager.persist_workflow_state(
-            run_id=bg_run_id,
+        await self._bg_task_handler.register_background_task(
+            task_id=task_id,
+            bg_run_id=bg_run_id,
+            parent_run_id=parent_run_id,
+            step_name=step_name,
+            data=data,
             context=context,
-            current_step_index=0,
-            last_step_output=None,
-            status="running",
-            metadata=meta,
+            metadata=metadata,
         )
 
     async def _mark_background_task_completed(
@@ -566,34 +522,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context: TContext_w_Scratch | None,
         metadata: JSONObject | None = None,
     ) -> None:
-        """Mark a background task as completed."""
-        if self.state_manager is None:
-            return
-        if context is None or not isinstance(context, DomainBaseModel):
-            return
-
-        run_id = getattr(context, "run_id", None) if context is not None else None
-        if run_id is None:
-            return
-
-        meta = dict(metadata or {})
-        meta.setdefault("task_id", task_id)
-        meta.setdefault("is_background_task", True)
-
-        await self.state_manager.persist_workflow_state(
-            run_id=run_id,
-            context=context,
-            current_step_index=1,
-            last_step_output=None,
-            status="completed",
-            metadata=meta,
+        await self._bg_task_handler.mark_background_task_completed(
+            task_id=task_id, context=context, metadata=metadata
         )
-        try:
-            from ...infra import telemetry as _telemetry
-
-            _telemetry.logfire.info(f"Background task '{task_id}' completed successfully")
-        except Exception:
-            pass
 
     async def _mark_background_task_failed(
         self,
@@ -603,44 +534,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         error: Exception,
         metadata: JSONObject | None = None,
     ) -> None:
-        """Mark a background task as failed."""
-        if self.state_manager is None:
-            return
-        if context is None or not isinstance(context, DomainBaseModel):
-            return
-
-        run_id = getattr(context, "run_id", None) if context is not None else None
-        if run_id is None:
-            return
-
-        meta = dict(metadata or {})
-        meta.setdefault("task_id", task_id)
-        meta.setdefault("is_background_task", True)
-        meta["background_error"] = meta.get("background_error") or str(error)
-
-        if context is not None:
-            try:
-                if hasattr(context, "background_error"):
-                    context.background_error = str(error)
-            except Exception:
-                pass
-
-        await self.state_manager.persist_workflow_state(
-            run_id=run_id,
-            context=context,
-            current_step_index=0,
-            last_step_output=None,
-            status="failed",
-            metadata=meta,
+        await self._bg_task_handler.mark_background_task_failed(
+            task_id=task_id, context=context, error=error, metadata=metadata
         )
-        try:
-            from ...infra import telemetry as _telemetry
-
-            _telemetry.logfire.error(
-                f"Background task '{task_id}' failed", extra={"error": str(error)}
-            )
-        except Exception:
-            pass
 
     async def _mark_background_task_paused(
         self,
@@ -650,37 +546,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         error: Exception,
         metadata: JSONObject | None = None,
     ) -> None:
-        """Mark a background task as paused (control-flow signal)."""
-        if self.state_manager is None:
-            return
-        if context is None or not isinstance(context, DomainBaseModel):
-            return
-
-        run_id = getattr(context, "run_id", None) if context is not None else None
-        if run_id is None:
-            return
-
-        meta = dict(metadata or {})
-        meta.setdefault("task_id", task_id)
-        meta.setdefault("is_background_task", True)
-        meta["background_error"] = meta.get("background_error") or str(error)
-
-        await self.state_manager.persist_workflow_state(
-            run_id=run_id,
-            context=context,
-            current_step_index=0,
-            last_step_output=None,
-            status="paused",
-            metadata=meta,
+        await self._bg_task_handler.mark_background_task_paused(
+            task_id=task_id, context=context, error=error, metadata=metadata
         )
-        try:
-            from ...infra import telemetry as _telemetry
-
-            _telemetry.logfire.info(
-                f"Background task '{task_id}' paused", extra={"reason": str(error)}
-            )
-        except Exception:
-            pass
 
     def _hash_obj(self, obj: object) -> str:
         return hash_obj(obj, self._serializer, self._hasher)
@@ -884,12 +752,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         limits: UsageLimits | None,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
         | None = None,
-        *,
-        step_executor: Callable[..., Awaitable[StepResult]] | None = None,
         **_: object,
     ) -> StepResult:
         return await self._step_handler.cache_step(
-            step, data, context, resources, limits, context_setter, step_executor
+            step, data, context, resources, limits, context_setter
         )
 
     async def _handle_conditional_step(
@@ -962,11 +828,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         | None = None,
         *,
         parallel_step: object | None = None,
-        step_executor: Callable[..., Awaitable[StepResult]] | None = None,
     ) -> StepResult:
         ps = parallel_step if parallel_step is not None else step
         return await self._step_handler.parallel_step(
-            ps, data, context, resources, limits, context_setter, step_executor
+            ps, data, context, resources, limits, context_setter
         )
 
     async def _handle_dynamic_router(
@@ -979,11 +844,10 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
         | None = None,
         router_step: object | None = None,
-        step_executor: Callable[..., Awaitable[StepResult]] | None = None,
     ) -> StepResult:
         rs = router_step if router_step is not None else step
         return await self._step_handler.dynamic_router_wrapper(
-            step, data, context, resources, limits, context_setter, rs, step_executor
+            step, data, context, resources, limits, context_setter, rs
         )
 
     async def _execute_agent_with_orchestration(
@@ -1021,7 +885,8 @@ __all__ = [
     "PluginError",
     "StepExecutor",
     "_UsageTracker",
-    "OptimizationConfig",  # Deprecated stub for backward compatibility
+    "StepExecutor",
+    "_UsageTracker",
     # Re-exports for compatibility
     "ISerializer",
     "IHasher",

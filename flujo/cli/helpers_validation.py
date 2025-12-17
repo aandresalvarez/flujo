@@ -1,5 +1,4 @@
 from __future__ import annotations
-# mypy: ignore-errors
 
 import os
 import re
@@ -50,7 +49,7 @@ def validate_pipeline_file(path: str, *, include_imports: bool = True) -> Valida
     try:
         import flujo.validation.linters_base as _lb
 
-        _lb._OVERRIDE_CACHE = None  # type: ignore[attr-defined]
+        _lb._OVERRIDE_CACHE = None
     except Exception:
         pass
     if path.endswith((".yaml", ".yml")):
@@ -335,7 +334,7 @@ def sanitize_blueprint_yaml(yaml_text: str) -> str:
     if not changed:
         return yaml_text
     try:
-        return yaml.safe_dump(data, sort_keys=False)
+        return str(yaml.safe_dump(data, sort_keys=False))
     except Exception:
         return yaml_text
 
@@ -443,5 +442,4 @@ def enrich_yaml_with_required_params(
 
     _walk(data)
 
-    enriched_yaml = yaml.safe_dump(data, sort_keys=False)
-    return enriched_yaml
+    return str(yaml.safe_dump(data, sort_keys=False))

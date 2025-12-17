@@ -1,36 +1,15 @@
-from typing import Any, AsyncIterator, Optional
-
 import pytest
 
 from flujo.application.core.execution_manager import ExecutionManager
 from flujo.application.core.state_manager import StateManager
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.models import PipelineContext, PipelineResult, StepResult
 from flujo.exceptions import UsageLimitExceededError
+from flujo.infra.backends import LocalBackend
 from flujo.state.backends.memory import InMemoryBackend
 from flujo.domain.models import UsageLimits
-
-
-async def usage_limit_step_executor(
-    step: Step[Any, Any],
-    data: Any,
-    context: Optional[PipelineContext],
-    resources: Any,
-    *,
-    stream: bool = False,
-) -> AsyncIterator[StepResult]:
-    if step.name == "ok":
-        yield StepResult(name="ok", output="mid", success=True, attempts=1)
-        return
-    # Produce a result that will trigger UsageLimitExceededError in ExecutionManager
-    yield StepResult(
-        name="limit",
-        output="over",
-        success=True,
-        attempts=1,
-        token_counts=10,
-    )
 
 
 @pytest.mark.fast
@@ -47,7 +26,30 @@ async def test_usage_limit_failure_persists_snapshot() -> None:
         pipeline,
         state_manager=state_manager,
         usage_limits=UsageLimits(total_tokens_limit=1),
+        backend=LocalBackend(ExecutorCore()),
     )
+
+    class _TokenHeavyExecutor:
+        async def execute(
+            self,
+            _core: object,
+            step: object,
+            _data: object,
+            _context: object,
+            _resources: object,
+            _limits: object,
+            _stream: bool,
+            _on_chunk: object,
+            _cache_key: object,
+            _fallback_depth: int,
+        ) -> StepResult:
+            if getattr(step, "name", "") == "ok":
+                return StepResult(name="ok", output="mid", success=True, attempts=1, token_counts=0)
+            return StepResult(
+                name="limit", output="over", success=True, attempts=1, token_counts=10
+            )
+
+    exec_manager.backend._executor.agent_step_executor = _TokenHeavyExecutor()  # type: ignore[attr-defined]
 
     run_id = "usage-limit-run"
     ctx = PipelineContext(initial_prompt="start")
@@ -62,7 +64,6 @@ async def test_usage_limit_failure_persists_snapshot() -> None:
             stream_last=False,
             run_id=run_id,
             state_created_at=None,
-            step_executor=usage_limit_step_executor,
         ):
             pass
 

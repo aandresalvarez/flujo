@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Protocol, Any, Optional, runtime_checkable
+from pydantic import BaseModel, PrivateAttr
 from flujo.type_definitions.common import JSONObject
 
 
@@ -11,12 +12,10 @@ class CacheBackend(Protocol):
     async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None: ...
 
 
-class InMemoryCache(CacheBackend):
+class InMemoryCache(BaseModel):
     """Simple in-memory cache for step results."""
 
-    def __init__(self) -> None:
-        # TTL handling could be added later
-        self._cache: JSONObject = {}
+    _cache: JSONObject = PrivateAttr(default_factory=dict)
 
     async def get(self, key: str) -> Any:
         value = self._cache.get(key)

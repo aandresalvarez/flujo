@@ -1034,7 +1034,6 @@ def isolated_telemetry(monkeypatch):
         "flujo.application.core.pipeline_orchestrator",
         "flujo.application.core.state_manager",
         "flujo.application.core.step_coordinator",
-        "flujo.application.core.step_executor",
     ]
 
     import sys

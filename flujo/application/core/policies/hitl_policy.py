@@ -1,5 +1,4 @@
 from __future__ import annotations
-# mypy: ignore-errors
 
 from typing import Type
 
@@ -263,8 +262,10 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
                         pass
                     # Update steps map snapshot for templates (typed field)
                     try:
-                        if hasattr(context, "step_outputs") and isinstance(
-                            getattr(context, "step_outputs", None), dict
+                        if (
+                            context is not None
+                            and hasattr(context, "step_outputs")
+                            and isinstance(getattr(context, "step_outputs", None), dict)
                         ):
                             context.step_outputs[getattr(step, "name", "")] = str(resp)
                     except Exception:
@@ -283,7 +284,7 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
                             telemetry.logfire.warning(f"Failed to sink HITL to {step.sink_to}: {e}")
                     # Mirror the response onto typed context for downstream steps
                     try:
-                        if hasattr(context, "user_input"):
+                        if context is not None and hasattr(context, "user_input"):
                             context.user_input = resp
                     except Exception:
                         pass
@@ -319,7 +320,9 @@ class DefaultHitlStepExecutor(StepPolicy[HumanInTheLoopStep]):
             try:
                 if hasattr(context, "status"):
                     context.status = "paused"
-                core._update_context_state(context, "paused")
+                update_state = getattr(core, "_update_context_state", None)
+                if callable(update_state):
+                    update_state(context, "paused")
             except Exception as e:
                 telemetry.logfire.error(f"Failed to update context state: {e}")
 

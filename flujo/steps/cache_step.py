@@ -21,8 +21,6 @@ class CacheStep(Step[StepInT, StepOutT]):
     wrapped_step: Step[StepInT, StepOutT]
     cache_backend: CacheBackend = Field(default_factory=InMemoryCache)
 
-    model_config = {"arbitrary_types_allowed": True}
-
     @property
     def is_complex(self) -> bool:
         # ✅ Override to mark as complex.

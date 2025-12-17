@@ -319,7 +319,7 @@ def _get_enabled_filters() -> set[str]:
     try:
         import os as _os
 
-        if _os.getenv("PYTEST_CURRENT_TEST"):
+        if _os.getenv("FLUJO_TEST_MODE"):
             _cached_ok = False
         else:
             _cached_ok = _CACHED_FILTERS is not None

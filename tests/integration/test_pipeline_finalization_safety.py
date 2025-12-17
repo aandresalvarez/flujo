@@ -103,7 +103,6 @@ async def test_completion_gate_requires_all_steps(monkeypatch: pytest.MonkeyPatc
         backend=None,
         *,
         stream=False,
-        step_executor=None,
         usage_limits=None,
         quota=None,
     ):  # type: ignore[no-untyped-def]
@@ -117,7 +116,6 @@ async def test_completion_gate_requires_all_steps(monkeypatch: pytest.MonkeyPatc
                 context,
                 backend=backend,
                 stream=stream,
-                step_executor=step_executor,
                 usage_limits=usage_limits,
                 quota=quota,
             ):

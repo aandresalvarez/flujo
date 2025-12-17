@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from flujo.application.core.state_manager import StateManager
 from flujo.application.core.execution_manager import ExecutionManager
-from flujo.domain.models import PipelineResult, StepResult
+from flujo.domain.models import PipelineResult
 from flujo.domain.dsl import Step, Pipeline
 from flujo.testing.utils import StubAgent
 
@@ -45,19 +45,6 @@ async def test_trace_saving_integration(sqlite_backend_factory) -> None:
     result = PipelineResult(step_history=[])
     result.trace_tree = mock_trace_tree
 
-    # Mock the step execution to avoid actual execution
-    async def mock_step_executor(step, data, context, resources, stream=False):
-        step_result = StepResult(
-            name=step.name,
-            output=f"output_from_{step.name}",
-            success=True,
-            attempts=1,
-            latency_s=0.1,
-            cost_usd=0.01,
-            token_counts=10,
-        )
-        yield step_result
-
     # Create a run first
     run_id = "test_integration_run"
     await backend.save_run_start(
@@ -79,7 +66,6 @@ async def test_trace_saving_integration(sqlite_backend_factory) -> None:
         context=None,
         result=result,
         run_id=run_id,
-        step_executor=mock_step_executor,
     ):
         pass
 
@@ -117,18 +103,6 @@ async def test_trace_saving_without_trace_tree(sqlite_backend_factory) -> None:
     result = PipelineResult(step_history=[])
     # result.trace_tree is None by default
 
-    async def mock_step_executor(step, data, context, resources, stream=False):
-        step_result = StepResult(
-            name=step.name,
-            output=f"output_from_{step.name}",
-            success=True,
-            attempts=1,
-            latency_s=0.1,
-            cost_usd=0.01,
-            token_counts=10,
-        )
-        yield step_result
-
     run_id = "test_no_trace_run"
     await backend.save_run_start(
         {
@@ -149,7 +123,6 @@ async def test_trace_saving_without_trace_tree(sqlite_backend_factory) -> None:
         context=None,
         result=result,
         run_id=run_id,
-        step_executor=mock_step_executor,
     ):
         pass
 

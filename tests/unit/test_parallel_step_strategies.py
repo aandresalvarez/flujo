@@ -14,6 +14,8 @@ from flujo.domain.dsl.step import Step, BranchFailureStrategy, MergeStrategy
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.models import (
     StepResult,
+    StepOutcome,
+    Success,
     UsageLimits,
 )
 from flujo.exceptions import UsageLimitExceededError, ConfigurationError
@@ -31,7 +33,7 @@ class MockContext(BaseModel):
     # Additional data storage for tests that expect it
     data: JSONObject = {}
 
-    model_config = {"extra": "allow", "arbitrary_types_allowed": True}
+    model_config = {"extra": "allow"}
 
     def __init__(self, data: JSONObject = None, **kwargs):
         # Merge data and kwargs
@@ -63,31 +65,6 @@ class TestParallelStepExecution:
     """Test parallel step execution with different strategies."""
 
     @pytest.fixture
-    def mock_step_executor(self):
-        """Create a mock step executor."""
-
-        async def executor(step, input_data, context, resources):
-            # Simulate successful step execution
-            # Handle both Step and Pipeline objects
-            if hasattr(step, "name"):
-                step_name = step.name
-            else:
-                # For Pipeline objects, use a default name
-                step_name = "pipeline_step"
-
-            return StepResult(
-                name=step_name,
-                output=input_data,  # Return input_data as expected by tests
-                success=True,
-                attempts=1,
-                latency_s=0.1,
-                token_counts=10,
-                cost_usd=0.01,
-            )
-
-        return executor
-
-    @pytest.fixture
     def mock_context_setter(self):
         """Create a mock context setter."""
 
@@ -110,9 +87,7 @@ class TestParallelStepExecution:
         )
 
     @pytest.mark.asyncio
-    async def test_basic_parallel_execution_no_merge(
-        self, parallel_step, mock_step_executor, mock_context_setter
-    ):
+    async def test_basic_parallel_execution_no_merge(self, parallel_step, mock_context_setter):
         """Test basic parallel execution with NO_MERGE strategy."""
         context = MockContext({"key": "value"})
 
@@ -133,9 +108,7 @@ class TestParallelStepExecution:
         assert "branch2" in result.output
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_with_context_include_keys(
-        self, mock_step_executor, mock_context_setter
-    ):
+    async def test_parallel_execution_with_context_include_keys(self, mock_context_setter):
         """Test parallel execution with context include keys."""
         parallel_step = ParallelStep(
             name="test_parallel",
@@ -162,9 +135,7 @@ class TestParallelStepExecution:
         assert result.success
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_no_context(
-        self, parallel_step, mock_step_executor, mock_context_setter
-    ):
+    async def test_parallel_execution_no_context(self, parallel_step, mock_context_setter):
         """Test parallel execution without context."""
         executor = ExecutorCore()
         result = await executor._handle_parallel_step(
@@ -179,9 +150,7 @@ class TestParallelStepExecution:
         assert result.success
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_with_usage_limits(
-        self, parallel_step, mock_step_executor, mock_context_setter
-    ):
+    async def test_parallel_execution_with_usage_limits(self, parallel_step, mock_context_setter):
         """Test parallel execution with usage limits."""
         usage_limits = UsageLimits(total_cost_usd_limit=0.05, total_tokens_limit=50)
 
@@ -198,22 +167,35 @@ class TestParallelStepExecution:
         assert result.success
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_cost_limit_breach(
-        self, mock_step_executor, mock_context_setter
-    ):
+    async def test_parallel_execution_cost_limit_breach(self, mock_context_setter):
         """Test parallel execution with cost limit breach."""
 
-        # Create a step executor that returns high cost
-        async def high_cost_executor(step, input_data, context, resources):
-            return StepResult(
-                name=step.name if hasattr(step, "name") else "test",
-                success=True,
-                output=input_data,
-                latency_s=0.1,
-                cost_usd=1.0,  # High cost
-                token_counts=10,
-                attempts=1,
-            )
+        class _HighCostAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                step: object,
+                data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepOutcome[StepResult]:
+                name = getattr(step, "name", "test")
+                return Success(
+                    step_result=StepResult(
+                        name=name,
+                        success=True,
+                        output=data,
+                        latency_s=0.1,
+                        cost_usd=1.0,  # High cost
+                        token_counts=10,
+                        attempts=1,
+                    )
+                )
 
         parallel_step = ParallelStep(
             name="test_parallel",
@@ -228,6 +210,7 @@ class TestParallelStepExecution:
 
         with pytest.raises(UsageLimitExceededError):
             executor = ExecutorCore()
+            executor.agent_step_executor = _HighCostAgentExecutor()
             await executor._handle_parallel_step(
                 parallel_step=parallel_step,
                 data="test_input",
@@ -235,26 +218,38 @@ class TestParallelStepExecution:
                 resources=None,
                 limits=usage_limits,
                 context_setter=mock_context_setter,
-                step_executor=high_cost_executor,
             )
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_token_limit_breach(
-        self, mock_step_executor, mock_context_setter
-    ):
+    async def test_parallel_execution_token_limit_breach(self, mock_context_setter):
         """Test parallel execution with token limit breach."""
 
-        # Create a step executor that returns high token count
-        async def high_token_executor(step, input_data, context, resources):
-            return StepResult(
-                name=step.name if hasattr(step, "name") else "test",
-                success=True,
-                output=input_data,
-                latency_s=0.1,
-                cost_usd=0.01,
-                token_counts=100,  # High token count
-                attempts=1,
-            )
+        class _HighTokenAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                step: object,
+                data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepOutcome[StepResult]:
+                name = getattr(step, "name", "test")
+                return Success(
+                    step_result=StepResult(
+                        name=name,
+                        success=True,
+                        output=data,
+                        latency_s=0.1,
+                        cost_usd=0.01,
+                        token_counts=100,  # High token count
+                        attempts=1,
+                    )
+                )
 
         parallel_step = ParallelStep(
             name="test_parallel",
@@ -269,6 +264,7 @@ class TestParallelStepExecution:
 
         with pytest.raises(UsageLimitExceededError):
             executor = ExecutorCore()
+            executor.agent_step_executor = _HighTokenAgentExecutor()
             await executor._handle_parallel_step(
                 parallel_step=parallel_step,
                 data="test_input",
@@ -276,25 +272,39 @@ class TestParallelStepExecution:
                 resources=None,
                 limits=usage_limits,
                 context_setter=mock_context_setter,
-                step_executor=high_token_executor,
             )
 
     @pytest.mark.asyncio
     async def test_parallel_execution_branch_failure_propagate(self, mock_context_setter):
         """Test parallel execution with branch failure and PROPAGATE strategy."""
 
-        # Create a step executor that fails
-        async def failing_executor(step, input_data, context, resources):
-            return StepResult(
-                name=step.name if hasattr(step, "name") else "test",
-                success=False,
-                output=None,
-                feedback="Test failure",
-                latency_s=0.1,
-                cost_usd=0.01,
-                token_counts=10,
-                attempts=1,
-            )
+        class _FailingAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                step: object,
+                _data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepOutcome[StepResult]:
+                name = getattr(step, "name", "test")
+                return Success(
+                    step_result=StepResult(
+                        name=name,
+                        success=False,
+                        output=None,
+                        feedback="Test failure",
+                        latency_s=0.1,
+                        cost_usd=0.01,
+                        token_counts=10,
+                        attempts=1,
+                    )
+                )
 
         parallel_step = ParallelStep(
             name="test_parallel",
@@ -307,6 +317,7 @@ class TestParallelStepExecution:
         )
 
         executor = ExecutorCore()
+        executor.agent_step_executor = _FailingAgentExecutor()
         result = await executor._handle_parallel_step(
             parallel_step=parallel_step,
             data="test_input",
@@ -314,7 +325,6 @@ class TestParallelStepExecution:
             resources=None,
             limits=None,
             context_setter=mock_context_setter,
-            step_executor=failing_executor,
         )
 
         # Verify that the result indicates failure
@@ -322,26 +332,8 @@ class TestParallelStepExecution:
         assert "failed" in result.feedback.lower()
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_branch_failure_ignore(
-        self, mock_step_executor, mock_context_setter
-    ):
+    async def test_parallel_execution_branch_failure_ignore(self, mock_context_setter):
         """Test parallel execution with branch failure and IGNORE strategy."""
-        # Create a step executor that fails for one branch
-        branch_results = {"branch1": True, "branch2": False}
-
-        async def conditional_failing_executor(step, input_data, context, resources):
-            step_name = step.name if hasattr(step, "name") else "test"
-            success = branch_results.get(step_name, True)
-            return StepResult(
-                name=step_name,
-                success=success,
-                output=input_data if success else None,
-                feedback="Test failure" if not success else None,
-                latency_s=0.1,
-                cost_usd=0.01,
-                token_counts=10,
-                attempts=1,
-            )
 
         parallel_step = ParallelStep(
             name="test_parallel",
@@ -367,9 +359,7 @@ class TestParallelStepExecution:
         assert result.success
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_merge_overwrite(
-        self, mock_step_executor, mock_context_setter
-    ):
+    async def test_parallel_execution_merge_overwrite(self, mock_context_setter):
         """Test parallel execution with OVERWRITE merge strategy."""
         parallel_step = ParallelStep(
             name="test_parallel",
@@ -393,9 +383,7 @@ class TestParallelStepExecution:
         assert result.success
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_merge_removed_root_rejected(
-        self, mock_step_executor, mock_context_setter
-    ):
+    async def test_parallel_execution_merge_removed_root_rejected(self, mock_context_setter):
         """Removed merge strategy should raise ConfigurationError."""
         removed_root = "scrat" + "chpad"
         parallel_step = ParallelStep.model_construct(
@@ -421,9 +409,7 @@ class TestParallelStepExecution:
             )
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_custom_merge_strategy(
-        self, mock_step_executor, mock_context_setter
-    ):
+    async def test_parallel_execution_custom_merge_strategy(self, mock_context_setter):
         """Test parallel execution with custom merge strategy."""
 
         def custom_merge_strategy(context, branch_context):
@@ -457,9 +443,21 @@ class TestParallelStepExecution:
     async def test_parallel_execution_exception_handling(self, mock_context_setter):
         """Test parallel execution with exception handling."""
 
-        # Create a step executor that raises exceptions
-        async def exception_executor(step, input_data, context, resources):
-            raise ValueError("Test exception")
+        class _ExceptionAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                _step: object,
+                _data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepOutcome[StepResult]:
+                raise ValueError("Test exception")
 
         parallel_step = ParallelStep(
             name="test_parallel",
@@ -472,6 +470,7 @@ class TestParallelStepExecution:
         )
 
         executor = ExecutorCore()
+        executor.agent_step_executor = _ExceptionAgentExecutor()
         result = await executor._handle_parallel_step(
             parallel_step=parallel_step,
             data="test_input",
@@ -479,7 +478,6 @@ class TestParallelStepExecution:
             resources=None,
             limits=None,
             context_setter=mock_context_setter,
-            step_executor=exception_executor,
         )
 
         # Verify that the result indicates failure
@@ -490,19 +488,33 @@ class TestParallelStepExecution:
     async def test_parallel_execution_task_cancellation(self, mock_context_setter):
         """Test parallel execution with task cancellation."""
 
-        # Create a step executor that takes time
-        async def slow_executor(step, input_data, context, resources):
-            # Simulate slow execution
-            await asyncio.sleep(0.1)
-            return StepResult(
-                name=step.name if hasattr(step, "name") else "test",
-                success=True,
-                output=input_data,
-                latency_s=0.1,
-                cost_usd=0.01,
-                token_counts=10,
-                attempts=1,
-            )
+        class _SlowAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                step: object,
+                data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepOutcome[StepResult]:
+                await asyncio.sleep(0.1)
+                name = getattr(step, "name", "test")
+                return Success(
+                    step_result=StepResult(
+                        name=name,
+                        success=True,
+                        output=data,
+                        latency_s=0.1,
+                        cost_usd=0.01,
+                        token_counts=10,
+                        attempts=1,
+                    )
+                )
 
         parallel_step = ParallelStep(
             name="test_parallel",
@@ -517,6 +529,7 @@ class TestParallelStepExecution:
 
         with pytest.raises(UsageLimitExceededError):
             executor = ExecutorCore()
+            executor.agent_step_executor = _SlowAgentExecutor()
             await executor._handle_parallel_step(
                 parallel_step=parallel_step,
                 data="test_input",
@@ -524,13 +537,10 @@ class TestParallelStepExecution:
                 resources=None,
                 limits=usage_limits,
                 context_setter=mock_context_setter,
-                step_executor=slow_executor,
             )
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_merge_context_update(
-        self, mock_step_executor, mock_context_setter
-    ):
+    async def test_parallel_execution_merge_context_update(self, mock_context_setter):
         """Test parallel execution with context update merge strategy."""
 
         # Create a context that can be updated
@@ -539,7 +549,7 @@ class TestParallelStepExecution:
             value: str = "initial"
             step_outputs: JSONObject = {}
 
-            model_config = {"extra": "allow", "arbitrary_types_allowed": True}
+            model_config = {"extra": "allow"}
 
             def __init__(self, value: str = "initial", **kwargs):
                 super().__init__(
@@ -575,7 +585,6 @@ class TestParallelStepExecution:
             resources=None,
             limits=None,
             context_setter=mock_context_setter,
-            step_executor=mock_step_executor,
         )
 
         # Verify that the result is successful
@@ -627,13 +636,34 @@ async def test_parallel_usage_limit_enforced_atomically(caplog):
         on_branch_failure=BranchFailureStrategy.PROPAGATE,
     )
 
-    async def step_executor(step, input_data, context, resources):
-        return await step.agent.run(input_data)
-
     from flujo.application.core.executor_core import ExecutorCore
 
     with pytest.raises(UsageLimitExceededError):
         executor = ExecutorCore()
+
+        class _CostlyAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                step: object,
+                data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepOutcome[StepResult]:
+                agent = getattr(step, "agent", None)
+                if agent is None or not hasattr(agent, "run"):
+                    raise AssertionError("Expected agent with .run()")
+                result = await agent.run(data)
+                if not isinstance(result, StepResult):
+                    raise AssertionError(f"Expected StepResult, got {type(result).__name__}")
+                return Success(step_result=result)
+
+        executor.agent_step_executor = _CostlyAgentExecutor()
         await executor._handle_parallel_step(
             parallel_step=parallel_step,
             data="test_input",
@@ -641,7 +671,6 @@ async def test_parallel_usage_limit_enforced_atomically(caplog):
             resources=None,
             limits=usage_limits,
             context_setter=lambda result, context: None,
-            step_executor=step_executor,
         )
 
     called_count = sum(a.called for a in agents)

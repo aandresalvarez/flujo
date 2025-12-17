@@ -1,10 +1,10 @@
 from __future__ import annotations
-# mypy: ignore-errors
 
 from typing import Protocol
 
 from ._shared import (
     Awaitable,
+    BaseModel,
     Callable,
     ConversationHistoryPromptProcessor,
     ContextManager,
@@ -46,9 +46,9 @@ async def run_loop_iterations(
     *,
     core: object,
     loop_step: _NamedStep,
-    body_pipeline: Pipeline | object,
+    body_pipeline: Pipeline[object, object] | object,
     current_data: object,
-    current_context: object | None,
+    current_context: BaseModel | None,
     resources: object,
     limits: UsageLimits | None,
     stream: bool,
@@ -71,7 +71,7 @@ async def run_loop_iterations(
     iteration_count: int,
     current_step_index: int,
     start_time: float,
-    context_setter: Optional[Callable[[PipelineResult[object], object | None], None]],
+    context_setter: Optional[Callable[[PipelineResult[BaseModel], BaseModel | None], None]],
     _fallback_depth: int,
 ) -> StepOutcome[StepResult]:
     loop_body_steps: list[object] = []
@@ -91,7 +91,7 @@ async def run_loop_iterations(
         telemetry.logfire.info(
             f"LoopStep '{loop_step.name}' using regular execution (single/no-step pipeline)"
         )
-    stashed_exec_lists: list[object] = []
+    stashed_exec_lists: list[list[object]] = []
     if is_resuming:
         total_steps = len(loop_body_steps)
         if total_steps == 0:
@@ -115,19 +115,11 @@ async def run_loop_iterations(
     while iteration_count <= max_loops:
         prev_cumulative_cost = cumulative_cost
         prev_cumulative_tokens = cumulative_tokens
-        iteration_results: list[StepResult] = []
+        iteration_results = []
         with telemetry.logfire.span(f"Loop '{loop_step.name}' - Iteration {iteration_count}"):
             telemetry.logfire.info(
                 f"LoopStep '{loop_step.name}': Starting Iteration {iteration_count}/{max_loops}"
             )
-        try:
-            from ...tracing.manager import get_active_trace_manager as _get_tm
-
-            _tm = _get_tm()
-            if _tm is not None:
-                _tm.add_event("loop.iteration", {"iteration": iteration_count})
-        except Exception:
-            pass
         iteration_context = (
             ContextManager.isolate(
                 current_context,
@@ -247,7 +239,9 @@ async def run_loop_iterations(
                     pass
                 token = _CACHE_OVERRIDE.set(False)
                 try:
-                    pipeline_result: PipelineResult[object] = await core._execute_pipeline(
+                    if not hasattr(core, "_execute_pipeline"):
+                        raise TypeError("ExecutorCore missing _execute_pipeline")
+                    pipeline_result: PipelineResult[BaseModel] = await core._execute_pipeline(
                         body_pipeline, current_data, iteration_context, resources, limits, stream
                     )
                 finally:
@@ -331,7 +325,7 @@ async def run_loop_iterations(
                         },
                         step_history=iteration_results_all + iteration_results,
                     )
-                pr = PipelineResult[object](
+                pr = PipelineResult[BaseModel](
                     step_history=[loop_sr],
                     total_cost_usd=float(prev_cumulative_cost),
                     total_tokens=int(prev_cumulative_tokens),
@@ -366,20 +360,21 @@ async def run_loop_iterations(
             except Exception:
                 pass
             try:
-                if hasattr(pipeline_result, "final_pipeline_context"):
-                    final_ctx = pipeline_result.final_pipeline_context
-                    if final_ctx is not None:
-                        try:
-                            ContextManager.merge(current_context, final_ctx)
-                        except Exception:
-                            current_context = final_ctx
+                final_ctx = getattr(pipeline_result, "final_pipeline_context", None)
+                if final_ctx is not None:
+                    try:
+                        merged_ctx = ContextManager.merge(current_context, final_ctx)
+                        if merged_ctx is not None:
+                            current_context = merged_ctx
+                    except Exception:
+                        current_context = final_ctx
             except Exception:
                 pass
         else:
             telemetry.logfire.info(
                 f"LoopStep '{loop_step.name}': executing loop body step-by-step with {len(loop_body_steps)} steps"
             )
-            pipeline_result = PipelineResult[object](
+            pipeline_result = PipelineResult[BaseModel](
                 step_history=[],
                 total_cost_usd=0.0,
                 total_tokens=0,
@@ -394,14 +389,15 @@ async def run_loop_iterations(
                 current_data = resume_payload
                 resume_requires_hitl_output = False
                 try:
-                    if hasattr(iteration_context, "loop_resume_requires_hitl_output"):
-                        iteration_context.loop_resume_requires_hitl_output = False
-                    if hasattr(iteration_context, "paused_step_input"):
-                        iteration_context.paused_step_input = None
-                    if hasattr(iteration_context, "hitl_data"):
-                        iteration_context.hitl_data = {}
-                    if hasattr(iteration_context, "status"):
-                        iteration_context.status = "running"
+                    if iteration_context is not None:
+                        if hasattr(iteration_context, "loop_resume_requires_hitl_output"):
+                            iteration_context.loop_resume_requires_hitl_output = False
+                        if hasattr(iteration_context, "paused_step_input"):
+                            iteration_context.paused_step_input = None
+                        if hasattr(iteration_context, "hitl_data"):
+                            iteration_context.hitl_data = {}
+                        if hasattr(iteration_context, "status"):
+                            iteration_context.status = "running"
                 except Exception:
                     pass
                 try:
@@ -419,6 +415,7 @@ async def run_loop_iterations(
             while current_step_index < len(current_step_list):
                 body_step = current_step_list[current_step_index]
                 step_name = getattr(body_step, "name", f"loop_step_{current_step_index}")
+                sr: StepResult | None = None
                 prev_loop_flag = getattr(core, "_inside_loop_iteration", False)
                 prev_force_flag = getattr(body_step, "_force_loop_fallback", None)
                 try:
@@ -478,11 +475,18 @@ async def run_loop_iterations(
                                 else None
                             ),
                         )
+                        if not hasattr(core, "execute"):
+                            raise TypeError("ExecutorCore missing execute")
                         outcome = await core.execute(frame)
-                        sr = core._unwrap_outcome_to_step_result(
-                            outcome, getattr(body_step, "name", "<step>")
-                        )
+                        if hasattr(core, "_unwrap_outcome_to_step_result"):
+                            sr = core._unwrap_outcome_to_step_result(
+                                outcome, getattr(body_step, "name", "<step>")
+                            )
+                        else:
+                            raise TypeError("ExecutorCore missing _unwrap_outcome_to_step_result")
                     else:
+                        if not hasattr(core, "_execute_simple_step"):
+                            raise TypeError("ExecutorCore missing _execute_simple_step")
                         sr = await core._execute_simple_step(
                             body_step,
                             current_data,
@@ -495,6 +499,10 @@ async def run_loop_iterations(
                             _fallback_depth,
                             False,
                         )
+                    if not isinstance(sr, StepResult):
+                        raise TypeError(
+                            f"Expected StepResult for loop body step '{step_name}', got {type(sr).__name__}"
+                        )
                     iteration_results.append(sr)
                     pipeline_result.step_history.append(sr)
                     try:
@@ -504,36 +512,48 @@ async def run_loop_iterations(
                     if not sr.success:
                         if sr.feedback == "hitl_pause" or isinstance(sr.output, Paused):
                             try:
-                                if hasattr(iteration_context, "status"):
-                                    iteration_context.status = "paused"
-                                if hasattr(iteration_context, "loop_iteration_index"):
-                                    iteration_context.loop_iteration_index = iteration_count
-                                if hasattr(iteration_context, "loop_step_index"):
-                                    iteration_context.loop_step_index = current_step_index + 1
-                                if hasattr(iteration_context, "loop_last_output"):
-                                    iteration_context.loop_last_output = current_data
-                                if hasattr(iteration_context, "loop_resume_requires_hitl_output"):
-                                    iteration_context.loop_resume_requires_hitl_output = True
-                                if hasattr(iteration_context, "loop_paused_step_name"):
-                                    iteration_context.loop_paused_step_name = step_name
-                                if hasattr(iteration_context, "paused_step_input"):
-                                    iteration_context.paused_step_input = sr.output
+                                if iteration_context is not None:
+                                    if hasattr(iteration_context, "status"):
+                                        iteration_context.status = "paused"
+                                    if hasattr(iteration_context, "loop_iteration_index"):
+                                        iteration_context.loop_iteration_index = iteration_count
+                                    if hasattr(iteration_context, "loop_step_index"):
+                                        iteration_context.loop_step_index = current_step_index + 1
+                                    if hasattr(iteration_context, "loop_last_output"):
+                                        iteration_context.loop_last_output = current_data
+                                    if hasattr(
+                                        iteration_context, "loop_resume_requires_hitl_output"
+                                    ):
+                                        iteration_context.loop_resume_requires_hitl_output = True
+                                    if hasattr(iteration_context, "loop_paused_step_name"):
+                                        iteration_context.loop_paused_step_name = step_name
+                                    if hasattr(iteration_context, "paused_step_input"):
+                                        iteration_context.paused_step_input = sr.output
 
                                 val = getattr(sr.output, "human_response", None)
-                                if hasattr(iteration_context, "user_input"):
-                                    iteration_context.user_input = val
-                                if hasattr(iteration_context, "hitl_data") and val is not None:
-                                    # Preserve HITL payload for auditing/resume without using scratchpad
-                                    iteration_context.hitl_data = {"human_response": val}
+                                if iteration_context is not None:
+                                    if hasattr(iteration_context, "user_input"):
+                                        iteration_context.user_input = val
+                                    if hasattr(iteration_context, "hitl_data") and val is not None:
+                                        # Preserve HITL payload for auditing/resume without using scratchpad
+                                        iteration_context.hitl_data = {"human_response": val}
 
                                 if current_context is not None:
                                     if hasattr(current_context, "status"):
                                         current_context.status = "paused"
-                                    if hasattr(current_context, "loop_iteration_index"):
+                                    if (
+                                        iteration_context is not None
+                                        and hasattr(iteration_context, "loop_iteration_index")
+                                        and hasattr(current_context, "loop_iteration_index")
+                                    ):
                                         current_context.loop_iteration_index = (
                                             iteration_context.loop_iteration_index
                                         )
-                                    if hasattr(current_context, "loop_step_index"):
+                                    if (
+                                        iteration_context is not None
+                                        and hasattr(iteration_context, "loop_step_index")
+                                        and hasattr(current_context, "loop_step_index")
+                                    ):
                                         current_context.loop_step_index = (
                                             iteration_context.loop_step_index
                                         )
@@ -599,11 +619,7 @@ async def run_loop_iterations(
                         current_step_list = stashed_exec_lists.pop()
                         continue
                 except (PausedException, PipelineAbortSignal):
-                    hitl_output = None
-                    try:
-                        hitl_output = sr.output  # type: ignore[name-defined]
-                    except Exception:
-                        hitl_output = None
+                    hitl_output = getattr(sr, "output", None) if sr is not None else None
                     propagate_pause_state(
                         iteration_context=iteration_context,
                         current_context=current_context,
@@ -694,10 +710,23 @@ async def run_loop_iterations(
                                 else None
                             ),
                         )
-                        fallback_result = await core.execute(fb_frame)
-                        pipeline_result.step_history.append(fallback_result)
-                        iteration_results.append(fallback_result)
-                        current_data = getattr(fallback_result, "output", current_data)
+                        if not hasattr(core, "execute"):
+                            raise TypeError("ExecutorCore missing execute")
+                        fb_outcome = await core.execute(fb_frame)
+                        if hasattr(core, "_unwrap_outcome_to_step_result"):
+                            fb_sr = core._unwrap_outcome_to_step_result(
+                                fb_outcome,
+                                getattr(loop_step.fallback_step, "name", "<fallback>"),
+                            )
+                        else:
+                            raise TypeError("ExecutorCore missing _unwrap_outcome_to_step_result")
+                        if not isinstance(fb_sr, StepResult):
+                            raise TypeError(
+                                f"Expected StepResult for loop fallback, got {type(fb_sr).__name__}"
+                            )
+                        pipeline_result.step_history.append(fb_sr)
+                        iteration_results.append(fb_sr)
+                        current_data = getattr(fb_sr, "output", current_data)
             except Exception:
                 pass
         final_ctx = getattr(pipeline_result, "final_pipeline_context", None)
@@ -726,8 +755,10 @@ async def run_loop_iterations(
                 )
 
         # Ensure loop exit condition is re-evaluated with the latest context flags
-        if getattr(iteration_context, "is_complete", False) and hasattr(
-            current_context, "is_complete"
+        if (
+            getattr(iteration_context, "is_complete", False)
+            and current_context is not None
+            and hasattr(current_context, "is_complete")
         ):
             current_context.is_complete = True
         sync_conversation_history(

@@ -1,6 +1,5 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
-# mypy: ignore-errors
 
 from ._shared import (  # noqa: F401
     Awaitable,
@@ -47,9 +46,9 @@ class ParallelStepExecutor(Protocol):
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
+class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
     @property
-    def handles_type(self) -> type[ParallelStep]:
+    def handles_type(self) -> type[ParallelStep[BaseModel]]:
         return ParallelStep
 
     async def execute(
@@ -63,38 +62,21 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         resources = frame.resources
         limits = frame.limits
         context_setter = getattr(frame, "context_setter", None)
-        step_executor = getattr(frame, "step_executor", None)
 
-        parallel_step: ParallelStep[object] | None = (
-            step if isinstance(step, ParallelStep) else None
-        )
         if not isinstance(step, ParallelStep):
             raise ValueError(f"Expected ParallelStep, got {type(step)}")
-        parallel_step = step
+        parallel_step: ParallelStep[BaseModel] = step
         telemetry.logfire.debug(f"=== HANDLING PARALLEL STEP === {parallel_step.name}")
         telemetry.logfire.debug(f"Parallel step branches: {list(parallel_step.branches.keys())}")
 
-        # Block removed merge strategy at execution time (defense in depth)
-        ms = getattr(parallel_step, "merge_strategy", None)
-        if isinstance(ms, str) and ms.lower() == "merge_scratchpad":
-            from flujo.exceptions import ConfigurationError as _CfgErr
+        # Fail fast on removed merge strategy even when steps/pipelines were built via model_construct.
+        from flujo.utils.scratchpad import is_merge_scratchpad
 
-            raise _CfgErr(
+        if is_merge_scratchpad(getattr(parallel_step, "merge_strategy", None)):
+            raise ConfigurationError(
                 "merge_strategy=MERGE_SCRATCHPAD is removed. Use CONTEXT_UPDATE with "
                 "explicit field_mapping or OVERWRITE/NO_MERGE."
             )
-        try:
-            from flujo.domain.dsl.step import MergeStrategy as _MS  # local import
-
-            if ms is getattr(_MS, "MERGE_SCRATCHPAD", None):
-                from flujo.exceptions import ConfigurationError as _CfgErr
-
-                raise _CfgErr(
-                    "merge_strategy=MERGE_SCRATCHPAD is removed. Use CONTEXT_UPDATE with "
-                    "explicit field_mapping or OVERWRITE/NO_MERGE."
-                )
-        except Exception:
-            pass
 
         result = StepResult(name=parallel_step.name)
         result.metadata_ = {}
@@ -164,7 +146,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
 
         # Tracking variables
         branch_results: Dict[str, StepResult] = {}
-        branch_contexts: JSONObject = {}
+        branch_contexts: Dict[str, BaseModel | None] = {}
         total_cost = 0.0
         total_tokens = 0
         all_successful = True
@@ -189,7 +171,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
 
             branch_contexts[branch_name] = branch_context
 
-        def _merge_branch_context_into_parent(branch_ctx: object | None) -> None:
+        def _merge_branch_context_into_parent(branch_ctx: BaseModel | None) -> None:
             nonlocal context
             if context is None or branch_ctx is None:
                 return
@@ -216,7 +198,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         async def execute_branch(
             branch_name: str,
             branch_pipeline: object,
-            branch_context: object | None,
+            branch_context: BaseModel | None,
             branch_quota: Optional[Quota],
         ) -> Tuple[str, StepResult]:
             try:
@@ -234,186 +216,131 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                 if context is not None and branch_context is not None:
                     ContextManager.verify_isolation(context, branch_context)
 
-                if step_executor is not None:
-                    target = branch_pipeline
-                    try:
-                        if isinstance(branch_pipeline, Pipeline) and getattr(
-                            branch_pipeline, "steps", None
-                        ):
-                            steps = list(getattr(branch_pipeline, "steps") or [])
-                            if steps:
-                                first_step = steps[0]
-                                if getattr(first_step, "agent", None) is not None:
-                                    try:
-                                        setattr(branch_pipeline, "agent", first_step.agent)
-                                    except Exception:
-                                        pass
-                    except Exception:
-                        target = branch_pipeline
-
-                    try:
-                        branch_result = await step_executor(
-                            target,
-                            data,
-                            branch_context,
-                            resources,
-                        )
-                    except AttributeError as exc:
-                        if (
-                            isinstance(target, Pipeline)
-                            and getattr(target, "steps", None)
-                            and "agent" in str(exc)
-                        ):
-                            steps = list(getattr(target, "steps") or [])
-                            if steps:
-                                branch_result = await step_executor(
-                                    steps[0],
-                                    data,
-                                    branch_context,
-                                    resources,
-                                )
-                            else:
-                                raise
-                        else:
-                            raise
-
-                    # Quota reconciliation for custom executors: they may bypass normal agent
-                    # policies, so reconcile against the branch quota using observed usage.
-                    try:
-                        from flujo.domain.models import UsageEstimate as _UsageEstimate
-
-                        quota_mgr = getattr(core, "_quota_manager", None)
-                        reconcile_fn = getattr(quota_mgr, "reconcile", None)
-                        if callable(reconcile_fn):
-                            reconcile_fn(
-                                _UsageEstimate(cost_usd=0.0, tokens=0),
-                                _UsageEstimate(
-                                    cost_usd=float(getattr(branch_result, "cost_usd", 0.0) or 0.0),
-                                    tokens=int(getattr(branch_result, "token_counts", 0) or 0),
-                                ),
-                                limits=limits if isinstance(limits, UsageLimits) else None,
-                            )
-                    except UsageLimitExceededError:
-                        raise
-                    except Exception:
-                        pass
+                # Execute branch pipeline (or a single step) and normalize to a PipelineResult.
+                if isinstance(branch_pipeline, Pipeline) and hasattr(
+                    core, "_execute_pipeline_via_policies"
+                ):
+                    pipeline_result = await core._execute_pipeline_via_policies(
+                        branch_pipeline,
+                        data,
+                        branch_context,
+                        resources,
+                        limits,
+                        context_setter,
+                    )
                 else:
-                    # Delegate depending on type: Pipeline vs Step
-                    if isinstance(branch_pipeline, Pipeline):
-                        pipeline_result = await core._execute_pipeline_via_policies(
-                            branch_pipeline,
-                            data,
-                            branch_context,
-                            resources,
-                            limits,
-                            context_setter,
+                    if not hasattr(core, "execute"):
+                        raise RuntimeError("ExecutorCore is missing required 'execute' method")
+                    step_outcome = await core.execute(
+                        step=branch_pipeline,
+                        data=data,
+                        context=branch_context,
+                        resources=resources,
+                        limits=limits,
+                        context_setter=context_setter,
+                    )
+                    if isinstance(step_outcome, StepResult):
+                        sr = step_outcome
+                        pipeline_result = PipelineResult(
+                            step_history=[sr],
+                            total_cost_usd=sr.cost_usd,
+                            total_tokens=sr.token_counts,
+                            final_pipeline_context=branch_context,
                         )
-                    else:
-                        # Execute a single Step via core and synthesize PipelineResult-like view
-                        step_outcome = await core.execute(
-                            step=branch_pipeline,
-                            data=data,
-                            context=branch_context,
-                            resources=resources,
-                            limits=limits,
-                            context_setter=context_setter,
-                        )
-                        if isinstance(step_outcome, Success):
-                            sr = step_outcome.step_result
-                            if not isinstance(sr, StepResult) or getattr(sr, "name", None) in (
-                                None,
-                                "<unknown>",
-                                "",
-                            ):
-                                sr = StepResult(
-                                    name=getattr(branch_pipeline, "name", "<unnamed>"),
-                                    success=False,
-                                    feedback="Missing step_result",
-                                )
-                            pipeline_result = PipelineResult(
-                                step_history=[sr],
-                                total_cost_usd=sr.cost_usd,
-                                total_tokens=sr.token_counts,
-                                final_pipeline_context=branch_context,
-                            )
-                        elif isinstance(step_outcome, Failure):
-                            sr = step_outcome.step_result or StepResult(
-                                name=getattr(branch_pipeline, "name", "<unnamed>"),
-                                success=False,
-                                feedback=step_outcome.feedback,
-                            )
-                            pipeline_result = PipelineResult(
-                                step_history=[sr],
-                                total_cost_usd=sr.cost_usd,
-                                total_tokens=sr.token_counts,
-                                final_pipeline_context=branch_context,
-                            )
-                        elif isinstance(step_outcome, Paused):
-                            # Propagate control-flow and preserve branch context
-                            _merge_branch_context_into_parent(branch_context)
-                            raise PausedException(step_outcome.message)
-                        else:
-                            # Unknown/Chunk/Aborted -> synthesize failure
+                    elif isinstance(step_outcome, Success):
+                        sr = step_outcome.step_result
+                        if not isinstance(sr, StepResult) or getattr(sr, "name", None) in (
+                            None,
+                            "<unknown>",
+                            "",
+                        ):
                             sr = StepResult(
                                 name=getattr(branch_pipeline, "name", "<unnamed>"),
                                 success=False,
-                                feedback=f"Unsupported outcome type: {type(step_outcome).__name__}",
+                                feedback="Missing step_result",
                             )
-                            pipeline_result = PipelineResult(
-                                step_history=[sr],
-                                total_cost_usd=0.0,
-                                total_tokens=0,
-                                final_pipeline_context=branch_context,
-                            )
-                    pipeline_success = (
-                        all(s.success for s in pipeline_result.step_history)
+                        pipeline_result = PipelineResult(
+                            step_history=[sr],
+                            total_cost_usd=sr.cost_usd,
+                            total_tokens=sr.token_counts,
+                            final_pipeline_context=branch_context,
+                        )
+                    elif isinstance(step_outcome, Failure):
+                        sr = step_outcome.step_result or StepResult(
+                            name=getattr(branch_pipeline, "name", "<unnamed>"),
+                            success=False,
+                            feedback=step_outcome.feedback,
+                        )
+                        pipeline_result = PipelineResult(
+                            step_history=[sr],
+                            total_cost_usd=sr.cost_usd,
+                            total_tokens=sr.token_counts,
+                            final_pipeline_context=branch_context,
+                        )
+                    elif isinstance(step_outcome, Paused):
+                        _merge_branch_context_into_parent(branch_context)
+                        raise PausedException(step_outcome.message)
+                    else:
+                        sr = StepResult(
+                            name=getattr(branch_pipeline, "name", "<unnamed>"),
+                            success=False,
+                            feedback=f"Unsupported outcome type: {type(step_outcome).__name__}",
+                        )
+                        pipeline_result = PipelineResult(
+                            step_history=[sr],
+                            total_cost_usd=0.0,
+                            total_tokens=0,
+                            final_pipeline_context=branch_context,
+                        )
+
+                pipeline_success = (
+                    all(s.success for s in pipeline_result.step_history)
+                    if pipeline_result.step_history
+                    else False
+                )
+
+                # Enhanced feedback aggregation for branch failures.
+                branch_feedback = ""
+                if pipeline_result.step_history:
+                    failed_steps = [s for s in pipeline_result.step_history if not s.success]
+                    if failed_steps:
+                        failure_details: list[str] = []
+                        for failed_step in failed_steps:
+                            step_detail = f"step '{failed_step.name}'"
+                            if failed_step.attempts > 1:
+                                step_detail += f" (after {failed_step.attempts} attempts)"
+                            if failed_step.feedback:
+                                step_detail += f": {failed_step.feedback}"
+                            failure_details.append(step_detail)
+                        branch_feedback = f"Pipeline failed - {'; '.join(failure_details)}"
+                    else:
+                        branch_feedback = (
+                            pipeline_result.step_history[-1].feedback
+                            if pipeline_result.step_history[-1].feedback
+                            else ""
+                        )
+
+                branch_result = StepResult(
+                    name=f"{parallel_step.name}_{branch_name}",
+                    output=(
+                        pipeline_result.step_history[-1].output
                         if pipeline_result.step_history
-                        else False
-                    )
-
-                    # Enhanced feedback aggregation for branch failures
-                    branch_feedback = ""
-                    if pipeline_result.step_history:
-                        failed_steps = [s for s in pipeline_result.step_history if not s.success]
-                        if failed_steps:
-                            # Aggregate detailed failure information
-                            failure_details = []
-                            for failed_step in failed_steps:
-                                step_detail = f"step '{failed_step.name}'"
-                                if failed_step.attempts > 1:
-                                    step_detail += f" (after {failed_step.attempts} attempts)"
-                                if failed_step.feedback:
-                                    step_detail += f": {failed_step.feedback}"
-                                failure_details.append(step_detail)
-                            branch_feedback = f"Pipeline failed - {'; '.join(failure_details)}"
-                        else:
-                            branch_feedback = (
-                                pipeline_result.step_history[-1].feedback
-                                if pipeline_result.step_history[-1].feedback
-                                else ""
-                            )
-
-                    branch_result = StepResult(
-                        name=f"{parallel_step.name}_{branch_name}",
-                        output=(
-                            pipeline_result.step_history[-1].output
-                            if pipeline_result.step_history
-                            else None
+                        else None
+                    ),
+                    success=pipeline_success,
+                    attempts=1,
+                    latency_s=sum(s.latency_s for s in pipeline_result.step_history),
+                    token_counts=pipeline_result.total_tokens,
+                    cost_usd=pipeline_result.total_cost_usd,
+                    feedback=branch_feedback,
+                    branch_context=pipeline_result.final_pipeline_context,
+                    metadata_={
+                        "failed_steps_count": len(
+                            [s for s in pipeline_result.step_history if not s.success]
                         ),
-                        success=pipeline_success,
-                        attempts=1,
-                        latency_s=sum(s.latency_s for s in pipeline_result.step_history),
-                        token_counts=pipeline_result.total_tokens,
-                        cost_usd=pipeline_result.total_cost_usd,
-                        feedback=branch_feedback,
-                        branch_context=pipeline_result.final_pipeline_context,
-                        metadata_={
-                            "failed_steps_count": len(
-                                [s for s in pipeline_result.step_history if not s.success]
-                            ),
-                            "total_steps_count": len(pipeline_result.step_history),
-                        },
-                    )
+                        "total_steps_count": len(pipeline_result.step_history),
+                    },
+                )
                 # No reactive post-branch checks in pure quota mode
                 telemetry.logfire.debug(
                     f"Branch {branch_name} completed: success={branch_result.success}"
@@ -460,7 +387,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                         if hasattr(core, "_reset_current_quota"):
                             core._reset_current_quota(quota_token)
                         elif hasattr(core, "_quota_manager") and hasattr(quota_token, "old_value"):
-                            core._quota_manager.set_current_quota(quota_token.old_value)  # type: ignore[attr-defined]
+                            core._quota_manager.set_current_quota(quota_token.old_value)
                 except Exception:
                     pass
 
@@ -476,18 +403,19 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     PricingNotConfiguredError,
                 ),
             ):
-                telemetry.logfire.info(
-                    f"Parallel branch hit usage limit, re-raising: {branch_execution_result}"
-                )
                 raise branch_execution_result
             if isinstance(branch_execution_result, Exception):
-                telemetry.logfire.error(
-                    f"Parallel branch raised unexpected exception: {branch_execution_result}"
-                )
                 raise branch_execution_result
-            if isinstance(branch_execution_result, tuple) and len(branch_execution_result) == 2:
-                bn2, branch_result = branch_execution_result
-                branch_name_local = bn2
+
+            branch_result: StepResult
+            if (
+                isinstance(branch_execution_result, tuple)
+                and len(branch_execution_result) == 2
+                and isinstance(branch_execution_result[0], str)
+                and isinstance(branch_execution_result[1], StepResult)
+            ):
+                branch_name_local = branch_execution_result[0]
+                branch_result = branch_execution_result[1]
             else:
                 telemetry.logfire.error(
                     f"Unexpected result format from branch {branch_name_local}: {branch_execution_result}"
@@ -503,26 +431,7 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                     feedback=f"Branch execution failed with unexpected result format: {branch_execution_result}",
                     metadata_={},
                 )
-            if isinstance(branch_result, Exception):
-                telemetry.logfire.error(
-                    f"Branch {branch_name_local} raised exception: {branch_result}"
-                )
-                branch_result = StepResult(
-                    name=f"{parallel_step.name}_{branch_name_local}",
-                    output=None,
-                    success=False,
-                    attempts=1,
-                    latency_s=0.0,
-                    token_counts=0,
-                    cost_usd=0.0,
-                    feedback=f"Branch execution failed: {branch_result}",
-                    metadata_={},
-                )
-            branch_result = (
-                branch_execution_result[1]
-                if isinstance(branch_execution_result, tuple)
-                else branch_execution_result
-            )
+
             branch_results[branch_name_local] = branch_result
             telemetry.logfire.debug(
                 "Parallel branch result",
@@ -544,8 +453,8 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
         start_index = 0
 
         # Execute remaining branches concurrently using the shared quota, and proactively cancel on breach
-        pending: set[asyncio.Task] = set()
-        task_to_branch: dict[asyncio.Task, str] = {}
+        pending: set[asyncio.Task[Tuple[str, StepResult]]] = set()
+        task_to_branch: dict[asyncio.Task[Tuple[str, StepResult]], str] = {}
         for bn, bp in zip(branch_names[start_index:], branch_pipelines[start_index:]):
             t = asyncio.create_task(
                 execute_branch(bn, bp, branch_contexts[bn], branch_quota_map.get(bn))
@@ -765,14 +674,16 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
 
                 msg = usage_limit_error_msg or "Usage limit exceeded"
                 try:
-                    pr: PipelineResult[object] = PipelineResult(
+                    pr: PipelineResult[BaseModel] = PipelineResult(
                         step_history=list(branch_results.values()),
                         total_cost_usd=sum(br.cost_usd for br in branch_results.values()),
                         total_tokens=sum(br.token_counts for br in branch_results.values()),
                         final_pipeline_context=context,
                     )
                 except Exception:
-                    pr = PipelineResult[object](step_history=[], total_cost_usd=0.0, total_tokens=0)
+                    pr = PipelineResult[BaseModel](
+                        step_history=[], total_cost_usd=0.0, total_tokens=0
+                    )
                 _refund_split_quota()
                 raise UsageLimitExceededError(msg, pr)
         # Overall success
@@ -932,13 +843,6 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep]):
                                     except Exception:  # noqa: BLE001, S110
                                         pass
                             ContextManager.merge(context, bc)
-                elif parallel_step.merge_strategy == "merge_scratchpad":
-                    from flujo.exceptions import ConfigurationError as _CfgErr
-
-                    raise _CfgErr(
-                        "merge_strategy=MERGE_SCRATCHPAD is removed. Use CONTEXT_UPDATE with "
-                        "explicit field_mapping or OVERWRITE/NO_MERGE."
-                    )
                 elif parallel_step.merge_strategy == MergeStrategy.OVERWRITE and branch_ctxs:
                     last = sorted(branch_ctxs)[-1]
                     branch_ctx = branch_ctxs[last]
@@ -1130,12 +1034,11 @@ class ParallelStepExecutorOutcomes(Protocol):
         core: object,
         step: object,
         data: object,
-        context: Optional[object],
+        context: Optional[BaseModel],
         resources: Optional[object],
         limits: Optional[UsageLimits],
-        context_setter: Optional[Callable[[PipelineResult[object], Optional[object]], None]],
-        parallel_step: Optional[ParallelStep[object]] = None,
-        step_executor: Optional[Callable[..., Awaitable[StepResult]]] = None,
+        context_setter: Optional[Callable[[PipelineResult[BaseModel], Optional[BaseModel]], None]],
+        parallel_step: Optional[ParallelStep[BaseModel]] = None,
     ) -> StepOutcome[StepResult]: ...
 
 

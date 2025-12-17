@@ -307,10 +307,12 @@ class ConfigManager:
             return tokens or None
 
         env_allowed = _parse_allowed_imports_env(os.environ.get("FLUJO_BLUEPRINT_ALLOWED_IMPORTS"))
-        test_mode_enabled = (
-            str(os.environ.get("FLUJO_TEST_MODE", "")).strip().lower() in {"1", "true", "yes", "on"}
-            or os.environ.get("PYTEST_CURRENT_TEST") is not None
-        )
+        test_mode_enabled = str(os.environ.get("FLUJO_TEST_MODE", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
         if self.config_path is None:
             current_env_sig = self._compute_env_signature()

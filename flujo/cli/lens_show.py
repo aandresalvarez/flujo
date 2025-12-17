@@ -7,9 +7,9 @@ from rich.panel import Panel
 from rich.text import Text
 import json
 from .config import load_backend_from_config
-import os as __os
 from typing import Optional, Any
 from flujo.utils.async_bridge import run_sync
+from flujo.utils.config import get_settings
 
 
 def _find_run_by_partial_id(backend: Any, partial_id: str, timeout: float = 5.0) -> Optional[str]:
@@ -167,13 +167,8 @@ def show_run(
         except Exception:
             pass  # Continue with original run_id
 
-    # Fast path in CI/tests for SQLite: avoid event loop and rich rendering
-    # Fast-mode heuristics rely only on env to avoid expensive settings init
-    _fast_mode = (
-        bool(__os.getenv("PYTEST_CURRENT_TEST"))
-        or (__os.getenv("CI", "").lower() in ("true", "1"))
-        or (__os.getenv("FLUJO_TEST_MODE", "").strip() in ("1", "true", "True"))
-    )
+    # Fast path in test environments for SQLite: avoid event loop and rich rendering
+    _fast_mode = bool(get_settings().test_mode)
 
     # If detailed output was requested, disable fast mode to fetch full payloads
     if verbose or show_input or show_output or show_error or json_output or show_final_output:

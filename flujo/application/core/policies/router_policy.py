@@ -1,5 +1,6 @@
 from __future__ import annotations
-# mypy: ignore-errors
+
+from typing import runtime_checkable
 
 from .parallel_policy import DefaultParallelStepExecutor
 from ._shared import (  # noqa: F401
@@ -15,6 +16,7 @@ from ._shared import (  # noqa: F401
     Pipeline,
     PipelineResult,
     Protocol,
+    Quota,
     StepOutcome,
     StepResult,
     Step,
@@ -31,21 +33,36 @@ from flujo.domain.models import BaseModel as DomainBaseModel
 # --- Dynamic Router Step Executor policy ---
 
 
+@runtime_checkable
+class _ExecutorCoreLike(Protocol):
+    async def execute(
+        self, frame: ExecutionFrame[DomainBaseModel]
+    ) -> StepOutcome[StepResult] | StepResult: ...
+
+    def _safe_step_name(self, step: object) -> str: ...
+
+    def _get_current_quota(self) -> Quota | None: ...
+
+
 class DynamicRouterStepExecutor(Protocol):
     async def execute(
         self, core: object, frame: ExecutionFrame[DomainBaseModel]
     ) -> StepOutcome[StepResult]: ...
 
 
-class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
+class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep[DomainBaseModel]]):
     @property
-    def handles_type(self) -> type[DynamicParallelRouterStep]:
+    def handles_type(self) -> type[DynamicParallelRouterStep[DomainBaseModel]]:
         return DynamicParallelRouterStep
 
     async def execute(
         self, core: object, frame: ExecutionFrame[DomainBaseModel]
     ) -> StepOutcome[StepResult]:
         """Handle DynamicParallelRouterStep execution with proper branch selection and parallel delegation."""
+        if not isinstance(core, _ExecutorCoreLike):
+            raise TypeError(
+                "DefaultDynamicRouterStepExecutor expected core with ExecutorCore interface"
+            )
         router_step = frame.step
         if not isinstance(router_step, DynamicParallelRouterStep):
             raise TypeError(
@@ -64,12 +81,7 @@ class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
         router_agent_step: Step[object, object] = Step(
             name=f"{router_step.name}_router", agent=router_step.router_agent
         )
-        quota = None
-        try:
-            if hasattr(core, "_get_current_quota"):
-                quota = core._get_current_quota()
-        except Exception:
-            quota = None
+        quota = core._get_current_quota()
 
         router_frame = ExecutionFrame(
             step=router_agent_step,
@@ -155,7 +167,7 @@ class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
             )
 
         # Phase 2: Execute selected branches in parallel via policy
-        temp_parallel_step: ParallelStep[object] = ParallelStep(
+        temp_parallel_step: ParallelStep[DomainBaseModel] = ParallelStep(
             name=router_step.name,
             branches=selected_branches,
             merge_strategy=router_step.merge_strategy,
@@ -165,12 +177,7 @@ class DefaultDynamicRouterStepExecutor(StepPolicy[DynamicParallelRouterStep]):
         )
         # Use the DefaultParallelStepExecutor policy directly instead of legacy core method
         parallel_executor = DefaultParallelStepExecutor()
-        quota = None
-        try:
-            if hasattr(core, "_get_current_quota"):
-                quota = core._get_current_quota()
-        except Exception:
-            quota = None
+        quota = core._get_current_quota()
         frame = ExecutionFrame(
             step=temp_parallel_step,
             data=data,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 from flujo.type_definitions.common import JSONObject
-# mypy: ignore-errors
 
 import inspect
 
@@ -50,8 +49,12 @@ async def run_agent_execution(
     cache_key: str | None,
     _fallback_depth: int = 0,
 ) -> StepOutcome[StepResult]:
+    handler = getattr(core, "_agent_handler", None)
+    execute_fn = getattr(handler, "execute", None)
+    if not callable(execute_fn):
+        raise TypeError("run_agent_execution requires core._agent_handler.execute(...)")
     try:
-        return await core._agent_handler.execute(
+        outcome = await execute_fn(
             step=step,
             data=data,
             context=context,
@@ -63,8 +66,18 @@ async def run_agent_execution(
             fallback_depth=_fallback_depth,
         )
     except PausedException as e:
-        # Control-flow exception: must propagate (do not coerce into data).
         raise e
+    if isinstance(outcome, StepOutcome):
+        return outcome
+    if isinstance(outcome, StepResult):
+        return to_outcome(outcome)
+    return to_outcome(
+        StepResult(
+            name=str(getattr(step, "name", "<unnamed>")),
+            success=False,
+            feedback=f"Unsupported agent handler outcome: {type(outcome).__name__}",
+        )
+    )
     if hasattr(step, "_mock_name"):
         mock_name = str(getattr(step, "_mock_name", ""))
         if "fallback_step" in mock_name and mock_name.count("fallback_step") > 1:
@@ -314,10 +327,10 @@ async def run_agent_execution(
         try:
             if resources is not None:
                 if hasattr(resources, "__aenter__"):
-                    attempt_resources = await resources.__aenter__()  # type: ignore[attr-defined]
+                    attempt_resources = await resources.__aenter__()
                     exit_cm = getattr(resources, "__aexit__", None)
                 elif hasattr(resources, "__enter__"):
-                    attempt_resources = resources.__enter__()  # type: ignore[attr-defined]
+                    attempt_resources = resources.__enter__()
                     exit_cm = getattr(resources, "__exit__", None)
         except Exception:
             raise

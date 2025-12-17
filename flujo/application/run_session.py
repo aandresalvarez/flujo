@@ -27,6 +27,7 @@ from ..domain.models import (
 from ..domain.resources import AppResources
 from ..domain.types import HookCallable
 from ..exceptions import (
+    ConfigurationError,
     ExecutionError,
     PipelineAbortSignal,
     PipelineContextInitializationError,
@@ -200,6 +201,27 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
                 telemetry.logfire.debug(
                     f"Runner.run_async received initial_context_data keys={list(initial_context_data.keys()) if isinstance(initial_context_data, dict) else None}"
                 )
+            except Exception:
+                pass
+
+            # Validate scratchpad removal once per run (without enforcing unrelated validation rules).
+            try:
+                validate_fn = getattr(self.pipeline, "validate", None)
+                if callable(validate_fn):
+                    report = validate_fn(raise_on_error=False, include_imports=True)
+                    findings = []
+                    try:
+                        for f in getattr(report, "errors", []) or []:
+                            rid = str(getattr(f, "rule_id", "") or "").upper()
+                            msg = str(getattr(f, "message", "") or "")
+                            if "SCRATCHPAD" in rid or "scratchpad" in msg.lower():
+                                findings.append(msg or rid)
+                    except Exception:
+                        findings = []
+                    if findings:
+                        raise ConfigurationError("; ".join(findings[:3]))
+            except ConfigurationError:
+                raise
             except Exception:
                 pass
             current_context_instance: Optional[ContextT] = None

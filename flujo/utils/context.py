@@ -19,14 +19,6 @@ _VERBOSE_DEBUG: bool = bool(os.getenv("FLUJO_VERBOSE_CONTEXT_DEBUG"))
 T = TypeVar("T", bound=BaseModel)
 
 
-def _force_setattr(target: Any, name: str, value: Any) -> None:
-    """Assign attribute bypassing Pydantic's field checks when necessary."""
-    try:
-        setattr(target, name, value)
-    except Exception:
-        object.__setattr__(target, name, value)
-
-
 # Cache for excluded fields to avoid repeated environment variable access
 _EXCLUDED_FIELDS_CACHE: Optional[set[str]] = None
 _ENV_EXCLUDED_FIELDS_CACHE: Optional[str] = None
@@ -430,7 +422,7 @@ def safe_merge_context_updates(
                         value_to_set = getattr(source_context, field_name)
                     except Exception:
                         value_to_set = source_value
-                    _force_setattr(target_context, field_name, value_to_set)
+                    setattr(target_context, field_name, value_to_set)
                     updated_count += 1
                     continue
 
@@ -475,7 +467,7 @@ def safe_merge_context_updates(
                         current_value, actual_source_value
                     )
                     if merged_value != current_value:
-                        _force_setattr(target_context, field_name, merged_value)
+                        setattr(target_context, field_name, merged_value)
                         updated_count += 1
                         if _VERBOSE_DEBUG:
                             logger.debug(f"Updated dict field: {field_name}")
@@ -536,7 +528,7 @@ def safe_merge_context_updates(
                     try:
                         if current_value != actual_source_value:
                             # Use setattr to trigger Pydantic validation
-                            _force_setattr(target_context, field_name, actual_source_value)
+                            setattr(target_context, field_name, actual_source_value)
                             updated_count += 1
                             if _VERBOSE_DEBUG:
                                 logger.debug(f"Updated simple field: {field_name}")
@@ -555,7 +547,7 @@ def safe_merge_context_updates(
                         validation_errors.append(error_msg)
                         continue
 
-            except (AttributeError, TypeError, ValidationError) as e:
+            except (AttributeError, TypeError, ValidationError, ValueError) as e:
                 # Skip fields that can't be accessed or set
                 skip_error_msg: str = f"Skipping field '{field_name}' due to access/set error: {e}"
                 if _VERBOSE_DEBUG:
@@ -615,7 +607,7 @@ def safe_context_field_update(context: Any, field_name: str, new_value: Any) -> 
         # Only update if value has changed
         if current_value != new_value:
             # Use setattr to trigger Pydantic validation
-            _force_setattr(context, field_name, new_value)
+            setattr(context, field_name, new_value)
 
             # Note: Pydantic v2 field validators are not automatically called on attribute assignment
             # So we don't validate the entire context after each field update
@@ -629,7 +621,7 @@ def safe_context_field_update(context: Any, field_name: str, new_value: Any) -> 
             logger.debug(f"Field '{field_name}' unchanged, skipping update")
             return True
 
-    except (AttributeError, TypeError, ValidationError) as e:
+    except (AttributeError, TypeError, ValidationError, ValueError) as e:
         logger.error("Failed to update field '" + field_name + "': " + str(e))
         return False
 
@@ -826,12 +818,6 @@ def set_nested_context_field(context: Any, path: str, value: Any) -> bool:
     """
     if not path:
         return False
-    # Scratchpad is deprecated and framework-reserved; prohibit writing into it via dot-paths.
-    # Use typed context fields instead.
-    if path == "scratchpad" or path.startswith("scratchpad."):
-        raise ValueError(
-            "scratchpad is framework-reserved and deprecated; write to typed context fields instead."
-        )
 
     parts = path.split(".")
     target = context
@@ -874,7 +860,7 @@ def set_nested_context_field(context: Any, path: str, value: Any) -> bool:
                 existing_val = None
             value = _coerce_numeric(existing_val, value)
             # Fall back to attribute assignment
-            _force_setattr(target, final_field, value)
+            setattr(target, final_field, value)
             return True
     except (AttributeError, TypeError) as e:
         raise AttributeError(

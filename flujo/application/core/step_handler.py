@@ -41,7 +41,6 @@ class StepHandler:
         resources: object | None,
         limits: UsageLimits | None,
         context_setter: ContextSetter | None,
-        step_executor: StepExecutor | None,
     ) -> StepResult:
         frame = make_execution_frame(
             self._core,
@@ -59,7 +58,6 @@ class StepHandler:
             if hasattr(self._core, "_get_current_quota")
             else None,
         )
-        setattr(frame, "step_executor", step_executor)
         outcome = await self._core.parallel_step_executor.execute(self._core, frame)
         return self._core._unwrap_outcome_to_step_result(outcome, self._core._safe_step_name(step))
 
@@ -103,7 +101,6 @@ class StepHandler:
         resources: object | None,
         limits: UsageLimits | None,
         context_setter: ContextSetter | None,
-        step_executor: StepExecutor | None,
     ) -> StepResult:
         frame = make_execution_frame(
             self._core,
@@ -312,7 +309,6 @@ class StepHandler:
         limits: UsageLimits | None,
         context_setter: ContextSetter | None,
         router_step: object,
-        step_executor: StepExecutor | None,
     ) -> StepResult:
         rs = router_step if router_step is not None else step
         frame = make_execution_frame(
@@ -331,7 +327,6 @@ class StepHandler:
             if hasattr(self._core, "_get_current_quota")
             else None,
         )
-        setattr(frame, "step_executor", step_executor)
         outcome = await self._core.dynamic_router_step_executor.execute(self._core, frame)
         if isinstance(outcome, Paused):
             raise PausedException(outcome.message)

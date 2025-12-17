@@ -123,6 +123,7 @@ class BlueprintStepModel(BaseModel):
         "hitl",
         "cache",
         "agentic_loop",
+        "StateMachine",
     ] = Field(default="step")
     # Accept both 'name' and legacy 'step' keys for step name
     name: str = Field(validation_alias=AliasChoices("name", "step"))
@@ -159,6 +160,67 @@ class BlueprintStepModel(BaseModel):
     output_template: Optional[str] = None
     processing: Optional[JSONObject] = None
     meta: Optional[JSONObject] = None
+    # StateMachineStep (kind: "StateMachine")
+    start_state: Optional[str] = None
+    end_states: list[str] | None = None
+    states: dict[str, object] | None = None
+    transitions: list[object] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_yaml_11_boolean_keys(cls, data: object) -> object:
+        """Normalize YAML 1.1 boolean keys that appear in step specs.
+
+        YAML 1.1 allows unquoted `on`/`off`/`yes`/`no` to parse as booleans. We
+        normalize those keys back to their intended string forms in the few
+        places where they show up in blueprints.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        kind_val = data.get("kind", "step")
+        kind_str = str(kind_val) if kind_val is not None else "step"
+        working = dict(data)
+
+        if kind_str == "conditional":
+            branches_raw = working.get("branches")
+            if isinstance(branches_raw, dict):
+                coerced: dict[str, object] = {}
+                for k, v in branches_raw.items():
+                    if isinstance(k, bool):
+                        coerced[str(k).lower()] = v
+                    else:
+                        coerced[str(k)] = v
+                working["branches"] = coerced
+
+        if kind_str == "StateMachine":
+            states_raw = working.get("states")
+            if isinstance(states_raw, dict):
+                working["states"] = {str(k): v for k, v in states_raw.items()}
+
+            end_states_raw = working.get("end_states")
+            if end_states_raw is not None and not isinstance(end_states_raw, list):
+                working["end_states"] = [end_states_raw]
+
+            transitions_raw = working.get("transitions")
+            if isinstance(transitions_raw, list):
+                coerced_transitions: list[object] = []
+                for rule in transitions_raw:
+                    if isinstance(rule, dict):
+                        rule_coerced: dict[str, object] = {}
+                        for k, v in rule.items():
+                            if k is True:
+                                rule_coerced["on"] = v
+                            elif k is False:
+                                rule_coerced["off"] = v
+                            else:
+                                rule_coerced[str(k)] = v
+                        coerced_transitions.append(rule_coerced)
+                    else:
+                        coerced_transitions.append(rule)
+                working["transitions"] = coerced_transitions
+
+        return working
 
     @field_validator("uses")
     @classmethod

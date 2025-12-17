@@ -1,14 +1,11 @@
 from types import TracebackType
-from typing import Any, ClassVar, Protocol, runtime_checkable, Optional, Type
+from typing import Any, Protocol, runtime_checkable, Optional, Type
 
 from flujo.domain.models import BaseModel
-from pydantic import ConfigDict
 
 
 class AppResources(BaseModel):
     """Base class for user-defined resource containers."""
-
-    model_config: ClassVar[ConfigDict] = {"arbitrary_types_allowed": True}
 
 
 @runtime_checkable

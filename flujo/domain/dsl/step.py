@@ -9,7 +9,6 @@ from flujo.type_definitions.common import JSONObject
 from typing import (
     Any,
     Callable,
-    ClassVar,
     Coroutine,
     Generic,
     List,
@@ -35,7 +34,7 @@ from enum import Enum
 from flujo.domain.base_model import BaseModel
 from flujo.domain.models import RefinementCheck, UsageLimits  # noqa: F401
 from flujo.domain.resources import AppResources
-from pydantic import Field, ConfigDict, model_validator
+from pydantic import Field, model_validator
 from ..agent_protocol import AsyncAgentProtocol
 from ..plugins import ValidationPlugin
 from ..validation import Validator
@@ -263,10 +262,6 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     def is_complex(self) -> bool:
         # ✅ Base steps are not complex by default.
         return False
-
-    model_config: ClassVar[ConfigDict] = {
-        "arbitrary_types_allowed": True,
-    }
 
     @model_validator(mode="after")
     def _validate_adapter_metadata(self) -> "Step[StepInT, StepOutT]":
@@ -1108,7 +1103,7 @@ class HumanInTheLoopStep(Step[Any, Any]):
         description="Context path to automatically store the human response (e.g., 'hitl_data.user_name')",
     )
 
-    model_config = {"arbitrary_types_allowed": True}
+    # model_config inherited from BaseModel
 
     @property
     def is_complex(self) -> bool:

@@ -9,6 +9,7 @@ from ._shared import (
     asyncio,
     telemetry,
 )
+from flujo.exceptions import PluginError, ValidationError
 from typing import Sequence, TypeVar
 
 from ..executor_protocols import IAgentRunner, IPluginRunner, IValidatorRunner
@@ -212,7 +213,7 @@ class DefaultPluginRedirector:
                 # Core will wrap generic exceptions as its own PluginError and add retry semantics
                 feedback = getattr(outcome, "feedback", None)
                 fb = feedback or "Plugin failed without feedback"
-                raise Exception(f"Plugin validation failed: {fb}")
+                raise PluginError(f"Plugin validation failed: {fb}")
             # New solution
             new_solution = getattr(outcome, "new_solution", None)
             if new_solution is not None:
@@ -253,6 +254,6 @@ class DefaultValidatorInvoker:
             timeout_s,
         )
         for r in results:
-            if not getattr(r, "is_valid", False):
-                # Raise a generic exception; core wraps/handles uniformly for retries/fallback
-                raise Exception(r.feedback)
+            if not r.is_valid:
+                # Raise a specific validation exception
+                raise ValidationError(r.feedback or "Validation failed", code="VALIDATION_FAILED")

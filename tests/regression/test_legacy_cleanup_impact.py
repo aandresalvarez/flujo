@@ -80,6 +80,24 @@ class TestLegacyFunctionUsageAnalysis:
         # step_logic module was removed, functionality migrated to ultra_executor
         # Test using ExecutorCore
         executor = ExecutorCore()
+
+        class _MockAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                _step: object,
+                _data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepResult:
+                return StepResult(name="test", success=True)
+
+        executor.agent_step_executor = _MockAgentExecutor()
         result = await executor._handle_cache_step(
             step=mock_cache_step,
             data="test",
@@ -87,7 +105,6 @@ class TestLegacyFunctionUsageAnalysis:
             resources=None,
             limits=None,
             context_setter=None,
-            step_executor=mock_step_executor,
         )
 
         assert isinstance(result, StepResult)
@@ -140,6 +157,24 @@ class TestMigrationCompleteness:
         # step_logic module was removed, functionality migrated to ultra_executor
         # Test using ExecutorCore
         executor = ExecutorCore()
+
+        class _MockAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                _step: object,
+                _data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepResult:
+                return StepResult(name="test", success=True)
+
+        executor.agent_step_executor = _MockAgentExecutor()
         await executor._handle_cache_step(
             step=mock_cache_step,
             data="test",
@@ -147,7 +182,6 @@ class TestMigrationCompleteness:
             resources=None,
             limits=None,
             context_setter=None,
-            step_executor=AsyncMock(),
         )
 
         # HITL step: test using ExecutorCore
@@ -265,6 +299,24 @@ class TestDeprecationDecorator:
         # step_logic module was removed, functionality migrated to ultra_executor
         # Test that ExecutorCore can handle cache steps
         executor = ExecutorCore()
+
+        class _MockAgentExecutor:
+            async def execute(
+                self,
+                _core: object,
+                _step: object,
+                _data: object,
+                _context: object,
+                _resources: object,
+                _limits: object,
+                _stream: bool,
+                _on_chunk: object,
+                _cache_key: object,
+                _fallback_depth: int,
+            ) -> StepResult:
+                return StepResult(name="test", success=True)
+
+        executor.agent_step_executor = _MockAgentExecutor()
         result = await executor._handle_cache_step(
             step=mock_cache_step,
             data="test",
@@ -272,7 +324,6 @@ class TestDeprecationDecorator:
             resources=None,
             limits=None,
             context_setter=None,
-            step_executor=AsyncMock(),
         )
 
         # Check that the result is valid
@@ -297,7 +348,6 @@ class TestFunctionSignatureAnalysis:
             "resources",
             "limits",
             "context_setter",
-            "step_executor",
         }
         assert expected_params.issubset(params)
 

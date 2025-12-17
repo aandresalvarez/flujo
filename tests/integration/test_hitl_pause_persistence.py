@@ -1,30 +1,14 @@
-from typing import Any, AsyncIterator, Optional
-
 import pytest
 
 from flujo.application.core.execution_manager import ExecutionManager
 from flujo.application.core.state_manager import StateManager
+from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.step import Step
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.models import PipelineContext, PipelineResult, StepResult
 from flujo.exceptions import PausedException, PipelineAbortSignal
+from flujo.infra.backends import LocalBackend
 from flujo.state.backends.memory import InMemoryBackend
-
-
-async def pause_step_executor(
-    step: Step[Any, Any],
-    data: Any,
-    context: Optional[PipelineContext],
-    resources: Any,
-    *,
-    stream: bool = False,
-) -> AsyncIterator[StepResult]:
-    if step.name == "s1":
-        # Normal step
-        yield StepResult(name="s1", output="mid", success=True, attempts=1)
-        return
-    # Simulate HITL pause on second step
-    raise PausedException("need input")
 
 
 @pytest.mark.fast
@@ -40,7 +24,29 @@ async def test_hitl_pause_persists_state_and_context() -> None:
     exec_manager = ExecutionManager[PipelineContext](
         pipeline,
         state_manager=state_manager,
+        backend=LocalBackend(ExecutorCore()),
     )
+
+    class _PauseOnSecondExecutor:
+        async def execute(
+            self,
+            _core: object,
+            step: object,
+            data: object,
+            _context: object,
+            _resources: object,
+            _limits: object,
+            _stream: bool,
+            _on_chunk: object,
+            _cache_key: object,
+            _fallback_depth: int,
+        ) -> StepResult:
+            if getattr(step, "name", "") == "s1":
+                return StepResult(name="s1", output="mid", success=True, attempts=1)
+            raise PausedException("need input")
+
+    # Override execution to simulate a pause on the second step.
+    exec_manager.backend._executor.agent_step_executor = _PauseOnSecondExecutor()  # type: ignore[attr-defined]
 
     run_id = "hitl-pause-run"
     ctx = PipelineContext(initial_prompt="start")
@@ -57,7 +63,6 @@ async def test_hitl_pause_persists_state_and_context() -> None:
             stream_last=False,
             run_id=run_id,
             state_created_at=None,
-            step_executor=pause_step_executor,
         ):
             items.append(item)
     except PipelineAbortSignal:

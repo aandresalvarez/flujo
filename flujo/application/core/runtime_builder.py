@@ -11,6 +11,7 @@ import importlib
 from .agent_handler import AgentHandler
 from .agent_orchestrator import AgentOrchestrator
 from .background_task_manager import BackgroundTaskManager
+from .background_task_handler import BackgroundTaskHandler
 from .cache_manager import CacheManager
 from .conditional_orchestrator import ConditionalOrchestrator
 from .context_update_manager import ContextUpdateManager
@@ -136,6 +137,7 @@ class ExecutorCoreDeps(Generic[TContext_w_Scratch]):
     sandbox: SandboxProtocol
     memory_manager: MemoryManager
     background_task_manager: BackgroundTaskManager
+    bg_task_handler: BackgroundTaskHandler
     context_update_manager: ContextUpdateManager
     step_history_tracker: StepHistoryTracker
     estimator_factory: UsageEstimatorFactory
@@ -281,6 +283,11 @@ class FlujoRuntimeBuilder:
         )
         memory_store_obj: VectorStoreProtocol = memory_store or NullVectorStore()
         background_task_manager_obj = background_task_manager or BackgroundTaskManager()
+        from .background_task_handler import BackgroundTaskHandler as _BackgroundTaskHandler
+
+        bg_task_handler_obj = _BackgroundTaskHandler(
+            None
+        )  # Temporary init, updated later if needed
         # Memory manager wiring (optional, disabled by default)
         try:
             from ...embeddings import get_embedding_client
@@ -521,6 +528,7 @@ class FlujoRuntimeBuilder:
             fallback_handler=fallback_handler or FallbackHandler(),
             hydration_manager=hydration_manager or HydrationManager(state_providers),
             background_task_manager=background_task_manager_obj,
+            bg_task_handler=bg_task_handler_obj,
             context_update_manager=context_update_manager or ContextUpdateManager(),
             step_history_tracker=step_history_tracker or StepHistoryTracker(),
             estimator_factory=estimator_factory or build_default_estimator_factory(),

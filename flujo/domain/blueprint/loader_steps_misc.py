@@ -25,6 +25,7 @@ AnyPipeline: TypeAlias = Pipeline[object, object]
 CompiledAgents: TypeAlias = dict[str, object]
 CompiledImports: TypeAlias = dict[str, AnyPipeline]
 BuildStep = Callable[..., AnyStep]
+BuildBranch = Callable[..., AnyPipeline]
 
 _CallableObj: TypeAlias = Callable[..., object]
 
@@ -522,10 +523,56 @@ def _attach_processing_meta(st: AnyStep, model: BlueprintStepModel) -> None:
         pass
 
 
+def build_state_machine_step(
+    model: BlueprintStepModel,
+    step_config: StepConfig,
+    *,
+    yaml_path: Optional[str],
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
+    build_branch: BuildBranch,
+) -> AnyStep:
+    from ..dsl.state_machine import StateMachineStep
+
+    if not model.start_state:
+        raise BlueprintError("StateMachine requires 'start_state'")
+    if not isinstance(model.states, dict) or not model.states:
+        raise BlueprintError("StateMachine.states must be a mapping of state → steps")
+
+    coerced_states: dict[str, AnyPipeline] = {}
+    for state_name, branch_spec in model.states.items():
+        state_key = str(state_name)
+        coerced_states[state_key] = build_branch(
+            branch_spec,
+            base_path=f"{yaml_path}.states.{state_key}" if yaml_path else None,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+        )
+
+    end_states = [str(x) for x in (model.end_states or [])]
+    transitions_raw = list(model.transitions or [])
+
+    sm = StateMachineStep(
+        name=model.name,
+        states=coerced_states,
+        start_state=str(model.start_state),
+        end_states=end_states,
+        transitions=transitions_raw,
+        config=step_config,
+    )
+    if yaml_path:
+        try:
+            sm.meta["yaml_path"] = yaml_path
+        except Exception:
+            pass
+    return sm
+
+
 __all__ = [
     "BuildStep",
     "build_agentic_loop_step",
     "build_basic_step",
     "build_cache_step",
     "build_hitl_step",
+    "build_state_machine_step",
 ]

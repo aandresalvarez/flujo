@@ -44,7 +44,7 @@ from ..domain.resources import AppResources
 from ..domain.processors import AgentProcessors
 from ..domain.types import HookCallable
 from ..domain.backends import ExecutionBackend
-from ..domain.interfaces import StateProvider
+from ..domain.interfaces import StateProvider, RunnerLike
 from ..state import StateBackend
 from ..infra.registry import PipelineRegistry
 from ..type_definitions.common import JSONObject
@@ -287,12 +287,14 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
             self._executor_factory = executor_factory
             # Warn if user also provided state_providers (they'll be ignored)
             if self._state_providers:
-                warnings.warn(
-                    "state_providers is ignored when executor_factory is provided. "
-                    "Pass state_providers to your ExecutorFactory instead.",
-                    UserWarning,
-                    stacklevel=2,
-                )
+                existing = getattr(self._executor_factory, "_state_providers", None)
+                if not existing:
+                    warnings.warn(
+                        "state_providers is ignored when executor_factory is provided. "
+                        "Pass state_providers to your ExecutorFactory instead.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
         else:
             # Create executor factory with state_providers
             self._executor_factory = ExecutorFactory(state_providers=self._state_providers)
@@ -909,3 +911,15 @@ __all__ = [
     "_accepts_param",
     "_extract_missing_fields",
 ]
+
+# Register the default runner factory to break circular dependencies with Pipeline
+from ..domain.interfaces import set_default_runner_factory as _set_default_runner_factory  # noqa: E402
+
+
+def _flujo_factory(
+    pipeline: Pipeline[object, object] | Step[object, object] | None = None,
+) -> RunnerLike:
+    return Flujo(pipeline)
+
+
+_set_default_runner_factory(_flujo_factory)
