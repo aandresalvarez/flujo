@@ -637,6 +637,97 @@ class SQLiteBackend(SQLiteTraceMixin, SQLiteBackendBase):
             finally:
                 await conn.close()
 
+    def get_workflow_stats_sync(self) -> JSONObject:
+        """Synchronous stats snapshot for observability collectors.
+
+        Prometheus collectors are synchronous and can be invoked from async runtimes
+        (running event loop threads). This method avoids `run_sync()` by querying
+        SQLite via the standard library driver.
+        """
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+        except Exception:
+            return {
+                "total_workflows": 0,
+                "status_counts": {},
+                "recent_workflows_24h": 0,
+                "average_execution_time_ms": 0,
+                "background_status_counts": {},
+            }
+
+        try:
+            cur = conn.execute("SELECT COUNT(*) FROM workflow_state")
+            row = cur.fetchone()
+            total_workflows = int(row[0]) if row else 0
+
+            cur = conn.execute(
+                """
+                SELECT status, COUNT(*)
+                FROM workflow_state
+                GROUP BY status
+                """
+            )
+            status_counts: dict[str, int] = {}
+            for status, count in cur.fetchall():
+                if status is None:
+                    continue
+                status_counts[str(status)] = int(count)
+
+            cur = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM workflow_state
+                WHERE created_at >= datetime('now', '-24 hours')
+                """
+            )
+            row = cur.fetchone()
+            recent_workflows_24h = int(row[0]) if row else 0
+
+            cur = conn.execute(
+                """
+                SELECT AVG(execution_time_ms)
+                FROM workflow_state
+                WHERE execution_time_ms IS NOT NULL
+                """
+            )
+            row = cur.fetchone()
+            avg_exec_time = row[0] if row else 0
+
+            cur = conn.execute(
+                """
+                SELECT status, COUNT(*)
+                FROM workflow_state
+                WHERE is_background_task = 1
+                GROUP BY status
+                """
+            )
+            bg_status_counts: dict[str, int] = {}
+            for status, count in cur.fetchall():
+                if status is None:
+                    continue
+                bg_status_counts[str(status)] = int(count)
+
+            return {
+                "total_workflows": total_workflows,
+                "status_counts": status_counts,
+                "recent_workflows_24h": recent_workflows_24h,
+                "average_execution_time_ms": avg_exec_time or 0,
+                "background_status_counts": bg_status_counts,
+            }
+        except Exception:
+            return {
+                "total_workflows": 0,
+                "status_counts": {},
+                "recent_workflows_24h": 0,
+                "average_execution_time_ms": 0,
+                "background_status_counts": {},
+            }
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
     async def get_failed_workflows(self, hours_back: int = 24) -> List[JSONObject]:
         """Get failed workflows from the last N hours."""
         await self._ensure_init()

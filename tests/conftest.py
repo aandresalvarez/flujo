@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import sys
+import tempfile
 import importlib.util as _importlib_util
 from pathlib import Path
 from typing import Any, Optional
@@ -22,6 +23,15 @@ from flujo.type_definitions.common import JSONObject
 
 # Set test mode environment variables for deterministic, low-overhead runs
 os.environ["FLUJO_TEST_MODE"] = "1"
+# Ensure any CLI/backend resolution uses an explicit test-only state directory.
+# This prevents FLUJO_TEST_MODE from implicitly changing persistence behavior in production runs.
+_base_dir = Path(os.getenv("PYTEST_TMPDIR", tempfile.gettempdir())) / "flujo-test-db"
+_worker_id = os.getenv("PYTEST_XDIST_WORKER", "") or "single"
+try:
+    _pid = os.getpid()
+except Exception:
+    _pid = 0
+os.environ.setdefault("FLUJO_TEST_STATE_DIR", str(_base_dir / f"worker-{_worker_id}-pid-{_pid}"))
 # Disable background memory monitoring to cut per-test overhead and avoid linger
 os.environ.setdefault("FLUJO_DISABLE_MEMORY_MONITOR", "1")
 
