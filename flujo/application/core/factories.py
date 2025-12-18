@@ -144,11 +144,11 @@ class BackendFactory:
             if scheme in {"memory", "mem", "inmemory"}:
                 return InMemoryBackend()
             if scheme.startswith("sqlite"):
-                from flujo.cli.config import _normalize_sqlite_path
+                from flujo.state.sqlite_uri import normalize_sqlite_path
 
                 cfg_path = getattr(get_config_manager(), "config_path", None)
                 cfg_dir = cfg_path.parent if cfg_path else Path.cwd()
-                sqlite_path = _normalize_sqlite_path(state_uri, Path.cwd(), config_dir=cfg_dir)
+                sqlite_path = normalize_sqlite_path(state_uri, Path.cwd(), config_dir=cfg_dir)
                 cache_key = f"sqlite:{sqlite_path}"
                 backend = self._state_backend_cache.get(cache_key)
                 if backend is None:

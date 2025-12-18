@@ -16,63 +16,10 @@ from ..state.backends.sqlite import SQLiteBackend
 from ..state.backends.postgres import PostgresBackend
 from ..state.backends.memory import InMemoryBackend
 from ..state.backends.base import StateBackend
+from ..state.sqlite_uri import normalize_sqlite_path as _normalize_sqlite_path
 from ..infra.config_manager import get_config_manager, get_state_uri
 from ..utils.config import get_settings
 from .helpers import print_rich_or_typer
-
-
-def _normalize_sqlite_path(uri: str, cwd: Path, *, config_dir: Path | None = None) -> Path:
-    """
-    Normalize a SQLite URI path to an absolute or relative Path.
-
-    - If the path is absolute (e.g., sqlite:////abs/path.db), return as is.
-    - If the path is relative (e.g., sqlite:///foo.db), resolve relative to cwd (or config_dir).
-    - Handles Windows paths and non-standard URIs gracefully.
-    """
-    parsed = urlparse(uri)
-    base_dir = config_dir if config_dir is not None else cwd
-
-    # Case 1: Non-standard sqlite://path (netloc present) or Windows drive in netloc
-    if parsed.netloc:
-        path_str = parsed.netloc + parsed.path
-        # Windows drive logic (C:/... or C:\...)
-        try:
-            if ":" in path_str and Path(path_str).is_absolute():
-                return Path(path_str).resolve()
-        except Exception:
-            pass
-
-        # If it looks like an absolute path, treat as such
-        p = Path(path_str)
-        if p.is_absolute():
-            return p.resolve()
-
-        return (base_dir / path_str).resolve()
-
-    # Case 2: Standard URI path
-    path_str = parsed.path
-    if not path_str or not path_str.strip():
-        raise ValueError(
-            "Malformed SQLite URI: empty path. Use 'sqlite:///file.db' or 'sqlite:////abs/path.db'."
-        )
-
-    # Check for // implying absolute path (sqlite:////abs...)
-    if path_str.startswith("//"):
-        return Path(path_str[1:]).resolve()
-
-    # Strip standard leading slash for processing
-    clean_path_str = path_str[1:] if path_str.startswith("/") else path_str
-
-    # Check if the remaining part is absolute (e.g. Windows /C:/...)
-    try:
-        p = Path(clean_path_str)
-        if p.is_absolute():
-            return p.resolve()
-    except Exception:
-        pass
-
-    # Default to specific behavior: sqlite:///foo.db is relative
-    return (base_dir / clean_path_str).resolve()
 
 
 def load_backend_from_config() -> StateBackend:

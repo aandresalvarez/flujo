@@ -191,7 +191,7 @@ def status(
     try:
         from ..infra.config_manager import get_state_uri as _get_state_uri
         from ..infra.config_manager import get_config_manager as _get_cfg_mgr
-        from .config import _normalize_sqlite_path as _norm_sqlite
+        from ..state.sqlite_uri import normalize_sqlite_path as _norm_sqlite
         from urllib.parse import urlparse as _urlparse
         from pathlib import Path
         import sqlite3 as _sql
