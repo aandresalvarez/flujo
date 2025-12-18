@@ -78,6 +78,6 @@ class FlujoAgentResult:
 
 
 __all__ = [
-    "FlujoAgentUsage",
     "FlujoAgentResult",
+    "FlujoAgentUsage",
 ]
