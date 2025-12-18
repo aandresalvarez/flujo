@@ -456,49 +456,37 @@ async def run_loop_iterations(
                         pass
                     except Exception:
                         pass
-                    if getattr(body_step, "is_complex", False):
-                        frame = make_execution_frame(
-                            core,
-                            body_step,
-                            current_data,
-                            iteration_context,
-                            resources,
-                            limits,
-                            context_setter=context_setter,
-                            stream=stream,
-                            on_chunk=on_chunk,
-                            fallback_depth=_fallback_depth,
-                            result=None,
-                            quota=(
-                                core._get_current_quota()
-                                if hasattr(core, "_get_current_quota")
-                                else None
-                            ),
-                        )
-                        if not hasattr(core, "execute"):
-                            raise TypeError("ExecutorCore missing execute")
+                    frame = make_execution_frame(
+                        core,
+                        body_step,
+                        current_data,
+                        iteration_context,
+                        resources,
+                        limits,
+                        context_setter=context_setter,
+                        stream=stream,
+                        on_chunk=on_chunk,
+                        fallback_depth=_fallback_depth,
+                        result=None,
+                        quota=core._get_current_quota()
+                        if hasattr(core, "_get_current_quota")
+                        else None,
+                    )
+                    if not hasattr(core, "execute"):
+                        raise TypeError("ExecutorCore missing execute")
+                    token = _CACHE_OVERRIDE.set(False)
+                    try:
                         outcome = await core.execute(frame)
-                        if hasattr(core, "_unwrap_outcome_to_step_result"):
-                            sr = core._unwrap_outcome_to_step_result(
-                                outcome, getattr(body_step, "name", "<step>")
-                            )
-                        else:
-                            raise TypeError("ExecutorCore missing _unwrap_outcome_to_step_result")
-                    else:
-                        if not hasattr(core, "_execute_simple_step"):
-                            raise TypeError("ExecutorCore missing _execute_simple_step")
-                        sr = await core._execute_simple_step(
-                            body_step,
-                            current_data,
-                            iteration_context,
-                            resources,
-                            limits,
-                            stream,
-                            on_chunk,
-                            None,  # Disable cache reuse inside loop iterations to avoid stale commands
-                            _fallback_depth,
-                            False,
+                    finally:
+                        _CACHE_OVERRIDE.reset(token)
+                    if isinstance(outcome, StepResult):
+                        sr = outcome
+                    elif hasattr(core, "_unwrap_outcome_to_step_result"):
+                        sr = core._unwrap_outcome_to_step_result(
+                            outcome, getattr(body_step, "name", "<step>")
                         )
+                    else:
+                        raise TypeError("ExecutorCore missing _unwrap_outcome_to_step_result")
                     if not isinstance(sr, StepResult):
                         raise TypeError(
                             f"Expected StepResult for loop body step '{step_name}', got {type(sr).__name__}"
