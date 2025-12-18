@@ -55,9 +55,28 @@ def _make_step_from_blueprint(
     # --- REGISTRY DISPATCH ---
     from .builder_registry import get_builder
 
-    # 1. Try to get a registered builder
     builder = get_builder(kind_val)
-    if builder:
+    if builder is not None:
+        # Built-in kinds use the BlueprintStepModel → StepConfig normalization path.
+        if kind_val not in {
+            "step",
+            "parallel",
+            "conditional",
+            "loop",
+            "map",
+            "dynamic_router",
+            "hitl",
+            "cache",
+            "agentic_loop",
+            "StateMachine",
+        }:
+            return builder(
+                model,
+                yaml_path=yaml_path,
+                compiled_agents=compiled_agents,
+                compiled_imports=compiled_imports,
+            )
+
         # Common prep for registered builders (validation + config)
         # Note: We validate to BlueprintStepModel for all built-in kinds, including StateMachine.
         if not isinstance(model, BlueprintStepModel):
@@ -98,30 +117,6 @@ def _make_step_from_blueprint(
             # We pass these common kwargs that adapters can use
             # Adapters will filter what they need or we must standardize
         )
-
-    # 2. Fallback: Custom Class Loading (Legacy/Plugin)
-    try:
-        from ...framework import registry as _fwreg
-
-        step_cls = _fwreg.get_step_class(kind_val)
-    except Exception:
-        step_cls = None
-
-    if step_cls is not None:
-        try:
-            # Ensure model is verified if passing to custom step?
-            # Or just pass raw dict if custom step handles it?
-            # Original code used validation if kind was in the set, else custom loading.
-            # If it wasn't in the set, it didn't do BlueprintStepModel validation.
-            step_obj = step_cls.model_validate(model)
-        except Exception as e:
-            raise BlueprintError(f"Failed to instantiate custom step for kind '{kind_val}': {e}")
-        if yaml_path:
-            try:
-                step_obj.meta["yaml_path"] = yaml_path
-            except Exception:
-                pass
-        return step_obj
 
     raise BlueprintError(f"Unknown step kind: {kind_val}")
 

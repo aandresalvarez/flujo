@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from ...domain.models import BaseModel as DomainBaseModel
 from ...domain.models import PipelineResult, StepResult, UsageLimits
+from ...exceptions import PausedException, PipelineAbortSignal, InfiniteRedirectError
 from .executor_helpers import make_execution_frame
 from .types import TContext_w_Scratch
 
@@ -152,33 +153,34 @@ class LoopOrchestrator:
                         current_context = main_context
                 except Exception:
                     current_context = main_context
+            except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+                raise
             except Exception:
                 for s in steps:
-                    try:
-                        sr = await core._execute_simple_step(
-                            s,
-                            body_output,
-                            current_context,
-                            resources,
-                            limits,
-                            False,
-                            None,
-                            None,
-                            0,
-                            False,
+                    frame = make_execution_frame(
+                        core,
+                        s,
+                        body_output,
+                        current_context,
+                        resources,
+                        limits,
+                        context_setter=None,
+                        stream=False,
+                        on_chunk=None,
+                        fallback_depth=0,
+                        result=None,
+                        quota=core._get_current_quota()
+                        if hasattr(core, "_get_current_quota")
+                        else None,
+                    )
+                    step_outcome = await core.execute(frame)
+                    sr = (
+                        step_outcome
+                        if isinstance(step_outcome, StepResult)
+                        else core._unwrap_outcome_to_step_result(
+                            step_outcome, core._safe_step_name(s)
                         )
-                    except TypeError:
-                        sr = await core._execute_simple_step(
-                            s,
-                            body_output,
-                            current_context,
-                            resources,
-                            limits,
-                            False,
-                            None,
-                            None,
-                            0,
-                        )
+                    )
                     step_history_tracker.add_step_result(sr)
                     if not sr.success:
                         fb = f"Loop body failed: {sr.feedback or 'Unknown error'}"
