@@ -2,6 +2,7 @@ import pytest
 from pydantic import BaseModel, TypeAdapter
 from flujo.agents.repair import DeterministicRepairProcessor
 from flujo.agents import AsyncAgentWrapper
+from flujo.domain.agent_result import FlujoAgentResult
 from flujo.exceptions import AgentIOValidationError
 
 
@@ -51,7 +52,9 @@ async def test_async_agent_wrapper_deterministic_repair(monkeypatch) -> None:
     monkeypatch.setattr(repair_mod, "get_repair_agent", lambda: MockRepairAgent())
 
     result = await wrapper.run_async("prompt")
-    assert result.value == 1
+    # Wrapper now returns FlujoAgentResult; access the repaired output inside
+    assert isinstance(result, FlujoAgentResult)
+    assert result.output.value == 1
 
 
 @pytest.mark.asyncio
@@ -78,7 +81,9 @@ async def test_async_agent_wrapper_llm_repair(monkeypatch) -> None:
     monkeypatch.setattr(repair_mod, "get_repair_agent", lambda: DummyRepairAgent())
 
     result = await wrapper.run_async("prompt")
-    assert result.value == 2
+    # Wrapper now returns FlujoAgentResult; access the repaired output inside
+    assert isinstance(result, FlujoAgentResult)
+    assert result.output.value == 2
 
 
 def test_balance_removes_and_adds_braces() -> None:
@@ -139,5 +144,7 @@ async def test_repair_prompt_handles_braces(monkeypatch) -> None:
     monkeypatch.setattr(repair_mod, "get_repair_agent", lambda: DummyRepairAgent())
 
     result = await wrapper.run_async("original { brace }")
-    assert result.value == 3
+    # Wrapper now returns FlujoAgentResult; access the repaired output inside
+    assert isinstance(result, FlujoAgentResult)
+    assert result.output.value == 3
     assert captured["prompt"]

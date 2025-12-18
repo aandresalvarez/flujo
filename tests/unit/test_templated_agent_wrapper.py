@@ -32,11 +32,15 @@ async def test_templated_wrapper_renders_and_restores_prompt() -> None:
         model_name="openai:gpt-4o-mini",
     )
 
+    from flujo.domain.agent_result import FlujoAgentResult
+
     prev_output = {"topic": "testing"}
     ctx = {"user": "Alice"}
 
     result = await wrapper.run_async(prev_output, context=ctx)
-    assert result == "ok"
+    # Wrapper now returns FlujoAgentResult; access output inside
+    assert isinstance(result, FlujoAgentResult)
+    assert result.output == "ok"
     # Ensure the underlying agent saw the rendered prompt
     assert agent.called_with_prompt == "Hello Alice about testing"
     # Ensure original prompt is restored after call

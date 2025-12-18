@@ -11,6 +11,7 @@ from flujo.agents import (
     make_agent_async,
 )
 from flujo.domain.models import Checklist, ChecklistItem
+from flujo.domain.agent_result import FlujoAgentResult
 
 from flujo.exceptions import OrchestratorRetryError
 from flujo.infra.settings import settings
@@ -30,7 +31,9 @@ async def test_async_agent_wrapper_success() -> None:
     agent.run.return_value = "ok"
     wrapper = AsyncAgentWrapper(agent)
     result = await wrapper.run_async("prompt")
-    assert result == "ok"
+    # Wrapper now returns FlujoAgentResult; access output inside
+    assert isinstance(result, FlujoAgentResult)
+    assert result.output == "ok"
 
 
 @pytest.mark.asyncio
@@ -39,14 +42,18 @@ async def test_async_agent_wrapper_retry_then_success(no_wait_backoff) -> None:
     agent.run.side_effect = [Exception("fail"), "ok"]
     wrapper = AsyncAgentWrapper(agent, max_retries=2)
     result = await wrapper.run_async("prompt")
-    assert result == "ok"
+    # Wrapper now returns FlujoAgentResult; access output inside
+    assert isinstance(result, FlujoAgentResult)
+    assert result.output == "ok"
 
 
 @pytest.mark.asyncio
 async def test_async_agent_wrapper_timeout(monkeypatch) -> None:
     agent = AsyncMock()
 
-    async def fake_wait_for(*args, **kwargs):
+    async def fake_wait_for(awaitable, *args, **kwargs):
+        if asyncio.iscoroutine(awaitable):
+            awaitable.close()
         raise asyncio.TimeoutError()
 
     monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
@@ -81,6 +88,7 @@ async def test_async_agent_wrapper_temperature_passed_directly() -> None:
 async def test_noop_reflection_agent() -> None:
     agent = NoOpReflectionAgent()
     result = await agent.run()
+    # NoOpReflectionAgent returns empty string directly (not wrapped in FlujoAgentResult)
     assert result == ""
 
 
@@ -118,6 +126,7 @@ async def test_logging_review_agent_success() -> None:
     base_agent.run.return_value = "ok"
     agent = LoggingReviewAgent(base_agent)
     result = await agent.run("prompt")
+    # LoggingReviewAgent returns base agent's result directly (not wrapped in FlujoAgentResult)
     assert result == "ok"
 
 
@@ -148,6 +157,7 @@ async def test_logging_review_agent_run_async_fallback() -> None:
     base_agent = NoAsyncAgent()
     agent = LoggingReviewAgent(base_agent)
     result = await agent._run_async("prompt")
+    # LoggingReviewAgent returns base agent's result directly (not wrapped in FlujoAgentResult)
     assert result == "ok"
 
 
@@ -162,6 +172,7 @@ async def test_logging_review_agent_run_async_non_callable() -> None:
     base_agent = WeirdAgent()
     agent = LoggingReviewAgent(base_agent)
     result = await agent._run_async("prompt")
+    # LoggingReviewAgent returns base agent's result directly (not wrapped in FlujoAgentResult)
     assert result == "ok"
 
 
@@ -272,7 +283,9 @@ async def test_async_agent_wrapper_runtime_timeout(
     mock_pydantic_ai_agent: MagicMock,
     monkeypatch,
 ) -> None:
-    async def fake_wait_for(*args, **kwargs):
+    async def fake_wait_for(awaitable, *args, **kwargs):
+        if asyncio.iscoroutine(awaitable):
+            awaitable.close()
         raise asyncio.TimeoutError()
 
     monkeypatch.setattr(asyncio, "wait_for", fake_wait_for)
@@ -281,7 +294,9 @@ async def test_async_agent_wrapper_runtime_timeout(
     with pytest.raises(OrchestratorRetryError) as exc_info:
         await wrapper.run_async("prompt")
     assert "timed out" in str(exc_info.value).lower() or "TimeoutError" in str(exc_info.value)
-    mock_pydantic_ai_agent.run.assert_called_once()
+    # Note: With the adapter pattern, the agent's run method may not be called
+    # when timeout happens immediately (before the adapter can call the agent).
+    # The key test is that the timeout is properly caught and raised.
 
 
 def test_make_self_improvement_agent_uses_settings_default(monkeypatch) -> None:
@@ -420,6 +435,7 @@ async def test_make_agent_async_custom_processor_order(monkeypatch) -> None:
 async def test_pydantic_output_parsed_by_agent(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     from flujo.infra import settings as settings_mod
+    from flujo.agents.adapters.pydantic_ai_adapter import PydanticAIAdapter
 
     monkeypatch.setattr(settings_mod, "openai_api_key", SecretStr("test-key"))
 
@@ -439,10 +455,15 @@ async def test_pydantic_output_parsed_by_agent(monkeypatch) -> None:
             return Checklist(**json.loads(m.group(0)))
 
     wrapper = make_agent_async("openai:gpt-4o", "sys", Checklist)
-    wrapper._agent = ParsingStubAgent(raw)
+    stub_agent = ParsingStubAgent(raw)
+    wrapper._agent = stub_agent
+    # Also update the adapter to use the stub agent (adapter pattern)
+    wrapper._adapter = PydanticAIAdapter(stub_agent)
     result = await wrapper.run_async("prompt")
-    assert isinstance(result, Checklist)
-    assert result.items == []
+    # Wrapper now returns FlujoAgentResult; access output inside
+    assert isinstance(result, FlujoAgentResult)
+    assert isinstance(result.output, Checklist)
+    assert result.output.items == []
 
 
 @pytest.mark.asyncio

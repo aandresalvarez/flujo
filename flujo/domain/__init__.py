@@ -24,6 +24,7 @@ from .models import (
     UsageLimits,
     ExecutedCommandLog,
 )
+from .agent_result import FlujoAgentResult, FlujoAgentUsage
 from .types import HookCallable
 from .events import HookPayload
 from .backends import ExecutionBackend, StepExecutionRequest
@@ -60,6 +61,9 @@ __all__ = [
     "StepResult",
     "UsageLimits",
     "ExecutedCommandLog",
+    # Agent Results
+    "FlujoAgentResult",
+    "FlujoAgentUsage",
     # Types and Events
     "HookCallable",
     "HookPayload",

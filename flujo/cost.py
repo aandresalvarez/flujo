@@ -153,14 +153,15 @@ class _TiktokenModule(Protocol):
 
 def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[int, int, float]:
     """
-    Extract usage metrics from a pydantic-ai agent response.
+    Extract usage metrics from an agent response.
 
-    This is a shared helper function to eliminate code duplication in ultra_executor.py.
+    This function supports both FlujoAgentResult (vendor-agnostic) and legacy
+    pydantic-ai responses for backward compatibility.
 
     Parameters
     ----------
     raw_output : Any
-        The raw output from the agent
+        The raw output from the agent (FlujoAgentResult or legacy format)
     agent : Any
         The agent that produced the output
     step_name : str
@@ -178,8 +179,80 @@ def extract_usage_metrics(raw_output: Any, agent: Any, step_name: str) -> Tuple[
     model_name: Optional[str] = None
 
     from .infra import telemetry
+    from .domain.agent_result import FlujoAgentResult
 
     missing_model_warned = False
+
+    # 0. PRIORITY: Check if this is a FlujoAgentResult (vendor-agnostic interface)
+    if isinstance(raw_output, FlujoAgentResult):
+        # Extract usage from FlujoAgentResult
+        usage = raw_output.usage()
+        if usage is not None:
+            prompt_tokens = getattr(usage, "input_tokens", 0)
+            completion_tokens = getattr(usage, "output_tokens", 0)
+            # Prefer cost from usage, then from result
+            cost_usd = getattr(usage, "cost_usd", None) or raw_output.cost_usd or 0.0
+
+            # If we have tokens, we might need to calculate cost
+            if prompt_tokens > 0 or completion_tokens > 0:
+                # Try to calculate cost if not already set
+                if cost_usd == 0.0:
+                    # Get model information for cost calculation
+                    try:
+                        from .utils.model_utils import (
+                            extract_model_id,
+                            extract_provider_and_model,
+                        )
+
+                        model_id = extract_model_id(agent, step_name)
+                        if model_id:
+                            cache_key = f"{agent.__class__.__name__}:{model_id}"
+                            if cache_key not in _model_cache:
+                                _model_cache[cache_key] = extract_provider_and_model(model_id)
+                            provider, model_name = _model_cache[cache_key]
+                            if provider is not None:
+                                try:
+                                    _ = flujo.infra.config.get_provider_pricing(
+                                        provider, model_name
+                                    )
+                                except PricingNotConfiguredError:
+                                    raise
+                                cost_calculator = CostCalculator()
+                                cost_usd = cost_calculator.calculate(
+                                    model_name=model_name,
+                                    prompt_tokens=prompt_tokens,
+                                    completion_tokens=completion_tokens,
+                                    provider=provider,
+                                )
+                    except PricingNotConfiguredError:
+                        raise
+                    except Exception:
+                        pass  # Non-fatal, continue with cost_usd = 0.0
+
+                telemetry.logfire.info(
+                    f"Extracted usage from FlujoAgentResult for step '{step_name}': "
+                    f"prompt={prompt_tokens}, completion={completion_tokens}, cost=${cost_usd}"
+                )
+                return prompt_tokens, completion_tokens, cost_usd
+
+        # If no usage but explicit cost/tokens, use those
+        if raw_output.cost_usd is not None:
+            cost_usd = _safe_float(raw_output.cost_usd, default=0.0)
+            total_tokens = (
+                _safe_int(raw_output.token_counts, default=0) if raw_output.token_counts else 0
+            )
+            telemetry.logfire.info(
+                f"Using explicit cost from FlujoAgentResult for step '{step_name}': "
+                f"cost=${cost_usd}, tokens={total_tokens}"
+            )
+            return 0, total_tokens, cost_usd
+
+        # If we have FlujoAgentResult but no usage/cost info, return zeros
+        # (don't fall through to legacy extraction - FlujoAgentResult.output is the actual output, not a response object)
+        telemetry.logfire.info(
+            f"FlujoAgentResult for step '{step_name}' has no usage/cost info; returning zeros"
+        )
+        return 0, 0, 0.0
 
     # 0. GUARD: When a Mock output reaches cost extraction directly, treat as zero usage.
     # Integration paths detect and raise earlier; unit cost tests expect graceful zeros here.

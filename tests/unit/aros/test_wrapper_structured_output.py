@@ -69,10 +69,14 @@ class NoKwAgent:
 @pytest.mark.fast
 @pytest.mark.asyncio
 async def test_wrapper_does_not_pass_response_format_when_not_supported():
+    from flujo.domain.agent_result import FlujoAgentResult
+
     agent = NoKwAgent()
     wrapper = AsyncAgentWrapper(agent)
     wrapper.enable_structured_output(json_schema={"type": "object"}, name="x")
     # Should not raise even though underlying run doesn't accept response_format
     res = await wrapper.run_async("hello")
     assert agent.called is True
-    assert isinstance(res, dict)
+    # Wrapper now returns FlujoAgentResult; check output inside
+    assert isinstance(res, FlujoAgentResult)
+    assert isinstance(res.output, dict)

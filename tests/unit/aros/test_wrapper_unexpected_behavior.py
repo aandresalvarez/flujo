@@ -42,6 +42,10 @@ async def test_wrapper_repairs_unexpected_model_behavior(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(repair_mod, "get_repair_agent", lambda: DummyRepairAgent())
 
+    from flujo.domain.agent_result import FlujoAgentResult
+
     wrapper = AsyncAgentWrapper(RaisesUnexpected(), max_retries=1, auto_repair=True)
     out = await wrapper.run_async("irrelevant")
-    assert out.value == 7
+    # Wrapper now returns FlujoAgentResult; access the repaired output inside
+    assert isinstance(out, FlujoAgentResult)
+    assert out.output.value == 7
