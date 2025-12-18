@@ -45,10 +45,18 @@ from ..utils import format_prompt
 # Import the module (not the symbol) so tests can monkeypatch it
 from . import utils as agents_utils
 from .agent_like import AgentLike
+from .adapters.pydantic_ai_adapter import PydanticAIAdapter
+from ..domain.agent_result import FlujoAgentResult
 
 
-# pydantic-ai UnexpectedModelBehavior import with safe fallback, mypy-friendly
+# pydantic-ai exception mapping (internal implementation detail)
+# These are mapped to Flujo exceptions before being raised externally
 def _resolve_unexpected_model_behavior() -> type[Exception]:  # pragma: no cover - import shim
+    """Resolve pydantic-ai UnexpectedModelBehavior exception type.
+
+    This is an internal implementation detail used for exception mapping.
+    External code should only see Flujo exceptions.
+    """
     try:  # pydantic-ai >=0.7
         from pydantic_ai.exceptions import UnexpectedModelBehavior as umb_imported
 
@@ -108,6 +116,8 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         self.target_output_type = getattr(agent, "output_type", Any)
         # Optional structured output configuration (best-effort, pydantic-ai centric)
         self._structured_output_config: dict[str, Any] | None = None
+        # Create adapter to convert pydantic-ai responses to FlujoAgentResult
+        self._adapter = PydanticAIAdapter(agent)
 
     def _call_agent_with_dynamic_args(self, *args: Any, **kwargs: Any) -> Any:
         """Invoke the underlying agent with arbitrary arguments."""
@@ -148,7 +158,13 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
         return self._agent.run(*args, **filtered_kwargs)
 
     async def _run_with_retry(self, *args: Any, **kwargs: Any) -> Any:
-        """Run the agent with retry, timeout and processor support."""
+        """Run the agent with retry, timeout and processor support.
+
+        Returns:
+            FlujoAgentResult: Vendor-agnostic result containing output and usage metrics.
+            Note: Return type is Any for protocol compatibility, but this method
+            always returns FlujoAgentResult at runtime.
+        """
 
         # Get context from kwargs (supports both 'context' and legacy 'pipeline_context')
         context_obj = kwargs.get("context") or kwargs.get("pipeline_context")
@@ -259,8 +275,9 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                     except Exception:
                         pass
 
+                    # Use adapter to convert pydantic-ai response to FlujoAgentResult
                     raw_agent_response = await asyncio.wait_for(
-                        self._call_agent_with_dynamic_args(
+                        self._adapter.run(
                             *processed_args,
                             **processed_kwargs,
                         ),
@@ -276,18 +293,33 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         pass
                     logfire.info(f"Agent '{self._model_name}' raw response: {raw_agent_response}")
 
-                    if isinstance(raw_agent_response, str) and raw_agent_response.startswith(
-                        "Agent failed after"
-                    ):
-                        raise OrchestratorRetryError(raw_agent_response)
+                    # raw_agent_response is now a FlujoAgentResult
+                    if isinstance(raw_agent_response, FlujoAgentResult):
+                        # Check for error strings in output
+                        if isinstance(
+                            raw_agent_response.output, str
+                        ) and raw_agent_response.output.startswith("Agent failed after"):
+                            raise OrchestratorRetryError(raw_agent_response.output)
 
-                    # Store the original AgentRunResult for usage tracking
-                    agent_usage_info = None
-                    if hasattr(raw_agent_response, "usage"):
+                        # Get usage info from FlujoAgentResult
                         agent_usage_info = raw_agent_response.usage()
 
-                    # Get the actual output content to be processed
-                    unpacked_output = getattr(raw_agent_response, "output", raw_agent_response)
+                        # Get the actual output content to be processed
+                        unpacked_output = raw_agent_response.output
+                    else:
+                        # Fallback for non-FlujoAgentResult responses (backward compatibility)
+                        if isinstance(raw_agent_response, str) and raw_agent_response.startswith(
+                            "Agent failed after"
+                        ):
+                            raise OrchestratorRetryError(raw_agent_response)
+
+                        # Store the original AgentRunResult for usage tracking
+                        agent_usage_info = None
+                        if hasattr(raw_agent_response, "usage"):
+                            agent_usage_info = raw_agent_response.usage()
+
+                        # Get the actual output content to be processed
+                        unpacked_output = getattr(raw_agent_response, "output", raw_agent_response)
 
                     # Emit agent.input event (post-processor prompt snapshot)
                     try:
@@ -340,57 +372,60 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                             processed = await proc.process(processed, context_obj)
                         unpacked_output = processed
 
-                    # Return a tuple with both the processed output and usage info
-                    # This ensures the usage information is preserved even after processing
-                    if agent_usage_info is not None:
-                        # Create a wrapper that preserves both the processed output and usage info
-                        # This is a clean abstraction that maintains the contract expected by cost tracking
-                        # while allowing output processors to work on the actual content
-                        class ProcessedOutputWithUsage:
-                            """Wrapper that preserves processed output and usage information."""
+                    # If we already have a FlujoAgentResult, update its output with processed version
+                    if isinstance(raw_agent_response, FlujoAgentResult):
+                        # Update the output with processed version, preserve usage and cost
+                        result = FlujoAgentResult(
+                            output=unpacked_output,
+                            usage=raw_agent_response.usage(),
+                            cost_usd=raw_agent_response.cost_usd,
+                            token_counts=raw_agent_response.token_counts,
+                        )
+                    else:
+                        # Fallback: create FlujoAgentResult from legacy response
+                        result = FlujoAgentResult(
+                            output=unpacked_output,
+                            usage=agent_usage_info,
+                            cost_usd=None,
+                            token_counts=None,
+                        )
 
-                            def __init__(self, output: Any, usage_info: Any) -> None:
-                                self.output = output
-                                self._usage_info = usage_info
+                    # Trace the response with preview and usage
+                    try:
+                        if tm is not None:
+                            out_raw2: Any = result.output
+                            try:
+                                if isinstance(out_raw2, PydanticBaseModel):
+                                    out_raw2 = out_raw2.model_dump(mode="json")
+                                else:
+                                    import dataclasses as _dc
 
-                            def usage(self) -> Any:
-                                return self._usage_info
-
-                        # Trace the response with preview and usage
-                        try:
-                            if tm is not None:
-                                out_raw2: Any = unpacked_output
-                                try:
-                                    if isinstance(out_raw2, PydanticBaseModel):
-                                        out_raw2 = out_raw2.model_dump(mode="json")
-                                    else:
-                                        import dataclasses as _dc
-
-                                        if _dc.is_dataclass(out_raw2) and not isinstance(
-                                            out_raw2, type
-                                        ):
-                                            out_raw2 = _dc.asdict(out_raw2)
-                                except Exception:
-                                    pass
-                                out_str = out_raw2 if isinstance(out_raw2, str) else str(out_raw2)
-                                out_prev = summarize_and_redact_prompt(
-                                    out_str, max_length=preview_len_env
-                                )
-                                attrs_out = {
-                                    "model_id": self.model_id,
-                                    "attempt": getattr(attempt.retry_state, "attempt_number", 1),
-                                    "response_preview": out_prev,
-                                }
-                                if debug_prompts:
-                                    attrs_out["response_full"] = out_str
-                                tm.add_event("agent.response", attrs_out)
-                                # Usage event
-                                try:
-                                    u = agent_usage_info
-                                    # pydantic-ai returns an object with .input_tokens/.output_tokens sometimes
+                                    if _dc.is_dataclass(out_raw2) and not isinstance(
+                                        out_raw2, type
+                                    ):
+                                        out_raw2 = _dc.asdict(out_raw2)
+                            except Exception:
+                                pass
+                            out_str = out_raw2 if isinstance(out_raw2, str) else str(out_raw2)
+                            out_prev = summarize_and_redact_prompt(
+                                out_str, max_length=preview_len_env
+                            )
+                            attrs_out = {
+                                "model_id": self.model_id,
+                                "attempt": getattr(attempt.retry_state, "attempt_number", 1),
+                                "response_preview": out_prev,
+                            }
+                            if debug_prompts:
+                                attrs_out["response_full"] = out_str
+                            tm.add_event("agent.response", attrs_out)
+                            # Usage event
+                            try:
+                                u = result.usage()
+                                if u is not None:
+                                    # FlujoAgentUsage has input_tokens and output_tokens
                                     it = getattr(u, "input_tokens", None)
                                     ot = getattr(u, "output_tokens", None)
-                                    cost = getattr(u, "cost_usd", None)
+                                    cost = getattr(u, "cost_usd", None) or result.cost_usd
                                     tm.add_event(
                                         "agent.usage",
                                         {
@@ -399,53 +434,34 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                                             "cost_usd": cost,
                                         },
                                     )
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-                        return ProcessedOutputWithUsage(unpacked_output, agent_usage_info)
-                    else:
-                        try:
-                            if tm is not None:
-                                out_raw: Any = unpacked_output
-                                try:
-                                    if isinstance(out_raw, PydanticBaseModel):
-                                        out_raw = out_raw.model_dump(mode="json")
-                                    else:
-                                        import dataclasses as _dc
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
 
-                                        if _dc.is_dataclass(out_raw) and not isinstance(
-                                            out_raw, type
-                                        ):
-                                            out_raw = _dc.asdict(out_raw)
-                                except Exception:
-                                    pass
-                                out_str = out_raw if isinstance(out_raw, str) else str(out_raw)
-                                out_prev = summarize_and_redact_prompt(
-                                    out_str, max_length=preview_len_env
-                                )
-                                attrs_out = {
-                                    "model_id": self.model_id,
-                                    "attempt": getattr(attempt.retry_state, "attempt_number", 1),
-                                    "response_preview": out_prev,
-                                }
-                                if debug_prompts:
-                                    attrs_out["response_full"] = out_str
-                                tm.add_event("agent.response", attrs_out)
-                        except Exception:
-                            pass
-                        return unpacked_output
+                    return result
         except RetryError as e:
             last_exc = e.last_attempt.exception()
+            if last_exc is None:
+                raise OrchestratorRetryError("Agent run failed with unknown error.") from e
+            # Map pydantic-ai exceptions to Flujo exceptions (internal implementation detail)
+            # Check for pydantic-ai specific exceptions and map them
+            is_pydantic_ai_exception = False
+            if isinstance(last_exc, ValidationError):
+                is_pydantic_ai_exception = True
+            elif isinstance(last_exc, ModelRetry):
+                is_pydantic_ai_exception = True
+            elif isinstance(last_exc, UnexpectedModelBehavior):
+                is_pydantic_ai_exception = True
+
             # Phase 1 (AROS v2): catch provider JSON-mode failures (UnexpectedModelBehavior)
-            if (
-                isinstance(last_exc, (ValidationError, ModelRetry, UnexpectedModelBehavior))
-                and self.auto_repair
-            ):
+            # Map pydantic-ai exceptions internally but handle them as Flujo exceptions
+            if is_pydantic_ai_exception and self.auto_repair:
                 logfire.warn(
                     f"Agent validation failed. Initiating automated repair. Error: {last_exc}"
                 )
                 # Use module reference to allow monkeypatching in tests
+                assert isinstance(last_exc, Exception)
                 raw_output = agents_utils.get_raw_output_from_exception(last_exc)
                 try:
                     cleaner = DeterministicRepairProcessor()
@@ -454,7 +470,10 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                         _unwrap_type_adapter(self.target_output_type)
                     ).validate_json(cleaned)
                     logfire.info("Deterministic repair successful.")
-                    return validated
+                    # Return as FlujoAgentResult for consistent interface
+                    return FlujoAgentResult(
+                        output=validated, usage=None, cost_usd=None, token_counts=None
+                    )
                 except (ValidationError, ValueError, TypeError):
                     logfire.warn("Deterministic repair failed. Escalating to LLM repair.")
                 try:
@@ -508,7 +527,10 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                             _unwrap_type_adapter(self.target_output_type)
                         ).validate_python(repair_response)
                         logfire.info("LLM repair successful.")
-                        return validated
+                        # Return as FlujoAgentResult for consistent interface
+                        return FlujoAgentResult(
+                            output=validated, usage=None, cost_usd=None, token_counts=None
+                        )
                     except json.JSONDecodeError as decode_exc:
                         logfire.error(
                             f"LLM repair failed: Invalid JSON returned by repair agent: {decode_exc}\nRaw output: {repaired_str}"
@@ -561,9 +583,23 @@ class AsyncAgentWrapper(Generic[AgentInT, AgentOutT], AsyncAgentProtocol[AgentIn
                 )
 
     async def run_async(self, *args: Any, **kwargs: Any) -> Any:
+        """Run the agent asynchronously with retry and timeout support.
+
+        Returns:
+            FlujoAgentResult: Vendor-agnostic result containing output and usage metrics.
+            Note: Return type is Any for AsyncAgentProtocol compatibility, but this
+            method always returns FlujoAgentResult at runtime.
+        """
         return await self._run_with_retry(*args, **kwargs)
 
     async def run(self, *args: Any, **kwargs: Any) -> Any:
+        """Run the agent (alias for run_async).
+
+        Returns:
+            FlujoAgentResult: Vendor-agnostic result containing output and usage metrics.
+            Note: Return type is Any for AsyncAgentProtocol compatibility, but this
+            method always returns FlujoAgentResult at runtime.
+        """
         return await self.run_async(*args, **kwargs)
 
     # Structured output helpers (pydantic-ai centric; best-effort)
@@ -763,6 +799,9 @@ def make_agent_async(
     """
     Creates a pydantic_ai.Agent and returns an AsyncAgentWrapper exposing .run_async.
 
+    The wrapper uses an internal adapter pattern to convert pydantic-ai responses
+    to FlujoAgentResult, providing vendor-agnostic results to Flujo's orchestration layer.
+
     Parameters
     ----------
     model : str
@@ -782,6 +821,12 @@ def make_agent_async(
     **kwargs : Any
         Additional arguments to pass to the underlying pydantic_ai.Agent
         (e.g., temperature, model_settings, max_tokens, etc.)
+
+    Returns
+    -------
+    AsyncAgentWrapper
+        Wrapper that returns FlujoAgentResult (vendor-agnostic interface).
+        The adapter pattern is used internally to isolate pydantic-ai specifics.
     """
     # Check if this is an image generation model
     from .recipes import _is_image_generation_model, _attach_image_cost_post_processor
@@ -843,6 +888,36 @@ def make_templated_agent_async(
     """
     Create an agent and wrap it with TemplatedAsyncAgentWrapper to enable
     just-in-time system prompt rendering.
+
+    The wrapper uses an internal adapter pattern to convert pydantic-ai responses
+    to FlujoAgentResult, providing vendor-agnostic results to Flujo's orchestration layer.
+
+    Parameters
+    ----------
+    model : str
+        The model identifier (e.g., "openai:gpt-4o")
+    template_string : str
+        Template string for system prompt with variable placeholders
+    variables_spec : Optional[dict[str, Any]]
+        Variable specifications for template rendering
+    output_type : Type[Any]
+        The expected output type
+    max_retries : int, optional
+        Maximum number of retries for failed calls
+    timeout : int, optional
+        Timeout in seconds for agent calls
+    processors : Optional[AgentProcessors], optional
+        Custom processors for the agent
+    auto_repair : bool, optional
+        Whether to enable automatic repair of failed outputs
+    **kwargs : Any
+        Additional arguments to pass to the underlying pydantic_ai.Agent
+
+    Returns
+    -------
+    TemplatedAsyncAgentWrapper
+        Wrapper that returns FlujoAgentResult (vendor-agnostic interface).
+        The adapter pattern is used internally to isolate pydantic-ai specifics.
     """
     # Create underlying agent with a placeholder prompt; it will be overridden at runtime
     try:

@@ -554,6 +554,17 @@ class AgentExecutionRunner:
                     # retry loop will handle
                     raise
 
+                # Preserve the raw agent response (for usage/cost extraction) while ensuring
+                # downstream processing/validation operates on the user-visible payload.
+                raw_agent_output = processed_output
+                try:
+                    from ...domain.agent_result import FlujoAgentResult
+
+                    if isinstance(processed_output, FlujoAgentResult):
+                        processed_output = processed_output.output
+                except Exception:
+                    raw_agent_output = processed_output
+
                 # Structured output normalization (AROS-lite) and mock detection
                 try:
                     if isinstance(processed_output, (Mock, MagicMock, AsyncMock)):
@@ -609,7 +620,7 @@ class AgentExecutionRunner:
                     from ...domain.models import UsageEstimate as _UsageEstimate
 
                     ptokens, ctokens, cost = _step_policies.extract_usage_metrics(
-                        raw_output=processed_output,
+                        raw_output=raw_agent_output,
                         agent=getattr(step, "agent", None),
                         step_name=core._safe_step_name(step),
                     )
@@ -845,7 +856,7 @@ class AgentExecutionRunner:
 
                     if not primary_tokens_known:
                         ptokens, ctokens, cost = _step_policies.extract_usage_metrics(
-                            raw_output=processed_output,
+                            raw_output=raw_agent_output,
                             agent=getattr(step, "agent", None),
                             step_name=core._safe_step_name(step),
                         )
