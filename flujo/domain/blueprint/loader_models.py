@@ -158,7 +158,7 @@ class BlueprintStepModel(BaseModel):
     planner: Optional[str] = None
     registry: Optional[Union[str, JSONObject]] = None
     output_template: Optional[str] = None
-    processing: Optional[JSONObject] = None
+    processing: Optional[ProcessingConfigModel] = None
     meta: Optional[JSONObject] = None
     # StateMachineStep (kind: "StateMachine")
     start_state: Optional[str] = None
