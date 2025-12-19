@@ -37,7 +37,7 @@ async def run_hybrid_check(
         except Exception:
             validate_fn = None
         if not callable(validate_fn):
-            from ..executor_helpers import PluginError
+            from ..execution.executor_helpers import PluginError
 
             raise PluginError("Plugin missing validate()")
         try:
@@ -52,7 +52,7 @@ async def run_hybrid_check(
             res = validate_fn(plugin_input, **plugin_kwargs)
             result = await res if inspect.isawaitable(res) else res
         except Exception as e:
-            from ..executor_helpers import PluginError
+            from ..execution.executor_helpers import PluginError
 
             raise PluginError(str(e)) from e
         if isinstance(result, PluginOutcome):

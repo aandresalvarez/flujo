@@ -719,7 +719,7 @@ def _types_compatible(a: object, b: object) -> bool:
             return True
         # Fixed-length tuples
         if a_args and len(a_args) == len(b_args):
-            return all(_types_compatible(ta, tb) for ta, tb in zip(a_args, b_args))
+            return all(_types_compatible(ta, tb) for ta, tb in zip(a_args, b_args, strict=True))
         # Be permissive if actual lacks args
         return True
 
@@ -784,13 +784,13 @@ def _types_compatible(a: object, b: object) -> bool:
 
         # Generic but not special-cased: compare arg lists if both present and same length
         if args_a and args_b and len(args_a) == len(args_b):
-            return all(_types_compatible(ta, tb) for ta, tb in zip(args_a, args_b))
+            return all(_types_compatible(ta, tb) for ta, tb in zip(args_a, args_b, strict=True))
 
         # If one side lacks args, consider it compatible (e.g., List[str] vs list)
         return True
 
     # Explicit handling for None/type(None) to avoid issubclass errors and crashy validation
-    if a is None or a is type(None):  # noqa: E721 - intentional NoneType check
+    if a is None or a is type(None):  # intentional NoneType check
         # typing wildcard always compatible
         if _is_typing_any(b):
             return True

@@ -11,7 +11,7 @@ from ....exceptions import InfiniteFallbackError
 from ....infra import telemetry
 from .agent_fallback_handler import AgentFallbackHandler, FallbackState
 from .agent_plugin_runner import AgentPluginRunner, PluginState
-from ..executor_helpers import run_validation
+from ..execution.executor_helpers import run_validation
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..executor_core import ExecutorCore
@@ -1059,7 +1059,7 @@ class AgentExecutionRunner:
                     attempt=attempt,
                     total_attempts=total_attempts,
                     pre_attempt_context=pre_attempt_context,
-                    context=context,
+                    _context=context,
                     close_resources=_close_resources,
                     state=fallback_state,
                 )

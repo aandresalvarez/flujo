@@ -47,8 +47,13 @@ class ResultHandler:
             telemetry.logfire.warning(
                 f"ExecutorCore handled missing agent for step '{safe_name}' gracefully"
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            try:
+                telemetry.logfire.debug(
+                    f"Shadow evaluator scheduling failed for step '{getattr(step, 'name', '<unnamed>')}': {exc}"
+                )
+            except Exception:
+                pass
         if called_with_frame:
             return Failure(error=err, feedback=result.feedback, step_result=result)
         return result
@@ -164,8 +169,13 @@ class ResultHandler:
             shadow_eval = getattr(self._core, "_shadow_evaluator", None)
             if shadow_eval is not None:
                 shadow_eval.maybe_schedule(core=self._core, step=step, result=result, frame=frame)
-        except Exception:
-            pass
+        except Exception as exc:
+            try:
+                telemetry.logfire.debug(
+                    f"Memory indexing failed for step '{getattr(step, 'name', '<unnamed>')}': {exc}"
+                )
+            except Exception:
+                pass
         try:
             memory_manager = getattr(self._core, "_memory_manager", None)
             if memory_manager is not None:

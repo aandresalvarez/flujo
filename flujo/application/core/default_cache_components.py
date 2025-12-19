@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flujo.application.core.runtime.default_cache_components import *  # noqa: F401,F403
+    from flujo.application.core.runtime.default_cache_components import _LRUCache  # noqa: F401
+
 from importlib import import_module
 import sys as _sys
 

@@ -14,7 +14,7 @@ from ....exceptions import (
 )
 from ....infra import telemetry
 from ....signature_tools import analyze_signature
-from ..context_manager import _accepts_param
+from ..context.context_manager import _accepts_param
 from .default_cache_components import (
     Blake3Hasher,
     DefaultCacheKeyGenerator,
@@ -363,7 +363,7 @@ class DefaultAgentRunner:
         stream: bool = False,
         on_chunk: Callable[[object], Awaitable[None]] | None = None,
     ) -> object:
-        from ..context_manager import _should_pass_context
+        from ..context.context_manager import _should_pass_context
         from flujo.domain.interfaces import get_skill_resolver
 
         if agent is None:

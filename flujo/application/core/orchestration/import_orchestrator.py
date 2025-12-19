@@ -13,7 +13,7 @@ from ....domain.models import (
     StepResult,
     UsageLimits,
 )
-from ..executor_helpers import make_execution_frame
+from ..execution.executor_helpers import make_execution_frame
 from ..step_policies import ImportStepExecutor
 from ..types import ExecutionFrame, TContext_w_Scratch
 

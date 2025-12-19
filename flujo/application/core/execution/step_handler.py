@@ -252,17 +252,14 @@ class StepHandler:
         original_context_setter = getattr(self._core, "_context_setter", None)
         quota_token = None
         try:
-            try:
-                setattr(self._core, "_context_setter", context_setter)
-            except Exception:
-                pass
+            self._core._context_setter = context_setter
             try:
                 quota_mgr = getattr(self._core, "_quota_manager", None)
                 set_fn = getattr(quota_mgr, "set_current_quota", None)
                 if callable(set_fn):
                     quota_token = set_fn(current_quota)
             except Exception:
-                quota_token = None
+                quota_token = None  # Quota manager unavailable; continue without quota tracking.
             outcome = await self._core.loop_step_executor.execute(self._core, frame)
             return self._core._unwrap_outcome_to_step_result(
                 outcome, self._core._safe_step_name(loop_step)
@@ -276,10 +273,7 @@ class StepHandler:
                         set_fn(quota_token.old_value)
             except Exception:
                 pass
-            try:
-                setattr(self._core, "_context_setter", original_context_setter)
-            except Exception:
-                pass
+            self._core._context_setter = original_context_setter
 
     async def pipeline(
         self,

@@ -68,7 +68,7 @@ class PolicyRegistry:
                 import flujo.framework  # noqa: F401
             except Exception:
                 pass
-            from ...framework.registry import get_registered_policies
+            from ....framework.registry import get_registered_policies
 
             for step_cls, policy_instance in get_registered_policies().items():
                 self._registry[step_cls] = policy_instance

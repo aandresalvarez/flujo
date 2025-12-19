@@ -129,14 +129,14 @@ class AgentPluginRunner:
                 state=state,
                 attempt_exception=None,
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             if e.__class__.__name__ == "InfiniteRedirectError" or isinstance(
                 e, InfiniteRedirectError
             ):
                 raise
             if isinstance(e, asyncio.TimeoutError):
                 raise
-            state.last_plugin_failure_feedback = f"Plugin execution failed: {str(e)}"
+            state.last_plugin_failure_feedback = f"Plugin execution failed: {e!s}"
             result.success = False
             result.feedback = state.last_plugin_failure_feedback
             result.output = None
@@ -236,7 +236,7 @@ class AgentPluginRunner:
                     on_chunk=on_chunk,
                     _fallback_depth=fallback_depth + 1,
                 )
-            except Exception as fb_exc:  # noqa: BLE001
+            except Exception as fb_exc:
                 if getattr(fb_exc, "__class__", type(fb_exc)).__name__ == "InfiniteFallbackError":
                     fb_txt = (
                         f"Fallback loop detected for step '{getattr(fb_step, 'name', '<unnamed>')}'"

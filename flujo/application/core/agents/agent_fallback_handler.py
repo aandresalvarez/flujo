@@ -52,7 +52,7 @@ class AgentFallbackHandler:
         attempt: int,
         total_attempts: int,
         pre_attempt_context: BaseModel | None,
-        context: BaseModel | None,
+        _context: BaseModel | None,
         close_resources: Callable[[BaseException | None], Awaitable[None]],
         state: FallbackState,
     ) -> FallbackHandlingResult:

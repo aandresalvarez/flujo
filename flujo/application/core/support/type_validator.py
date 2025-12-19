@@ -6,7 +6,7 @@ import typing as _typing
 from typing import Protocol, get_args, get_origin, Union
 
 from ....exceptions import TypeMismatchError
-from ..context_manager import _types_compatible
+from ..context.context_manager import _types_compatible
 
 _TYPING_OPEN = getattr(_typing, "An" + "y")
 

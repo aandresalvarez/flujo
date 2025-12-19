@@ -161,10 +161,7 @@ class PolicyHandlers(Generic[TContext_w_Scratch]):
                     quota_token = self._core._set_current_quota(current_quota)
 
                 if current_quota is not None and not current_quota.reserve(estimate):
-                    try:
-                        from .usage_messages import format_reservation_denial
-                    except Exception:  # pragma: no cover
-                        from flujo.application.core.usage_messages import format_reservation_denial
+                    from ..runtime.usage_messages import format_reservation_denial
 
                     rem_cost, rem_tokens = current_quota.get_remaining()
                     denial = format_reservation_denial(
@@ -276,7 +273,7 @@ class PolicyHandlers(Generic[TContext_w_Scratch]):
         self._ensure_granular_policy(registry)
         # Ensure a fallback exists; default to simple policy when not provided
         try:
-            if registry._fallback_policy is None:  # noqa: SLF001
+            if registry._fallback_policy is None:
                 fallback = self._core.simple_step_executor
                 if isinstance(fallback, StepPolicy):
                     registry.register_fallback(fallback)

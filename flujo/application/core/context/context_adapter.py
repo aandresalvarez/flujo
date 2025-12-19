@@ -24,10 +24,10 @@ from ....utils.serialization import register_custom_serializer, register_custom_
 from ....utils.scratchpad import SCRATCHPAD_REMOVED_MESSAGE, update_contains_scratchpad
 
 __all__ = [
+    "TypeResolutionContext",
     "_build_context_update",
     "_inject_context",
     "register_custom_type",
-    "TypeResolutionContext",
 ]
 
 T = TypeVar("T")
@@ -373,7 +373,9 @@ def _annotation_allows_none(field_type: object) -> bool:
         return False
 
 
-def _deserialize_value(value: object, field_type: object, context_model: type[BaseModel]) -> object:
+def _deserialize_value(
+    value: object, field_type: object, _context_model: type[BaseModel]
+) -> object:
     """
     Deserialize a value according to its field type.
 

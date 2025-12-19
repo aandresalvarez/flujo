@@ -8,7 +8,7 @@ from ....infra import telemetry
 from .default_cache_components import DefaultCacheKeyGenerator, _LRUCache
 
 # Import the cache override context variable from shared module
-from ..context_vars import _CACHE_OVERRIDE
+from ..context.context_vars import _CACHE_OVERRIDE
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..types import ExecutionFrame, TContext_w_Scratch

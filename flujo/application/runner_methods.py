@@ -29,7 +29,7 @@ from ..domain.models import (
 from ..domain.processors import AgentProcessors
 from ..domain.resources import AppResources
 from ..type_definitions.common import JSONObject
-from .core.context_manager import _extract_missing_fields
+from .core.context.context_manager import _extract_missing_fields
 from .core.async_iter import aclose_if_possible
 from .runner_execution import resume_async_inner
 from .run_session import RunSession

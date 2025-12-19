@@ -101,7 +101,12 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
             if executor is not None:
                 executor.state_manager = self.state_manager
         except Exception:
-            pass
+            try:
+                from ....infra import telemetry
+
+                telemetry.logfire.warning("Failed to inject state_manager into backend executor")
+            except Exception:
+                pass
         self.usage_limits = usage_limits
         self.step_coordinator = step_coordinator or StepCoordinator()
         self.type_validator = type_validator or TypeValidator()
@@ -997,13 +1002,13 @@ class ExecutionManager(ExecutionFinalizationMixin[ContextT], Generic[ContextT]):
                     yield result
                     return
 
-                except PipelineContextInitializationError as e:
+                except PipelineContextInitializationError:
                     # Propagate PipelineContextInitializationError so it can be converted to ContextInheritanceError
                     # at the appropriate level (e.g., in as_step method)
-                    raise e
-                except ContextInheritanceError as e:
+                    raise
+                except ContextInheritanceError:
                     # Propagate ContextInheritanceError immediately
-                    raise e
+                    raise
                 except Exception as e:
                     # Ensure redirect-loop propagates as an exception to satisfy tests
                     if e.__class__.__name__ == "InfiniteRedirectError":

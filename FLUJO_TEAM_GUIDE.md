@@ -413,7 +413,7 @@ from typing import Any, Optional, Dict, List
 from flujo.application.core import ExecutorCore
 from flujo.domain.dsl import Step
 from flujo.domain.models import StepResult, PipelineContext
-from flujo.application.core.execution_frame import ExecutionFrame
+from flujo.application.core.support.types import ExecutionFrame
 from flujo.type_definitions.common import JSONObject  # ✅ Use JSONObject, not Dict[str, Any]
 
 class DefaultYourStepExecutor:
@@ -526,7 +526,7 @@ from flujo.application.core.context.context_manager import ContextManager
 from typing import Any, Dict, Optional, List
 from flujo.domain.models import PipelineContext, StepResult
 from flujo.domain.dsl import Step
-from flujo.application.core.execution_frame import ExecutionFrame
+from flujo.application.core.support.types import ExecutionFrame
 
 class DefaultLoopStepExecutor:
     """Executor policy for LoopStep with proper context isolation."""
@@ -930,7 +930,7 @@ async def correct_exception_handling() -> StepResult:
 # ❌ Wrong - Putting policy logic directly in ExecutorCore
 from typing import Any
 from flujo.domain.dsl.loop import LoopStep
-from flujo.application.core.execution_frame import ExecutionFrame
+from flujo.application.core.support.types import ExecutionFrame
 
 class ExecutorCore:
     async def execute(self, frame: ExecutionFrame) -> Any:

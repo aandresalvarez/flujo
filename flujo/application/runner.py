@@ -164,6 +164,10 @@ class Flujo(Generic[RunnerInT, RunnerOutT, ContextT]):
     _tracing_manager: TracingManager
     _state_manager: StateBackendManager
     _trace_manager: object | None  # Trace manager instance when tracing is enabled
+    backend: ExecutionBackend
+    state_backend: StateBackend | None
+    delete_on_completion: bool
+    persist_state: bool
 
     def __init__(
         self,

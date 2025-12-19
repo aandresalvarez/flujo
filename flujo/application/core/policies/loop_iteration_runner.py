@@ -24,8 +24,8 @@ from ._shared import (
     time,
     to_outcome,
 )
-from ..executor_helpers import make_execution_frame
-from ..context_vars import _CACHE_OVERRIDE
+from ..execution.executor_helpers import make_execution_frame
+from ..context.context_vars import _CACHE_OVERRIDE
 from flujo.exceptions import PipelineAbortSignal
 from .loop_hitl_orchestrator import clear_hitl_markers, propagate_pause_state
 from .loop_history import (

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from ....domain.models import BaseModel as DomainBaseModel
 from ....domain.models import PipelineResult, StepResult, UsageLimits
 from ....exceptions import PausedException, PipelineAbortSignal, InfiniteRedirectError
-from ..executor_helpers import make_execution_frame
+from ..execution.executor_helpers import make_execution_frame
 from ..types import TContext_w_Scratch
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -218,8 +218,17 @@ class LoopOrchestrator:
                         metadata_={"iterations": i, "exit_reason": exit_reason},
                         step_history=step_history_tracker.get_history(),
                     )
-            except Exception:
-                pass
+            except (PausedException, PipelineAbortSignal, InfiniteRedirectError):
+                raise
+            except Exception as exc:
+                try:
+                    from ....infra import telemetry
+
+                    telemetry.logfire.warning(
+                        f"Exit condition evaluation failed in LoopStep '{name}': {exc}"
+                    )
+                except Exception:
+                    pass
 
             final_output = body_output
             try:

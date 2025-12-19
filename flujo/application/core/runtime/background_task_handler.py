@@ -8,7 +8,7 @@ from ....infra.settings import get_settings
 from ....type_definitions.common import JSONObject
 
 if TYPE_CHECKING:
-    from .state_manager import StateManager
+    from ..state.state_manager import StateManager
 
 
 class BackgroundTaskHandler:

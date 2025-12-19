@@ -171,7 +171,7 @@ class PIIScrubbingPolicy:
         if not changed:
             return GovernanceDecision(allow=True)
         try:
-            telemetry.logfire.info(
+            telemetry.logfire.debug(
                 "[Governance] PII scrubbed from step input",
                 extra={"step": getattr(step, "name", "<unnamed>")},
             )

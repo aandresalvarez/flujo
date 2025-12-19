@@ -29,7 +29,7 @@ from ....exceptions import (
 )
 from ....domain.models import PipelineResult, StepResult, StepOutcome, Failure, Success
 from ..failure_builder import build_failure_outcome
-from ..context_vars import _CACHE_OVERRIDE
+from ..context.context_vars import _CACHE_OVERRIDE
 
 __all__ = ["_CACHE_OVERRIDE"]  # Re-export for backward compatibility
 
@@ -906,8 +906,9 @@ class _UsageTracker:
             self.total_cost_usd += float(cost_usd)
             self.prompt_tokens += int(tokens)
 
-    async def guard(self, limits: UsageLimits) -> None:
+    async def guard(self, limits: UsageLimits) -> None:  # noqa: ARG002
         # Backward-compatibility stub: quota reservation is the only enforcement surface.
+        _ = limits
         return None
 
     async def snapshot(self) -> tuple[float, int, int]:

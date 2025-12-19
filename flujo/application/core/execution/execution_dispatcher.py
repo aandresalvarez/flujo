@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import inspect
+from typing import TypeAlias
 
 from ....domain.models import Failure, StepOutcome, StepResult
 from ..types import ExecutionFrame, TContext_w_Scratch
 from ..policy_registry import PolicyCallable, PolicyRegistry, StepPolicy, StepType
 
 
-RegisteredPolicy = PolicyCallable | StepPolicy[StepType]
+RegisteredPolicy: TypeAlias = PolicyCallable | StepPolicy[StepType]
 
 
 class ExecutionDispatcher:

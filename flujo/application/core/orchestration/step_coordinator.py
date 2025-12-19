@@ -38,6 +38,24 @@ from flujo.application.core.hook_dispatcher import _dispatch_hook
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
 
+def _is_mock(obj: object) -> bool:
+    """Check if an object is a unittest.mock instance."""
+    try:
+        from unittest.mock import Mock as _M, MagicMock as _MM
+
+        try:
+            from unittest.mock import AsyncMock as _AM
+
+            if isinstance(obj, (_M, _MM, _AM)):
+                return True
+        except Exception:
+            if isinstance(obj, (_M, _MM)):
+                return True
+    except Exception:
+        pass
+    return bool(getattr(obj, "_is_mock", False) or hasattr(obj, "assert_called"))
+
+
 class StepCoordinator(Generic[ContextT]):
     """Coordinates individual step execution with telemetry and hooks."""
 
@@ -139,25 +157,6 @@ class StepCoordinator(Generic[ContextT]):
                         try:
                             if isinstance(step_outcome, Success):
                                 sr = step_outcome.step_result
-
-                                def _is_mock(obj: object) -> bool:
-                                    try:
-                                        from unittest.mock import Mock as _M, MagicMock as _MM
-
-                                        try:
-                                            from unittest.mock import AsyncMock as _AM
-
-                                            if isinstance(obj, (_M, _MM, _AM)):
-                                                return True
-                                        except Exception:
-                                            if isinstance(obj, (_M, _MM)):
-                                                return True
-                                    except Exception:
-                                        pass
-                                    return bool(
-                                        getattr(obj, "_is_mock", False)
-                                        or hasattr(obj, "assert_called")
-                                    )
 
                                 if _is_mock(getattr(sr, "output", None)):
                                     from flujo.exceptions import MockDetectionError as _MDE
@@ -327,26 +326,6 @@ class StepCoordinator(Generic[ContextT]):
                                     pass
                                 # Detect direct Mock outputs and raise
                                 try:
-
-                                    def _is_mock(obj: object) -> bool:
-                                        try:
-                                            from unittest.mock import Mock as _M, MagicMock as _MM
-
-                                            try:
-                                                from unittest.mock import AsyncMock as _AM
-
-                                                if isinstance(obj, (_M, _MM, _AM)):
-                                                    return True
-                                            except Exception:
-                                                if isinstance(obj, (_M, _MM)):
-                                                    return True
-                                        except Exception:
-                                            pass
-                                        return bool(
-                                            getattr(obj, "_is_mock", False)
-                                            or hasattr(obj, "assert_called")
-                                        )
-
                                     if _is_mock(getattr(step_result, "output", None)):
                                         from flujo.exceptions import MockDetectionError as _MDE
 
@@ -402,8 +381,8 @@ class StepCoordinator(Generic[ContextT]):
                             else:
                                 # Fall back to executing the step directly via ExecutorCore to recover.
                                 try:
-                                    from ..core.executor_core import ExecutorCore as _Core
-                                    from ..core.types import ExecutionFrame as _Frame
+                                    from ..executor_core import ExecutorCore as _Core
+                                    from ..types import ExecutionFrame as _Frame
 
                                     core2 = _Core()
                                     frame2 = _Frame(
@@ -460,7 +439,7 @@ class StepCoordinator(Generic[ContextT]):
                     if context.paused_step_input is None:
                         context.paused_step_input = data
                 # Indicate to the ExecutionManager/Runner that execution should stop by raising a sentinel
-                raise PipelineAbortSignal("Paused for HITL")
+                raise PipelineAbortSignal("Paused for HITL") from e
             except UsageLimitExceededError:
                 # Re-raise usage limit exceptions to be handled by ExecutionManager
                 raise
@@ -531,7 +510,8 @@ class StepCoordinator(Generic[ContextT]):
                 if hasattr(step, "failure_handlers") and step.failure_handlers:
                     for handler in step.failure_handlers:
                         try:
-                            handler() if hasattr(handler, "__call__") else None
+                            if callable(handler):
+                                handler()
                             try:
                                 if isinstance(step_result, StepResult):
                                     meta = getattr(step_result, "metadata_", None)

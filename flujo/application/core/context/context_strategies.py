@@ -76,6 +76,6 @@ class SelectiveIsolation(ContextIsolationStrategy):
 __all__ = [
     "ContextIsolationStrategy",
     "LenientIsolation",
-    "StrictIsolation",
     "SelectiveIsolation",
+    "StrictIsolation",
 ]

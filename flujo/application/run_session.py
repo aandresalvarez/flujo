@@ -146,10 +146,8 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
         """Execute pipeline steps using the execution manager."""
         assert self.pipeline is not None
 
-        state_manager: StateManager[ContextT] = StateManager[ContextT](state_backend)
-        step_coordinator: StepCoordinator[ContextT] = StepCoordinator[ContextT](
-            self.hooks, self.resources
-        )
+        state_manager: StateManager[ContextT] = StateManager(state_backend)
+        step_coordinator: StepCoordinator[ContextT] = StepCoordinator(self.hooks, self.resources)
         root_quota = build_root_quota(self.usage_limits)
 
         execution_manager = ExecutionManager(
@@ -318,7 +316,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
             data: object = initial_input
             pipeline_result_obj: PipelineResult[ContextT] = PipelineResult()
             state_created_at: datetime | None = None
-            state_manager: StateManager[ContextT] = StateManager[ContextT](self.state_backend)
+            state_manager: StateManager[ContextT] = StateManager(self.state_backend)
             run_id_for_state = run_id or getattr(current_context_instance, "run_id", None)
 
             if run_id_for_state is None:
@@ -605,9 +603,7 @@ class RunSession(Generic[RunnerInT, RunnerOutT, ContextT]):
             except (UsageLimitExceededError, PricingNotConfiguredError) as e:
                 if current_context_instance is not None:
                     assert self.pipeline is not None
-                    execution_manager: ExecutionManager[ContextT] = ExecutionManager[ContextT](
-                        self.pipeline
-                    )
+                    execution_manager: ExecutionManager[ContextT] = ExecutionManager(self.pipeline)
                     if pipeline_result_obj.final_pipeline_context is None:
                         execution_manager.set_final_context(
                             pipeline_result_obj,

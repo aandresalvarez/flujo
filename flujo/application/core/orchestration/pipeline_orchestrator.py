@@ -19,7 +19,7 @@ from ....domain.models import (
 from ....exceptions import PausedException, UsageLimitExceededError
 from ....infra import telemetry
 from ..step_history_tracker import StepHistoryTracker
-from ..executor_helpers import make_execution_frame
+from ..execution.executor_helpers import make_execution_frame
 
 
 class _ExecutorCoreLike(Protocol):

@@ -290,7 +290,7 @@ class FlujoRuntimeBuilder:
         )  # Temporary init, updated later if needed
         # Memory manager wiring (optional, disabled by default)
         try:
-            from ...embeddings import get_embedding_client
+            from ....embeddings import get_embedding_client
         except Exception:  # pragma: no cover - optional dependency
             get_embedding_client = None  # type: ignore
 
