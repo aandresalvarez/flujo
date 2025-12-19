@@ -42,8 +42,6 @@ from .executor_helpers import (
     is_complex_step,
     log_execution_error,
     make_execution_frame,
-    execute_simple_step,
-    execute_step_compat,
     build_failure,
     handle_missing_agent_exception,
     persist_and_finalize,
@@ -708,10 +706,11 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         frame_or_step: ExecutionFrame[TContext_w_Scratch] | object | None = None,
         data: object | None = None,
+        *args: object,
         **kwargs: object,
     ) -> StepOutcome[StepResult] | StepResult:
         """Public entrypoint that delegates to the shared execution flow."""
-        return await execute_entrypoint(self, frame_or_step, data, **kwargs)
+        return await execute_entrypoint(self, frame_or_step, data, *args, **kwargs)
 
     def _log_execution_error(self, step_name: str, exc: Exception) -> None:
         log_execution_error(self, step_name, exc)
@@ -719,8 +718,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     _build_failure_outcome = build_failure
 
     _make_execution_frame = make_execution_frame
-
-    _execute_simple_step = execute_simple_step
 
     # Preserve failure builder compatibility
     _failure_builder = build_failure_outcome
@@ -921,8 +918,6 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
             cache_key=cache_key,
             fallback_depth=_fallback_depth,
         )
-
-    execute_step = execute_step_compat
 
     _safe_step_name = staticmethod(safe_step_name)
     _format_feedback = staticmethod(format_feedback)

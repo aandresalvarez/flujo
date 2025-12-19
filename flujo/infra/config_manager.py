@@ -631,6 +631,21 @@ class ConfigManager:
         if env_uri:
             return env_uri
 
+        # Test mode isolation: when FLUJO_TEST_MODE=1 and FLUJO_TEST_STATE_DIR is set,
+        # use an isolated SQLite database in that directory for test isolation.
+        test_mode = str(os.environ.get("FLUJO_TEST_MODE", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        test_state_dir = os.environ.get("FLUJO_TEST_STATE_DIR", "").strip()
+        if test_mode and test_state_dir:
+            from pathlib import Path
+
+            test_db_path = Path(test_state_dir) / "flujo_ops.db"
+            return f"sqlite:///{test_db_path.as_posix()}"
+
         # TOML file configuration
         config = self.load_config(force_reload=force_reload)
         return config.state_uri

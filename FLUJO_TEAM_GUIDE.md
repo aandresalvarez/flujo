@@ -512,7 +512,7 @@ Step execution, especially within retries, must be **idempotent with respect to 
 
 ### **✅ The Correct Pattern: Context Isolation for Complex Steps**
 
-The `ExecutorCore` automatically handles context isolation for retries in `_execute_simple_step`. For complex steps like `LoopStep` and `ParallelStep`, you **must do this manually**.
+The `ExecutorCore` automatically handles context isolation for retries in the simple-step policy path invoked by `ExecutorCore.execute`. For complex steps like `LoopStep` and `ParallelStep`, you **must do this manually**.
 
 ContextManager now delegates isolation/merge through strategies:
 - `LenientIsolation` (default) uses best-effort deep copies and safe merges.

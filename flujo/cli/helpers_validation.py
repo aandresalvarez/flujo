@@ -5,7 +5,6 @@ import re
 from typing import Any, Optional
 
 import yaml
-from typer import Exit
 
 from flujo.domain.dsl import Pipeline
 from flujo.domain.pipeline_validation import ValidationReport
@@ -19,9 +18,9 @@ from .helpers_io import load_pipeline_from_file
 def load_mermaid_code(file: str, object_name: str, detail_level: str) -> str:
     """Load a pipeline and return its Mermaid diagram code string."""
     pipeline, _ = load_pipeline_from_file(file, object_name)
-    if not hasattr(pipeline, "to_mermaid_with_detail_level"):
-        raise Exit(1)
-    return pipeline.to_mermaid_with_detail_level(detail_level)
+    from flujo.visualization.visualize import visualize_with_detail_level
+
+    return visualize_with_detail_level(pipeline, detail_level)
 
 
 def get_pipeline_step_names(path: str) -> list[str]:

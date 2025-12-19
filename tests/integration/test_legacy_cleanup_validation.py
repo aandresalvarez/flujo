@@ -15,6 +15,7 @@ from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.steps.cache_step import CacheStep
 from flujo.domain.models import StepResult
+from tests.test_types.fixtures import execute_simple_step
 from flujo.exceptions import PausedException
 
 
@@ -261,7 +262,8 @@ class TestRemainingFunctionPreservation:
 
         # Test basic execution using ExecutorCore
         executor = ExecutorCore()
-        result = await executor.execute_step(
+        result = await execute_simple_step(
+            executor,
             step=mock_step,
             data="test",
             context=None,
@@ -269,8 +271,6 @@ class TestRemainingFunctionPreservation:
             limits=None,
             stream=False,
             on_chunk=None,
-            context_setter=None,
-            result=None,
             _fallback_depth=0,
         )
 

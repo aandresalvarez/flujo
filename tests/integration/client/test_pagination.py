@@ -325,6 +325,7 @@ def test_postgres_dependency_guard_missing_asyncpg(monkeypatch):
         return original_find_spec(name)
 
     monkeypatch.setattr(importlib.util, "find_spec", mock_find_spec)
+    monkeypatch.delenv("FLUJO_STATE_URI", raising=False)
 
     # Mock get_state_uri to return a postgres URI
     monkeypatch.setattr(
@@ -333,8 +334,10 @@ def test_postgres_dependency_guard_missing_asyncpg(monkeypatch):
 
     # Mock test environment detection to prevent SQLite fallback
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    # Mock ConfigManager.get_settings since load_backend_from_config calls cfg_manager.get_settings()
     monkeypatch.setattr(
-        "flujo.cli.config.get_settings", lambda: type("Settings", (), {"test_mode": False})()
+        "flujo.infra.config_manager.ConfigManager.get_settings",
+        lambda self, **kwargs: type("Settings", (), {"test_mode": False})(),
     )
 
     from flujo.cli.config import load_backend_from_config
@@ -360,6 +363,7 @@ def test_postgres_dependency_guard_in_factory(monkeypatch):
         return original_find_spec(name)
 
     monkeypatch.setattr(importlib.util, "find_spec", mock_find_spec)
+    monkeypatch.delenv("FLUJO_STATE_URI", raising=False)
 
     # Mock get_state_uri to return a postgres URI
     monkeypatch.setattr(

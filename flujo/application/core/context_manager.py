@@ -38,21 +38,6 @@ class ContextManager:
     def _is_base_model(obj: object) -> TypeGuard[BaseModel]:
         return isinstance(obj, BaseModel)
 
-    @staticmethod
-    def _is_mock_context(obj: object) -> bool:
-        try:
-            from unittest.mock import Mock, MagicMock
-
-            try:
-                from unittest.mock import AsyncMock as _AsyncMock
-
-                _mock_types: tuple[type[object], ...] = (Mock, MagicMock, _AsyncMock)
-            except Exception:
-                _mock_types = (Mock, MagicMock)
-            return isinstance(obj, _mock_types)
-        except Exception:
-            return False
-
     class ContextIsolationError(Exception):
         """Raised when context isolation fails under strict settings."""
 
@@ -124,9 +109,6 @@ class ContextManager:
         """Return a deep copy of the context for isolation (lenient behavior)."""
         if context is None:
             return None
-        # Fast path: skip isolation for unittest.mock contexts used in performance tests
-        if ContextManager._is_mock_context(context):
-            return context
         # Selective isolation: include only specified keys if requested
         if include_keys:
             try:
@@ -254,9 +236,6 @@ class ContextManager:
         last_error: Exception | None = None
         if context is None:
             return None
-        # Allow mocks without isolation for performance tests
-        if ContextManager._is_mock_context(context):
-            return context
 
         # Selective isolation if keys provided (reuse non-strict which is safe)
         if include_keys:

@@ -113,7 +113,7 @@ class TestConfigurationIntegration:
         finally:
             os.unlink(config_path)
 
-    def test_state_uri_configuration(self):
+    def test_state_uri_configuration(self, monkeypatch: pytest.MonkeyPatch):
         """Test that state URI is properly configured."""
         config_content = """
         state_uri = "sqlite:///custom_flujo.db"
@@ -124,6 +124,7 @@ class TestConfigurationIntegration:
             config_path = f.name
 
         try:
+            monkeypatch.delenv("FLUJO_STATE_URI", raising=False)
             config_manager = ConfigManager(config_path)
             state_uri = config_manager.get_state_uri()
 

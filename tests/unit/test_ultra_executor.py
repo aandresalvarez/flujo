@@ -33,6 +33,7 @@ from flujo.domain.validation import ValidationResult
 from flujo.exceptions import (
     PausedException,
 )
+from tests.test_types.fixtures import execute_simple_step
 
 # Alias for backward compatibility
 UltraStepExecutor = ExecutorCore
@@ -591,8 +592,8 @@ class TestBackwardCompatibility:
         assert executor is not None
 
     @pytest.mark.asyncio
-    async def test_execute_step_signature(self):
-        """Test that execute_step has the same signature."""
+    async def test_execute_signature(self):
+        """Test that execute can run a simple step with legacy kwargs."""
         executor = UltraStepExecutor(enable_cache=False)
 
         agent = MockAgent("output")
@@ -608,9 +609,19 @@ class TestBackwardCompatibility:
         step.validators = []
         step.plugins = []  # Add missing plugins attribute
 
-        result = await executor.execute_step(
-            step, "input", context=None, resources=None, usage_limits=None
+        outcome = await executor.execute(
+            step,
+            "input",
+            context=None,
+            resources=None,
+            usage_limits=None,
         )
+        if isinstance(outcome, StepResult):
+            result = outcome
+        else:
+            result = executor._unwrap_outcome_to_step_result(
+                outcome, executor._safe_step_name(step)
+            )
 
         assert result.success is True
         assert result.output == "output"
@@ -784,7 +795,7 @@ class TestIntegration:
             config=StepConfig(max_retries=2),
         )
 
-        result = await executor.execute_step(step, "input data")
+        result = await execute_simple_step(executor, step, "input data")
 
         assert result.success is True
         assert result.name == "real_test_step"

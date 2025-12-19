@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeVar
+from typing import TypeVar
 
-from .step import Step, HumanInTheLoopStep
-from .loop import LoopStep
-from .conditional import ConditionalStep
-from .parallel import ParallelStep
+from flujo.domain.dsl.step import Step, HumanInTheLoopStep
+from flujo.domain.dsl.loop import LoopStep
+from flujo.domain.dsl.conditional import ConditionalStep
+from flujo.domain.dsl.parallel import ParallelStep
+from flujo.domain.dsl.pipeline import Pipeline
 
-if TYPE_CHECKING:
-    from .pipeline import Pipeline
-
-from ..models import BaseModel
+from flujo.domain.models import BaseModel
 
 PipeInT = TypeVar("PipeInT")
 PipeOutT = TypeVar("PipeOutT")
@@ -18,12 +16,20 @@ InnerPipeInT = TypeVar("InnerPipeInT")
 InnerPipeOutT = TypeVar("InnerPipeOutT")
 
 
-def to_mermaid(pipeline: "Pipeline[PipeInT, PipeOutT]") -> str:
+def _as_pipeline(candidate: object) -> Pipeline[object, object] | None:
+    if isinstance(candidate, Pipeline):
+        return candidate
+    if isinstance(candidate, Step):
+        return Pipeline.from_step(candidate)
+    return None
+
+
+def visualize(pipeline: "Pipeline[PipeInT, PipeOutT]") -> str:
     """Generate a Mermaid graph definition for visualizing this pipeline."""
-    return to_mermaid_with_detail_level(pipeline, "auto")
+    return visualize_with_detail_level(pipeline, "auto")
 
 
-def to_mermaid_with_detail_level(
+def visualize_with_detail_level(
     pipeline: "Pipeline[PipeInT, PipeOutT]", detail_level: str = "auto"
 ) -> str:
     """Generate a Mermaid graph definition with configurable detail levels."""
@@ -58,7 +64,11 @@ def _calculate_complexity_score(pipeline: "Pipeline[PipeInT, PipeOutT]") -> int:
         score += 1  # base
 
         if isinstance(step, LoopStep):
-            score += 3 + len(step.loop_body_pipeline.steps) * 2
+            loop_body = _as_pipeline(step.loop_body_pipeline)
+            if loop_body is not None:
+                score += 3 + len(loop_body.steps) * 2
+            else:
+                score += 3
         elif isinstance(step, ConditionalStep):
             score += 2 + len(step.branches) * 2
         elif isinstance(step, ParallelStep):
@@ -150,7 +160,8 @@ def _generate_high_detail_mermaid(  # noqa: C901 – complexity inherited
             add_edge(prev_node, loop_node_id)
 
         lines.append(f'    subgraph "Loop Body: {step.name}"')
-        body_start = process_pipeline(step.loop_body_pipeline)
+        loop_body = _as_pipeline(step.loop_body_pipeline)
+        body_start = process_pipeline(loop_body) if loop_body is not None else None
         lines.append("    end")
 
         if body_start is None:
@@ -182,9 +193,10 @@ def _generate_high_detail_mermaid(  # noqa: C901 – complexity inherited
             add_edge(cond_node_id, branch_end, str(branch_key))
             branch_end_nodes.append(branch_end)
 
-        if step.default_branch_pipeline is not None:
+        default_branch = _as_pipeline(step.default_branch_pipeline)
+        if default_branch is not None:
             lines.append('    subgraph "Default Branch"')
-            default_end = process_pipeline(step.default_branch_pipeline)
+            default_end = process_pipeline(default_branch)
             lines.append("    end")
             if default_end is None:
                 default_end = cond_node_id

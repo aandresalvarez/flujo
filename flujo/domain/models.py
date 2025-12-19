@@ -95,7 +95,7 @@ class Success(StepOutcome[T]):
 class Failure(StepOutcome[T]):
     """Recoverable failure with partial result and feedback for callers/tests."""
 
-    error: Any
+    error: Any = None
     feedback: str | None = None
     step_result: Optional["StepResult"] = None
 

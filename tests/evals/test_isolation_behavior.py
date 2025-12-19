@@ -20,8 +20,8 @@ def test_skills_base_dir_stack_is_isolated(sentinel: str) -> None:
 
 @pytest.mark.parametrize("value", ["file:///tmp/a", "memory://b"])
 def test_flujo_env_is_cleared_between_tests(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
-    # Autouse fixture should clear mutable FLUJO_* env vars before each test invocation
-    assert os.environ.get("FLUJO_STATE_URI") is None
+    # Autouse fixture should clear mutable FLUJO_* env vars and set FLUJO_STATE_URI
+    assert os.environ.get("FLUJO_STATE_URI") == "memory://"
 
     monkeypatch.setenv("FLUJO_STATE_URI", value)
     assert os.environ["FLUJO_STATE_URI"] == value

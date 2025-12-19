@@ -2,6 +2,7 @@
 
 from typing import Any
 from flujo.domain import Step, Pipeline, StepConfig
+from flujo.visualization.visualize import visualize, visualize_with_detail_level
 from flujo.testing import DummyPlugin
 from flujo.domain.plugins import PluginOutcome
 
@@ -20,7 +21,7 @@ def test_simple_pipeline_visualization():
     step3 = Step.model_validate({"name": "Load", "agent": TestAgent()})
 
     pipeline = step1 >> step2 >> step3
-    mermaid = pipeline.to_mermaid()
+    mermaid = visualize(pipeline)
 
     # Check that it's a valid Mermaid graph
     assert mermaid.startswith("graph TD")
@@ -43,7 +44,7 @@ def test_pipeline_with_validation_steps():
     step2 = Step.model_validate({"name": "Process", "agent": TestAgent(), "validators": []})
 
     pipeline = step1 >> step2
-    mermaid = pipeline.to_mermaid()
+    mermaid = visualize(pipeline)
 
     # Check for validation annotation
     assert "🛡️" in mermaid
@@ -57,7 +58,7 @@ def test_pipeline_with_retry_config():
     )
 
     pipeline = step1 >> step2
-    mermaid = pipeline.to_mermaid()
+    mermaid = visualize(pipeline)
 
     # Check for dashed edge (retry indicator)
     assert "-.->" in mermaid
@@ -76,7 +77,7 @@ def test_loop_step_visualization():
     )
 
     pipeline = Pipeline.from_step(loop_step)
-    mermaid = pipeline.to_mermaid()
+    mermaid = visualize(pipeline)
 
     # Check for loop node shape
     assert '("Loop: RefineLoop")' in mermaid
@@ -106,7 +107,7 @@ def test_conditional_step_visualization():
     )
 
     pipeline = Pipeline.from_step(conditional_step)
-    mermaid = pipeline.to_mermaid()
+    mermaid = visualize(pipeline)
 
     # Check for conditional node shape
     assert '{"Branch: Router"}' in mermaid
@@ -134,7 +135,7 @@ def test_parallel_step_visualization():
     )
 
     pipeline = Pipeline.from_step(parallel_step)
-    mermaid = pipeline.to_mermaid()
+    mermaid = visualize(pipeline)
 
     # Check for parallel node shape
     assert '{{"Parallel: ParallelProcess"}}' in mermaid
@@ -149,7 +150,7 @@ def test_human_in_the_loop_visualization():
     hitl_step = Step.human_in_the_loop("UserApproval", "Please review the result")
 
     pipeline = Pipeline.from_step(hitl_step)
-    mermaid = pipeline.to_mermaid()
+    mermaid = visualize(pipeline)
 
     # Check for human step shape
     assert "[/Human: UserApproval/]" in mermaid
@@ -190,7 +191,7 @@ def test_complex_nested_pipeline_visualization():
     complex_pipeline = loop_step >> conditional_step >> parallel_step
 
     # Test auto-detection (should choose low detail for complex pipeline)
-    mermaid_auto = complex_pipeline.to_mermaid()
+    mermaid_auto = visualize(complex_pipeline)
 
     # Verify auto-detection chose low detail (emoji format)
     assert '("🔄 MainLoop")' in mermaid_auto
@@ -198,7 +199,7 @@ def test_complex_nested_pipeline_visualization():
     assert "{{⚡ Concurrent}}" in mermaid_auto
 
     # Test high detail explicitly
-    mermaid_high = complex_pipeline.to_mermaid_with_detail_level("high")
+    mermaid_high = visualize_with_detail_level(complex_pipeline, "high")
 
     # Verify high detail format
     assert '("Loop: MainLoop")' in mermaid_high
@@ -233,7 +234,7 @@ def test_pipeline_with_mixed_configurations():
     normal_step = Step.model_validate({"name": "NormalStep", "agent": TestAgent()})
 
     pipeline = validated_step >> retry_step >> normal_step
-    mermaid = pipeline.to_mermaid()
+    mermaid = visualize(pipeline)
 
     # Check for validation annotation
     assert "ValidatedStep 🛡️" in mermaid

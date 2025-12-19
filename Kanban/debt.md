@@ -1,85 +1,67 @@
-# Technical Debt (Verified)
+Based on the updated code, you have made **significant architectural improvements**, specifically regarding the **Agent-Level Coupling** and **Blueprint Loading**.
 
-This file tracks *actionable*, code-grounded debt that still exists in Flujo and keeps a paper trail
-of what was resolved vs intentionally re-scoped.
+Here is the updated status of your technical debt:
 
-Rules for updates:
-- Every backlog item must include: impact, effort, evidence (how to verify), and exit criteria.
-- “Resolved” items must include verifiable evidence (a quick `rg` command and/or a file pointer).
-- If a fix is pending, link the PR and keep the item out of “Resolved” until it lands in `main`.
+### ✅ SOLVED: Agent-Level Coupling (The Adapter Pattern)
+You have successfully implemented the **Adapter Pattern** for agents.
+*   **Evidence:** `flujo/agents/wrapper.py` now instantiates `PydanticAIAdapter`. The `_run_with_retry` method no longer interacts directly with raw PydanticAI results; it interacts with the adapter and expects a `FlujoAgentResult`.
+*   **Benefit:** Your core orchestration logic (`ExecutorCore`) is now shielded from changes in the `pydantic-ai` library.
 
-## Current backlog (ordered by ROI: impact ÷ effort)
+### ✅ SOLVED: Blueprint Loader Registry
+You have refactored `loader_steps.py` to use a clean `BlueprintBuilderRegistry`.
+*   **Evidence:** `_make_step_from_blueprint` now cleanly delegates to `get_builder(kind)`. The framework fallback logic is encapsulated within the registry's `get_builder` method, removing the fragile `if/elif` chain from the loader.
 
-- None (verified)
+---
 
-## Resolved / Re-scoped (keep this section honest)
+### ⚠️ REMAINING DEBT (High Priority)
 
-1) Gate test-mode state backend override in CLI
-   - Evidence: `rg -n "FLUJO_TEST_STATE_DIR|FLUJO_EPHEMERAL_STATE" flujo/cli/config.py` shows explicit opt-ins.
-   - PR: #563
+#### 1. "Test Mode" Logic in Production Config (Operational Risk)
+**Source:** `flujo/cli/config.py` (Lines ~46-75)
+The production CLI configuration logic still explicitly branches logic based on `settings.test_mode`.
 
-2) Remove runtime import in `@step` decorator path
-   - Evidence: `rg -n "Import here to avoid circular imports" flujo/domain/dsl/step_decorators.py` returns empty.
-   - PR: #564
+```python
+# flujo/cli/config.py
+if is_test_env and not env_uri_set:
+    # ... logic that swaps the backend ...
+```
 
-3) Blueprint `processing` config typed + validated
-   - Evidence: `rg -n "processing: Optional\\[ProcessingConfigModel\\]" flujo/domain/blueprint/loader_models.py`.
-   - PR: #565
+*   **Why it's still debt:** Your production code contains logic specifically designed to bypass standard configuration loading if a specific flag is set.
+*   **Risk:** If `FLUJO_TEST_MODE` is accidentally set in a staging or production environment, the system will silently ignore the configured `state_uri` and switch to a temporary SQLite DB or Memory DB, potentially causing data loss or confusion.
+*   **Fix:** Remove this block. Test isolation should be achieved by the **Test Runner** (e.g., `conftest.py`) injecting a specific `FLUJO_STATE_URI`, not by the application code checking if it's being tested.
 
-4) Mermaid renderer redundant runtime imports removed
-   - Evidence: `rg -n "Runtime import to avoid circular dependency" flujo/domain/dsl/pipeline_mermaid.py`
-     returns empty.
-   - PR: #562
+#### 2. ExecutorCore "Zombie" Methods (Maintenance Burden)
+**Source:** `flujo/application/core/executor_core.py`
+The legacy compatibility shims are still present.
 
-5) Blueprint loader legacy fallback removed
-   - Evidence: `rg -n "get_step_class|framework\\.registry" flujo/domain/blueprint/loader_steps.py` returns empty.
-   - PR: #566
+*   **Evidence:**
+    *   `execute_simple_step`: Still defines a legacy execution path.
+    *   `execute_step_compat`: Still present.
+*   **Risk:** You are maintaining two parallel ways to execute a step. Bugs fixed in `execute()` might persist in `execute_simple_step` if that path is still used by legacy loop logic.
+*   **Fix:** Refactor `LoopOrchestrator` (the likely consumer) to use the standard `execute` method, then delete these shim methods.
 
-6) ExecutorCore internal shim calls removed
-   - Evidence: `rg -n "execute_simple_step|_execute_simple_step" flujo/application/core` shows only shim
-     definitions/aliases.
-   - PR: #567
+### ⚠️ REMAINING DEBT (Low Priority / cleanup)
 
-7) Telemetry avoids import-time env reads
-   - Evidence: `rg -n "os\\.getenv\\(\\\"CI\\\"\\)" flujo/infra/telemetry.py` is only used inside
-     `init_telemetry()`.
-   - PR: #568
+#### 3. Domain <-> Visualization Coupling
+**Source:** `flujo/domain/dsl/pipeline.py`
+While you moved the heavy lifting to `pipeline_mermaid.py`, the `Pipeline` class still has methods `to_mermaid()` and `to_mermaid_with_detail_level()`.
 
-8) `_force_setattr` workaround removed
-   - Evidence: `rg -n "_force_setattr" flujo` returns empty.
+*   **Why it's debt:** The **Data Structure** (`Pipeline`) knows about its **Representation** (Mermaid). This forces `pipeline.py` to import `pipeline_mermaid`, which imports `step`, creating a cycle that requires runtime import workarounds.
+*   **Fix:** Remove `to_mermaid` from the `Pipeline` class entirely. Users should call:
+    ```python
+    from flujo.visualization import visualize
+    visualize(pipeline)
+    ```
 
-9) Pydantic `arbitrary_types_allowed` scatter removed (single boundary definition)
-   - Evidence: `rg -n "arbitrary_types_allowed" flujo` returns only `flujo/domain/base_model.py`.
+#### 4. Context Manager "Mock" Awareness
+**Source:** `flujo/application/core/context_manager.py`
+The method `_is_mock_context` imports `unittest.mock` to check if the context is a mock object to skip isolation/merging.
 
-10) Removed implicit pytest detection in config manager (explicit `FLUJO_TEST_MODE` only)
-    - Evidence: `rg -n "PYTEST_CURRENT_TEST" flujo/infra/config_manager.py` returns empty.
-    - Note: remaining `PYTEST_CURRENT_TEST` usage is limited to the test-only helper `flujo/cli/test_setup.py`.
+*   **Why it's debt:** Production code shouldn't know about `unittest`.
+*   **Fix:** In your tests, instead of passing a raw `Mock()` as a context, use a real `PipelineContext` (it's lightweight) or a minimal subclass. This allows you to remove the `unittest` dependency from your core application logic.
 
-11) Governance tool allowlist uses centralized settings (no direct env reads in registry)
-   - Evidence: `rg -n "FLUJO_GOVERNANCE_TOOL_ALLOWLIST" flujo/infra/skill_registry.py` returns empty, and
-     the setting is defined in `flujo/infra/settings.py`.
+### Updated Task List
 
-12) Fixed TOML override type mismatch for `governance_tool_allowlist` (`list[str]` → `str`)
-   - Evidence: `flujo/infra/config_manager.py` normalizes list values before `setattr`, and
-     `tests/unit/test_config_manager.py` includes a TOML list test case.
-
-13) Versioned SQLite migrations (no ad-hoc runtime schema patching)
-   - Evidence: `rg -n "PRAGMA user_version" flujo/state/backends/sqlite_migrations.py` shows versioned migration flow.
-
-14) Legacy `step_executor` path removed from the core surface area
-   - Evidence: `rg -n "\\bstep_executor\\b" flujo` returns empty.
-
-15) Scratchpad writes removed from execution policies (typed fields only)
-   - Evidence: `rg -n "scratchpad writes removed" flujo/application/core/policies` shows typed-only comments/paths.
-
-16) CLI validation helpers bypassed strict typing
-   - Resolved: removed module-level `# mypy: ignore-errors` and made helpers pass `mypy --strict`.
-   - Key file: `flujo/cli/helpers_validation.py`.
-
-17) CI architecture gates no longer re-run full suites inside the architecture job
-    - Evidence: `rg -n "GITHUB_ACTIONS" tests/architecture` shows CI-only skips/overrides.
-
-18) Deprecated global agents module hook (intentionally retained until next major release)
-    - Rationale: We keep module `__getattr__` in `flujo/agents/recipes.py` to raise clear upgrade errors for
-      removed globals. This is a deprecation UX shim and not a runtime hot path (only triggers on missing attrs).
-    - Evidence: `rg -n "def __getattr__" flujo/agents/recipes.py` shows the intentional deprecation hook.
+1.  **Refactor CLI Config:** Delete the `if is_test_env:` block in `flujo/cli/config.py`. Update your test suite's `conftest.py` to set `os.environ["FLUJO_STATE_URI"] = "memory://"` globally for tests.
+2.  **Delete Executor Shims:** Remove `execute_simple_step` and `execute_step_compat` from `ExecutorCore`.
+3.  **Purge Domain Visualization:** Remove `to_mermaid` methods from `Pipeline`.
+4.  **Remove Mock Awareness:** Remove `_is_mock_context` from `ContextManager`.

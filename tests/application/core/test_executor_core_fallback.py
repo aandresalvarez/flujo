@@ -13,7 +13,11 @@ import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import UsageLimits
-from tests.test_types.fixtures import create_test_step, create_test_step_result
+from tests.test_types.fixtures import (
+    create_test_step,
+    create_test_step_result,
+    execute_simple_step,
+)
 from flujo.exceptions import (
     UsageLimitExceededError,
     MissingAgentError,
@@ -119,7 +123,8 @@ class TestExecutorCoreFallback:
         executor_core._agent_runner.run.return_value = "primary success"
 
         # Act
-        result = await executor_core._execute_simple_step(
+        result = await execute_simple_step(
+            executor_core,
             primary_step,
             "test data",
             None,  # context
@@ -171,7 +176,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -220,7 +226,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -270,7 +277,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -320,7 +328,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -368,7 +377,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -403,7 +413,8 @@ class TestExecutorCoreFallback:
         # individual agent behaviors correctly for real Step objects
 
         # Act
-        result = await executor_core._execute_simple_step(
+        result = await execute_simple_step(
+            executor_core,
             primary_step,
             "test data",
             None,  # context
@@ -443,7 +454,8 @@ class TestExecutorCoreFallback:
             mock_execute.side_effect = Exception("Fallback execution failed")
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -485,7 +497,8 @@ class TestExecutorCoreFallback:
             ]
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -532,7 +545,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -592,7 +606,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 context,  # context
@@ -673,7 +688,8 @@ class TestExecutorCoreFallback:
         executor_core._agent_runner.run.side_effect = Exception("Primary failed")
 
         # Act
-        result = await executor_core._execute_simple_step(
+        result = await execute_simple_step(
+            executor_core,
             primary_step,
             "test data",
             None,  # context
@@ -709,7 +725,8 @@ class TestExecutorCoreFallback:
 
         # Act & Assert
         with pytest.raises(UsageLimitExceededError):
-            await executor_core._execute_simple_step(
+            await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -736,7 +753,8 @@ class TestExecutorCoreFallback:
 
         # Act & Assert
         with pytest.raises(PricingNotConfiguredError):
-            await executor_core._execute_simple_step(
+            await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -761,7 +779,8 @@ class TestExecutorCoreFallback:
 
         # Act & Assert
         with pytest.raises(MissingAgentError):
-            await executor_core._execute_simple_step(
+            await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -810,7 +829,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -863,7 +883,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -894,7 +915,8 @@ class TestExecutorCoreFallback:
         executor_core._cache_backend.get.return_value = cached_result
 
         # Act
-        result = await executor_core._execute_simple_step(
+        result = await execute_simple_step(
+            executor_core,
             primary_step,
             "test data",
             None,  # context
@@ -944,7 +966,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -991,7 +1014,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 complex_data,
                 None,  # context
@@ -1039,7 +1063,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -1090,7 +1115,8 @@ class TestExecutorCoreFallback:
             )
 
             # Act
-            result = await executor_core._execute_simple_step(
+            result = await execute_simple_step(
+                executor_core,
                 primary_step,
                 "test data",
                 None,  # context
@@ -1160,7 +1186,8 @@ class TestExecutorCoreFallback:
                 executor_core._enable_cache = False
                 executor_core._cache_backend = None  # Also disable cache backend
 
-                result = await executor_core._execute_simple_step(
+                result = await execute_simple_step(
+                    executor_core,
                     primary_step,
                     "test data",
                     None,  # context
@@ -1242,7 +1269,8 @@ class TestExecutorCoreFallback:
         executor_core._cache_backend = None
 
         # Act
-        result = await executor_core._execute_simple_step(
+        result = await execute_simple_step(
+            executor_core,
             primary_step,
             "test data",
             None,  # context
@@ -1313,7 +1341,8 @@ class TestExecutorCoreFallback:
         executor_core._cache_backend = None
 
         # Act
-        result = await executor_core._execute_simple_step(
+        result = await execute_simple_step(
+            executor_core,
             primary_step,
             "test data",
             None,  # context
@@ -1351,7 +1380,8 @@ class TestExecutorCoreFallback:
         executor_core._cache_backend.put.return_value = None
 
         # Act
-        result = await executor_core._execute_simple_step(
+        result = await execute_simple_step(
+            executor_core,
             primary_step,
             "test data",
             None,  # context
@@ -1424,7 +1454,8 @@ class TestExecutorCoreFallback:
         executor_core._cache_backend = None
 
         # Act
-        result = await executor_core._execute_simple_step(
+        result = await execute_simple_step(
+            executor_core,
             primary_step,
             "test data",
             None,  # context
@@ -1773,8 +1804,8 @@ class TestExecutorCoreFallback:
 
         # Execute with streaming
         executor = ExecutorCore()
-        result = await executor._execute_simple_step(
-            primary_step, "test data", None, None, None, True, None, "cache_key", None
+        result = await execute_simple_step(
+            executor, primary_step, "test data", None, None, None, True, None, "cache_key", None
         )
 
         # Verify fallback succeeded with streaming processing
@@ -1821,8 +1852,8 @@ class TestExecutorCoreFallback:
         from flujo.domain.models import PipelineContext
 
         context = PipelineContext(user_id="test_user_123")
-        result = await executor._execute_simple_step(
-            primary_step, "test data", context, None, None, False, None, "cache_key", None
+        result = await execute_simple_step(
+            executor, primary_step, "test data", context, None, None, False, None, "cache_key", None
         )
 
         # Verify fallback succeeded with context preserved

@@ -8,6 +8,7 @@ from flujo.domain.dsl.step import Step
 from flujo.testing.utils import StubAgent, DummyPlugin
 from flujo.domain.plugins import PluginOutcome
 from flujo.domain.models import StepResult, UsageLimits, Success, Failure
+from tests.test_types.fixtures import execute_simple_step
 
 
 @pytest.mark.asyncio
@@ -46,7 +47,8 @@ async def test_simple_policy_success_path(monkeypatch):
     step = Step(name="s", agent=StubAgent(["ok"]))
 
     # Execute end-to-end via core to ensure policy path is exercised
-    res = await core._execute_simple_step(
+    res = await execute_simple_step(
+        core,
         step,
         data="in",
         context=None,
@@ -69,7 +71,8 @@ async def test_simple_policy_with_plugin_success(monkeypatch):
     # One plugin that returns success without redirect
     step.plugins = [(DummyPlugin([PluginOutcome(success=True)]), 1)]
 
-    res = await core._execute_simple_step(
+    res = await execute_simple_step(
+        core,
         step,
         data="in",
         context=None,
@@ -93,7 +96,8 @@ async def test_simple_policy_with_validator_failure(monkeypatch):
     failing = DummyPlugin([PluginOutcome(success=False, feedback="bad")])
     step.plugins = [(failing, 1)]
 
-    res = await core._execute_simple_step(
+    res = await execute_simple_step(
+        core,
         step,
         data="in",
         context=None,
@@ -125,7 +129,8 @@ async def test_processors_pipeline_applied(monkeypatch):
     monkeypatch.setattr(core._processor_pipeline, "apply_prompt", apply_prompt)
     monkeypatch.setattr(core._processor_pipeline, "apply_output", apply_output)
 
-    res = await core._execute_simple_step(
+    res = await execute_simple_step(
+        core,
         step,
         data="in",
         context=None,

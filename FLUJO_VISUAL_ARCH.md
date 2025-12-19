@@ -263,7 +263,7 @@ The transport is a **render‑only** JSON payload. Major version changes are **b
 
 ## 13. Export & Interchange
 
-* Renderer SHOULD support export to **SVG/PNG** and to **Mermaid** (via `to_mermaid()` parity).
+* Renderer SHOULD support export to **SVG/PNG** and to **Mermaid** (via `visualize()` parity).
 * Back‑export to canonical `.flujo.yml` MUST preserve semantics (no lossy transforms).
 
 ---

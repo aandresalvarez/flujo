@@ -12,6 +12,7 @@ from flujo.application.core.executor_core import ExecutorCore as UltraStepExecut
 from flujo.domain.dsl.step import Step
 from flujo.domain.models import BaseModel as DomainBaseModel
 from flujo.domain.models import StepResult
+from tests.test_types.fixtures import execute_simple_step
 
 # Constants for better maintainability
 FLOAT_TOLERANCE = 1e-10
@@ -243,14 +244,15 @@ class TestUltraExecutorPerformance:
 
         # Warm up both executors
         for _ in range(5):
-            await ultra_executor.execute_step(mock_step, data, context, resources)
+            await execute_simple_step(ultra_executor, mock_step, data, context, resources)
             await realistic_iterative_executor.execute_step(mock_step, data, context, resources)
 
         # Benchmark ultra executor
         ultra_times = []
         for i in range(iterations):
             start_time = time.perf_counter()
-            result = await ultra_executor.execute_step(
+            result = await execute_simple_step(
+                ultra_executor,
                 step=mock_step,
                 data=data,
                 context=context,
@@ -265,10 +267,10 @@ class TestUltraExecutorPerformance:
         for i in range(iterations):
             start_time = time.perf_counter()
             result = await realistic_iterative_executor.execute_step(
-                step=mock_step,
-                data=data,
-                context=context,
-                resources=resources,
+                mock_step,
+                data,
+                context,
+                resources,
             )
             end_time = time.perf_counter()
             iterative_times.append(end_time - start_time)
@@ -319,7 +321,7 @@ class TestUltraExecutorPerformance:
         resources = _BenchmarkResources()
 
         # Test 1: Basic execution
-        result = await ultra_executor.execute_step(mock_step, data, context, resources)
+        result = await execute_simple_step(ultra_executor, mock_step, data, context, resources)
         assert result.success, "Ultra executor should execute successfully"
         assert result.output == "benchmark_output"
 
@@ -348,7 +350,7 @@ class TestUltraExecutorPerformance:
         retry_step.meta = {}
         retry_step.persist_feedback_to_context = False
 
-        result = await ultra_executor.execute_step(retry_step, data, context, resources)
+        result = await execute_simple_step(ultra_executor, retry_step, data, context, resources)
 
         # Should eventually succeed after retries
         assert result.success, "Ultra executor should handle retries and eventually succeed"
@@ -381,7 +383,7 @@ class TestUltraExecutorPerformance:
 
         start_time = time.perf_counter()
         tasks = [
-            ultra_executor.execute_step(slow_step, data, context, resources)
+            execute_simple_step(ultra_executor, slow_step, data, context, resources)
             for _ in range(num_concurrent)
         ]
         results = await asyncio.gather(*tasks)
@@ -424,7 +426,7 @@ class TestUltraExecutorPerformance:
         if hasattr(ultra_executor, "_usage"):
             await ultra_executor._usage.add(0.1, 100)
 
-        result = await ultra_executor.execute_step(usage_step, data, context, resources)
+        result = await execute_simple_step(ultra_executor, usage_step, data, context, resources)
 
         print("\nUsage Tracking Feature Value:")
         if hasattr(ultra_executor, "_usage"):
@@ -453,7 +455,8 @@ class TestUltraExecutorPerformance:
 
         # First execution (cache miss)
         start_time = time.perf_counter()
-        result1 = await ultra_executor.execute_step(
+        result1 = await execute_simple_step(
+            ultra_executor,
             step=mock_step,
             data=data,
             context=context,
@@ -463,7 +466,8 @@ class TestUltraExecutorPerformance:
 
         # Second execution (cache hit)
         start_time = time.perf_counter()
-        result2 = await ultra_executor.execute_step(
+        result2 = await execute_simple_step(
+            ultra_executor,
             step=mock_step,
             data=data,
             context=context,
@@ -498,7 +502,8 @@ class TestUltraExecutorPerformance:
         # Execute many steps concurrently
         start_time = time.perf_counter()
         tasks = [
-            ultra_executor.execute_step(
+            execute_simple_step(
+                ultra_executor,
                 step=mock_step,
                 data=data,
                 context=context,
@@ -547,7 +552,8 @@ class TestUltraExecutorPerformance:
 
         # Execute many steps
         for i in range(iterations):
-            result = await ultra_executor.execute_step(
+            result = await execute_simple_step(
+                ultra_executor,
                 step=mock_step,
                 data=data,
                 context=context,
@@ -621,7 +627,7 @@ class TestUltraExecutorPerformance:
                 frame = ultra_executor._Frame(
                     step=mock_step,
                     data={"test": i, "data": f"value_{i}"},
-                    context=Mock() if i % 2 == 0 else None,
+                    context=_BenchmarkContext() if i % 2 == 0 else None,
                     resources=Mock() if i % 3 == 0 else None,
                 )
                 frames.append(frame)
@@ -722,7 +728,8 @@ class TestUltraExecutorScalability:
         # Fill cache (cache misses - agent.run is called)
         start_time = time.perf_counter()
         for i in range(num_entries):
-            result = await executor.execute_step(
+            result = await execute_simple_step(
+                executor,
                 step=step,
                 data={"index": i, "data": f"value_{i}"},
                 context=None,
@@ -734,7 +741,8 @@ class TestUltraExecutorScalability:
         # Test cache hits (no agent.run called)
         start_time = time.perf_counter()
         for i in range(num_entries):
-            result = await executor.execute_step(
+            result = await execute_simple_step(
+                executor,
                 step=step,
                 data={"index": i, "data": f"value_{i}"},
                 context=None,
@@ -806,7 +814,8 @@ class TestUltraExecutorScalability:
             num_tasks = concurrency * 5  # Reduced for faster execution
             start_time = time.perf_counter()
             tasks = [
-                executor.execute_step(step, f"input_{i}", None, None) for i in range(num_tasks)
+                execute_simple_step(executor, step, f"input_{i}", None, None)
+                for i in range(num_tasks)
             ]
             results = await asyncio.gather(*tasks)
             total_time = time.perf_counter() - start_time
