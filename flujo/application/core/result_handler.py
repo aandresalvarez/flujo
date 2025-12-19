@@ -59,13 +59,11 @@ class ResultHandler:
         """Normalize any StepOutcome/StepResult into a StepResult (propagates Paused)."""
         # Already a StepResult
         if isinstance(outcome, StepResult):
-            # Adapter: ensure fallback successes carry minimal diagnostic feedback when missing
+            # Restore diagnostic feedback if explicitly requested via metadata (see StepConfig)
             try:
-                if outcome.success and (outcome.feedback is None):
-                    md = getattr(outcome, "metadata_", None)
-                    if isinstance(md, dict) and (
-                        md.get("fallback_triggered") is True or "original_error" in md
-                    ):
+                md = getattr(outcome, "metadata_", None)
+                if isinstance(md, dict) and md.get("preserve_fallback_diagnostics") is True:
+                    if outcome.success and (outcome.feedback is None):
                         original_error = md.get("original_error")
                         base_msg = (
                             f"Primary agent failed: {original_error}"
@@ -106,36 +104,48 @@ class ResultHandler:
                 feedback=f"Could not unwrap: {type(obj).__name__}",
             )
 
+        res = None
         if isinstance(outcome, StepResult):
-            return outcome
-        if isinstance(outcome, Success):
-            return outcome.step_result
-        if isinstance(outcome, Failure):
+            res = outcome
+        elif isinstance(outcome, Success):
+            res = outcome.step_result
+        elif isinstance(outcome, Failure):
             if outcome.step_result is not None:
-                return outcome.step_result
-            return StepResult(
-                name=step_name,
-                output=None,
-                success=False,
-                feedback=outcome.feedback
-                or (str(outcome.error) if outcome.error is not None else None),
-            )
-        if isinstance(outcome, Paused):
+                res = outcome.step_result
+            else:
+                res = StepResult(
+                    name=step_name,
+                    output=None,
+                    success=False,
+                    feedback=outcome.feedback
+                    or (str(outcome.error) if outcome.error is not None else None),
+                )
+        elif isinstance(outcome, Paused):
             raise PausedException(outcome.message)
-        if isinstance(outcome, BackgroundLaunched):
-            return StepResult(
+        elif isinstance(outcome, BackgroundLaunched):
+            res = StepResult(
                 name=step_name,
                 output=None,
                 success=True,
                 feedback=f"Launched in background (task_id={outcome.task_id})",
                 metadata_={"background_task_id": outcome.task_id},
             )
-        return StepResult(
-            name=step_name,
-            output=None,
-            success=False,
-            feedback=f"Unsupported outcome type: {type(outcome).__name__}",
-        )
+        else:
+            res = StepResult(
+                name=step_name,
+                output=None,
+                success=False,
+                feedback=f"Unsupported outcome type: {type(outcome).__name__}",
+            )
+
+        # Final safety check for metadata_
+        if res is not None:
+            if getattr(res, "metadata_", None) is None:
+                try:
+                    res.metadata_ = {}
+                except Exception:
+                    pass
+        return res
 
     async def persist_and_finalize(
         self,

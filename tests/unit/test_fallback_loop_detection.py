@@ -14,6 +14,7 @@ from flujo.application.runner import InfiniteFallbackError
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.models import StepResult
 from tests.conftest import create_test_flujo
+from tests.test_types.fixtures import execute_simple_step
 
 
 class TestFallbackLoopDetection:
@@ -315,7 +316,8 @@ class TestFallbackLoopDetection:
             if step.fallback_step:
                 # Simulate the fallback recursion using ExecutorCore
                 executor = ExecutorCore()
-                return await executor.execute_step(
+                return await execute_simple_step(
+                    executor,
                     step=step.fallback_step,
                     data=data,
                     context=context,

@@ -1,39 +1,9 @@
 import pytest
 from types import SimpleNamespace
 from flujo.application.core.executor_core import ExecutorCore
-from flujo.domain.models import StepResult
 from flujo.domain.dsl.pipeline import Pipeline
 from flujo.testing.utils import StubAgent
 from tests.test_types.fixtures import create_test_step
-
-
-class DummyExecutor(ExecutorCore):
-    async def _execute_simple_step(
-        self,
-        step,
-        data,
-        context,
-        resources,
-        limits,
-        stream,
-        on_chunk,
-        cache_key,
-        _fallback_depth,
-    ):
-        # Return a StepResult that increments numeric data by 1
-        return StepResult(
-            name=getattr(step, "name", "step"),
-            success=True,
-            output=data + 1,
-            attempts=1,
-            latency_s=0.0,
-            token_counts=0,
-            cost_usd=0.0,
-            feedback=None,
-            branch_context=context,
-            metadata_={},
-            step_history=None,
-        )
 
 
 @pytest.mark.asyncio
@@ -45,7 +15,7 @@ async def test_execute_loop_basic_iterations_and_history():
     objects without agents, which properly triggered the protection. Now uses
     proper Step objects with StubAgent to test the intended loop behavior.
     """
-    exec = DummyExecutor()
+    executor = ExecutorCore()
     # Create a proper Step with agent instead of SimpleNamespace
     step = create_test_step(name="inc", agent=StubAgent([1, 2, 3]))
     pipeline = Pipeline.from_step(step)
@@ -58,7 +28,7 @@ async def test_execute_loop_basic_iterations_and_history():
         iteration_input_mapper=None,
         loop_output_mapper=None,
     )
-    result = await exec._execute_loop(loop_step, 0, None, None, None, None)
+    result = await executor._execute_loop(loop_step, 0, None, None, None, None)
     assert not result.success
     assert result.attempts == 3
     assert result.output == 3
@@ -79,7 +49,7 @@ async def test_execute_loop_with_exit_condition_and_mappers():
     proper Step objects with StubAgent to test the intended loop behavior
     with exit conditions and mappers.
     """
-    exec = DummyExecutor()
+    executor = ExecutorCore()
     # Create a proper Step with agent instead of SimpleNamespace
     step = create_test_step(name="inc", agent=StubAgent([2]))  # Return 2 to satisfy exit condition
     pipeline = Pipeline.from_step(step)
@@ -105,7 +75,7 @@ async def test_execute_loop_with_exit_condition_and_mappers():
         iteration_input_mapper=iter_mapper,
         loop_output_mapper=output_mapper,
     )
-    result = await exec._execute_loop(loop_step, 0, None, None, None, None)
+    result = await executor._execute_loop(loop_step, 0, None, None, None, None)
     assert result.success
     assert result.attempts == 1
     assert result.output == 4
@@ -124,7 +94,7 @@ async def test_execute_loop_with_output_mapper_exception():
     proper Step objects with StubAgent to test the intended loop behavior
     when output mapper raises an exception.
     """
-    exec = DummyExecutor()
+    executor = ExecutorCore()
     # Create a proper Step with agent instead of SimpleNamespace
     step = create_test_step(name="inc", agent=StubAgent([1, 2]))
     pipeline = Pipeline.from_step(step)
@@ -141,7 +111,7 @@ async def test_execute_loop_with_output_mapper_exception():
         iteration_input_mapper=None,
         loop_output_mapper=bad_output_mapper,
     )
-    result = await exec._execute_loop(loop_step, 0, None, None, None, None)
+    result = await executor._execute_loop(loop_step, 0, None, None, None, None)
     assert not result.success
     assert result.attempts == 2
     assert result.output is None

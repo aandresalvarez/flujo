@@ -272,28 +272,19 @@ def _reset_registry_per_test():
 
 
 @pytest.fixture(autouse=True)
-def _clear_state_uri_env(monkeypatch):
-    """Prevent FLUJO_STATE_URI leakage between tests when using xdist/random.
-
-    Some tests set FLUJO_STATE_URI explicitly; others expect TOML defaults.
-    Clearing it at test start ensures isolation and avoids cross-test failures.
-    """
-    monkeypatch.delenv("FLUJO_STATE_URI", raising=False)
-    yield
-
-
-@pytest.fixture(autouse=True)
 def _clear_flujo_env(monkeypatch: pytest.MonkeyPatch):
     """Clear mutable FLUJO_* environment variables between tests.
 
     Keep only the test-mode/observability toggles that are intentionally set at
     module import. Everything else resets to avoid cross-test contamination.
+    Default FLUJO_STATE_URI to memory:// for test isolation.
     """
 
     allowlist = {"FLUJO_TEST_MODE", "FLUJO_DISABLE_MEMORY_MONITOR"}
     for key in list(os.environ.keys()):
         if key.startswith("FLUJO_") and key not in allowlist:
             monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("FLUJO_STATE_URI", "memory://")
     yield
 
 

@@ -17,6 +17,7 @@ from flujo.domain.dsl.step import HumanInTheLoopStep
 from flujo.steps.cache_step import CacheStep
 from flujo.domain.models import StepResult
 from flujo.exceptions import PausedException
+from tests.test_types.fixtures import execute_simple_step
 
 
 @pytest.mark.asyncio
@@ -224,7 +225,8 @@ class TestMigrationCompleteness:
         # step_logic module was removed, functionality migrated to ultra_executor
         # Test using ExecutorCore
         executor = ExecutorCore()
-        await executor.execute_step(
+        await execute_simple_step(
+            executor,
             step=mock_step,
             data="test",
             context=None,
@@ -232,8 +234,6 @@ class TestMigrationCompleteness:
             limits=None,
             stream=False,
             on_chunk=None,
-            context_setter=None,
-            result=None,
             _fallback_depth=0,
         )
 
@@ -369,15 +369,13 @@ class TestFunctionSignatureAnalysis:
         }
         assert expected_params.issubset(params)
 
-        # Test execute_step signature
-        sig = inspect.signature(executor.execute_step)
-        params = list(sig.parameters.keys())
+        # Test execute signature
+        sig = inspect.signature(executor.execute)
+        params = sig.parameters
 
-        # Should have the expected parameters
-        assert "step" in params
+        assert "frame_or_step" in params
         assert "data" in params
-        assert "context" in params
-        assert "resources" in params
+        assert any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
 class TestLegacyCleanupCompleteness:

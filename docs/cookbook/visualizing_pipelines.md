@@ -1,8 +1,8 @@
 # Visualizing Pipelines with Mermaid
 
-The `flujo` library provides advanced pipeline visualization capabilities through the `.to_mermaid()` method, which generates comprehensive [Mermaid](https://mermaid.js.org/) graph definitions. This feature helps developers understand complex pipeline structures, debug issues, and create documentation.
+The `flujo` library provides advanced pipeline visualization capabilities through the `visualize()` function, which generates comprehensive [Mermaid](https://mermaid.js.org/) graph definitions. This feature helps developers understand complex pipeline structures, debug issues, and create documentation.
 
-You can visualize any `Pipeline` as a Mermaid diagram using the `.to_mermaid_with_detail_level()` method. This helps you understand and debug complex workflows.
+You can visualize any `Pipeline` as a Mermaid diagram using the `visualize_with_detail_level()` helper to control the level of detail.
 
 ## Detail Levels
 
@@ -11,26 +11,27 @@ You can control the amount of detail in the generated diagram:
 - **high**: Full detail, all subgraphs, annotations, and control flow. Best for small or medium pipelines.
 - **medium**: Simplified, uses emojis for step types, no subgraphs. Good for moderately complex pipelines.
 - **low**: Minimal, groups steps, high-level overview. Best for very large or complex pipelines.
-- **auto**: Uses an AI agent to select the best level based on pipeline complexity.
+- **auto**: Selects the best level based on pipeline complexity.
 
 ## Usage Example
 
 ```python
 from flujo import Step, Pipeline
+from flujo.visualization.visualize import visualize_with_detail_level
 
 pipeline = Step("Extract", agent) >> Step("Transform", agent) >> Step("Load", agent)
 
 # High detail
-print(pipeline.to_mermaid_with_detail_level("high"))
+print(visualize_with_detail_level(pipeline, "high"))
 
 # Medium detail
-print(pipeline.to_mermaid_with_detail_level("medium"))
+print(visualize_with_detail_level(pipeline, "medium"))
 
 # Low detail
-print(pipeline.to_mermaid_with_detail_level("low"))
+print(visualize_with_detail_level(pipeline, "low"))
 
-# Auto (AI chooses)
-print(pipeline.to_mermaid_with_detail_level("auto"))
+# Auto (selected by complexity)
+print(visualize_with_detail_level(pipeline, "auto"))
 ```
 
 ## Choosing the Right Level
@@ -53,10 +54,11 @@ For more, see the [API Reference](../api/index.md).
 
 ## Basic Usage
 
-The `.to_mermaid()` method is available on any `Pipeline` object:
+Use `visualize(pipeline)` to generate a Mermaid diagram for any `Pipeline` object:
 
 ```python
 from flujo import Step, Pipeline
+from flujo.visualization.visualize import visualize
 
 # Create a simple pipeline
 step1 = Step("Extract", my_agent)
@@ -66,7 +68,7 @@ step3 = Step("Load", my_agent)
 pipeline = step1 >> step2 >> step3
 
 # Generate the Mermaid diagram
-mermaid_diagram = pipeline.to_mermaid()
+mermaid_diagram = visualize(pipeline)
 print(mermaid_diagram)
 ```
 
@@ -227,7 +229,7 @@ complex_pipeline = (
 )
 
 # Generate visualization
-mermaid_diagram = complex_pipeline.to_mermaid()
+mermaid_diagram = visualize(complex_pipeline)
 print(mermaid_diagram)
 ```
 
@@ -304,7 +306,7 @@ Then in your documentation:
 # Pipeline Overview
 
 ```mermaid
-{{ pipeline.to_mermaid() }}
+{{ visualize(pipeline) }}
 ```
 ```
 
@@ -330,4 +332,4 @@ For very large pipelines:
 - Use the visualization to identify opportunities for refactoring
 - Focus on the high-level structure rather than every detail
 
-The `.to_mermaid()` method provides a powerful way to understand and communicate complex pipeline structures, making it easier to debug issues, onboard new team members, and maintain clear documentation.
+The `visualize()` function provides a powerful way to understand and communicate complex pipeline structures, making it easier to debug issues, onboard new team members, and maintain clear documentation.

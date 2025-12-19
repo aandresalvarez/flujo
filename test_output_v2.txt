@@ -1,0 +1,1186 @@
+⚡ Running fast tests (enhanced runner)...
+CI=1 uv run python scripts/run_targeted_tests.py --full-suite --disable-plugin-autoload --markers "not slow and not veryslow and not serial and not benchmark" --kexpr "not bug_reports and not manual_testing and not scripts and not architecture" --workers auto --timeout 90 || (echo "❌ Some tests failed. Run 'make test-fast-verbose' for detailed output." && exit 1)
+🔍 Discovering tests (slow tests excluded by markers, skipping slow phase)...
+🔍 Discovering tests...
+⚠️  Test discovery returned non-zero. Output may include plugin chatter.
+📋 Discovered 572 tests
+🧵 Parallel mode: 2 workers
+▶︎ [1/572] START tests/test_managed_state.py
+▶︎ [2/572] START tests/smoke/test_smoke.py
+✅ tests/smoke/test_smoke.py (2.07s) — PASS
+▶︎ [3/572] START tests/test_types/test_outcome_guards.py
+✅ tests/test_managed_state.py (2.07s) — PASS
+▶︎ [4/572] START tests/tracing/test_manager.py
+✅ tests/tracing/test_manager.py (2.20s) — PASS
+▶︎ [5/572] START tests/unit/test_agent_pricing_exceptions.py
+✅ tests/test_types/test_outcome_guards.py (2.54s) — PASS
+▶︎ [6/572] START tests/unit/test_serialization_properties.py
+✅ tests/unit/test_agent_pricing_exceptions.py (1.50s) — PASS
+▶︎ [7/572] START tests/unit/test_state_manager_cache_key_parsing.py
+✅ tests/unit/test_state_manager_cache_key_parsing.py (4.12s) — PASS
+▶︎ [8/572] START tests/unit/test_cli_parameter_integration.py
+✅ tests/unit/test_serialization_properties.py (6.93s) — PASS
+▶︎ [9/572] START tests/unit/test_telemetry_redaction.py
+✅ tests/unit/test_telemetry_redaction.py (1.39s) — PASS
+▶︎ [10/572] START tests/unit/test_prompt_formatter.py
+✅ tests/unit/test_cli_parameter_integration.py (4.80s) — PASS
+▶︎ [11/572] START tests/unit/test_schema_migration_robustness.py
+✅ tests/unit/test_schema_migration_robustness.py (1.08s) — PASS
+▶︎ [12/572] START tests/unit/test_override_agent.py
+✅ tests/unit/test_prompt_formatter.py (2.88s) — PASS
+▶︎ [13/572] START tests/unit/test_lens_event_rendering.py
+✅ tests/unit/test_lens_event_rendering.py (1.39s) — PASS
+▶︎ [14/572] START tests/unit/test_cache_scope_after_loop.py
+✅ tests/unit/test_cache_scope_after_loop.py (1.49s) — PASS
+▶︎ [15/572] START tests/unit/test_builtins.py
+✅ tests/unit/test_override_agent.py (2.93s) — PASS
+▶︎ [16/572] START tests/unit/test_default_backend.py
+✅ tests/unit/test_default_backend.py (1.54s) — PASS
+▶︎ [17/572] START tests/unit/test_hooks_typed.py
+✅ tests/unit/test_hooks_typed.py (1.64s) — PASS
+▶︎ [18/572] START tests/unit/test_context_update_allows_none.py
+✅ tests/unit/test_context_update_allows_none.py (1.57s) — PASS
+▶︎ [19/572] START tests/unit/test_agent_execution_runner_unwraps_agent_result.py
+✅ tests/unit/test_builtins.py (5.01s) — PASS
+▶︎ [20/572] START tests/unit/test_utils_settings.py
+✅ tests/unit/test_agent_execution_runner_unwraps_agent_result.py (1.41s) — PASS
+▶︎ [21/572] START tests/unit/test_history_manager.py
+✅ tests/unit/test_utils_settings.py (1.45s) — PASS
+▶︎ [22/572] START tests/unit/test_yaml_state_machine_imports_resolution.py
+✅ tests/unit/test_yaml_state_machine_imports_resolution.py (1.32s) — PASS
+▶︎ [23/572] START tests/unit/test_factories_parameter_validation.py
+✅ tests/unit/test_history_manager.py (2.51s) — PASS
+▶︎ [24/572] START tests/unit/test_runner_shadow_eval_run_level.py
+✅ tests/unit/test_runner_shadow_eval_run_level.py (1.39s) — PASS
+▶︎ [25/572] START tests/unit/test_shadow_evaluator.py
+✅ tests/unit/test_factories_parameter_validation.py (4.46s) — PASS
+▶︎ [26/572] START tests/unit/test_project_root_helpers.py
+✅ tests/unit/test_shadow_evaluator.py (3.32s) — PASS
+▶︎ [27/572] START tests/unit/test_import_step_outputs_semantics.py
+✅ tests/unit/test_project_root_helpers.py (3.68s) — PASS
+▶︎ [28/572] START tests/unit/test_loop_step_executor_context.py
+✅ tests/unit/test_import_step_outputs_semantics.py (2.55s) — PASS
+▶︎ [29/572] START tests/unit/test_safe_log_shutdown.py
+✅ tests/unit/test_safe_log_shutdown.py (1.64s) — PASS
+▶︎ [30/572] START tests/unit/test_dummy_remote_backend.py
+✅ tests/unit/test_loop_step_executor_context.py (1.92s) — PASS
+▶︎ [31/572] START tests/unit/test_conditional_policy_contract.py
+✅ tests/unit/test_conditional_policy_contract.py (1.67s) — PASS
+▶︎ [32/572] START tests/unit/test_monitor_integration.py
+✅ tests/unit/test_dummy_remote_backend.py (4.13s) — PASS
+▶︎ [33/572] START tests/unit/test_hitl_yaml_support.py
+✅ tests/unit/test_monitor_integration.py (2.94s) — PASS
+▶︎ [34/572] START tests/unit/test_cache_yaml_support.py
+✅ tests/unit/test_hitl_yaml_support.py (1.78s) — PASS
+▶︎ [35/572] START tests/unit/test_executor_components.py
+✅ tests/unit/test_cache_yaml_support.py (1.69s) — PASS
+▶︎ [36/572] START tests/unit/test_bug_regression.py
+✅ tests/unit/test_bug_regression.py (1.00s) — PASS
+▶︎ [37/572] START tests/unit/test_welcome_agent.py
+✅ tests/unit/test_welcome_agent.py (1.92s) — PASS
+▶︎ [38/572] START tests/unit/test_parallel_reduce.py
+✅ tests/unit/test_parallel_reduce.py (2.65s) — PASS
+▶︎ [39/572] START tests/unit/test_evaluators.py
+✅ tests/unit/test_executor_components.py (7.58s) — PASS
+▶︎ [40/572] START tests/unit/test_fail_fast_nested_hitl.py
+✅ tests/unit/test_fail_fast_nested_hitl.py (1.73s) — PASS
+▶︎ [41/572] START tests/unit/test_run_session.py
+✅ tests/unit/test_evaluators.py (3.65s) — PASS
+▶︎ [42/572] START tests/unit/test_architect_builder.py
+✅ tests/unit/test_architect_builder.py (1.60s) — PASS
+▶︎ [43/572] START tests/unit/test_serialization_core.py
+✅ tests/unit/test_run_session.py (2.38s) — PASS
+▶︎ [44/572] START tests/unit/test_replay_executor.py
+✅ tests/unit/test_replay_executor.py (2.01s) — PASS
+▶︎ [45/572] START tests/unit/test_skill_registry_governance_wrapper.py
+✅ tests/unit/test_serialization_core.py (2.48s) — PASS
+▶︎ [46/572] START tests/unit/test_validation.py
+✅ tests/unit/test_skill_registry_governance_wrapper.py (1.91s) — PASS
+▶︎ [47/572] START tests/unit/test_types_compatible_generics.py
+✅ tests/unit/test_validation.py (4.24s) — PASS
+▶︎ [48/572] START tests/unit/test_serialization_edge_cases.py
+✅ tests/unit/test_types_compatible_generics.py (3.09s) — PASS
+▶︎ [49/572] START tests/unit/test_domain_models.py
+✅ tests/unit/test_domain_models.py (2.70s) — PASS
+▶︎ [50/572] START tests/unit/test_conditional_step.py
+✅ tests/unit/test_serialization_edge_cases.py (6.31s) — PASS
+▶︎ [51/572] START tests/unit/test_plugins.py
+✅ tests/unit/test_plugins.py (1.72s) — PASS
+▶︎ [52/572] START tests/unit/test_cache_step.py
+✅ tests/unit/test_conditional_step.py (5.74s) — PASS
+▶︎ [53/572] START tests/unit/test_pipeline_visualization.py
+✅ tests/unit/test_pipeline_visualization.py (3.73s) — PASS
+▶︎ [54/572] START tests/unit/test_openapi_agent_generator.py
+✅ tests/unit/test_openapi_agent_generator.py (3.95s) — PASS
+▶︎ [55/572] START tests/unit/test_template_fallbacks.py
+✅ tests/unit/test_template_fallbacks.py (2.34s) — PASS
+▶︎ [56/572] START tests/unit/test_template_strict_mode_regressions.py
+✅ tests/unit/test_template_strict_mode_regressions.py (5.07s) — PASS
+▶︎ [57/572] START tests/unit/test_tracing.py
+✅ tests/unit/test_tracing.py (1.57s) — PASS
+▶︎ [58/572] START tests/unit/test_otel_hook.py
+✅ tests/unit/test_cache_step.py (18.19s) — PASS
+▶︎ [59/572] START tests/unit/test_temperature.py
+✅ tests/unit/test_otel_hook.py (1.41s) — PASS
+▶︎ [60/572] START tests/unit/test_state_providers_integration.py
+✅ tests/unit/test_temperature.py (3.75s) — PASS
+▶︎ [61/572] START tests/unit/test_blueprint_import_default_deny.py
+✅ tests/unit/test_blueprint_import_default_deny.py (1.42s) — PASS
+▶︎ [62/572] START tests/unit/test_parallel_infinite_quota.py
+✅ tests/unit/test_parallel_infinite_quota.py (1.78s) — PASS
+▶︎ [63/572] START tests/unit/test_cli_init.py
+✅ tests/unit/test_state_providers_integration.py (6.30s) — PASS
+▶︎ [64/572] START tests/unit/test_blueprint_compiler_gpt5.py
+✅ tests/unit/test_blueprint_compiler_gpt5.py (1.32s) — PASS
+▶︎ [65/572] START tests/unit/test_state_serializer.py
+✅ tests/unit/test_cli_init.py (2.41s) — PASS
+▶︎ [66/572] START tests/unit/test_loop_step_policy.py
+✅ tests/unit/test_state_serializer.py (3.46s) — PASS
+▶︎ [67/572] START tests/unit/test_import_input_precedence.py
+✅ tests/unit/test_loop_step_policy.py (2.60s) — PASS
+▶︎ [68/572] START tests/unit/test_import_step_policy.py
+✅ tests/unit/test_import_step_policy.py (1.42s) — PASS
+▶︎ [69/572] START tests/unit/test_self_improvement_agent.py
+✅ tests/unit/test_import_input_precedence.py (1.83s) — PASS
+▶︎ [70/572] START tests/unit/test_parallel_imports.py
+✅ tests/unit/test_parallel_imports.py (1.44s) — PASS
+▶︎ [71/572] START tests/unit/test_governance_policy.py
+✅ tests/unit/test_self_improvement_agent.py (1.99s) — PASS
+▶︎ [72/572] START tests/unit/test_pipeline_context.py
+✅ tests/unit/test_pipeline_context.py (3.10s) — PASS
+▶︎ [73/572] START tests/unit/test_model_utils.py
+✅ tests/unit/test_governance_policy.py (3.72s) — PASS
+▶︎ [74/572] START tests/unit/test_execution_manager.py
+✅ tests/unit/test_model_utils.py (8.07s) — PASS
+▶︎ [75/572] START tests/unit/test_sqlite_fault_tolerance.py
+✅ tests/unit/test_execution_manager.py (7.76s) — PASS
+▶︎ [76/572] START tests/unit/test_domain_interfaces.py
+✅ tests/unit/test_sqlite_fault_tolerance.py (0.95s) — PASS
+▶︎ [77/572] START tests/unit/test_async_bridge.py
+✅ tests/unit/test_domain_interfaces.py (1.53s) — PASS
+▶︎ [78/572] START tests/unit/test_outcomes_utils.py
+✅ tests/unit/test_outcomes_utils.py (1.62s) — PASS
+▶︎ [79/572] START tests/unit/test_sqlite_backup_fix.py
+✅ tests/unit/test_sqlite_backup_fix.py (0.96s) — PASS
+▶︎ [80/572] START tests/unit/test_embeddings.py
+✅ tests/unit/test_async_bridge.py (3.96s) — PASS
+▶︎ [81/572] START tests/unit/test_usage_estimator.py
+✅ tests/unit/test_usage_estimator.py (2.51s) — PASS
+▶︎ [82/572] START tests/unit/test_vector_store_postgres.py
+✅ tests/unit/test_vector_store_postgres.py (0.96s) — PASS
+▶︎ [83/572] START tests/unit/test_hitl_nesting_failfast.py
+✅ tests/unit/test_hitl_nesting_failfast.py (1.77s) — PASS
+▶︎ [84/572] START tests/unit/test_compiler_name_propagation.py
+✅ tests/unit/test_compiler_name_propagation.py (1.87s) — PASS
+▶︎ [85/572] START tests/unit/test_hitl_loader_dumper_extras.py
+✅ tests/unit/test_embeddings.py (8.97s) — PASS
+▶︎ [86/572] START tests/unit/test_sqlite_observability.py
+✅ tests/unit/test_hitl_loader_dumper_extras.py (1.93s) — PASS
+▶︎ [87/572] START tests/unit/test_auto_repair.py
+✅ tests/unit/test_sqlite_observability.py (0.98s) — PASS
+▶︎ [88/572] START tests/unit/test_persistence_edge_cases.py
+✅ tests/unit/test_persistence_edge_cases.py (0.98s) — PASS
+▶︎ [89/572] START tests/unit/test_adapter_step.py
+✅ tests/unit/test_auto_repair.py (3.10s) — PASS
+▶︎ [90/572] START tests/unit/test_signature_tools.py
+✅ tests/unit/test_adapter_step.py (2.60s) — PASS
+▶︎ [91/572] START tests/unit/test_hydration_manager_parallel.py
+✅ tests/unit/test_hydration_manager_parallel.py (2.36s) — PASS
+▶︎ [92/572] START tests/unit/test_pydantic_context_merging.py
+✅ tests/unit/test_signature_tools.py (4.50s) — PASS
+▶︎ [93/572] START tests/unit/test_pipeline_visualization_detail_levels.py
+✅ tests/unit/test_pydantic_context_merging.py (4.74s) — PASS
+▶︎ [94/572] START tests/unit/test_dsl.py
+✅ tests/unit/test_pipeline_visualization_detail_levels.py (4.56s) — PASS
+▶︎ [95/572] START tests/unit/test_parallel_step_strategies.py
+✅ tests/unit/test_parallel_step_strategies.py (5.80s) — PASS
+▶︎ [96/572] START tests/unit/test_utils_properties.py
+✅ tests/unit/test_dsl.py (7.62s) — PASS
+▶︎ [97/572] START tests/unit/test_quota_race_condition.py
+✅ tests/unit/test_utils_properties.py (1.76s) — PASS
+▶︎ [98/572] START tests/unit/test_sqlite_edge_cases.py
+✅ tests/unit/test_quota_race_condition.py (1.36s) — PASS
+▶︎ [99/572] START tests/unit/test_cost_tracking.py
+✅ tests/unit/test_sqlite_edge_cases.py (1.01s) — PASS
+▶︎ [100/572] START tests/unit/test_map_step_refactoring.py
+✅ tests/unit/test_map_step_refactoring.py (3.97s) — PASS
+▶︎ [101/572] START tests/unit/test_registry_abuse.py
+✅ tests/unit/test_registry_abuse.py (1.58s) — PASS
+▶︎ [102/572] START tests/unit/test_framework_schema_skill.py
+✅ tests/unit/test_framework_schema_skill.py (1.28s) — PASS
+▶︎ [103/572] START tests/unit/test_persistence_performance.py
+✅ tests/unit/test_persistence_performance.py (1.05s) — PASS
+▶︎ [104/572] START tests/unit/test_lens_cli.py
+✅ tests/unit/test_lens_cli.py (1.07s) — PASS
+▶︎ [105/572] START tests/unit/test_agentic_loop_logging.py
+✅ tests/unit/test_agentic_loop_logging.py (6.24s) — PASS
+▶︎ [106/572] START tests/unit/test_agent_strict_pricing.py
+✅ tests/unit/test_agent_strict_pricing.py (1.57s) — PASS
+▶︎ [107/572] START tests/unit/test_testing_utils.py
+✅ tests/unit/test_cost_tracking.py (26.42s) — PASS
+▶︎ [108/572] START tests/unit/test_code_interpreter_skill.py
+✅ tests/unit/test_code_interpreter_skill.py (2.17s) — PASS
+▶︎ [109/572] START tests/unit/test_vector_store_sqlite.py
+✅ tests/unit/test_testing_utils.py (11.35s) — PASS
+▶︎ [110/572] START tests/unit/test_yaml_imports_outputs_semantics.py
+✅ tests/unit/test_vector_store_sqlite.py (1.65s) — PASS
+▶︎ [111/572] START tests/unit/test_sql_injection_security.py
+✅ tests/unit/test_yaml_imports_outputs_semantics.py (1.91s) — PASS
+▶︎ [112/572] START tests/unit/test_yaml_loader_state_machine.py
+✅ tests/unit/test_yaml_loader_state_machine.py (1.37s) — PASS
+▶︎ [113/572] START tests/unit/test_conditional_step_policy.py
+✅ tests/unit/test_sql_injection_security.py (3.75s) — PASS
+▶︎ [114/572] START tests/unit/test_typed_context_enforcement.py
+✅ tests/unit/test_conditional_step_policy.py (2.13s) — PASS
+▶︎ [115/572] START tests/unit/test_docker_sandbox_import.py
+✅ tests/unit/test_docker_sandbox_import.py (1.38s) — PASS
+▶︎ [116/572] START tests/unit/test_scoring.py
+✅ tests/unit/test_typed_context_enforcement.py (1.82s) — PASS
+▶︎ [117/572] START tests/unit/test_remote_sandbox.py
+✅ tests/unit/test_remote_sandbox.py (2.20s) — PASS
+▶︎ [118/572] START tests/unit/test_orchestrator_typing.py
+✅ tests/unit/test_orchestrator_typing.py (1.54s) — PASS
+▶︎ [119/572] START tests/unit/test_replay_agent.py
+✅ tests/unit/test_replay_agent.py (1.61s) — PASS
+▶︎ [120/572] START tests/unit/test_learnable_estimator.py
+✅ tests/unit/test_scoring.py (5.91s) — PASS
+▶︎ [121/572] START tests/unit/test_repair_yaml_ruamel.py
+✅ tests/unit/test_learnable_estimator.py (1.32s) — PASS
+▶︎ [122/572] START tests/unit/test_docker_sandbox.py
+✅ tests/unit/test_repair_yaml_ruamel.py (1.57s) — PASS
+▶︎ [123/572] START tests/unit/test_fallback_edge_cases.py
+✅ tests/unit/test_docker_sandbox.py (3.20s) — PASS
+▶︎ [124/572] START tests/unit/test_cli_performance_edge_cases.py
+✅ tests/unit/test_cli_performance_edge_cases.py (1.05s) — PASS
+▶︎ [125/572] START tests/unit/test_testing_utils_extended.py
+✅ tests/unit/test_fallback_edge_cases.py (5.57s) — PASS
+▶︎ [126/572] START tests/unit/test_postgres_step_atomicity.py
+✅ tests/unit/test_postgres_step_atomicity.py (1.33s) — PASS
+▶︎ [127/572] START tests/unit/test_import_step_on_failure_semantics.py
+✅ tests/unit/test_import_step_on_failure_semantics.py (1.52s) — PASS
+▶︎ [128/572] START tests/unit/test_builtins_context_helpers.py
+✅ tests/unit/test_testing_utils_extended.py (6.55s) — PASS
+▶︎ [129/572] START tests/unit/test_context_manager.py
+✅ tests/unit/test_context_manager.py (1.02s) — PASS
+▶︎ [130/572] START tests/unit/test_state_machine_transitions_policy.py
+✅ tests/unit/test_builtins_context_helpers.py (4.32s) — PASS
+▶︎ [131/572] START tests/unit/test_conditional_bool_policy.py
+✅ tests/unit/test_state_machine_transitions_policy.py (3.48s) — PASS
+▶︎ [132/572] START tests/unit/test_fallback_loop_detection.py
+✅ tests/unit/test_conditional_bool_policy.py (1.89s) — PASS
+▶︎ [133/572] START tests/unit/test_execution_backend.py
+✅ tests/unit/test_execution_backend.py (1.51s) — PASS
+▶︎ [134/572] START tests/unit/test_config_precedence.py
+✅ tests/unit/test_config_precedence.py (1.53s) — PASS
+▶︎ [135/572] START tests/unit/test_pipeline_property.py
+✅ tests/unit/test_pipeline_property.py (1.03s) — PASS
+▶︎ [136/572] START tests/unit/test_inline_pipeline_dicts_in_branches.py
+✅ tests/unit/test_inline_pipeline_dicts_in_branches.py (1.66s) — PASS
+▶︎ [137/572] START tests/unit/test_blueprint_prompt_template.py
+✅ tests/unit/test_fallback_loop_detection.py (6.34s) — PASS
+▶︎ [138/572] START tests/unit/test_dynamic_router.py
+✅ tests/unit/test_blueprint_prompt_template.py (1.38s) — PASS
+▶︎ [139/572] START tests/unit/test_escape_marker_fix.py
+✅ tests/unit/test_dynamic_router.py (4.72s) — PASS
+▶︎ [140/572] START tests/unit/test_serialization_utilities.py
+✅ tests/unit/test_escape_marker_fix.py (6.46s) — PASS
+▶︎ [141/572] START tests/unit/test_integration_quota_propagation.py
+✅ tests/unit/test_integration_quota_propagation.py (1.84s) — PASS
+▶︎ [142/572] START tests/unit/test_granular_blob_store.py
+✅ tests/unit/test_granular_blob_store.py (5.33s) — PASS
+▶︎ [143/572] START tests/unit/test_performance.py
+✅ tests/unit/test_serialization_utilities.py (13.48s) — PASS
+▶︎ [144/572] START tests/unit/test_executor_core_parallel_migration.py
+✅ tests/unit/test_executor_core_parallel_migration.py (2.68s) — PASS
+▶︎ [145/572] START tests/unit/test_sqlite_backend_robustness.py
+✅ tests/unit/test_sqlite_backend_robustness.py (0.88s) — PASS
+▶︎ [146/572] START tests/unit/test_hitl_dump_load_stability.py
+✅ tests/unit/test_performance.py (8.26s) — PASS
+▶︎ [147/572] START tests/unit/test_granular_step_policy.py
+✅ tests/unit/test_hitl_dump_load_stability.py (1.24s) — PASS
+▶︎ [148/572] START tests/unit/test_yaml_dynamic_router.py
+✅ tests/unit/test_yaml_dynamic_router.py (1.33s) — PASS
+▶︎ [149/572] START tests/unit/test_file_sqlite_backends.py
+✅ tests/unit/test_file_sqlite_backends.py (0.93s) — PASS
+▶︎ [150/572] START tests/unit/test_executor_core_di.py
+✅ tests/unit/test_granular_step_policy.py (3.28s) — PASS
+▶︎ [151/572] START tests/unit/test_resource_context_management.py
+✅ tests/unit/test_executor_core_di.py (2.14s) — PASS
+▶︎ [152/572] START tests/unit/test_blueprint_compiler_order.py
+✅ tests/unit/test_resource_context_management.py (2.49s) — PASS
+▶︎ [153/572] START tests/unit/test_context_merge_conflicts.py
+✅ tests/unit/test_blueprint_compiler_order.py (1.64s) — PASS
+▶︎ [154/572] START tests/unit/test_conversation_processor.py
+✅ tests/unit/test_context_merge_conflicts.py (2.11s) — PASS
+▶︎ [155/572] START tests/unit/test_yaml_loop_mappers.py
+✅ tests/unit/test_conversation_processor.py (2.49s) — PASS
+▶︎ [156/572] START tests/unit/test_pipeline_validation.py
+✅ tests/unit/test_yaml_loop_mappers.py (3.39s) — PASS
+▶︎ [157/572] START tests/unit/test_conversation_finish_skip.py
+✅ tests/unit/test_pipeline_validation.py (2.51s) — PASS
+▶︎ [158/572] START tests/unit/test_step_outputs_migration.py
+✅ tests/unit/test_conversation_finish_skip.py (1.67s) — PASS
+▶︎ [159/572] START tests/unit/test_signature_injection.py
+✅ tests/unit/test_step_outputs_migration.py (1.69s) — PASS
+▶︎ [160/572] START tests/unit/test_ultra_executor_cumulative_limits.py
+✅ tests/unit/test_signature_injection.py (2.19s) — PASS
+▶︎ [161/572] START tests/unit/test_sqlite_retry_mechanism.py
+✅ tests/unit/test_ultra_executor_cumulative_limits.py (2.79s) — PASS
+▶︎ [162/572] START tests/unit/test_blueprint_name_and_execution_results.py
+✅ tests/unit/test_sqlite_retry_mechanism.py (0.98s) — PASS
+▶︎ [163/572] START tests/unit/test_state_backend_manager.py
+✅ tests/unit/test_blueprint_name_and_execution_results.py (2.11s) — PASS
+▶︎ [164/572] START tests/unit/test_context_strategies.py
+✅ tests/unit/test_state_backend_manager.py (2.13s) — PASS
+▶︎ [165/572] START tests/unit/test_fallback.py
+✅ tests/unit/test_context_strategies.py (1.87s) — PASS
+▶︎ [166/572] START tests/unit/test_hitl_complex_schema_dump_load.py
+✅ tests/unit/test_hitl_complex_schema_dump_load.py (1.32s) — PASS
+▶︎ [167/572] START tests/unit/test_context_retrieve_memory.py
+✅ tests/unit/test_fallback.py (3.65s) — PASS
+▶︎ [168/572] START tests/unit/test_context_adapter_type_resolution.py
+✅ tests/unit/test_context_retrieve_memory.py (1.82s) — PASS
+▶︎ [169/572] START tests/unit/test_dynamic_router_step_policy.py
+✅ tests/unit/test_dynamic_router_step_policy.py (2.10s) — PASS
+▶︎ [170/572] START tests/unit/test_resume_orchestrator.py
+✅ tests/unit/test_resume_orchestrator.py (1.93s) — PASS
+▶︎ [171/572] START tests/unit/test_prometheus_collector.py
+✅ tests/unit/test_prometheus_collector.py (1.24s) — PASS
+▶︎ [172/572] START tests/unit/test_model_generator_array_primitives.py
+✅ tests/unit/test_context_adapter_type_resolution.py (7.67s) — PASS
+▶︎ [173/572] START tests/unit/test_cost_mock_safety.py
+✅ tests/unit/test_model_generator_array_primitives.py (1.62s) — PASS
+▶︎ [174/572] START tests/unit/test_parallel_step_executor_context.py
+✅ tests/unit/test_cost_mock_safety.py (1.89s) — PASS
+▶︎ [175/572] START tests/unit/test_domain_interfaces_injection.py
+✅ tests/unit/test_parallel_step_executor_context.py (1.87s) — PASS
+▶︎ [176/572] START tests/unit/test_cli_display_run_id.py
+✅ tests/unit/test_cli_display_run_id.py (1.65s) — PASS
+▶︎ [177/572] START tests/unit/test_simple_step_policy.py
+✅ tests/unit/test_domain_interfaces_injection.py (2.34s) — PASS
+▶︎ [178/572] START tests/unit/test_model_generator_array_objects.py
+✅ tests/unit/test_model_generator_array_objects.py (1.31s) — PASS
+▶︎ [179/572] START tests/unit/test_as_step.py
+✅ tests/unit/test_as_step.py (1.72s) — PASS
+▶︎ [180/572] START tests/unit/test_cli_config_backend.py
+✅ tests/unit/test_simple_step_policy.py (4.54s) — PASS
+▶︎ [181/572] START tests/unit/test_blueprint_loader.py
+✅ tests/unit/test_cli_config_backend.py (1.97s) — PASS
+▶︎ [182/572] START tests/unit/test_sqlite_trace_persistence.py
+✅ tests/unit/test_sqlite_trace_persistence.py (1.02s) — PASS
+▶︎ [183/572] START tests/unit/test_slot_synthesis.py
+✅ tests/unit/test_slot_synthesis.py (1.30s) — PASS
+▶︎ [184/572] START tests/unit/test_quota_mode.py
+✅ tests/unit/test_blueprint_loader.py (3.40s) — PASS
+▶︎ [185/572] START tests/unit/test_executor_core_clear_cache_sync.py
+✅ tests/unit/test_executor_core_clear_cache_sync.py (1.74s) — PASS
+▶︎ [186/572] START tests/unit/test_error_messages.py
+✅ tests/unit/test_quota_mode.py (1.86s) — PASS
+▶︎ [187/572] START tests/unit/test_estimator_config_overrides.py
+✅ tests/unit/test_estimator_config_overrides.py (1.34s) — PASS
+▶︎ [188/572] START tests/unit/test_programmatic_entrypoint.py
+✅ tests/unit/test_error_messages.py (2.47s) — PASS
+▶︎ [189/572] START tests/unit/test_agent_step_policy.py
+✅ tests/unit/test_programmatic_entrypoint.py (3.14s) — PASS
+▶︎ [190/572] START tests/unit/test_telemetry_robustness.py
+✅ tests/unit/test_agent_step_policy.py (2.48s) — PASS
+▶︎ [191/572] START tests/unit/test_factories.py
+✅ tests/unit/test_telemetry_robustness.py (4.17s) — PASS
+▶︎ [192/572] START tests/unit/test_streaming_protocol.py
+✅ tests/unit/test_factories.py (4.57s) — PASS
+▶︎ [193/572] START tests/unit/test_sandbox_interface.py
+✅ tests/unit/test_streaming_protocol.py (2.48s) — PASS
+▶︎ [194/572] START tests/unit/test_trace_persistence_serialization.py
+✅ tests/unit/test_sandbox_interface.py (2.70s) — PASS
+▶︎ [195/572] START tests/unit/test_state_manager_fallback_serialization.py
+✅ tests/unit/test_trace_persistence_serialization.py (1.34s) — PASS
+▶︎ [196/572] START tests/unit/test_safe_deserialize_roundtrip.py
+✅ tests/unit/test_safe_deserialize_roundtrip.py (1.59s) — PASS
+▶︎ [197/572] START tests/unit/test_model_generator_array_enum_items.py
+✅ tests/unit/test_state_manager_fallback_serialization.py (2.15s) — PASS
+▶︎ [198/572] START tests/unit/test_parallel_step_robustness.py
+✅ tests/unit/test_parallel_step_robustness.py (0.89s) — PASS
+▶︎ [199/572] START tests/unit/test_extract.py
+✅ tests/unit/test_model_generator_array_enum_items.py (1.27s) — PASS
+▶︎ [200/572] START tests/unit/test_streaming_bytes_bug.py
+❌ tests/unit/test_streaming_bytes_bug.py (1.49s) — FAIL
+   💡 FAILED tests/unit/test_streaming_bytes_bug.py::TestStreamingBytesBug::test_text_streaming_agent_protocol - AttributeError: 'ExecutorCore' object has no attribute 'execute_step'
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+▶︎ [201/572] START tests/unit/test_ci_compatibility.py
+✅ tests/unit/test_ci_compatibility.py (4.54s) — PASS
+▶︎ [202/572] START tests/unit/test_jinja_sandbox.py
+✅ tests/unit/test_extract.py (6.74s) — PASS
+▶︎ [203/572] START tests/unit/test_parallel_context_merge.py
+✅ tests/unit/test_jinja_sandbox.py (1.53s) — PASS
+▶︎ [204/572] START tests/unit/test_trace_integration.py
+✅ tests/unit/test_parallel_context_merge.py (1.32s) — PASS
+▶︎ [205/572] START tests/unit/test_sqlite_fuzzing.py
+✅ tests/unit/test_trace_integration.py (1.02s) — PASS
+▶︎ [206/572] START tests/unit/test_context_aware_protocol.py
+✅ tests/unit/test_sqlite_fuzzing.py (0.99s) — PASS
+▶︎ [207/572] START tests/unit/test_postgres_backend_shutdown.py
+✅ tests/unit/test_postgres_backend_shutdown.py (1.30s) — PASS
+▶︎ [208/572] START tests/unit/test_cli.py
+✅ tests/unit/test_context_aware_protocol.py (1.77s) — PASS
+▶︎ [209/572] START tests/unit/test_telemetry.py
+✅ tests/unit/test_telemetry.py (4.18s) — PASS
+▶︎ [210/572] START tests/unit/test_state_backend.py
+✅ tests/unit/test_state_backend.py (1.57s) — PASS
+▶︎ [211/572] START tests/unit/test_import_hitl_and_input_routing.py
+✅ tests/unit/test_import_hitl_and_input_routing.py (2.52s) — PASS
+▶︎ [212/572] START tests/unit/test_loop_step.py
+✅ tests/unit/test_loop_step.py (2.09s) — PASS
+▶︎ [213/572] START tests/unit/test_parallel_step_policy.py
+✅ tests/unit/test_cli.py (12.30s) — PASS
+▶︎ [214/572] START tests/unit/test_cli_import_openapi.py
+✅ tests/unit/test_parallel_step_policy.py (3.01s) — PASS
+▶︎ [215/572] START tests/unit/test_memory_interface.py
+✅ tests/unit/test_cli_import_openapi.py (2.21s) — PASS
+▶︎ [216/572] START tests/unit/test_parameter_passing.py
+✅ tests/unit/test_parameter_passing.py (1.92s) — PASS
+▶︎ [217/572] START tests/unit/test_reconstruction_logic.py
+✅ tests/unit/test_memory_interface.py (3.01s) — PASS
+▶︎ [218/572] START tests/unit/test_framework_registry.py
+✅ tests/unit/test_framework_registry.py (1.37s) — PASS
+▶︎ [219/572] START tests/unit/test_summary_aggregation_nested_pipeline.py
+✅ tests/unit/test_summary_aggregation_nested_pipeline.py (1.95s) — PASS
+▶︎ [220/572] START tests/unit/test_templated_agent_wrapper.py
+✅ tests/unit/test_reconstruction_logic.py (3.45s) — PASS
+▶︎ [221/572] START tests/unit/test_pipeline_registry.py
+✅ tests/unit/test_templated_agent_wrapper.py (1.30s) — PASS
+▶︎ [222/572] START tests/unit/test_tracing_manager.py
+✅ tests/unit/test_pipeline_registry.py (1.87s) — PASS
+▶︎ [223/572] START tests/unit/test_sqlite_backend_traces.py
+✅ tests/unit/test_tracing_manager.py (1.65s) — PASS
+▶︎ [224/572] START tests/unit/test_state_machine_policy_executor.py
+✅ tests/unit/test_sqlite_backend_traces.py (0.99s) — PASS
+▶︎ [225/572] START tests/unit/test_conditional_step_executor_context.py
+✅ tests/unit/test_conditional_step_executor_context.py (1.37s) — PASS
+▶︎ [226/572] START tests/unit/test_ultra_executor.py
+✅ tests/unit/test_state_machine_policy_executor.py (1.96s) — PASS
+▶︎ [227/572] START tests/unit/test_blueprint_prompt_from_file.py
+✅ tests/unit/test_blueprint_prompt_from_file.py (2.24s) — PASS
+▶︎ [228/572] START tests/unit/test_agents.py
+❌ tests/unit/test_ultra_executor.py (7.42s) — FAIL
+   💡 FAILED tests/unit/test_ultra_executor.py::TestBackwardCompatibility::test_execute_step_signature - AttributeError: 'ExecutorCore' object has no attribute 'execute_step'
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+▶︎ [229/572] START tests/unit/test_settings.py
+✅ tests/unit/test_settings.py (3.31s) — PASS
+▶︎ [230/572] START tests/unit/test_cli_config.py
+❌ tests/unit/test_cli_config.py (3.63s) — FAIL
+   💡 FAILED tests/unit/test_cli_config.py::TestConfigWarning::test_warning_displayed_when_no_env_and_no_config - assert "[flujo.config] FLUJO_STATE_URI not set, using default 'sqlite:///flujo_ops.db'" in ''
+ +  where '' = <_pytest.logging.LogCaptureFixture object at 0x10d2c38c0>.text
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+▶︎ [231/572] START tests/unit/test_config_manager.py
+✅ tests/unit/test_agents.py (12.68s) — PASS
+▶︎ [232/572] START tests/evals/test_behavioral_golden.py
+✅ tests/unit/test_config_manager.py (8.20s) — PASS
+▶︎ [233/572] START tests/evals/test_isolation_behavior.py
+✅ tests/evals/test_behavioral_golden.py (7.90s) — PASS
+▶︎ [234/572] START tests/infra/test_budget_resolver.py
+✅ tests/evals/test_isolation_behavior.py (2.45s) — PASS
+▶︎ [235/572] START tests/blueprints/test_model_generator.py
+✅ tests/infra/test_budget_resolver.py (2.13s) — PASS
+▶︎ [236/572] START tests/blueprints/test_blueprint_validation.py
+✅ tests/blueprints/test_model_generator.py (1.61s) — PASS
+▶︎ [237/572] START tests/robustness/test_configuration_robustness.py
+✅ tests/robustness/test_configuration_robustness.py (1.04s) — PASS
+▶︎ [238/572] START tests/robustness/test_error_recovery.py
+✅ tests/blueprints/test_blueprint_validation.py (2.17s) — PASS
+▶︎ [239/572] START tests/robustness/test_performance_regression.py
+✅ tests/robustness/test_performance_regression.py (0.97s) — PASS
+▶︎ [240/572] START tests/robustness/test_concurrency_safety.py
+✅ tests/robustness/test_error_recovery.py (0.99s) — PASS
+▶︎ [241/572] START tests/robustness/test_memory_leak_detection.py
+✅ tests/robustness/test_concurrency_safety.py (0.92s) — PASS
+▶︎ [242/572] START tests/security/test_file_backend_security.py
+✅ tests/robustness/test_memory_leak_detection.py (0.92s) — PASS
+▶︎ [243/572] START tests/security/test_prompt_injection.py
+✅ tests/security/test_prompt_injection.py (2.22s) — PASS
+▶︎ [244/572] START tests/security/test_sql_injection_prevention.py
+✅ tests/security/test_file_backend_security.py (5.32s) — PASS
+▶︎ [245/572] START tests/security/test_state_deserialization.py
+✅ tests/security/test_state_deserialization.py (1.33s) — PASS
+▶︎ [246/572] START tests/integration/test_console_tracer_depth.py
+✅ tests/security/test_sql_injection_prevention.py (5.30s) — PASS
+▶︎ [247/572] START tests/integration/test_evals_adapter.py
+✅ tests/integration/test_console_tracer_depth.py (2.25s) — PASS
+▶︎ [248/572] START tests/integration/test_flujo_patterns_real_llm.py
+✅ tests/integration/test_evals_adapter.py (1.60s) — PASS
+▶︎ [249/572] START tests/integration/test_stateful_hitl.py
+✅ tests/integration/test_flujo_patterns_real_llm.py (0.88s) — PASS
+▶︎ [250/572] START tests/integration/test_cost_tracking_bug_fixes.py
+✅ tests/integration/test_stateful_hitl.py (0.96s) — PASS
+▶︎ [251/572] START tests/integration/test_cache_integration.py
+✅ tests/integration/test_cache_integration.py (1.80s) — PASS
+▶︎ [252/572] START tests/integration/test_processors.py
+✅ tests/integration/test_cost_tracking_bug_fixes.py (5.07s) — PASS
+▶︎ [253/572] START tests/integration/test_conversational_loop_basic.py
+✅ tests/integration/test_processors.py (3.04s) — PASS
+▶︎ [254/572] START tests/integration/test_sqlite_backend_edge_cases.py
+✅ tests/integration/test_conversational_loop_basic.py (1.07s) — PASS
+▶︎ [255/572] START tests/integration/test_agentic_loop_recipe.py
+✅ tests/integration/test_sqlite_backend_edge_cases.py (1.01s) — PASS
+▶︎ [256/572] START tests/integration/test_state_roundtrip.py
+✅ tests/integration/test_state_roundtrip.py (1.62s) — PASS
+▶︎ [257/572] START tests/integration/test_silent_context_modification_fix.py
+✅ tests/integration/test_agentic_loop_recipe.py (3.26s) — PASS
+▶︎ [258/572] START tests/integration/test_error_recovery_with_context_updates.py
+✅ tests/integration/test_silent_context_modification_fix.py (3.20s) — PASS
+▶︎ [259/572] START tests/integration/test_hitl_integration.py
+✅ tests/integration/test_error_recovery_with_context_updates.py (3.11s) — PASS
+▶︎ [260/572] START tests/integration/test_cost_tracking_mock.py
+✅ tests/integration/test_hitl_integration.py (4.04s) — PASS
+▶︎ [261/572] START tests/integration/test_pipeline_runner.py
+✅ tests/integration/test_cost_tracking_mock.py (2.65s) — PASS
+▶︎ [262/572] START tests/integration/test_crash_recovery.py
+✅ tests/integration/test_crash_recovery.py (2.60s) — PASS
+▶︎ [263/572] START tests/integration/test_conditional_step_logic_migration.py
+✅ tests/integration/test_pipeline_runner.py (5.52s) — PASS
+▶︎ [264/572] START tests/integration/test_yaml_blueprint.py
+✅ tests/integration/test_conditional_step_logic_migration.py (4.16s) — PASS
+▶︎ [265/572] START tests/integration/test_pydantic_ai_compatibility.py
+✅ tests/integration/test_pydantic_ai_compatibility.py (1.83s) — PASS
+▶︎ [266/572] START tests/integration/test_stateful_runner.py
+✅ tests/integration/test_yaml_blueprint.py (3.70s) — PASS
+▶︎ [267/572] START tests/integration/test_nested_dsl_constructs.py
+✅ tests/integration/test_stateful_runner.py (2.86s) — PASS
+▶︎ [268/572] START tests/integration/test_hitl_step_migration_integration.py
+✅ tests/integration/test_nested_dsl_constructs.py (3.44s) — PASS
+▶︎ [269/572] START tests/integration/test_hitl_sink_to.py
+✅ tests/integration/test_hitl_sink_to.py (2.19s) — PASS
+▶︎ [270/572] START tests/integration/test_cli_skills_autoload.py
+✅ tests/integration/test_hitl_step_migration_integration.py (4.50s) — PASS
+▶︎ [271/572] START tests/integration/test_yaml_template_fallbacks.py
+✅ tests/integration/test_cli_skills_autoload.py (1.81s) — PASS
+▶︎ [272/572] START tests/integration/test_streaming_pipeline.py
+✅ tests/integration/test_yaml_template_fallbacks.py (1.53s) — PASS
+▶︎ [273/572] START tests/integration/test_usage_limits_enforcement.py
+✅ tests/integration/test_streaming_pipeline.py (2.47s) — PASS
+▶︎ [274/572] START tests/integration/test_configuration_integration.py
+✅ tests/integration/test_configuration_integration.py (3.31s) — PASS
+▶︎ [275/572] START tests/integration/test_budget_in_runner.py
+✅ tests/integration/test_budget_in_runner.py (2.25s) — PASS
+▶︎ [276/572] START tests/integration/test_redirect_loop_unhashable.py
+✅ tests/integration/test_usage_limits_enforcement.py (7.62s) — PASS
+▶︎ [277/572] START tests/integration/test_trace_complete_flow.py
+✅ tests/integration/test_redirect_loop_unhashable.py (1.59s) — PASS
+▶︎ [278/572] START tests/integration/test_hitl_branch_schemas.py
+✅ tests/integration/test_trace_complete_flow.py (2.22s) — PASS
+▶︎ [279/572] START tests/integration/test_caching_and_fallbacks.py
+✅ tests/integration/test_hitl_branch_schemas.py (1.86s) — PASS
+▶︎ [280/572] START tests/integration/test_sqlite_concurrency_edge_cases.py
+✅ tests/integration/test_sqlite_concurrency_edge_cases.py (0.95s) — PASS
+▶︎ [281/572] START tests/integration/test_embedding_regression.py
+✅ tests/integration/test_caching_and_fallbacks.py (3.41s) — PASS
+▶︎ [282/572] START tests/integration/test_conversational_loop_ai_turn_variants.py
+✅ tests/integration/test_conversational_loop_ai_turn_variants.py (0.95s) — PASS
+▶︎ [283/572] START tests/integration/test_legacy_cleanup_validation.py
+✅ tests/integration/test_embedding_regression.py (2.75s) — PASS
+▶︎ [284/572] START tests/integration/test_persistence_backends.py
+✅ tests/integration/test_persistence_backends.py (3.21s) — PASS
+▶︎ [285/572] START tests/integration/test_resilience_features.py
+❌ tests/integration/test_legacy_cleanup_validation.py (3.90s) — FAIL
+   💡 FAILED tests/integration/test_legacy_cleanup_validation.py::TestRemainingFunctionPreservation::test_run_step_logic_preservation - AttributeError: 'ExecutorCore' object has no attribute 'execute_step'
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+▶︎ [286/572] START tests/integration/test_parallel_merge_conflicts.py
+✅ tests/integration/test_resilience_features.py (1.91s) — PASS
+▶︎ [287/572] START tests/integration/test_executor_core_loop_conditional_migration.py
+✅ tests/integration/test_parallel_merge_conflicts.py (1.83s) — PASS
+▶︎ [288/572] START tests/integration/test_usage_limits_persistence.py
+✅ tests/integration/test_executor_core_loop_conditional_migration.py (0.95s) — PASS
+▶︎ [289/572] START tests/integration/test_pipeline_runner_with_resources.py
+✅ tests/integration/test_usage_limits_persistence.py (1.59s) — PASS
+▶︎ [290/572] START tests/integration/test_background_execution.py
+✅ tests/integration/test_pipeline_runner_with_resources.py (2.52s) — PASS
+▶︎ [291/572] START tests/integration/test_cli_run.py
+✅ tests/integration/test_cli_run.py (3.49s) — PASS
+▶︎ [292/572] START tests/integration/test_conversational_loop_parallel.py
+✅ tests/integration/test_background_execution.py (5.35s) — PASS
+▶︎ [293/572] START tests/integration/test_async_runner_detection.py
+✅ tests/integration/test_conversational_loop_parallel.py (0.97s) — PASS
+▶︎ [294/572] START tests/integration/test_loop_context_update_regression.py
+✅ tests/integration/test_async_runner_detection.py (2.38s) — PASS
+▶︎ [295/572] START tests/integration/test_hitl_trace_resume_event.py
+✅ tests/integration/test_hitl_trace_resume_event.py (0.95s) — PASS
+▶︎ [296/572] START tests/integration/test_background_resumability.py
+✅ tests/integration/test_loop_context_update_regression.py (3.62s) — PASS
+▶︎ [297/572] START tests/integration/test_otel_integration.py
+✅ tests/integration/test_background_resumability.py (0.94s) — PASS
+▶︎ [298/572] START tests/integration/test_strict_validation.py
+✅ tests/integration/test_otel_integration.py (1.51s) — PASS
+▶︎ [299/572] START tests/integration/test_pipeline_finalization_safety.py
+✅ tests/integration/test_strict_validation.py (2.04s) — PASS
+▶︎ [300/572] START tests/integration/test_pipeline_composition.py
+✅ tests/integration/test_pipeline_finalization_safety.py (2.00s) — PASS
+▶︎ [301/572] START tests/integration/test_refine_until_with_context_updates.py
+✅ tests/integration/test_pipeline_composition.py (3.20s) — PASS
+▶︎ [302/572] START tests/integration/test_task_client.py
+✅ tests/integration/test_refine_until_with_context_updates.py (3.06s) — PASS
+▶︎ [303/572] START tests/integration/test_conversation_sqlite_pause_resume.py
+✅ tests/integration/test_task_client.py (1.78s) — PASS
+▶︎ [304/572] START tests/integration/test_yaml_loop_mappers_integration.py
+✅ tests/integration/test_conversation_sqlite_pause_resume.py (0.94s) — PASS
+▶︎ [305/572] START tests/integration/test_settings_validation.py
+✅ tests/integration/test_settings_validation.py (1.24s) — PASS
+▶︎ [306/572] START tests/integration/test_refine_until.py
+✅ tests/integration/test_yaml_loop_mappers_integration.py (2.12s) — PASS
+▶︎ [307/572] START tests/integration/test_yaml_import_step_config.py
+✅ tests/integration/test_yaml_import_step_config.py (1.59s) — PASS
+▶︎ [308/572] START tests/integration/test_FSD11_bug_fix.py
+✅ tests/integration/test_refine_until.py (2.52s) — PASS
+▶︎ [309/572] START tests/integration/test_statemachine_builtins.py
+✅ tests/integration/test_statemachine_builtins.py (2.73s) — PASS
+▶︎ [310/572] START tests/integration/test_granular_execution.py
+✅ tests/integration/test_FSD11_bug_fix.py (4.40s) — PASS
+▶︎ [311/572] START tests/integration/test_conversation_persistence.py
+✅ tests/integration/test_conversation_persistence.py (0.90s) — PASS
+▶︎ [312/572] START tests/integration/test_prometheus_server.py
+✅ tests/integration/test_prometheus_server.py (0.91s) — PASS
+▶︎ [313/572] START tests/integration/test_hitl_sink_to_nested.py
+✅ tests/integration/test_granular_execution.py (3.24s) — PASS
+▶︎ [314/572] START tests/integration/test_hitl_pipeline.py
+✅ tests/integration/test_hitl_sink_to_nested.py (0.94s) — PASS
+▶︎ [315/572] START tests/integration/test_dynamic_parallel_router_with_context_updates.py
+✅ tests/integration/test_hitl_pipeline.py (3.48s) — PASS
+▶︎ [316/572] START tests/integration/test_state_machine_integration.py
+✅ tests/integration/test_state_machine_integration.py (1.75s) — PASS
+▶︎ [317/572] START tests/integration/test_map_over_with_context_updates.py
+✅ tests/integration/test_dynamic_parallel_router_with_context_updates.py (4.45s) — PASS
+▶︎ [318/572] START tests/integration/test_conversational_loop_nested.py
+✅ tests/integration/test_conversational_loop_nested.py (0.83s) — PASS
+▶︎ [319/572] START tests/integration/test_executor_core_fallback_integration.py
+✅ tests/integration/test_executor_core_fallback_integration.py (0.90s) — PASS
+▶︎ [320/572] START tests/integration/test_orchestrator_sync.py
+✅ tests/integration/test_orchestrator_sync.py (1.53s) — PASS
+▶︎ [321/572] START tests/integration/test_custom_step_extension.py
+✅ tests/integration/test_map_over_with_context_updates.py (3.42s) — PASS
+▶︎ [322/572] START tests/integration/test_hitl_resume_input.py
+✅ tests/integration/test_hitl_resume_input.py (0.92s) — PASS
+▶︎ [323/572] START tests/integration/test_unified_error_handling.py
+✅ tests/integration/test_custom_step_extension.py (1.58s) — PASS
+▶︎ [324/572] START tests/integration/test_granular_real_llm.py
+❌ tests/integration/test_unified_error_handling.py (1.56s) — FAIL
+   💡 FAILED tests/integration/test_unified_error_handling.py::test_simple_step_returns_stepresult_on_failure - AttributeError: 'ExecutorCore' object has no attribute 'execute_step'
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+▶︎ [325/572] START tests/integration/test_hybrid_validation.py
+✅ tests/integration/test_granular_real_llm.py (0.95s) — PASS
+▶︎ [326/572] START tests/integration/test_conditional_step_execution.py
+✅ tests/integration/test_hybrid_validation.py (2.67s) — PASS
+▶︎ [327/572] START tests/integration/test_executor_core_architecture_validation.py
+✅ tests/integration/test_executor_core_architecture_validation.py (0.90s) — PASS
+▶︎ [328/572] START tests/integration/test_state_machine_imports_run.py
+✅ tests/integration/test_state_machine_imports_run.py (0.90s) — PASS
+▶︎ [329/572] START tests/integration/test_hitl_loop_resume_fix.py
+✅ tests/integration/test_hitl_loop_resume_fix.py (0.87s) — PASS
+▶︎ [330/572] START tests/integration/test_as_step_state_persistence.py
+✅ tests/integration/test_conditional_step_execution.py (6.81s) — PASS
+▶︎ [331/572] START tests/integration/test_sqlite_filesystem_edge_cases.py
+✅ tests/integration/test_sqlite_filesystem_edge_cases.py (0.93s) — PASS
+▶︎ [332/572] START tests/integration/test_embedding_cost_integration.py
+✅ tests/integration/test_as_step_state_persistence.py (2.49s) — PASS
+▶︎ [333/572] START tests/integration/test_conditional_with_context_updates.py
+✅ tests/integration/test_conditional_with_context_updates.py (2.99s) — PASS
+▶︎ [334/572] START tests/integration/test_loop_step_execution.py
+✅ tests/integration/test_embedding_cost_integration.py (3.29s) — PASS
+▶︎ [335/572] START tests/integration/test_cli_mermaid.py
+✅ tests/integration/test_cli_mermaid.py (1.41s) — PASS
+▶︎ [336/572] START tests/integration/test_as_step_composition.py
+✅ tests/integration/test_as_step_composition.py (4.05s) — PASS
+▶︎ [337/572] START tests/integration/test_fsd_12_tracing_complete.py
+✅ tests/integration/test_fsd_12_tracing_complete.py (0.86s) — PASS
+▶︎ [338/572] START tests/integration/test_default_recipe.py
+✅ tests/integration/test_loop_step_execution.py (6.94s) — PASS
+▶︎ [339/572] START tests/integration/test_imports_no_circular.py
+✅ tests/integration/test_default_recipe.py (1.48s) — PASS
+▶︎ [340/572] START tests/integration/test_parallel_usage_governor_stress.py
+✅ tests/integration/test_parallel_usage_governor_stress.py (0.96s) — PASS
+▶︎ [341/572] START tests/integration/test_explicit_cost_integration.py
+✅ tests/integration/test_imports_no_circular.py (2.46s) — PASS
+▶︎ [342/572] START tests/integration/test_cli_run_loop_json.py
+✅ tests/integration/test_cli_run_loop_json.py (1.67s) — PASS
+▶︎ [343/572] START tests/integration/test_local_tracer.py
+✅ tests/integration/test_explicit_cost_integration.py (3.75s) — PASS
+▶︎ [344/572] START tests/integration/test_cli_wizard_explain.py
+✅ tests/integration/test_local_tracer.py (2.35s) — PASS
+▶︎ [345/572] START tests/integration/test_nested_pause.py
+✅ tests/integration/test_cli_wizard_explain.py (1.96s) — PASS
+▶︎ [346/572] START tests/integration/test_adapter_allowlist_enforcement.py
+✅ tests/integration/test_nested_pause.py (1.76s) — PASS
+▶︎ [347/572] START tests/integration/test_replay_agent_non_hitl.py
+✅ tests/integration/test_replay_agent_non_hitl.py (0.93s) — PASS
+▶︎ [348/572] START tests/integration/test_dynamic_router_with_context_updates.py
+✅ tests/integration/test_adapter_allowlist_enforcement.py (1.91s) — PASS
+▶︎ [349/572] START tests/integration/test_yaml_loop_declarative.py
+✅ tests/integration/test_yaml_loop_declarative.py (1.55s) — PASS
+▶︎ [350/572] START tests/integration/test_yaml_conditional_expression_methods.py
+✅ tests/integration/test_dynamic_router_with_context_updates.py (3.73s) — PASS
+▶︎ [351/572] START tests/integration/test_execution_backend_protocol.py
+✅ tests/integration/test_yaml_conditional_expression_methods.py (1.82s) — PASS
+▶︎ [352/572] START tests/integration/test_sqlite_backup_edge_cases.py
+✅ tests/integration/test_sqlite_backup_edge_cases.py (0.89s) — PASS
+▶︎ [353/572] START tests/integration/test_performance_with_context_updates.py
+✅ tests/integration/test_execution_backend_protocol.py (1.59s) — PASS
+▶︎ [354/572] START tests/integration/test_conversational_loop_hitl_pause.py
+✅ tests/integration/test_conversational_loop_hitl_pause.py (0.94s) — PASS
+▶︎ [355/572] START tests/integration/test_mock_output_handling.py
+✅ tests/integration/test_performance_with_context_updates.py (3.56s) — PASS
+▶︎ [356/572] START tests/integration/test_cache_with_context_updates.py
+✅ tests/integration/test_mock_output_handling.py (2.41s) — PASS
+▶︎ [357/572] START tests/integration/test_conversational_loop_nested_hitl.py
+✅ tests/integration/test_conversational_loop_nested_hitl.py (1.52s) — PASS
+▶︎ [358/572] START tests/integration/test_pipeline_hooks.py
+✅ tests/integration/test_cache_with_context_updates.py (3.03s) — PASS
+▶︎ [359/572] START tests/integration/test_cost_tracking_real_agent.py
+✅ tests/integration/test_cost_tracking_real_agent.py (1.83s) — PASS
+▶︎ [360/572] START tests/integration/test_hitl_with_context_updates.py
+✅ tests/integration/test_pipeline_hooks.py (4.13s) — PASS
+▶︎ [361/572] START tests/integration/test_pipeline_versioning.py
+✅ tests/integration/test_pipeline_versioning.py (1.49s) — PASS
+▶︎ [362/572] START tests/integration/test_reconstruction_integration.py
+✅ tests/integration/test_hitl_with_context_updates.py (2.94s) — PASS
+▶︎ [363/572] START tests/integration/test_parallel_step.py
+✅ tests/integration/test_reconstruction_integration.py (2.96s) — PASS
+▶︎ [364/572] START tests/integration/test_usage_governor.py
+✅ tests/integration/test_parallel_step.py (4.51s) — PASS
+▶︎ [365/572] START tests/integration/test_pipeline_runner_with_context.py
+✅ tests/integration/test_pipeline_runner_with_context.py (2.07s) — PASS
+▶︎ [366/572] START tests/integration/test_hitl_pause_persistence.py
+✅ tests/integration/test_usage_governor.py (4.84s) — PASS
+▶︎ [367/572] START tests/integration/test_imports_skills_isolation.py
+✅ tests/integration/test_hitl_pause_persistence.py (1.49s) — PASS
+▶︎ [368/572] START tests/integration/test_postgres_backend.py
+✅ tests/integration/test_postgres_backend.py (0.92s) — PASS
+▶︎ [369/572] START tests/integration/test_context_injection.py
+✅ tests/integration/test_imports_skills_isolation.py (1.57s) — PASS
+▶︎ [370/572] START tests/integration/test_outcomes_backend_path.py
+✅ tests/integration/test_outcomes_backend_path.py (1.70s) — PASS
+▶︎ [371/572] START tests/integration/test_self_improvement.py
+✅ tests/integration/test_context_injection.py (3.27s) — PASS
+▶︎ [372/572] START tests/integration/test_pipeline_context_updates.py
+✅ tests/integration/test_self_improvement.py (2.18s) — PASS
+▶︎ [373/572] START tests/integration/test_validation_persistence.py
+✅ tests/integration/test_validation_persistence.py (1.73s) — PASS
+▶︎ [374/572] START tests/integration/test_simple_outcome_backend_path.py
+✅ tests/integration/test_pipeline_context_updates.py (2.92s) — PASS
+▶︎ [375/572] START tests/integration/test_dynamic_router_bug_fix.py
+✅ tests/integration/test_simple_outcome_backend_path.py (1.47s) — PASS
+▶︎ [376/572] START tests/integration/test_externalized_prompt_cli.py
+✅ tests/integration/test_dynamic_router_bug_fix.py (2.67s) — PASS
+▶︎ [377/572] START tests/integration/test_map_declarative.py
+✅ tests/integration/test_externalized_prompt_cli.py (2.59s) — PASS
+▶︎ [378/572] START tests/integration/test_image_cost_integration.py
+✅ tests/integration/test_map_declarative.py (1.53s) — PASS
+▶︎ [379/572] START tests/integration/test_cost_tracking_critical_bugs.py
+✅ tests/integration/test_image_cost_integration.py (3.25s) — PASS
+▶︎ [380/572] START tests/integration/test_cost_tracking_integration.py
+✅ tests/integration/test_cost_tracking_critical_bugs.py (4.91s) — PASS
+▶︎ [381/572] START tests/integration/test_yaml_sink_to.py
+✅ tests/integration/test_cost_tracking_integration.py (3.78s) — PASS
+▶︎ [382/572] START tests/integration/test_hitl_branches.py
+✅ tests/integration/test_yaml_sink_to.py (1.52s) — PASS
+▶︎ [383/572] START tests/integration/test_parallel_step_enhancements.py
+✅ tests/integration/test_hitl_branches.py (1.85s) — PASS
+▶︎ [384/572] START tests/integration/test_import_step_nested_hitl_pause_resume.py
+✅ tests/integration/test_import_step_nested_hitl_pause_resume.py (1.50s) — PASS
+▶︎ [385/572] START tests/integration/test_map_over_step.py
+✅ tests/integration/test_parallel_step_enhancements.py (4.78s) — PASS
+▶︎ [386/572] START tests/static_analysis/test_forbid_explicit_any.py
+✅ tests/static_analysis/test_forbid_explicit_any.py (1.37s) — PASS
+▶︎ [387/572] START tests/utils/test_serialization_registry.py
+✅ tests/integration/test_map_over_step.py (2.99s) — PASS
+▶︎ [388/572] START tests/utils/test_safe_serialize_comprehensive.py
+✅ tests/utils/test_serialization_registry.py (4.29s) — PASS
+▶︎ [389/572] START tests/cli/test_validate_sarif_rule_metadata.py
+✅ tests/cli/test_validate_sarif_rule_metadata.py (2.19s) — PASS
+▶︎ [390/572] START tests/cli/test_validate_formatters_and_baseline.py
+✅ tests/utils/test_safe_serialize_comprehensive.py (8.87s) — PASS
+▶︎ [391/572] START tests/cli/test_misc_cli.py
+✅ tests/cli/test_misc_cli.py (2.24s) — PASS
+▶︎ [392/572] START tests/cli/test_create_debug.py
+✅ tests/cli/test_create_debug.py (1.63s) — PASS
+▶︎ [393/572] START tests/cli/test_validate_requires_project.py
+✅ tests/cli/test_validate_requires_project.py (2.18s) — PASS
+▶︎ [394/572] START tests/cli/test_create_project_conversation.py
+✅ tests/cli/test_create_project_conversation.py (1.40s) — PASS
+▶︎ [395/572] START tests/cli/test_project_journey.py
+✅ tests/cli/test_validate_formatters_and_baseline.py (11.77s) — PASS
+▶︎ [396/572] START tests/cli/test_lens_from_file_and_replay.py
+✅ tests/cli/test_project_journey.py (2.71s) — PASS
+▶︎ [397/572] START tests/cli/test_validate_fixer_vt3.py
+✅ tests/cli/test_lens_from_file_and_replay.py (3.41s) — PASS
+▶︎ [398/572] START tests/cli/test_run_resource_ownership.py
+✅ tests/cli/test_run_resource_ownership.py (1.53s) — PASS
+▶︎ [399/572] START tests/cli/test_zero_config_and_credentials.py
+✅ tests/cli/test_validate_fixer_vt3.py (4.03s) — PASS
+▶︎ [400/572] START tests/cli/test_validate_fixer_vc2.py
+✅ tests/cli/test_zero_config_and_credentials.py (2.24s) — PASS
+▶︎ [401/572] START tests/cli/test_status.py
+✅ tests/cli/test_validate_fixer_vc2.py (4.07s) — PASS
+▶︎ [402/572] START tests/cli/test_validate_phase1.py
+✅ tests/cli/test_validate_phase1.py (4.96s) — PASS
+▶︎ [403/572] START tests/cli/test_cli_piped_input.py
+✅ tests/cli/test_status.py (7.96s) — PASS
+▶︎ [404/572] START tests/cli/test_validate_fixer_vt1.py
+✅ tests/cli/test_cli_piped_input.py (4.16s) — PASS
+▶︎ [405/572] START tests/cli/test_smoke_solve_bench_improve.py
+✅ tests/cli/test_validate_fixer_vt1.py (3.20s) — PASS
+▶︎ [406/572] START tests/cli/test_help_snapshots.py
+❌ tests/cli/test_help_snapshots.py (1.19s) — FAIL
+   💡 FAILED tests/cli/test_help_snapshots.py::test_top_level_help_semantics - assert '--install-completion' in "\n Usage: root [OPTIONS] COMMAND [ARGS]...\n\n A project-based server to build, run, and debug Flujo AI\n workflows.\n\n Common Commands:\n\n  • init / demo: scaffold a project or a demo\n  • run: run the current project's pipeline (YAML or\n    Python)\n  • validate: validate a pipeline file\n  • lens: inspect past runs (list, show, trace,\n    from-file)\n  • dev: developer tools (version, show-config, validate,\n    visualize, budgets)\n\n Debugging Flags for run:\n\n  • --debug: step-by-step trace tree (safe previews)\n  • --trace-preview-len N: preview size for\n    prompts/responses\n  • --debug-prompts: include full prompts/responses in\n    trace (unsafe)\n  • --debug-export PATH: write full debug JSON (trace +\n    steps + context). If omitted with --debug,\n    auto-writes to ./debug/<timestamp>_<run_id>.json.\n\n Visualization Flags for run:\n\n  • --live/--progress: live step panels (compact)\n  • --summary: only final output, totals, and run id\n  • --no-steps / --no-context: hide table/context\n  • --output-preview-len N: trim table outputs (default\n    100)\n  • --final-output-format: auto|raw|json|yaml|md\n  • --pager: page long output in terminal\n\n Project Ro...n╭─ Commands ─────────────────────────────────────────────╮\n│ run        🚀 Run the workflow in the current project. │\n│ status     Show provider readiness and SQLite state    │\n│            configuration.                              │\n│ migrate    Apply database migrations for the state     │\n│            backend.                                    │\n│ validate   ✅ Validate the project's pipeline.yaml     │\n│            file.                                       │\n│ init       Initialize a new Flujo project in the       │\n│            current directory.                          │\n│ demo       Create a demo Flujo project in the current  │\n│            directory.                                  │\n│ create     🤖 Start a conversation with the AI         │\n│            Architect to build your workflow.           │\n│ lens       🔍 Inspect, debug, and trace past workflow  │\n│            runs.                                       │\n│ dev        🛠️  Access advanced developer and diagnostic │\n│            tools (e.g., version, show-config,          │\n│            visualize).                                 │\n╰────────────────────────────────────────────────────────╯\n"
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+▶︎ [407/572] START tests/cli/test_new_cli_additions.py
+✅ tests/cli/test_smoke_solve_bench_improve.py (1.92s) — PASS
+▶︎ [408/572] START tests/cli/test_blueprints.py
+✅ tests/cli/test_blueprints.py (3.47s) — PASS
+▶︎ [409/572] START tests/cli/test_create.py
+✅ tests/cli/test_create.py (1.99s) — PASS
+▶︎ [410/572] START tests/cli/test_architect_hitl.py
+✅ tests/cli/test_architect_hitl.py (0.99s) — PASS
+▶︎ [411/572] START tests/cli/test_create_resource_ownership.py
+✅ tests/cli/test_create_resource_ownership.py (1.35s) — PASS
+▶︎ [412/572] START tests/cli/test_validate_json_telemetry_and_dry_run.py
+✅ tests/cli/test_new_cli_additions.py (10.98s) — PASS
+▶︎ [413/572] START tests/cli/test_architect_self_correction.py
+✅ tests/cli/test_architect_self_correction.py (1.01s) — PASS
+▶︎ [414/572] START tests/cli/test_main.py
+✅ tests/cli/test_validate_json_telemetry_and_dry_run.py (5.54s) — PASS
+▶︎ [415/572] START tests/cli/test_create_sanitizer.py
+✅ tests/cli/test_create_sanitizer.py (2.29s) — PASS
+▶︎ [416/572] START tests/cli/test_architect_gpt5_settings.py
+✅ tests/cli/test_architect_gpt5_settings.py (4.68s) — PASS
+▶︎ [417/572] START tests/cli/test_architect_integration.py
+✅ tests/cli/test_architect_integration.py (1.00s) — PASS
+▶︎ [418/572] START tests/cli/test_scaffold_overwrite_reporting.py
+✅ tests/cli/test_scaffold_overwrite_reporting.py (1.30s) — PASS
+▶︎ [419/572] START tests/cli/test_run_visualization_flags.py
+✅ tests/cli/test_run_visualization_flags.py (3.86s) — PASS
+▶︎ [420/572] START tests/state/test_sqlite_migration.py
+✅ tests/cli/test_main.py (15.12s) — PASS
+▶︎ [421/572] START tests/state/test_sqlite_async_bridge.py
+✅ tests/state/test_sqlite_migration.py (1.36s) — PASS
+▶︎ [422/572] START tests/processors/test_common.py
+✅ tests/state/test_sqlite_async_bridge.py (1.54s) — PASS
+▶︎ [423/572] START tests/processors/test_repair.py
+✅ tests/processors/test_repair.py (1.34s) — PASS
+▶︎ [424/572] START tests/architecture/test_module_isolation.py
+✅ tests/architecture/test_module_isolation.py (0.89s) — PASS
+▶︎ [425/572] START tests/architecture/test_srp_compliance.py
+✅ tests/architecture/test_srp_compliance.py (0.89s) — PASS
+▶︎ [426/572] START tests/architecture/test_policy_frame_signatures.py
+✅ tests/architecture/test_policy_frame_signatures.py (0.88s) — PASS
+▶︎ [427/572] START tests/architecture/test_srp_semantic_analysis.py
+✅ tests/architecture/test_srp_semantic_analysis.py (0.88s) — PASS
+▶︎ [428/572] START tests/architecture/test_type_safety_compliance.py
+✅ tests/architecture/test_type_safety_compliance.py (0.86s) — PASS
+▶︎ [429/572] START tests/architecture/test_remediation_guardrails.py
+✅ tests/architecture/test_remediation_guardrails.py (0.88s) — PASS
+▶︎ [430/572] START tests/architecture/test_architecture_compliance.py
+✅ tests/architecture/test_architecture_compliance.py (0.89s) — PASS
+▶︎ [431/572] START tests/architecture/test_ci_configuration.py
+✅ tests/architecture/test_ci_configuration.py (0.89s) — PASS
+▶︎ [432/572] START tests/architect/test_architect_plan_rejection_flow.py
+✅ tests/architect/test_architect_plan_rejection_flow.py (0.87s) — PASS
+▶︎ [433/572] START tests/architect/test_architect_state_machine_integration.py
+✅ tests/architect/test_architect_state_machine_integration.py (0.88s) — PASS
+▶︎ [434/572] START tests/architect/test_architect_comprehensive.py
+✅ tests/processors/test_common.py (10.59s) — PASS
+▶︎ [435/572] START tests/architect/test_architect_fallback_functionality.py
+✅ tests/architect/test_architect_comprehensive.py (0.95s) — PASS
+▶︎ [436/572] START tests/architect/test_architect_basic_functionality.py
+✅ tests/architect/test_architect_fallback_functionality.py (1.00s) — PASS
+▶︎ [437/572] START tests/architect/test_architect_happy_path_flow.py
+✅ tests/architect/test_architect_basic_functionality.py (0.92s) — PASS
+▶︎ [438/572] START tests/architect/test_architect_validation_repair_loop.py
+✅ tests/architect/test_architect_happy_path_flow.py (0.91s) — PASS
+▶︎ [439/572] START tests/golden_traces/test_trace_capturing_hook.py
+✅ tests/architect/test_architect_validation_repair_loop.py (0.93s) — PASS
+▶︎ [440/572] START tests/golden_traces/test_golden_traces.py
+✅ tests/golden_traces/test_trace_capturing_hook.py (1.30s) — PASS
+▶︎ [441/572] START tests/golden_traces/test_golden_pipeline.py
+✅ tests/golden_traces/test_golden_traces.py (1.57s) — PASS
+▶︎ [442/572] START tests/application/test_runner_outcomes_failure.py
+✅ tests/golden_traces/test_golden_pipeline.py (1.52s) — PASS
+▶︎ [443/572] START tests/application/test_runner.py
+✅ tests/application/test_runner_outcomes_failure.py (1.47s) — PASS
+▶︎ [444/572] START tests/regression/test_conditional_step_regression.py
+✅ tests/application/test_runner.py (3.49s) — PASS
+▶︎ [445/572] START tests/regression/test_state_machine_imports_regression.py
+✅ tests/regression/test_state_machine_imports_regression.py (0.87s) — PASS
+▶︎ [446/572] START tests/regression/test_legacy_cleanup_impact.py
+✅ tests/regression/test_conditional_step_regression.py (4.52s) — PASS
+▶︎ [447/572] START tests/regression/test_hitl_step_migration_regression.py
+❌ tests/regression/test_legacy_cleanup_impact.py (2.54s) — FAIL
+   💡 FAILED tests/regression/test_legacy_cleanup_impact.py::TestMigrationCompleteness::test_legacy_function_deprecation - AttributeError: 'ExecutorCore' object has no attribute 'execute_step'
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+▶︎ [448/572] START tests/regression/test_input_adaptation.py
+✅ tests/regression/test_input_adaptation.py (1.78s) — PASS
+▶︎ [449/572] START tests/regression/test_template_resolution_regression.py
+✅ tests/regression/test_hitl_step_migration_regression.py (3.74s) — PASS
+▶︎ [450/572] START tests/regression/test_skills_autoload_loader.py
+✅ tests/regression/test_template_resolution_regression.py (1.84s) — PASS
+▶︎ [451/572] START tests/e2e/test_e2e_pipelines.py
+✅ tests/regression/test_skills_autoload_loader.py (1.52s) — PASS
+▶︎ [452/572] START tests/e2e/test_e2e_self_improvement.py
+✅ tests/e2e/test_e2e_pipelines.py (1.49s) — PASS
+▶︎ [453/572] START tests/e2e/test_golden_transcript.py
+✅ tests/e2e/test_e2e_self_improvement.py (1.55s) — PASS
+▶︎ [454/572] START tests/e2e/test_realistic_code_review_pipeline.py
+✅ tests/e2e/test_golden_transcript.py (0.99s) — PASS
+▶︎ [455/572] START tests/e2e/test_golden_transcript_agentic_loop.py
+✅ tests/e2e/test_golden_transcript_agentic_loop.py (1.73s) — PASS
+▶︎ [456/572] START tests/e2e/test_golden_transcript_dynamic_parallel.py
+✅ tests/e2e/test_realistic_code_review_pipeline.py (2.56s) — PASS
+▶︎ [457/572] START tests/e2e/test_golden_transcript_core.py
+✅ tests/e2e/test_golden_transcript_core.py (1.79s) — PASS
+▶︎ [458/572] START tests/e2e/test_golden_transcript_refine.py
+✅ tests/e2e/test_golden_transcript_dynamic_parallel.py (2.14s) — PASS
+▶︎ [459/572] START tests/domain/test_models.py
+✅ tests/e2e/test_golden_transcript_refine.py (2.20s) — PASS
+▶︎ [460/572] START tests/domain/test_context_mixins.py
+✅ tests/domain/test_models.py (2.40s) — PASS
+▶︎ [461/572] START tests/domain/dsl/test_pipeline_validation_va5_templated_input.py
+✅ tests/domain/test_context_mixins.py (1.56s) — PASS
+▶︎ [462/572] START tests/domain/dsl/test_pipeline_validation_yaml_strict.py
+✅ tests/domain/dsl/test_pipeline_validation_va5_templated_input.py (1.84s) — PASS
+▶︎ [463/572] START tests/domain/dsl/test_pipeline_validation_linter.py
+✅ tests/domain/dsl/test_pipeline_validation_yaml_strict.py (1.58s) — PASS
+▶︎ [464/572] START tests/domain/dsl/test_pipeline.py
+✅ tests/domain/dsl/test_pipeline.py (2.07s) — PASS
+▶︎ [465/572] START tests/application/core/test_executor_core_loop_step_migration.py
+✅ tests/domain/dsl/test_pipeline_validation_linter.py (9.05s) — PASS
+▶︎ [466/572] START tests/application/core/test_execution_dispatcher_frame_adapter.py
+✅ tests/application/core/test_execution_dispatcher_frame_adapter.py (1.51s) — PASS
+▶︎ [467/572] START tests/application/core/test_executor_core.py
+✅ tests/application/core/test_executor_core_loop_step_migration.py (8.16s) — PASS
+▶︎ [468/572] START tests/application/core/test_policy_registry.py
+✅ tests/application/core/test_executor_core.py (1.74s) — PASS
+▶︎ [469/572] START tests/application/core/test_executor_di.py
+✅ tests/application/core/test_policy_registry.py (2.36s) — PASS
+▶︎ [470/572] START tests/application/core/test_executor_core_fallback_edgecases.py
+✅ tests/application/core/test_executor_di.py (2.01s) — PASS
+▶︎ [471/572] START tests/application/core/test_execution_manager_state_handling.py
+✅ tests/application/core/test_executor_core_fallback_edgecases.py (0.92s) — PASS
+▶︎ [472/572] START tests/application/core/test_executor_core_conditional_step_dispatch.py
+✅ tests/application/core/test_execution_manager_state_handling.py (0.96s) — PASS
+▶︎ [473/572] START tests/application/core/test_executor_core_conditional_step_logic.py
+✅ tests/application/core/test_executor_core_conditional_step_dispatch.py (2.56s) — PASS
+▶︎ [474/572] START tests/application/core/test_step_result_pool.py
+✅ tests/application/core/test_step_result_pool.py (1.76s) — PASS
+▶︎ [475/572] START tests/application/core/test_typed_context_enforcement.py
+✅ tests/application/core/test_executor_core_conditional_step_logic.py (5.89s) — PASS
+▶︎ [476/572] START tests/application/core/test_executor_core_loop_step.py
+✅ tests/application/core/test_typed_context_enforcement.py (2.93s) — PASS
+▶︎ [477/572] START tests/application/core/test_step_logic_accounting.py
+❌ tests/application/core/test_step_logic_accounting.py (1.46s) — FAIL
+   💡 FAILED tests/application/core/test_step_logic_accounting.py::test_failed_primary_step_preserves_metrics - AttributeError: 'ExecutorCore' object has no attribute 'execute_step'
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+▶︎ [478/572] START tests/application/core/test_executor_core_loop_step_dispatch.py
+✅ tests/application/core/test_executor_core_loop_step_dispatch.py (1.98s) — PASS
+▶︎ [479/572] START tests/application/core/test_step_policies.py
+✅ tests/application/core/test_executor_core_loop_step.py (4.00s) — PASS
+▶︎ [480/572] START tests/application/core/test_executor_core_fallback.py
+❌ tests/application/core/test_executor_core_fallback.py (1.44s) — FAIL
+   💡 FAILED tests/application/core/test_executor_core_fallback.py::TestExecutorCoreFallback::test_fallback_not_triggered_on_primary_success - AttributeError: 'ExecutorCore' object has no attribute '_execute_simple_step'. Did you mean: '_execute_complex_step'?
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+▶︎ [481/572] START tests/application/core/test_executor_core_execute_loop.py
+✅ tests/application/core/test_step_policies.py (2.69s) — PASS
+▶︎ [482/572] START tests/application/core/test_executor_core_chokepoint.py
+✅ tests/application/core/test_executor_core_execute_loop.py (2.05s) — PASS
+▶︎ [483/572] START tests/application/core/test_executor_core_hitl_step_migration.py
+✅ tests/application/core/test_executor_core_chokepoint.py (1.51s) — PASS
+▶︎ [484/572] START tests/application/core/test_executor_core_conditional_step.py
+✅ tests/application/core/test_executor_core_conditional_step.py (4.05s) — PASS
+▶︎ [485/572] START tests/application/core/test_executor_core_fallback_core.py
+❌ tests/application/core/test_executor_core_fallback_core.py (1.71s) — FAIL
+   💡 FAILED tests/application/core/test_executor_core_fallback_core.py::TestExecutorCoreFallback::test_fallback_triggered_on_primary_failure - KeyError: 'fallback_triggered'
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+▶︎ [486/572] START tests/integration/aros/test_factory_gpt5_profile.py
+✅ tests/application/core/test_executor_core_hitl_step_migration.py (7.11s) — PASS
+▶︎ [487/572] START tests/integration/aros/test_trace_grammar_applied_integration.py
+✅ tests/integration/aros/test_factory_gpt5_profile.py (0.93s) — PASS
+▶︎ [488/572] START tests/integration/aros/test_policy_gpt4o_mini.py
+✅ tests/integration/aros/test_policy_gpt4o_mini.py (0.90s) — PASS
+▶︎ [489/572] START tests/integration/state_machine/test_state_machine_transitions_integration.py
+✅ tests/integration/aros/test_trace_grammar_applied_integration.py (1.46s) — PASS
+▶︎ [490/572] START tests/integration/architect/test_architect_security_validation.py
+✅ tests/integration/state_machine/test_state_machine_transitions_integration.py (0.91s) — PASS
+▶︎ [491/572] START tests/integration/architect/test_architect_regression_fixes.py
+✅ tests/integration/architect/test_architect_security_validation.py (1.00s) — PASS
+▶︎ [492/572] START tests/integration/architect/test_architect_validation_repair.py
+✅ tests/integration/architect/test_architect_regression_fixes.py (1.01s) — PASS
+▶︎ [493/572] START tests/integration/architect/test_agentic_end_to_end.py
+✅ tests/integration/architect/test_architect_validation_repair.py (0.94s) — PASS
+▶︎ [494/572] START tests/integration/architect/test_architect_happy_path.py
+✅ tests/integration/architect/test_agentic_end_to_end.py (0.98s) — PASS
+▶︎ [495/572] START tests/integration/architect/test_architect_edge_cases.py
+✅ tests/integration/architect/test_architect_happy_path.py (0.99s) — PASS
+▶︎ [496/572] START tests/integration/architect/test_architect_performance_stress.py
+✅ tests/integration/architect/test_architect_edge_cases.py (1.01s) — PASS
+▶︎ [497/572] START tests/integration/architect/test_architect_plan_approval_hitl.py
+✅ tests/integration/architect/test_architect_performance_stress.py (1.02s) — PASS
+▶︎ [498/572] START tests/integration/architect/test_architect_plan_rejection.py
+✅ tests/integration/architect/test_architect_plan_approval_hitl.py (0.99s) — PASS
+▶︎ [499/572] START tests/integration/client/test_task_client_lifecycle.py
+✅ tests/integration/architect/test_architect_plan_rejection.py (0.97s) — PASS
+▶︎ [500/572] START tests/integration/client/test_pagination.py
+❌ tests/integration/client/test_pagination.py (2.73s) — FAIL
+   💡 FAILED tests/integration/client/test_pagination.py::test_postgres_dependency_guard_missing_asyncpg - AttributeError: 'module' object at flujo.cli.config has no attribute 'get_settings'
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+▶︎ [501/572] START tests/unit/tracing/test_resume_span_closure.py
+✅ tests/integration/client/test_task_client_lifecycle.py (3.59s) — PASS
+▶︎ [502/572] START tests/unit/tracing/test_trace_manager_post_run_state.py
+✅ tests/unit/tracing/test_resume_span_closure.py (1.32s) — PASS
+▶︎ [503/572] START tests/unit/infra/test_console_tracer_paused.py
+✅ tests/unit/tracing/test_trace_manager_post_run_state.py (1.32s) — PASS
+▶︎ [504/572] START tests/unit/blueprints/test_loop_state_sugar.py
+✅ tests/unit/infra/test_console_tracer_paused.py (1.33s) — PASS
+▶︎ [505/572] START tests/unit/blueprints/test_agentic_loop_sugar.py
+✅ tests/unit/blueprints/test_loop_state_sugar.py (1.33s) — PASS
+▶︎ [506/572] START tests/unit/blueprints/test_agentic_loop_output_template.py
+✅ tests/unit/blueprints/test_agentic_loop_sugar.py (1.50s) — PASS
+▶︎ [507/572] START tests/unit/blueprints/test_condition_error_messages.py
+✅ tests/unit/blueprints/test_agentic_loop_output_template.py (1.50s) — PASS
+▶︎ [508/572] START tests/unit/blueprints/test_template_resolution.py
+✅ tests/unit/blueprints/test_condition_error_messages.py (1.56s) — PASS
+▶︎ [509/572] START tests/unit/blueprints/test_expression_sandbox.py
+✅ tests/unit/blueprints/test_template_resolution.py (2.35s) — PASS
+▶︎ [510/572] START tests/unit/blueprints/test_expression_conditions.py
+✅ tests/unit/blueprints/test_expression_sandbox.py (2.36s) — PASS
+▶︎ [511/572] START tests/unit/blueprints/test_loop_state_target_resolution.py
+✅ tests/unit/blueprints/test_expression_conditions.py (1.54s) — PASS
+▶︎ [512/572] START tests/unit/blueprints/test_conditional_bool_branches.py
+✅ tests/unit/blueprints/test_conditional_bool_branches.py (1.26s) — PASS
+▶︎ [513/572] START tests/unit/prompting/test_filters_allowlist.py
+✅ tests/unit/blueprints/test_loop_state_target_resolution.py (2.64s) — PASS
+▶︎ [514/572] START tests/unit/prompting/test_filters.py
+✅ tests/unit/prompting/test_filters_allowlist.py (1.28s) — PASS
+▶︎ [515/572] START tests/unit/aros/test_smart_coercion_anyof.py
+✅ tests/unit/aros/test_smart_coercion_anyof.py (1.23s) — PASS
+▶︎ [516/572] START tests/unit/aros/test_reasoning_precheck.py
+✅ tests/unit/prompting/test_filters.py (2.93s) — PASS
+▶︎ [517/572] START tests/unit/aros/test_reasoning_precheck_max_tokens.py
+✅ tests/unit/aros/test_reasoning_precheck.py (1.53s) — PASS
+▶︎ [518/572] START tests/unit/aros/test_tracing_aggregation.py
+✅ tests/unit/aros/test_reasoning_precheck_max_tokens.py (1.53s) — PASS
+▶︎ [519/572] START tests/unit/aros/test_cli_health_check_export.py
+✅ tests/unit/aros/test_tracing_aggregation.py (1.45s) — PASS
+▶︎ [520/572] START tests/unit/aros/test_enum_and_stage0.py
+✅ tests/unit/aros/test_enum_and_stage0.py (2.07s) — PASS
+▶︎ [521/572] START tests/unit/aros/test_wrapper_structured_output.py
+✅ tests/unit/aros/test_cli_health_check_export.py (2.20s) — PASS
+▶︎ [522/572] START tests/unit/aros/test_smart_coercion.py
+✅ tests/unit/aros/test_wrapper_structured_output.py (2.18s) — PASS
+▶︎ [523/572] START tests/unit/aros/test_wrapper_unexpected_behavior.py
+✅ tests/unit/aros/test_wrapper_unexpected_behavior.py (1.29s) — PASS
+▶︎ [524/572] START tests/unit/aros/test_structured_finalize_normalization.py
+✅ tests/unit/aros/test_smart_coercion.py (5.04s) — PASS
+▶︎ [525/572] START tests/unit/aros/test_schema_derivation.py
+✅ tests/unit/aros/test_structured_finalize_normalization.py (1.64s) — PASS
+▶︎ [526/572] START tests/unit/aros/test_wrapper_kwargs_response_format.py
+✅ tests/unit/aros/test_wrapper_kwargs_response_format.py (1.30s) — PASS
+▶︎ [527/572] START tests/unit/aros/test_processing_config_validation.py
+✅ tests/unit/aros/test_schema_derivation.py (1.60s) — PASS
+▶︎ [528/572] START tests/unit/aros/test_runner_completion_gate.py
+✅ tests/unit/aros/test_runner_completion_gate.py (1.46s) — PASS
+▶︎ [529/572] START tests/unit/aros/test_cli_health_check_trend_stage_specific.py
+✅ tests/unit/aros/test_processing_config_validation.py (2.15s) — PASS
+▶︎ [530/572] START tests/unit/as_step/test_context_merge.py
+✅ tests/unit/aros/test_cli_health_check_trend_stage_specific.py (1.39s) — PASS
+▶︎ [531/572] START tests/unit/utils/test_excluded_fields.py
+✅ tests/unit/as_step/test_context_merge.py (2.04s) — PASS
+▶︎ [532/572] START tests/unit/utils/test_context_utils.py
+✅ tests/unit/utils/test_excluded_fields.py (2.25s) — PASS
+▶︎ [533/572] START tests/unit/cli/test_validate_rules_overrides.py
+✅ tests/unit/utils/test_context_utils.py (2.16s) — PASS
+▶︎ [534/572] START tests/unit/cli/test_validate_baseline.py
+✅ tests/unit/cli/test_validate_rules_overrides.py (1.31s) — PASS
+▶︎ [535/572] START tests/unit/cli/test_validate_telemetry_counts.py
+✅ tests/unit/cli/test_validate_baseline.py (1.72s) — PASS
+▶︎ [536/572] START tests/unit/cli/test_openapi_agent_generator.py
+✅ tests/unit/cli/test_validate_telemetry_counts.py (1.42s) — PASS
+▶︎ [537/572] START tests/unit/cli/test_fix_va8.py
+✅ tests/unit/cli/test_fix_va8.py (1.74s) — PASS
+▶︎ [538/572] START tests/unit/cli/test_validate_fail_on_warn.py
+✅ tests/unit/cli/test_openapi_agent_generator.py (2.00s) — PASS
+▶︎ [539/572] START tests/unit/builtins/test_builtins_adapters.py
+✅ tests/unit/cli/test_validate_fail_on_warn.py (1.73s) — PASS
+▶︎ [540/572] START tests/unit/builtins/test_transforms.py
+✅ tests/unit/builtins/test_transforms.py (2.13s) — PASS
+▶︎ [541/572] START tests/unit/architect/test_fallbacks.py
+✅ tests/unit/builtins/test_builtins_adapters.py (4.03s) — PASS
+▶︎ [542/572] START tests/unit/architect/test_builtins_analyze_project.py
+✅ tests/unit/architect/test_fallbacks.py (1.54s) — PASS
+▶︎ [543/572] START tests/unit/architect/test_yaml_writer_and_finalize.py
+✅ tests/unit/architect/test_builtins_analyze_project.py (1.86s) — PASS
+▶︎ [544/572] START tests/unit/architect/test_tool_matcher_resilience.py
+✅ tests/unit/architect/test_yaml_writer_and_finalize.py (1.65s) — PASS
+▶︎ [545/572] START tests/unit/architect/test_builtins_visualize_plan.py
+✅ tests/unit/architect/test_tool_matcher_resilience.py (1.66s) — PASS
+▶︎ [546/572] START tests/unit/architect/test_builtins_run_pipeline_in_memory.py
+✅ tests/unit/architect/test_builtins_visualize_plan.py (1.65s) — PASS
+▶︎ [547/572] START tests/unit/architect/test_builtins_estimate_plan_cost.py
+✅ tests/unit/architect/test_builtins_run_pipeline_in_memory.py (1.60s) — PASS
+▶︎ [548/572] START tests/unit/architect/test_planner_agent_toggle.py
+✅ tests/unit/architect/test_builtins_estimate_plan_cost.py (1.30s) — PASS
+▶︎ [549/572] START tests/unit/application/test_runner_shutdown.py
+✅ tests/unit/architect/test_planner_agent_toggle.py (1.30s) — PASS
+▶︎ [550/572] START tests/unit/application/test_executor_backend_factories.py
+✅ tests/unit/application/test_runner_shutdown.py (2.53s) — PASS
+▶︎ [551/572] START tests/unit/dsl/test_step_io_keys.py
+✅ tests/unit/application/test_executor_backend_factories.py (1.97s) — PASS
+▶︎ [552/572] START tests/unit/dsl/test_state_machine_transitions_parse.py
+✅ tests/unit/dsl/test_state_machine_transitions_parse.py (2.31s) — PASS
+▶︎ [553/572] START tests/unit/blueprint/test_loader_pipeline_name.py
+✅ tests/unit/blueprint/test_loader_pipeline_name.py (1.31s) — PASS
+▶︎ [554/572] START tests/unit/domain/validation/test_rules_schema_missing.py
+✅ tests/unit/dsl/test_step_io_keys.py (4.38s) — PASS
+▶︎ [555/572] START tests/unit/domain/validation/test_validation_suppressions.py
+✅ tests/unit/domain/validation/test_rules_schema_missing.py (2.04s) — PASS
+▶︎ [556/572] START tests/unit/domain/validation/test_v_cf1_infinite_loop.py
+✅ tests/unit/domain/validation/test_validation_suppressions.py (1.90s) — PASS
+▶︎ [557/572] START tests/unit/domain/validation/test_import_source_file.py
+✅ tests/unit/domain/validation/test_v_cf1_infinite_loop.py (1.78s) — PASS
+▶︎ [558/572] START tests/unit/domain/validation/test_rules_context_missing.py
+✅ tests/unit/domain/validation/test_import_source_file.py (1.50s) — PASS
+▶︎ [559/572] START tests/unit/domain/validation/test_comment_suppress_and_file.py
+✅ tests/unit/domain/validation/test_comment_suppress_and_file.py (1.49s) — PASS
+▶︎ [560/572] START tests/unit/domain/validation/test_rules_exception_linter.py
+✅ tests/unit/domain/validation/test_rules_context_missing.py (2.01s) — PASS
+▶︎ [561/572] START tests/unit/domain/validation/test_rules_context_isolation.py
+✅ tests/unit/domain/validation/test_rules_exception_linter.py (3.73s) — PASS
+▶︎ [562/572] START tests/unit/domain/validation/test_rules_templates_missing.py
+✅ tests/unit/domain/validation/test_rules_context_isolation.py (3.74s) — PASS
+▶︎ [563/572] START tests/unit/domain/validation/test_rules_agents_missing.py
+✅ tests/unit/domain/validation/test_rules_templates_missing.py (1.67s) — PASS
+▶︎ [564/572] START tests/unit/domain/validation/test_rules_imports_missing.py
+✅ tests/unit/domain/validation/test_rules_agents_missing.py (2.20s) — PASS
+▶︎ [565/572] START tests/unit/domain/validation/test_rules_orchestration_missing.py
+✅ tests/unit/domain/validation/test_rules_imports_missing.py (2.01s) — PASS
+▶︎ [566/572] START tests/unit/domain/validation/test_validation_new_features.py
+✅ tests/unit/domain/validation/test_rules_orchestration_missing.py (1.70s) — PASS
+▶︎ [567/572] START tests/unit/domain/validation/test_skills_for_vex1.py
+✅ tests/unit/domain/validation/test_skills_for_vex1.py (1.20s) — PASS
+▶︎ [568/572] START tests/unit/domain/validation/test_yaml_loc_indexing.py
+✅ tests/unit/domain/validation/test_yaml_loc_indexing.py (1.83s) — PASS
+▶︎ [569/572] START tests/unit/architect/states/test_planning_state.py
+✅ tests/unit/domain/validation/test_validation_new_features.py (3.55s) — PASS
+▶︎ [570/572] START tests/unit/architect/states/test_plan_approval_state.py
+✅ tests/unit/architect/states/test_planning_state.py (1.60s) — PASS
+▶︎ [571/572] START tests/unit/architect/states/test_validation_state.py
+✅ tests/unit/architect/states/test_plan_approval_state.py (1.59s) — PASS
+▶︎ [572/572] START tests/unit/architect/states/test_refinement_state.py
+✅ tests/unit/architect/states/test_validation_state.py (1.46s) — PASS
+✅ tests/unit/architect/states/test_refinement_state.py (1.46s) — PASS
+
+──── Summary ────
+PASS       : 561
+FAIL       : 11
+
+📋 Detailed log : output/controlled_test_run_20251218_143258.log
+🚨 Failure summary: output/failure_summary_20251218_143258.txt
+🗂️  JSON results  : output/results_20251218_143258.json
+
+⚠️  Tests completed with issues (exit code: 2)
+❌ Some tests failed. Run 'make test-fast-verbose' for detailed output.
+make: *** [test-fast] Error 1

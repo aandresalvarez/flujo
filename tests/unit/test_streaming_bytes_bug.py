@@ -19,6 +19,7 @@ from flujo.domain.streaming_protocol import (
     BinaryOnlyStreamingAgentProtocol,
     StreamingAgentProtocol,
 )
+from tests.test_types.fixtures import execute_simple_step
 
 
 class StubTextStreamingAgent(TextOnlyStreamingAgentProtocol):
@@ -92,8 +93,13 @@ class TestStreamingBytesBug:
         mock_step.agent = agent
 
         # Act
-        result = await executor.execute_step(
-            step=mock_step, data="test input", context=None, resources=mock_resources, stream=True
+        result = await execute_simple_step(
+            executor,
+            step=mock_step,
+            data="test input",
+            context=None,
+            resources=mock_resources,
+            stream=True,
         )
 
         # Assert
@@ -110,8 +116,13 @@ class TestStreamingBytesBug:
         mock_step.agent = agent
 
         # Act
-        result = await executor.execute_step(
-            step=mock_step, data="test input", context=None, resources=mock_resources, stream=True
+        result = await execute_simple_step(
+            executor,
+            step=mock_step,
+            data="test input",
+            context=None,
+            resources=mock_resources,
+            stream=True,
         )
 
         # Assert
@@ -128,8 +139,13 @@ class TestStreamingBytesBug:
         mock_step.agent = agent
 
         # Act
-        result = await executor.execute_step(
-            step=mock_step, data="test input", context=None, resources=mock_resources, stream=True
+        result = await execute_simple_step(
+            executor,
+            step=mock_step,
+            data="test input",
+            context=None,
+            resources=mock_resources,
+            stream=True,
         )
 
         # Assert
@@ -148,8 +164,13 @@ class TestStreamingBytesBug:
         mock_step.agent = agent
 
         # Act
-        result = await executor.execute_step(
-            step=mock_step, data="test input", context=None, resources=mock_resources, stream=True
+        result = await execute_simple_step(
+            executor,
+            step=mock_step,
+            data="test input",
+            context=None,
+            resources=mock_resources,
+            stream=True,
         )
 
         # Assert
@@ -166,8 +187,13 @@ class TestStreamingBytesBug:
         mock_step.agent = agent
 
         # Act
-        result = await executor.execute_step(
-            step=mock_step, data="test input", context=None, resources=mock_resources, stream=True
+        result = await execute_simple_step(
+            executor,
+            step=mock_step,
+            data="test input",
+            context=None,
+            resources=mock_resources,
+            stream=True,
         )
 
         # Assert - Mixed types should fall back to string representation
@@ -186,8 +212,13 @@ class TestStreamingBytesBug:
         mock_step.agent = agent
 
         # Act
-        result = await executor.execute_step(
-            step=mock_step, data="test input", context=None, resources=mock_resources, stream=True
+        result = await execute_simple_step(
+            executor,
+            step=mock_step,
+            data="test input",
+            context=None,
+            resources=mock_resources,
+            stream=True,
         )
 
         # Assert
@@ -204,8 +235,13 @@ class TestStreamingBytesBug:
         mock_step.agent = agent
 
         # Act
-        result = await executor.execute_step(
-            step=mock_step, data="test input", context=None, resources=mock_resources, stream=True
+        result = await execute_simple_step(
+            executor,
+            step=mock_step,
+            data="test input",
+            context=None,
+            resources=mock_resources,
+            stream=True,
         )
 
         # Assert
@@ -222,8 +258,13 @@ class TestStreamingBytesBug:
         mock_step.agent = agent
 
         # Act
-        result = await executor.execute_step(
-            step=mock_step, data="test input", context=None, resources=mock_resources, stream=True
+        result = await execute_simple_step(
+            executor,
+            step=mock_step,
+            data="test input",
+            context=None,
+            resources=mock_resources,
+            stream=True,
         )
 
         # Assert

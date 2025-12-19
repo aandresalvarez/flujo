@@ -5,6 +5,7 @@ from flujo import Step
 from flujo.testing.utils import gather_result
 from flujo.domain.models import StepResult
 from flujo.domain.plugins import PluginOutcome
+from tests.test_types.fixtures import execute_simple_step
 
 
 class FailingAgent:
@@ -45,7 +46,7 @@ async def test_simple_step_returns_stepresult_on_failure():
 
     executor = UltraStepExecutor()
 
-    result = await executor.execute_step(step, "test_data")
+    result = await execute_simple_step(executor, step, "test_data")
 
     assert isinstance(result, StepResult)
     assert not result.success
@@ -64,7 +65,7 @@ async def test_streaming_step_returns_stepresult_on_failure():
 
     executor = UltraStepExecutor()
 
-    result = await executor.execute_step(step, "test_data", stream=True)
+    result = await execute_simple_step(executor, step, "test_data", stream=True)
 
     assert isinstance(result, StepResult)
     assert not result.success
@@ -88,7 +89,7 @@ async def test_complex_step_returns_stepresult_on_failure():
 
     executor = UltraStepExecutor()
 
-    result = await executor.execute_step(step, "test_data")
+    result = await execute_simple_step(executor, step, "test_data")
 
     assert isinstance(result, StepResult)
     assert not result.success
@@ -111,11 +112,11 @@ async def test_critical_exceptions_are_re_raised():
     executor = UltraStepExecutor()
 
     with pytest.raises(PausedException, match="Test pause"):
-        await executor.execute_step(paused_step, "test_data")
+        await execute_simple_step(executor, paused_step, "test_data")
 
     # Test streaming with InfiniteFallbackError
     with pytest.raises(InfiniteFallbackError, match="Test infinite fallback"):
-        await executor.execute_step(paused_step, "test_data", stream=True)
+        await execute_simple_step(executor, paused_step, "test_data", stream=True)
 
 
 @pytest.mark.asyncio
@@ -131,12 +132,12 @@ async def test_consistent_api_contract():
     )
 
     # Simple step
-    result1 = await executor.execute_step(step, "test_data")
+    result1 = await execute_simple_step(executor, step, "test_data")
     assert isinstance(result1, StepResult)
     assert not result1.success
 
     # Streaming step
-    result2 = await executor.execute_step(step, "test_data", stream=True)
+    result2 = await execute_simple_step(executor, step, "test_data", stream=True)
     assert isinstance(result2, StepResult)
     assert not result2.success
 
@@ -149,7 +150,7 @@ async def test_consistent_api_contract():
             "plugins": [(MockPlugin(), 1)],
         }
     )
-    result3 = await executor.execute_step(complex_step, "test_data")
+    result3 = await execute_simple_step(executor, complex_step, "test_data")
     assert isinstance(result3, StepResult)
     assert not result3.success
 
@@ -165,7 +166,7 @@ async def test_error_information_preservation():
 
     executor = UltraStepExecutor()
 
-    result = await executor.execute_step(step, "test_data")
+    result = await execute_simple_step(executor, step, "test_data")
 
     assert "RuntimeError" in result.feedback
     assert "Test failure" in result.feedback
@@ -217,7 +218,7 @@ async def test_timing_preservation_for_failed_steps():
 
     executor = UltraStepExecutor()
 
-    result = await executor.execute_step(slow_step, "test_data")
+    result = await execute_simple_step(executor, slow_step, "test_data")
 
     # Should preserve actual execution time
     assert isinstance(result, StepResult)

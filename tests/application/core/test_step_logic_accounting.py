@@ -8,6 +8,7 @@ from flujo.domain.dsl.step import Step, StepConfig
 from flujo.domain.models import StepResult
 from flujo.domain.plugins import PluginOutcome, ValidationPlugin
 from flujo.application.core.executor_core import ExecutorCore
+from tests.test_types.fixtures import execute_simple_step
 
 
 class StubAgent:
@@ -76,7 +77,8 @@ async def test_failed_primary_step_preserves_metrics() -> None:
 
     # Execute the step using ExecutorCore
     executor = ExecutorCore()
-    result = await executor.execute_step(
+    result = await execute_simple_step(
+        executor,
         step=step,
         data="test input",
         context=None,
@@ -125,7 +127,8 @@ async def test_successful_fallback_preserves_metrics() -> None:
 
     # Execute the step using ExecutorCore
     executor = ExecutorCore()
-    result = await executor.execute_step(
+    result = await execute_simple_step(
+        executor,
         step=primary_step,
         data="test input",
         context=None,
@@ -175,7 +178,8 @@ async def test_failed_fallback_accumulates_metrics() -> None:
 
     # Execute the step using ExecutorCore
     executor = ExecutorCore()
-    result = await executor.execute_step(
+    result = await execute_simple_step(
+        executor,
         step=primary_step,
         data="test input",
         context=None,
@@ -223,7 +227,8 @@ async def test_multiple_retries_preserve_last_attempt_metrics() -> None:
 
     # Execute the step using ExecutorCore
     executor = ExecutorCore()
-    result = await executor.execute_step(
+    result = await execute_simple_step(
+        executor,
         step=step,
         data="test input",
         context=None,

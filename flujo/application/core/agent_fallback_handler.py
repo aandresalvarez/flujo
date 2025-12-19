@@ -161,7 +161,7 @@ class AgentFallbackHandler:
             return FallbackHandlingResult(
                 outcome=Failure(
                     error=fb_exc,
-                    feedback=f"Fallback execution failed: {fb_exc}",
+                    feedback=f"Original error: {primary_feedback}; Fallback error: {fb_exc}",
                     step_result=StepResult(
                         name=_safe_step_name(step),
                         output=None,
@@ -170,7 +170,7 @@ class AgentFallbackHandler:
                         latency_s=time_perf_ns_to_seconds(time_perf_ns() - start_ns),
                         token_counts=result.token_counts,
                         cost_usd=result.cost_usd,
-                        feedback=f"Fallback execution failed: {fb_exc}",
+                        feedback=f"Original error: {primary_feedback}; Fallback error: {fb_exc}",
                         branch_context=(
                             attempt_context if getattr(step, "updates_context", False) else None
                         ),
@@ -186,15 +186,33 @@ class AgentFallbackHandler:
 
         from ...domain.models import StepOutcome as _StepOutcome
 
-        if isinstance(fallback_result_sr, StepResult):
-            if fallback_result_sr.success:
-                if fallback_result_sr.metadata_ is None:
-                    fallback_result_sr.metadata_ = {}
-                fallback_result_sr.metadata_.update(
-                    {"fallback_triggered": True, "original_error": primary_feedback}
-                )
+        if isinstance(fallback_result_sr, (StepResult, Success)):
+            # Normalize to StepResult for metric processing
+            final_sr: StepResult
+            if isinstance(fallback_result_sr, Success):
+                final_sr = fallback_result_sr.step_result
+            else:
+                final_sr = fallback_result_sr
+
+            preserve_diagnostics = False
+            try:
+                cfg = getattr(step, "config", None)
+                preserve_diagnostics = getattr(cfg, "preserve_fallback_diagnostics", False)
+            except Exception:
+                pass
+            if final_sr.metadata_ is None:
+                final_sr.metadata_ = {}
+            final_sr.metadata_.update(
+                {
+                    "fallback_triggered": True,
+                    "original_error": primary_feedback,
+                    "preserve_fallback_diagnostics": preserve_diagnostics,
+                }
+            )
+
+            if final_sr.success:
                 try:
-                    fb_tokens = int(fallback_result_sr.token_counts or 0)
+                    fb_tokens = int(final_sr.token_counts or 0)
                 except Exception:
                     fb_tokens = 0
                 try:
@@ -219,9 +237,9 @@ class AgentFallbackHandler:
                     else primary_unit_tokens * max(1, total_attempts)
                 )
                 fb_unit = fb_tokens if fb_tokens not in (None, 0) else primary_unit_tokens
-                fallback_result_sr.token_counts = primary_total + fb_unit
+                final_sr.token_counts = primary_total + fb_unit
                 try:
-                    fallback_result_sr.token_counts = int(fallback_result_sr.token_counts)
+                    final_sr.token_counts = int(final_sr.token_counts)
                 except Exception:
                     pass
                 try:
@@ -229,20 +247,18 @@ class AgentFallbackHandler:
                     add_fn = getattr(usage_meter, "add", None) if usage_meter is not None else None
                     if callable(add_fn):
                         await add_fn(
-                            float(fallback_result_sr.cost_usd or 0.0),
+                            float(final_sr.cost_usd or 0.0),
                             int(state.prompt_tokens_latest or 0) + fb_tokens,
                             0,
                         )
                 except Exception:
                     pass
                 try:
-                    fb_attempts = int(getattr(fallback_result_sr, "attempts", 1) or 1)
-                    fallback_result_sr.attempts = int(total_attempts + fb_attempts)
+                    fb_attempts = int(getattr(final_sr, "attempts", 1) or 1)
+                    final_sr.attempts = int(total_attempts + fb_attempts)
                 except Exception:
                     pass
-                fallback_result_sr.feedback = (
-                    fallback_result_sr.feedback if fallback_result_sr.feedback else None
-                )
+                final_sr.feedback = final_sr.feedback if final_sr.feedback else None
                 try:
                     fb_handler = getattr(core, "_fallback_handler", None)
                     reset_fn = (
@@ -254,11 +270,13 @@ class AgentFallbackHandler:
                     pass
                 await close_resources(None)
                 return FallbackHandlingResult(
-                    outcome=Success(step_result=fallback_result_sr), resources_closed=True
+                    outcome=Success(step_result=final_sr),
+                    resources_closed=True,
                 )
 
+            # Fallback failed but returned a StepResult/Success
             primary_fb_failure = state.last_plugin_failure_feedback or primary_feedback
-            combo_fb = f"Original error: {primary_fb_failure}; Fallback error: {fallback_result_sr.feedback}"
+            combo_fb = f"Original error: {primary_fb_failure}; Fallback error: {final_sr.feedback}"
             await close_resources(attempt_exc)
             return FallbackHandlingResult(
                 outcome=Failure(
@@ -274,8 +292,8 @@ class AgentFallbackHandler:
                             (state.best_primary_tokens or state.primary_tokens_total)
                             or int(result.token_counts or 0)
                         )
-                        + int(getattr(fallback_result_sr, "token_counts", 0) or 0),
-                        cost_usd=float(getattr(fallback_result_sr, "cost_usd", 0.0) or 0.0),
+                        + int(getattr(final_sr, "token_counts", 0) or 0),
+                        cost_usd=float(getattr(final_sr, "cost_usd", 0.0) or 0.0),
                         feedback=combo_fb,
                         branch_context=(
                             pre_attempt_context
@@ -296,28 +314,16 @@ class AgentFallbackHandler:
             )
 
         if isinstance(fallback_result_sr, _StepOutcome):
-            if (
-                isinstance(fallback_result_sr, Success)
-                and fallback_result_sr.step_result is not None
-            ):
-                if fallback_result_sr.step_result.metadata_ is None:
-                    fallback_result_sr.step_result.metadata_ = {}
-                fallback_result_sr.step_result.metadata_.update(
-                    {"fallback_triggered": True, "original_error": primary_feedback}
-                )
-                return FallbackHandlingResult(
-                    outcome=Success(step_result=fallback_result_sr.step_result),
-                    resources_closed=False,
-                )
             unwrap_fn = getattr(core, "_unwrap_outcome_to_step_result", None)
             if not callable(unwrap_fn):
                 raise TypeError("Executor core must provide _unwrap_outcome_to_step_result()")
             sr_fb = unwrap_fn(fallback_result_sr, _safe_step_name(step))
             failure_fb = state.last_plugin_failure_feedback or primary_feedback
+            combo_fb = f"Original error: {failure_fb}; Fallback error: {getattr(fallback_result_sr, 'feedback', 'Unknown')}"
             return FallbackHandlingResult(
                 outcome=Failure(
                     error=attempt_exc,
-                    feedback=f"Original error: {failure_fb}; Fallback error: {getattr(fallback_result_sr, 'feedback', 'Unknown')}",
+                    feedback=combo_fb,
                     step_result=StepResult(
                         name=_safe_step_name(step),
                         output=None,
@@ -327,7 +333,7 @@ class AgentFallbackHandler:
                         token_counts=int(result.token_counts or 0)
                         + int(getattr(sr_fb, "token_counts", 0) or 0),
                         cost_usd=float(getattr(sr_fb, "cost_usd", 0.0) or 0.0),
-                        feedback=f"Fallback execution failed: {attempt_exc}",
+                        feedback=combo_fb,
                         branch_context=None,
                         metadata_={"fallback_triggered": True, "original_error": failure_fb},
                         step_history=[],

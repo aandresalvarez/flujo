@@ -2,7 +2,6 @@
 
 import pytest
 from datetime import datetime
-from unittest.mock import Mock
 
 from flujo.application.core.state_manager import StateManager
 from flujo.domain.models import PipelineContext
@@ -18,23 +17,22 @@ class TestStateManagerFallbackSerialization:
 
     def test_fallback_serialization_includes_all_essential_fields(self, state_manager):
         """Test that fallback serialization includes all essential context fields."""
-        # Create a mock context with various fields
-        mock_context = Mock(spec=PipelineContext)
-        mock_context.initial_prompt = "test prompt"
-        mock_context.pipeline_id = "test_pipeline_123"
-        mock_context.pipeline_name = "Test Pipeline"
-        mock_context.pipeline_version = "1.0.0"
-        mock_context.total_steps = 5
-        mock_context.error_message = "test error"
-        mock_context.run_id = "test_run_456"
-        mock_context.created_at = datetime.now()
-        mock_context.updated_at = datetime.now()
-        mock_context.status = "running"
-        mock_context.current_step = 2
-        mock_context.last_error = "previous error"
-        mock_context.metadata = {"key": "value"}
+        # Create a real context with various fields
+        context = PipelineContext(initial_prompt="test prompt")
+        context.pipeline_id = "test_pipeline_123"
+        context.pipeline_name = "Test Pipeline"
+        context.pipeline_version = "1.0.0"
+        context.total_steps = 5
+        context.error_message = "test error"
+        context.run_id = "test_run_456"
+        context.created_at = datetime.now()
+        context.updated_at = datetime.now()
+        context.status = "running"
+        context.current_step = 2
+        context.last_error = "previous error"
+        context.metadata = {"key": "value"}
 
-        fallback_context = state_manager._build_context_fallback(mock_context)
+        fallback_context = state_manager._build_context_fallback(context)
 
         assert fallback_context["initial_prompt"] == "test prompt"
         assert fallback_context["pipeline_id"] == "test_pipeline_123"
@@ -50,12 +48,16 @@ class TestStateManagerFallbackSerialization:
 
     def test_fallback_serialization_with_missing_fields(self, state_manager):
         """Test that fallback serialization handles missing fields gracefully."""
-        # Create a minimal mock context with only some fields
-        mock_context = Mock(spec=PipelineContext)
-        mock_context.initial_prompt = "minimal prompt"
+
+        # Minimal context object with only the fields under test
+        class MinimalContext:
+            def __init__(self, initial_prompt: str) -> None:
+                self.initial_prompt = initial_prompt
+
+        context = MinimalContext("minimal prompt")
         # Other fields are not set, so they should get default values
 
-        fallback_context = state_manager._build_context_fallback(mock_context)
+        fallback_context = state_manager._build_context_fallback(context)
 
         # Verify default values are used for missing fields
         assert fallback_context["initial_prompt"] == "minimal prompt"
@@ -68,19 +70,18 @@ class TestStateManagerFallbackSerialization:
 
     def test_error_fallback_serialization(self, state_manager):
         """Test that error fallback serialization includes essential fields."""
-        # Create a mock context
-        mock_context = Mock(spec=PipelineContext)
-        mock_context.initial_prompt = "error test prompt"
-        mock_context.pipeline_id = "error_pipeline_123"
-        mock_context.pipeline_name = "Error Test Pipeline"
-        mock_context.pipeline_version = "2.0.0"
-        mock_context.total_steps = 3
-        mock_context.run_id = "error_run_789"
+        # Create a real context
+        context = PipelineContext(initial_prompt="error test prompt")
+        context.pipeline_id = "error_pipeline_123"
+        context.pipeline_name = "Error Test Pipeline"
+        context.pipeline_version = "2.0.0"
+        context.total_steps = 3
+        context.run_id = "error_run_789"
 
         # Simulate the error fallback serialization
         error_message = "Serialization failed: test error"
         error_fallback_context = state_manager._build_context_fallback(
-            mock_context, error_message=error_message
+            context, error_message=error_message
         )
 
         # Verify error fallback includes essential fields
@@ -95,21 +96,20 @@ class TestStateManagerFallbackSerialization:
     def test_fallback_serialization_preserves_data_integrity(self, state_manager):
         """Test that fallback serialization preserves data integrity."""
         # Create a context with complex data
-        mock_context = Mock(spec=PipelineContext)
-        mock_context.initial_prompt = "complex prompt with special chars: ñáéíóú 🚀🎉"
-        mock_context.pipeline_id = "complex_pipeline_with_underscores_123"
-        mock_context.pipeline_name = "Complex Pipeline with Spaces"
-        mock_context.pipeline_version = "1.2.3-beta"
-        mock_context.total_steps = 42
-        mock_context.error_message = "Complex error with symbols: @#$%^&*()"
-        mock_context.run_id = "complex_run_id_with_underscores_456"
-        mock_context.metadata = {
+        context = PipelineContext(initial_prompt="complex prompt with special chars: ñáéíóú 🚀🎉")
+        context.pipeline_id = "complex_pipeline_with_underscores_123"
+        context.pipeline_name = "Complex Pipeline with Spaces"
+        context.pipeline_version = "1.2.3-beta"
+        context.total_steps = 42
+        context.error_message = "Complex error with symbols: @#$%^&*()"
+        context.run_id = "complex_run_id_with_underscores_456"
+        context.metadata = {
             "nested": {"data": "value"},
             "list": [1, 2, 3],
             "special_chars": "ñáéíóú 🚀🎉",
         }
 
-        fallback_context = state_manager._build_context_fallback(mock_context)
+        fallback_context = state_manager._build_context_fallback(context)
 
         # Verify data integrity is preserved
         assert (

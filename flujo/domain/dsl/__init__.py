@@ -68,6 +68,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     # Granular execution
     "GranularStep": (".granular", "GranularStep"),
     "ResumeError": (".granular", "ResumeError"),
+    # Visualization - moved to flujo.visualization
 }
 
 
@@ -85,7 +86,10 @@ def __getattr__(name: str) -> object:
         import importlib
 
         module = importlib.import_module(module_path, package=__name__)
-        value = getattr(module, attr_name)
+        if not attr_name:
+            value = module
+        else:
+            value = getattr(module, attr_name)
         # Cache in globals for subsequent access
         globals()[name] = value
         return value
