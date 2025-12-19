@@ -17,7 +17,7 @@ pytestmark = [pytest.mark.benchmark, pytest.mark.slow]
 # step_logic module was intentionally removed during refactoring
 # The functionality has been migrated to ultra_executor
 from flujo.application.core.executor_core import ExecutorCore
-from flujo.steps.cache_step import CacheStep
+from flujo.domain.dsl.cache_step import CacheStep
 from flujo.domain.models import StepResult
 
 

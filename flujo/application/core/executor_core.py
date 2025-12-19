@@ -25,31 +25,32 @@ from .agent_handler import AgentHandler
 from .shadow_evaluator import ShadowEvaluator
 
 from .runtime_builder import ExecutorCoreDeps, FlujoRuntimeBuilder
-from .executor_helpers import (
-    _UsageTracker,
-    format_feedback,
-    safe_step_name,
-    normalize_frame_context,
-    set_quota_and_hydrate,
-    get_current_quota,
-    set_current_quota,
-    reset_current_quota,
-    hash_obj,
-    isolate_context,
-    merge_context_updates,
-    accumulate_loop_context,
-    update_context_state,
-    is_complex_step,
-    log_execution_error,
-    make_execution_frame,
-    build_failure,
-    handle_missing_agent_exception,
-    persist_and_finalize,
-    handle_unexpected_exception,
-    maybe_use_cache,
-    execute_entrypoint,
+from .execution.executor_helpers import (
     PluginError,
     StepExecutor,
+    _CACHE_OVERRIDE,
+    _UsageTracker,
+    accumulate_loop_context,
+    build_failure,
+    execute_entrypoint,
+    format_feedback,
+    get_current_quota,
+    handle_missing_agent_exception,
+    handle_unexpected_exception,
+    hash_obj,
+    is_complex_step,
+    isolate_context,
+    log_execution_error,
+    make_execution_frame,
+    maybe_use_cache,
+    merge_context_updates,
+    normalize_frame_context,
+    persist_and_finalize,
+    reset_current_quota,
+    safe_step_name,
+    set_current_quota,
+    set_quota_and_hydrate,
+    update_context_state,
 )
 from .step_policies import (
     AgentResultUnpacker,
@@ -87,7 +88,7 @@ from .executor_protocols import (
     IUsageMeter,
     ITelemetry,
 )
-from .default_cache_components import (
+from .runtime.default_cache_components import (
     ThreadSafeMeter,
     InMemoryLRUBackend,
     OrjsonSerializer,
@@ -121,7 +122,6 @@ except Exception:
     _DEFAULT_STRICT_CONTEXT_ISOLATION = False
     _DEFAULT_STRICT_CONTEXT_MERGE = False
 
-from .executor_helpers import _CACHE_OVERRIDE
 
 if TYPE_CHECKING:
     from .state_manager import StateManager
@@ -175,6 +175,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     _pipeline_orchestrator: "PipelineOrchestrator"
     _import_orchestrator: "ImportOrchestrator"
     _validation_orchestrator: "ValidationOrchestrator"
+    _context_setter: (
+        Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None] | None
+    )
 
     # Context variables moved to respective manager classes
 

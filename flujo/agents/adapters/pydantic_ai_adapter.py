@@ -84,7 +84,7 @@ class PydanticAIAdapter:
         This prevents TypeError when passing vendor-specific kwargs to agents
         that don't support them (e.g., response_format for simple agents).
         """
-        from flujo.application.core.context_manager import _accepts_param
+        from flujo.application.core.context.context_manager import _accepts_param
 
         filtered: dict[str, Any] = {}
 

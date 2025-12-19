@@ -42,7 +42,7 @@ def policy_name_for_step(step_obj: Any) -> str:
             DynamicParallelRouterStep as _Router,
         )
         from flujo.domain.dsl.step import HumanInTheLoopStep as _Hitl
-        from flujo.steps.cache_step import CacheStep as _Cache
+        from flujo.domain.dsl.cache_step import CacheStep as _Cache
     except Exception:
         _Loop = _Par = _Cond = _Router = _Hitl = _Cache = None
     try:

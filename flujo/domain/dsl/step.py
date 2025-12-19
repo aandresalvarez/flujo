@@ -45,13 +45,13 @@ from ...exceptions import StepInvocationError
 ExecutionMode = Literal["sync", "background"]
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flujo.infra.caching import CacheBackend
+    from ..caching import CacheBackend
     from .loop import LoopStep, MapStep
     from .conditional import ConditionalStep
     from .parallel import ParallelStep
     from .pipeline import Pipeline
     from .dynamic_router import DynamicParallelRouterStep
-    from flujo.steps.cache_step import CacheStep
+    from .cache_step import CacheStep
 
 # Type variables
 StepInT = TypeVar("StepInT")
@@ -1073,7 +1073,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         wrapped_step: "Step[Any, Any]",
         cache_backend: Optional[CacheBackend] = None,
     ) -> "CacheStep[Any, Any]":
-        from flujo.steps.cache_step import CacheStep
+        from .cache_step import CacheStep
 
         return CacheStep.cached(wrapped_step, cache_backend)
 

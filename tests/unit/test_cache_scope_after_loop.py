@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from flujo.application.core.policies.cache_policy import DefaultCacheStepExecutor
-from flujo.steps.cache_step import CacheStep
+from flujo.domain.dsl.cache_step import CacheStep
 from flujo.domain.dsl import Step
 from flujo.domain.models import StepResult, Success
 from flujo.application.core.types import ExecutionFrame

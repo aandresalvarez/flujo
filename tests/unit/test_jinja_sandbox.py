@@ -1,6 +1,6 @@
 import pytest
 
-from flujo.builtins_extras import render_jinja_template
+from flujo.builtins.extras import render_jinja_template
 
 
 @pytest.mark.asyncio

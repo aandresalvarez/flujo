@@ -17,7 +17,7 @@ from flujo.domain.models import (
 )
 from flujo.domain.outcomes import to_outcome
 from flujo.infra import telemetry
-from flujo.steps.cache_step import CacheStep, _generate_cache_key
+from flujo.domain.dsl.cache_step import CacheStep, _generate_cache_key
 
 from ..context_adapter import _build_context_update, _inject_context
 from ..policy_registry import StepPolicy

@@ -210,7 +210,7 @@ module = [
     "flujo.validation.linters_orchestration",
     "flujo.validation.linters_extended",
     # Execution finalization with async patterns
-    "flujo.application.core.execution_manager_finalization",
+    "flujo.application.core.execution.execution_manager_finalization",
     # Mermaid generation with complex string handling
     "flujo.domain.dsl.pipeline_mermaid",
 ]
@@ -239,7 +239,7 @@ source = [
 [[tool.mypy.overrides]]
 module = [
   "flujo.application.core.step_policies",
-  "flujo.application.core.execution_manager",
+  "flujo.application.core.execution.execution_manager",
   "flujo.application.core.step_executor",
   "flujo.domain.dsl.step",
 ]
@@ -272,7 +272,7 @@ disable_error_code = [
 
 [[tool.mypy.overrides]]
 module = [
-  "flujo.application.core.loop_executor",
+  "flujo.application.core.execution.loop_executor",
   "flujo.plugins.sql_validator",
   "flujo.application.runner",
 ]

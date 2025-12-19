@@ -807,7 +807,7 @@ class TestIntegration:
         executor = ExecutorCore(enable_cache=False)
 
         # Create a CacheStep (which should be handled by step logic)
-        from flujo.steps.cache_step import CacheStep
+        from flujo.domain.dsl.cache_step import CacheStep
 
         # Create a wrapped step first
         wrapped_agent = MockAgent("wrapped output")

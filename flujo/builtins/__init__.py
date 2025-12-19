@@ -4,16 +4,16 @@ from __future__ import annotations
 # Imports are intentionally wildcarded to preserve public surface and side-effect
 # registrations on import (skills registry population).
 
-from .agents.wrapper import make_agent_async  # noqa: F401
-from . import builtins_core as _core
-from . import builtins_extras as _extras
-from .builtins_core import register_core_builtins  # noqa: F401,F403
-from .builtins_architect import *  # noqa: F401,F403
-from .builtins_support import *  # noqa: F401,F403
-from .builtins_extras import _DDGSAsync, _DDGS_CLASS  # noqa: F401
-from .builtins_extras import *  # noqa: F401,F403
-from .builtins_optional import register_optional_builtins  # noqa: F401,F403
-from .builtins_context import register_context_builtins  # noqa: F401,F403
+from ..agents.wrapper import make_agent_async  # noqa: F401
+from . import core as _core
+from . import extras as _extras
+from .core import register_core_builtins  # noqa: F401,F403
+from .architect import *  # noqa: F401,F403
+from .support import *  # noqa: F401,F403
+from .extras import _DDGSAsync, _DDGS_CLASS  # noqa: F401
+from .extras import *  # noqa: F401,F403
+from .optional import register_optional_builtins  # noqa: F401,F403
+from .context import register_context_builtins  # noqa: F401,F403
 
 
 def _register_builtins() -> None:

@@ -8,7 +8,7 @@ from flujo.domain.dsl.loop import LoopStep
 from flujo.domain.dsl.parallel import ParallelStep
 from flujo.domain.dsl.conditional import ConditionalStep
 from flujo.domain.dsl.dynamic_router import DynamicParallelRouterStep
-from flujo.steps.cache_step import CacheStep
+from flujo.domain.dsl.cache_step import CacheStep
 from flujo.domain.models import Success, StepResult
 from flujo.domain.dsl.pipeline import Pipeline
 

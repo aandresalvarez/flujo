@@ -1,49 +1,14 @@
-from typing import (
-    TypeVar,
-    Generic,
-    Optional,
-    Callable,
-    Awaitable,
-    TYPE_CHECKING,
-)
-from dataclasses import dataclass
-from ...domain.models import BaseModel
+"""Compatibility shim for `types` (moved to core/support/)."""
 
-from ...domain.models import UsageLimits, PipelineResult, Quota
-from ...domain.interfaces import StepLike
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    pass  # pragma: no cover
+    from flujo.application.core.support.types import *  # noqa: F401,F403
 
+from importlib import import_module
+import sys as _sys
 
-TContext_w_Scratch = TypeVar("TContext_w_Scratch", bound=BaseModel)
-
-
-@dataclass
-class ExecutionFrame(Generic[TContext_w_Scratch]):
-    """
-    Encapsulates all state for a single step execution call.
-
-    This provides a formal, type-safe data contract for internal execution calls,
-    eliminating parameter-passing bugs and making recursive logic easier to reason about.
-    """
-
-    # Core execution parameters
-    step: StepLike
-    data: object
-    context: Optional[TContext_w_Scratch]
-    resources: object | None
-    limits: Optional[UsageLimits]
-
-    # Streaming and callback parameters
-    stream: bool
-    on_chunk: Optional[Callable[[object], Awaitable[None]]]
-    # Context management
-    context_setter: Callable[[PipelineResult[TContext_w_Scratch], TContext_w_Scratch | None], None]
-
-    # Optional quota for proactive reservations
-    quota: Optional[Quota] = None
-
-    # Optional parameters for backward compatibility and advanced features
-    result: object | None = None  # For backward compatibility
-    _fallback_depth: int = 0  # Track fallback recursion depth
+_module = import_module("flujo.application.core.support.types")
+_sys.modules[__name__] = _module

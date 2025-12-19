@@ -1,15 +1,14 @@
+"""Compatibility shim for `async_iter` (moved to core/support/)."""
+
 from __future__ import annotations
 
-import inspect
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from flujo.application.core.support.async_iter import *  # noqa: F401,F403
 
-async def aclose_if_possible(obj: object) -> None:
-    """Best-effort `aclose()` for async generators/iterators that support it."""
-    try:
-        aclose = getattr(obj, "aclose", None)
-        if callable(aclose):
-            res = aclose()
-            if inspect.isawaitable(res):
-                await res
-    except Exception:
-        pass
+from importlib import import_module
+import sys as _sys
+
+_module = import_module("flujo.application.core.support.async_iter")
+_sys.modules[__name__] = _module

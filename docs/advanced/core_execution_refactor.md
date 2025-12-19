@@ -30,7 +30,7 @@ The refactor decomposes the monolithic method into dedicated components within t
 
 ### 1. ExecutionManager
 
-**File**: `flujo/application/core/execution_manager.py`
+**File**: `flujo/application/core/execution/execution_manager.py`
 
 The main orchestrator that coordinates all execution components. It provides a clean interface for executing pipeline steps while delegating specific responsibilities to specialized components.
 
@@ -46,7 +46,7 @@ The main orchestrator that coordinates all execution components. It provides a c
 
 ### 2. StateManager
 
-**File**: `flujo/application/core/state_manager.py`
+**File**: `flujo/application/core/state/state_manager.py`
 
 Handles all workflow state persistence and loading operations.
 
@@ -78,7 +78,7 @@ breach_event hooks are removed.
 
 ### 4. StepCoordinator
 
-**File**: `flujo/application/core/step_coordinator.py`
+**File**: `flujo/application/core/orchestration/step_coordinator.py`
 
 Coordinates individual step execution with telemetry and hook management.
 
@@ -96,7 +96,7 @@ Coordinates individual step execution with telemetry and hook management.
 
 ### 5. TypeValidator
 
-**File**: `flujo/application/core/type_validator.py`
+**File**: `flujo/application/core/support/type_validator.py`
 
 Validates type compatibility between pipeline steps.
 

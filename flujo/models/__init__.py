@@ -1,5 +1,6 @@
-"""
-Domain models for flujo.
+"""Public facade for Flujo domain models.
+
+This module is a stable import path for user-facing types.
 """
 
 from ..domain.models import (

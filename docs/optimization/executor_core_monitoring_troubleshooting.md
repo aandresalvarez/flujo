@@ -93,7 +93,7 @@ config = OptimizationConfig(
 
 #### Custom Telemetry Handlers
 ```python
-from flujo.application.core.optimized_telemetry import TelemetryHandler
+from flujo.application.core.runtime.optimized_telemetry import TelemetryHandler
 
 class CustomTelemetryHandler(TelemetryHandler):
     def handle_metric(self, metric_name, value, timestamp, tags=None):

@@ -62,7 +62,7 @@ def build_cache_step(
     compiled_imports: CompiledImports | None,
     make_step_fn: BuildStep,
 ) -> AnyStep:
-    from flujo.steps.cache_step import CacheStep as _CacheStep
+    from flujo.domain.dsl.cache_step import CacheStep as _CacheStep
 
     if not model.wrapped_step:
         raise BlueprintError("cache step requires 'wrapped_step'")
