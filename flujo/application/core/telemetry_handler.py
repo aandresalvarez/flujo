@@ -1,33 +1,9 @@
+"""Compatibility shim for `telemetry_handler` (moved to core/runtime/)."""
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from importlib import import_module
+import sys as _sys
 
-from ...infra import telemetry
-
-if TYPE_CHECKING:
-    from .executor_core import ExecutorCore
-    from .types import TContext_w_Scratch
-
-
-class TelemetryHandler:
-    """Handles lightweight telemetry/logging concerns for ExecutorCore."""
-
-    def __init__(self, core: "ExecutorCore[TContext_w_Scratch]") -> None:
-        self._core: "ExecutorCore[TContext_w_Scratch]" = core
-
-    def log_step_start(self, step: object, *, stream: bool, fallback_depth: int) -> None:
-        try:
-            telemetry.logfire.debug(
-                f"Executing step: {self._core._safe_step_name(step)} "
-                f"type={type(step).__name__} stream={stream} depth={fallback_depth}"
-            )
-        except Exception:
-            pass
-
-    def log_execution_error(self, step_name: str, exc: Exception) -> None:
-        try:
-            telemetry.logfire.error(
-                f"[DEBUG] ExecutorCore caught unexpected exception at step '{step_name}': {type(exc).__name__}: {exc}"
-            )
-        except Exception:
-            pass
+_module = import_module("flujo.application.core.runtime.telemetry_handler")
+_sys.modules[__name__] = _module

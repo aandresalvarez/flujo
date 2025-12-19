@@ -28,7 +28,7 @@ export FLUJO_GOVERNANCE_POLICY_MODULE="my_project.policies:MyPolicy"
 Policies implement an async `evaluate(...)` method and return a `GovernanceDecision`.
 
 ```python
-from flujo.application.core.governance_policy import GovernanceDecision
+from flujo.application.core.policy.governance_policy import GovernanceDecision
 
 class MyPolicy:
     async def evaluate(self, *, core, step, data, context, resources) -> GovernanceDecision:

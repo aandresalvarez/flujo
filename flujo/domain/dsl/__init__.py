@@ -9,6 +9,7 @@ must be imported from their respective modules:
     from flujo.domain.dsl.loop import LoopStep, MapStep
     from flujo.domain.dsl.conditional import ConditionalStep
     from flujo.domain.dsl.parallel import ParallelStep
+    from flujo.domain.dsl.cache_step import CacheStep
 
 This avoids import cycles and ensures robust usage.
 """
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from .step import MergeStrategy, BranchFailureStrategy, BranchKey, HumanInTheLoopStep
     from .dynamic_router import DynamicParallelRouterStep
     from .granular import GranularStep, ResumeError
+    from .cache_step import CacheStep
 
 __all__ = [
     "StepConfig",
@@ -44,6 +46,7 @@ __all__ = [
     "DynamicParallelRouterStep",
     "GranularStep",
     "ResumeError",
+    "CacheStep",
 ]
 
 # Lazy import registry: maps symbol name to (module, attribute_name)
@@ -68,6 +71,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     # Granular execution
     "GranularStep": (".granular", "GranularStep"),
     "ResumeError": (".granular", "ResumeError"),
+    "CacheStep": (".cache_step", "CacheStep"),
     # Visualization - moved to flujo.visualization
 }
 

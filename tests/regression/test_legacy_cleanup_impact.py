@@ -14,7 +14,7 @@ import pytest
 # The functionality has been migrated to ultra_executor
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.domain.dsl.step import HumanInTheLoopStep
-from flujo.steps.cache_step import CacheStep
+from flujo.domain.dsl.cache_step import CacheStep
 from flujo.domain.models import StepResult
 from flujo.exceptions import PausedException
 from tests.test_types.fixtures import execute_simple_step

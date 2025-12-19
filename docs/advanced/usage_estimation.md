@@ -45,7 +45,7 @@ Notes:
 Provide a custom estimator at core construction time:
 
 ```python
-from flujo.application.core.estimation import UsageEstimator
+from flujo.application.core.runtime.estimation import UsageEstimator
 from flujo.domain.models import UsageEstimate
 
 class MyEstimator(UsageEstimator):
@@ -59,7 +59,7 @@ core = ExecutorCore(usage_estimator=MyEstimator())
 Or register rules in a factory:
 
 ```python
-from flujo.application.core.estimation import EstimatorRegistry, UsageEstimatorFactory
+from flujo.application.core.runtime.estimation import EstimatorRegistry, UsageEstimatorFactory
 
 registry = EstimatorRegistry()
 registry.register(lambda s: getattr(s, "name", "").endswith("_heavy"), MyEstimator())

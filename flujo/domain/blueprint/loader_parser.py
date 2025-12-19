@@ -152,7 +152,7 @@ def dump_pipeline_blueprint_to_yaml(pipeline: Pipeline[PipeInT, PipeOutT]) -> st
         except Exception:
             pass
         try:
-            from flujo.steps.cache_step import CacheStep as _CacheStep
+            from flujo.domain.dsl.cache_step import CacheStep as _CacheStep
 
             if isinstance(step, _CacheStep):
                 wrapped = getattr(step, "wrapped_step", None)

@@ -1,6 +1,6 @@
 from unittest.mock import Mock, patch
 
-from flujo.steps.cache_step import (
+from flujo.domain.dsl.cache_step import (
     CacheStep,
     _serialize_for_cache_key,
     _sort_set_deterministically,

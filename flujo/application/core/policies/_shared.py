@@ -54,7 +54,7 @@ from flujo.domain.dsl.step import BranchFailureStrategy, HumanInTheLoopStep, Mer
 from flujo.domain.dsl.import_step import ImportStep
 from flujo.application.conversation.history_manager import HistoryManager, HistoryStrategyConfig
 from flujo.processors.conversation import ConversationHistoryPromptProcessor
-from flujo.steps.cache_step import CacheStep, _generate_cache_key
+from flujo.domain.dsl.cache_step import CacheStep, _generate_cache_key
 
 __all__ = [
     "asyncio",

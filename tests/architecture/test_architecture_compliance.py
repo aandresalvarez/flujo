@@ -243,7 +243,7 @@ class TestArchitectureCompliance:
         Fallback chains should be detected and limited.
         """
         policy_files = [flujo_root / "flujo/application/core/step_policies.py"]
-        fallback_handler = flujo_root / "flujo/application/core/fallback_handler.py"
+        fallback_handler = flujo_root / "flujo/application/core/runtime/fallback_handler.py"
 
         violations = []
         for policy_file in policy_files:

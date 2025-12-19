@@ -52,7 +52,7 @@ async def test_cache_prevents_double_invocation_of_agent():
     # Build cached step programmatically to count invocations
     counter = {"n": 0}
     step = Step.from_callable(make_counting(counter), name="Counting")
-    from flujo.steps.cache_step import CacheStep
+    from flujo.domain.dsl.cache_step import CacheStep
 
     cached = CacheStep.cached(step)
     pipeline = Pipeline(steps=[cached])

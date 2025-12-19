@@ -7,7 +7,7 @@ This guide is for the Flujo core team—developers building and maintaining the 
 > The legacy monolithic module `flujo/application/core/ultra_executor.py` has been decomposed. The responsibilities are now split across:
 > - `flujo/application/core/executor_core.py`: ExecutorCore and related public types/exports.
 > - `flujo/application/core/executor_protocols.py`: Protocol interfaces (e.g., ISerializer, IHasher, ICacheBackend, IAgentRunner).
-> - `flujo/application/core/default_components.py`: Default concrete implementations (e.g., OrjsonSerializer, Blake3Hasher, InMemoryLRUBackend, ThreadSafeMeter, DefaultAgentRunner).
+> - `flujo/application/core/runtime/default_components.py`: Default concrete implementations (e.g., OrjsonSerializer, Blake3Hasher, InMemoryLRUBackend, ThreadSafeMeter, DefaultAgentRunner).
 >
 > When updating the executor or composing defaults, import from these modules instead of `ultra_executor`. Policy implementations remain in `flujo/application/core/step_policies.py`.
 
@@ -468,7 +468,7 @@ Always use the centralized utilities for safety and consistency with proper typi
 
 ```python
 from typing import Optional
-from flujo.application.core.context_manager import ContextManager
+from flujo.application.core.context.context_manager import ContextManager
 from flujo.domain.models import PipelineContext
 from flujo.utils.context import safe_merge_context_updates
 from flujo.type_definitions.common import JSONObject  # ✅ Use JSONObject
@@ -522,7 +522,7 @@ Use the include_keys path to keep branch contexts minimal and enable strict flag
 
 ```python
 # In a policy for a complex step (e.g., LoopStep)
-from flujo.application.core.context_manager import ContextManager
+from flujo.application.core.context.context_manager import ContextManager
 from typing import Any, Dict, Optional, List
 from flujo.domain.models import PipelineContext, StepResult
 from flujo.domain.dsl import Step
@@ -801,7 +801,7 @@ class DefaultYourCustomStepExecutor:
 from typing import Optional, Any
 from flujo.application.core.step_policies import DefaultYourCustomStepExecutor
 from flujo.domain.dsl.your_step import YourCustomStep
-from flujo.application.core.types import ExecutionFrame
+from flujo.application.core.support.types import ExecutionFrame
 
 # 1. Update the constructor to accept the new policy with proper typing
 class ExecutorCore:

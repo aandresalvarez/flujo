@@ -51,7 +51,7 @@ async def main():
     # You can look up your run_id via `flujo lens list` or store it after the first run
     run_id = input('Enter run_id to resume: ').strip()
     # Load paused state and resume with human input
-    from flujo.application.core.state_manager import StateManager
+    from flujo.application.core.state.state_manager import StateManager
     from flujo.state.backends.sqlite import SQLiteBackend
     backend = SQLiteBackend()
     sm = StateManager[PipelineContext](backend)

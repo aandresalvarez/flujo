@@ -67,8 +67,8 @@ Add lifecycle logging to `ExecutorCore.execute()` and related methods:
 
 **Target files:**
 - `flujo/application/core/executor_core.py`
-- `flujo/application/core/step_coordinator.py`
-- `flujo/application/core/execution_manager.py`
+- `flujo/application/core/orchestration/step_coordinator.py`
+- `flujo/application/core/execution/execution_manager.py`
 
 **Logging structure:**
 ```python

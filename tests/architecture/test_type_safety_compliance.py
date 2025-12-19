@@ -132,7 +132,7 @@ class TestTypeSafetyCompliance:
             # Legacy files that still need migration
             "flujo/utils/serialization.py",
             "flujo/domain/blueprint/model_generator.py",
-            "flujo/application/core/type_validator.py",
+            "flujo/application/core/support/type_validator.py",
             # Test files
             "tests/",
         }
@@ -205,11 +205,11 @@ class TestTypeSafetyCompliance:
 
         # Allowlist known legacy paths where casts remain; tighten over time.
         acceptable_paths = {
-            "flujo/application/core/context_adapter.py",
+            "flujo/application/core/context/context_adapter.py",
             "flujo/application/core/executor_core.py",
             "flujo/application/core/policies/simple_policy.py",
-            "flujo/application/core/background_task_manager.py",
-            "flujo/application/core/context_manager.py",
+            "flujo/application/core/runtime/background_task_manager.py",
+            "flujo/application/core/context/context_manager.py",
         }
 
         filtered = []

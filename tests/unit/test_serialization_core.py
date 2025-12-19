@@ -1,7 +1,7 @@
 import pytest
 from pydantic import BaseModel
 
-from flujo.steps.cache_step import _generate_cache_key, _serialize_for_cache_key
+from flujo.domain.dsl.cache_step import _generate_cache_key, _serialize_for_cache_key
 from flujo.utils.serialization import (
     _serialize_for_json,
     register_custom_serializer,

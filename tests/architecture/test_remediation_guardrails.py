@@ -111,7 +111,10 @@ class TestQuotaGuardrails:
         if not app_dir.exists():
             pytest.skip("Application directory not found")
 
-        allowlist = {flujo_root / "flujo/application/core/quota_manager.py"}
+        allowlist = {
+            flujo_root / "flujo/application/core/runtime/quota_manager.py",
+            flujo_root / "flujo/application/core/quota_manager.py",
+        }
         limit_attrs = {"total_cost_usd_limit", "total_tokens_limit"}
 
         violations: List[str] = []
@@ -149,7 +152,7 @@ class TestQuotaGuardrails:
         if violations:
             pytest.fail(
                 "Found ad-hoc UsageLimits→Quota translation outside "
-                "flujo/application/core/quota_manager.py:\n" + "\n".join(sorted(violations))
+                "flujo/application/core/runtime/quota_manager.py:\n" + "\n".join(sorted(violations))
             )
 
 
@@ -172,6 +175,8 @@ class TestUsageLimitGuardrails:
             pytest.skip("core directory not found")
 
         allowed_files = {
+            "flujo/application/core/runtime/quota_manager.py",
+            "flujo/application/core/runtime/usage_messages.py",
             "flujo/application/core/quota_manager.py",
             "flujo/application/core/usage_messages.py",
         }
