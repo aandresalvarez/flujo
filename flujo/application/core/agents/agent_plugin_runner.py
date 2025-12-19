@@ -269,7 +269,9 @@ class AgentPluginRunner:
 
             unwrap_fn = getattr(core, "_unwrap_outcome_to_step_result", None)
             if not callable(unwrap_fn):
-                raise TypeError("Executor core must provide _unwrap_outcome_to_step_result()")
+                raise TypeError(
+                    "Executor core must provide _unwrap_outcome_to_step_result()"
+                ) from None
             fallback_result_sr = unwrap_fn(fallback_result_sr, _safe_step_name(fb_step))
             if fallback_result_sr.metadata_ is None:
                 fallback_result_sr.metadata_ = {}

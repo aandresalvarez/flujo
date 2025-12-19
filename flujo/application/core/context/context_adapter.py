@@ -382,6 +382,7 @@ def _deserialize_value(
     This centralizes the deserialization logic and integrates with
     Flujo's serialization system.
     """
+    _ = _context_model
     if field_type is None:
         return value
 
