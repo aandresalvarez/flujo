@@ -202,6 +202,15 @@ class StateBackend(ABC):
         """
         raise NotImplementedError
 
+    async def save_spans(self, run_id: str, spans: list[JSONObject]) -> None:
+        """Persist normalized spans for a run.
+
+        Args:
+            run_id: Unique identifier for the workflow run
+            spans: List of span dictionaries (span_id, parent_span_id, name, etc.)
+        """
+        raise NotImplementedError
+
     async def get_spans(
         self, run_id: str, status: Optional[str] = None, name: Optional[str] = None
     ) -> List[JSONObject]:

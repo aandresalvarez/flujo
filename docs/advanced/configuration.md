@@ -54,6 +54,9 @@ These boolean settings enable or disable specific `flujo` features.
 *   `otlp_export_enabled`: `bool = False`
     *   **Description**: Enables or disables OpenTelemetry Protocol (OTLP) export for distributed tracing.
 
+*   `state_backend_span_export_enabled`: `Optional[bool] = None`
+    *   **Description**: Export OpenTelemetry spans to the configured state backend. `None` enables auto mode (SQLite only).
+
 #### Default Models
 
 These settings define the default language models used by various agents within `flujo`.
@@ -135,6 +138,18 @@ Built-in environment toggles:
   - **Environment Variables**: `FLUJO_SANDBOX_API_KEY`
 - `sandbox.timeout_seconds`: `int`
   - **Environment Variables**: `FLUJO_SANDBOX_TIMEOUT_S`
+- `sandbox.verify_ssl`: `bool` (remote mode)
+  - **Environment Variables**: `FLUJO_SANDBOX_VERIFY_SSL`
+- `sandbox.docker_image`: `str` (docker mode)
+  - **Environment Variables**: `FLUJO_SANDBOX_DOCKER_IMAGE`
+- `sandbox.docker_pull`: `bool` (docker mode)
+  - **Environment Variables**: `FLUJO_SANDBOX_DOCKER_PULL`
+- `sandbox.docker_mem_limit`: `Optional[str]` (docker mode)
+  - **Environment Variables**: `FLUJO_SANDBOX_DOCKER_MEM_LIMIT`
+- `sandbox.docker_pids_limit`: `Optional[int]` (docker mode)
+  - **Environment Variables**: `FLUJO_SANDBOX_DOCKER_PIDS_LIMIT`
+- `sandbox.docker_network_mode`: `Optional[str]` (docker mode)
+  - **Environment Variables**: `FLUJO_SANDBOX_DOCKER_NETWORK_MODE`
 
 Example:
 ```toml

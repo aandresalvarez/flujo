@@ -221,10 +221,17 @@ def _get_default_pricing(provider: Optional[str], model: str) -> Optional[Provid
 
 
 def _is_ci_environment() -> bool:
-    """Check if we're running in a CI environment."""
-    import os
+    """Check if we're running in a CI environment.
 
-    return os.environ.get("CI", "").lower() in ("true", "1", "yes")
+    This function delegates to config_manager.is_ci_environment() for CI detection,
+    following the guideline to access configuration through the config_manager module.
+
+    Returns:
+        True if running in a CI environment (CI env var set), False otherwise.
+    """
+    from .config_manager import is_ci_environment
+
+    return is_ci_environment()
 
 
 def get_ci_performance_multiplier() -> float:
@@ -232,6 +239,13 @@ def get_ci_performance_multiplier() -> float:
 
     CI environments often have different performance characteristics than local development.
     This function provides appropriate multipliers for performance thresholds.
+
+    **Usage Context:**
+    This function is intended for use in performance tests and benchmarks to adjust
+    thresholds based on environment. It does not affect production code execution.
+
+    Returns:
+        Multiplier value: 3.0 for CI environments, 1.0 for local development
     """
     if _is_ci_environment():
         # CI environments typically have:

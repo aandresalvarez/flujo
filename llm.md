@@ -286,7 +286,7 @@ Execute multiple branches concurrently.
 - `context_update` (default): Safe merge, fails on conflicts
 - `overwrite`: Later branches overwrite earlier ones
 - `no_merge`: No context merging
-- `merge_scratchpad`: Only merge scratchpad dictionaries
+Note: legacy merge mode removed; use `context_update` for safe merges.
 
 **Failure Handling**:
 - `propagate` (default): Fail if any branch fails
@@ -409,11 +409,11 @@ Execute steps repeatedly until a condition is met.
     max_loops: 5
     init:                                # Run once before first iteration
       - append:
-          target: "context.scratchpad.history"
+          target: "context.import_artifacts.history"
           value: "User: {{ steps.get_goal.output }}"
     state:                               # Run after each iteration
       append:
-        - target: "context.scratchpad.history"
+        - target: "context.import_artifacts.history"
           value: "Agent: {{ previous_step }}"
       set:
         - target: "context.summary"
@@ -421,7 +421,7 @@ Execute steps repeatedly until a condition is met.
     propagation:
       next_input: context                # How to pass data: context | previous_output | auto
     exit_expression: "context.done == true"
-    output_template: "{{ context.scratchpad.history | join('\\n') }}"
+    output_template: "{{ context.import_artifacts.history | join('\\n') }}"
 ```
 
 **Use Cases**: Iterative refinement, conversational AI, agentic workflows
@@ -452,7 +452,7 @@ Apply a pipeline to each item in a collection.
     body: [...]
     init:                                # Run once before mapping
       - set:
-          target: "context.scratchpad.count"
+          target: "context.import_artifacts.count"
           value: "0"
     finalize:                            # Run once after mapping
       output:
@@ -602,7 +602,7 @@ For `condition_expression` and `exit_expression`:
 ```yaml
 exit_expression: "context.status == 'done'"
 condition_expression: "previous_step.lower().startswith('ok')"
-exit_expression: "context.scratchpad.get('action', '') == 'finish'"
+exit_expression: "context.import_artifacts.get('action', '') == 'finish'"
 ```
 
 ---
@@ -833,15 +833,15 @@ steps:
       input_to: initial_prompt
       propagate_hitl: true
       outputs:
-        - { child: scratchpad.goal, parent: scratchpad.goal }
+        - { child: import_artifacts.goal, parent: import_artifacts.goal }
   
   - kind: step
     name: generate
     uses: imports.generation
     config:
-      input_to: scratchpad
+      input_to: import_artifacts
       outputs:
-        - { child: scratchpad.result, parent: scratchpad.result }
+        - { child: import_artifacts.result, parent: import_artifacts.result }
 ```
 
 ### 9. Built-in Data Transforms
@@ -922,8 +922,8 @@ Complex pattern for AI agents that explore and use tools iteratively.
         name: decide_action
         uses: agents.explorer_agent  # Tool-calling agent
         input: |
-          Current state: {{ context.scratchpad.state | tojson }}
-          History: {{ context.scratchpad.history | tojson }}
+          Current state: {{ context.import_artifacts.state | tojson }}
+          History: {{ context.import_artifacts.history | tojson }}
         updates_context: true
       
       # Execute tool if agent chose one
@@ -1273,16 +1273,16 @@ Even though Flujo allows implicit step kinds, always be explicit:
   uses: agents.processor
 ```
 
-### 14. **Use Context Scratchpad for State**
+### 14. **Use Typed Context Fields for State**
 
-Store intermediate state in `context.scratchpad` to avoid polluting the main context:
+Store intermediate state in typed context fields (or `context.import_artifacts`) to avoid polluting the main context:
 
 ```yaml
 - kind: step
   name: init_state
   uses: "skills.custom:initialize"
   updates_context: true
-  # Returns: {"scratchpad": {"history": [], "count": 0}}
+  # Returns: {"import_artifacts": {"history": [], "count": 0}}
 ```
 
 ### 15. **Test Custom Skills Independently**
@@ -1439,7 +1439,7 @@ This guide covers everything needed to create Flujo pipelines:
 5. Write type-safe custom skills with robust input handling
 6. Implement retry logic for external API calls
 7. Test custom skills independently with unit tests
-8. Use context scratchpad for intermediate state
+8. Use typed context fields or `import_artifacts` for intermediate state
 9. Validate pipelines before running (`flujo validate`)
 10. Monitor costs and enable budget limits for production
 11. Start simple and add complexity incrementally
@@ -1987,7 +1987,7 @@ Execute multiple branches concurrently.
 - `context_update` (default): Safe merge, fails on conflicts
 - `overwrite`: Later branches overwrite earlier ones
 - `no_merge`: No context merging
-- `merge_scratchpad`: Only merge scratchpad dictionaries
+Note: legacy merge mode removed; use `context_update` for safe merges.
 
 **Failure Handling**:
 - `propagate` (default): Fail if any branch fails
@@ -2150,11 +2150,11 @@ loop:
     max_loops: 5
     init:                                # Run once before first iteration
       - append:
-          target: "context.scratchpad.history"
+          target: "context.import_artifacts.history"
           value: "User: {{ steps.get_goal.output }}"
     state:                               # Run after each iteration
       append:
-        - target: "context.scratchpad.history"
+        - target: "context.import_artifacts.history"
           value: "Agent: {{ previous_step }}"
       set:
         - target: "context.summary"
@@ -2162,7 +2162,7 @@ loop:
     propagation:
       next_input: context                # How to pass data: context | previous_output | auto
     exit_expression: "context.done == true"
-    output_template: "{{ context.scratchpad.history | join('\\n') }}"
+    output_template: "{{ context.import_artifacts.history | join('\\n') }}"
 ```
 
 **Use Cases**: Iterative refinement, conversational AI, agentic workflows
@@ -2193,7 +2193,7 @@ Apply a pipeline to each item in a collection.
     body: [...]
     init:                                # Run once before mapping
       - set:
-          target: "context.scratchpad.count"
+          target: "context.import_artifacts.count"
           value: "0"
     finalize:                            # Run once after mapping
       output:
@@ -2249,7 +2249,7 @@ Pause for human input or approval.
 - kind: hitl
   name: ask_age
   message: "What age range?"
-  sink_to: "scratchpad.last_answer"
+  sink_to: "import_artifacts.last_answer"
 
 - kind: conditional
   name: merge_when_answer_present
@@ -2261,7 +2261,7 @@ Pause for human input or approval.
         agent:
           id: "flujo.builtins.context_merge"
           params:
-            path: "scratchpad.slots"
+            path: "import_artifacts.slots"
             value: { age: "{{ resume_input }}" }
         updates_context: true
     "false":
@@ -2396,7 +2396,7 @@ For `condition_expression` and `exit_expression`:
 **Examples**:
 ```yaml
 # ✅ Safe dict access with .get()
-exit_expression: "context.scratchpad.get('action', '') == 'finish'"
+exit_expression: "context.import_artifacts.get('action', '') == 'finish'"
 
 # ✅ Direct attribute access
 exit_expression: "context.status == 'done'"
@@ -2415,10 +2415,10 @@ condition_expression: "not context.field or context.field == ''"
    # ❌ WRONG - Multi-line
    exit_expression: |
      steps['decide'].output.action == 'finish' or
-     context.scratchpad.done == true
+     context.import_artifacts.done == true
    
    # ✅ CORRECT - Single line
-   exit_expression: "steps['decide'].output.action == 'finish' or context.scratchpad.get('done', false)"
+   exit_expression: "steps['decide'].output.action == 'finish' or context.import_artifacts.get('done', false)"
    ```
 
 2. **Reference specific steps**: Use `steps['name'].output` to access named steps:
@@ -2433,10 +2433,10 @@ condition_expression: "not context.field or context.field == ''"
 3. **Safe dict access**: Always use `.get()` for optional fields:
    ```yaml
    # ✅ Safe - provides default
-   exit_expression: "context.scratchpad.get('ready', false)"
+   exit_expression: "context.import_artifacts.get('ready', false)"
    
    # ❌ Risky - fails if key missing
-   exit_expression: "context.scratchpad.ready"
+   exit_expression: "context.import_artifacts.ready"
    ```
 
 ---
@@ -2678,15 +2678,15 @@ steps:
       input_to: initial_prompt
       propagate_hitl: true
       outputs:
-        - { child: scratchpad.goal, parent: scratchpad.goal }
+        - { child: import_artifacts.goal, parent: import_artifacts.goal }
   
   - kind: step
     name: generate
     uses: imports.generation
     config:
-      input_to: scratchpad
+      input_to: import_artifacts
       outputs:
-        - { child: scratchpad.result, parent: scratchpad.result }
+        - { child: import_artifacts.result, parent: import_artifacts.result }
 ```
 
 ### 9. Built-in Data Transforms
@@ -2770,8 +2770,8 @@ Complex pattern for AI agents that explore and use tools iteratively.
         name: decide_action
         uses: agents.explorer_agent  # Tool-calling agent
         input: |
-          Current state: {{ context.scratchpad.state | tojson }}
-          History: {{ context.scratchpad.history | tojson }}
+          Current state: {{ context.import_artifacts.state | tojson }}
+          History: {{ context.import_artifacts.history | tojson }}
         updates_context: true
       
       # Execute tool if agent chose one
@@ -3000,7 +3000,7 @@ agent: { id: "flujo.builtins.fs_write_file", params: { path: "...", content: "..
   agent:
     id: "flujo.builtins.context_merge"
     params:
-      path: "scratchpad"
+      path: "import_artifacts"
       value: { key: "value" }
   updates_context: true
 
@@ -3133,7 +3133,7 @@ Even though Flujo allows implicit step kinds, always be explicit:
 
 ### 14. **Initialize Context State Before Use**
 
-Always initialize `context.scratchpad` fields before referencing them:
+Always initialize the context fields you plan to read (or `import_artifacts` keys) before referencing them:
 
 ```yaml
 # Step 1: Initialize state
@@ -3143,7 +3143,7 @@ Always initialize `context.scratchpad` fields before referencing them:
     id: "flujo.builtins.passthrough"
   input: |
     {
-      "scratchpad": {
+      "import_artifacts": {
         "working_data": "",
         "history": [],
         "count": 0,
@@ -3159,11 +3159,11 @@ Always initialize `context.scratchpad` fields before referencing them:
     body:
       - kind: step
         name: work
-        input: "{{ context.scratchpad.working_data }}"
+        input: "{{ context.import_artifacts.working_data }}"
         updates_context: true
     propagation:
       next_input: context
-    exit_expression: "context.scratchpad.get('ready', false)"
+    exit_expression: "context.import_artifacts.get('ready', false)"
 ```
 
 ### 15. **Test Custom Skills Independently**
@@ -3216,7 +3216,7 @@ Always run `flujo validate` before production deployment.
 
 ### ❌ Uninitialized Context State
 
-Don't assume `context.scratchpad` fields exist without initializing them:
+Don't assume context fields or `import_artifacts` keys exist without initializing them:
 
 ```yaml
 # ❌ WRONG - Assumes working_definition exists
@@ -3226,7 +3226,7 @@ Don't assume `context.scratchpad` fields exist without initializing them:
     body:
       - kind: step
         name: refine
-        input: "{{ context.scratchpad.working_definition }}"
+        input: "{{ context.import_artifacts.working_definition }}"
 
 # ✅ CORRECT - Initialize first
 steps:
@@ -3234,7 +3234,7 @@ steps:
     name: init_state
     agent:
       id: "flujo.builtins.passthrough"
-    input: '{"working_definition": "", "status": "pending"}'
+    input: '{"import_artifacts": {"working_definition": "", "status": "pending"}}'
     updates_context: true
   
   - kind: loop
@@ -3243,7 +3243,7 @@ steps:
       body:
         - kind: step
           name: refine
-          input: "{{ context.scratchpad.working_definition }}"
+          input: "{{ context.import_artifacts.working_definition }}"
 ```
 
 ### ❌ Referencing Non-Existent Skills
@@ -3690,12 +3690,12 @@ flujo lens show <run_id> --json | jq '.steps[] | {name: .name, status: .status}'
       - kind: hitl
         name: get_data
         message: "Enter value:"
-        sink_to: "scratchpad.user_input"  # ← Correctly stored!
+        sink_to: "import_artifacts.user_input"  # ← Correctly stored!
 
 - kind: step
   name: verify
   agent: { id: "flujo.builtins.stringify" }
-  input: "Value: {{ context.scratchpad.user_input }}"  # ← Available here
+  input: "Value: {{ context.import_artifacts.user_input }}"  # ← Available here
 ```
 
 **Testing Confirmation**:
@@ -3845,7 +3845,7 @@ For the latest information, always check the official Flujo documentation and ch
   agent:
     id: "flujo.builtins.context_merge"
     params:
-      path: "scratchpad.slots"
+      path: "import_artifacts.slots"
       value: { key: "value" }
   updates_context: true
 ```
@@ -3969,4 +3969,3 @@ input: "{{ context.items | join('\n- ') }}"
 **See:** [Loop Step Scoping](docs/user_guide/loop_step_scoping.md)
 
 ---
-

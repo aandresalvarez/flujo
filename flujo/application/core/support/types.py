@@ -47,3 +47,4 @@ class ExecutionFrame(Generic[TContext_w_Scratch]):
     # Optional parameters for backward compatibility and advanced features
     result: object | None = None  # For backward compatibility
     _fallback_depth: int = 0  # Track fallback recursion depth
+    cache_checked: bool = False  # Whether a cache lookup already ran for this frame

@@ -1,5 +1,23 @@
+"""Blueprint loader for parsing YAML pipeline definitions.
+
+This module handles loading and parsing YAML blueprints into executable Pipeline objects.
+It supports declarative agents, imports, and various step types.
+
+Import Strategy (per FLUJO_TEAM_GUIDE Section 12):
+- Top-level imports: Standard library and core dependencies (os, sys, yaml, etc.)
+- TYPE_CHECKING imports: Type-only imports to avoid circular dependencies
+- Runtime imports: Used only for:
+  1. Optional dependencies (ruamel.yaml, flujo.builtins) - loaded conditionally
+  2. Circular dependency resolution (compiler module) - loaded when needed
+  3. Optional step types (DynamicParallelRouterStep, MapStep, etc.) - loaded on demand
+
+This approach balances static analysis support with runtime flexibility for optional features.
+"""
+
 from __future__ import annotations
 
+import os
+import sys
 from typing import TypeVar
 
 import yaml
@@ -11,6 +29,7 @@ from .loader_models import BlueprintError, BlueprintPipelineModel
 from .loader_resolution import _pop_skills_base_dir, _push_skills_base_dir
 from .loader_steps import build_pipeline_from_blueprint
 from flujo.type_definitions.common import JSONObject
+from flujo.exceptions import ControlFlowError
 
 
 PipeInT = TypeVar("PipeInT")
@@ -180,16 +199,33 @@ def load_pipeline_blueprint_from_yaml(
     source_file: str | None = None,
     _visited: list[str] | None = None,
 ) -> Pipeline[object, object]:
-    import os
-    import sys as _sys
+    """
+    Load a pipeline from a YAML blueprint with support for imports and agents.
 
-    _pushed_sys_path = False
+    This function handles sys.path manipulation for skills discovery, which requires
+    runtime imports of os and sys. The imports are at module level to improve
+    static analysis and follow FLUJO_TEAM_GUIDE Section 12 (Type Safety).
+
+    Args:
+        yaml_text: YAML string containing the pipeline blueprint
+        base_dir: Optional base directory for resolving relative imports
+        source_file: Optional source file path for cycle detection
+        _visited: Internal parameter for tracking visited files during import resolution
+
+    Returns:
+        Compiled Pipeline object ready for execution
+
+    Raises:
+        BlueprintError: If the blueprint is invalid, has cyclic imports, or compilation fails
+    """
+    _pushed_sys_path: bool = False
+    base_dir_abs: str | None = None
     _push_skills_base_dir(base_dir)
     if base_dir:
         try:
             base_dir_abs = os.path.abspath(base_dir)
-            if base_dir_abs not in _sys.path:
-                _sys.path.insert(0, base_dir_abs)
+            if base_dir_abs not in sys.path:
+                sys.path.insert(0, base_dir_abs)
                 _pushed_sys_path = True
         except Exception:
             _pushed_sys_path = False
@@ -352,162 +388,154 @@ def load_pipeline_blueprint_from_yaml(
     except Exception:
         pass
     try:
-        try:
-            data = yaml.safe_load(yaml_text)
-            if not isinstance(data, dict) or "steps" not in data:
-                raise BlueprintError("YAML blueprint must be a mapping with a 'steps' key")
-            bp = BlueprintPipelineModel.model_validate(data)
-            from .compiler import DeclarativeBlueprintCompiler
+        data = yaml.safe_load(yaml_text)
+        if not isinstance(data, dict) or "steps" not in data:
+            raise BlueprintError("YAML blueprint must be a mapping with a 'steps' key")
+        bp = BlueprintPipelineModel.model_validate(data)
+        # Runtime import required to avoid circular dependency with compiler module
+        # The TYPE_CHECKING import above is for type hints only
+        from .compiler import DeclarativeBlueprintCompiler
 
-            if bp.agents or getattr(bp, "imports", None):
-                try:
-                    compiler = DeclarativeBlueprintCompiler(
-                        bp, base_dir=base_dir, _visited=_visited
-                    )
-                    return compiler.compile_to_pipeline()
-                except Exception as e:
-                    raise BlueprintError(
-                        f"Failed to compile declarative blueprint (agents/imports): {e}"
-                    ) from e
+        if bp.agents or getattr(bp, "imports", None):
             try:
-                p = build_pipeline_from_blueprint(bp)
-            except BlueprintError:
-                raise
+                compiler = DeclarativeBlueprintCompiler(bp, base_dir=base_dir, _visited=_visited)
+                return compiler.compile_to_pipeline()
             except Exception as e:
-                # Preserve control-flow exceptions if they ever surface here.
-                try:
-                    from flujo.exceptions import ControlFlowError
-
-                    if isinstance(e, ControlFlowError):
-                        raise
-                except Exception:
-                    pass
-                raise BlueprintError(f"Failed to build pipeline from blueprint: {e}") from e
-            try:
-                name_val = getattr(bp, "name", None)
-                if isinstance(name_val, str):
-                    name_val_stripped = name_val.strip()
-                    if name_val_stripped:
+                raise BlueprintError(
+                    f"Failed to compile declarative blueprint (agents/imports): {e}"
+                ) from e
+        try:
+            p = build_pipeline_from_blueprint(bp)
+        except BlueprintError:
+            raise
+        except Exception as e:
+            if isinstance(e, ControlFlowError):
+                raise
+            raise BlueprintError(f"Failed to build pipeline from blueprint: {e}") from e
+        try:
+            name_val = getattr(bp, "name", None)
+            if isinstance(name_val, str):
+                name_val_stripped = name_val.strip()
+                if name_val_stripped:
+                    try:
+                        setattr(p, "name", name_val_stripped)
+                    except Exception:
                         try:
-                            setattr(p, "name", name_val_stripped)
+                            object.__setattr__(p, "name", name_val_stripped)
                         except Exception:
+                            pass
+        except Exception:
+            pass
+        try:
+            if source_file:
+                try:
+                    setattr(p, "_source_file", str(source_file))
+                except Exception:
+                    object.__setattr__(p, "_source_file", str(source_file))
+        except Exception:
+            pass
+        try:
+            from ..dsl import Pipeline as _DPipe, Step as _DStep
+
+            def _attach_step_loc(st: object) -> None:
+                try:
+                    meta = getattr(st, "meta", None)
+                    if isinstance(meta, dict) and "yaml_path" in meta:
+                        ypath = str(meta.get("yaml_path"))
+                        if ypath in loc_index:
+                            ln, col = loc_index[ypath]
+                            info = {"path": ypath, "line": int(ln), "column": int(col)}
+                            if source_file:
+                                info["file"] = str(source_file)
+                            meta["_yaml_loc"] = info
+                        pats = sup_index.get(ypath) or []
+                        if pats:
                             try:
-                                object.__setattr__(p, "name", name_val_stripped)
+                                lst = meta.setdefault("suppress_rules", [])
+                                for ptn in pats:
+                                    if ptn not in lst:
+                                        lst.append(ptn)
                             except Exception:
                                 pass
-            except Exception:
-                pass
-            try:
-                if source_file:
+                except Exception:
+                    pass
+                try:
+                    fb = getattr(st, "fallback_step", None)
+                    if isinstance(fb, _DStep):
+                        _attach_step_loc(fb)
+                except Exception:
+                    pass
+                try:
+                    branches = getattr(st, "branches", None)
+                    if isinstance(branches, dict):
+                        for _bn, _bp in branches.items():
+                            if isinstance(_bp, _DPipe):
+                                _attach_pipe_loc(_bp)
+                except Exception:
+                    pass
+                try:
+                    states = getattr(st, "states", None)
+                    if isinstance(states, dict):
+                        for _sn, _sp in states.items():
+                            if isinstance(_sp, _DPipe):
+                                _attach_pipe_loc(_sp)
+                except Exception:
+                    pass
+                for attr in (
+                    "default_branch_pipeline",
+                    "loop_body_pipeline",
+                    "original_body_pipeline",
+                    "pipeline_to_run",
+                ):
                     try:
-                        setattr(p, "_source_file", str(source_file))
+                        bpv = getattr(st, attr, None)
+                        if isinstance(bpv, _DPipe):
+                            _attach_pipe_loc(bpv)
                     except Exception:
-                        object.__setattr__(p, "_source_file", str(source_file))
-            except Exception:
-                pass
-            try:
-                from ..dsl import Pipeline as _DPipe, Step as _DStep
+                        continue
+                try:
+                    ws = getattr(st, "wrapped_step", None)
+                    if isinstance(ws, _DStep):
+                        _attach_step_loc(ws)
+                except Exception:
+                    pass
 
-                def _attach_step_loc(st: object) -> None:
-                    try:
-                        meta = getattr(st, "meta", None)
-                        if isinstance(meta, dict) and "yaml_path" in meta:
-                            ypath = str(meta.get("yaml_path"))
-                            if ypath in loc_index:
-                                ln, col = loc_index[ypath]
-                                info = {"path": ypath, "line": int(ln), "column": int(col)}
-                                if source_file:
-                                    info["file"] = str(source_file)
-                                meta["_yaml_loc"] = info
-                            pats = sup_index.get(ypath) or []
-                            if pats:
-                                try:
-                                    lst = meta.setdefault("suppress_rules", [])
-                                    for ptn in pats:
-                                        if ptn not in lst:
-                                            lst.append(ptn)
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
-                    try:
-                        fb = getattr(st, "fallback_step", None)
-                        if isinstance(fb, _DStep):
-                            _attach_step_loc(fb)
-                    except Exception:
-                        pass
-                    try:
-                        branches = getattr(st, "branches", None)
-                        if isinstance(branches, dict):
-                            for _bn, _bp in branches.items():
-                                if isinstance(_bp, _DPipe):
-                                    _attach_pipe_loc(_bp)
-                    except Exception:
-                        pass
-                    try:
-                        states = getattr(st, "states", None)
-                        if isinstance(states, dict):
-                            for _sn, _sp in states.items():
-                                if isinstance(_sp, _DPipe):
-                                    _attach_pipe_loc(_sp)
-                    except Exception:
-                        pass
-                    for attr in (
-                        "default_branch_pipeline",
-                        "loop_body_pipeline",
-                        "original_body_pipeline",
-                        "pipeline_to_run",
-                    ):
-                        try:
-                            bpv = getattr(st, attr, None)
-                            if isinstance(bpv, _DPipe):
-                                _attach_pipe_loc(bpv)
-                        except Exception:
-                            continue
-                    try:
-                        ws = getattr(st, "wrapped_step", None)
-                        if isinstance(ws, _DStep):
-                            _attach_step_loc(ws)
-                    except Exception:
-                        pass
+            def _attach_pipe_loc(pipe: object) -> None:
+                try:
+                    for _st in getattr(pipe, "steps", []) or []:
+                        _attach_step_loc(_st)
+                except Exception:
+                    pass
 
-                def _attach_pipe_loc(pipe: object) -> None:
-                    try:
-                        for _st in getattr(pipe, "steps", []) or []:
-                            _attach_step_loc(_st)
-                    except Exception:
-                        pass
-
-                _attach_pipe_loc(p)
-            except Exception:
-                pass
-            return p
-        except ValidationError as ve:
-            try:
-                errs = ve.errors()
-                messages = [
-                    f"{e.get('msg')} at {'.'.join(str(p) for p in e.get('loc', []))}" for e in errs
-                ]
-                raise BlueprintError("; ".join(messages)) from ve
-            except Exception:
-                raise BlueprintError(str(ve)) from ve
-        except yaml.YAMLError as ye:
-            mark = getattr(ye, "problem_mark", None)
-            if mark is not None:
-                msg = f"Invalid YAML at line {getattr(mark, 'line', -1) + 1}, column {getattr(mark, 'column', -1) + 1}: {getattr(ye, 'problem', ye)}"
-            else:
-                msg = f"Invalid YAML: {ye}"
-            raise BlueprintError(msg) from ye
+            _attach_pipe_loc(p)
+        except Exception:
+            pass
+        return p
+    except ValidationError as ve:
+        try:
+            errs = ve.errors()
+            messages = [
+                f"{e.get('msg')} at {'.'.join(str(p) for p in e.get('loc', []))}" for e in errs
+            ]
+            raise BlueprintError("; ".join(messages)) from ve
+        except Exception:
+            raise BlueprintError(str(ve)) from ve
+    except yaml.YAMLError as ye:
+        mark = getattr(ye, "problem_mark", None)
+        if mark is not None:
+            msg = f"Invalid YAML at line {getattr(mark, 'line', -1) + 1}, column {getattr(mark, 'column', -1) + 1}: {getattr(ye, 'problem', ye)}"
+        else:
+            msg = f"Invalid YAML: {ye}"
+        raise BlueprintError(msg) from ye
     finally:
         # Pop from stack after processing (critical for correct cycle detection)
         if _file_pushed and _visited and real_source is not None:
             if _visited and _visited[-1] == real_source:
                 _visited.pop()
         try:
-            if _pushed_sys_path and base_dir:
-                base_dir_abs = os.path.abspath(base_dir)
-                if base_dir_abs in _sys.path:
-                    _sys.path.remove(base_dir_abs)
+            if _pushed_sys_path and base_dir_abs:
+                if base_dir_abs in sys.path:
+                    sys.path.remove(base_dir_abs)
         except Exception:
             pass
         _pop_skills_base_dir()

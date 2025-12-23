@@ -27,6 +27,9 @@ pip install "flujo[docker]"
 mode = "docker"
 docker_image = "python:3.13-slim"
 docker_pull = true
+docker_mem_limit = "512m"
+docker_pids_limit = 256
+docker_network_mode = "none"
 ```
 
 Or configure via environment variables:

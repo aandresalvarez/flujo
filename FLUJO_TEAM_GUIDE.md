@@ -321,8 +321,8 @@ Testing guidance:
 This release fixes Human‑In‑The‑Loop (HITL) behavior inside loop bodies. The loop now resumes the current iteration from the correct step without nesting, captures agent outputs before the pause, and cleans up resume state reliably.
 
 What changed (policy‑driven):
-- Robust resume detection: The Loop policy (`DefaultLoopStepExecutor`) detects a resume using `scratchpad` keys and tolerates `status` already set to `running`.
-  - Reads: `loop_iteration`, `loop_step_index`, `loop_last_output`, `loop_paused_step_name`, `loop_resume_requires_hitl_output`.
+- Robust resume detection: The Loop policy (`DefaultLoopStepExecutor`) detects a resume using typed loop-resume fields and tolerates `status` already set to `running`.
+  - Reads: `loop_iteration_index`, `loop_step_index`, `loop_last_output`, `loop_paused_step_name`, `loop_resume_requires_hitl_output`.
   - Leaves control‑flow orchestration to the runner; no data‑failure conversion of pauses.
 - Correct input routing on resume:
   - If we resume at the paused HITL step, we pass the human response to that step only.
@@ -334,7 +334,7 @@ What changed (policy‑driven):
 - Resume state cleanup: On loop completion the policy clears: `loop_iteration`, `loop_step_index`, `loop_last_output`, `loop_paused_step_name`, `loop_resume_requires_hitl_output`. If `status` was `paused`, it is normalized to `completed`.
 
 Complementary DSL enhancement:
-- Simple `Step` now supports `sink_to: str | None`. When set, the step’s output is stored directly to the given context path (e.g., `counter`, `scratchpad.value`). This enables scalar iteration counters to persist across iterations without requiring dict‑shaped outputs.
+- Simple `Step` now supports `sink_to: str | None`. When set, the step’s output is stored directly to the given context path (e.g., `counter`, `import_artifacts.value`). This enables scalar iteration counters to persist across iterations without requiring dict‑shaped outputs.
 
 Developer checklist (Loops + HITL):
 - Do not add loop‑specific logic in `ExecutorCore`; all behavior belongs in `step_policies.py`.
@@ -345,7 +345,7 @@ Developer checklist (Loops + HITL):
 Testing guidance:
 - Minimal loop with `agent >> hitl`: verify pause at HITL, resume with input, no nested loops, step history contains one loop step.
 - Multi‑iteration progression: assert context counters increment [1,2,3] across repeated pause/resume cycles.
-- State cleanup: after completion, `scratchpad` should not contain loop resume keys, and status should not be `paused`.
+- State cleanup: after completion, loop-resume fields should be cleared and status should not be `paused`.
 
 ## **Testing Standards (Markers & Fast/Slow Split)**
 
@@ -2123,7 +2123,7 @@ This update fixes nested-loop creation when resuming a Human-In-The-Loop (HITL) 
 
 Key behaviors
 - Pause propagation: HITL raises `PausedException` that propagates out of the loop policy to the runner. The policy never swallows it or returns a `StepResult(success=False)` for control-flow.
-- Resume continuity: On resume, the loop continues the current iteration using `scratchpad['loop_step_index']` and `scratchpad['loop_iteration']`; it does not start a nested loop instance.
+- Resume continuity: On resume, the loop continues the current iteration using `context.loop_step_index` and `context.loop_iteration_index`; it does not start a nested loop instance.
 - Idempotent context: Each iteration runs inside `ContextManager.isolate()` and merges back only on success. On pause, minimal state (iteration index, paused step index/name, and optional `loop_resume_requires_hitl_output`) is recorded; no partial writes poison the parent context.
 - Exit checks in parent loop: `exit_expression`/`exit_condition` evaluates in the parent loop context after the iteration completes; a true value exits immediately (no extra nested iterations).
 - sink_to parity: Simple-step `sink_to` is honored inside loop iterations and also when resuming from cache hits, using `set_nested_context_field` for nested paths.
@@ -2133,7 +2133,7 @@ Tracer notes
 - Telemetry attributes set on pause: `loop_step_index`, `loop_iteration`, and (when HITL) `loop_resume_requires_hitl_output=true`.
 
 What to avoid
-- Do not read `flujo.toml` or env vars to infer resume logic; rely on runner-provided context/scratchpad only.
+- Do not read `flujo.toml` or env vars to infer resume logic; rely on runner-provided context fields only.
 - Do not catch `PausedException` and return a failure `StepResult`; always re-raise to let the runner orchestrate resume.
 
 Compatibility

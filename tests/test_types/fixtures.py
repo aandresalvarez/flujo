@@ -19,6 +19,7 @@ from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.domain.dsl.step import Step, StepConfig
 from flujo.domain.models import BaseModel, StepResult, UsageLimits
 from flujo.domain.dsl.pipeline import Pipeline
+from tests.test_types.fakes import TestContext
 
 
 def create_test_step(
@@ -96,6 +97,11 @@ def create_test_usage_limits(
     )
 
 
+def create_test_context(**kwargs: Any) -> TestContext:
+    """Create a typed test context with defaults."""
+    return TestContext(**kwargs)
+
+
 async def execute_simple_step(
     core: ExecutorCore,
     step: Any,
@@ -150,6 +156,7 @@ __all__ = [
     "create_test_step_result",
     "create_test_pipeline",
     "create_test_usage_limits",
+    "create_test_context",
     "execute_simple_step",
     "TEST_STEP_RESULT_SUCCESS",
     "TEST_STEP_RESULT_FAILURE",

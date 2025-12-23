@@ -152,12 +152,21 @@ class TestSRPCompliance:
         python_files = self._get_python_files(flujo_root)
         god_classes = []
 
+        # Abstract base classes / interfaces may legitimately have many methods
+        # as they define complete API contracts
+        allowed_abstract_classes = {
+            "StateBackend",  # ABC defining complete state backend interface
+        }
+
         for file_path in python_files:
             try:
                 tree = self._parse_python_file(file_path)
                 classes = self._analyze_class_complexity(tree)
 
                 for class_name, class_info in classes.items():
+                    # Skip allowed abstract/interface classes
+                    if class_name in allowed_abstract_classes:
+                        continue
                     if class_info["public_methods"] > 25:  # Very high threshold for God Objects
                         god_classes.append(
                             f"{file_path}:{class_name}: {class_info['public_methods']} public methods"

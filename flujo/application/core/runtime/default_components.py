@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 import inspect
 from collections.abc import AsyncIterator
-from typing import Awaitable, Callable, TYPE_CHECKING, TypeGuard
+from typing import Awaitable, Callable, TypeGuard
 
 from ....domain.validation import ValidationResult
 from ....exceptions import (
@@ -14,6 +14,7 @@ from ....exceptions import (
 )
 from ....infra import telemetry
 from ....signature_tools import analyze_signature
+from ....utils.mock_detection import is_mock_like
 from ..context.context_manager import _accepts_param
 from .default_cache_components import (
     Blake3Hasher,
@@ -23,22 +24,6 @@ from .default_cache_components import (
     ThreadSafeMeter,
     _LRUCache,
 )
-
-if TYPE_CHECKING:
-    from unittest.mock import AsyncMock, MagicMock, Mock  # pragma: no cover
-else:  # pragma: no cover - mock types only used for isinstance checks in tests
-    try:
-        from unittest.mock import AsyncMock, MagicMock, Mock  # type: ignore
-    except Exception:
-
-        class Mock:  # minimal runtime fallbacks
-            pass
-
-        class MagicMock(Mock):
-            pass
-
-        class AsyncMock(Mock):
-            pass
 
 
 def _is_callable(obj: object) -> TypeGuard[Callable[..., object]]:
@@ -447,17 +432,11 @@ class DefaultAgentRunner:
 
         filtered_kwargs: dict[str, object] = {}
 
-        if isinstance(executable_func, (Mock, MagicMock, AsyncMock)):
+        if is_mock_like(executable_func):
             filtered_kwargs.update(options)
             # Avoid passing mock contexts to mock agent functions to minimize overhead
-            if context is not None:
-                try:
-                    from unittest.mock import Mock as _M
-
-                    if not isinstance(context, _M):
-                        filtered_kwargs["context"] = context
-                except Exception:
-                    filtered_kwargs["context"] = context
+            if context is not None and not is_mock_like(context):
+                filtered_kwargs["context"] = context
             if resources is not None:
                 filtered_kwargs["resources"] = resources
         elif not options and context is None and resources is None:
@@ -592,24 +571,7 @@ class DefaultAgentRunner:
                     _res = await _res
 
             # Detect mock objects in agent outputs
-            # Mock detection: don't swallow exceptions; only guard imports
-            def _is_mock(obj: object) -> bool:
-                try:
-                    from unittest.mock import Mock as _M, MagicMock as _MM
-
-                    try:
-                        from unittest.mock import AsyncMock as _AM
-
-                        if isinstance(obj, (_M, _MM, _AM)):
-                            return True
-                    except Exception:
-                        if isinstance(obj, (_M, _MM)):
-                            return True
-                except Exception:
-                    pass
-                return bool(getattr(obj, "_is_mock", False) or hasattr(obj, "assert_called"))
-
-            if _is_mock(_res):
+            if is_mock_like(_res):
                 from ....exceptions import MockDetectionError as _MDE
 
                 raise _MDE(f"Agent {type(agent).__name__} returned a Mock object")

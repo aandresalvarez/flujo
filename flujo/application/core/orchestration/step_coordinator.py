@@ -34,26 +34,14 @@ from flujo.infra import telemetry
 
 from flujo.domain.types import HookCallable
 from flujo.application.core.hook_dispatcher import _dispatch_hook
+from ....utils.mock_detection import is_mock_like
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
 
 
 def _is_mock(obj: object) -> bool:
-    """Check if an object is a unittest.mock instance."""
-    try:
-        from unittest.mock import Mock as _M, MagicMock as _MM
-
-        try:
-            from unittest.mock import AsyncMock as _AM
-
-            if isinstance(obj, (_M, _MM, _AM)):
-                return True
-        except Exception:
-            if isinstance(obj, (_M, _MM)):
-                return True
-    except Exception:
-        pass
-    return bool(getattr(obj, "_is_mock", False) or hasattr(obj, "assert_called"))
+    """Check if an object is mock-like."""
+    return is_mock_like(obj)
 
 
 class StepCoordinator(Generic[ContextT]):

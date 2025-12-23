@@ -375,6 +375,7 @@ async def execute_flow(
     if not callable(maybe_use_cache_fn):
         raise TypeError("ExecutorCore missing _maybe_use_cache")
     cached_outcome, cache_key = await maybe_use_cache_fn(frame, called_with_frame=called_with_frame)
+    frame.cache_checked = True
     if cached_outcome is not None:
         return _ensure_outcome(cached_outcome, step_name=getattr(step, "name", ""))
 

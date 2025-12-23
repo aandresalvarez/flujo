@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import time
 from typing import Awaitable, Callable, Dict, List, Optional, Protocol, Tuple
-from unittest.mock import AsyncMock, MagicMock, Mock
 
 from flujo.domain.models import (
     BaseModel,
@@ -66,9 +65,6 @@ __all__ = [
     "Optional",
     "Protocol",
     "Tuple",
-    "AsyncMock",
-    "MagicMock",
-    "Mock",
     "BaseModel",
     "Failure",
     "Paused",

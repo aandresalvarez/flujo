@@ -8,6 +8,7 @@ import logging
 from ....domain.models import BaseModel
 from ....infra import telemetry
 from ....utils.context import safe_merge_context_updates
+from ....utils.mock_detection import is_mock_like
 from ....exceptions import ContextMutationError
 from .context_strategies import (
     ContextIsolationStrategy,
@@ -191,7 +192,6 @@ class ContextManager:
     ) -> BaseModel | None:
         """Isolate context strictly: raise if deep isolation cannot be guaranteed.
 
-        - Returns original object only for unittest.mock instances (perf tests).
         - For Pydantic, uses model_copy(deep=True).
         - Else, attempts deepcopy. If both fail, raises ContextIsolationError.
         """
@@ -395,20 +395,9 @@ class ContextManager:
         # If contexts are the same object, no merge needed
         if main_context is branch_context:
             return main_context
-        # Fast path: skip merging when branch_context is a unittest.mock object (perf tests)
-        try:
-            from unittest.mock import Mock, MagicMock
-
-            try:
-                from unittest.mock import AsyncMock as _AsyncMock
-
-                _mock_types: tuple[type[object], ...] = (Mock, MagicMock, _AsyncMock)
-            except Exception:
-                _mock_types = (Mock, MagicMock)
-            if isinstance(branch_context, _mock_types):
-                return main_context
-        except Exception:
-            pass
+        # Fast path: skip merging when branch_context is mock-like (perf tests)
+        if is_mock_like(branch_context):
+            return main_context
         safe_merge_context_updates(main_context, branch_context)
         return main_context
 

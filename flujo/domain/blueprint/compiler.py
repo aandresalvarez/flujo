@@ -1,6 +1,22 @@
+"""Declarative blueprint compiler for pre-compiling agents and imports.
+
+This module compiles declarative agent definitions and handles blueprint imports
+before pipeline construction.
+
+Import Strategy (per FLUJO_TEAM_GUIDE Section 12):
+- Top-level imports: Standard library and core dependencies (os, pydantic, etc.)
+- TYPE_CHECKING imports: Type-only imports to avoid circular dependencies
+- Runtime imports: Used only for circular dependency resolution:
+  - load_pipeline_blueprint_from_yaml: Loaded in _compile_imports() to avoid
+    circular dependency with loader_parser module
+
+This approach maintains type safety while allowing necessary circular imports
+for recursive blueprint compilation.
+"""
+
 from __future__ import annotations
 
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import os
 from pydantic import BaseModel
@@ -292,22 +308,31 @@ class DeclarativeBlueprintCompiler:
                 pass
 
     def _resolve_base_dir(self) -> str:
-        import os
+        """Resolve the base directory for relative path resolution.
 
+        Returns:
+            Base directory string, either from constructor or current working directory
+        """
         if self._base_dir:
             return self._base_dir
         # Default to current working directory
+        # Note: os is imported at module level to follow FLUJO_TEAM_GUIDE Section 12
         return os.getcwd()
 
     def _compile_imports(self) -> None:
-        """Load and compile imported blueprints into Pipeline objects cached by alias."""
+        """Load and compile imported blueprints into Pipeline objects cached by alias.
+
+        This method handles recursive blueprint imports with cycle detection.
+        Runtime import of load_pipeline_blueprint_from_yaml is required to avoid
+        circular dependency between compiler and loader_parser modules.
+        """
         imports: Optional[dict[str, str]] = getattr(self.blueprint, "imports", None)
         if not imports:
             return
-        import os
+        # Runtime import required to avoid circular dependency with loader_parser module
         from .loader import load_pipeline_blueprint_from_yaml
 
-        base_dir = self._resolve_base_dir()
+        base_dir: str = self._resolve_base_dir()
         for alias, rel_path in imports.items():
             try:
                 path = rel_path

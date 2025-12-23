@@ -12,6 +12,7 @@ from pydantic import (
     AliasChoices,
     model_validator,
     BaseModel,
+    ConfigDict,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -64,6 +65,8 @@ class ShadowEvalSettings(BaseModel):
 class SandboxSettings(BaseModel):
     """Settings for sandboxed code execution."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     mode: Literal["null", "remote", "docker"] = Field(
         default="null",
         validation_alias=AliasChoices("FLUJO_SANDBOX_MODE", "flujo_sandbox_mode"),
@@ -99,6 +102,28 @@ class SandboxSettings(BaseModel):
         default=True,
         validation_alias=AliasChoices("FLUJO_SANDBOX_DOCKER_PULL", "flujo_sandbox_docker_pull"),
         description="Pull the docker image if not present locally.",
+    )
+    docker_mem_limit: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FLUJO_SANDBOX_DOCKER_MEM_LIMIT", "flujo_sandbox_docker_mem_limit"
+        ),
+        description="Memory limit for docker sandbox containers (e.g., '512m', '1g').",
+    )
+    docker_pids_limit: Optional[int] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FLUJO_SANDBOX_DOCKER_PIDS_LIMIT", "flujo_sandbox_docker_pids_limit"
+        ),
+        description="Maximum number of PIDs for docker sandbox containers.",
+        ge=1,
+    )
+    docker_network_mode: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "FLUJO_SANDBOX_DOCKER_NETWORK_MODE", "flujo_sandbox_docker_network_mode"
+        ),
+        description="Docker network mode for sandbox containers (e.g., 'none', 'bridge').",
     )
 
 
@@ -156,6 +181,13 @@ class Settings(BaseSettings):
     reward_enabled: bool = True
     telemetry_export_enabled: bool = False
     otlp_export_enabled: bool = False
+    state_backend_span_export_enabled: Optional[bool] = Field(
+        default=None,
+        description=(
+            "Export OpenTelemetry spans to the configured state backend. "
+            "None enables auto mode (SQLite only)."
+        ),
+    )
     shadow_eval: ShadowEvalSettings = ShadowEvalSettings()
 
     # --- Core strictness toggles ---

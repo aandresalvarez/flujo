@@ -18,6 +18,7 @@ from flujo.exceptions import (
     PipelineAbortSignal,
     ValidationError as FlujoValidationError,
 )
+from .mock_detection import is_mock_like
 
 logger = logging.getLogger(__name__)
 _VERBOSE_DEBUG: bool = bool(os.getenv("FLUJO_VERBOSE_CONTEXT_DEBUG"))
@@ -169,22 +170,11 @@ def safe_merge_context_updates(
     if target_context is None or source_context is None:
         return False
 
-    # Fast path: if source_context is a unittest.mock object, skip merge entirely
-    try:
-        from unittest.mock import Mock, MagicMock
-
-        try:
-            from unittest.mock import AsyncMock as _AsyncMock
-
-            _mock_types: tuple[type[Any], ...] = (Mock, MagicMock, _AsyncMock)
-        except Exception:
-            _mock_types = (Mock, MagicMock)
-        if isinstance(source_context, _mock_types):
-            if _VERBOSE_DEBUG:
-                logger.debug("Skipping merge from mock source_context for performance and safety")
-            return True
-    except Exception:
-        pass
+    # Fast path: if source_context is mock-like, skip merge entirely
+    if is_mock_like(source_context):
+        if _VERBOSE_DEBUG:
+            logger.debug("Skipping merge from mock-like source_context for performance and safety")
+        return True
 
     # Use default excluded fields if none provided
     if excluded_fields is None:
@@ -372,15 +362,10 @@ def safe_merge_context_updates(
             pass
 
         # Performance guard: if source_fields look like trivial mock data, skip merge
-        try:
-            from unittest.mock import Mock
-
-            if isinstance(source_context, Mock) and list(source_fields.keys()) == ["test"]:
-                if _VERBOSE_DEBUG:
-                    logger.debug("Skipping trivial mock context merge for performance")
-                return True
-        except Exception:
-            pass
+        if is_mock_like(source_context) and list(source_fields.keys()) == ["test"]:
+            if _VERBOSE_DEBUG:
+                logger.debug("Skipping trivial mock context merge for performance")
+            return True
 
         if _VERBOSE_DEBUG:
             # Avoid massive stringification: truncate long string values for debug
@@ -482,28 +467,11 @@ def safe_merge_context_updates(
                         logger.debug(f"Merging lists for field: {field_name}")
                     # Append with de-duplication and robust handling for edge cases
                     try:
-                        # Guard: skip if source is a Mock-like object masquerading as list
-                        try:
-                            from unittest.mock import Mock, MagicMock
-
-                            try:
-                                from unittest.mock import AsyncMock as _AsyncMock
-
-                                _mock_list_types: tuple[type[Any], ...] = (
-                                    Mock,
-                                    MagicMock,
-                                    _AsyncMock,
-                                )
-                            except Exception:
-                                _mock_list_types = (Mock, MagicMock)
-                            if isinstance(actual_source_value, _mock_list_types):
-                                if _VERBOSE_DEBUG:
-                                    logger.debug(
-                                        f"Skipping mock list merge for field: {field_name}"
-                                    )
-                                raise TypeError("source is mock")
-                        except Exception:
-                            pass
+                        # Guard: skip if source is a mock-like object masquerading as list
+                        if is_mock_like(actual_source_value):
+                            if _VERBOSE_DEBUG:
+                                logger.debug(f"Skipping mock list merge for field: {field_name}")
+                            raise TypeError("source is mock")
 
                         if actual_source_value:
                             existing_signatures = {

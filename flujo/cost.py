@@ -16,6 +16,7 @@ from typing import (
 from types import FunctionType, BuiltinFunctionType, MethodType
 import flujo.infra.config
 from flujo.exceptions import PricingNotConfiguredError
+from .utils.mock_detection import is_mock_like
 
 # Cache for model information to reduce repeated extraction overhead
 _model_cache: dict[str, tuple[Optional[str], str]] = {}
@@ -60,34 +61,8 @@ def resolve_callable(value: T | Callable[[], T]) -> T:
 
 
 def _is_mock_object(value: Any) -> bool:
-    """Best-effort check to determine whether ``value`` is a unittest.mock object.
-
-    Avoids tight coupling by importing lazily and falling back to duck-typing
-    checks present on Mock/MagicMock/AsyncMock instances.
-    """
-    try:
-        # Import lazily to avoid overhead at module import time
-        from unittest.mock import Mock, MagicMock
-
-        # Build tuple of types in a mypy-friendly way
-        mock_types: tuple[type[Any], ...] = (Mock, MagicMock)
-        try:
-            from unittest.mock import AsyncMock as _AsyncMock  # py>=3.8
-
-            mock_types = (*mock_types, _AsyncMock)
-        except Exception:  # pragma: no cover - AsyncMock may not exist
-            pass
-        if isinstance(value, mock_types):
-            return True
-    except Exception:
-        # If unittest.mock is unavailable (unlikely), fallback to duck-typing
-        pass
-
-    # Common attributes on mock objects
-    if hasattr(value, "assert_called") or getattr(value, "_is_mock", False):
-        return True
-
-    return False
+    """Best-effort check to determine whether ``value`` is a mock-like object."""
+    return is_mock_like(value)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
