@@ -75,8 +75,9 @@ def normalize_sqlite_path(uri: str, cwd: Path, *, config_dir: Path | None = None
 
     # Case 2: Standard URI path
     path_str = parsed.path
+    stripped_path = path_str.strip() if path_str else ""
     # Check for empty path: urlparse("sqlite:///") returns path="/", which we treat as empty
-    if not path_str or not path_str.strip() or path_str.strip() == "/":
+    if not path_str or not stripped_path or stripped_path == "/":
         raise ValueError(
             "Malformed SQLite URI: empty path. Use 'sqlite:///file.db' or 'sqlite:////abs/path.db'."
         )

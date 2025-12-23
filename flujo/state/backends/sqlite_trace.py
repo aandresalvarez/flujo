@@ -39,7 +39,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class SQLiteTraceMixin:
-    async def save_spans(self: "_SQLiteBackendDeps", run_id: str, spans: List[JSONObject]) -> None:
+    async def save_spans(self: "_SQLiteBackendDeps", run_id: str, spans: list[JSONObject]) -> None:
         """Persist normalized spans for a given run_id."""
         if not run_id or not spans:
             return

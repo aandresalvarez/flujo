@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import TYPE_CHECKING, TypeVar
+from typing import TypeVar
 
 import yaml
 from pydantic import ValidationError
@@ -29,9 +29,7 @@ from .loader_models import BlueprintError, BlueprintPipelineModel
 from .loader_resolution import _pop_skills_base_dir, _push_skills_base_dir
 from .loader_steps import build_pipeline_from_blueprint
 from flujo.type_definitions.common import JSONObject
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    pass
+from flujo.exceptions import ControlFlowError
 
 
 PipeInT = TypeVar("PipeInT")
@@ -396,7 +394,7 @@ def load_pipeline_blueprint_from_yaml(
         bp = BlueprintPipelineModel.model_validate(data)
         # Runtime import required to avoid circular dependency with compiler module
         # The TYPE_CHECKING import above is for type hints only
-        from .compiler import DeclarativeBlueprintCompiler  # noqa: PLC0415
+        from .compiler import DeclarativeBlueprintCompiler
 
         if bp.agents or getattr(bp, "imports", None):
             try:
@@ -411,14 +409,8 @@ def load_pipeline_blueprint_from_yaml(
         except BlueprintError:
             raise
         except Exception as e:
-            # Preserve control-flow exceptions if they ever surface here.
-            try:
-                from flujo.exceptions import ControlFlowError
-
-                if isinstance(e, ControlFlowError):
-                    raise
-            except Exception:
-                pass
+            if isinstance(e, ControlFlowError):
+                raise
             raise BlueprintError(f"Failed to build pipeline from blueprint: {e}") from e
         try:
             name_val = getattr(bp, "name", None)

@@ -92,8 +92,8 @@ class TestSerializationGuardrails:
                 + "\n\nUse flujo.state.backends.base._serialize_for_json (via _fast_json_dumps) instead."
             )
 
-    def test_no_serialize_jsonable_in_repo(self, flujo_root: Path) -> None:
-        """Legacy serialize_jsonable must not appear in code, tests, or docs."""
+    def test_no_serialize_jsonable_in_code_tests_docs(self, flujo_root: Path) -> None:
+        """Legacy serialize_jsonable must not appear in project code, tests, or docs."""
         guardrail_file = Path(__file__).resolve()
         search_roots = [
             flujo_root / "flujo",

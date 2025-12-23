@@ -223,15 +223,18 @@ def _get_default_pricing(provider: Optional[str], model: str) -> Optional[Provid
 def _is_ci_environment() -> bool:
     """Check if we're running in a CI environment.
 
-    **Note (per FLUJO_TEAM_GUIDE Section 2.6):**
-    This function is used for performance threshold adjustment in benchmarking/testing
-    contexts, not for changing production behavior. It is acceptable because:
-    - It's used only for performance multiplier calculations
+    This function reads the CI environment variable directly rather than through
+    ConfigManager because CI detection is part of test infrastructure, not
+    runtime configuration. The CI flag is set by CI systems (GitHub Actions, etc.)
+    and is not configurable via flujo.toml.
+
+    This is an acceptable exception to the config access guidelines because:
+    - It's used only for performance threshold adjustments in tests/benchmarks
     - It does not affect production code execution paths
-    - It's isolated to configuration/infrastructure modules
+    - The CI env var is external infrastructure, not user configuration
 
     Returns:
-        True if running in a CI environment (CI env var set), False otherwise
+        True if running in a CI environment (CI env var set), False otherwise.
     """
     import os
 
