@@ -1,4 +1,5 @@
 import logging
+import sys
 
 import atexit
 from typing import TYPE_CHECKING, Any, Callable, Optional, List
@@ -48,6 +49,40 @@ def _safe_log(logger: logging.Logger, level: int, message: str, *args: Any, **kw
         # Check if logger is still valid before attempting to log
         if logger is None or not hasattr(logger, "log"):
             return
+        if sys.is_finalizing():
+            return
+
+        def _handler_closed(handler: logging.Handler) -> bool:
+            stream = getattr(handler, "stream", None)
+            if stream is None:
+                return False
+            try:
+                return bool(getattr(stream, "closed", False))
+            except Exception:
+                return False
+
+        def _prune_closed_handlers(target: logging.Logger) -> None:
+            try:
+                handlers = list(getattr(target, "handlers", []))
+                if not handlers:
+                    return
+                keep: list[logging.Handler] = []
+                for handler in handlers:
+                    if _handler_closed(handler):
+                        try:
+                            handler.close()
+                        except Exception:
+                            pass
+                        continue
+                    keep.append(handler)
+                if len(keep) != len(handlers):
+                    target.handlers = keep
+            except Exception:
+                pass
+
+        _prune_closed_handlers(logger)
+        if getattr(logger, "propagate", False):
+            _prune_closed_handlers(logging.getLogger())
 
         # Attempt to log the message - let the actual logging attempt happen
         # and catch any I/O errors that result. The logging system will handle

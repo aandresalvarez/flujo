@@ -706,6 +706,108 @@ class PostgresBackend(StateBackend):
                         ],
                     )
 
+    async def save_spans(self, run_id: str, spans: list[JSONObject]) -> None:
+        if not run_id or not spans:
+            return
+        await self._ensure_init()
+        assert self._pool is not None
+        pipeline_name: Optional[str] = None
+        pipeline_version: Optional[str] = None
+        for span in spans:
+            attrs = span.get("attributes")
+            if not isinstance(attrs, dict):
+                continue
+            if pipeline_name is None:
+                val = attrs.get("flujo.pipeline.name")
+                if isinstance(val, str) and val:
+                    pipeline_name = val
+            if pipeline_version is None:
+                val = attrs.get("flujo.pipeline.version")
+                if isinstance(val, str) and val:
+                    pipeline_version = val
+            if pipeline_name and pipeline_version:
+                break
+
+        rows: List[Tuple[str, Optional[str], str, float, Optional[float], str, Optional[str]]] = []
+        for span in spans:
+            try:
+                span_id = str(span.get("span_id", ""))
+                if not span_id:
+                    continue
+                parent_span_id_val = span.get("parent_span_id")
+                parent_span_id = str(parent_span_id_val) if parent_span_id_val is not None else None
+                name = str(span.get("name", "")) or "span"
+                start_time = float(span.get("start_time", 0.0))
+                end_raw = span.get("end_time")
+                end_time = float(end_raw) if end_raw is not None else None
+                status = str(span.get("status", "running"))
+                attrs = span.get("attributes", {})
+                attrs_json = _jsonb(attrs if isinstance(attrs, dict) else {})
+            except (ValueError, TypeError):
+                continue
+
+            rows.append(
+                (
+                    span_id,
+                    parent_span_id,
+                    name,
+                    start_time,
+                    end_time,
+                    status,
+                    attrs_json,
+                )
+            )
+
+        if not rows:
+            return
+
+        async with self._pool.acquire() as conn:
+            now = datetime.now(timezone.utc)
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO runs (
+                        run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                        created_at, updated_at
+                    ) VALUES ($1, 'unknown', $2, $3, 'running', $4, $4)
+                    ON CONFLICT (run_id) DO NOTHING
+                    """,
+                    run_id,
+                    pipeline_name or "unknown",
+                    pipeline_version or "latest",
+                    now,
+                )
+                await conn.executemany(
+                    """
+                    INSERT INTO spans (
+                        run_id, span_id, parent_span_id, name, start_time, end_time,
+                        status, attributes, created_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)
+                    """,
+                    [
+                        (
+                            run_id,
+                            span_id,
+                            parent_span_id,
+                            name,
+                            start_time,
+                            end_time,
+                            status,
+                            attrs_json,
+                            now,
+                        )
+                        for (
+                            span_id,
+                            parent_span_id,
+                            name,
+                            start_time,
+                            end_time,
+                            status,
+                            attrs_json,
+                        ) in rows
+                    ],
+                )
+
     async def save_run_start(self, run_data: JSONObject) -> None:
         await self._ensure_init()
         assert self._pool is not None

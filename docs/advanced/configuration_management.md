@@ -37,6 +37,7 @@ reflection_enabled = true
 reward_enabled = true
 telemetry_export_enabled = false
 otlp_export_enabled = false
+state_backend_span_export_enabled = true
 
 # Default models for each agent
 default_solution_model = "openai:gpt-4o"

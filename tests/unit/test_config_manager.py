@@ -172,6 +172,35 @@ class TestConfigManager:
         finally:
             os.unlink(config_path)
 
+    def test_settings_sandbox_overrides(self, tmp_path, monkeypatch):
+        """Sandbox overrides in [settings.sandbox] should apply unless env overrides."""
+        monkeypatch.delenv("FLUJO_SANDBOX_MODE", raising=False)
+        monkeypatch.delenv("FLUJO_SANDBOX_DOCKER_MEM_LIMIT", raising=False)
+        monkeypatch.delenv("FLUJO_SANDBOX_DOCKER_PIDS_LIMIT", raising=False)
+        monkeypatch.delenv("FLUJO_SANDBOX_DOCKER_NETWORK_MODE", raising=False)
+
+        config_path = tmp_path / "flujo.toml"
+        config_path.write_text(
+            """
+            [settings.sandbox]
+            mode = "docker"
+            docker_mem_limit = "512m"
+            docker_pids_limit = 256
+            docker_network_mode = "none"
+            """
+        )
+
+        config_manager = ConfigManager(config_path)
+        settings = config_manager.get_settings()
+        assert settings.sandbox.mode == "docker"
+        assert settings.sandbox.docker_mem_limit == "512m"
+        assert settings.sandbox.docker_pids_limit == 256
+        assert settings.sandbox.docker_network_mode == "none"
+
+        monkeypatch.setenv("FLUJO_SANDBOX_DOCKER_MEM_LIMIT", "1g")
+        settings = config_manager.get_settings()
+        assert settings.sandbox.docker_mem_limit == "1g"
+
     def test_governance_tool_allowlist_toml_list_is_joined(self, tmp_path, monkeypatch):
         """TOML list overrides should be normalized to Settings string type."""
         monkeypatch.delenv("FLUJO_GOVERNANCE_TOOL_ALLOWLIST", raising=False)

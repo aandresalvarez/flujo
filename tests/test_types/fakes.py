@@ -12,7 +12,8 @@ from typing import Any, Optional
 
 from flujo.application.core.executor_protocols import IUsageMeter, ICacheBackend
 from flujo.domain.resources import AppResources
-from flujo.domain.models import StepResult
+from flujo.domain.models import BaseModel, StepResult
+from pydantic import Field
 
 
 class FakeAgent:
@@ -34,6 +35,14 @@ class FakeAgent:
             {"data": data, "context": context, "resources": resources, "kwargs": kwargs}
         )
         return self.output
+
+
+class TestContext(BaseModel):
+    """Minimal typed context for tests."""
+
+    counter: int = 0
+    scratchpad: dict[str, object] = Field(default_factory=dict)
+    step_outputs: dict[str, object] = Field(default_factory=dict)
 
 
 class FakeUsageMeter(IUsageMeter):
@@ -66,7 +75,7 @@ class FakeUsageMeter(IUsageMeter):
         return current
 
 
-__all__ = ["FakeAgent", "FakeUsageMeter", "FakeCacheBackend"]
+__all__ = ["FakeAgent", "FakeUsageMeter", "FakeCacheBackend", "TestContext"]
 
 
 class FakeCacheBackend(ICacheBackend):

@@ -42,6 +42,21 @@ class TemplateConfig(BaseModel):
     log_resolution: bool = False  # Log template resolution process in debug mode
 
 
+class SandboxOverrides(BaseModel):
+    """Sandbox settings overrides from flujo.toml [settings.sandbox]."""
+
+    mode: Optional[str] = None
+    api_url: Optional[str] = None
+    api_key: Optional[str] = None
+    timeout_seconds: Optional[int] = None
+    verify_ssl: Optional[bool] = None
+    docker_image: Optional[str] = None
+    docker_pull: Optional[bool] = None
+    docker_mem_limit: Optional[str] = None
+    docker_pids_limit: Optional[int] = None
+    docker_network_mode: Optional[str] = None
+
+
 class FlujoConfig(BaseModel):
     """Configuration loaded from flujo.toml files."""
 
@@ -128,6 +143,7 @@ class SettingsOverrides(BaseModel):
     reward_enabled: Optional[bool] = None
     telemetry_export_enabled: Optional[bool] = None
     otlp_export_enabled: Optional[bool] = None
+    state_backend_span_export_enabled: Optional[bool] = None
 
     # Default models
     default_solution_model: Optional[str] = None
@@ -158,6 +174,7 @@ class SettingsOverrides(BaseModel):
     governance_policy_module: Optional[str] = None
     governance_tool_allowlist: Optional[list[str]] = None
     shadow_eval_sink: Optional[str] = None
+    sandbox: Optional[SandboxOverrides] = None
 
 
 class BudgetConfig(BaseModel):
@@ -536,11 +553,29 @@ class ConfigManager:
         # Step 2: Create Settings with defaults + environment variables
         # pydantic-settings automatically loads: defaults < environment variables
         settings = Settings()
+        self._apply_sandbox_env_overrides(settings)
 
         # Step 3: Apply TOML overrides, but only if no environment variable is set
         # This ensures environment variables have the highest precedence
         if config.settings:
             for field_name, toml_value in config.settings.model_dump(exclude_none=True).items():
+                if field_name == "sandbox" and isinstance(toml_value, dict):
+                    sandbox_obj = getattr(settings, "sandbox", None)
+                    if sandbox_obj is not None:
+                        sandbox_fields = getattr(type(sandbox_obj), "model_fields", {}) or {}
+                        for sandbox_key, sandbox_value in toml_value.items():
+                            if sandbox_value is None:
+                                continue
+                            if not hasattr(sandbox_obj, sandbox_key):
+                                continue
+                            field_info = sandbox_fields.get(sandbox_key)
+                            if field_info and self._is_field_set_by_env(sandbox_key, field_info):
+                                continue
+                            try:
+                                setattr(sandbox_obj, sandbox_key, sandbox_value)
+                            except Exception:
+                                pass
+                    continue
                 if hasattr(settings, field_name):
                     # Check if this field has been set by an environment variable
                     field_info = Settings.model_fields.get(field_name)
@@ -571,30 +606,64 @@ class ConfigManager:
             pass
         return ArosConfig()  # defaults
 
-    def _is_field_set_by_env(self, field_name: str, field_info: Any) -> bool:
-        """Check if a field was set by an environment variable.
-
-        This method checks all possible environment variable names for a field,
-        including validation_alias patterns.
-        """
-        import os
+    def _get_env_value_for_field(self, field_name: str, field_info: Any) -> Optional[str]:
+        """Return the environment variable value for a field when set."""
         from pydantic import AliasChoices
 
-        # Get all possible environment variable names for this field
         env_var_names = [field_name.upper()]
-
-        # Add validation_alias names if they exist
         if hasattr(field_info, "validation_alias") and field_info.validation_alias:
             alias = field_info.validation_alias
             if isinstance(alias, AliasChoices):
-                env_var_names.extend(
-                    [str(choice).upper() for choice in alias.choices if isinstance(choice, str)]
-                )
+                for choice in alias.choices:
+                    if isinstance(choice, str):
+                        env_var_names.append(choice.upper())
+                        env_var_names.append(choice)
             elif isinstance(alias, str):
                 env_var_names.append(alias.upper())
+                env_var_names.append(alias)
 
-        # Check if any of these environment variables are set
-        return any(env_var in os.environ for env_var in env_var_names)
+        for env_var in env_var_names:
+            if env_var in os.environ:
+                return os.environ.get(env_var)
+        return None
+
+    def _is_field_set_by_env(self, field_name: str, field_info: Any) -> bool:
+        """Check if a field was set by an environment variable."""
+        return self._get_env_value_for_field(field_name, field_info) is not None
+
+    def _apply_sandbox_env_overrides(self, settings: Any) -> None:
+        """Apply env overrides to nested sandbox settings."""
+        sandbox_obj = getattr(settings, "sandbox", None)
+        if sandbox_obj is None:
+            return
+        try:
+            from .settings import SandboxSettings
+
+            sandbox_fields = SandboxSettings.model_fields
+        except Exception:
+            return
+
+        sandbox_data = {}
+        try:
+            sandbox_data = sandbox_obj.model_dump()
+        except Exception:
+            pass
+        env_overrides: dict[str, str] = {}
+        for field_name, field_info in sandbox_fields.items():
+            env_value = self._get_env_value_for_field(field_name, field_info)
+            if env_value is not None:
+                env_overrides[field_name] = env_value
+        if not env_overrides:
+            return
+        try:
+            merged = {**sandbox_data, **env_overrides}
+            setattr(settings, "sandbox", SandboxSettings.model_validate(merged))
+        except Exception:
+            for key, value in env_overrides.items():
+                try:
+                    setattr(sandbox_obj, key, value)
+                except Exception:
+                    pass
 
     def get_cli_defaults(self, command: str, force_reload: bool = False) -> JSONObject:
         """Get CLI defaults for a specific command.

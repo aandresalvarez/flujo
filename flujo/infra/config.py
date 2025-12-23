@@ -221,7 +221,18 @@ def _get_default_pricing(provider: Optional[str], model: str) -> Optional[Provid
 
 
 def _is_ci_environment() -> bool:
-    """Check if we're running in a CI environment."""
+    """Check if we're running in a CI environment.
+
+    **Note (per FLUJO_TEAM_GUIDE Section 2.6):**
+    This function is used for performance threshold adjustment in benchmarking/testing
+    contexts, not for changing production behavior. It is acceptable because:
+    - It's used only for performance multiplier calculations
+    - It does not affect production code execution paths
+    - It's isolated to configuration/infrastructure modules
+
+    Returns:
+        True if running in a CI environment (CI env var set), False otherwise
+    """
     import os
 
     return os.environ.get("CI", "").lower() in ("true", "1", "yes")
@@ -232,6 +243,13 @@ def get_ci_performance_multiplier() -> float:
 
     CI environments often have different performance characteristics than local development.
     This function provides appropriate multipliers for performance thresholds.
+
+    **Usage Context:**
+    This function is intended for use in performance tests and benchmarks to adjust
+    thresholds based on environment. It does not affect production code execution.
+
+    Returns:
+        Multiplier value: 3.0 for CI environments, 1.0 for local development
     """
     if _is_ci_environment():
         # CI environments typically have:

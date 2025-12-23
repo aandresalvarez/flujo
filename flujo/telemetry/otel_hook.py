@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, Dict, Literal, Optional
+import threading
 import time
+from typing import Callable, Dict, Literal, Optional, Sequence, TYPE_CHECKING
 
 from ..domain.events import (
     HookPayload,
@@ -21,7 +22,9 @@ try:
         BatchSpanProcessor,
         ConsoleSpanExporter,
         SpanExporter,
+        SpanExportResult,
     )
+    from opentelemetry.sdk.trace import ReadableSpan
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
         OTLPSpanExporter,
     )
@@ -32,6 +35,164 @@ except Exception:  # pragma: no cover - optional dependency
 
 
 logger = logging.getLogger("flujo.telemetry.otel")
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from flujo.state.backends.base import StateBackend
+
+if OTEL_AVAILABLE:
+
+    class StateBackendSpanExporter(SpanExporter):
+        """Export OTel spans to the configured StateBackend spans table."""
+
+        def __init__(
+            self,
+            state_backend: "StateBackend",
+            *,
+            run_id_attribute: str = "flujo.run_id",
+        ) -> None:
+            self._backend = state_backend
+            self._run_id_attribute = run_id_attribute
+            self._trace_run_ids: Dict[str, str] = {}
+            self._lock = threading.Lock()
+            self._closed = False
+
+        def export(self, spans: Sequence["ReadableSpan"]) -> "SpanExportResult":
+            if self._closed:
+                return SpanExportResult.FAILURE
+            if not spans:
+                return SpanExportResult.SUCCESS
+            try:
+                grouped: Dict[str, list[dict[str, object]]] = {}
+                with self._lock:
+                    for span in spans:
+                        run_id = self._extract_run_id(span)
+                        if run_id:
+                            self._trace_run_ids[self._trace_id(span)] = run_id
+                    for span in spans:
+                        span_record = self._span_to_record(span)
+                        if span_record is None:
+                            continue
+                        run_id_value = span_record.pop("_run_id", None)
+                        if not isinstance(run_id_value, str) or not run_id_value:
+                            continue
+                        grouped.setdefault(run_id_value, []).append(span_record)
+                for run_id, span_records in grouped.items():
+                    self._persist_spans(run_id, span_records)
+                return SpanExportResult.SUCCESS
+            except Exception as exc:  # noqa: BLE001 - telemetry must not raise
+                logger.debug("StateBackendSpanExporter export failed", exc_info=exc)
+                return SpanExportResult.FAILURE
+
+        def shutdown(self) -> None:
+            if self._closed:
+                return
+            self._closed = True
+            shutdown_fn = getattr(self._backend, "shutdown", None)
+            if callable(shutdown_fn):
+                try:
+                    result = shutdown_fn()
+                except Exception:
+                    return
+                try:
+                    if hasattr(result, "__await__"):
+                        from flujo.utils.async_bridge import run_sync
+
+                        run_sync(result)
+                except Exception:
+                    pass
+
+        def force_flush(self, timeout_millis: int = 30000) -> bool:
+            return True
+
+        def _persist_spans(self, run_id: str, spans: list[dict[str, object]]) -> None:
+            try:
+                import asyncio
+
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            try:
+                if loop is not None:
+                    loop.create_task(self._backend.save_spans(run_id, spans))
+                    return
+                result = self._backend.save_spans(run_id, spans)
+            except NotImplementedError:
+                return
+            except Exception:
+                return
+
+            try:
+                if hasattr(result, "__await__"):
+                    from flujo.utils.async_bridge import run_sync
+
+                    run_sync(result)
+            except Exception:
+                pass
+
+        def _extract_run_id(self, span: "ReadableSpan") -> Optional[str]:
+            attrs = getattr(span, "attributes", None)
+            if attrs is not None and hasattr(attrs, "get"):
+                run_id = attrs.get(self._run_id_attribute) or attrs.get("run_id")
+                if run_id is not None:
+                    return str(run_id)
+            return None
+
+        def _trace_id(self, span: "ReadableSpan") -> str:
+            ctx = span.context
+            return f"{ctx.trace_id:032x}"
+
+        def _span_to_record(self, span: "ReadableSpan") -> Optional[dict[str, object]]:
+            try:
+                ctx = span.context
+                span_id = f"{ctx.span_id:016x}"
+                if not span_id:
+                    return None
+                parent = span.parent
+                parent_span_id = f"{parent.span_id:016x}" if parent is not None else None
+                start_raw = span.start_time
+                if start_raw is None:
+                    return None
+                start_time = float(start_raw) / 1_000_000_000
+                end_raw = span.end_time
+                end_time = float(end_raw) / 1_000_000_000 if end_raw else None
+                status_code = span.status.status_code
+                if status_code == StatusCode.ERROR:
+                    status = "failed"
+                elif status_code == StatusCode.OK:
+                    status = "completed"
+                else:
+                    status = "running"
+                raw_attrs = span.attributes
+                if raw_attrs is None:
+                    attrs = {}
+                elif isinstance(raw_attrs, dict):
+                    attrs = raw_attrs
+                else:
+                    try:
+                        attrs = dict(raw_attrs)
+                    except Exception:
+                        attrs = {}
+                run_id = self._extract_run_id(span) or self._trace_run_ids.get(self._trace_id(span))
+                if run_id is None:
+                    run_id = self._trace_id(span)
+                return {
+                    "_run_id": run_id,
+                    "span_id": span_id,
+                    "parent_span_id": parent_span_id,
+                    "name": span.name,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "status": status,
+                    "attributes": dict(attrs),
+                }
+            except Exception:
+                return None
+
+else:  # pragma: no cover - optional dependency
+
+    class StateBackendSpanExporter:  # type: ignore[no-redef]
+        def __init__(self, *_: object, **__: object) -> None:
+            raise ImportError("OpenTelemetry dependencies are not installed")
 
 
 class OpenTelemetryHook:
@@ -48,18 +209,26 @@ class OpenTelemetryHook:
 
         if mode == "console":
             exporter: SpanExporter = ConsoleSpanExporter()
+            exporter_key: tuple[str, str | None] = ("console", None)
         else:
             exporter = OTLPSpanExporter(endpoint=endpoint) if endpoint else OTLPSpanExporter()
+            exporter_key = ("otlp", endpoint or "")
 
-        provider = TracerProvider()
-        processor = BatchSpanProcessor(exporter)
-        provider.add_span_processor(processor)
-        trace.set_tracer_provider(provider)
+        provider = trace.get_tracer_provider()
+        if not isinstance(provider, TracerProvider):
+            provider = TracerProvider()
+            trace.set_tracer_provider(provider)
+
+        self._attach_span_processor(provider, exporter_key, BatchSpanProcessor(exporter))
+        self._maybe_attach_state_backend_exporter(provider)
         self.tracer = trace.get_tracer("flujo")
 
         self._active_spans: Dict[str, Span] = {}
         # Monotonic start times for step spans (fallback latency computation)
         self._mono_start: Dict[str, float] = {}
+        self._current_run_id: Optional[str] = None
+        self._current_pipeline_name: Optional[str] = None
+        self._current_pipeline_version: Optional[str] = None
         self._redact: Callable[[str], str]
         try:
             from flujo.utils.redact import summarize_and_redact_prompt
@@ -113,12 +282,15 @@ class OpenTelemetryHook:
         run_id = getattr(payload, "run_id", None)
         if run_id is not None:
             span.set_attribute("flujo.run_id", run_id)
+            self._current_run_id = str(run_id)
         pipeline_name = getattr(payload, "pipeline_name", None)
         if pipeline_name is not None:
             span.set_attribute("flujo.pipeline.name", pipeline_name)
+            self._current_pipeline_name = str(pipeline_name)
         pipeline_version = getattr(payload, "pipeline_version", None)
         if pipeline_version is not None:
             span.set_attribute("flujo.pipeline.version", pipeline_version)
+            self._current_pipeline_version = str(pipeline_version)
         initial_budget_cost_usd = getattr(payload, "initial_budget_cost_usd", None)
         if initial_budget_cost_usd is not None:
             span.set_attribute("flujo.budget.initial_cost_usd", initial_budget_cost_usd)
@@ -131,6 +303,9 @@ class OpenTelemetryHook:
         if span is not None:
             span.set_status(StatusCode.OK)
             span.end()
+        self._current_run_id = None
+        self._current_pipeline_name = None
+        self._current_pipeline_version = None
 
     def _get_step_span_key(self, step_name: str, step_id: Optional[int] = None) -> str:
         """Generate a consistent span key for a step.
@@ -156,6 +331,12 @@ class OpenTelemetryHook:
         # Canonical attributes (best-effort)
         raw_input = str(getattr(payload, "step_input", ""))
         span.set_attribute("step_input", self._safe_redact(raw_input))
+        if self._current_run_id is not None:
+            span.set_attribute("flujo.run_id", self._current_run_id)
+        if self._current_pipeline_name is not None:
+            span.set_attribute("flujo.pipeline.name", self._current_pipeline_name)
+        if self._current_pipeline_version is not None:
+            span.set_attribute("flujo.pipeline.version", self._current_pipeline_version)
         try:
             span.set_attribute(
                 "flujo.step.type",
@@ -305,3 +486,99 @@ class OpenTelemetryHook:
             except Exception:
                 pass
             span.end()
+
+    def _attach_span_processor(
+        self,
+        provider: "TracerProvider",
+        key: tuple[str, str | None],
+        processor: "BatchSpanProcessor",
+    ) -> None:
+        export_keys = getattr(provider, "_flujo_otel_export_keys", None)
+        if not isinstance(export_keys, set):
+            export_keys = set()
+            try:
+                setattr(provider, "_flujo_otel_export_keys", export_keys)
+            except Exception:
+                export_keys = set()
+        if key in export_keys:
+            return
+        try:
+            provider.add_span_processor(processor)
+            export_keys.add(key)
+        except Exception:
+            pass
+
+    def _maybe_attach_state_backend_exporter(self, provider: "TracerProvider") -> None:
+        try:
+            from pathlib import Path
+            from urllib.parse import urlparse
+
+            from flujo.infra.config_manager import get_config_manager, get_state_uri
+            from flujo.infra.settings import get_settings
+            from flujo.state.backends.postgres import PostgresBackend
+            from flujo.state.backends.sqlite import SQLiteBackend
+            from flujo.state.sqlite_uri import normalize_sqlite_path
+        except Exception:
+            return
+
+        try:
+            settings = get_settings()
+            if bool(getattr(settings, "test_mode", False)):
+                return
+        except Exception:
+            settings = None
+
+        enabled = None
+        if settings is not None:
+            enabled = getattr(settings, "state_backend_span_export_enabled", None)
+        if enabled is False:
+            return
+
+        try:
+            state_uri = get_state_uri(force_reload=True)
+        except Exception:
+            state_uri = None
+
+        backend: Optional[StateBackend] = None
+        export_key: tuple[str, str | None] | None = None
+        cfg_dir = Path.cwd()
+        try:
+            cfg_path = get_config_manager().config_path
+            if cfg_path is not None:
+                cfg_dir = cfg_path.parent
+        except Exception:
+            cfg_dir = Path.cwd()
+
+        if state_uri is None:
+            if enabled is None or enabled is True:
+                backend = SQLiteBackend(Path.cwd() / "flujo_ops.db")
+                export_key = ("state_backend", "sqlite://default")
+        else:
+            parsed = urlparse(state_uri)
+            scheme = parsed.scheme.lower()
+            if scheme.startswith("sqlite"):
+                if enabled is None or enabled is True:
+                    sqlite_path = normalize_sqlite_path(state_uri, Path.cwd(), config_dir=cfg_dir)
+                    backend = SQLiteBackend(sqlite_path)
+                    export_key = ("state_backend", f"sqlite://{sqlite_path}")
+            elif scheme in {"memory", "mem", "inmemory"}:
+                backend = None
+            else:
+                if enabled is True and scheme in {"postgres", "postgresql"}:
+                    try:
+                        backend = PostgresBackend(state_uri)
+                        export_key = ("state_backend", state_uri)
+                    except Exception:
+                        backend = None
+
+        if backend is None or export_key is None:
+            return
+        try:
+            exporter = StateBackendSpanExporter(backend)
+            self._attach_span_processor(
+                provider,
+                export_key,
+                BatchSpanProcessor(exporter),
+            )
+        except Exception:
+            return

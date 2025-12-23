@@ -1,4 +1,19 @@
-"""Test-specific CLI environment configuration for CI and deterministic output."""
+"""Test-specific CLI environment configuration for CI and deterministic output.
+
+This module is part of Flujo's test infrastructure and intentionally checks for
+test environment variables (PYTEST_CURRENT_TEST, CI) to configure deterministic
+CLI output for testing.
+
+**Architectural Note (per FLUJO_TEAM_GUIDE Section 2.6):**
+This module is explicitly exempt from the "no test-aware production code" rule
+because it is test infrastructure, not production code. Test infrastructure may
+legitimately check for test environment variables to ensure deterministic behavior
+in CI and test environments.
+
+**Usage:**
+This module should only be imported and used in test contexts. Production code
+should not import or depend on this module.
+"""
 
 from __future__ import annotations
 
@@ -13,13 +28,30 @@ import typer.rich_utils as tru
 def configure_test_environment() -> None:
     """Configure CLI environment for tests/CI to ensure deterministic output.
 
-    This function should only be called when PYTEST_CURRENT_TEST or CI env vars are set.
-    It configures:
-    - ANSI/color disabling for CI
+    This function checks for test environment variables (PYTEST_CURRENT_TEST or CI)
+    and configures the CLI environment accordingly. This is intentional test infrastructure
+    behavior, not production code checking for test environments.
+
+    **Why this is acceptable:**
+    - This is test infrastructure, not production code (per FLUJO_TEAM_GUIDE Section 2.6)
+    - The check ensures deterministic test output in CI environments
+    - Production code paths do not call this function
+
+    **Configuration applied:**
+    - ANSI/color disabling for CI compatibility
     - Rich formatting overrides for deterministic help output
     - Click stderr shim for test compatibility
+    - Terminal width standardization for consistent output
+
+    **Environment Variables Checked:**
+    - PYTEST_CURRENT_TEST: Set by pytest when running tests
+    - CI: Set by most CI/CD systems (GitHub Actions, GitLab CI, etc.)
+
+    Returns:
+        None: Function returns early if not in test/CI environment
     """
     # Only configure if in test/CI environment
+    # This check is intentional for test infrastructure (see module docstring)
     if not (os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("CI")):
         return
 

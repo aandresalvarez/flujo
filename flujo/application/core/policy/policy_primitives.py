@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from flujo.exceptions import ConfigurationError, MockDetectionError
 from flujo.infra import telemetry
+from ....utils.mock_detection import is_mock_like
 from .policy_registry import PolicyRegistry, StepPolicy
 
 __all__ = [
@@ -113,22 +114,9 @@ def _unpack_agent_result(output: object) -> object:
 
 
 def _detect_mock_objects(obj: object) -> None:
-    """Raise MockDetectionError when the object is a unittest.mock instance."""
-
-    try:
-        from unittest.mock import Mock as _M, MagicMock as _MM
-
-        _mock_types: tuple[type[object], ...]
-        try:
-            from unittest.mock import AsyncMock as _AM  # py>=3.8
-
-            _mock_types = (_M, _MM, _AM)
-        except Exception:  # pragma: no cover - AsyncMock may be unavailable
-            _mock_types = (_M, _MM)
-        if isinstance(obj, _mock_types):
-            raise MockDetectionError("Mock object detected in agent output")
-    except Exception:
-        return
+    """Raise MockDetectionError when the object is mock-like."""
+    if is_mock_like(obj):
+        raise MockDetectionError("Mock object detected in agent output")
 
 
 def _load_template_config() -> tuple[bool, bool]:

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from ....domain.models import BaseModel, StepOutcome, StepResult, Success, UsageLimits
 from ....exceptions import InfiniteFallbackError
 from ....infra import telemetry
+from ....utils.mock_detection import is_mock_like
 from .agent_fallback_handler import AgentFallbackHandler, FallbackState
 from .agent_plugin_runner import AgentPluginRunner, PluginState
 from ..execution.executor_helpers import run_validation
@@ -45,12 +46,6 @@ class AgentExecutionRunner:
     ) -> StepOutcome[StepResult]:
         """Orchestrate agent execution with retries, telemetry, validation, plugins, fallback."""
         # Local imports to avoid import-time cycles
-        from unittest.mock import Mock, MagicMock
-
-        try:
-            from unittest.mock import AsyncMock
-        except Exception:  # pragma: no cover - Python <3.8 fallback
-            AsyncMock = type("_NoAsyncMock", (), {})  # type: ignore[misc,assignment]
         from ..hybrid_check import run_hybrid_check
         from ....domain.models import Failure
         from ....exceptions import (
@@ -171,9 +166,7 @@ class AgentExecutionRunner:
         except Exception:
             retries_config = 0
         # Guard mocked max_retries values
-        if hasattr(retries_config, "_mock_name") or isinstance(
-            retries_config, (Mock, MagicMock, AsyncMock)
-        ):
+        if is_mock_like(retries_config):
             retries_config = 2
         total_attempts = max(1, retries_config + 1)
         try:
@@ -567,7 +560,7 @@ class AgentExecutionRunner:
 
                 # Structured output normalization (AROS-lite) and mock detection
                 try:
-                    if isinstance(processed_output, (Mock, MagicMock, AsyncMock)):
+                    if is_mock_like(processed_output):
                         raise MockDetectionError(
                             f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object"
                         )

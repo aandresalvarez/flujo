@@ -66,6 +66,29 @@ async def test_docker_sandbox_runs_python() -> None:
 
 
 @pytest.mark.asyncio
+async def test_docker_sandbox_applies_limits() -> None:
+    container = _FakeContainer(status=0, logs=b"ok")
+    client = _FakeClient(container=container)
+    sandbox = DockerSandbox(
+        client=client,
+        image="python:3.13-slim",
+        pull=False,
+        mem_limit="256m",
+        pids_limit=128,
+        network_mode="none",
+    )
+
+    await sandbox.exec_code(SandboxExecution(code="print('hi')", language="python"))
+
+    assert client.containers.last_args is not None
+    _, kwargs = client.containers.last_args
+    assert kwargs["mem_limit"] == "256m"
+    assert kwargs["pids_limit"] == 128
+    assert kwargs["network_mode"] == "none"
+    assert "network_disabled" not in kwargs
+
+
+@pytest.mark.asyncio
 async def test_docker_sandbox_timeout() -> None:
     class SlowContainer(_FakeContainer):
         def wait(self) -> dict[str, int]:

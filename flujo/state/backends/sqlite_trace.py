@@ -39,6 +39,113 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class SQLiteTraceMixin:
+    async def save_spans(self: "_SQLiteBackendDeps", run_id: str, spans: List[JSONObject]) -> None:
+        """Persist normalized spans for a given run_id."""
+        if not run_id or not spans:
+            return
+        await self._ensure_init()
+        async with self._lock:
+
+            async def _save() -> None:
+                conn = await self._create_connection()
+                try:
+                    db = conn
+                    await db.execute("PRAGMA foreign_keys = ON")
+
+                    pipeline_name: Optional[str] = None
+                    pipeline_version: Optional[str] = None
+                    for span in spans:
+                        attrs = span.get("attributes")
+                        if not isinstance(attrs, dict):
+                            continue
+                        if pipeline_name is None:
+                            val = attrs.get("flujo.pipeline.name")
+                            if isinstance(val, str) and val:
+                                pipeline_name = val
+                        if pipeline_version is None:
+                            val = attrs.get("flujo.pipeline.version")
+                            if isinstance(val, str) and val:
+                                pipeline_version = val
+                        if pipeline_name and pipeline_version:
+                            break
+
+                    try:
+                        now = datetime.now(timezone.utc).isoformat()
+                        await db.execute(
+                            """
+                            INSERT OR IGNORE INTO runs (
+                                run_id, pipeline_id, pipeline_name, pipeline_version, status,
+                                created_at, updated_at
+                            ) VALUES (?, 'unknown', ?, ?, 'running', ?, ?)
+                            """,
+                            (
+                                run_id,
+                                pipeline_name or "unknown",
+                                pipeline_version or "latest",
+                                now,
+                                now,
+                            ),
+                        )
+                    except sqlite3.Error:
+                        pass
+
+                    spans_to_insert: List[
+                        Tuple[str, str, Optional[str], str, float, Optional[float], str, str]
+                    ] = []
+                    for span in spans:
+                        try:
+                            span_id = str(span.get("span_id", ""))
+                            if not span_id:
+                                continue
+                            parent_span_id_val = span.get("parent_span_id")
+                            parent_span_id = (
+                                str(parent_span_id_val) if parent_span_id_val is not None else None
+                            )
+                            name = str(span.get("name", "")) or "span"
+                            start_time = float(span.get("start_time", 0.0))
+                            end_raw = span.get("end_time")
+                            end_time = float(end_raw) if end_raw is not None else None
+                            status = str(span.get("status", "running"))
+                            attrs = span.get("attributes", {})
+                            attrs_json = _fast_json_dumps(attrs if isinstance(attrs, dict) else {})
+                        except (ValueError, TypeError):
+                            continue
+
+                        spans_to_insert.append(
+                            (
+                                span_id,
+                                run_id,
+                                parent_span_id,
+                                name,
+                                start_time,
+                                end_time,
+                                status,
+                                attrs_json,
+                            )
+                        )
+
+                    if spans_to_insert:
+                        await db.executemany(
+                            """
+                            INSERT INTO spans (
+                                span_id, run_id, parent_span_id, name, start_time,
+                                end_time, status, attributes, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                            """,
+                            spans_to_insert,
+                        )
+                        await db.commit()
+                        try:
+                            from flujo.infra.audit import log_audit as _audit
+
+                            _audit("spans_saved", run_id=run_id, span_count=len(spans_to_insert))
+                        except Exception:
+                            pass
+                finally:
+                    await conn.close()
+
+            await self._with_retries(_save)
+
     async def save_trace(self: "_SQLiteBackendDeps", run_id: str, trace: JSONObject) -> None:
         """Persist a trace tree as normalized spans for a given run_id."""
         await self._ensure_init()

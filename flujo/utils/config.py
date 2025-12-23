@@ -43,6 +43,9 @@ class Settings:
     sandbox_verify_ssl: bool = True
     sandbox_docker_image: str = "python:3.13-slim"
     sandbox_docker_pull: bool = True
+    sandbox_docker_mem_limit: str | None = None
+    sandbox_docker_pids_limit: int | None = None
+    sandbox_docker_network_mode: str | None = None
 
 
 _CACHED_SETTINGS: Optional[Settings] = None
@@ -75,6 +78,18 @@ def _load_from_env() -> Settings:
     }
     sandbox_mode = sandbox_mode_map.get(raw_sandbox_mode, "null")
 
+    docker_mem_limit = os.getenv("FLUJO_SANDBOX_DOCKER_MEM_LIMIT")
+    docker_mem_limit = docker_mem_limit.strip() if docker_mem_limit else None
+    docker_pids_raw = os.getenv("FLUJO_SANDBOX_DOCKER_PIDS_LIMIT")
+    docker_pids_limit = None
+    if docker_pids_raw:
+        try:
+            docker_pids_limit = int(docker_pids_raw)
+        except Exception:
+            docker_pids_limit = None
+    docker_network_mode = os.getenv("FLUJO_SANDBOX_DOCKER_NETWORK_MODE")
+    docker_network_mode = docker_network_mode.strip() if docker_network_mode else None
+
     return Settings(
         # Always use pure quota mode - legacy system removed
         pure_quota_mode=True,
@@ -106,6 +121,9 @@ def _load_from_env() -> Settings:
         sandbox_docker_pull=_flag("FLUJO_SANDBOX_DOCKER_PULL")
         if "FLUJO_SANDBOX_DOCKER_PULL" in os.environ
         else True,
+        sandbox_docker_mem_limit=docker_mem_limit,
+        sandbox_docker_pids_limit=docker_pids_limit,
+        sandbox_docker_network_mode=docker_network_mode,
     )
 
 

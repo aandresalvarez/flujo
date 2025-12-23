@@ -340,6 +340,21 @@ class FlujoRuntimeBuilder:
                             getattr(settings, "sandbox_timeout_s", 60.0),
                         )
                     ),
+                    mem_limit=getattr(
+                        sandbox_cfg,
+                        "docker_mem_limit",
+                        getattr(settings, "sandbox_docker_mem_limit", None),
+                    ),
+                    pids_limit=getattr(
+                        sandbox_cfg,
+                        "docker_pids_limit",
+                        getattr(settings, "sandbox_docker_pids_limit", None),
+                    ),
+                    network_mode=getattr(
+                        sandbox_cfg,
+                        "docker_network_mode",
+                        getattr(settings, "sandbox_docker_network_mode", None),
+                    ),
                 )
             except Exception:
                 sandbox_obj = NullSandbox()

@@ -3,7 +3,8 @@ import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
-from flujo.cli.config import _normalize_sqlite_path, load_backend_from_config
+from flujo.state.sqlite_uri import normalize_sqlite_path
+from flujo.cli.config import load_backend_from_config
 
 
 @pytest.mark.parametrize(
@@ -17,13 +18,13 @@ from flujo.cli.config import _normalize_sqlite_path, load_backend_from_config
         ("sqlite:///./subdir/bar.db", "./subdir/bar.db"),
     ],
 )
-def test_normalize_sqlite_path_relative(uri, expected_rel):
+def test_normalize_sqlite_path_relative(uri: str, expected_rel: str) -> None:
     """
-    _normalize_sqlite_path should resolve relative URIs to cwd, and absolute URIs as-is.
+    normalize_sqlite_path should resolve relative URIs to cwd, and absolute URIs as-is.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
-        cwd = Path(tmpdir)
-        result = _normalize_sqlite_path(uri, cwd)
+        cwd: Path = Path(tmpdir)
+        result: Path = normalize_sqlite_path(uri, cwd)
         if expected_rel.startswith("/"):
             # Absolute path
             assert result.resolve() == Path(expected_rel).resolve(), (
@@ -36,43 +37,101 @@ def test_normalize_sqlite_path_relative(uri, expected_rel):
             )
 
 
-def test_normalize_sqlite_path_absolute():
+def test_normalize_sqlite_path_absolute() -> None:
     """
-    _normalize_sqlite_path should return absolute paths as-is.
+    normalize_sqlite_path should return absolute paths as-is.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         # Use a temp absolute path to avoid hard-coded /tmp; simulate absolute URI
-        abs_path = Path(tmpdir) / "abs.db"
-        uri = f"sqlite:///{abs_path}"
-        cwd = Path(tmpdir)
-        result = _normalize_sqlite_path(uri, cwd)
+        abs_path: Path = Path(tmpdir) / "abs.db"
+        uri: str = f"sqlite:///{abs_path}"
+        cwd: Path = Path(tmpdir)
+        result: Path = normalize_sqlite_path(uri, cwd)
         assert result.resolve() == abs_path.resolve(), (
             f"Expected {abs_path.resolve()}, got {result.resolve()}"
         )
 
 
-def test_normalize_sqlite_path_edge_cases():
+def test_normalize_sqlite_path_edge_cases() -> None:
     """
-    _normalize_sqlite_path should handle edge cases like double slashes and /./ correctly.
+    normalize_sqlite_path should handle edge cases like double slashes and /./ correctly.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
-        cwd = Path(tmpdir)
+        cwd: Path = Path(tmpdir)
         # sqlite:///./foo.db -> ./foo.db
-        uri = "sqlite:///./foo.db"
-        result = _normalize_sqlite_path(uri, cwd)
+        uri: str = "sqlite:///./foo.db"
+        result: Path = normalize_sqlite_path(uri, cwd)
         assert result.resolve() == (cwd / "./foo.db").resolve()
         # sqlite:////foo.db -> /foo.db
         uri = "sqlite:////foo.db"
-        result = _normalize_sqlite_path(uri, cwd)
+        result = normalize_sqlite_path(uri, cwd)
         assert result.resolve() == Path("/foo.db").resolve()
         # sqlite:///foo.db -> foo.db
         uri = "sqlite:///foo.db"
-        result = _normalize_sqlite_path(uri, cwd)
+        result = normalize_sqlite_path(uri, cwd)
         assert result.resolve() == (cwd / "foo.db").resolve()
         # sqlite:///../foo.db -> ../foo.db
         uri = "sqlite:///../foo.db"
-        result = _normalize_sqlite_path(uri, cwd)
+        result = normalize_sqlite_path(uri, cwd)
         assert result.resolve() == (cwd / "../foo.db").resolve()
+
+
+def test_normalize_sqlite_path_config_dir() -> None:
+    """
+    normalize_sqlite_path should use config_dir when provided for relative paths.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cwd: Path = Path(tmpdir) / "cwd"
+        cwd.mkdir()
+        config_dir: Path = Path(tmpdir) / "config"
+        config_dir.mkdir()
+
+        uri: str = "sqlite:///foo.db"
+        result: Path = normalize_sqlite_path(uri, cwd, config_dir=config_dir)
+        expected: Path = (config_dir / "foo.db").resolve()
+        assert result.resolve() == expected, f"Expected {expected}, got {result.resolve()}"
+
+
+def test_normalize_sqlite_path_malformed_uri() -> None:
+    """
+    normalize_sqlite_path should raise ValueError for malformed URIs with empty paths.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cwd: Path = Path(tmpdir)
+
+        # Empty path should raise ValueError
+        with pytest.raises(ValueError, match="Malformed SQLite URI: empty path"):
+            normalize_sqlite_path("sqlite:///", cwd)
+
+        # Whitespace-only path should raise ValueError
+        with pytest.raises(ValueError, match="Malformed SQLite URI: empty path"):
+            normalize_sqlite_path("sqlite:///   ", cwd)
+
+
+def test_normalize_sqlite_path_non_standard_netloc() -> None:
+    """
+    normalize_sqlite_path should handle non-standard URIs with netloc for backward compatibility.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cwd: Path = Path(tmpdir)
+
+        # Non-standard form: sqlite://foo.db (netloc present)
+        uri: str = "sqlite://foo.db"
+        result: Path = normalize_sqlite_path(uri, cwd)
+        assert result.resolve() == (cwd / "foo.db").resolve()
+
+
+def test_normalize_sqlite_path_double_slash_absolute() -> None:
+    """
+    normalize_sqlite_path should correctly handle sqlite:////abs/path.db format.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cwd: Path = Path(tmpdir)
+
+        # Double slash indicates absolute path
+        uri: str = "sqlite:////abs/path.db"
+        result: Path = normalize_sqlite_path(uri, cwd)
+        assert result.resolve() == Path("/abs/path.db").resolve()
 
 
 class TestConfigWarning:

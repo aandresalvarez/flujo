@@ -21,11 +21,21 @@ class DockerSandbox(SandboxProtocol):
         image: str = "python:3.13-slim",
         pull: bool = True,
         timeout_s: float = 60.0,
+        mem_limit: str | int | None = None,
+        pids_limit: int | None = None,
+        network_mode: str | None = None,
         client: Any | None = None,
     ) -> None:
         self._image = image
         self._pull = pull
         self._timeout_s = timeout_s
+        if isinstance(mem_limit, str):
+            mem_limit = mem_limit.strip() or None
+        self._mem_limit = mem_limit
+        self._pids_limit = pids_limit if isinstance(pids_limit, int) and pids_limit > 0 else None
+        if isinstance(network_mode, str):
+            network_mode = network_mode.strip() or None
+        self._network_mode = network_mode
         self._client: Any = client or self._get_client()
         if self._pull:
             try:
@@ -98,16 +108,22 @@ class DockerSandbox(SandboxProtocol):
                 )
 
             try:
-                container = self._client.containers.run(
-                    self._image,
-                    command,
-                    working_dir="/workspace",
-                    environment=request.environment or {},
-                    volumes={str(workdir): {"bind": "/workspace", "mode": "rw"}},
-                    network_disabled=True,
-                    detach=True,
-                    tty=False,
-                )
+                run_kwargs: dict[str, object] = {
+                    "working_dir": "/workspace",
+                    "environment": request.environment or {},
+                    "volumes": {str(workdir): {"bind": "/workspace", "mode": "rw"}},
+                    "detach": True,
+                    "tty": False,
+                }
+                if self._network_mode:
+                    run_kwargs["network_mode"] = self._network_mode
+                else:
+                    run_kwargs["network_disabled"] = True
+                if self._mem_limit is not None:
+                    run_kwargs["mem_limit"] = self._mem_limit
+                if self._pids_limit is not None:
+                    run_kwargs["pids_limit"] = self._pids_limit
+                container = self._client.containers.run(self._image, command, **run_kwargs)
             except Exception as exc:
                 return SandboxResult(
                     stdout="",
