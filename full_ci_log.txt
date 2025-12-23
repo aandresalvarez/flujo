@@ -1,0 +1,472 @@
+Quality Checks	Set up job	﻿2025-12-23T22:49:24.2311730Z Current runner version: '2.330.0'
+Quality Checks	Set up job	2025-12-23T22:49:24.2335007Z ##[group]Runner Image Provisioner
+Quality Checks	Set up job	2025-12-23T22:49:24.2335795Z Hosted Compute Agent
+Quality Checks	Set up job	2025-12-23T22:49:24.2336300Z Version: 20251211.462
+Quality Checks	Set up job	2025-12-23T22:49:24.2336960Z Commit: 6cbad8c2bb55d58165063d031ccabf57e2d2db61
+Quality Checks	Set up job	2025-12-23T22:49:24.2337606Z Build Date: 2025-12-11T16:28:49Z
+Quality Checks	Set up job	2025-12-23T22:49:24.2338174Z Worker ID: {3e15b4f7-f431-4be8-bfcf-6e09770ee783}
+Quality Checks	Set up job	2025-12-23T22:49:24.2338787Z ##[endgroup]
+Quality Checks	Set up job	2025-12-23T22:49:24.2339205Z ##[group]Operating System
+Quality Checks	Set up job	2025-12-23T22:49:24.2339723Z Ubuntu
+Quality Checks	Set up job	2025-12-23T22:49:24.2340100Z 24.04.3
+Quality Checks	Set up job	2025-12-23T22:49:24.2340485Z LTS
+Quality Checks	Set up job	2025-12-23T22:49:24.2340911Z ##[endgroup]
+Quality Checks	Set up job	2025-12-23T22:49:24.2341340Z ##[group]Runner Image
+Quality Checks	Set up job	2025-12-23T22:49:24.2341796Z Image: ubuntu-24.04
+Quality Checks	Set up job	2025-12-23T22:49:24.2342253Z Version: 20251215.174.1
+Quality Checks	Set up job	2025-12-23T22:49:24.2343167Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20251215.174/images/ubuntu/Ubuntu2404-Readme.md
+Quality Checks	Set up job	2025-12-23T22:49:24.2344348Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20251215.174
+Quality Checks	Set up job	2025-12-23T22:49:24.2345400Z ##[endgroup]
+Quality Checks	Set up job	2025-12-23T22:49:24.2346347Z ##[group]GITHUB_TOKEN Permissions
+Quality Checks	Set up job	2025-12-23T22:49:24.2348217Z Contents: read
+Quality Checks	Set up job	2025-12-23T22:49:24.2348684Z Metadata: read
+Quality Checks	Set up job	2025-12-23T22:49:24.2349146Z Packages: read
+Quality Checks	Set up job	2025-12-23T22:49:24.2349606Z ##[endgroup]
+Quality Checks	Set up job	2025-12-23T22:49:24.2351870Z Secret source: Actions
+Quality Checks	Set up job	2025-12-23T22:49:24.2352550Z Prepare workflow directory
+Quality Checks	Set up job	2025-12-23T22:49:24.2661310Z Prepare all required actions
+Quality Checks	Set up job	2025-12-23T22:49:24.2699933Z Getting action download info
+Quality Checks	Set up job	2025-12-23T22:49:24.6360147Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+Quality Checks	Set up job	2025-12-23T22:49:24.7182985Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+Quality Checks	Set up job	2025-12-23T22:49:24.7828050Z Download action repository 'astral-sh/setup-uv@v1' (SHA:162b8acf397cb069dec09a3f5a9847cf71cfa46a)
+Quality Checks	Set up job	2025-12-23T22:49:25.9816028Z Complete job name: Quality Checks
+Quality Checks	Checkout repository	﻿2025-12-23T22:49:26.0676099Z ##[group]Run actions/checkout@v4
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0677221Z with:
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0677703Z   repository: aandresalvarez/flujo
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0678551Z   token: ***
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0678975Z   ssh-strict: true
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0679419Z   ssh-user: git
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0679872Z   persist-credentials: true
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0680375Z   clean: true
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0680831Z   sparse-checkout-cone-mode: true
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0681365Z   fetch-depth: 1
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0681810Z   fetch-tags: false
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0682271Z   show-progress: true
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0682729Z   lfs: false
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0683158Z   submodules: false
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0683641Z   set-safe-directory: true
+Quality Checks	Checkout repository	2025-12-23T22:49:26.0684357Z ##[endgroup]
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1704848Z Syncing repository: aandresalvarez/flujo
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1707048Z ##[group]Getting Git version info
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1707911Z Working directory is '/home/runner/work/flujo/flujo'
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1708985Z [command]/usr/bin/git version
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1767036Z git version 2.52.0
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1789914Z ##[endgroup]
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1802980Z Temporarily overriding HOME='/home/runner/work/_temp/90139910-ed33-4392-ab1b-f6f8a0ec26f1' before making global git config changes
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1804763Z Adding repository directory to the temporary git global config as a safe directory
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1807397Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/flujo/flujo
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1842040Z Deleting the contents of '/home/runner/work/flujo/flujo'
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1845197Z ##[group]Initializing the repository
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1849220Z [command]/usr/bin/git init /home/runner/work/flujo/flujo
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1945153Z hint: Using 'master' as the name for the initial branch. This default branch name
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1946315Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1947647Z hint: to use in all of your new repositories, which will suppress this warning,
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1949118Z hint: call:
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1949524Z hint:
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1950303Z hint: 	git config --global init.defaultBranch <name>
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1950916Z hint:
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1951506Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1952657Z hint: 'development'. The just-created branch can be renamed via this command:
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1953699Z hint:
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1954126Z hint: 	git branch -m <name>
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1954599Z hint:
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1955234Z hint: Disable this message with "git config set advice.defaultBranchName false"
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1956262Z Initialized empty Git repository in /home/runner/work/flujo/flujo/.git/
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1958887Z [command]/usr/bin/git remote add origin https://github.com/aandresalvarez/flujo
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1991695Z ##[endgroup]
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1993172Z ##[group]Disabling automatic garbage collection
+Quality Checks	Checkout repository	2025-12-23T22:49:26.1996991Z [command]/usr/bin/git config --local gc.auto 0
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2027392Z ##[endgroup]
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2037962Z ##[group]Setting up auth
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2038772Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2070989Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2360925Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2390114Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2573002Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2600720Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2781617Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2814463Z ##[endgroup]
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2815369Z ##[group]Fetching the repository
+Quality Checks	Checkout repository	2025-12-23T22:49:26.2825571Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +2bcb0a83622de90b84302ab1ae01f13d0c35817a:refs/remotes/pull/576/merge
+Quality Checks	Checkout repository	2025-12-23T22:49:27.8525448Z From https://github.com/aandresalvarez/flujo
+Quality Checks	Checkout repository	2025-12-23T22:49:27.8528656Z  * [new ref]         2bcb0a83622de90b84302ab1ae01f13d0c35817a -> pull/576/merge
+Quality Checks	Checkout repository	2025-12-23T22:49:27.8553075Z ##[endgroup]
+Quality Checks	Checkout repository	2025-12-23T22:49:27.8555087Z ##[group]Determining the checkout info
+Quality Checks	Checkout repository	2025-12-23T22:49:27.8557530Z ##[endgroup]
+Quality Checks	Checkout repository	2025-12-23T22:49:27.8560554Z [command]/usr/bin/git sparse-checkout disable
+Quality Checks	Checkout repository	2025-12-23T22:49:27.8596937Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+Quality Checks	Checkout repository	2025-12-23T22:49:27.8618195Z ##[group]Checking out the ref
+Quality Checks	Checkout repository	2025-12-23T22:49:27.8620914Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/576/merge
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0525581Z Note: switching to 'refs/remotes/pull/576/merge'.
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0527301Z 
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0528217Z You are in 'detached HEAD' state. You can look around, make experimental
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0530325Z changes and commit them, and you can discard any commits you make in this
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0533210Z state without impacting any branches by switching back to a branch.
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0535087Z 
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0536428Z If you want to create a new branch to retain commits you create, you may
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0539446Z do so (now or later) by using -c with the switch command. Example:
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0541229Z 
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0541991Z   git switch -c <new-branch-name>
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0543272Z 
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0543941Z Or undo this operation with:
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0545688Z 
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0546344Z   git switch -
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0547354Z 
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0548587Z Turn off this advice by setting config variable advice.detachedHead to false
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0550380Z 
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0552561Z HEAD is now at 2bcb0a8 Merge e64398baa6b6d7de54ca21b1ed2e65cfa35352aa into ea7f6bb80b0f35ee2d16f5d071b17cdbace5fdad
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0557420Z ##[endgroup]
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0578935Z [command]/usr/bin/git log -1 --format=%H
+Quality Checks	Checkout repository	2025-12-23T22:49:28.0598386Z 2bcb0a83622de90b84302ab1ae01f13d0c35817a
+Quality Checks	Set up Python 3.13	﻿2025-12-23T22:49:28.0899904Z ##[group]Run actions/setup-python@v5
+Quality Checks	Set up Python 3.13	2025-12-23T22:49:28.0901062Z with:
+Quality Checks	Set up Python 3.13	2025-12-23T22:49:28.0901888Z   python-version: 3.13
+Quality Checks	Set up Python 3.13	2025-12-23T22:49:28.0902834Z   check-latest: false
+Quality Checks	Set up Python 3.13	2025-12-23T22:49:28.0904078Z   token: ***
+Quality Checks	Set up Python 3.13	2025-12-23T22:49:28.0904935Z   update-environment: true
+Quality Checks	Set up Python 3.13	2025-12-23T22:49:28.0905971Z   allow-prereleases: false
+Quality Checks	Set up Python 3.13	2025-12-23T22:49:28.0907114Z   freethreaded: false
+Quality Checks	Set up Python 3.13	2025-12-23T22:49:28.0908021Z ##[endgroup]
+Quality Checks	Set up Python 3.13	2025-12-23T22:49:28.2491218Z ##[group]Installed versions
+Quality Checks	Set up Python 3.13	2025-12-23T22:49:28.2592812Z Successfully set up CPython (3.13.11)
+Quality Checks	Set up Python 3.13	2025-12-23T22:49:28.2594939Z ##[endgroup]
+Quality Checks	Set up uv	﻿2025-12-23T22:49:28.2755872Z ##[group]Run astral-sh/setup-uv@v1
+Quality Checks	Set up uv	2025-12-23T22:49:28.2756763Z with:
+Quality Checks	Set up uv	2025-12-23T22:49:28.2757548Z   enable-cache: true
+Quality Checks	Set up uv	2025-12-23T22:49:28.2758270Z   version: 0.4.4
+Quality Checks	Set up uv	2025-12-23T22:49:28.2759033Z   cache-local-path: /tmp/setup-uv-cache
+Quality Checks	Set up uv	2025-12-23T22:49:28.2759902Z env:
+Quality Checks	Set up uv	2025-12-23T22:49:28.2760742Z   pythonLocation: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Set up uv	2025-12-23T22:49:28.2762121Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.13.11/x64/lib/pkgconfig
+Quality Checks	Set up uv	2025-12-23T22:49:28.2763447Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Set up uv	2025-12-23T22:49:28.2764662Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Set up uv	2025-12-23T22:49:28.2765927Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Set up uv	2025-12-23T22:49:28.2767200Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.13.11/x64/lib
+Quality Checks	Set up uv	2025-12-23T22:49:28.2768248Z ##[endgroup]
+Quality Checks	Set up uv	2025-12-23T22:49:28.4288727Z Downloading uv from "https://github.com/astral-sh/uv/releases/download/0.4.4/uv-x86_64-unknown-linux-gnu.tar.gz" ...
+Quality Checks	Set up uv	2025-12-23T22:49:28.8099381Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/51028122-fd98-4f5a-8ff3-77dce859a70d -f /home/runner/work/_temp/e36a3278-380d-4ccf-a13c-e3958527328b
+Quality Checks	Set up uv	2025-12-23T22:49:29.0292312Z Added /opt/hostedtoolcache/uv/0.4.4/x86_64 to the path
+Quality Checks	Set up uv	2025-12-23T22:49:29.0298233Z Successfully installed uv version 0.4.4
+Quality Checks	Set up uv	2025-12-23T22:49:29.0305703Z Set UV_CACHE_DIR to /tmp/setup-uv-cache
+Quality Checks	Set up uv	2025-12-23T22:49:29.0306248Z Trying to restore uv cache from GitHub Actions cache with key: setup-uv-1-x86_64-unknown-linux-gnu-0.4.4-no-dependency-glob
+Quality Checks	Set up uv	2025-12-23T22:49:29.0738800Z ##[warning]Failed to restore: Cache service responded with 400
+Quality Checks	Set up uv	2025-12-23T22:49:29.0750294Z No GitHub Actions cache found for key: setup-uv-1-x86_64-unknown-linux-gnu-0.4.4-no-dependency-glob
+Quality Checks	Install dependencies	﻿2025-12-23T22:49:29.0824706Z ##[group]Run uv sync --all-extras
+Quality Checks	Install dependencies	2025-12-23T22:49:29.0825123Z [36;1muv sync --all-extras[0m
+Quality Checks	Install dependencies	2025-12-23T22:49:29.0851124Z shell: /usr/bin/bash -e {0}
+Quality Checks	Install dependencies	2025-12-23T22:49:29.0851360Z env:
+Quality Checks	Install dependencies	2025-12-23T22:49:29.0851619Z   pythonLocation: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Install dependencies	2025-12-23T22:49:29.0852000Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.13.11/x64/lib/pkgconfig
+Quality Checks	Install dependencies	2025-12-23T22:49:29.0852372Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Install dependencies	2025-12-23T22:49:29.0852698Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Install dependencies	2025-12-23T22:49:29.0853013Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Install dependencies	2025-12-23T22:49:29.0853343Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.13.11/x64/lib
+Quality Checks	Install dependencies	2025-12-23T22:49:29.0853625Z   UV_CACHE_DIR: /tmp/setup-uv-cache
+Quality Checks	Install dependencies	2025-12-23T22:49:29.0853847Z ##[endgroup]
+Quality Checks	Install dependencies	2025-12-23T22:49:29.5294001Z Using Python 3.13.11 interpreter at: /opt/hostedtoolcache/Python/3.13.11/x64/bin/python3
+Quality Checks	Install dependencies	2025-12-23T22:49:29.5294748Z Creating virtualenv at: .venv
+Quality Checks	Install dependencies	2025-12-23T22:49:31.5370618Z Resolved 262 packages in 2.00s
+Quality Checks	Install dependencies	2025-12-23T22:49:35.3938427Z Prepared 259 packages in 3.82s
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7153710Z Installed 259 packages in 321ms
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7156500Z  + ag-ui-protocol==0.1.10
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7157439Z  + aiofiles==25.1.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7158075Z  + aiohappyeyeballs==2.6.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7158615Z  + aiohttp==3.13.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7159136Z  + aiosignal==1.4.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7165500Z  + aiosqlite==0.22.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7167303Z  + annotated-types==0.7.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7167661Z  + anthropic==0.75.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7167970Z  + anyio==4.12.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7168283Z  + argcomplete==3.6.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7168593Z  + asyncpg==0.31.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7168891Z  + attrs==25.4.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7169177Z  + authlib==1.6.6
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7169470Z  + babel==2.17.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7169753Z  + backrefs==6.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7170049Z  + bandit==1.7.9
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7170335Z  + beartype==0.22.9
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7170685Z  + blake3==1.0.8
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7170981Z  + blis==1.3.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7171282Z  + boolean-py==5.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7171582Z  + boto3==1.42.16
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7171869Z  + botocore==1.42.16
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7172171Z  + brotli==1.2.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7172490Z  + build==1.2.2.post1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7172811Z  + cachecontrol==0.14.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7173136Z  + cachetools==6.2.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7173910Z  + catalogue==2.0.10
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7174214Z  + certifi==2025.11.12
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7174528Z  + cffi==2.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7174831Z  + charset-normalizer==3.4.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7175195Z  + click==8.3.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7175497Z  + cloudpathlib==0.23.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7175819Z  + cloudpickle==3.1.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7176136Z  + cohere==5.20.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7176419Z  + colorama==0.4.6
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7176724Z  + confection==0.1.5
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7177124Z  + coverage==7.13.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7177438Z  + cryptography==44.0.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7177807Z  + cyclonedx-python-lib==7.4.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7178177Z  + cyclopts==4.4.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7178466Z  + cymem==2.0.13
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7178747Z  + ddgs==9.10.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7179037Z  + defusedxml==0.7.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7179349Z  + diskcache==5.6.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7179645Z  + distro==1.9.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7179932Z  + dnspython==2.8.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7180252Z  + docstring-parser==0.17.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7180594Z  + docutils==0.22.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7180911Z  + email-validator==2.3.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7181265Z  + eval-type-backport==0.3.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7181706Z  + exceptiongroup==1.3.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7182034Z  + execnet==2.1.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7182332Z  + executing==2.2.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7182639Z  + fake-useragent==2.2.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7182980Z  + fakeredis==2.33.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7183288Z  + fastavro==1.12.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7183575Z  + fastmcp==2.14.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7183880Z  + filelock==3.20.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7184543Z  + flujo==0.6.2 (from file:///home/runner/work/flujo/flujo)
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7185029Z  + frozenlist==1.8.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7185335Z  + fsspec==2025.12.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7185657Z  + genai-prices==0.0.49
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7185982Z  + ghp-import==2.1.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7186319Z  + google-auth==2.45.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7186669Z  + google-genai==1.56.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7187846Z  + googleapis-common-protos==1.72.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7189405Z  + griffe==1.15.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7189721Z  + groq==1.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7189998Z  + h11==0.16.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7190280Z  + h2==4.3.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7190553Z  + hf-xet==1.2.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7190845Z  + hpack==4.1.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7191133Z  + html5lib==1.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7191418Z  + httpcore==1.0.9
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7191712Z  + httpx==0.28.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7192101Z  + httpx-sse==0.4.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7192427Z  + huggingface-hub==0.36.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7192765Z  + hyperframe==6.1.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7193286Z  + hypothesis==6.112.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7193609Z  + idna==3.11
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7193922Z  + importlib-metadata==8.7.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7194273Z  + iniconfig==2.3.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7194582Z  + invoke==2.2.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7194883Z  + jaraco-classes==3.4.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7195228Z  + jaraco-context==6.0.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7195574Z  + jaraco-functools==4.4.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7195911Z  + jeepney==0.9.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7196205Z  + jinja2==3.1.6
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7196483Z  + jiter==0.12.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7196773Z  + jmespath==1.0.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7197175Z  + json-repair==0.54.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7197500Z  + jsonschema==4.25.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7197826Z  + jsonschema-path==0.3.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7198216Z  + jsonschema-specifications==2025.9.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7198615Z  + keyring==25.7.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7198934Z  + license-expression==30.4.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7199300Z  + logfire==4.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7199596Z  + logfire-api==4.16.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7199924Z  + lupa==2.6
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7200192Z  + lxml==6.0.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7200478Z  + markdown==3.10
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7200778Z  + markdown-it-py==4.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7201132Z  + markupsafe==3.0.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7201429Z  + mcp==1.25.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7201715Z  + mdurl==0.1.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7201997Z  + mergedeep==1.3.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7202306Z  + mistralai==1.9.11
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7202600Z  + mkdocs==1.6.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7202872Z  + mkdocs-autorefs==1.4.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7203178Z  + mkdocs-get-deps==0.2.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7203489Z  + mkdocs-material==9.7.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7203804Z  + mkdocs-material-extensions==1.3.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7204253Z  + mkdocs-redirects==1.2.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7204569Z  + mkdocstrings==1.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7204860Z  + mkdocstrings-python==2.0.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7205222Z  + more-itertools==10.8.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7205514Z  + msgpack==1.1.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7205793Z  + multidict==6.7.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7206120Z  + murmurhash==1.0.15
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7206426Z  + mypy==1.12.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7206704Z  + mypy-extensions==1.1.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7207130Z  + nexus-rpc==1.1.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7207403Z  + nh3==0.3.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7207658Z  + numpy==2.4.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7207934Z  + openai==2.14.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7208224Z  + openapi-pydantic==0.5.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7208573Z  + opentelemetry-api==1.35.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7209011Z  + opentelemetry-exporter-otlp-proto-common==1.35.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7209594Z  + opentelemetry-exporter-otlp-proto-http==1.35.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7210190Z  + opentelemetry-exporter-prometheus==0.56b0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7210664Z  + opentelemetry-instrumentation==0.56b0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7211156Z  + opentelemetry-instrumentation-httpx==0.56b0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7211621Z  + opentelemetry-proto==1.35.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7212003Z  + opentelemetry-sdk==1.35.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7212406Z  + opentelemetry-semantic-conventions==0.56b0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7213072Z  + opentelemetry-util-http==0.56b0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7213405Z  + orjson==3.11.5
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7213689Z  + packageurl-python==0.17.6
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7213998Z  + packaging==25.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7214269Z  + paginate==0.5.7
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7214542Z  + pathable==0.4.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7214824Z  + pathspec==0.12.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7215126Z  + pathvalidate==3.3.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7215399Z  + phonenumbers==9.0.21
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7215721Z  + pip==25.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7216001Z  + pip-api==0.0.34
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7216301Z  + pip-audit==2.7.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7216643Z  + pip-requirements-parser==32.0.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7222844Z  + pkginfo==1.10.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7223152Z  + platformdirs==4.5.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7223457Z  + pluggy==1.6.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7223726Z  + preshed==3.0.12
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7224028Z  + presidio-analyzer==2.2.360
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7224392Z  + presidio-anonymizer==2.2.360
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7224719Z  + primp==0.15.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7225240Z  + prometheus-client==0.22.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7225565Z  + prompt-toolkit==3.0.52
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7225866Z  + propcache==0.4.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7226136Z  + protobuf==6.33.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7226407Z  + py-cpuinfo==9.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7226704Z  + py-key-value-aio==0.3.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7227209Z  + py-key-value-shared==0.3.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7227570Z  + py-serializable==1.1.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7227922Z  + pyasn1==0.6.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7228260Z  + pyasn1-modules==0.4.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7228556Z  + pycparser==2.23
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7228839Z  + pydantic==2.12.5
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7229100Z  + pydantic-ai==1.25.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7229445Z  + pydantic-ai-slim==1.25.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7229748Z  + pydantic-core==2.41.5
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7230049Z  + pydantic-evals==1.25.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7230355Z  + pydantic-graph==1.25.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7230660Z  + pydantic-settings==2.12.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7230975Z  + pydocket==0.15.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7231258Z  + pyfiglet==1.0.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7231510Z  + pygments==2.19.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7231770Z  + pyjson5==2.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7232037Z  + pyjwt==2.10.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7232301Z  + pymdown-extensions==10.19.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7232634Z  + pyparsing==3.3.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7232917Z  + pyperclip==1.11.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7233215Z  + pyproject-hooks==1.2.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7233526Z  + pytest==8.3.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7233811Z  + pytest-asyncio==0.24.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7234131Z  + pytest-benchmark==4.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7234490Z  + pytest-cov==5.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7234799Z  + pytest-deadfixtures==2.2.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7235147Z  + pytest-picked==0.4.6
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7235470Z  + pytest-randomly==3.15.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7235956Z  + pytest-rerunfailures==13.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7236325Z  + pytest-split==0.10.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7236646Z  + pytest-timeout==2.3.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7237279Z  + pytest-xdist==3.6.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7237588Z  + python-dateutil==2.9.0.post0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7237962Z  + python-dotenv==1.2.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7238319Z  + python-json-logger==4.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7241860Z  + python-multipart==0.0.21
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7242223Z  + pyyaml==6.0.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7242491Z  + pyyaml-env-tag==1.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7242778Z  + readme-renderer==44.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7243076Z  + redis==7.1.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7243320Z  + referencing==0.36.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7243613Z  + regex==2025.11.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7243887Z  + requests==2.32.5
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7244136Z  + requests-file==3.0.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7244434Z  + requests-toolbelt==1.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7244738Z  + rfc3986==2.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7244999Z  + rich==14.2.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7245252Z  + rich-rst==1.3.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7245524Z  + rpds-py==0.30.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7245786Z  + rsa==4.9.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7246053Z  + ruamel-yaml==0.18.17
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7246346Z  + ruamel-yaml-clib==0.2.15
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7246667Z  + ruff==0.6.9
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7247344Z  + s3transfer==0.16.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7247639Z  + secretstorage==3.5.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7247949Z  + setuptools==80.9.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7248242Z  + shellingham==1.5.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7248525Z  + six==1.17.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7248790Z  + smart-open==7.5.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7249078Z  + sniffio==1.3.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7249353Z  + socksio==1.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7249595Z  + sortedcontainers==2.4.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7249902Z  + spacy==3.8.11
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7250203Z  + spacy-legacy==3.0.12
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7250519Z  + spacy-loggers==1.0.5
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7250849Z  + sqlvalidator==0.0.8
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7251161Z  + srsly==2.5.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7251449Z  + sse-starlette==3.0.4
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7251774Z  + starlette==0.50.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7252073Z  + stevedore==5.6.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7252382Z  + temporalio==1.19.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7252690Z  + tenacity==9.1.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7252987Z  + thinc==8.3.10
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7253393Z  + tldextract==5.3.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7253721Z  + tokenizers==0.22.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7254023Z  + toml==0.10.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7254311Z  + tqdm==4.67.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7254594Z  + twine==5.1.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7254871Z  + typer==0.20.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7255160Z  + typer-slim==0.20.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7255481Z  + types-protobuf==6.32.1.20251210
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7255855Z  + types-requests==2.31.0.6
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7256178Z  + types-urllib3==1.26.25.14
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7256534Z  + typing-extensions==4.15.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7257016Z  + typing-inspection==0.4.2
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7257354Z  + urllib3==1.26.20
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7257619Z  + uvicorn==0.40.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7257912Z  + uvloop==0.22.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7258180Z  + vcrpy==6.0.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7258466Z  + wasabi==1.1.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7258764Z  + watchdog==6.0.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7259041Z  + wcwidth==0.2.14
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7259330Z  + weasel==0.4.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7259604Z  + webencodings==0.5.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7259930Z  + websockets==15.0.1
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7260210Z  + wrapt==1.17.3
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7260472Z  + yarl==1.22.0
+Quality Checks	Install dependencies	2025-12-23T22:49:35.7260746Z  + zipp==3.23.0
+Quality Checks	Run Linter	﻿2025-12-23T22:49:35.7308042Z ##[group]Run make lint
+Quality Checks	Run Linter	2025-12-23T22:49:35.7308275Z [36;1mmake lint[0m
+Quality Checks	Run Linter	2025-12-23T22:49:35.7329757Z shell: /usr/bin/bash -e {0}
+Quality Checks	Run Linter	2025-12-23T22:49:35.7329988Z env:
+Quality Checks	Run Linter	2025-12-23T22:49:35.7330225Z   pythonLocation: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Run Linter	2025-12-23T22:49:35.7330660Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.13.11/x64/lib/pkgconfig
+Quality Checks	Run Linter	2025-12-23T22:49:35.7331025Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Run Linter	2025-12-23T22:49:35.7331343Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Run Linter	2025-12-23T22:49:35.7331664Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.13.11/x64
+Quality Checks	Run Linter	2025-12-23T22:49:35.7331979Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.13.11/x64/lib
+Quality Checks	Run Linter	2025-12-23T22:49:35.7332272Z   UV_CACHE_DIR: /tmp/setup-uv-cache
+Quality Checks	Run Linter	2025-12-23T22:49:35.7332516Z ##[endgroup]
+Quality Checks	Run Linter	2025-12-23T22:49:35.7445279Z 🔎 Linting code...
+Quality Checks	Run Linter	2025-12-23T22:49:35.9657729Z All checks passed!
+Quality Checks	Run Linter	2025-12-23T22:49:36.1067914Z Type-safety lint failures detected:
+Quality Checks	Run Linter	2025-12-23T22:49:36.1069710Z  - core.cast: found 1, baseline 0 (+1) (reduce usages or run with --update-baseline)
+Quality Checks	Run Linter	2025-12-23T22:49:36.1071641Z Type-safety metrics (current vs baseline):
+Quality Checks	Run Linter	2025-12-23T22:49:36.1072462Z   ✗ core.cast: 1 (baseline: 0, delta: +1)
+Quality Checks	Run Linter	2025-12-23T22:49:36.1073029Z   ✓ core.Any: 0 (baseline: 0, delta: 0)
+Quality Checks	Run Linter	2025-12-23T22:49:36.1073589Z   ✓ runtime.cast: 0 (baseline: 0, delta: 0)
+Quality Checks	Run Linter	2025-12-23T22:49:36.1074170Z   ✓ runtime.Any: 0 (baseline: 0, delta: 0)
+Quality Checks	Run Linter	2025-12-23T22:49:36.1074713Z   ✓ dsl.cast: 0 (baseline: 0, delta: 0)
+Quality Checks	Run Linter	2025-12-23T22:49:36.1075274Z   ✓ dsl.Any: 164 (baseline: 166, delta: -2)
+Quality Checks	Run Linter	2025-12-23T22:49:36.1075843Z   ✓ blueprint.cast: 0 (baseline: 0, delta: 0)
+Quality Checks	Run Linter	2025-12-23T22:49:36.1076425Z   ✓ blueprint.Any: 0 (baseline: 0, delta: 0)
+Quality Checks	Run Linter	2025-12-23T22:49:36.1076759Z 
+Quality Checks	Run Linter	2025-12-23T22:49:36.1130481Z make: *** [Makefile:57: lint] Error 1
+Quality Checks	Run Linter	2025-12-23T22:49:36.1138524Z ##[error]Process completed with exit code 2.
+Quality Checks	Post Checkout repository	﻿2025-12-23T22:49:36.1271604Z Post job cleanup.
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2155846Z [command]/usr/bin/git version
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2199781Z git version 2.52.0
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2246408Z Temporarily overriding HOME='/home/runner/work/_temp/4e9da962-9c24-4e82-8c2a-cc4edea4cff4' before making global git config changes
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2247551Z Adding repository directory to the temporary git global config as a safe directory
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2252940Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/flujo/flujo
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2288183Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2319525Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2520469Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2540367Z http.https://github.com/.extraheader
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2553359Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2580023Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2770810Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+Quality Checks	Post Checkout repository	2025-12-23T22:49:36.2797951Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+Quality Checks	Complete job	﻿2025-12-23T22:49:36.3163004Z Cleaning up orphan processes
