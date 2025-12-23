@@ -107,3 +107,57 @@ async def test_idempotency_wrapping_skips_if_not_required() -> None:
     # Calling without key should succeed
     result = await wrapped_tool_func({"data": "foo"})
     assert result == "success"
+
+
+@pytest.mark.asyncio
+async def test_idempotency_wrapping_fails_with_wrong_key_in_kwargs() -> None:
+    """Verify that tool calls fail if wrong idempotency_key is provided in kwargs."""
+    executor = GranularAgentStepExecutor()
+
+    # Mock a tool function
+    async def my_tool(payload: dict, **kwargs: object) -> str:
+        return "success"
+
+    # Mock an agent
+    mock_agent = MagicMock()
+    mock_agent.tools = {"my_tool": MockTool("my_tool", my_tool, requires_key=True)}
+
+    expected_key = "expected-key"
+    wrapped_agent = executor._enforce_idempotency_on_agent(mock_agent, expected_key)
+    wrapped_tool_func = wrapped_agent.tools["my_tool"].function
+
+    # Calling with wrong key in kwargs should raise ConfigurationError
+    with pytest.raises(ConfigurationError) as exc_info:
+        await wrapped_tool_func({"data": "foo"}, idempotency_key="wrong-key")
+
+    assert "Idempotency key mismatch" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_idempotency_wrapping_correctly_binds_multiple_tools() -> None:
+    """Regression test: verify each wrapped tool calls its own function (closure fix)."""
+    executor = GranularAgentStepExecutor()
+
+    # Mock multiple tool functions
+    async def tool_one(payload: dict, **kwargs: object) -> str:
+        return "one"
+
+    async def tool_two(payload: dict, **kwargs: object) -> str:
+        return "two"
+
+    # Mock an agent with multiple tools
+    mock_agent = MagicMock()
+    mock_agent.tools = {
+        "tool_one": MockTool("tool_one", tool_one, requires_key=True),
+        "tool_two": MockTool("tool_two", tool_two, requires_key=True),
+    }
+
+    key = "test-key"
+    wrapped_agent = executor._enforce_idempotency_on_agent(mock_agent, key)
+
+    func_one = wrapped_agent.tools["tool_one"].function
+    func_two = wrapped_agent.tools["tool_two"].function
+
+    # Verify each tool returns its unique value
+    assert await func_one({"idempotency_key": key}) == "one"
+    assert await func_two({"idempotency_key": key}) == "two"

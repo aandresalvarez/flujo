@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from typing import Optional, Type
+from typing import Any, Callable, Optional, Type, cast
 
 from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.policy_registry import StepPolicy
@@ -268,8 +268,10 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                             hydrated_history.append(hydrated)
                         except Exception as e:
                             telemetry.logfire.error(f"Failed to hydrate blob in history: {e}")
-                            # Fallback to raw entry or fail fast
-                            hydrated_history.append(entry)
+                            raise ResumeError(
+                                f"Irrecoverable state: Failed to hydrate history from blob store: {e}",
+                                irrecoverable=True,
+                            ) from e
                     history = hydrated_history
                 else:
                     history = raw_history
@@ -540,27 +542,41 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                 original_func = tool.function
 
                 @wraps(original_func)
-                async def wrapped_tool(*args: object, **kwargs: object) -> object:
+                async def wrapped_tool(
+                    *args: object,
+                    _name: str = name,
+                    _tool_requires: bool = tool_requires,
+                    _original_func: object = original_func,
+                    _key: str = key,
+                    **kwargs: object,
+                ) -> object:
                     # In pydantic-ai, tool functions usually get (ctx, payload) or (payload)
                     # We look for idempotency_key in kwargs or payload
                     has_key = "idempotency_key" in kwargs
+                    if has_key:
+                        if kwargs["idempotency_key"] != _key:
+                            raise ConfigurationError(
+                                f"Idempotency key mismatch in tool '{_name}': "
+                                f"expected {_key}, got {kwargs['idempotency_key']}"
+                            )
+
                     if not has_key and args:
                         # Check last arg if it's a dict (payload)
                         last_arg = args[-1]
                         if isinstance(last_arg, dict) and "idempotency_key" in last_arg:
                             has_key = True
-                            if last_arg["idempotency_key"] != key:
+                            if last_arg["idempotency_key"] != _key:
                                 raise ConfigurationError(
-                                    f"Idempotency key mismatch in tool '{name}': "
-                                    f"expected {key}, got {last_arg['idempotency_key']}"
+                                    f"Idempotency key mismatch in tool '{_name}': "
+                                    f"expected {_key}, got {last_arg['idempotency_key']}"
                                 )
 
-                    if not has_key and tool_requires:
+                    if not has_key and _tool_requires:
                         raise ConfigurationError(
-                            f"Tool '{name}' requires 'idempotency_key' but it was not provided."
+                            f"Tool '{_name}' requires 'idempotency_key' but it was not provided."
                         )
 
-                    return await original_func(*args, **kwargs)
+                    return await cast(Callable[..., Any], _original_func)(*args, **kwargs)
 
                 # Replace function with wrapped version
                 tool.function = wrapped_tool
