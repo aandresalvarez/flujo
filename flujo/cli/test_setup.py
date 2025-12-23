@@ -99,6 +99,9 @@ def configure_test_environment() -> None:
             ctx: click.Context,
             markup_mode: MarkupMode,
         ) -> None:
+            safe_markup_mode: Literal["markdown", "rich"] = (
+                "rich" if markup_mode is None else markup_mode
+            )
             # Usage and description without right-padding spaces to match snapshots
             typer.echo("")
             typer.echo(f" {obj.get_usage(ctx).strip()}")
@@ -169,7 +172,7 @@ def configure_test_environment() -> None:
                 name=tru.ARGUMENTS_PANEL_TITLE,
                 params=default_arguments,
                 ctx=ctx,
-                markup_mode=markup_mode,
+                markup_mode=safe_markup_mode,
                 console=console,
             )
             for panel_name, arguments in panel_to_arguments.items():
@@ -179,7 +182,7 @@ def configure_test_environment() -> None:
                     name=panel_name,
                     params=arguments,
                     ctx=ctx,
-                    markup_mode=markup_mode,
+                    markup_mode=safe_markup_mode,
                     console=console,
                 )
 
@@ -188,7 +191,7 @@ def configure_test_environment() -> None:
                 name=tru.OPTIONS_PANEL_TITLE,
                 params=default_options,
                 ctx=ctx,
-                markup_mode=markup_mode,
+                markup_mode=safe_markup_mode,
                 console=console,
             )
             for panel_name, options in panel_to_options.items():
@@ -198,7 +201,7 @@ def configure_test_environment() -> None:
                     name=panel_name,
                     params=options,
                     ctx=ctx,
-                    markup_mode=markup_mode,
+                    markup_mode=safe_markup_mode,
                     console=console,
                 )
 
@@ -226,7 +229,7 @@ def configure_test_environment() -> None:
                     tru._print_commands_panel(
                         name=tru.COMMANDS_PANEL_TITLE,
                         commands=default_commands,
-                        markup_mode=markup_mode,
+                        markup_mode=safe_markup_mode,
                         console=console,
                         cmd_len=max_cmd_len,
                     )
@@ -234,7 +237,7 @@ def configure_test_environment() -> None:
                     tru._print_commands_panel(
                         name=tru.COMMANDS_PANEL_TITLE,
                         commands=default_commands,
-                        markup_mode=markup_mode,
+                        markup_mode=safe_markup_mode,
                         console=console,
                         cmd_len=max_cmd_len,
                     )
@@ -245,7 +248,7 @@ def configure_test_environment() -> None:
                         tru._print_commands_panel(
                             name=panel_name,
                             commands=commands,
-                            markup_mode=markup_mode,
+                            markup_mode=safe_markup_mode,
                             console=console,
                             cmd_len=max_cmd_len,
                         )
@@ -253,7 +256,7 @@ def configure_test_environment() -> None:
                         tru._print_commands_panel(
                             name=panel_name,
                             commands=commands,
-                            markup_mode=markup_mode,
+                            markup_mode=safe_markup_mode,
                             console=console,
                             cmd_len=max_cmd_len,
                         )
