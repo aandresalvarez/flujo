@@ -13,12 +13,13 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from typing import Optional, Type
+from typing import Any, Optional, Type
 
 from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.policy_registry import StepPolicy
 from flujo.application.core.types import ExecutionFrame
 from flujo.domain.dsl.granular import GranularStep, GranularState, ResumeError
+from flujo.state.granular_blob_store import GranularBlobStore
 from flujo.domain.models import (
     BaseModel,
     Failure,
@@ -180,6 +181,12 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
         # === Fingerprint Computation (§5.2) ===
         current_fingerprint = self._compute_fingerprint(step, data, context)
 
+        # === Blob Store Initialization (§8.1) ===
+        state_backend = getattr(core, "_state_backend", None)
+        blob_store = None
+        if state_backend is not None:
+            blob_store = GranularBlobStore(state_backend, threshold_bytes=step.blob_threshold_bytes)
+
         # === Context Isolation (§5.4) ===
         isolated_context = (
             ContextManager.isolate(
@@ -232,18 +239,40 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
         network_attempted = False
         actual_usage = UsageEstimate(cost_usd=0.0, tokens=0)
 
+        # Extract agent from step
+        agent = getattr(step, "agent", None)
+        if agent is None:
+            raise ValueError(f"GranularStep '{step_name}' has no agent configured")
+
+        # Wrap agent for idempotency enforcement if requested (§7)
+        if step.enforce_idempotency:
+            try:
+                agent = self._enforce_idempotency_on_agent(agent, idempotency_key)
+            except Exception as e:
+                telemetry.logfire.warning(f"Failed to wrap agent for idempotency: {e}")
+
         try:
             # === Execute Agent Turn ===
             capture_started = True
 
-            agent = getattr(step, "agent", None)
-            if agent is None:
-                raise ValueError(f"GranularStep '{step_name}' has no agent configured")
-
             # Build history for agent context
             history: list[dict[str, object]] = []
             if stored_state is not None:
-                history = list(stored_state.get("history", []))
+                raw_history = list(stored_state.get("history", []))
+                # Hydrate blobs if store is available (§8.1)
+                if blob_store is not None:
+                    hydrated_history = []
+                    for entry in raw_history:
+                        try:
+                            hydrated = await blob_store.hydrate_history_entry(entry)
+                            hydrated_history.append(hydrated)
+                        except Exception as e:
+                            telemetry.logfire.error(f"Failed to hydrate blob in history: {e}")
+                            # Fallback to raw entry or fail fast
+                            hydrated_history.append(entry)
+                    history = hydrated_history
+                else:
+                    history = raw_history
 
             # Apply history truncation if needed
             if step.history_max_tokens > 0 and history:
@@ -293,16 +322,22 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             is_complete = self._check_completion(agent_output)
 
             # Update history with new turn
+            new_turn_entry = {
+                "turn_index": next_turn_index,
+                "input": data if self._is_json_serializable(data) else str(data),
+                "output": agent_output
+                if self._is_json_serializable(agent_output)
+                else str(agent_output),
+            }
+
+            # Offload large payloads if store is available (§8.1)
+            if blob_store is not None:
+                new_turn_entry = await blob_store.process_history_entry(
+                    new_turn_entry, run_id, step_name, next_turn_index
+                )
+
             new_history = list(history)
-            new_history.append(
-                {
-                    "turn_index": next_turn_index,
-                    "input": data if self._is_json_serializable(data) else str(data),
-                    "output": agent_output
-                    if self._is_json_serializable(agent_output)
-                    else str(agent_output),
-                }
-            )
+            new_history.append(new_turn_entry)
 
             # === Persist New State (CAS check: only if turn_index matches) ===
             new_state: GranularState = {
@@ -484,6 +519,53 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             return True
         except (TypeError, ValueError):
             return False
+
+    def _enforce_idempotency_on_agent(self, agent: Any, key: str) -> Any:
+        """Wrap agent's tools to ensure idempotency_key is present in payloads (§7)."""
+        # If it's a pydantic-ai Agent, we can attempt to wrap its tools
+        if hasattr(agent, "tools") and isinstance(agent.tools, dict):
+            from functools import wraps
+
+            from flujo.exceptions import ConfigurationError
+
+            # We should avoid mutating the original agent if possible,
+            # but pydantic-ai agents are often created per-step.
+            # For GranularStep, we might just wrap the tool functions.
+
+            for name, tool in agent.tools.items():
+                # Check if tool requires idempotency key
+                tool_requires = getattr(tool, "requires_idempotency_key", False)
+
+                # Validation hook: wrap the tool function to check payload
+                original_func = tool.function
+
+                @wraps(original_func)
+                async def wrapped_tool(*args: Any, **kwargs: Any) -> Any:
+                    # In pydantic-ai, tool functions usually get (ctx, payload) or (payload)
+                    # We look for idempotency_key in kwargs or payload
+                    has_key = "idempotency_key" in kwargs
+                    if not has_key and args:
+                        # Check last arg if it's a dict (payload)
+                        last_arg = args[-1]
+                        if isinstance(last_arg, dict) and "idempotency_key" in last_arg:
+                            has_key = True
+                            if last_arg["idempotency_key"] != key:
+                                raise ConfigurationError(
+                                    f"Idempotency key mismatch in tool '{name}': "
+                                    f"expected {key}, got {last_arg['idempotency_key']}"
+                                )
+
+                    if not has_key and tool_requires:
+                        raise ConfigurationError(
+                            f"Tool '{name}' requires 'idempotency_key' but it was not provided."
+                        )
+
+                    return await original_func(*args, **kwargs)
+
+                # Replace function with wrapped version
+                tool.function = wrapped_tool
+
+        return agent
 
     @staticmethod
     def _ns_to_seconds(ns: int) -> float:

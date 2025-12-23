@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 
 
-@dataclass(slots=True)
+@dataclass
 class MemoryRecord:
     """A single vector-backed memory item."""
 
@@ -18,7 +18,7 @@ class MemoryRecord:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-@dataclass(slots=True)
+@dataclass
 class VectorQuery:
     """Query parameters for vector search."""
 
