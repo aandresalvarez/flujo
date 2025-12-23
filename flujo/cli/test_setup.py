@@ -18,11 +18,14 @@ should not import or depend on this module.
 from __future__ import annotations
 
 import os
-from typing import Union
+from typing import Literal, Union
 
 import click
 import typer
 import typer.rich_utils as tru
+
+
+MarkupMode = Literal["markdown", "rich", None]
 
 
 def configure_test_environment() -> None:
@@ -94,7 +97,7 @@ def configure_test_environment() -> None:
             *,
             obj: Union[click.Command, click.Group],
             ctx: click.Context,
-            markup_mode: tru.MarkupMode,
+            markup_mode: MarkupMode,
         ) -> None:
             # Usage and description without right-padding spaces to match snapshots
             typer.echo("")
