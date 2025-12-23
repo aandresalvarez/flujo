@@ -19,6 +19,7 @@ from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.policy_registry import StepPolicy
 from flujo.application.core.types import ExecutionFrame
 from flujo.domain.dsl.granular import GranularStep, GranularState, ResumeError
+from flujo.exceptions import ConfigurationError
 from flujo.state.granular_blob_store import GranularBlobStore
 from flujo.domain.models import (
     BaseModel,
@@ -249,7 +250,13 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
             try:
                 agent = self._enforce_idempotency_on_agent(agent, idempotency_key)
             except Exception as e:
-                telemetry.logfire.warning(f"Failed to wrap agent for idempotency: {e}")
+                # Fail-fast: ensure idempotency requests are not silently ignored
+                error_msg = (
+                    f"Failed to wrap agent for idempotency (step='{step_name}', "
+                    f"key='{idempotency_key}'): {e}"
+                )
+                telemetry.logfire.error(error_msg)
+                raise ConfigurationError(error_msg) from e
 
         try:
             # === Execute Agent Turn ===
