@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from typing import Any, Optional, Type
+from typing import Optional, Type
 
 from flujo.application.core.context_manager import ContextManager
 from flujo.application.core.policy_registry import StepPolicy
@@ -520,7 +520,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
         except (TypeError, ValueError):
             return False
 
-    def _enforce_idempotency_on_agent(self, agent: Any, key: str) -> Any:
+    def _enforce_idempotency_on_agent(self, agent: object, key: str) -> object:
         """Wrap agent's tools to ensure idempotency_key is present in payloads (§7)."""
         # If it's a pydantic-ai Agent, we can attempt to wrap its tools
         if hasattr(agent, "tools") and isinstance(agent.tools, dict):
@@ -540,7 +540,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                 original_func = tool.function
 
                 @wraps(original_func)
-                async def wrapped_tool(*args: Any, **kwargs: Any) -> Any:
+                async def wrapped_tool(*args: object, **kwargs: object) -> object:
                     # In pydantic-ai, tool functions usually get (ctx, payload) or (payload)
                     # We look for idempotency_key in kwargs or payload
                     has_key = "idempotency_key" in kwargs
