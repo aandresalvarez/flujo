@@ -330,8 +330,7 @@ class DeclarativeBlueprintCompiler:
         if not imports:
             return
         # Runtime import required to avoid circular dependency with loader_parser module
-        # Note: os is imported at module level to follow FLUJO_TEAM_GUIDE Section 12
-        from .loader import load_pipeline_blueprint_from_yaml  # noqa: PLC0415
+        from .loader import load_pipeline_blueprint_from_yaml
 
         base_dir: str = self._resolve_base_dir()
         for alias, rel_path in imports.items():

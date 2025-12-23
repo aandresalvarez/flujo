@@ -607,7 +607,12 @@ class ConfigManager:
         return ArosConfig()  # defaults
 
     def _get_env_value_for_field(self, field_name: str, field_info: Any) -> Optional[str]:
-        """Return the environment variable value for a field when set."""
+        """Return the environment variable value for a field when set.
+
+        Values are read from ``os.environ`` and are therefore always strings;
+        this method returns the matching string value or ``None`` if no
+        relevant environment variable is defined.
+        """
         from pydantic import AliasChoices
 
         env_var_names = [field_name.upper()]
@@ -786,6 +791,22 @@ def get_state_uri(force_reload: bool = False) -> Optional[str]:
 def get_aros_config(force_reload: bool = False) -> ArosConfig:
     """Convenience accessor for AROS defaults."""
     return get_config_manager(force_reload=force_reload).get_aros_config()
+
+
+def is_ci_environment() -> bool:
+    """Check if we're running in a CI environment.
+
+    This function centralizes CI detection by checking the CI environment variable,
+    which is set automatically by CI systems (GitHub Actions, GitLab CI, etc.).
+
+    The CI flag is external infrastructure configuration (not user-configurable via
+    flujo.toml), but this helper provides access through the config_manager module
+    to maintain a single entry point for configuration-related queries.
+
+    Returns:
+        True if running in a CI environment (CI env var set), False otherwise.
+    """
+    return os.environ.get("CI", "").lower() in ("true", "1", "yes")
 
 
 # Wire domain-level config provider interface to avoid direct infra imports in domain logic

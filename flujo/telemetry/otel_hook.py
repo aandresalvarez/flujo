@@ -562,14 +562,13 @@ class OpenTelemetryHook:
                     backend = SQLiteBackend(sqlite_path)
                     export_key = ("state_backend", f"sqlite://{sqlite_path}")
             elif scheme in {"memory", "mem", "inmemory"}:
-                backend = None
-            else:
-                if enabled is True and scheme in {"postgres", "postgresql"}:
-                    try:
-                        backend = PostgresBackend(state_uri)
-                        export_key = ("state_backend", state_uri)
-                    except Exception:
-                        backend = None
+                pass  # Memory backends don't persist spans
+            elif enabled is True and scheme in {"postgres", "postgresql"}:
+                try:
+                    backend = PostgresBackend(state_uri)
+                    export_key = ("state_backend", state_uri)
+                except Exception:
+                    pass  # Fall through with backend = None
 
         if backend is None or export_key is None:
             return

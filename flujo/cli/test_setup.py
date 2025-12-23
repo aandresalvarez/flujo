@@ -18,14 +18,14 @@ should not import or depend on this module.
 from __future__ import annotations
 
 import os
-from typing import Literal, Union
+from typing import Literal, Optional, Union
 
 import click
 import typer
 import typer.rich_utils as tru
 
 
-MarkupMode = Literal["markdown", "rich", None]
+MarkupMode = Optional[Literal["markdown", "rich"]]
 
 
 def configure_test_environment() -> None:

@@ -101,7 +101,7 @@ class TestSerializationGuardrails:
             flujo_root / "docs",
         ]
 
-        violations: List[str] = []
+        violations: list[str] = []
         for root in search_roots:
             if not root.exists():
                 continue
@@ -401,7 +401,7 @@ class TestAsyncBridgeUnification:
     def test_no_ad_hoc_asyncio_runners(self, flujo_root: Path) -> None:
         """Prevent ad-hoc asyncio loop runners outside the shared async bridge."""
         bridge_file = flujo_root / "flujo/utils/async_bridge.py"
-        violations: List[str] = []
+        violations: list[str] = []
 
         for py_file in (flujo_root / "flujo").rglob("*.py"):
             if py_file == bridge_file:
