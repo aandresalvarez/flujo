@@ -92,6 +92,43 @@ class TestSerializationGuardrails:
                 + "\n\nUse flujo.state.backends.base._serialize_for_json (via _fast_json_dumps) instead."
             )
 
+    def test_no_serialize_jsonable_in_repo(self, flujo_root: Path) -> None:
+        """Legacy serialize_jsonable must not appear in code, tests, or docs."""
+        guardrail_file = Path(__file__).resolve()
+        search_roots = [
+            flujo_root / "flujo",
+            flujo_root / "tests",
+            flujo_root / "docs",
+        ]
+
+        violations: List[str] = []
+        for root in search_roots:
+            if not root.exists():
+                continue
+            for path in root.rglob("*"):
+                if path.is_dir():
+                    continue
+                if path.resolve() == guardrail_file:
+                    continue
+                try:
+                    content = path.read_text()
+                except (UnicodeDecodeError, OSError):
+                    continue
+                if "serialize_jsonable" not in content:
+                    continue
+                rel_path = path.relative_to(flujo_root)
+                for i, line in enumerate(content.split("\n"), 1):
+                    if "serialize_jsonable" in line:
+                        violations.append(f"{rel_path}:{i}: {line.strip()[:120]}")
+
+        if violations:
+            pytest.fail(
+                "Found legacy serialize_jsonable references:\n"
+                + "\n".join(violations[:20])
+                + ("\n..." if len(violations) > 20 else "")
+                + "\n\nUse model_dump(mode='json') or _serialize_for_json instead."
+            )
+
 
 class TestQuotaGuardrails:
     """Ensure UsageLimits→Quota translation stays centralized."""
@@ -359,4 +396,49 @@ class TestAsyncBridgeUnification:
             pytest.fail(
                 "Found ad-hoc BlockingPortal usage outside flujo/utils/async_bridge.py:\n"
                 + "\n".join(sorted(violations))
+            )
+
+    def test_no_ad_hoc_asyncio_runners(self, flujo_root: Path) -> None:
+        """Prevent ad-hoc asyncio loop runners outside the shared async bridge."""
+        bridge_file = flujo_root / "flujo/utils/async_bridge.py"
+        violations: List[str] = []
+
+        for py_file in (flujo_root / "flujo").rglob("*.py"):
+            if py_file == bridge_file:
+                continue
+
+            try:
+                content = py_file.read_text()
+                tree = ast.parse(content, filename=str(py_file))
+            except (SyntaxError, UnicodeDecodeError, OSError):
+                continue
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if isinstance(func, ast.Attribute):
+                    if (
+                        isinstance(func.value, ast.Name)
+                        and func.value.id == "asyncio"
+                        and func.attr in {"run", "new_event_loop", "run_coroutine_threadsafe"}
+                    ):
+                        line = content.split("\n")[node.lineno - 1].strip()
+                        rel_path = py_file.relative_to(flujo_root)
+                        violations.append(f"{rel_path}:{node.lineno}: {line}")
+                    if func.attr == "run_until_complete":
+                        line = content.split("\n")[node.lineno - 1].strip()
+                        rel_path = py_file.relative_to(flujo_root)
+                        violations.append(f"{rel_path}:{node.lineno}: {line}")
+                elif isinstance(func, ast.Name) and func.id == "run_coroutine_threadsafe":
+                    line = content.split("\n")[node.lineno - 1].strip()
+                    rel_path = py_file.relative_to(flujo_root)
+                    violations.append(f"{rel_path}:{node.lineno}: {line}")
+
+        if violations:
+            pytest.fail(
+                "Found ad-hoc asyncio runner usage outside flujo/utils/async_bridge.py:\n"
+                + "\n".join(violations[:20])
+                + ("\n..." if len(violations) > 20 else "")
+                + "\n\nUse flujo.utils.async_bridge.run_sync instead."
             )
