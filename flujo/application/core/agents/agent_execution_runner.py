@@ -551,47 +551,44 @@ class AgentExecutionRunner:
                 except Exception:
                     raw_agent_output = processed_output
 
-                    # Structured output normalization (AROS-lite) and mock detection
-                    pmeta: dict[str, object] = {}
-                    try:
-                        meta_obj = getattr(step, "meta", {}) or {}
-                        if isinstance(meta_obj, dict):
-                            pmeta = meta_obj.get("processing", {}) or {}
-                            if not isinstance(pmeta, dict):
-                                pmeta = {}
-                    except Exception:
-                        pmeta = {}
-                    so_mode = str(pmeta.get("structured_output", "")).strip().lower()
-                    schema_obj = (
-                        pmeta.get("schema") if isinstance(pmeta.get("schema"), dict) else None
-                    )
-                    if so_mode and so_mode not in {"off", "false", "none"}:
-                        from flujo.processors.common import StripMarkdownFences, EnforceJsonResponse
-
-                        try:
-                            processed_output = await StripMarkdownFences("json").process(
-                                processed_output
-                            )
-                        except Exception:
-                            pass
-                        try:
-                            processed_output = await EnforceJsonResponse().process(processed_output)
-                        except Exception:
-                            pass
-                        try:
-                            # Auto-wrap single-field structured outputs into object shape
-                            if (
-                                isinstance(processed_output, str)
-                                and isinstance(schema_obj, dict)
-                                and isinstance(schema_obj.get("properties"), dict)
-                                and len(schema_obj["properties"]) == 1
-                            ):
-                                sole_key = next(iter(schema_obj["properties"].keys()))
-                                processed_output = {sole_key: processed_output}
-                        except Exception:
-                            pass
+                # Structured output normalization (AROS-lite)
+                # NOTE: This must run AFTER FlujoAgentResult extraction, regardless of success/failure
+                pmeta: dict[str, object] = {}
+                try:
+                    meta_obj = getattr(step, "meta", {}) or {}
+                    if isinstance(meta_obj, dict):
+                        pmeta = meta_obj.get("processing", {}) or {}
+                        if not isinstance(pmeta, dict):
+                            pmeta = {}
                 except Exception:
-                    pass
+                    pmeta = {}
+                so_mode = str(pmeta.get("structured_output", "")).strip().lower()
+                schema_obj = pmeta.get("schema") if isinstance(pmeta.get("schema"), dict) else None
+                if so_mode and so_mode not in {"off", "false", "none"}:
+                    from flujo.processors.common import StripMarkdownFences, EnforceJsonResponse
+
+                    try:
+                        processed_output = await StripMarkdownFences("json").process(
+                            processed_output
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        processed_output = await EnforceJsonResponse().process(processed_output)
+                    except Exception:
+                        pass
+                    try:
+                        # Auto-wrap single-field structured outputs into object shape
+                        if (
+                            isinstance(processed_output, str)
+                            and isinstance(schema_obj, dict)
+                            and isinstance(schema_obj.get("properties"), dict)
+                            and len(schema_obj["properties"]) == 1
+                        ):
+                            sole_key = next(iter(schema_obj["properties"].keys()))
+                            processed_output = {sole_key: processed_output}
+                    except Exception:
+                        pass
 
                 # Measure usage immediately after agent run so plugin failures still record usage
                 try:
