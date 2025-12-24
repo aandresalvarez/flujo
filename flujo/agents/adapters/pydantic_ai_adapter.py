@@ -20,7 +20,7 @@ class PydanticAIUsageAdapter:
     attribute names across versions) to the FlujoAgentUsage protocol.
 
     Note: This class satisfies the FlujoAgentUsage protocol by exposing
-    input_tokens, output_tokens, and cost_usd as properties.
+    input_tokens, output_tokens, and cost_usd as public attributes.
     """
 
     def __init__(self, pydantic_usage: Any) -> None:
@@ -31,30 +31,15 @@ class PydanticAIUsageAdapter:
         """
         self._usage = pydantic_usage
         # Pre-compute values for protocol compliance and performance
-        self._input_tokens: int = getattr(
+        self.input_tokens: int = getattr(
             pydantic_usage, "input_tokens", getattr(pydantic_usage, "request_tokens", 0)
         )
-        self._output_tokens: int = getattr(
+        self.output_tokens: int = getattr(
             pydantic_usage,
             "output_tokens",
             getattr(pydantic_usage, "response_tokens", 0),
         )
-        self._cost_usd: Optional[float] = getattr(pydantic_usage, "cost_usd", None)
-
-    @property
-    def input_tokens(self) -> int:
-        """Get input tokens, handling different pydantic-ai attribute names."""
-        return self._input_tokens
-
-    @property
-    def output_tokens(self) -> int:
-        """Get output tokens, handling different pydantic-ai attribute names."""
-        return self._output_tokens
-
-    @property
-    def cost_usd(self) -> Optional[float]:
-        """Get cost in USD if available."""
-        return self._cost_usd
+        self.cost_usd: Optional[float] = getattr(pydantic_usage, "cost_usd", None)
 
 
 class PydanticAIAdapter:
