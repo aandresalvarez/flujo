@@ -9,14 +9,14 @@ from ....infra import telemetry
 if TYPE_CHECKING:
     from ..executor_core import ExecutorCore
     from ..types import ExecutionFrame
-    from ..types import TContext_w_Scratch
+    from ..types import TContext
 
 
 class ResultHandler:
     """Handles cache persistence and exception wrapping for ExecutorCore."""
 
-    def __init__(self, core: "ExecutorCore[TContext_w_Scratch]") -> None:
-        self._core: "ExecutorCore[TContext_w_Scratch]" = core
+    def __init__(self, core: "ExecutorCore[TContext]") -> None:
+        self._core: "ExecutorCore[TContext]" = core
 
     def handle_missing_agent_exception(
         self, err: MissingAgentError, step: object, *, called_with_frame: bool
@@ -159,7 +159,7 @@ class ResultHandler:
         result: StepResult,
         cache_key: Optional[str],
         called_with_frame: bool,
-        frame: ExecutionFrame[TContext_w_Scratch] | None = None,
+        frame: ExecutionFrame[TContext] | None = None,
     ) -> StepOutcome[StepResult] | StepResult:
         """Persist cache if applicable and return standardized result."""
         await self._core._cache_manager.maybe_persist_step_result(
@@ -195,7 +195,7 @@ class ResultHandler:
         self,
         *,
         step: object,
-        frame: ExecutionFrame[TContext_w_Scratch],
+        frame: ExecutionFrame[TContext],
         exc: Exception,
         called_with_frame: bool,
     ) -> StepOutcome[StepResult] | StepResult:
@@ -214,7 +214,7 @@ class ResultHandler:
         return self._core._unwrap_outcome_to_step_result(failure_outcome, step_name)
 
     async def maybe_use_cache(
-        self, frame: ExecutionFrame[TContext_w_Scratch], *, called_with_frame: bool
+        self, frame: ExecutionFrame[TContext], *, called_with_frame: bool
     ) -> tuple[Optional[StepOutcome[StepResult] | StepResult], Optional[str]]:
         """Return cached outcome if present and compute cache key when enabled."""
         cache_key: Optional[str] = None

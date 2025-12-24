@@ -9,7 +9,7 @@ from ....domain.models import BaseModel as DomainBaseModel
 from ....domain.models import PipelineResult, StepResult, UsageLimits
 from ....exceptions import PausedException, PipelineAbortSignal, InfiniteRedirectError
 from ..execution.executor_helpers import make_execution_frame
-from ..types import TContext_w_Scratch
+from ..types import TContext
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..executor_core import ExecutorCore
@@ -21,10 +21,10 @@ class LoopOrchestrator:
     async def execute(
         self,
         *,
-        core: "ExecutorCore[TContext_w_Scratch]",
+        core: "ExecutorCore[TContext]",
         loop_step: object,
         data: object,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         resources: object | None,
         limits: UsageLimits | None,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]

@@ -27,21 +27,14 @@ from flujo.exceptions import (
     PipelineContextInitializationError,
     PausedException,
     UsageLimitExceededError,
-    MockDetectionError,
     NonRetryableError,
 )
 from flujo.infra import telemetry
 
 from flujo.domain.types import HookCallable
 from flujo.application.core.hook_dispatcher import _dispatch_hook
-from ....utils.mock_detection import is_mock_like
 
 ContextT = TypeVar("ContextT", bound=BaseModel)
-
-
-def _is_mock(obj: object) -> bool:
-    """Check if an object is mock-like."""
-    return is_mock_like(obj)
 
 
 class StepCoordinator(Generic[ContextT]):
@@ -141,19 +134,6 @@ class StepCoordinator(Generic[ContextT]):
 
                         # Call the backend directly (typed StepOutcome)
                         step_outcome = await backend.execute_step(request)
-                        # Detect mock outputs in successful outcomes and raise
-                        try:
-                            if isinstance(step_outcome, Success):
-                                sr = step_outcome.step_result
-
-                                if _is_mock(getattr(sr, "output", None)):
-                                    from flujo.exceptions import MockDetectionError as _MDE
-
-                                    raise _MDE(
-                                        f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object"
-                                    )
-                        except Exception:
-                            pass
 
                         # Repair known internal attribute-error masking during streaming failures
                         # If chunks were produced and the failure error looks like an internal attribute error,
@@ -312,16 +292,6 @@ class StepCoordinator(Generic[ContextT]):
                                         return
                                 except Exception:
                                     pass
-                                # Detect direct Mock outputs and raise
-                                try:
-                                    if _is_mock(getattr(step_result, "output", None)):
-                                        from flujo.exceptions import MockDetectionError as _MDE
-
-                                        raise _MDE(
-                                            f"Step '{getattr(step, 'name', '<unnamed>')}' returned a Mock object"
-                                        )
-                                except Exception:
-                                    pass
                                 yield step_outcome
                             elif isinstance(step_outcome, Failure):
                                 step_result = step_outcome.step_result or StepResult(
@@ -437,8 +407,8 @@ class StepCoordinator(Generic[ContextT]):
             except ContextInheritanceError:
                 # Re-raise context inheritance errors to be handled by ExecutionManager
                 raise
-            except (MockDetectionError, NonRetryableError):
-                # Re-raise mock detection and non-retryable errors immediately
+            except NonRetryableError:
+                # Re-raise non-retryable errors immediately
                 raise
             except Exception as e:
                 # Propagate critical redirect-loop exceptions instead of swallowing into a StepResult

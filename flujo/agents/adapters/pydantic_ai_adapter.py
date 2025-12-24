@@ -7,7 +7,7 @@ Flujo's orchestration layer.
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 from flujo.domain.agent_result import FlujoAgentResult, FlujoAgentUsage
 from flujo.agents.agent_like import AgentLike
@@ -134,9 +134,9 @@ class PydanticAIAdapter:
         if hasattr(raw_response, "usage"):
             pydantic_usage = raw_response.usage()
             if pydantic_usage is not None:
-                # Cast is needed because mypy doesn't recognize property-based
-                # protocol implementations in strict mode
-                usage = cast(FlujoAgentUsage, PydanticAIUsageAdapter(pydantic_usage))
+                adapter = PydanticAIUsageAdapter(pydantic_usage)
+                if isinstance(adapter, FlujoAgentUsage):
+                    usage = adapter
 
         # Extract output (pydantic-ai responses have .output attribute)
         output = getattr(raw_response, "output", raw_response)

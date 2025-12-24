@@ -8,7 +8,6 @@ import logging
 from ....domain.models import BaseModel
 from ....infra import telemetry
 from ....utils.context import safe_merge_context_updates
-from ....utils.mock_detection import is_mock_like
 from ....exceptions import ContextMutationError
 from .context_strategies import (
     ContextIsolationStrategy,
@@ -394,9 +393,6 @@ class ContextManager:
             return main_context
         # If contexts are the same object, no merge needed
         if main_context is branch_context:
-            return main_context
-        # Fast path: skip merging when branch_context is mock-like (perf tests)
-        if is_mock_like(branch_context):
             return main_context
         safe_merge_context_updates(main_context, branch_context)
         return main_context

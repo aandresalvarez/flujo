@@ -68,7 +68,7 @@ from .step_policies import (
     ValidatorInvoker,
 )
 from .policy_registry import PolicyRegistry, create_default_registry
-from .types import TContext_w_Scratch, ExecutionFrame
+from .types import TContext, ExecutionFrame
 from .estimation import (
     UsageEstimator,
     UsageEstimatorFactory,
@@ -139,7 +139,7 @@ if TYPE_CHECKING:
 TFrameContext = TypeVar("TFrameContext", bound=DomainBaseModel)
 
 
-class ExecutorCore(Generic[TContext_w_Scratch]):
+class ExecutorCore(Generic[TContext]):
     """
     Policy-driven step executor with modular architecture.
 
@@ -223,7 +223,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         enable_optimized_error_handling: bool = True,
         state_providers: dict[str, StateProvider[object]] | None = None,
         state_manager: StateManager[DomainBaseModel] | None = None,
-        deps: ExecutorCoreDeps[TContext_w_Scratch] | None = None,
+        deps: ExecutorCoreDeps[TContext] | None = None,
         builder: FlujoRuntimeBuilder | None = None,
     ) -> None:
         # Validate parameters for compatibility
@@ -484,7 +484,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     _normalize_frame_context = staticmethod(normalize_frame_context)
 
-    async def _set_quota_and_hydrate(self, frame: ExecutionFrame[TContext_w_Scratch]) -> None:
+    async def _set_quota_and_hydrate(self, frame: ExecutionFrame[TContext]) -> None:
         """Assign quota to the execution context and hydrate managed state."""
         await set_quota_and_hydrate(frame, self._quota_manager, self._hydration_manager)
 
@@ -500,7 +500,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         result: StepResult,
         cache_key: str | None,
         called_with_frame: bool,
-        frame: ExecutionFrame[TContext_w_Scratch] | None = None,
+        frame: ExecutionFrame[TContext] | None = None,
     ) -> StepOutcome[StepResult] | StepResult:
         return await persist_and_finalize(
             self,
@@ -515,7 +515,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         *,
         step: object,
-        frame: ExecutionFrame[TContext_w_Scratch],
+        frame: ExecutionFrame[TContext],
         exc: Exception,
         called_with_frame: bool,
     ) -> StepOutcome[StepResult] | StepResult:
@@ -524,7 +524,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         )
 
     async def _maybe_use_cache(
-        self, frame: ExecutionFrame[TContext_w_Scratch], *, called_with_frame: bool
+        self, frame: ExecutionFrame[TContext], *, called_with_frame: bool
     ) -> tuple[StepOutcome[StepResult] | StepResult | None, str | None]:
         return await maybe_use_cache(self, frame, called_with_frame=called_with_frame)
 
@@ -551,7 +551,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         parent_run_id: str | None,
         step_name: str,
         data: object,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         metadata: JSONObject | None = None,
     ) -> None:
         await self._bg_task_handler.register_background_task(
@@ -568,7 +568,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         *,
         task_id: str,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         metadata: JSONObject | None = None,
     ) -> None:
         await self._bg_task_handler.mark_background_task_completed(
@@ -579,7 +579,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         *,
         task_id: str,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         error: Exception,
         metadata: JSONObject | None = None,
     ) -> None:
@@ -591,7 +591,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         *,
         task_id: str,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         error: Exception,
         metadata: JSONObject | None = None,
     ) -> None:
@@ -602,16 +602,16 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
     def _hash_obj(self, obj: object) -> str:
         return hash_obj(obj, self._serializer, self._hasher)
 
-    def _isolate_context(self, context: TContext_w_Scratch | None) -> TContext_w_Scratch | None:
+    def _isolate_context(self, context: TContext | None) -> TContext | None:
         return isolate_context(
             context, strict_context_isolation=bool(self._strict_context_isolation)
         )
 
     def _merge_context_updates(
         self,
-        main_context: TContext_w_Scratch | None,
-        branch_context: TContext_w_Scratch | None,
-    ) -> TContext_w_Scratch | None:
+        main_context: TContext | None,
+        branch_context: TContext | None,
+    ) -> TContext | None:
         return merge_context_updates(
             main_context,
             branch_context,
@@ -620,9 +620,9 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     def _accumulate_loop_context(
         self,
-        current_context: TContext_w_Scratch | None,
-        iteration_context: TContext_w_Scratch | None,
-    ) -> TContext_w_Scratch | None:
+        current_context: TContext | None,
+        iteration_context: TContext | None,
+    ) -> TContext | None:
         return accumulate_loop_context(
             current_context,
             iteration_context,
@@ -641,7 +641,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         return self._result_handler.unwrap_outcome_to_step_result(outcome, step_name)
 
     async def _dispatch_frame(
-        self, frame: ExecutionFrame[TContext_w_Scratch], *, called_with_frame: bool
+        self, frame: ExecutionFrame[TContext], *, called_with_frame: bool
     ) -> StepOutcome[StepResult] | StepResult:
         return await self._dispatch_handler.dispatch(frame, called_with_frame=called_with_frame)
 
@@ -650,7 +650,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         *,
         step: object,
         data: object,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         resources: object | None,
         limits: UsageLimits | None,
         stream: bool = False,
@@ -707,7 +707,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
 
     async def execute(
         self,
-        frame_or_step: ExecutionFrame[TContext_w_Scratch] | object | None = None,
+        frame_or_step: ExecutionFrame[TContext] | object | None = None,
         data: object | None = None,
         *args: object,
         **kwargs: object,
@@ -730,7 +730,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         pipeline: object,
         data: object,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         resources: object | None,
         limits: UsageLimits | None,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
@@ -744,7 +744,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         pipeline: object,
         data: object,
-        context: TContext_w_Scratch,
+        context: TContext,
         resources: object,
         limits: UsageLimits,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
@@ -758,7 +758,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         loop_step: object,
         data: object,
-        context: TContext_w_Scratch,
+        context: TContext,
         resources: object,
         limits: UsageLimits,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
@@ -773,7 +773,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         loop_step: object,
         data: object,
-        context: TContext_w_Scratch,
+        context: TContext,
         resources: object,
         limits: UsageLimits,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
@@ -795,7 +795,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         step: object,
         data: object,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         resources: object | None,
         limits: UsageLimits | None,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
@@ -810,7 +810,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         step: object,
         data: object,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         resources: object | None,
         limits: UsageLimits | None,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
@@ -826,7 +826,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         step: object,
         data: object,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         resources: object | None,
         limits: UsageLimits | None,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
@@ -841,7 +841,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         step: object,
         data: object,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         resources: object | None,
         limits: UsageLimits | None,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
@@ -869,7 +869,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         step: object | None = None,
         data: object | None = None,
-        context: TContext_w_Scratch | None = None,
+        context: TContext | None = None,
         resources: object | None = None,
         limits: UsageLimits | None = None,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
@@ -886,7 +886,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         step: object | None = None,
         data: object | None = None,
-        context: TContext_w_Scratch | None = None,
+        context: TContext | None = None,
         resources: object | None = None,
         limits: UsageLimits | None = None,
         context_setter: Callable[[PipelineResult[DomainBaseModel], DomainBaseModel | None], None]
@@ -902,7 +902,7 @@ class ExecutorCore(Generic[TContext_w_Scratch]):
         self,
         step: object,
         data: object,
-        context: TContext_w_Scratch | None,
+        context: TContext | None,
         resources: object | None,
         limits: UsageLimits | None,
         stream: bool,

@@ -3,9 +3,9 @@ Test that the ExecutorCore's new parallel and dynamic router step methods are wo
 
 This test verifies that FSD 4 of 6 has been successfully implemented.
 
-Note: This test uses proper domain objects instead of Mock objects to avoid MockDetectionError.
-The MockDetectionError is an architectural protection that prevents Mock objects from being
-processed as real steps, ensuring test integrity and preventing test pollution.
+Note: This test uses proper domain objects instead of Mock objects for integration testing.
+While mock detection has been removed, using real domain objects remains best practice
+for verifying complex orchestration behaviors.
 """
 
 import pytest
@@ -30,7 +30,7 @@ class TestExecutorCoreParallelMigration:
 
     @pytest.fixture
     def test_agent(self):
-        """Create a real agent for testing (not a Mock to avoid MockDetectionError)."""
+        """Create a real agent for testing."""
         return StubAgent(["test_output"])
 
     @pytest.fixture
