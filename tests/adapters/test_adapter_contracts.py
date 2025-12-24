@@ -45,18 +45,25 @@ class Usage:
 
 
 class ResponseWithUsageMethod:
-    def __init__(self, output: str, usage: Usage) -> None:
+    def __init__(self, output: str, usage: Usage | None) -> None:
         self.output = output
         self._usage = usage
 
-    def usage(self) -> Usage:
+    def usage(self) -> Usage | None:
         return self._usage
 
 
 class ResponseWithUsageAttribute:
-    def __init__(self, output: str, usage: Usage) -> None:
+    def __init__(self, output: str, usage: Usage | None) -> None:
         self.output = output
         self.usage = usage
+
+
+class ResponseWithCostData:
+    def __init__(self, output: str, cost_usd: float, token_counts: int) -> None:
+        self.output = output
+        self.cost_usd = cost_usd
+        self.token_counts = token_counts
 
 
 def _assert_usage_values(result: FlujoAgentResult, expected: Usage) -> None:
@@ -65,6 +72,10 @@ def _assert_usage_values(result: FlujoAgentResult, expected: Usage) -> None:
     assert usage.input_tokens == expected.input_tokens
     assert usage.output_tokens == expected.output_tokens
     assert usage.cost_usd == expected.cost_usd
+
+
+def _assert_usage_none(result: FlujoAgentResult) -> None:
+    assert result.usage() is None
 
 
 @pytest.mark.asyncio
@@ -97,3 +108,70 @@ async def test_adapter_contract_usage_attribute(case: AdapterCase) -> None:
     assert isinstance(result, FlujoAgentResult)
     assert result.output == "ok"
     _assert_usage_values(result, usage)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ADAPTER_CASES, ids=lambda case: case.name)
+async def test_adapter_contract_usage_method_none(case: AdapterCase) -> None:
+    """Adapters must return None when usage() yields None."""
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=ResponseWithUsageMethod("ok", None))
+
+    adapter = case.factory(agent)
+    result = await adapter.run("prompt")
+
+    assert isinstance(result, FlujoAgentResult)
+    assert result.output == "ok"
+    _assert_usage_none(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ADAPTER_CASES, ids=lambda case: case.name)
+async def test_adapter_contract_usage_attribute_none(case: AdapterCase) -> None:
+    """Adapters must return None when usage attribute is None."""
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=ResponseWithUsageAttribute("ok", None))
+
+    adapter = case.factory(agent)
+    result = await adapter.run("prompt")
+
+    assert isinstance(result, FlujoAgentResult)
+    assert result.output == "ok"
+    _assert_usage_none(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ADAPTER_CASES, ids=lambda case: case.name)
+async def test_adapter_contract_missing_usage(case: AdapterCase) -> None:
+    """Adapters must return None when no usage data is present."""
+
+    class ResponseWithoutUsage:
+        def __init__(self, output: str) -> None:
+            self.output = output
+
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=ResponseWithoutUsage("ok"))
+
+    adapter = case.factory(agent)
+    result = await adapter.run("prompt")
+
+    assert isinstance(result, FlujoAgentResult)
+    assert result.output == "ok"
+    _assert_usage_none(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ADAPTER_CASES, ids=lambda case: case.name)
+async def test_adapter_contract_explicit_cost_data(case: AdapterCase) -> None:
+    """Adapters must propagate explicit cost and token counts when provided."""
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=ResponseWithCostData("ok", 0.12, 42))
+
+    adapter = case.factory(agent)
+    result = await adapter.run("prompt")
+
+    assert isinstance(result, FlujoAgentResult)
+    assert result.output == "ok"
+    _assert_usage_none(result)
+    assert result.cost_usd == 0.12
+    assert result.token_counts == 42
