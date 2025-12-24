@@ -26,3 +26,8 @@ Strict DSL mode is the only mode. Any generic flow (Any/object) must pass throug
 - Observability:
   - Metrics track adapter invocations and allowlist usage; CI fails on new unapproved adapters or missing tokens.
 
+## Agent Adapters (Code)
+
+Agent adapters under `flujo/agents/adapters/` must register in
+`tests/adapters/test_adapter_contracts.py` (`ADAPTER_CASES`) so shared usage and
+cost semantics are enforced.
