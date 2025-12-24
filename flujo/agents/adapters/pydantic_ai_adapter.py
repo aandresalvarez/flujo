@@ -20,9 +20,7 @@ class PydanticAIUsageAdapter:
     attribute names across versions) to the FlujoAgentUsage protocol.
 
     Note: This class satisfies the FlujoAgentUsage protocol by exposing
-    input_tokens, output_tokens, and cost_usd as properties. The protocol's
-    @runtime_checkable decorator allows isinstance() checks to work with
-    property-based implementations.
+    input_tokens, output_tokens, and cost_usd as properties.
     """
 
     def __init__(self, pydantic_usage: Any) -> None:
@@ -132,11 +130,10 @@ class PydanticAIAdapter:
         # Extract usage if available (guard against None from usage())
         usage: Optional[FlujoAgentUsage] = None
         if hasattr(raw_response, "usage"):
-            pydantic_usage = raw_response.usage()
+            usage_attr = raw_response.usage
+            pydantic_usage = usage_attr() if callable(usage_attr) else usage_attr
             if pydantic_usage is not None:
-                adapter = PydanticAIUsageAdapter(pydantic_usage)
-                if isinstance(adapter, FlujoAgentUsage):
-                    usage = adapter
+                usage = PydanticAIUsageAdapter(pydantic_usage)
 
         # Extract output (pydantic-ai responses have .output attribute)
         output = getattr(raw_response, "output", raw_response)
