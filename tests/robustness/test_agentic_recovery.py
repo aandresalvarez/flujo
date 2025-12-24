@@ -13,7 +13,8 @@ multi-agent coordination, human-in-the-loop patterns, and deterministic testing.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -24,6 +25,8 @@ from flujo.domain.commands import (
     AgentCommand,
 )
 from flujo.testing.replay import ReplayAgent, ReplayError
+
+pytestmark = pytest.mark.fast
 
 
 # =============================================================================
@@ -355,23 +358,27 @@ class TestTemplatedAsyncAgentWrapper:
         )
 
         # Create mock context
-        mock_context = MagicMock()
-        mock_context.user_name = "Alice"
-        mock_context.hitl_history = []
+        mock_context = SimpleNamespace(user_name="Alice", hitl_history=[])
 
         # Patch the adapter to control execution
-        with patch.object(wrapper._adapter, "run") as mock_run:
-            mock_run.return_value = FlujoAgentResult(
+        captured_prompt: dict[str, str | None] = {}
+
+        async def _capture_prompt(*args: object, **kwargs: object) -> FlujoAgentResult:
+            captured_prompt["value"] = getattr(wrapper._agent, "system_prompt", None)
+            return FlujoAgentResult(
                 output="mocked response",
                 usage=None,
                 cost_usd=None,
                 token_counts=None,
             )
 
+        with patch.object(wrapper._adapter, "run", side_effect=_capture_prompt) as mock_run:
             result = await wrapper.run_async("test", context=mock_context)
 
             # Verify result returned
-            assert result is not None
+            assert result.output == "mocked response"
+            mock_run.assert_called_once()
+            assert captured_prompt["value"] == "You are helping Alice with their task."
 
     @pytest.mark.asyncio
     async def test_wrapper_without_template_behaves_like_base(self) -> None:

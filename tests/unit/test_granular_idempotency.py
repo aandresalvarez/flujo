@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 from flujo.application.core.policies.granular_policy import GranularAgentStepExecutor
 from flujo.exceptions import ConfigurationError
 
+pytestmark = pytest.mark.fast
+
 
 class MockTool:
     def __init__(self, name, func, requires_key=True):

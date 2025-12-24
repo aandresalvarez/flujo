@@ -16,6 +16,8 @@ from flujo.agents.adapters.pydantic_ai_adapter import PydanticAIAdapter
 from flujo.agents.agent_like import AgentLike
 from flujo.domain.agent_result import FlujoAgentResult
 
+pytestmark = pytest.mark.fast
+
 
 class AdapterUnderTest(Protocol):
     """Minimal adapter interface for contract tests."""
@@ -37,33 +39,41 @@ ADAPTER_CASES: tuple[AdapterCase, ...] = (
 )
 
 
+@dataclass
 class Usage:
-    def __init__(self, input_tokens: int, output_tokens: int, cost_usd: float) -> None:
-        self.input_tokens = input_tokens
-        self.output_tokens = output_tokens
-        self.cost_usd = cost_usd
+    """Simple usage payload for adapter contract tests."""
+
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
 
 
+@dataclass
 class ResponseWithUsageMethod:
-    def __init__(self, output: str, usage: Usage | None) -> None:
-        self.output = output
-        self._usage = usage
+    """Mock response exposing usage via a method."""
+
+    output: str
+    _usage: Usage | None
 
     def usage(self) -> Usage | None:
         return self._usage
 
 
+@dataclass
 class ResponseWithUsageAttribute:
-    def __init__(self, output: str, usage: Usage | None) -> None:
-        self.output = output
-        self.usage = usage
+    """Mock response exposing usage via an attribute."""
+
+    output: str
+    usage: Usage | None
 
 
+@dataclass
 class ResponseWithCostData:
-    def __init__(self, output: str, cost_usd: float, token_counts: int) -> None:
-        self.output = output
-        self.cost_usd = cost_usd
-        self.token_counts = token_counts
+    """Mock response exposing explicit cost and token counts."""
+
+    output: str
+    cost_usd: float
+    token_counts: int
 
 
 def _assert_usage_values(result: FlujoAgentResult, expected: Usage) -> None:

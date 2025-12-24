@@ -19,6 +19,8 @@ from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.models import StepResult
 from flujo.testing.utils import StubAgent
 
+pytestmark = pytest.mark.fast
+
 
 class TestExecutorCoreParallelMigration:
     """Test that ExecutorCore correctly handles ParallelStep and DynamicParallelRouterStep."""

@@ -12,7 +12,6 @@ correctly recovered into valid, typed Python objects.
 from __future__ import annotations
 
 import json
-from typing import Any
 
 import pytest
 from pydantic import BaseModel
@@ -38,14 +37,6 @@ class SampleOutputSchema(BaseModel):
     name: str
 
 
-class NestedSchema(BaseModel):
-    """Schema with nested structure for complex coercion tests."""
-
-    id: int
-    metadata: dict[str, Any]
-    tags: list[str]
-
-
 # =============================================================================
 # Stage 0: JSON Region Extraction Tests
 # =============================================================================
@@ -57,6 +48,8 @@ class TestJsonRegionExtractorProcessor:
     The extractor's job is to find and isolate valid JSON from LLM output
     that may contain surrounding prose, markdown, or other text.
     """
+
+    pytestmark = pytest.mark.fast
 
     @pytest.mark.asyncio
     async def test_passthrough_clean_json_object(self) -> None:
@@ -146,9 +139,9 @@ This should work for your use case."""
 
         result = await processor.process(input_data, None)
 
-        # The extractor should find valid JSON - either one works
+        # The extractor should choose the largest balanced JSON object
         parsed = json.loads(result)
-        assert isinstance(parsed, dict)
+        assert parsed == {"b": 2, "nested": {"c": 3, "d": 4}}
 
     @pytest.mark.asyncio
     async def test_preserve_non_json_input(self) -> None:
@@ -189,6 +182,8 @@ class TestTolerantJsonDecoderProcessor:
     - Trailing commas
     - Python literals (True/False/None vs true/false/null)
     """
+
+    pytestmark = pytest.mark.fast
 
     @pytest.mark.asyncio
     async def test_decode_valid_json_fast_path(self) -> None:
@@ -308,6 +303,8 @@ class TestSmartTypeCoercionProcessor:
     - "number":  ["str->float"] - allows "3.14" -> 3.14
     """
 
+    pytestmark = pytest.mark.fast
+
     @pytest.mark.asyncio
     async def test_coerce_string_to_boolean_with_schema(self) -> None:
         """String 'true'/'false' should coerce to bool with schema+allowlist."""
@@ -366,9 +363,8 @@ class TestSmartTypeCoercionProcessor:
         )
 
         result = await processor.process({"enabled": "true"}, None)
-        # With allowlist, the fallback path may coerce
-        # This test documents actual behavior
-        assert result["enabled"] in (True, "true")  # Accept either
+        # With allowlist, the fallback path should coerce deterministically
+        assert result["enabled"] is True
 
     @pytest.mark.asyncio
     async def test_preserve_non_coercible_strings(self) -> None:
@@ -457,6 +453,8 @@ class TestAROSPipelineIntegration:
     valid typed output from messy LLM responses.
     """
 
+    pytestmark = pytest.mark.slow
+
     @pytest.mark.asyncio
     async def test_full_pipeline_prose_with_malformed_json(self) -> None:
         """Test complete pipeline: prose -> extraction -> decode -> coercion."""
@@ -504,3 +502,73 @@ Let me know if you need more details!"""
         assert final["enabled"] is True
         assert final["count"] == 42
         assert final["status"] == "complete"
+
+    @pytest.mark.asyncio
+    async def test_pipeline_invalid_json_returns_original(self) -> None:
+        """Invalid JSON should fall back to the original string payload."""
+        llm_output = """```json
+{not: valid}
+```"""
+
+        extractor = JsonRegionExtractorProcessor()
+        extracted = await extractor.process(llm_output, None)
+
+        decoder = TolerantJsonDecoderProcessor(tolerant_level=0)
+        decoded = await decoder.process(extracted, None)
+        assert decoded == extracted
+
+        coercer = SmartTypeCoercionProcessor(schema={"type": "object"}, allow={})
+        final = await coercer.process(decoded, None)
+        assert final == extracted
+
+    @pytest.mark.asyncio
+    async def test_pipeline_prefers_largest_json_block(self) -> None:
+        """Pipeline should extract, decode, and coerce the largest JSON block."""
+        llm_output = '{"a": 1} and {"enabled": "true", "count": "2", "nested": {"flag": "false"}}'
+
+        extractor = JsonRegionExtractorProcessor()
+        extracted = await extractor.process(llm_output, None)
+        assert "nested" in extracted
+
+        decoder = TolerantJsonDecoderProcessor()
+        decoded = await decoder.process(extracted, None)
+        assert isinstance(decoded, dict)
+
+        schema = {
+            "type": "object",
+            "properties": {
+                "enabled": {"type": "boolean"},
+                "count": {"type": "integer"},
+                "nested": {
+                    "type": "object",
+                    "properties": {"flag": {"type": "boolean"}},
+                },
+            },
+        }
+        coercer = SmartTypeCoercionProcessor(
+            schema=schema, allow={"boolean": ["str->bool"], "integer": ["str->int"]}
+        )
+        final = await coercer.process(decoded, None)
+        assert final == {"enabled": True, "count": 2, "nested": {"flag": False}}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("llm_output", "expected"),
+        [
+            ("", ""),
+            ("null", None),
+        ],
+    )
+    async def test_pipeline_handles_empty_or_null_inputs(
+        self, llm_output: str, expected: object
+    ) -> None:
+        """Pipeline should handle empty or null inputs gracefully."""
+        extractor = JsonRegionExtractorProcessor()
+        extracted = await extractor.process(llm_output, None)
+
+        decoder = TolerantJsonDecoderProcessor()
+        decoded = await decoder.process(extracted, None)
+
+        coercer = SmartTypeCoercionProcessor(schema={}, allow={})
+        final = await coercer.process(decoded, None)
+        assert final == expected

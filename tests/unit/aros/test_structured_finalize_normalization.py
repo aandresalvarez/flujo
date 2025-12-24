@@ -24,6 +24,14 @@ class FencedJsonAgent:
 """.strip()
 
 
+async def _run_pipeline(runner: Flujo, payload: str = ""):
+    """Run a Flujo pipeline and return the final result."""
+    last = None
+    async for res in runner.run_async(payload):
+        last = res
+    return last
+
+
 @pytest.mark.anyio
 async def test_fenced_json_passthrough_when_types_match() -> None:
     """Structured output with fenced JSON passes when types are compatible.
@@ -43,17 +51,12 @@ async def test_fenced_json_passthrough_when_types_match() -> None:
     p = Pipeline.model_construct(steps=[s])
     runner = Flujo(pipeline=p, pipeline_name="fenced_test")
 
-    async def _run():
-        last = None
-        async for res in runner.run_async(""):
-            last = res
-        return last
-
-    result = await _run()
+    result = await _run_pipeline(runner)
 
     # Step should complete successfully
     assert len(result.step_history) == 1
     assert result.step_history[0].success is True
+    assert result.step_history[0].output == '```json\n{"value": "ok"}\n```'
 
 
 @pytest.mark.anyio
@@ -81,13 +84,7 @@ async def test_structured_meta_triggers_processing() -> None:
     p = Pipeline.model_construct(steps=[s])
     runner = Flujo(pipeline=p, pipeline_name="structured_test")
 
-    async def _run():
-        last = None
-        async for res in runner.run_async(""):
-            last = res
-        return last
-
-    result = await _run()
+    result = await _run_pipeline(runner)
 
     # Step should complete successfully with dict output
     assert len(result.step_history) == 1

@@ -39,6 +39,8 @@ from flujo.infra import telemetry
 
 __all__ = ["GranularAgentStepExecutor", "DefaultGranularAgentStepExecutor"]
 
+_NONCALLABLE_TOOL_ERROR = "Tool function for '{tool_name}' is not callable"
+
 
 def _get_granular_state(context: object | None) -> Optional[GranularState]:
     """Extract granular_state from context.granular_state."""
@@ -584,7 +586,7 @@ class GranularAgentStepExecutor(StepPolicy[GranularStep]):
                         )
 
                     if not callable(_original_func):
-                        raise ConfigurationError(f"Tool function for '{_name}' is not callable")
+                        raise ConfigurationError(_NONCALLABLE_TOOL_ERROR.format(tool_name=_name))
 
                     return await _original_func(*args, **kwargs)
 
