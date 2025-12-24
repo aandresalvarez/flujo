@@ -172,6 +172,22 @@ async def test_adapter_contract_missing_usage(case: AdapterCase) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("case", ADAPTER_CASES, ids=lambda case: case.name)
+async def test_adapter_contract_raw_output_without_attribute(case: AdapterCase) -> None:
+    """Adapters must handle raw outputs that lack an .output attribute."""
+    raw_output = {"value": "ok"}
+    agent = MagicMock()
+    agent.run = AsyncMock(return_value=raw_output)
+
+    adapter = case.factory(agent)
+    result = await adapter.run("prompt")
+
+    assert isinstance(result, FlujoAgentResult)
+    assert result.output == raw_output
+    _assert_usage_none(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ADAPTER_CASES, ids=lambda case: case.name)
 async def test_adapter_contract_explicit_cost_data(case: AdapterCase) -> None:
     """Adapters must propagate explicit cost and token counts when provided."""
     agent = MagicMock()

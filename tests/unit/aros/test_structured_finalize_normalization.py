@@ -12,6 +12,8 @@ from flujo.domain.dsl.pipeline import Pipeline
 from flujo.domain.dsl.step import Step
 from flujo.application.runner import Flujo
 
+pytestmark = pytest.mark.fast
+
 
 class FencedJsonAgent:
     """Agent that returns JSON wrapped in markdown code fences."""
@@ -49,7 +51,7 @@ async def test_fenced_json_passthrough_when_types_match() -> None:
     s.agent = FencedJsonAgent()
 
     p = Pipeline.model_construct(steps=[s])
-    runner = Flujo(pipeline=p, pipeline_name="fenced_test")
+    runner = Flujo(pipeline=p, pipeline_name="fenced_test", persist_state=False)
 
     result = await _run_pipeline(runner)
 
@@ -82,7 +84,7 @@ async def test_structured_meta_triggers_processing() -> None:
     s.meta = {"processing": {"structured_output": "openai_json"}}
 
     p = Pipeline.model_construct(steps=[s])
-    runner = Flujo(pipeline=p, pipeline_name="structured_test")
+    runner = Flujo(pipeline=p, pipeline_name="structured_test", persist_state=False)
 
     result = await _run_pipeline(runner)
 
