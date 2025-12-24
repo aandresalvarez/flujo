@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from ....domain.models import BaseModel as DomainBaseModel
 from ....domain.models import PipelineResult, StepResult, UsageLimits
@@ -71,9 +71,7 @@ class LoopOrchestrator:
         iter_mapper = getattr(loop_step, "iteration_input_mapper", None)
         output_mapper = getattr(loop_step, "loop_output_mapper", None)
 
-        current_context: TContext | None = context or cast(
-            TContext, _PipelineContext(initial_prompt=str(data))
-        )
+        current_context: DomainBaseModel = context or _PipelineContext(initial_prompt=str(data))
         main_context = current_context
         current_input = data
         attempts = 0
@@ -84,7 +82,7 @@ class LoopOrchestrator:
 
         for i in range(1, max_loops + 1):
             attempts = i
-            iter_context: TContext | None = None
+            iter_context: DomainBaseModel | None = None
             try:
                 if i == 1 and callable(initial_mapper):
                     current_input = initial_mapper(current_input, current_context)
@@ -115,9 +113,7 @@ class LoopOrchestrator:
                     from ..context_manager import ContextManager as _CM
 
                     iter_context = (
-                        cast(TContext, _CM.isolate_strict(main_context))
-                        if main_context is not None
-                        else None
+                        _CM.isolate_strict(main_context) if main_context is not None else None
                     )
                 except Exception as exc:
                     fb = f"LoopStep '{name}' context isolation failed: {exc}"
@@ -152,13 +148,14 @@ class LoopOrchestrator:
 
                 if body is None or resources is None or limits is None or main_context is None:
                     raise RuntimeError("Legacy loop missing pipeline prerequisites")
-                pr = await core._execute_pipeline(
-                    body,
-                    body_output,
-                    iter_context,
-                    resources,
-                    limits,
-                    None,
+                pr = await core._pipeline_orchestrator.execute(
+                    core=core,
+                    pipeline=body,
+                    data=body_output,
+                    context=iter_context,
+                    resources=resources,
+                    limits=limits,
+                    context_setter=None,
                 )
                 try:
                     if pr.step_history:
