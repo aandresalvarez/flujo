@@ -10,6 +10,8 @@ Tests cover PRD v12 requirements:
 import pytest
 from pydantic import Field
 
+from unittest.mock import patch
+
 from flujo.application.core.executor_core import ExecutorCore
 from flujo.application.core.executor_helpers import make_execution_frame
 from flujo.application.core.policies.granular_policy import GranularAgentStepExecutor
@@ -318,3 +320,46 @@ def test_granular_step_idempotency_key_generation() -> None:
     assert key1 == key2, "Same inputs should produce same key"
     assert key1 != key3, "Different turn index should produce different key"
     assert len(key1) == 64, "Should be SHA-256 hex digest"
+
+
+@pytest.mark.asyncio
+async def test_granular_idempotency_wrap_failure_fails_fast() -> None:
+    """Verify that if agent wrapping for idempotency fails, we fail fast with ConfigurationError."""
+    core = ExecutorCore()
+    executor = GranularAgentStepExecutor()
+
+    # Step with idempotency enabled
+    step = GranularStep(
+        name="test_idempotency_fail",
+        agent=MockAgent(),
+        enforce_idempotency=True,
+    )
+
+    context = MockContext()
+    frame = make_execution_frame(
+        core,
+        step,
+        data="test",
+        context=context,
+        resources=None,
+        limits=None,
+        context_setter=None,
+        stream=False,
+        on_chunk=None,
+        fallback_depth=0,
+        result=None,
+        quota=None,
+    )
+
+    # Patch _enforce_idempotency_on_agent to raise an error
+    from flujo.exceptions import ConfigurationError
+
+    with patch.object(
+        executor, "_enforce_idempotency_on_agent", side_effect=ValueError("Wrap error")
+    ):
+        with pytest.raises(ConfigurationError) as exc_info:
+            await executor.execute(core, frame)
+
+    assert "Failed to wrap agent for idempotency" in str(exc_info.value)
+    assert "Wrap error" in str(exc_info.value)
+    assert "test_idempotency_fail" in str(exc_info.value)

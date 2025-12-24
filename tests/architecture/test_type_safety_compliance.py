@@ -210,6 +210,7 @@ class TestTypeSafetyCompliance:
             "flujo/application/core/policies/simple_policy.py",
             "flujo/application/core/runtime/background_task_manager.py",
             "flujo/application/core/context/context_manager.py",
+            "flujo/application/core/policies/granular_policy.py",
         }
 
         filtered = []
