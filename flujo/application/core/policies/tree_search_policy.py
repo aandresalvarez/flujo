@@ -30,6 +30,7 @@ from flujo.domain.models import (
     UsageEstimate,
     UsageLimits,
 )
+from flujo.domain.validation import ValidationResult
 from flujo.domain.scoring import ratio_score
 from flujo.exceptions import (
     InfiniteRedirectError,
@@ -177,6 +178,26 @@ def _format_candidate(candidate: object) -> str:
     return str(candidate)
 
 
+def _normalize_candidate_for_hash(candidate: object) -> object:
+    if isinstance(candidate, BaseModel):
+        try:
+            return candidate.model_dump()
+        except Exception:
+            return str(candidate)
+    dump_fn = getattr(candidate, "model_dump", None)
+    if callable(dump_fn):
+        try:
+            return dump_fn()
+        except Exception:
+            return str(candidate)
+    return candidate
+
+
+def _candidate_state_hash(candidate: object) -> str:
+    normalized = _normalize_candidate_for_hash(candidate)
+    return stable_digest({"candidate": normalized})
+
+
 def _extract_candidates(output: object) -> list[object]:
     if output is None:
         return []
@@ -256,7 +277,18 @@ def _score_evaluation(output: object) -> tuple[float, bool, JSONObject]:
     score = 0.0
     hard_fail = False
     meta: JSONObject = {}
-    if isinstance(output, Checklist):
+    if isinstance(output, ValidationResult):
+        score = float(output.score)
+        hard_fail = not output.is_valid
+        try:
+            meta["validation_result"] = output.model_dump(exclude_none=True)
+        except Exception:
+            meta["validation_result"] = {
+                "is_valid": output.is_valid,
+                "score": output.score,
+                "feedback": output.feedback,
+            }
+    elif isinstance(output, Checklist):
         score = float(ratio_score(output))
         meta["checklist"] = output.model_dump()
     elif isinstance(output, EvaluationReport):
@@ -287,7 +319,9 @@ def _score_evaluation(output: object) -> tuple[float, bool, JSONObject]:
 
 def _diff_heuristic(output: object) -> float | None:
     diff_payload: object | None = None
-    if isinstance(output, EvaluationReport):
+    if isinstance(output, ValidationResult):
+        diff_payload = output.diff
+    elif isinstance(output, EvaluationReport):
         diff_payload = output.diff
     elif isinstance(output, dict):
         diff_payload = output.get("diff") or output.get("patch")
@@ -406,7 +440,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                 g_cost=0.0,
                 h_cost=1.0,
                 f_cost=1.0,
-                state_hash=stable_digest({"candidate": data}),
+                state_hash=_candidate_state_hash(data),
             )
             root.attach_context(context)
             state.nodes[root_id] = root
@@ -590,7 +624,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                     )
                     continue
 
-                state_hash = stable_digest({"candidate": candidate, "parent": current.state_hash})
+                state_hash = _candidate_state_hash(candidate)
                 if state_hash in closed_hashes:
                     _record_trace(
                         {

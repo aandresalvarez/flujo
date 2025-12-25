@@ -2,17 +2,32 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Protocol, Any, runtime_checkable, Optional, Callable, Tuple
 from flujo.domain.base_model import BaseModel
-from pydantic import Field
+from pydantic import Field, model_validator
 from flujo.type_definitions.common import JSONObject
 
 
 class ValidationResult(BaseModel):
-    """The standard output from any validator, providing a clear pass/fail signal and feedback."""
+    """The standard output from any validator, providing a pass/fail signal and scoring."""
 
     is_valid: bool
+    score: float = 1.0
+    diff: JSONObject | None = None
     feedback: Optional[str] = None
     validator_name: str
     metadata: JSONObject = Field(default_factory=dict)
+
+    @model_validator(mode="before")  # type: ignore[untyped-decorator]
+    @classmethod
+    def _default_score_from_validity(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        if "score" in data and data["score"] is None:
+            data = dict(data)
+            data.pop("score", None)
+        if "score" not in data and data.get("is_valid") is False:
+            data = dict(data)
+            data["score"] = 0.0
+        return data
 
 
 @runtime_checkable
@@ -51,15 +66,23 @@ class BaseValidator(Validator):
     ) -> ValidationResult: ...
 
 
-def validator(func: Callable[..., Tuple[bool, Optional[str]] | bool]) -> Validator:
+ValidatorReturn = (
+    Tuple[bool, Optional[str]]
+    | Tuple[bool, Optional[str], float]
+    | Tuple[bool, Optional[str], float, JSONObject]
+    | bool
+)
+
+
+def validator(func: Callable[..., ValidatorReturn]) -> Validator:
     """Decorator to create a stateless Validator from a function.
 
     This decorator allows you to easily convert a simple function into a
     Validator that can be used in validation pipelines. The function should
-    take the output to check and return a tuple of (is_valid, feedback).
+    take the output to check and return a tuple of (is_valid, feedback[, score, diff]).
 
     Args:
-        func: A function that takes output_to_check and returns (bool, str|None)
+        func: A function that takes output_to_check and returns (bool, str|None[, score, diff])
 
     Returns:
         A Validator instance that wraps the function
@@ -100,19 +123,29 @@ def validator(func: Callable[..., Tuple[bool, Optional[str]] | bool]) -> Validat
                 else:
                     result = func(output_to_check)
 
-                # Support both bool and (bool, feedback) returns
+                # Support bool or tuple returns: (bool, feedback[, score, diff])
                 if isinstance(result, tuple) and len(result) >= 1:
                     is_valid = bool(result[0])
                     feedback = result[1] if len(result) > 1 else None
+                    score = result[2] if len(result) > 2 else None
+                    diff = result[3] if len(result) > 3 else None
                 else:
                     is_valid = bool(result)
                     feedback = None
+                    score = None
+                    diff = None
 
-                return ValidationResult(
-                    is_valid=is_valid,
-                    feedback=feedback,
-                    validator_name=func.__name__,
-                )
+                payload: dict[str, object] = {
+                    "is_valid": is_valid,
+                    "feedback": feedback,
+                    "validator_name": func.__name__,
+                }
+                if score is not None:
+                    payload["score"] = score
+                if diff is not None:
+                    payload["diff"] = diff
+
+                return ValidationResult(**payload)
             except Exception as e:  # pragma: no cover - defensive
                 return ValidationResult(
                     is_valid=False,
