@@ -153,40 +153,40 @@ LLMs have fundamental limitations that can cause A* to become a "token-burning m
 ## 6. Implementation Roadmap
 
 ### Milestone 1: The Reliable Operator (Weeks 1-2)
-*   [ ] Implement `DiffProcessor` (JSON Patching) using `JSONObject`.
-*   [ ] Build the **Multi-Signal Evaluator** framework (Rubrics + Objective Checks).
-*   [ ] Update `ParallelStep` to support a `consensus` reducer using the new Evaluator.
-*   [ ] **Validation:** Add unit tests for `DiffProcessor` and `ParallelStep` consensus logic.
-*   [ ] **Deliverable:** A pipeline that runs 3 agents, votes, and auto-corrects schema errors using diffs.
+*   [x] Implement `DiffProcessor` (JSON Patching) using `JSONObject`.
+*   [x] Build the **Multi-Signal Evaluator** framework (Rubrics + Objective Checks).
+*   [x] Update `ParallelStep` to support a `consensus` reducer using the new Evaluator.
+*   [x] **Validation:** Add unit tests for `DiffProcessor` and `ParallelStep` consensus logic.
+*   [x] **Deliverable:** A pipeline that runs 3 agents, votes, and auto-corrects schema errors using diffs.
 
 ### Milestone 2: The Durable Search Primitive (Weeks 3-4)
-*   [ ] **Model Definition:** Create `SearchNode` and `SearchState` models using `JSONObject`.
-*   [ ] **Policy Implementation:** Build `DefaultTreeSearchStepExecutor` in `flujo/application/core/policies/tree_search_policy.py`.
-*   [ ] **State Hook:** Implement Save-on-Iteration logic to update `context.tree_search_state`.
-*   [ ] **Isolation Logic:** Integrate `ContextManager.isolate()` into the expansion loop.
-*   [ ] **Quota Guard:** Implement the **Reserve -> Execute -> Reconcile** pattern in the search loop.
-*   [ ] **LLM Robustness Layer:**
-    *   [ ] **2.1 Frontier Deduplication:** Implement `ClosedSet` using `stable_digest` hashing.
-    *   [ ] **2.2 Goal Pinning:** Inject `context.initial_prompt` into every Proposer/Evaluator call.
-    *   [ ] **2.3 Path Summarization:** Integrate `HistoryManager.summarize()` for deep searches.
-    *   [ ] **2.4 Candidate Pre-Filter:** Add lightweight Python validators before LLM evaluation.
-    *   [ ] **2.5 Deterministic Search:** Force `temperature=0` and log full Search Traces.
-*   [ ] **Engineering Excellence (Tests):**
-    *   [ ] **Unit Tests:** Validate Priority Queue sorting and `SearchNode` serialization.
-    *   [ ] **Integration Test (Crash Recovery):** Run search, kill process, resume, and verify frontier parity.
-    *   [ ] **Idempotency Test:** Assert that parallel search branches have zero context leakage.
-    *   [ ] **Quota Test:** Force a limit breach and verify precise "Reserve -> Reconcile" behavior.
-    *   [ ] **Deduplication Test:** Verify that repeated candidates are killed without LLM calls.
-    *   [ ] **Goal Drift Test:** Verify that `initial_prompt` is present in all search agent prompts.
-*   [ ] **Deliverable:** A search pipeline that can be paused, resumed, respects cost limits, and is immune to LLM drift/repetition.
+*   [x] **Model Definition:** Create `SearchNode` and `SearchState` models using `JSONObject`.
+*   [x] **Policy Implementation:** Build `DefaultTreeSearchStepExecutor` in `flujo/application/core/policies/tree_search_policy.py`.
+*   [x] **State Hook:** Implement Save-on-Iteration logic to update `context.tree_search_state`.
+*   [x] **Isolation Logic:** Integrate `ContextManager.isolate()` into the expansion loop.
+*   [x] **Quota Guard:** Implement the **Reserve -> Execute -> Reconcile** pattern in the search loop.
+*   [x] **LLM Robustness Layer:**
+    *   [x] **2.1 Frontier Deduplication:** Implement `ClosedSet` using `stable_digest` hashing.
+    *   [x] **2.2 Goal Pinning:** Inject `context.initial_prompt` into every Proposer/Evaluator call.
+    *   [x] **2.3 Path Summarization:** Integrate `HistoryManager.summarize()` for deep searches.
+    *   [x] **2.4 Candidate Pre-Filter:** Add lightweight Python validators before LLM evaluation.
+    *   [x] **2.5 Deterministic Search:** Force `temperature=0` and log full Search Traces.
+*   [x] **Engineering Excellence (Tests):**
+    *   [x] **Unit Tests:** Validate Priority Queue sorting and `SearchNode` serialization.
+    *   [x] **Integration Test (Crash Recovery):** Run search, kill process, resume, and verify frontier parity.
+    *   [x] **Idempotency Test:** Assert that parallel search branches have zero context leakage.
+    *   [x] **Quota Test:** Force a limit breach and verify precise "Reserve -> Reconcile" behavior.
+    *   [x] **Deduplication Test:** Verify that repeated candidates are killed without LLM calls.
+    *   [x] **Goal Drift Test:** Verify that `initial_prompt` is present in all search agent prompts.
+*   [x] **Deliverable:** A search pipeline that can be paused, resumed, respects cost limits, and is immune to LLM drift/repetition.
 
 ### Milestone 3: The Integration (Weeks 5-6)
-*   [ ] Wire the Milestone 1 `DiffProcessor` as the Heuristic ($h$) for Milestone 2's `TreeSearchStep`.
-*   [ ] **Validation:** End-to-end test of A* with backtracking on a logic puzzle (e.g. "Game of 24").
-*   [ ] **Deliverable:** A biomedical research agent that proposes hypotheses, scores them, backtracks if contradicted, and outputs optimal reasoning.
+*   [x] Wire the Milestone 1 `DiffProcessor` as the Heuristic ($h$) for Milestone 2's `TreeSearchStep`.
+*   [x] **Validation:** End-to-end test of A* with backtracking on a logic puzzle (e.g. "Game of 24").
+*   [x] **Deliverable:** A biomedical research agent that proposes hypotheses, scores them, backtracks if contradicted, and outputs optimal reasoning.
 
 ### Milestone 4: Documentation & Knowledge Transfer (Week 7)
-*   [ ] **Technical Documentation:** Document the `TreeSearchStep` YAML schema and configuration in `docs/user_guide/pipeline_dsl.md`.
-*   [ ] **Architectural ADR:** Record the A* state persistence, context isolation, and LLM robustness strategies in `docs/adr/`.
-*   [ ] **Cookbook:** Create `docs/cookbook/reasoning_with_astar.md` showing the "Game of 24" implementation.
-*   [ ] **Developer Guide:** Update `FLUJO_TEAM_GUIDE.md` with search layer patterns.
+*   [x] **Technical Documentation:** Document the `TreeSearchStep` YAML schema and configuration in `docs/user_guide/pipeline_dsl.md`.
+*   [x] **Architectural ADR:** Record the A* state persistence, context isolation, and LLM robustness strategies in `docs/adr/`.
+*   [x] **Cookbook:** Create `docs/cookbook/reasoning_with_astar.md` showing the "Game of 24" implementation.
+*   [x] **Developer Guide:** Update `FLUJO_TEAM_GUIDE.md` with search layer patterns.
