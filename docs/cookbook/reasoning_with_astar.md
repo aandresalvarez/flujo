@@ -97,3 +97,20 @@ if __name__ == "__main__":
 - Keep candidate payloads JSON-serializable; they are persisted in `context.tree_search_state`.
 - Use `candidate_validator` to prune invalid candidates cheaply.
 - Set `goal_score_threshold=1.0` and `require_goal=True` when only exact matches should succeed.
+
+## Heuristic Tuning & Distillation
+
+After a run, you can analyze the search trace to tighten your evaluator rubric or distill the winning path into a reusable prompt. The tuning helper defaults to the `shadow_eval.judge_model` when configured.
+
+```python
+from flujo.application.tree_search_improvement import (
+    build_tree_search_trace_report,
+    distill_tree_search_path,
+    tune_tree_search_evaluator,
+)
+
+# state is a SearchState captured from context.tree_search_state
+report = build_tree_search_trace_report(state, objective="Use all numbers to make 24")
+improvements = await tune_tree_search_evaluator(report)
+distilled_prompt = await distill_tree_search_path(state, objective="Use all numbers to make 24")
+```
