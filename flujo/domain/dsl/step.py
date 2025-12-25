@@ -69,7 +69,7 @@ _ModelT = TypeVar("_ModelT")
 
 
 def _typed_model_validator(
-    *args: Any, **kwargs: Any
+    *args: object, **kwargs: object
 ) -> Callable[[Callable[[_ModelT], _ModelT]], Callable[[_ModelT], _ModelT]]:
     return model_validator(*args, **kwargs)
 
