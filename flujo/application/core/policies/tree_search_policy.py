@@ -1204,13 +1204,13 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
         )
         try:
             if frame.context_setter is not None:
-                pr: PipelineResult[BaseModel] = PipelineResult(
+                pipeline_result: PipelineResult[BaseModel] = PipelineResult(
                     step_history=step_history,
                     total_cost_usd=total_cost,
                     total_tokens=total_tokens,
                     final_pipeline_context=context,
                 )
-                frame.context_setter(pr, context)
+                frame.context_setter(pipeline_result, context)
         except Exception:
             pass
         telemetry.logfire.debug(

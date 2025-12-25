@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional, TypeAlias
+from typing import Optional, TypeAlias, cast
 
 from ..dsl import Pipeline, Step, StepConfig
+from ..dsl.step import InvariantRule
 from .loader_models import (
     BlueprintError,
     BlueprintPipelineModel,
@@ -396,7 +397,7 @@ def build_pipeline_from_blueprint(
                 compiled_imports=compiled_imports,
             )
         )
-    pipeline_invariants: list[object] = []
+    pipeline_invariants: list[InvariantRule] = []
     if model.static_invariants:
         from .loader_steps_misc import _resolve_callable_spec
 
@@ -405,12 +406,12 @@ def build_pipeline_from_blueprint(
                 pipeline_invariants.append(rule)
                 continue
             if callable(rule):
-                pipeline_invariants.append(rule)
+                pipeline_invariants.append(cast(InvariantRule, rule))
                 continue
             if isinstance(rule, dict):
                 resolved = _resolve_callable_spec(rule, label="pipeline_invariant")
                 if resolved is not None:
-                    pipeline_invariants.append(resolved)
+                    pipeline_invariants.append(cast(InvariantRule, resolved))
                     continue
             raise BlueprintError(f"Invalid pipeline invariant: {rule!r}")
 

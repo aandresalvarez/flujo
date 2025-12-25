@@ -50,7 +50,7 @@ class PipelineLike(Protocol):
     """Minimal pipeline contract for ExecutionManager."""
 
     steps: Sequence[Step]
-    static_invariants: Sequence[InvariantRule]
+    static_invariants: list[InvariantRule]
 
 
 def _format_invariant_rule(rule: InvariantRule) -> str:
