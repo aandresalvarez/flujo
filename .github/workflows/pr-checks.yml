@@ -7,6 +7,13 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# Global environment to keep installs deterministic and isolated per job
+env:
+  UV_VERSION: "0.4.24"
+  UV_LINK_MODE: copy
+  UV_CACHE_DIR: .uv-cache
+  PYTHONHASHSEED: "0"
+
 # Cancel any in-progress jobs for the same PR when new commits are pushed.
 concurrency:
   group: pr-checks-${{ github.ref }}
@@ -32,15 +39,16 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Run Linter
         run: make lint
 
       - name: Run Type Checker
-        run: make typecheck
+        run: make typecheck-ci
 
   # ----------------------------------------------------------------------------
   # Job 2: Fast Tests (Primary Feedback)
@@ -53,6 +61,8 @@ jobs:
       fail-fast: true
       matrix:
         python-version: ["3.13", "3.14"]
+        shard-count: [4]
+        shard-index: [0, 1, 2, 3]
     env:
       CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
@@ -72,69 +82,36 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Set dummy OpenAI API key for tests
         run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
 
-      - name: Run fast tests with coverage (deterministic order)
+      - name: Run fast tests (sharded)
         run: |
-          # Disable pytest-randomly to avoid order-dependent flakes; keep limited parallelism
-          # Use pytest-cov to handle xdist subprocess coverage correctly
-          uv run pytest --cov=flujo --cov-report= tests/ -m "not slow and not serial and not benchmark" -n 2 -p no:randomly
-          # Rename default .coverage to a unique name for artifact upload
-          mv .coverage .coverage.fast-pr
+          if [ "${{ matrix.python-version }}" = "3.13" ]; then
+            make test-shard \
+              SHARD_INDEX=${{ matrix.shard-index }} \
+              SHARD_COUNT=${{ matrix.shard-count }} \
+              TEST_SHARD_COVERAGE=1
+            if [ -f .coverage ]; then
+              mv .coverage .coverage.fast-pr-${{ matrix.shard-index }}
+            fi
+          else
+            make test-shard \
+              SHARD_INDEX=${{ matrix.shard-index }} \
+              SHARD_COUNT=${{ matrix.shard-count }}
+          fi
 
       - name: Store coverage file
+        if: matrix.python-version == '3.13'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-fast-pr
+          name: coverage-fast-pr-${{ matrix.shard-index }}
           path: .coverage.*
-
-  # ----------------------------------------------------------------------------
-  # Job 3: Unit Tests Only (Ultra Fast)
-  # ----------------------------------------------------------------------------
-  test-unit:
-    name: Unit Tests
-    runs-on: ubuntu-latest
-    needs: quality-checks
-    strategy:
-      fail-fast: true
-      matrix:
-        python-version: ["3.14"]  # Latest supported Python for unit tests
-    env:
-      CI: "true"
-      FLUJO_CLI_PERF_THRESHOLD: "0.2"
-      FLUJO_CV_THRESHOLD: "1.0"
-      FLUJO_CI_DB_SIZE: "50"  # Minimal database size for ultra-fast unit tests
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          allow-prereleases: ${{ matrix.python-version == '3.14' }}
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v1
-        with:
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --all-extras
-
-      - name: Set dummy OpenAI API key for tests
-        run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
-
-      - name: Run unit tests only (limited xdist)
-        run: |
-          # Use limited xdist workers for faster feedback while minimizing flake risk
-          # Exclude slow/serial/veryslow tests to prevent timeouts
-          uv run pytest tests/unit/ -n 3 -m "not slow and not serial and not veryslow"
 
   # ----------------------------------------------------------------------------
   # Job 3b: Architecture Tests
@@ -156,9 +133,10 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Run architecture compliance tests
         run: uv run pytest tests/architecture/
@@ -192,9 +170,10 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Run security tests
         run: |
@@ -221,15 +200,16 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Download coverage data
         uses: actions/download-artifact@v4
         with:
           path: .
-          pattern: coverage-fast-pr
+          pattern: coverage-fast-pr-*
           merge-multiple: true
 
       - name: Generate coverage report
@@ -277,9 +257,10 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Set dummy OpenAI API key for tests
         run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV

@@ -2,7 +2,7 @@
 # Continuous Integration workflow for the Flujo project.
 #
 # Dependency Management:
-# - Uses uv sync --all-extras to ensure all dependencies are installed
+# - Uses uv sync --frozen --extra dev to ensure deterministic installs
 # - Includes prometheus-client and httpx for comprehensive testing
 # - All dependencies are properly declared in pyproject.toml
 
@@ -51,15 +51,16 @@ jobs:
         with:
           enable-cache: true
           version: ${{ env.UV_VERSION }}
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Run Linter
         run: make lint
 
       - name: Run Type Checker
-        run: make typecheck
+        run: make typecheck-ci
 
   # ----------------------------------------------------------------------------
   # Job 2: Run Fast Tests (Parallel) - Quick Feedback
@@ -72,6 +73,8 @@ jobs:
       fail-fast: true
       matrix:
         python-version: ["3.13", "3.14"]
+        shard-count: [4]
+        shard-index: [0, 1, 2, 3]
     env:
       CI: "true"
       FLUJO_CLI_PERF_THRESHOLD: "0.2"
@@ -92,20 +95,23 @@ jobs:
         with:
           enable-cache: true
           version: ${{ env.UV_VERSION }}
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Set dummy OpenAI API key for tests
         run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
 
-      - name: Run fast tests with coverage
+      - name: Run fast tests with coverage (sharded)
         run: |
-          # Use pytest-cov to handle xdist subprocess coverage correctly
-          # Disable benchmark plugin to suppress warnings (benchmarks already excluded via -m)
-          uv run pytest --cov=flujo --cov-report= tests/ -m "not slow and not serial and not benchmark" -n 2 -p no:benchmark --randomly-seed=${PYTEST_RANDOMLY_SEED}
-          # Rename default .coverage to a unique name for artifact upload
-          mv .coverage .coverage.fast-${{ matrix.python-version }}
+          make test-shard \
+            SHARD_INDEX=${{ matrix.shard-index }} \
+            SHARD_COUNT=${{ matrix.shard-count }} \
+            TEST_SHARD_COVERAGE=1
+          if [ -f .coverage ]; then
+            mv .coverage .coverage.fast-${{ matrix.python-version }}-${{ matrix.shard-index }}
+          fi
 
       - name: Store fast tests coverage file
         uses: actions/upload-artifact@v4
@@ -155,9 +161,10 @@ jobs:
         with:
           enable-cache: true
           version: ${{ env.UV_VERSION }}
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Set dummy OpenAI API key for tests
         run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
@@ -208,9 +215,10 @@ jobs:
         with:
           enable-cache: true
           version: ${{ env.UV_VERSION }}
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Download coverage data
         uses: actions/download-artifact@v4
@@ -257,9 +265,10 @@ jobs:
         with:
           enable-cache: true
           version: ${{ env.UV_VERSION }}
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Run behavioral evals (serial)
         run: uv run pytest tests/evals/test_behavioral_golden.py -n 0 --randomly-seed=${PYTEST_RANDOMLY_SEED}
@@ -289,9 +298,10 @@ jobs:
         with:
           enable-cache: true
           version: ${{ env.UV_VERSION }}
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Build distributions
         run: uv build
@@ -392,9 +402,10 @@ jobs:
         with:
           enable-cache: true
           version: ${{ env.UV_VERSION }}
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Set dummy OpenAI API key for tests
         run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV
@@ -449,7 +460,7 @@ jobs:
           version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Set dummy OpenAI API key for tests
         run: echo "OPENAI_API_KEY=dummy-key-for-testing" >> $GITHUB_ENV
@@ -493,9 +504,10 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --frozen --extra dev
 
       - name: Set dummy OpenAI API key for tests
         run: echo "OPENAI_API_KEY=dummy-key" >> $GITHUB_ENV

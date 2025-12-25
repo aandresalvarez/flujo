@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -13,6 +16,12 @@ permissions:
   contents: read
   pages: write
   id-token: write
+
+env:
+  UV_VERSION: "0.4.24"
+  UV_LINK_MODE: copy
+  UV_CACHE_DIR: .uv-cache
+  PYTHONHASHSEED: "0"
 
 jobs:
   deploy:
@@ -35,10 +44,11 @@ jobs:
         uses: astral-sh/setup-uv@v1
         with:
           enable-cache: true
+          version: ${{ env.UV_VERSION }}
 
       - name: Install dependencies
-        # Install all dependencies including docs extras
-        run: uv sync --all-extras
+        # Install documentation dependencies only
+        run: uv sync --frozen --extra docs
 
       - name: Build the documentation site
         run: uv run mkdocs build

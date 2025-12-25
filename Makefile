@@ -75,6 +75,15 @@ typecheck: .uv ## Run static type checking with mypy
 	@# Run mypy non-interactively to avoid hanging on missing stub prompts
 	@uv run mypy flujo/ --install-types --non-interactive
 
+.PHONY: typecheck-ci
+typecheck-ci: .uv ## Run static type checking without re-syncing deps (CI)
+	@echo "🧐 Running static type checking (CI, no sync)..."
+	@# Clear mypy cache to avoid cross-Python stdlib stub mismatches (e.g., urllib.parse)
+	@rm -rf .mypy_cache || true
+	@uv run mypy --clear-cache >/dev/null 2>&1 || true
+	@# Run mypy non-interactively to avoid hanging on missing stub prompts
+	@uv run mypy flujo/ --install-types --non-interactive
+
 .PHONY: typecheck-fast
 typecheck-fast: .uv ## Typecheck without syncing deps (faster local loop)
 	@echo "🧐 Running static type checking (no sync)..."
@@ -107,6 +116,8 @@ FAST_KEXPR := not bug_reports and not manual_testing and not scripts
 ifndef INCLUDE_ARCHITECTURE_IN_FAST
 FAST_KEXPR := $(FAST_KEXPR) and not architecture
 endif
+TEST_SHARD_MARKERS ?= not slow and not veryslow and not serial and not benchmark
+TEST_SHARD_KEXPR ?= $(FAST_KEXPR)
 
 .PHONY: test
 test: .uv ## Run all tests via enhanced runner (robust, two-phase)
@@ -329,8 +340,9 @@ test-shard: .uv ## Run deterministic shard (for CI: make test-shard SHARD_INDEX=
 	@GROUP_IDX=$$(( $(SHARD_INDEX) + 1 )); \
 	CI=1 uv run pytest tests/ \
 		--splits $(SHARD_COUNT) --group $$GROUP_IDX \
+		-m "$(TEST_SHARD_MARKERS)" -k "$(TEST_SHARD_KEXPR)" \
 		-n auto --dist=loadfile \
-		-p pytest_split -q
+		-p pytest_split $(if $(TEST_SHARD_COVERAGE),--cov=flujo --cov-report=,) -q
 
 .PHONY: test-serial
 test-serial: .uv ## Run serial/slow/benchmark tests in isolation (fixes parallel issues)
