@@ -14,7 +14,7 @@ from flujo.state.backends.sqlite import SQLiteBackend
 from flujo.testing.utils import gather_result
 
 
-pytestmark = [pytest.mark.slow]
+pytestmark = [pytest.mark.slow, pytest.mark.serial]
 
 
 class Ctx(PipelineContext):

@@ -141,8 +141,6 @@ def judge_selection(
                 best = res
                 best_score = score
                 best_report = report
-            elif score == best_score and best is None:
-                best = res
 
         if best is None:
             return StepResult(

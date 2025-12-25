@@ -51,7 +51,17 @@ def _apply_patch(doc: Any, patch_ops: list[dict[str, Any]]) -> Any:
                 parent.pop(final_key, None)
         elif op.get("op") in {"add", "replace"}:
             if isinstance(parent, list):
-                parent[int(final_key)] = op.get("value")
+                index = int(final_key)
+                value = op.get("value")
+                if op.get("op") == "add":
+                    if index == len(parent):
+                        parent.append(value)
+                    elif 0 <= index < len(parent):
+                        parent.insert(index, value)
+                    else:
+                        raise IndexError(f"add index out of range: {index}")
+                else:
+                    parent[index] = value
             elif final_key:
                 parent[final_key] = op.get("value")
             else:
