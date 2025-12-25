@@ -22,6 +22,7 @@ class Ctx(PipelineContext):
 
 
 def _run_tree_search_process(db_path: Path, run_id: str) -> subprocess.Popen[str]:
+    # Use a literal-safe representation so the subprocess script can't be tricked by path contents.
     db_path_literal = repr(str(db_path))
     script = f"""
 import asyncio, os

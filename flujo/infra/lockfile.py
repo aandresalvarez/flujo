@@ -105,7 +105,9 @@ def _source_fingerprint(agent: object) -> str | None:
     if hasattr(agent, "__call__") and not inspect.isfunction(agent):
         target = agent.__call__
     try:
-        # inspect.getsource expects a function-like object; cast keeps typing satisfied.
+        # inspect.getsource expects a function-like object; some agent wrappers expose
+        # __call__ without matching the FunctionType protocols, so we cast to Any and
+        # rely on runtime inspection plus the exception handler below.
         return inspect.getsource(cast(Any, target))
     except Exception:
         return None

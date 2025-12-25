@@ -43,6 +43,62 @@ def _is_invariant_rule(obj: object) -> TypeGuard[InvariantRule]:
     return isinstance(obj, str) or _is_invariant_callable(obj)
 
 
+def _resolve_compiled_reference(
+    value: object,
+    *,
+    label: str,
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
+) -> object | None:
+    if not isinstance(value, str):
+        return None
+    if value.startswith("agents."):
+        if not compiled_agents:
+            raise BlueprintError(f"No compiled agents available for '{label}'")
+        key = value.split(".", 1)[1]
+        if key not in compiled_agents:
+            raise BlueprintError(f"Unknown agent reference '{value}' for '{label}'")
+        return compiled_agents[key]
+    if value.startswith("imports."):
+        if not compiled_imports:
+            raise BlueprintError(f"No compiled imports available for '{label}'")
+        key = value.split(".", 1)[1]
+        if key not in compiled_imports:
+            raise BlueprintError(f"Unknown import reference '{value}' for '{label}'")
+        return compiled_imports[key]
+    return None
+
+
+def _resolve_spec_value(
+    spec: object,
+    *,
+    label: str,
+    compiled_agents: CompiledAgents | None = None,
+    compiled_imports: CompiledImports | None = None,
+) -> object:
+    resolved = _resolve_compiled_reference(
+        spec,
+        label=label,
+        compiled_agents=compiled_agents,
+        compiled_imports=compiled_imports,
+    )
+    if resolved is not None:
+        return resolved
+    if isinstance(spec, (str, dict)):
+        try:
+            return _resolve_agent_entry(spec)
+        except Exception:
+            if isinstance(spec, dict):
+                path = spec.get("path")
+                if isinstance(path, str):
+                    return _import_object(path)
+                raise
+            if isinstance(spec, str):
+                return _import_object(spec)
+            raise
+    return spec
+
+
 def build_hitl_step(model: BlueprintStepModel, step_config: StepConfig) -> AnyStep:
     from ..dsl.step import HumanInTheLoopStep
     from .model_generator import generate_model_from_schema
@@ -193,33 +249,14 @@ def _resolve_tree_search_target(
     compiled_agents: CompiledAgents | None,
     compiled_imports: CompiledImports | None,
 ) -> object:
-    def _resolve_compiled_reference(value: object) -> object | None:
-        if not isinstance(value, str):
-            return None
-        if value.startswith("agents."):
-            if not compiled_agents:
-                raise BlueprintError(f"No compiled agents available for '{label}'")
-            key = value.split(".", 1)[1]
-            if key not in compiled_agents:
-                raise BlueprintError(f"Unknown agent reference '{value}' for '{label}'")
-            return compiled_agents[key]
-        if value.startswith("imports."):
-            if not compiled_imports:
-                raise BlueprintError(f"No compiled imports available for '{label}'")
-            key = value.split(".", 1)[1]
-            if key not in compiled_imports:
-                raise BlueprintError(f"Unknown import reference '{value}' for '{label}'")
-            return compiled_imports[key]
-        return None
-
     if spec is None:
         raise BlueprintError(f"tree_search requires '{label}'")
-    resolved = _resolve_compiled_reference(spec)
-    if resolved is not None:
-        return resolved
-    if isinstance(spec, (str, dict)):
-        return _resolve_agent_entry(spec)
-    return spec
+    return _resolve_spec_value(
+        spec,
+        label=label,
+        compiled_agents=compiled_agents,
+        compiled_imports=compiled_imports,
+    )
 
 
 def _resolve_callable_spec(
@@ -229,23 +266,7 @@ def _resolve_callable_spec(
 ) -> _CallableObj | None:
     if spec is None:
         return None
-    obj: object
-    if isinstance(spec, (str, dict)):
-        try:
-            obj = _resolve_agent_entry(spec)
-        except Exception:
-            if isinstance(spec, dict):
-                path = spec.get("path")
-                if isinstance(path, str):
-                    obj = _import_object(path)
-                else:
-                    raise
-            elif isinstance(spec, str):
-                obj = _import_object(spec)
-            else:
-                raise
-    else:
-        obj = spec
+    obj = _resolve_spec_value(spec, label=label)
     if not callable(obj):
         raise BlueprintError(f"{label} must be callable")
     return obj

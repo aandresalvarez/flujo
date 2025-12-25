@@ -3,10 +3,9 @@ from __future__ import annotations
 from typing import Any, Callable, Optional, Protocol
 
 import inspect
+import logging
 
 from pydantic import Field
-
-from flujo.infra import telemetry
 
 from .models import Checklist, ChecklistItem
 from .scoring import ratio_score
@@ -14,6 +13,8 @@ from .validation import ValidationResult, Validator
 from ..type_definitions.common import JSONObject
 
 from .base_model import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class EvaluationScore(BaseModel):
@@ -54,7 +55,7 @@ def _coerce_checklist(value: object) -> Checklist | None:
 
 
 def _ensure_checklist_items(checklist: Checklist) -> Checklist:
-    items = list(checklist.items or [])
+    items = list(checklist.items)
     cleaned: list[ChecklistItem] = []
     for item in items:
         if isinstance(item, ChecklistItem):
@@ -63,15 +64,11 @@ def _ensure_checklist_items(checklist: Checklist) -> Checklist:
             try:
                 cleaned.append(ChecklistItem.model_validate(item))
             except Exception as exc:
-                try:
-                    telemetry.logfire.debug(
-                        "Checklist item validation failed",
-                        extra={"error": str(exc)},
-                    )
-                except Exception:
-                    pass
-    checklist.items = cleaned
-    return checklist
+                logger.warning(
+                    "Checklist item validation failed",
+                    extra={"item": item, "error": str(exc)},
+                )
+    return checklist.model_copy(update={"items": cleaned})
 
 
 async def _invoke_agent(agent: _AgentLike | Callable[..., object], payload: object) -> object:
