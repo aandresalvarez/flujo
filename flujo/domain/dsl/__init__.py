@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from .loop import LoopStep, MapStep
     from .conditional import ConditionalStep
     from .parallel import ParallelStep
+    from .tree_search import TreeSearchStep
     from .state_machine import StateMachineStep
     from .step import MergeStrategy, BranchFailureStrategy, BranchKey, HumanInTheLoopStep
     from .dynamic_router import DynamicParallelRouterStep
@@ -38,6 +39,7 @@ __all__ = [
     "MapStep",
     "ConditionalStep",
     "ParallelStep",
+    "TreeSearchStep",
     "StateMachineStep",
     "MergeStrategy",
     "BranchFailureStrategy",
@@ -61,6 +63,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     # Control flow
     "ConditionalStep": (".conditional", "ConditionalStep"),
     "ParallelStep": (".parallel", "ParallelStep"),
+    "TreeSearchStep": (".tree_search", "TreeSearchStep"),
     "StateMachineStep": (".state_machine", "StateMachineStep"),
     "DynamicParallelRouterStep": (".dynamic_router", "DynamicParallelRouterStep"),
     # Step utilities (re-exported from step.py for convenience)

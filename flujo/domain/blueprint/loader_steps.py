@@ -20,6 +20,7 @@ from .loader_steps_misc import (
     build_basic_step,
     build_cache_step,
     build_hitl_step,
+    build_tree_search_step,
     build_state_machine_step,
 )
 
@@ -68,6 +69,7 @@ def _make_step_from_blueprint(
             "hitl",
             "cache",
             "agentic_loop",
+            "tree_search",
             "StateMachine",
         }:
             return builder(
@@ -346,6 +348,22 @@ def _register_defaults() -> None:
             build_branch=_build_pipeline_from_branch,
         )
 
+    def _adapt_tree_search(
+        model: BlueprintStepModel,
+        config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        return build_tree_search_step(
+            model,
+            config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+        )
+
     register_builder("parallel", _adapt_parallel)
     register_builder("conditional", _adapt_conditional)
     register_builder("loop", _adapt_loop)
@@ -354,6 +372,7 @@ def _register_defaults() -> None:
     register_builder("cache", _adapt_cache)
     register_builder("hitl", _adapt_hitl)
     register_builder("agentic_loop", _adapt_agentic_loop)
+    register_builder("tree_search", _adapt_tree_search)
     register_builder("StateMachine", _adapt_state_machine)
     register_builder("step", _adapt_basic)
 

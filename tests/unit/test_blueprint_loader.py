@@ -42,6 +42,25 @@ def sync_condition_function(data, context):
     return "branch_a"
 
 
+def tree_search_cost_fn(candidate, parent, depth, evaluation):
+    return float(depth)
+
+
+def tree_search_validator(candidate):
+    _ = candidate
+    return True
+
+
+def tree_search_proposer(data):
+    _ = data
+    return ["a", "b"]
+
+
+def tree_search_evaluator(data):
+    _ = data
+    return 1.0
+
+
 class TestAsyncExitConditionRejection:
     """Test that async exit_condition functions are rejected at load time."""
 
@@ -197,6 +216,32 @@ steps:
 
 class TestErrorMessageQuality:
     """Test that error messages are clear and actionable."""
+
+
+def test_tree_search_blueprint_loads() -> None:
+    yaml_content = """
+version: "0.1"
+name: "tree_search_pipeline"
+steps:
+  - kind: tree_search
+    name: "tree_search"
+    proposer: "tests.unit.test_blueprint_loader:tree_search_proposer"
+    evaluator: "tests.unit.test_blueprint_loader:tree_search_evaluator"
+    cost_function: "tests.unit.test_blueprint_loader:tree_search_cost_fn"
+    candidate_validator: "tests.unit.test_blueprint_loader:tree_search_validator"
+    branching_factor: 2
+    beam_width: 1
+    max_depth: 1
+    max_iterations: 3
+    path_max_tokens: 300
+    goal_score_threshold: 0.9
+    require_goal: false
+"""
+    pipeline = load_pipeline_blueprint_from_yaml(yaml_content)
+    assert pipeline is not None
+    from flujo.domain.dsl.tree_search import TreeSearchStep
+
+    assert isinstance(pipeline.steps[0], TreeSearchStep)
 
     def test_exit_condition_error_includes_helpful_example(self):
         """Test that error message includes code example and documentation link."""

@@ -177,6 +177,119 @@ def build_agentic_loop_step(
         raise BlueprintError(f"Failed to wrap agentic loop pipeline as step: {e}")
 
 
+def _resolve_tree_search_target(
+    spec: object,
+    *,
+    label: str,
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
+) -> object:
+    if spec is None:
+        raise BlueprintError(f"tree_search requires '{label}'")
+    if isinstance(spec, str):
+        if spec.startswith("agents."):
+            if not compiled_agents:
+                raise BlueprintError(f"No compiled agents available for '{label}'")
+            key = spec.split(".", 1)[1]
+            if key not in compiled_agents:
+                raise BlueprintError(f"Unknown agent reference '{spec}' for '{label}'")
+            return compiled_agents[key]
+        if spec.startswith("imports."):
+            if not compiled_imports:
+                raise BlueprintError(f"No compiled imports available for '{label}'")
+            key = spec.split(".", 1)[1]
+            if key not in compiled_imports:
+                raise BlueprintError(f"Unknown import reference '{spec}' for '{label}'")
+            return compiled_imports[key]
+    if isinstance(spec, (str, dict)):
+        return _resolve_agent_entry(spec)
+    return spec
+
+
+def _resolve_callable_spec(
+    spec: object,
+    *,
+    label: str,
+) -> _CallableObj | None:
+    if spec is None:
+        return None
+    obj: object
+    if isinstance(spec, (str, dict)):
+        try:
+            obj = _resolve_agent_entry(spec)
+        except Exception:
+            if isinstance(spec, dict):
+                path = spec.get("path")
+                if isinstance(path, str):
+                    obj = _import_object(path)
+                else:
+                    raise
+            elif isinstance(spec, str):
+                obj = _import_object(spec)
+            else:
+                raise
+    else:
+        obj = spec
+    if not callable(obj):
+        raise BlueprintError(f"{label} must be callable")
+    return obj
+
+
+def build_tree_search_step(
+    model: BlueprintStepModel,
+    step_config: StepConfig,
+    *,
+    yaml_path: Optional[str],
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
+) -> AnyStep:
+    _ = yaml_path
+    from ..dsl.tree_search import TreeSearchStep
+
+    proposer_obj = _resolve_tree_search_target(
+        model.proposer,
+        label="proposer",
+        compiled_agents=compiled_agents,
+        compiled_imports=compiled_imports,
+    )
+    evaluator_obj = _resolve_tree_search_target(
+        model.evaluator,
+        label="evaluator",
+        compiled_agents=compiled_agents,
+        compiled_imports=compiled_imports,
+    )
+    cost_fn = _resolve_callable_spec(model.cost_function, label="cost_function")
+    candidate_validator = _resolve_callable_spec(
+        model.candidate_validator, label="candidate_validator"
+    )
+
+    kwargs: dict[str, object] = {}
+    if model.branching_factor is not None:
+        kwargs["branching_factor"] = int(model.branching_factor)
+    if model.beam_width is not None:
+        kwargs["beam_width"] = int(model.beam_width)
+    if model.max_depth is not None:
+        kwargs["max_depth"] = int(model.max_depth)
+    if model.max_iterations is not None:
+        kwargs["max_iterations"] = int(model.max_iterations)
+    if model.path_max_tokens is not None:
+        kwargs["path_max_tokens"] = int(model.path_max_tokens)
+    if model.goal_score_threshold is not None:
+        kwargs["goal_score_threshold"] = float(model.goal_score_threshold)
+    if model.require_goal is not None:
+        kwargs["require_goal"] = bool(model.require_goal)
+
+    return TreeSearchStep(
+        name=model.name,
+        proposer=proposer_obj,
+        evaluator=evaluator_obj,
+        cost_function=cost_fn,
+        candidate_validator=candidate_validator,
+        config=step_config,
+        **kwargs,
+    )
+
+
 def build_basic_step(
     model: BlueprintStepModel,
     step_config: StepConfig,
