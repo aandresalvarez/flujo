@@ -157,7 +157,7 @@ class MultiSignalEvaluator:
                 if isinstance(res, ValidationResult):
                     objective_results.append(res)
                 elif hasattr(res, "is_valid"):
-                    payload: dict[str, object] = {
+                    result_payload: dict[str, object] = {
                         "is_valid": bool(getattr(res, "is_valid")),
                         "feedback": getattr(res, "feedback", None),
                         "validator_name": getattr(validator, "name", type(validator).__name__),
@@ -165,13 +165,13 @@ class MultiSignalEvaluator:
                     score = getattr(res, "score", None)
                     if score is not None:
                         try:
-                            payload["score"] = float(score)
+                            result_payload["score"] = float(score)
                         except Exception:
                             pass
                     diff = getattr(res, "diff", None)
                     if diff is not None:
-                        payload["diff"] = diff
-                    objective_results.append(ValidationResult(**payload))
+                        result_payload["diff"] = diff
+                    objective_results.append(ValidationResult(**result_payload))
                 else:
                     objective_results.append(
                         ValidationResult(

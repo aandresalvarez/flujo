@@ -1,9 +1,22 @@
 from __future__ import annotations
 from abc import abstractmethod
-from typing import Protocol, Any, runtime_checkable, Optional, Callable, Tuple
+from typing import Protocol, Any, runtime_checkable, Optional, Callable, Tuple, TYPE_CHECKING
+from typing import TypeVar, Literal
 from flujo.domain.base_model import BaseModel
 from pydantic import Field, model_validator
 from flujo.type_definitions.common import JSONObject
+
+
+_F = TypeVar("_F", bound=Callable[..., object])
+
+if TYPE_CHECKING:  # pragma: no cover
+
+    def _typed_model_validator(*, mode: Literal["before"]) -> Callable[[_F], _F]: ...
+
+else:
+
+    def _typed_model_validator(*, mode: Literal["before"]) -> Callable[[_F], _F]:
+        return model_validator(mode=mode)
 
 
 class ValidationResult(BaseModel):
@@ -16,7 +29,7 @@ class ValidationResult(BaseModel):
     validator_name: str
     metadata: JSONObject = Field(default_factory=dict)
 
-    @model_validator(mode="before")  # type: ignore[untyped-decorator]
+    @_typed_model_validator(mode="before")
     @classmethod
     def _default_score_from_validity(cls, data: object) -> object:
         if not isinstance(data, dict):

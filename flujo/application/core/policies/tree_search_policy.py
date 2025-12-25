@@ -807,13 +807,13 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
         feedback: str | None = None
         if winner is None:
             feedback = "TreeSearchStep produced no viable candidates"
-            metadata: dict[str, object] = {
+            failure_metadata: dict[str, object] = {
                 "goal_reached": False,
                 "iterations": state.iterations,
                 "expansions": state.expansions,
             }
             if heuristic_counts:
-                metadata["heuristic_counts"] = heuristic_counts
+                failure_metadata["heuristic_counts"] = heuristic_counts
             result = StepResult(
                 name=step.name,
                 success=False,
@@ -824,7 +824,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
                 cost_usd=total_cost,
                 feedback=feedback,
                 step_history=step_history,
-                metadata_=metadata,
+                metadata_=failure_metadata,
             )
             state.status = "failed"
             _snapshot_state()
@@ -853,7 +853,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
         if step.require_goal and not goal_reached:
             feedback = "Goal threshold not reached"
 
-        metadata: dict[str, object] = {
+        result_metadata: dict[str, object] = {
             "goal_reached": goal_reached,
             "iterations": state.iterations,
             "expansions": state.expansions,
@@ -861,12 +861,12 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
             "best_score": winner.metadata.get("rubric_score"),
         }
         if heuristic_counts:
-            metadata["heuristic_counts"] = heuristic_counts
+            result_metadata["heuristic_counts"] = heuristic_counts
         heuristic_source = None
         if winner.evaluation is not None:
             heuristic_source = winner.evaluation.get("heuristic_source")
         if heuristic_source is not None:
-            metadata["best_heuristic_source"] = heuristic_source
+            result_metadata["best_heuristic_source"] = heuristic_source
 
         result = StepResult(
             name=step.name,
@@ -878,7 +878,7 @@ class DefaultTreeSearchStepExecutor(StepPolicy[TreeSearchStep[PipelineContext]])
             cost_usd=total_cost,
             feedback=feedback,
             step_history=step_history,
-            metadata_=metadata,
+            metadata_=result_metadata,
         )
         telemetry.logfire.debug(
             "TreeSearchStep completed",
