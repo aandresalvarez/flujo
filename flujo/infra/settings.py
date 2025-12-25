@@ -189,6 +189,14 @@ class Settings(BaseSettings):
         ),
     )
     shadow_eval: ShadowEvalSettings = ShadowEvalSettings()
+    tree_search_discovery_enabled: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "FLUJO_TREE_SEARCH_DISCOVERY_ENABLED",
+            "flujo_tree_search_discovery_enabled",
+        ),
+        description="Enable TreeSearchStep discovery agent for deducing invariants.",
+    )
 
     # --- Core strictness toggles ---
     # Strict mode is the default; opt-out is not supported in CI.

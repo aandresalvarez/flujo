@@ -65,6 +65,31 @@ class HistoryManager:
         # default: truncate_tokens
         return self._by_tokens(history, model_id=model_id)
 
+    def summarize(
+        self,
+        parts: Sequence[str],
+        *,
+        max_tokens: int = 2000,
+        model_id: Optional[str] = None,
+    ) -> str:
+        """Summarize a list of path segments into a token-bounded string."""
+        if not parts:
+            return ""
+        max_tokens = max(1, int(max_tokens or 0))
+        kept: List[str] = []
+        running = 0
+        for text in reversed(parts):
+            turn = ConversationTurn(role=ConversationRole.assistant, content=str(text))
+            t = self._estimate_turn_tokens(turn, model_id=model_id)
+            if running + t > max_tokens and kept:
+                break
+            kept.append(str(text))
+            running += t
+        kept.reverse()
+        if len(kept) < len(parts):
+            return "... (summarized) ...\n" + "\n".join(kept)
+        return "\n".join(kept)
+
     # --------------------
     # Strategies
     # --------------------

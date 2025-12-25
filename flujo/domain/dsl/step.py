@@ -64,6 +64,22 @@ ContextModelT = TypeVar("ContextModelT", bound=BaseModel)
 # BranchKey type alias for ConditionalStep.
 # Keys must be JSON/YAML-friendly and stable for persistence/serialization.
 BranchKey = str | bool | int
+InvariantRule = str | Callable[..., bool]
+
+_ModelT = TypeVar("_ModelT")
+
+if TYPE_CHECKING:  # pragma: no cover
+
+    def _typed_model_validator(
+        *, mode: Literal["after"]
+    ) -> Callable[[Callable[[_ModelT], _ModelT]], Callable[[_ModelT], _ModelT]]: ...
+
+else:
+
+    def _typed_model_validator(
+        *, mode: Literal["after"]
+    ) -> Callable[[Callable[[_ModelT], _ModelT]], Callable[[_ModelT], _ModelT]]:
+        return model_validator(mode=mode)
 
 
 class MergeStrategy(Enum):
@@ -198,6 +214,14 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
     config: StepConfig = Field(default_factory=StepConfig)
     plugins: List[tuple[ValidationPlugin, int]] = Field(default_factory=list)
     validators: List[Validator] = Field(default_factory=list)
+    static_invariants: list[InvariantRule] = Field(
+        default_factory=list,
+        description="Hard invariants that must hold for this step's context.",
+    )
+    discovery_agent: object | None = Field(
+        default=None,
+        description="Optional discovery agent used by TreeSearchStep to deduce invariants.",
+    )
     failure_handlers: List[Callable[[], None]] = Field(default_factory=list)
     processors: "AgentProcessors" = Field(default_factory=AgentProcessors)
     fallback_step: object | None = Field(default=None, exclude=True)
@@ -263,7 +287,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         # ✅ Base steps are not complex by default.
         return False
 
-    @model_validator(mode="after")
+    @_typed_model_validator(mode="after")
     def _validate_adapter_metadata(self) -> "Step[StepInT, StepOutT]":
         """Adapters must always declare identity and allowlist token."""
         meta = getattr(self, "meta", None)
@@ -879,6 +903,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
         on_branch_failure: BranchFailureStrategy = BranchFailureStrategy.PROPAGATE,
         field_mapping: Optional[Dict[str, List[str]]] = None,
         ignore_branch_names: bool = False,
+        reduce: Callable[..., object] | None = None,
         **config_kwargs: Any,
     ) -> "ParallelStep[ContextModelT]":
         from .parallel import ParallelStep  # local import
@@ -892,6 +917,7 @@ class Step(BaseModel, Generic[StepInT, StepOutT]):
                 "on_branch_failure": on_branch_failure,
                 "field_mapping": field_mapping,
                 "ignore_branch_names": ignore_branch_names,
+                "reduce": reduce,
                 **config_kwargs,
             }
         )

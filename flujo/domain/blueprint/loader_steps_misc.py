@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Optional, TypeAlias, TypeGuard
 
 from ..dsl import Pipeline, Step, StepConfig
+from ..dsl.step import InvariantRule
 from ..dsl.import_step import ImportStep, OutputMapping
 from ..models import BaseModel, UsageLimits
 from ..resources import AppResources
@@ -32,6 +33,70 @@ _CallableObj: TypeAlias = Callable[..., object]
 
 def _is_callable_obj(obj: object) -> TypeGuard[_CallableObj]:
     return callable(obj)
+
+
+def _is_invariant_callable(obj: object) -> TypeGuard[Callable[..., bool]]:
+    return callable(obj)
+
+
+def _is_invariant_rule(obj: object) -> TypeGuard[InvariantRule]:
+    return isinstance(obj, str) or _is_invariant_callable(obj)
+
+
+def _resolve_compiled_reference(
+    value: object,
+    *,
+    label: str,
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
+) -> object | None:
+    if not isinstance(value, str):
+        return None
+    if value.startswith("agents."):
+        if not compiled_agents:
+            raise BlueprintError(f"No compiled agents available for '{label}'")
+        key = value.split(".", 1)[1]
+        if key not in compiled_agents:
+            raise BlueprintError(f"Unknown agent reference '{value}' for '{label}'")
+        return compiled_agents[key]
+    if value.startswith("imports."):
+        if not compiled_imports:
+            raise BlueprintError(f"No compiled imports available for '{label}'")
+        key = value.split(".", 1)[1]
+        if key not in compiled_imports:
+            raise BlueprintError(f"Unknown import reference '{value}' for '{label}'")
+        return compiled_imports[key]
+    return None
+
+
+def _resolve_spec_value(
+    spec: object,
+    *,
+    label: str,
+    compiled_agents: CompiledAgents | None = None,
+    compiled_imports: CompiledImports | None = None,
+) -> object:
+    resolved = _resolve_compiled_reference(
+        spec,
+        label=label,
+        compiled_agents=compiled_agents,
+        compiled_imports=compiled_imports,
+    )
+    if resolved is not None:
+        return resolved
+    if isinstance(spec, (str, dict)):
+        try:
+            return _resolve_agent_entry(spec)
+        except Exception:
+            if isinstance(spec, dict):
+                path = spec.get("path")
+                if isinstance(path, str):
+                    return _import_object(path)
+                raise
+            if isinstance(spec, str):
+                return _import_object(spec)
+            raise
+    return spec
 
 
 def build_hitl_step(model: BlueprintStepModel, step_config: StepConfig) -> AnyStep:
@@ -175,6 +240,114 @@ def build_agentic_loop_step(
         )
     except Exception as e:
         raise BlueprintError(f"Failed to wrap agentic loop pipeline as step: {e}")
+
+
+def _resolve_tree_search_target(
+    spec: object,
+    *,
+    label: str,
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
+) -> object:
+    if spec is None:
+        raise BlueprintError(f"tree_search requires '{label}'")
+    return _resolve_spec_value(
+        spec,
+        label=label,
+        compiled_agents=compiled_agents,
+        compiled_imports=compiled_imports,
+    )
+
+
+def _resolve_callable_spec(
+    spec: object,
+    *,
+    label: str,
+) -> _CallableObj | None:
+    if spec is None:
+        return None
+    obj = _resolve_spec_value(spec, label=label)
+    if not callable(obj):
+        raise BlueprintError(f"{label} must be callable")
+    return obj
+
+
+def build_tree_search_step(
+    model: BlueprintStepModel,
+    step_config: StepConfig,
+    *,
+    yaml_path: Optional[str],
+    compiled_agents: CompiledAgents | None,
+    compiled_imports: CompiledImports | None,
+) -> AnyStep:
+    _ = yaml_path
+    from ..dsl.tree_search import TreeSearchStep
+
+    proposer_obj = _resolve_tree_search_target(
+        model.proposer,
+        label="proposer",
+        compiled_agents=compiled_agents,
+        compiled_imports=compiled_imports,
+    )
+    evaluator_obj = _resolve_tree_search_target(
+        model.evaluator,
+        label="evaluator",
+        compiled_agents=compiled_agents,
+        compiled_imports=compiled_imports,
+    )
+    cost_fn = _resolve_callable_spec(model.cost_function, label="cost_function")
+    candidate_validator = _resolve_callable_spec(
+        model.candidate_validator, label="candidate_validator"
+    )
+    discovery_agent: object | None = None
+    if model.discovery_agent is not None:
+        discovery_agent = _resolve_tree_search_target(
+            model.discovery_agent,
+            label="discovery_agent",
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+        )
+
+    static_invariants: list[InvariantRule] = []
+    if model.static_invariants:
+        for rule in model.static_invariants:
+            if _is_invariant_rule(rule):
+                static_invariants.append(rule)
+                continue
+            if isinstance(rule, dict):
+                resolved = _resolve_callable_spec(rule, label="static_invariant")
+                if resolved is not None and _is_invariant_callable(resolved):
+                    static_invariants.append(resolved)
+                    continue
+            raise BlueprintError(f"Invalid static invariant: {rule!r}")
+
+    kwargs: dict[str, object] = {}
+    if model.branching_factor is not None:
+        kwargs["branching_factor"] = int(model.branching_factor)
+    if model.beam_width is not None:
+        kwargs["beam_width"] = int(model.beam_width)
+    if model.max_depth is not None:
+        kwargs["max_depth"] = int(model.max_depth)
+    if model.max_iterations is not None:
+        kwargs["max_iterations"] = int(model.max_iterations)
+    if model.path_max_tokens is not None:
+        kwargs["path_max_tokens"] = int(model.path_max_tokens)
+    if model.goal_score_threshold is not None:
+        kwargs["goal_score_threshold"] = float(model.goal_score_threshold)
+    if model.require_goal is not None:
+        kwargs["require_goal"] = bool(model.require_goal)
+
+    return TreeSearchStep(
+        name=model.name,
+        proposer=proposer_obj,
+        evaluator=evaluator_obj,
+        cost_function=cost_fn,
+        candidate_validator=candidate_validator,
+        discovery_agent=discovery_agent,
+        static_invariants=static_invariants,
+        config=step_config,
+        **kwargs,
+    )
 
 
 def build_basic_step(

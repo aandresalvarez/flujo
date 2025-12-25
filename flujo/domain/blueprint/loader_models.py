@@ -123,6 +123,7 @@ class BlueprintStepModel(BaseModel):
         "hitl",
         "cache",
         "agentic_loop",
+        "tree_search",
         "StateMachine",
     ] = Field(default="step")
     # Accept both 'name' and legacy 'step' keys for step name
@@ -158,6 +159,20 @@ class BlueprintStepModel(BaseModel):
     planner: Optional[str] = None
     registry: Optional[Union[str, JSONObject]] = None
     output_template: Optional[str] = None
+    # TreeSearchStep (kind: "tree_search")
+    proposer: Optional[Union[str, JSONObject]] = None
+    evaluator: Optional[Union[str, JSONObject]] = None
+    discovery_agent: Optional[Union[str, JSONObject]] = None
+    static_invariants: list[object] | None = None
+    cost_function: Optional[Union[str, JSONObject]] = None
+    candidate_validator: Optional[Union[str, JSONObject]] = None
+    branching_factor: Optional[int] = None
+    beam_width: Optional[int] = None
+    max_depth: Optional[int] = None
+    max_iterations: Optional[int] = None
+    path_max_tokens: Optional[int] = None
+    goal_score_threshold: Optional[float] = None
+    require_goal: Optional[bool] = None
     processing: Optional[ProcessingConfigModel] = None
     meta: Optional[JSONObject] = None
     # StateMachineStep (kind: "StateMachine")
@@ -257,6 +272,7 @@ class BlueprintPipelineModel(BaseModel):
     steps: list[JSONObject]
     agents: Optional[dict[str, "AgentModel"]] = None
     imports: Optional[dict[str, str]] = None
+    static_invariants: list[object] | None = None
 
     @model_validator(mode="after")
     def _validate_agent_references(self) -> "BlueprintPipelineModel":

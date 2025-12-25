@@ -64,6 +64,7 @@ nav:
     - 'Budget-Aware Workflows': 'cookbook/budget_aware_workflows.md'
     - 'Cost Control': 'cookbook/cost_control.md'
     - 'Error Recovery': 'cookbook/error_recovery.md'
+    - 'Reasoning with A*': 'cookbook/reasoning_with_astar.md'
     - 'Visualizing Pipelines': 'cookbook/visualizing_pipelines.md'
   - 'Development':
     - 'Testing Guide': 'advanced/testing_guide.md'

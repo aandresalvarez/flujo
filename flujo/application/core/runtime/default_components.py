@@ -228,17 +228,31 @@ class DefaultValidatorRunner:
                     if hasattr(feedback, "_mock_name"):
                         feedback = None
 
+                    score = getattr(result, "score", None)
+                    if hasattr(score, "_mock_name"):
+                        score = None
+                    diff = getattr(result, "diff", None)
+                    if hasattr(diff, "_mock_name"):
+                        diff = None
+
                     validator_name = getattr(validator, "name", None)
                     if hasattr(validator_name, "_mock_name") or validator_name is None:
                         validator_name = type(validator).__name__
 
-                    validation_results.append(
-                        ValidationResult(
-                            is_valid=bool(getattr(result, "is_valid")),
-                            feedback=feedback,
-                            validator_name=validator_name,
-                        )
-                    )
+                    payload: dict[str, object] = {
+                        "is_valid": bool(getattr(result, "is_valid")),
+                        "feedback": feedback,
+                        "validator_name": validator_name,
+                    }
+                    if score is not None:
+                        try:
+                            payload["score"] = float(score)
+                        except Exception:
+                            pass
+                    if diff is not None:
+                        payload["diff"] = diff
+
+                    validation_results.append(ValidationResult(**payload))
                 else:
                     feedback_msg = (
                         f"Validator {type(validator).__name__} returned invalid result type"

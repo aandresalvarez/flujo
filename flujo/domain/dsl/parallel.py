@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Generic, TypeVar
+from typing import Awaitable, Callable, Generic, TypeVar
 
 try:
     from typing import Self
@@ -9,12 +9,13 @@ except ImportError:
 
 from pydantic import Field, model_validator
 
-from ..models import BaseModel
+from ..models import BaseModel, StepResult
 from .step import Step, MergeStrategy, BranchFailureStrategy
 from .pipeline import Pipeline  # Import for runtime use in normalization
 from flujo.type_definitions.common import JSONObject
 
 TContext = TypeVar("TContext", bound=BaseModel)
+ParallelReducer = Callable[..., StepResult | object | Awaitable[StepResult | object]]
 
 __all__ = ["ParallelStep"]
 
@@ -30,6 +31,10 @@ class ParallelStep(Step[object, object], Generic[TContext]):
 
     branches: JSONObject = Field(
         description="Mapping of branch names to pipelines to run in parallel."
+    )
+    reduce: ParallelReducer | None = Field(
+        default=None,
+        description="Optional reducer to merge branch results into a single StepResult/output.",
     )
     context_include_keys: list[str] | None = Field(
         default=None,

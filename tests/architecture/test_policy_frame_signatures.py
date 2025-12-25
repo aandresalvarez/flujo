@@ -11,6 +11,7 @@ from flujo.application.core.step_policies import (
     DefaultImportStepExecutor,
     DefaultLoopStepExecutor,
     DefaultParallelStepExecutor,
+    DefaultTreeSearchStepExecutor,
     DefaultSimpleStepExecutor,
 )
 
@@ -27,6 +28,7 @@ from flujo.application.core.step_policies import (
         DefaultDynamicRouterStepExecutor,
         DefaultHitlStepExecutor,
         DefaultImportStepExecutor,
+        DefaultTreeSearchStepExecutor,
     ],
 )
 def test_policy_execute_signature_uses_frame(policy_cls: type) -> None:

@@ -8,6 +8,8 @@ from ..domain.models import (
     Candidate,
     Checklist,
     ChecklistItem,
+    SearchNode,
+    SearchState,
     PipelineResult,
     StepResult,
     UsageLimits,
@@ -20,12 +22,15 @@ from ..domain.models import (
     HumanInteraction,
     PipelineContext,
 )
+from ..domain.evaluation import EvaluationReport, EvaluationScore
 
 __all__ = [
     "Task",
     "Candidate",
     "Checklist",
     "ChecklistItem",
+    "SearchNode",
+    "SearchState",
     "PipelineResult",
     "StepResult",
     "UsageLimits",
@@ -37,4 +42,6 @@ __all__ = [
     "ImprovementReport",
     "HumanInteraction",
     "PipelineContext",
+    "EvaluationReport",
+    "EvaluationScore",
 ]

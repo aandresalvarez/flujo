@@ -16,3 +16,5 @@ This directory contains examples demonstrating different Flujo patterns and capa
 | **09_pipeline_factories.py** | Using factory functions for transparent workflows. |
 | **10_cli_run_demo.py** | Command-line interface examples. |
 | **11_state_machine_pipeline.py** | State machine pattern for complex workflows. |
+| **consensus_diff_autofix_demo.py** | Parallel consensus with DiffProcessor auto-correction. |
+| **biomedical_astar_agent_demo.py** | TreeSearchStep A* demo for biomedical hypotheses. |

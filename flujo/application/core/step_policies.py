@@ -49,6 +49,7 @@ from .policies.router_policy import (
 from .policies.hitl_policy import DefaultHitlStepExecutor, HitlStepExecutor
 from .policies.cache_policy import DefaultCacheStepExecutor, CacheStepExecutor
 from .policies.import_policy import DefaultImportStepExecutor, ImportStepExecutor
+from .policies.tree_search_policy import DefaultTreeSearchStepExecutor, TreeSearchStepExecutor
 
 __all__ = [
     "extract_usage_metrics",
@@ -90,4 +91,6 @@ __all__ = [
     "DefaultCacheStepExecutor",
     "ImportStepExecutor",
     "DefaultImportStepExecutor",
+    "TreeSearchStepExecutor",
+    "DefaultTreeSearchStepExecutor",
 ]

@@ -133,6 +133,8 @@ __all__ = [
     "Candidate",
     "Checklist",
     "ChecklistItem",
+    "SearchNode",
+    "SearchState",
     "PipelineResult",
     "StepResult",
     "UsageLimits",
@@ -190,6 +192,91 @@ class Candidate(BaseModel):
             f"Candidate(score={self.score:.2f}, solution={self.solution!r}, "
             f"checklist_items={len(self.checklist.items) if self.checklist else 0})"
         )
+
+
+class SearchNode(BaseModel):
+    """A single node in a tree search frontier."""
+
+    node_id: str
+    parent_id: str | None = None
+    depth: int = 0
+    candidate: Any | None = None
+    output: Any | None = None
+    g_cost: float = 0.0
+    h_cost: float = 1.0
+    f_cost: float = 1.0
+    state_hash: str = ""
+    evaluation: JSONObject | None = None
+    context_snapshot: JSONObject | None = None
+    metadata: JSONObject = Field(default_factory=dict)
+
+    _context: Optional["PipelineContext"] = PrivateAttr(default=None)
+
+    def attach_context(self, context: Optional["PipelineContext"]) -> None:
+        """Attach runtime context and capture a snapshot for persistence."""
+        self._context = context
+        if context is None:
+            self.context_snapshot = None
+            return
+        exclude = {"tree_search_state"} if hasattr(context, "tree_search_state") else set()
+        try:
+            self.context_snapshot = context.model_dump(exclude=exclude)
+        except Exception:
+            self.context_snapshot = context.model_dump()
+
+    def rehydrate_context(
+        self, context_type: type["PipelineContext"]
+    ) -> Optional["PipelineContext"]:
+        """Rebuild runtime context from the stored snapshot if needed."""
+        if self._context is not None:
+            return self._context
+        if self.context_snapshot is None:
+            return None
+        try:
+            ctx = context_type.model_validate(self.context_snapshot)
+        except Exception:
+            return None
+        try:
+            if hasattr(ctx, "tree_search_state"):
+                setattr(ctx, "tree_search_state", None)
+        except Exception:
+            pass
+        self._context = ctx
+        return ctx
+
+
+class SearchState(BaseModel):
+    """Persistent tree search state stored in the pipeline context."""
+
+    version: int = 1
+    open_set: list[str] = Field(default_factory=list)
+    closed_set: list[str] = Field(default_factory=list)
+    nodes: dict[str, SearchNode] = Field(default_factory=dict)
+    deduced_invariants: list[str] = Field(default_factory=list)
+    iterations: int = 0
+    expansions: int = 0
+    next_node_id: int = 0
+    best_node_id: str | None = None
+    status: Literal["running", "paused", "completed", "failed"] = "running"
+    trace: list[JSONObject] = Field(default_factory=list)
+    metadata: JSONObject = Field(default_factory=dict)
+
+    def sorted_open_nodes(self) -> list[SearchNode]:
+        """Return open nodes sorted by A* priority."""
+        nodes = [self.nodes[nid] for nid in self.open_set if nid in self.nodes]
+        return sorted(nodes, key=lambda n: (n.f_cost, n.g_cost, n.depth, n.node_id))
+
+    def pop_best_open(self) -> SearchNode | None:
+        """Pop the best node from the open set."""
+        nodes = self.sorted_open_nodes()
+        if not nodes:
+            return None
+        best = nodes[0]
+        try:
+            self.open_set.remove(best.node_id)
+        except ValueError:
+            pass
+        return best
 
 
 class StepResult(BaseModel):
@@ -764,6 +851,10 @@ class PipelineContext(BaseModel):
     granular_state: dict[str, Any] | None = Field(
         default=None,
         description="Granular execution state for GranularStep.",
+    )
+    tree_search_state: SearchState | None = Field(
+        default=None,
+        description="Persistent TreeSearchStep frontier state for crash recovery.",
     )
     # Background task bookkeeping (migrated from scratchpad)
     is_background_task: bool = Field(

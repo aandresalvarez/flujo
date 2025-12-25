@@ -8,6 +8,7 @@ from ....domain.dsl.granular import GranularStep
 from ....domain.dsl.import_step import ImportStep
 from ....domain.dsl.loop import LoopStep
 from ....domain.dsl.parallel import ParallelStep
+from ....domain.dsl.tree_search import TreeSearchStep
 from ....domain.dsl.step import HumanInTheLoopStep, Step
 from ....domain.models import BaseModel, Failure, PipelineResult, StepOutcome, StepResult, Success
 from ....exceptions import UsageLimitExceededError
@@ -271,6 +272,7 @@ class PolicyHandlers(Generic[TContext]):
         self._adapt_existing_policies(registry)
         self._ensure_state_machine_policy(registry)
         self._ensure_granular_policy(registry)
+        self._ensure_tree_search_policy(registry)
         # Ensure a fallback exists; default to simple policy when not provided
         try:
             if registry._fallback_policy is None:
@@ -333,7 +335,7 @@ class PolicyHandlers(Generic[TContext]):
             async def _sm_bound(frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
                 return await _sm_policy.execute(self._core, frame)
 
-            if registry.get(_SM) is None:
+            if not registry.has_exact(_SM):
                 registry.register(_SM, _sm_bound)
         except Exception:
             # Defensive: never break core init due to optional policy wiring
@@ -349,8 +351,26 @@ class PolicyHandlers(Generic[TContext]):
             async def _g_bound(frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
                 return await _g_policy.execute(self._core, frame)
 
-            if registry.get(GranularStep) is None:
+            if not registry.has_exact(GranularStep):
                 registry.register(GranularStep, _g_bound)
+        except Exception:
+            # Defensive: never break core init due to optional policy wiring
+            pass
+
+    def _ensure_tree_search_policy(self, registry: PolicyRegistry) -> None:
+        """Register TreeSearchStep policy for durable A* search execution."""
+        try:
+            from ..policies.tree_search_policy import (
+                DefaultTreeSearchStepExecutor as _TSPolicy,
+            )
+
+            _ts_policy = _TSPolicy()
+
+            async def _ts_bound(frame: ExecutionFrame[BaseModel]) -> StepOutcome[StepResult]:
+                return await _ts_policy.execute(self._core, frame)
+
+            if not registry.has_exact(TreeSearchStep):
+                registry.register(TreeSearchStep, _ts_bound)
         except Exception:
             # Defensive: never break core init due to optional policy wiring
             pass

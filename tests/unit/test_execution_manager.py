@@ -347,6 +347,42 @@ class TestExecutionManager:
         assert len(result.step_history) == 2  # Both steps in the pipeline were executed
 
     @pytest.mark.asyncio
+    async def test_pipeline_invariants_fail_after_context_update(self):
+        """Invariant violations should fail the step after context updates."""
+        step = Step(name="step1", agent=lambda _x: {"mode": "unsafe"}, updates_context=True)
+        pipeline = Pipeline(
+            steps=[step],
+            static_invariants=["context.mode == 'safe'"],
+        )
+
+        class _Backend:
+            agent_registry = {}
+
+            async def execute_step(self, _request):
+                return Success(
+                    step_result=StepResult(name="step1", output={"mode": "unsafe"}, success=True)
+                )
+
+        execution_manager = ExecutionManager(pipeline, backend=_Backend())
+        result = PipelineResult()
+        ctx = PipelineContext(initial_prompt="test")
+        async for _ in execution_manager.execute_steps(
+            start_idx=0,
+            data="input",
+            context=ctx,
+            result=result,
+        ):
+            pass
+
+        assert len(result.step_history) == 1
+        step_result = result.step_history[0]
+        assert step_result.success is False
+        assert step_result.feedback is not None
+        assert "Invariant violated" in step_result.feedback
+        assert step_result.metadata_ is not None
+        assert step_result.metadata_["invariant_violations"][0]["rule"] == "context.mode == 'safe'"
+
+    @pytest.mark.asyncio
     async def test_abort_from_on_step_failure_closes_step_iterator(self) -> None:
         """Abort paths must close the in-flight step iterator to avoid asyncgen leaks."""
 

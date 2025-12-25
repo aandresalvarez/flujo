@@ -1,4 +1,5 @@
 from __future__ import annotations
+import inspect
 from flujo.type_definitions.common import JSONObject
 
 from ._shared import (  # noqa: F401
@@ -695,12 +696,44 @@ class DefaultParallelStepExecutor(StepPolicy[ParallelStep[BaseModel]]):
         for bn, br in branch_results.items():
             output_dict[bn] = br.output if br.success else br
         result.output = output_dict
-        # Apply declarative reduce mapper if present
+        # Apply reducer if present (StepResult-aware first, meta reducer as fallback)
         try:
-            meta = getattr(parallel_step, "meta", {})
-            reducer = meta.get("parallel_reduce_mapper") if isinstance(meta, dict) else None
+            reducer = getattr(parallel_step, "reduce", None)
+            reduced: object | None = None
             if callable(reducer):
-                result.output = reducer(output_dict, context)
+                ordered_results = [
+                    branch_results[name] for name in branch_names if name in branch_results
+                ]
+                try:
+                    reduced = reducer(ordered_results, context)
+                except TypeError:
+                    try:
+                        reduced = reducer(ordered_results)
+                    except TypeError:
+                        try:
+                            reduced = reducer(output_dict, context)
+                        except TypeError:
+                            reduced = reducer(output_dict)
+                if inspect.isawaitable(reduced):
+                    reduced = await reduced
+            else:
+                meta = getattr(parallel_step, "meta", {})
+                mapper = meta.get("parallel_reduce_mapper") if isinstance(meta, dict) else None
+                if callable(mapper):
+                    reduced = mapper(output_dict, context)
+            if isinstance(reduced, StepResult):
+                result.output = reduced.output
+                result.success = reduced.success
+                result.feedback = reduced.feedback
+                try:
+                    result.metadata_["reduced_from"] = {
+                        "strategy": getattr(reducer, "__name__", "reduce"),
+                        "selected_step": reduced.name,
+                    }
+                except Exception:
+                    pass
+            elif reduced is not None:
+                result.output = reduced
         except Exception:
             # On reducer error, keep original map for debuggability
             pass

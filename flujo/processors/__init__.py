@@ -5,6 +5,7 @@ from .common import (
     EnforceJsonResponse,
     SerializePydantic,
 )
+from .diff import DiffProcessor
 
 # Import from the new location per FSD-005.3
 from ..agents.repair import DeterministicRepairProcessor
@@ -20,6 +21,7 @@ __all__ = [
     "StripMarkdownFences",
     "EnforceJsonResponse",
     "SerializePydantic",
+    "DiffProcessor",
     "DeterministicRepairProcessor",
     "JsonRegionExtractorProcessor",
     "SmartTypeCoercionProcessor",

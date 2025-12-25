@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Optional, TypeAlias
+from typing import Optional, TypeAlias, TypeGuard
 
 from ..dsl import Pipeline, Step, StepConfig
+from ..dsl.step import InvariantRule
 from .loader_models import (
     BlueprintError,
     BlueprintPipelineModel,
@@ -20,6 +21,7 @@ from .loader_steps_misc import (
     build_basic_step,
     build_cache_step,
     build_hitl_step,
+    build_tree_search_step,
     build_state_machine_step,
 )
 
@@ -27,6 +29,10 @@ AnyStep: TypeAlias = Step[object, object]
 AnyPipeline: TypeAlias = Pipeline[object, object]
 CompiledAgents: TypeAlias = dict[str, object]
 CompiledImports: TypeAlias = dict[str, AnyPipeline]
+
+
+def _is_invariant_rule(rule: object) -> TypeGuard[InvariantRule]:
+    return isinstance(rule, str) or callable(rule)
 
 
 def _make_step_from_blueprint(
@@ -68,6 +74,7 @@ def _make_step_from_blueprint(
             "hitl",
             "cache",
             "agentic_loop",
+            "tree_search",
             "StateMachine",
         }:
             return builder(
@@ -346,6 +353,22 @@ def _register_defaults() -> None:
             build_branch=_build_pipeline_from_branch,
         )
 
+    def _adapt_tree_search(
+        model: BlueprintStepModel,
+        config: StepConfig,
+        *,
+        yaml_path: Optional[str] = None,
+        compiled_agents: CompiledAgents | None = None,
+        compiled_imports: CompiledImports | None = None,
+    ) -> AnyStep:
+        return build_tree_search_step(
+            model,
+            config,
+            yaml_path=yaml_path,
+            compiled_agents=compiled_agents,
+            compiled_imports=compiled_imports,
+        )
+
     register_builder("parallel", _adapt_parallel)
     register_builder("conditional", _adapt_conditional)
     register_builder("loop", _adapt_loop)
@@ -354,6 +377,7 @@ def _register_defaults() -> None:
     register_builder("cache", _adapt_cache)
     register_builder("hitl", _adapt_hitl)
     register_builder("agentic_loop", _adapt_agentic_loop)
+    register_builder("tree_search", _adapt_tree_search)
     register_builder("StateMachine", _adapt_state_machine)
     register_builder("step", _adapt_basic)
 
@@ -377,7 +401,22 @@ def build_pipeline_from_blueprint(
                 compiled_imports=compiled_imports,
             )
         )
-    p: AnyPipeline = Pipeline.model_construct(steps=steps)
+    pipeline_invariants: list[InvariantRule] = []
+    if model.static_invariants:
+        from .loader_steps_misc import _resolve_callable_spec
+
+        for rule in model.static_invariants:
+            if _is_invariant_rule(rule):
+                pipeline_invariants.append(rule)
+                continue
+            if isinstance(rule, dict):
+                resolved = _resolve_callable_spec(rule, label="pipeline_invariant")
+                if resolved is not None and _is_invariant_rule(resolved):
+                    pipeline_invariants.append(resolved)
+                    continue
+            raise BlueprintError(f"Invalid pipeline invariant: {rule!r}")
+
+    p: AnyPipeline = Pipeline.model_construct(steps=steps, static_invariants=pipeline_invariants)
     try:
         for st in p.steps:
             _finalize_step_types(st)

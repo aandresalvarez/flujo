@@ -126,6 +126,28 @@ critically. The agent does not modify your code automatically.
 
 `flujo` provides custom evaluators to simplify the integration with `pydantic-evals`.
 
+### Multi-Signal Evaluator (Critic/Judge Loop)
+
+The critic-judge loop does not require a separate pattern. `MultiSignalEvaluator` already
+supports it via `review_agent` (critic) and `validator_agent` (judge), with optional
+objective validators for hard checks.
+
+```python
+from flujo.domain.evaluation import MultiSignalEvaluator
+from flujo.agents import make_agent_async
+
+critic = make_agent_async("openai:gpt-4o", "Critique the solution using a checklist.", dict)
+judge = make_agent_async("openai:gpt-4o", "Validate the checklist strictly.", dict)
+
+evaluator = MultiSignalEvaluator(
+    review_agent=critic,
+    validator_agent=judge,
+    objective_validators=[],
+)
+
+report = await evaluator.run({"solution": output, "task": prompt})
+```
+
 ### `FinalSolutionEvaluator`
 
 The `FinalSolutionEvaluator` extracts the output of the last step in a `PipelineResult` and compares it against the `expected_output` defined in your evaluation `Case`. This is useful when you want to evaluate the overall outcome of your pipeline.

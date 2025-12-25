@@ -10,6 +10,7 @@ from .dsl import (
     StepConfig,
     MapStep,
     ParallelStep,
+    TreeSearchStep,
     MergeStrategy,
     BranchFailureStrategy,
 )
@@ -19,6 +20,8 @@ from .models import (
     Candidate,
     Checklist,
     ChecklistItem,
+    SearchNode,
+    SearchState,
     PipelineResult,
     StepResult,
     UsageLimits,
@@ -31,6 +34,13 @@ from .backends import ExecutionBackend, StepExecutionRequest
 from .processors import AgentProcessors
 from .plugins import PluginOutcome, ValidationPlugin
 from .validation import Validator, ValidationResult
+from .evaluation import (
+    EvaluationReport,
+    EvaluationScore,
+    MultiSignalEvaluator,
+    make_multi_signal_evaluator,
+)
+from .consensus import majority_vote, code_consensus, judge_selection
 from .pipeline_validation import ValidationFinding, ValidationReport
 from .resources import AppResources
 from . import blueprint as blueprint
@@ -47,6 +57,7 @@ __all__ = [
     "StepConfig",
     "MapStep",
     "ParallelStep",
+    "TreeSearchStep",
     "MergeStrategy",
     "BranchFailureStrategy",
     "BaseContext",
@@ -57,6 +68,8 @@ __all__ = [
     "Candidate",
     "Checklist",
     "ChecklistItem",
+    "SearchNode",
+    "SearchState",
     "PipelineResult",
     "StepResult",
     "UsageLimits",
@@ -78,6 +91,13 @@ __all__ = [
     "ValidationResult",
     "ValidationFinding",
     "ValidationReport",
+    "EvaluationReport",
+    "EvaluationScore",
+    "MultiSignalEvaluator",
+    "make_multi_signal_evaluator",
+    "majority_vote",
+    "code_consensus",
+    "judge_selection",
     # Resources
     "AppResources",
     "blueprint",
